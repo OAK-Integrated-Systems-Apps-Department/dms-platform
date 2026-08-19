@@ -1,0 +1,4 @@
+infra/local/.env
+.idea/
+infra/secrets/*.env
+!infra/secrets/*.enc.env

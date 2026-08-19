@@ -1,0 +1,20 @@
+package com.oak.dms.user.dto;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Public API representation of a {@link com.oak.dms.user.User}.
+ */
+public record UserResponse(
+        UUID userId,
+        UUID tenantId,
+        UUID keycloakId,
+        String email,
+        String displayName,
+        boolean mfaEnabled,
+        String status,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
+) {
+}

@@ -1,0 +1,88 @@
+spring:
+  application:
+    name: dms-core
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/dms_dev}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:password}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:dms}
+    password: ${RABBITMQ_PASSWORD:changeme}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 1000
+          max-attempts: 5
+          multiplier: 2
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/oak-dms}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/oak-dms/protocol/openid-connect/certs}
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8081}
+    realm: ${KEYCLOAK_REALM:oak-dms}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:dms-core-admin}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:changeme}
+
+dms:
+  outbox:
+    relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    root: INFO
+    com.oak.dms: ${LOG_LEVEL:INFO}
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:WARN}
