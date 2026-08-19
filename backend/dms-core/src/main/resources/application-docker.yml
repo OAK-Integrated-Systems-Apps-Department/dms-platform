@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/dms_core_db
+  rabbitmq:
+    host: rabbitmq
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/realms/oak-dms
+          jwk-set-uri: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
+
+keycloak:
+  admin:
+    server-url: http://keycloak:8080

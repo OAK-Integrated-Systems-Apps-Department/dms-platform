@@ -1,0 +1,129 @@
+version: "3.9"
+
+# Local development stack for dms-core. Production topology (Helm/RKE2/
+# Rancher, managed Postgres with Barman backups, Ceph/Rook object storage,
+# OpenBao secrets) lives under the other infra/ subdirectories - this
+# compose file is intentionally dev-only.
+#
+# Secrets: nothing below is hardcoded plaintext. Values come from
+# infra/secrets/dms-core.secrets.env, which is generated on demand by:
+#     scripts/openbao-decrypt-secrets.sh
+# from the committed ciphertext in infra/secrets/dms-core.secrets.enc.env
+# (encrypted with OpenBao's Transit engine - see scripts/openbao-encrypt-secrets.sh).
+# The plaintext file is gitignored and should be deleted after `docker compose up`.
+
+x-secrets-env: &secrets-env
+  env_file:
+    - ../secrets/dms-core.secrets.env
+
+services:
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: oakdms-postgres
+    <<: *secrets-env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: oakdms-rabbitmq
+    <<: *secrets-env
+    environment:
+      RABBITMQ_DEFAULT_USER: dms
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    container_name: oakdms-keycloak
+    command: ["start-dev", "--import-realm"]
+    <<: *secrets-env
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/oak-dms-realm.json:/opt/keycloak/data/import/oak-dms-realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot init job: grants dms-core-admin's service account the
+  # manage-users role, the one piece of setup a realm export can't express
+  # (see infra/keycloak/README.md). Runs once per stack start and exits;
+  # dms-core waits for it to complete successfully before starting, so
+  # user-management calls never race against an ungranted permission.
+  keycloak-bootstrap:
+    image: quay.io/keycloak/keycloak:26.7.0
+    container_name: oakdms-keycloak-bootstrap
+    entrypoint: ["/bin/bash", "/bootstrap/bootstrap.sh"]
+    <<: *secrets-env
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_BOOTSTRAP_ADMIN_USER: admin
+      KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: oak-dms
+      KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+    volumes:
+      - ../keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  dms-core:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: oakdms-core
+    <<: *secrets-env
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/dms_core_db
+      DB_USERNAME: dms_core_user
+      DB_PASSWORD: ${DMS_CORE_DB_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: oak-dms
+      KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/oak-dms
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
+      KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak-bootstrap:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
