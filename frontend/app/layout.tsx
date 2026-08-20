@@ -1,5 +1,5 @@
 "use client"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -7,10 +7,17 @@ import { cn } from "@/lib/utils"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
-const fontMono = Geist_Mono({
+const fraunces = Fraunces({
   subsets: ["latin"],
+  weight: ["500", "600"],
+  variable: "--font-heading",
+})
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
   variable: "--font-mono",
 })
 
@@ -27,9 +34,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn(
         "antialiased",
-        fontMono.variable,
+        plexMono.variable,
         "font-sans",
-        geist.variable
+        inter.variable,
+        fraunces.variable
       )}
     >
       <body>
