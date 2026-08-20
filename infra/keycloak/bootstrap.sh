@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 #
 # Closes the one gap a Keycloak realm export genuinely can't express:
 # granting a client's service account a role on ANOTHER client
