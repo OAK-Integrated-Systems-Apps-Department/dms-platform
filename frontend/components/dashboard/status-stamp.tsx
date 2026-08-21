@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-import type { DocumentStatus } from "../types"
+import type { DocumentStatus } from "./types"
 
 const STAMP_STYLES: Record<DocumentStatus, string> = {
   Approved: "border-primary text-primary bg-primary/10",
