@@ -13,7 +13,8 @@
     "realm": [
       { "name": "PLATFORM_ADMIN", "description": "Cross-tenant platform administrator" },
       { "name": "TENANT_ADMIN", "description": "Full administrative access within one tenant" },
-      { "name": "MEMBER", "description": "Standard authenticated user" }
+      { "name": "MEMBER", "description": "Standard authenticated user" },
+      { "name": "manage-users", "description": "Manage users and roles" }
     ]
   },
 
@@ -21,7 +22,7 @@
     {
       "clientId": "dms-core-admin",
       "name": "dms-core (Admin API client)",
-      "description": "Confidential client used server-to-server by dms-core to call the Keycloak Admin REST API (create/disable users, assign realm roles). Not used for interactive login. NOTE: 'secret' below is a LOCAL DEV placeholder only - a Keycloak realm import cannot read from OpenBao at import time, so this value must stay identical to KEYCLOAK_ADMIN_CLIENT_SECRET in infra/secrets/dms-core.secrets.(enc.)env (see scripts/openbao-encrypt-secrets.sh / openbao-decrypt-secrets.sh). For any shared or production realm, do NOT rely on this static value - instead import without a client secret and rotate it post-import via 'kcadm.sh update' (same pattern bootstrap.sh already uses for the manage-users role grant), sourcing the new value from OpenBao.",
+      "description": "Confidential client for dms-core Admin API calls (user/role management). Secret matches KEYCLOAK_ADMIN_CLIENT_SECRET.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -37,7 +38,7 @@
     {
       "clientId": "oak-dms-web",
       "name": "Oak DMS Web Client",
-      "description": "Public client used by the frontend (SPA) for the Authorization Code + PKCE login flow.",
+      "description": "Public client for frontend SPA (Authorization Code + PKCE login).",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,

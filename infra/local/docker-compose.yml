@@ -79,9 +79,10 @@ services:
   # dms-core waits for it to complete successfully before starting, so
   # user-management calls never race against an ungranted permission.
   keycloak-bootstrap:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: alpine:latest
     container_name: oakdms-keycloak-bootstrap
-    entrypoint: ["/bin/bash", "/bootstrap/bootstrap.sh"]
+    entrypoint: /bin/sh
+    command: ["/bootstrap/bootstrap.sh"]
     <<: *secrets-env
     environment:
       KEYCLOAK_URL: http://keycloak:8080
@@ -124,6 +125,18 @@ services:
         condition: service_healthy
       keycloak-bootstrap:
         condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: oakdms-frontend
+    environment:
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - dms-core
 
 volumes:
   postgres_data:
