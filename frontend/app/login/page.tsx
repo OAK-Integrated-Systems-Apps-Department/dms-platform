@@ -3,45 +3,80 @@
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
-import { AlertTriangle, Layers } from "lucide-react"
+import { AlertTriangle, Layers, ShieldCheck } from "lucide-react"
+
+import { OtpInput } from "@/components/auth/otp-input"
 
 interface LoginResponse {
   ok: boolean
   error?: string
+  mfaRequired?: boolean
 }
 
-async function login(username: string, password: string): Promise<LoginResponse> {
+async function login(username: string, password: string, totp?: string): Promise<LoginResponse> {
   const response = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, totp }),
   })
   return response.json()
 }
 
+/**
+ * Two steps in one page, not two routes: "credentials" then, only for
+ * accounts with OTP configured, "otp". They have to share this component
+ * (rather than the OTP step being its own page/route, the way
+ * dms-otp.html was drafted) because Keycloak's direct-grant token
+ * endpoint validates username + password + code together in a single
+ * request — there's no server-side session to hand off between two
+ * separate page loads, so the credentials can only ever be "remembered"
+ * for step 2 by staying in this component's state. See the comment on
+ * loginWithPassword in lib/auth/keycloak.ts for why Keycloak works this
+ * way.
+ */
 export default function LoginPage() {
   const router = useRouter()
+  const [step, setStep] = useState<"credentials" | "otp">("credentials")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
+  const [code, setCode] = useState("")
 
   const mutation = useMutation({
-    mutationFn: () => login(username, password),
+    mutationFn: (totp?: string) => login(username, password, totp),
     onSuccess: (result) => {
       if (result.ok) {
         router.push("/")
         router.refresh()
+        return
+      }
+      if (result.mfaRequired) {
+        setStep("otp")
       }
     },
   })
 
-  function handleSubmit(event: FormEvent) {
+  function handleCredentialsSubmit(event: FormEvent) {
     event.preventDefault()
     mutation.reset()
-    mutation.mutate()
+    mutation.mutate(undefined)
   }
 
-  const errorMessage = mutation.data?.ok === false ? mutation.data.error : null
+  function handleOtpSubmit(event: FormEvent) {
+    event.preventDefault()
+    mutation.mutate(code)
+  }
+
+  function handleBackToCredentials() {
+    setStep("credentials")
+    setCode("")
+    mutation.reset()
+  }
+
+  // On the OTP step, mfaRequired is always true again (Keycloak still
+  // needs a code), so the only real failure there is a wrong/expired
+  // code — mutation.data.error covers both steps' generic message.
+  const errorMessage = mutation.data?.ok === false && !mutation.data.mfaRequired ? mutation.data.error : null
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
@@ -66,6 +101,8 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {step === "credentials" ? (
+          <>
         <div className="mb-1.5 text-center font-mono text-[10.5px] font-medium tracking-[0.12em] text-[var(--gold)]">
           REALM: DMS-TENANT
         </div>
@@ -80,7 +117,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+            <form onSubmit={handleCredentialsSubmit}>
           <div className="mb-[17px]">
             <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
               Username or email
@@ -171,6 +208,48 @@ export default function LoginPage() {
         <div className="mt-[26px] text-center text-xs text-[var(--ink-faint)]">
           Need access? Contact your workspace administrator.
         </div>
+          </>
+        ) : (
+          <div className="text-center">
+            <div className="mx-auto mb-[18px] flex size-[52px] items-center justify-center rounded-full border border-border bg-primary-tint">
+              <ShieldCheck size={24} className="text-primary" />
+            </div>
+            <h1 className="mb-2 font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+              Two-factor authentication
+            </h1>
+            <p className="mb-[26px] text-[13.5px] leading-[1.5] text-muted-foreground">
+              Enter the code from your authenticator app
+            </p>
+
+            {errorMessage && (
+              <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-left text-[13px] leading-[1.4] text-[#7A3623]">
+                <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
+                {errorMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleOtpSubmit}>
+              <OtpInput value={code} onChange={setCode} disabled={mutation.isPending} />
+
+              <button
+                type="submit"
+                disabled={mutation.isPending || code.length < 6}
+                className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {mutation.isPending ? "Verifying…" : "Submit"}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={handleBackToCredentials}
+              className="mt-4 text-[13px] font-semibold text-primary hover:underline"
+            >
+              Back to sign in
+            </button>
+
+          </div>
+        )}
       </div>
     </div>
   )

@@ -60,17 +60,31 @@ function toTokenSet(body: {
  * response — callers map this to the same "Invalid username or password"
  * copy used in the login design).
  */
-export async function loginWithPassword(username: string, password: string): Promise<TokenSet> {
+export async function loginWithPassword(
+  username: string,
+  password: string,
+  totp?: string
+): Promise<TokenSet> {
+  const params = new URLSearchParams({
+    grant_type: "password",
+    client_id: KEYCLOAK_CLIENT_ID,
+    username,
+    password,
+    scope: "openid",
+  })
+  // Keycloak's direct-grant OTP validator reads this as a plain form
+  // field alongside username/password in the SAME request — there's no
+  // separate "submit the code" request. Omitted entirely (not sent as
+  // "") when the caller has no code yet, since an empty string and a
+  // present-but-wrong code are not the same thing to the validator.
+  if (totp) {
+    params.set("totp", totp)
+  }
+
   const response = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "password",
-      client_id: KEYCLOAK_CLIENT_ID,
-      username,
-      password,
-      scope: "openid",
-    }),
+    body: params,
     cache: "no-store",
   })
 
@@ -83,6 +97,31 @@ export async function loginWithPassword(username: string, password: string): Pro
   }
 
   return toTokenSet(await response.json())
+}
+
+const DMS_CORE_URL = process.env.DMS_CORE_URL ?? "http://localhost:8080"
+
+/**
+ * Asks dms-core's public AuthController whether this username has OTP
+ * configured, so the login form knows to show the code field BEFORE
+ * attempting the actual password grant. This is a UX hint only — it is
+ * never trusted as an authorization decision, and a false answer (e.g.
+ * dms-core unreachable) just means the OTP field stays hidden and, if the
+ * account really does need a code, loginWithPassword() below fails with
+ * the ordinary generic "Invalid username or password" error.
+ */
+export async function checkMfaRequired(usernameOrEmail: string): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `${DMS_CORE_URL}/api/v1/auth/mfa-required?username=${encodeURIComponent(usernameOrEmail)}`,
+      { cache: "no-store" }
+    )
+    if (!response.ok) return false
+    const body = (await response.json()) as { mfaRequired?: boolean }
+    return body.mfaRequired ?? false
+  } catch {
+    return false
+  }
 }
 
 /** Exchanges a still-valid refresh token for a fresh token set. */
