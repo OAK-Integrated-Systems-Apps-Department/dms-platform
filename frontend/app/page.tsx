@@ -10,8 +10,9 @@ import {
 } from "@/components/dashboard/panels"
 import { StatsRow } from "@/components/dashboard/stats-row"
 import { WelcomeHeader } from "@/components/dashboard/welcome-header"
-import { currentUser, recentDocuments } from "@/components/dashboard/data"
+import { recentDocuments } from "@/components/dashboard/data"
 import type { DocumentFileType, RecentDocument } from "@/components/dashboard/types"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
 
 function extensionToType(name: string): DocumentFileType {
   const ext = name.split(".").pop()?.toLowerCase()
@@ -32,6 +33,7 @@ function formatSize(bytes: number): string {
  * a new one the same way once you've built it.
  */
 export default function Page() {
+  const { data: user } = useCurrentUser()
   const [documents, setDocuments] = useState<RecentDocument[]>(recentDocuments)
 
   function handleUpload(files: FileList) {
@@ -63,7 +65,7 @@ export default function Page() {
   return (
     <DashboardShell initialActiveLabel="Dashboard">
       <WelcomeHeader
-        firstName={currentUser.name.split(" ")[0]}
+        firstName={user?.displayName.split(" ")[0] ?? "there"}
         dateLabel="Tuesday, August 18, 2026"
         onUpload={handleUpload}
         onCreateFolder={handleCreateFolder}

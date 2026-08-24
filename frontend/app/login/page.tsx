@@ -1,0 +1,177 @@
+"use client"
+
+import { useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
+import { useMutation } from "@tanstack/react-query"
+import { AlertTriangle, Layers } from "lucide-react"
+
+interface LoginResponse {
+  ok: boolean
+  error?: string
+}
+
+async function login(username: string, password: string): Promise<LoginResponse> {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  })
+  return response.json()
+}
+
+export default function LoginPage() {
+  const router = useRouter()
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(false)
+
+  const mutation = useMutation({
+    mutationFn: () => login(username, password),
+    onSuccess: (result) => {
+      if (result.ok) {
+        router.push("/")
+        router.refresh()
+      }
+    },
+  })
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    mutation.reset()
+    mutation.mutate()
+  }
+
+  const errorMessage = mutation.data?.ok === false ? mutation.data.error : null
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-[34px] shadow-[var(--ledger-shadow)]">
+        <div className="mb-[26px] flex flex-col items-center">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+            <Layers size={22} color="var(--primary-foreground)" />
+          </div>
+          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
+            Ledger
+          </div>
+          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
+            DOCUMENT VAULT
+          </div>
+        </div>
+
+        <div className="mb-1.5 text-center font-mono text-[10.5px] font-medium tracking-[0.12em] text-[var(--gold)]">
+          REALM: DMS-TENANT
+        </div>
+        <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+          Sign in to your account
+        </h1>
+
+        {errorMessage && (
+          <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+            <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
+            {errorMessage}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="mb-[17px]">
+            <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+              Username or email
+            </label>
+            <input
+              id="username"
+              type="text"
+              placeholder="username"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+            />
+          </div>
+
+          <div className="mb-[17px]">
+            <label htmlFor="password" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              placeholder="••••••••••"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+            />
+          </div>
+
+          <div className="mb-[22px] flex items-center justify-between">
+            <label className="flex items-center gap-[7px] text-[13px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              Remember me
+            </label>
+            <a href="/reset-password" className="text-[13px] font-semibold text-primary hover:underline">
+              Forgot password?
+            </a>
+          </div>
+
+          <button
+            type="submit"
+            disabled={mutation.isPending}
+            className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {mutation.isPending ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+
+        <div className="mt-[26px] mb-[18px] flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="font-mono text-[10px] tracking-[0.1em] whitespace-nowrap text-[var(--ink-faint)]">
+            OR CONTINUE WITH
+          </span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        <button
+          type="button"
+          className="mb-2.5 flex w-full items-center gap-[11px] rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13.5px] font-semibold text-foreground transition-colors hover:bg-[var(--secondary)]"
+        >
+          <svg className="size-[19px] shrink-0 rounded" viewBox="0 0 48 48">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" />
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+            <path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.1-5.6l-6.5-5.5C29.6 34.7 26.9 36 24 36c-5.2 0-9.6-3.3-11.2-8l-6.6 5.1C9.6 39.6 16.2 44 24 44z" />
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.5C40.5 36.8 44 30.9 44 24c0-1.2-.1-2.4-.4-3.5z" />
+          </svg>
+          Continue with Google Workspace
+        </button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-[11px] rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13.5px] font-semibold text-foreground transition-colors hover:bg-[var(--secondary)]"
+        >
+          <svg className="size-[19px] shrink-0" viewBox="0 0 23 23">
+            <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+            <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+            <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+            <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+          </svg>
+          Continue with Microsoft Entra ID
+        </button>
+
+        <div className="mt-[26px] text-center text-xs text-[var(--ink-faint)]">
+          Need access? Contact your workspace administrator.
+        </div>
+      </div>
+    </div>
+  )
+}
