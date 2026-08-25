@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import {
   Layers,
@@ -28,9 +30,13 @@ interface AppSidebarProps {
  * themes. Reads its items from `nav-config.ts`. The Settings popover at
  * the bottom controls dark mode (via next-themes) plus two demo toggles.
  */
-export function AppSidebar({ activeLabel = "My Documents", onNavigate }: AppSidebarProps) {
+export function AppSidebar({
+  activeLabel = "My Documents",
+  onNavigate,
+}: AppSidebarProps) {
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
+  const pathname = usePathname()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [requireSignature, setRequireSignature] = useState(true)
@@ -39,7 +45,10 @@ export function AppSidebar({ activeLabel = "My Documents", onNavigate }: AppSide
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
-      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+      if (
+        settingsRef.current &&
+        !settingsRef.current.contains(event.target as Node)
+      ) {
         setSettingsOpen(false)
       }
     }
@@ -75,27 +84,53 @@ export function AppSidebar({ activeLabel = "My Documents", onNavigate }: AppSide
           )}
           <nav className="flex flex-col gap-0.5">
             {section.items.map((item: NavItem) => {
-                const isActive = item.label === activeLabel
+              const isActive = item.href
+                ? item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href)
+                : item.label === activeLabel
               const Icon = item.icon
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => onNavigate?.(item.label)}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg px-2.5 py-[9px] text-left text-[13.5px] transition-colors",
-                    isActive
-                      ? "bg-sidebar-primary font-semibold text-sidebar-primary-foreground"
-                      : "font-medium text-sidebar-foreground hover:bg-sidebar-accent"
-                  )}
-                >
-                  <Icon size={16.5} className={cn("shrink-0", !isActive && "opacity-85")} />
+              const itemClassName = cn(
+                "flex items-center gap-2.5 rounded-lg px-2.5 py-[9px] text-left text-[13.5px] transition-colors",
+                isActive
+                  ? "bg-sidebar-primary font-semibold text-sidebar-primary-foreground"
+                  : "font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+              )
+              const content = (
+                <>
+                  <Icon
+                    size={16.5}
+                    className={cn("shrink-0", !isActive && "opacity-85")}
+                  />
                   <span className="flex-1">{item.label}</span>
                   {item.badge != null && (
                     <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
                       {item.badge}
                     </span>
                   )}
+                </>
+              )
+
+              if (item.href) {
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={itemClassName}
+                  >
+                    {content}
+                  </Link>
+                )
+              }
+
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => onNavigate?.(item.label)}
+                  className={itemClassName}
+                >
+                  {content}
                 </button>
               )
             })}
@@ -107,7 +142,11 @@ export function AppSidebar({ activeLabel = "My Documents", onNavigate }: AppSide
 
       <div ref={settingsRef} className="relative">
         {settingsOpen && (
-          <Dropdown width={260} noPad className="top-auto bottom-[52px] left-0 right-auto text-foreground">
+          <Dropdown
+            width={260}
+            noPad
+            className="top-auto right-auto bottom-[52px] left-0 text-foreground"
+          >
             <div className="flex items-center justify-between p-3.5 pb-2.5">
               <span className="text-[13.5px] font-semibold">Settings</span>
               <button
@@ -138,7 +177,9 @@ export function AppSidebar({ activeLabel = "My Documents", onNavigate }: AppSide
             <div className="flex items-center justify-between px-3.5 py-2">
               <div className="flex items-center gap-2">
                 <PenTool size={15} className="text-muted-foreground" />
-                <span className="text-[13px]">Require e-signature on approval</span>
+                <span className="text-[13px]">
+                  Require e-signature on approval
+                </span>
               </div>
               <Toggle
                 checked={requireSignature}
