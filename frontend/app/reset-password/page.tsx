@@ -4,15 +4,21 @@ import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Layers } from "lucide-react"
 
+import { API_BASE_URL } from "@/lib/api-config"
+
 async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
-  await fetch("/api/auth/forgot-password", {
+  await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ usernameOrEmail }),
   })
-  // Deliberately not reading the response body for content — see the doc
-  // comment on app/api/auth/forgot-password/route.ts. The request always
-  // "succeeds" from the browser's point of view; only the copy below is
+  // Deliberately not reading the response body for content. Previously
+  // the Next.js proxy enforced "always looks like success" regardless of
+  // dms-core's real response; without that layer, this enumeration
+  // protection now depends entirely on your Java backend returning the
+  // same generic response whether or not the account exists — worth
+  // double-checking on that side. The request always "succeeds" from the
+  // browser's point of view here either way; only the copy below is
   // shown, regardless of whether an account actually matched.
 }
 
@@ -23,7 +29,7 @@ async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
  *
  * There's no separate "reset password" form with new-password fields here
  * on purpose: this only submits the username/email to
- * /api/auth/forgot-password. Keycloak's own emailed link is what actually
+ * dms-core's /api/v1/auth/forgot-password. Keycloak's own emailed link is what actually
  * lets the person set a new password (executeActionsEmail(["UPDATE_PASSWORD"])
  * on the backend), the same mechanism used for the admin-invite flow in
  * app/register/page.tsx.

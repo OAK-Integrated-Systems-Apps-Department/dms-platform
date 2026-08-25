@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query"
 
+import { API_BASE_URL } from "@/lib/api-config"
+
 /** Mirrors backend/dms-core's UserResponse DTO (only the fields the UI uses). */
 export interface CurrentUser {
   userId: string
@@ -18,10 +20,12 @@ function initialsOf(displayName: string): string {
 }
 
 async function fetchCurrentUser(): Promise<CurrentUser> {
-  const response = await fetch("/api/users/me")
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/me`, {
+    credentials: "include",
+  })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new Error(body?.error ?? "Could not load your profile.")
+    throw new Error(body?.message ?? "Could not load your profile.")
   }
   return response.json()
 }

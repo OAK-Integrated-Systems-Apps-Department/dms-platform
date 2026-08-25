@@ -1,11 +1,18 @@
 "use client"
 
 import { useState, type FormEvent } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
 import { AlertTriangle, Layers, ShieldCheck } from "lucide-react"
 
 import { OtpInput } from "@/components/auth/otp-input"
+import { API_BASE_URL } from "@/lib/api-config"
+
+// This page already only ever does client-side fetches (no server data),
+// so forcing it dynamic just avoids Next's "useSearchParams needs a
+// Suspense boundary" build requirement for the dev bypass below — no
+// behavior change for the real login flow.
+export const dynamic = "force-dynamic"
 
 interface LoginResponse {
   ok: boolean
@@ -13,13 +20,37 @@ interface LoginResponse {
   mfaRequired?: boolean
 }
 
+/**
+ * Two calls to dms-core, not one — see the component doc comment below
+ * for why the MFA check has to happen before the real login attempt
+ * rather than being inferred from its result.
+ */
 async function login(username: string, password: string, totp?: string): Promise<LoginResponse> {
-  const response = await fetch("/api/auth/login", {
+  if (!totp) {
+    const mfaCheck = await fetch(
+      `${API_BASE_URL}/api/v1/auth/mfa-required?username=${encodeURIComponent(username)}`,
+      { credentials: "include" }
+    )
+      .then((r) => (r.ok ? r.json() : { mfaRequired: false }))
+      .catch(() => ({ mfaRequired: false }))
+    if (mfaCheck.mfaRequired) {
+      return { ok: false, mfaRequired: true }
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    // credentials: "include" so the session cookie(s) your Java backend
+    // sets on a successful login come back on every request after this.
+    credentials: "include",
     body: JSON.stringify({ username, password, totp }),
   })
-  return response.json()
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    return { ok: false, error: body.message ?? "Invalid username or password." }
+  }
+  return { ok: true }
 }
 
 /**
@@ -30,13 +61,21 @@ async function login(username: string, password: string, totp?: string): Promise
  * endpoint validates username + password + code together in a single
  * request — there's no server-side session to hand off between two
  * separate page loads, so the credentials can only ever be "remembered"
- * for step 2 by staying in this component's state. See the comment on
- * loginWithPassword in lib/auth/keycloak.ts for why Keycloak works this
- * way.
+ * for step 2 by staying in this component's state. Your Java backend's
+ * login endpoint is the one that actually knows why (Keycloak direct
+ * grant validates username + password + code together, with no way to
+ * signal "OTP required" separately from "wrong password") — that's also
+ * why login() below checks /mfa-required BEFORE attempting login, instead
+ * of reacting to a failed login attempt.
  */
 export default function LoginPage() {
   const router = useRouter()
-  const [step, setStep] = useState<"credentials" | "otp">("credentials")
+  const searchParams = useSearchParams()
+  // Dev-only: visiting /login?step=otp lands straight on the OTP screen
+  // without needing dms-core's /mfa-required endpoint or Keycloak at all.
+  // Stripped out entirely in production builds — see the check below.
+  const devOtpBypass = process.env.NODE_ENV !== "production" && searchParams.get("step") === "otp"
+  const [step, setStep] = useState<"credentials" | "otp">(devOtpBypass ? "otp" : "credentials")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)

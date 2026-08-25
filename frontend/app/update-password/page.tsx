@@ -1,76 +1,50 @@
 "use client"
 
-import { useMemo, useState, type FormEvent } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Layers } from "lucide-react"
+import { CheckCircle2, Layers } from "lucide-react"
 
-// This page's own fetch is dynamic (submit-triggered), but reading the
-// token via useSearchParams still needs this to opt out of static
-// rendering — same reasoning as the dev bypass in app/login/page.tsx.
-export const dynamic = "force-dynamic"
+import { API_BASE_URL } from "@/lib/api-config"
 
-interface UpdatePasswordResponse {
-  ok: boolean
-  error?: string
-}
-
-async function updatePassword(token: string, newPassword: string): Promise<UpdatePasswordResponse> {
-  const response = await fetch("/api/auth/update-password", {
+async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, newPassword }),
+    body: JSON.stringify({ usernameOrEmail }),
   })
-  return response.json()
+  // Deliberately not reading the response body for content. Previously
+  // the Next.js proxy enforced "always looks like success" regardless of
+  // dms-core's real response; without that layer, this enumeration
+  // protection now depends entirely on your Java backend returning the
+  // same generic response whether or not the account exists — worth
+  // double-checking on that side. The request always "succeeds" from the
+  // browser's point of view here either way; only the copy below is
+  // shown, regardless of whether an account actually matched.
 }
-
-function scoreStrength(value: string): number {
-  let score = 0
-  if (value.length >= 8) score++
-  if (/[A-Z]/.test(value) && /[a-z]/.test(value)) score++
-  if (/[0-9]/.test(value)) score++
-  if (/[^A-Za-z0-9]/.test(value)) score++
-  return score
-}
-
-const STRENGTH_COLORS = ["var(--rust)", "var(--gold)", "var(--gold)", "var(--primary)"]
 
 /**
- * Public (see PUBLIC_PATHS in middleware.ts) — reached only via the emailed
- * link's ?token=... query param, both for the admin-invite flow
- * (VERIFY_EMAIL + UPDATE_PASSWORD, see app/register/page.tsx) and the
- * forgot-password flow (UPDATE_PASSWORD, see app/reset-password/page.tsx).
- * No session cookie is involved — `token` is the only proof of identity
- * here, verified server-side by /api/auth/update-password.
+ * Public page (see PUBLIC_PATHS in middleware.ts) — the person here is by
+ * definition not signed in yet. Linked from the "Forgot password?" link on
+ * app/login/page.tsx.
+ *
+ * There's no separate "reset password" form with new-password fields here
+ * on purpose: this only submits the username/email to
+ * dms-core's /api/v1/auth/forgot-password. Keycloak's own emailed link is what actually
+ * lets the person set a new password (executeActionsEmail(["UPDATE_PASSWORD"])
+ * on the backend), the same mechanism used for the admin-invite flow in
+ * app/register/page.tsx.
  */
-export default function UpdatePasswordPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const token = searchParams.get("token") ?? ""
-
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showNew, setShowNew] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
-
-  const strength = newPassword ? Math.max(1, scoreStrength(newPassword)) : 0
-  const passwordsMatch = confirmPassword.length > 0 && confirmPassword === newPassword
-  const passwordsMismatch = confirmPassword.length > 0 && confirmPassword !== newPassword
-  const canSubmit = token.length > 0 && newPassword.length >= 8 && passwordsMatch
+export default function ResetPasswordPage() {
+  const [usernameOrEmail, setUsernameOrEmail] = useState("")
 
   const mutation = useMutation({
-    mutationFn: () => updatePassword(token, newPassword),
+    mutationFn: () => requestPasswordReset(usernameOrEmail.trim()),
   })
-
-  const missingToken = useMemo(() => token.length === 0, [token])
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (!canSubmit) return
     mutation.mutate()
   }
-
-  const errorMessage = mutation.data?.ok === false ? mutation.data.error : null
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
@@ -82,7 +56,7 @@ export default function UpdatePasswordPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-[34px] shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
         <div className="mb-7 flex flex-col items-center">
           <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
             <Layers size={22} color="var(--primary-foreground)" />
@@ -95,121 +69,70 @@ export default function UpdatePasswordPage() {
           </div>
         </div>
 
-        {missingToken ? (
-          <div className="flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
-            <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-            This link is missing its token. Use the link from your email, or request a new one.
-          </div>
-        ) : mutation.data?.ok ? (
+        {mutation.isSuccess ? (
           <>
             <div className="mb-2 flex justify-center">
               <CheckCircle2 size={28} className="text-primary" />
             </div>
             <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Password updated
+              Check your email
             </h1>
-            <p className="mb-6 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              You can sign in with your new password now.
+            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
+              If an account matches <span className="font-medium text-foreground">{usernameOrEmail}</span>,
+              we&apos;ve sent a link to reset the password.
             </p>
-            <button
-              type="button"
-              onClick={() => router.push("/login")}
-              className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
-            >
-              Go to sign in
-            </button>
+            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
+              The link expires after a while — request a new one if it&apos;s gone stale.
+            </p>
           </>
         ) : (
           <>
             <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Update password
+              Forgot your password?
             </h1>
             <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              You need to change your password to activate your account.
+              Enter your username or email to reset it
             </p>
 
-            {errorMessage && (
-              <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
-                <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-                {errorMessage}
-              </div>
-            )}
-
             <form onSubmit={handleSubmit}>
-              <div className="mb-[18px]">
-                <label htmlFor="newPassword" className="mb-[7px] block text-[13px] font-semibold text-foreground">
-                  New password
-                </label>
-                <div className="relative">
-                  <input
-                    id="newPassword"
-                    type={showNew ? "text" : "password"}
-                    placeholder="••••••••••"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] py-[11px] pl-[13px] pr-[42px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNew((v) => !v)}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] hover:text-muted-foreground"
-                  >
-                    {showNew ? <EyeOff size={17} /> : <Eye size={17} />}
-                  </button>
-                </div>
-                <div className="mt-2 flex gap-1">
-                  {Array.from({ length: 4 }, (_, i) => (
-                    <i
-                      key={i}
-                      className="h-[3px] flex-1 rounded-sm"
-                      style={{ background: i < strength ? STRENGTH_COLORS[strength - 1] : "var(--border)" }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-[18px]">
+              <div className="mb-[22px]">
                 <label
-                  htmlFor="confirmPassword"
+                  htmlFor="usernameOrEmail"
                   className="mb-[7px] block text-[13px] font-semibold text-foreground"
                 >
-                  Confirm password
+                  Username or email
                 </label>
-                <div className="relative">
                   <input
-                    id="confirmPassword"
-                    type={showConfirm ? "text" : "password"}
-                    placeholder="••••••••••"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] py-[11px] pl-[13px] pr-[42px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  id="usernameOrEmail"
+                  type="text"
+                  placeholder="username"
+                  autoComplete="username"
+                  value={usernameOrEmail}
+                  onChange={(e) => setUsernameOrEmail(e.target.value)}
+                  className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm((v) => !v)}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] hover:text-muted-foreground"
-                  >
-                    {showConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
-                  </button>
-                </div>
-                <div className="mt-[7px] min-h-[14px] text-[11.5px]">
-                  {passwordsMatch && <span className="text-primary">Passwords match</span>}
-                  {passwordsMismatch && <span className="text-[var(--rust)]">Passwords do not match</span>}
-                </div>
               </div>
 
               <button
                 type="submit"
-                disabled={!canSubmit || mutation.isPending}
-                className="mt-1.5 w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={mutation.isPending || !usernameOrEmail.trim()}
+                className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {mutation.isPending ? "Updating…" : "Submit"}
+                {mutation.isPending ? "Sending…" : "Submit"}
               </button>
             </form>
           </>
         )}
+
+        <a
+          href="/login"
+          className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          Back to login
+        </a>
       </div>
     </div>
   )

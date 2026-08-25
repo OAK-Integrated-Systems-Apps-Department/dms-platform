@@ -18,6 +18,7 @@ import { fileIcon } from "@/components/dashboard/file-icon"
 import { Dropdown, MenuRow } from "@/components/ui/dropdown"
 import { IconButton } from "@/components/ui/icon-button"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { API_BASE_URL } from "@/lib/api-config"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 
@@ -54,7 +55,7 @@ export function AppTopbar() {
   }, [])
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" })
+    await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST", credentials: "include" })
     router.push("/login")
     router.refresh()
   }
