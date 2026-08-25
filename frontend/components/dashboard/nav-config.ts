@@ -18,7 +18,7 @@ import type { NavSection } from "./types"
 export const navSections: NavSection[] = [
   {
     items: [
-      { label: "Dashboard", icon: LayoutDashboard },
+      { label: "Dashboard", icon: LayoutDashboard, href: "/" },
       { label: "My Documents", icon: FileText },
       { label: "Shared With Me", icon: Users },
       { label: "Recent Pins", icon: Pin },
@@ -30,7 +30,7 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users & Roles", icon: Users },
+      { label: "Users & Roles", icon: Users, href: "/admin/roles" },
       { label: "Audit Log", icon: ScrollText },
     ],
   },

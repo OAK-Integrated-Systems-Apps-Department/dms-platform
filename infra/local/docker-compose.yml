@@ -17,7 +17,6 @@ x-secrets-env: &secrets-env
     - ../secrets/dms-core.secrets.env
 
 services:
-
   postgres:
     image: postgres:18-alpine
     container_name: oakdms-postgres
@@ -45,7 +44,7 @@ services:
       RABBITMQ_DEFAULT_USER: dms
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
     ports:
-      - "5672:5672"   # AMQP
+      - "5672:5672" # AMQP
       - "15672:15672" # management UI
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
@@ -129,10 +128,24 @@ services:
   frontend:
     build:
       context: ../../frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: oakdms-frontend
     environment:
       PORT: "3000"
+      # Some Docker/OS combos (bind mounts on Windows/WSL2 or certain
+      # network filesystems) don't propagate inotify file-change events
+      # into the container, so Next's dev server never sees edits.
+      # Polling fixes that at the cost of a bit of CPU; harmless if unneeded.
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../../frontend:/app
+      # Anonymous volume shadows the host's node_modules mount above with
+      # the one installed *inside* the image at build time. Without this,
+      # the bind mount would hide those deps entirely (or worse, replace
+      # them with host-architecture binaries) - which is exactly the kind
+      # of arch mismatch that caused the original "Exec format error".
+      - /app/node_modules
+      - /app/.next
     ports:
       - "3000:3000"
     depends_on:

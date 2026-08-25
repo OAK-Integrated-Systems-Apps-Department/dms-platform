@@ -9,6 +9,14 @@ export interface NavItem {
   label: string
   icon: LucideIcon
   badge?: number
+  /**
+   * Real route to navigate to (e.g. "/admin/roles"). When present, the
+   * sidebar renders this item as a Next.js `Link` and derives its active
+   * state from the current pathname instead of `activeLabel`. Omit for
+   * items that don't have a page yet — they keep the original
+   * `onNavigate`-only demo behavior.
+   */
+  href?: string
 }
 
 export interface NavSection {
