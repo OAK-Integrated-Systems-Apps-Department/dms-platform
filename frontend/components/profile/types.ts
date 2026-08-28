@@ -15,3 +15,15 @@ export interface ProfileSupplement {
   accountCreated: string
   lastLogin: string
 }
+
+/**
+ * Password/MFA status shown on My Security Settings. Real source would be
+ * Keycloak's Account REST API alongside `ProfileSupplement` above — the
+ * actions themselves (changing password, managing MFA methods) aren't
+ * DMS-built forms at all; they deep-link into Keycloak's own Account
+ * Console. See `KEYCLOAK_ACCOUNT_URL` in `lib/api-config.ts`.
+ */
+export interface SecuritySupplement {
+  passwordLastChanged: string
+  mfaEnrolled: boolean
+}
