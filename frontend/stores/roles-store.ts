@@ -8,6 +8,7 @@ interface RolesState {
   roles: RoleRecord[]
   addRole: (values: RoleFormValues) => RoleRecord
   updateRole: (id: string, values: RoleFormValues) => void
+  updateRolePermissions: (id: string, permissions: string[]) => void
   toggleStatus: (id: string) => void
 }
 
@@ -44,6 +45,15 @@ export const useRolesStore = create<RolesState>((set) => ({
               permissions: values.permissions,
             }
           : role
+      ),
+    }))
+  },
+
+  /** Used by the standalone Role Permission Configuration screen — leaves name/description/status untouched. */
+  updateRolePermissions: (id, permissions) => {
+    set((state) => ({
+      roles: state.roles.map((role) =>
+        role.id === id ? { ...role, permissions } : role
       ),
     }))
   },
