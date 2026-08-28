@@ -119,7 +119,12 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                 className="border-b border-border last:border-b-0 hover:bg-muted"
               >
                 <td className="px-3.5 py-3 text-[13.5px] font-medium text-foreground">
-                  {user.name}
+                  <Link
+                    href={`/admin/users/${user.id}/access-summary`}
+                    className="text-primary hover:underline"
+                  >
+                    {user.name}
+                  </Link>
                 </td>
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">
                   {user.username}
