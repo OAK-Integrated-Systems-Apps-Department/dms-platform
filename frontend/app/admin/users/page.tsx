@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { ChevronDown, Plus, Search } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -15,15 +16,16 @@ const PAGE_SIZE = 5
 
 /**
  * User Management — User List, per dms-admin-users.html. Search/filter,
- * add a user (routes to the existing admin-invite flow at /register — see
- * app/register/page.tsx, no separate "add user" form needed here), or
- * view, edit, and activate/deactivate an existing account.
+ * add a user (routes to the admin-invite flow at /admin/users/new), view
+ * a user's full detail (routes to /admin/users/[userId], per
+ * dms-view-user.html), or edit/activate/deactivate an existing account.
  *
- * "View" and "Edit" are wired to callbacks rather than routes for now —
- * no mockup for those two screens exists yet, so I didn't invent detail
- * pages. Swap handleView/handleEdit for real navigation once those exist.
+ * "Edit" is still wired to a callback rather than a route — no mockup for
+ * that screen exists yet, so I didn't invent it. Swap handleEdit for real
+ * navigation once it does.
  */
 export default function UserListPage() {
+  const router = useRouter()
   const users = useUsersStore((state) => state.users)
   const toggleStatus = useUsersStore((state) => state.toggleStatus)
 
@@ -55,9 +57,10 @@ export default function UserListPage() {
     setPage(1)
   }
 
-  // Placeholders — see the component doc comment above.
+  // Edit still has no mockup/screen to navigate to — see the component
+  // doc comment above. View now goes to the real page.
   function handleView(user: UserRecord) {
-    console.log("View user", user.id)
+    router.push(`/admin/users/${user.id}`)
   }
   function handleEdit(user: UserRecord) {
     console.log("Edit user", user.id)

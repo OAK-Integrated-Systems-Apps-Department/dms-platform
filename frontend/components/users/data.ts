@@ -1,21 +1,106 @@
 import type { UserRecord } from "./types"
 
 /**
- * Ported directly from dms-admin-users.html's ALL_USERS. Swap for a
- * fetch/query hook once the User Management endpoints exist — see
- * components/roles/data.ts for the same "mock now, real API later" note.
+ * Ported from dms-admin-users.html's ALL_USERS, extended with the
+ * profile/security/activity detail dms-view-user.html needs. u-3 (Kasun
+ * Perera) matches that mockup's sample data exactly; the rest have
+ * plausible values so every row in the list is clickable through to a
+ * fully-populated detail screen. Swap for a fetch/query hook once the
+ * User Management endpoints exist — see components/roles/data.ts for the
+ * same "mock now, real API later" note.
  */
 export const initialUsers: UserRecord[] = [
-  { id: "u-1", name: "Priyanka Fernando", username: "priyanka.fernando", email: "priyanka.fernando@oakdms.com", roles: ["Admin"], status: "active", lastLogin: "2026-08-24" },
-  { id: "u-2", name: "Nadia Rajapaksa", username: "nadia.rajapaksa", email: "nadia.rajapaksa@oakdms.com", roles: ["Compliance Officer"], status: "active", lastLogin: "2026-08-23" },
-  { id: "u-3", name: "Kasun Perera", username: "kasun.perera", email: "kasun.perera@oakdms.com", roles: ["Approver", "Uploader"], status: "active", lastLogin: "2026-08-22" },
-  { id: "u-4", name: "Malik Silva", username: "malik.silva", email: "malik.silva@oakdms.com", roles: ["Approver"], status: "inactive", lastLogin: "2026-07-11" },
-  { id: "u-5", name: "Dilani Wickramasinghe", username: "dilani.wickrama", email: "dilani.wickrama@oakdms.com", roles: ["Uploader"], status: "active", lastLogin: "2026-08-20" },
-  { id: "u-6", name: "Ruwan Jayasuriya", username: "ruwan.jayasuriya", email: "ruwan.jayasuriya@oakdms.com", roles: ["Viewer"], status: "active", lastLogin: "2026-08-19" },
-  { id: "u-7", name: "Anjali Gunawardena", username: "anjali.guna", email: "anjali.guna@oakdms.com", roles: ["Compliance Officer", "Viewer"], status: "inactive", lastLogin: "2026-06-02" },
-  { id: "u-8", name: "Thilina Bandara", username: "thilina.bandara", email: "thilina.bandara@oakdms.com", roles: ["Uploader"], status: "active", lastLogin: "2026-08-18" },
-  { id: "u-9", name: "Chamari Rathnayake", username: "chamari.rathnayake", email: "chamari.rathnayake@oakdms.com", roles: ["Admin"], status: "active", lastLogin: "2026-08-17" },
-  { id: "u-10", name: "Suresh Kumar", username: "suresh.kumar", email: "suresh.kumar@oakdms.com", roles: ["Viewer"], status: "active", lastLogin: "—" },
-  { id: "u-11", name: "Ishara De Silva", username: "ishara.desilva", email: "ishara.desilva@oakdms.com", roles: ["Approver"], status: "active", lastLogin: "2026-08-15" },
-  { id: "u-12", name: "Nimal Herath", username: "nimal.herath", email: "nimal.herath@oakdms.com", roles: ["Uploader", "Viewer"], status: "inactive", lastLogin: "2026-05-30" },
+  {
+    id: "u-1", name: "Priyanka Fernando", username: "priyanka.fernando", email: "priyanka.fernando@oakdms.com",
+    roles: ["Admin"], status: "active", lastLogin: "2026-08-24",
+    firstName: "Priyanka", lastName: "Fernando", tenant: "oak-dms", createdOn: "2025-09-12",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-07-02", activeSessions: 1,
+    recentActivity: [
+      { id: "a1", time: "2026-08-24, 08:40", text: "Approved **Q3 Board Resolution.pdf**", actor: "self / web" },
+      { id: "a2", time: "2026-08-19, 14:12", text: "Role **Admin** granted", actor: "system / admin" },
+    ],
+  },
+  {
+    id: "u-2", name: "Nadia Rajapaksa", username: "nadia.rajapaksa", email: "nadia.rajapaksa@oakdms.com",
+    roles: ["Compliance Officer"], status: "active", lastLogin: "2026-08-23",
+    firstName: "Nadia", lastName: "Rajapaksa", tenant: "oak-dms", createdOn: "2025-10-01",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-05-18", activeSessions: 2,
+    recentActivity: [
+      { id: "a1", time: "2026-08-23, 11:05", text: "Reviewed **Audit Findings — H1 2026.pdf**", actor: "self / web" },
+    ],
+  },
+  {
+    id: "u-3", name: "Kasun Perera", username: "kasun.perera", email: "kasun.perera@oakdms.com",
+    roles: ["Approver", "Uploader"], status: "active", lastLogin: "2026-08-22",
+    firstName: "Kasun", lastName: "Perera", tenant: "oak-dms", createdOn: "2025-11-03",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-06-30", activeSessions: 2,
+    recentActivity: [
+      { id: "a1", time: "2026-08-22, 09:14", text: "Approved **Vendor MSA — Acme Textiles.pdf**", actor: "self / web" },
+      { id: "a2", time: "2026-08-20, 16:02", text: "Uploaded **Supplier Onboarding — Ceylon Foods.pdf**", actor: "self / web" },
+      { id: "a3", time: "2026-07-11, 11:47", text: "Role **Uploader** granted", actor: "system / admin" },
+    ],
+  },
+  {
+    id: "u-4", name: "Malik Silva", username: "malik.silva", email: "malik.silva@oakdms.com",
+    roles: ["Approver"], status: "inactive", lastLogin: "2026-07-11",
+    firstName: "Malik", lastName: "Silva", tenant: "oak-dms", createdOn: "2025-08-20",
+    mfaStatus: "Not enabled", lastPasswordChange: "2026-03-04", activeSessions: 0,
+    recentActivity: [{ id: "a1", time: "2026-07-11, 09:30", text: "Account **deactivated**", actor: "system / admin" }],
+  },
+  {
+    id: "u-5", name: "Dilani Wickramasinghe", username: "dilani.wickrama", email: "dilani.wickrama@oakdms.com",
+    roles: ["Uploader"], status: "active", lastLogin: "2026-08-20",
+    firstName: "Dilani", lastName: "Wickramasinghe", tenant: "oak-dms", createdOn: "2025-12-14",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-06-01", activeSessions: 1,
+    recentActivity: [{ id: "a1", time: "2026-08-20, 10:18", text: "Uploaded **Warehouse Lease Renewal.pdf**", actor: "self / web" }],
+  },
+  {
+    id: "u-6", name: "Ruwan Jayasuriya", username: "ruwan.jayasuriya", email: "ruwan.jayasuriya@oakdms.com",
+    roles: ["Viewer"], status: "active", lastLogin: "2026-08-19",
+    firstName: "Ruwan", lastName: "Jayasuriya", tenant: "oak-dms", createdOn: "2026-01-22",
+    mfaStatus: "Not enabled", lastPasswordChange: "2026-01-22", activeSessions: 1,
+    recentActivity: [{ id: "a1", time: "2026-08-19, 15:47", text: "Viewed **Insurance Policy 2026.pdf**", actor: "self / web" }],
+  },
+  {
+    id: "u-7", name: "Anjali Gunawardena", username: "anjali.guna", email: "anjali.guna@oakdms.com",
+    roles: ["Compliance Officer", "Viewer"], status: "inactive", lastLogin: "2026-06-02",
+    firstName: "Anjali", lastName: "Gunawardena", tenant: "oak-dms", createdOn: "2025-07-08",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-02-11", activeSessions: 0,
+    recentActivity: [{ id: "a1", time: "2026-06-02, 13:00", text: "Account **deactivated**", actor: "system / admin" }],
+  },
+  {
+    id: "u-8", name: "Thilina Bandara", username: "thilina.bandara", email: "thilina.bandara@oakdms.com",
+    roles: ["Uploader"], status: "active", lastLogin: "2026-08-18",
+    firstName: "Thilina", lastName: "Bandara", tenant: "oak-dms", createdOn: "2026-02-02",
+    mfaStatus: "Not enabled", lastPasswordChange: "2026-02-02", activeSessions: 1,
+    recentActivity: [{ id: "a1", time: "2026-08-18, 09:02", text: "Uploaded **Fleet Maintenance Log — July.pdf**", actor: "self / web" }],
+  },
+  {
+    id: "u-9", name: "Chamari Rathnayake", username: "chamari.rathnayake", email: "chamari.rathnayake@oakdms.com",
+    roles: ["Admin"], status: "active", lastLogin: "2026-08-17",
+    firstName: "Chamari", lastName: "Rathnayake", tenant: "oak-dms", createdOn: "2025-06-15",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-07-20", activeSessions: 3,
+    recentActivity: [{ id: "a1", time: "2026-08-17, 17:22", text: "Role **Admin** granted to **Priyanka Fernando**", actor: "self / web" }],
+  },
+  {
+    id: "u-10", name: "Suresh Kumar", username: "suresh.kumar", email: "suresh.kumar@oakdms.com",
+    roles: ["Viewer"], status: "active", lastLogin: "—",
+    firstName: "Suresh", lastName: "Kumar", tenant: "oak-dms", createdOn: "2026-08-10",
+    mfaStatus: "Not enabled", lastPasswordChange: "2026-08-10", activeSessions: 0,
+    recentActivity: [{ id: "a1", time: "2026-08-10, 09:00", text: "Account created — invitation email sent", actor: "system / admin" }],
+  },
+  {
+    id: "u-11", name: "Ishara De Silva", username: "ishara.desilva", email: "ishara.desilva@oakdms.com",
+    roles: ["Approver"], status: "active", lastLogin: "2026-08-15",
+    firstName: "Ishara", lastName: "De Silva", tenant: "oak-dms", createdOn: "2025-09-29",
+    mfaStatus: "Enabled — authenticator app", lastPasswordChange: "2026-04-14", activeSessions: 1,
+    recentActivity: [{ id: "a1", time: "2026-08-15, 12:37", text: "Approved **NDA — Horizon Freight.pdf**", actor: "self / web" }],
+  },
+  {
+    id: "u-12", name: "Nimal Herath", username: "nimal.herath", email: "nimal.herath@oakdms.com",
+    roles: ["Uploader", "Viewer"], status: "inactive", lastLogin: "2026-05-30",
+    firstName: "Nimal", lastName: "Herath", tenant: "oak-dms", createdOn: "2025-05-19",
+    mfaStatus: "Not enabled", lastPasswordChange: "2025-11-02", activeSessions: 0,
+    recentActivity: [{ id: "a1", time: "2026-05-30, 10:00", text: "Account **deactivated**", actor: "system / admin" }],
+  },
 ]
