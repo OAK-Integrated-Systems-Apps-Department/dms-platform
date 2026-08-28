@@ -43,10 +43,16 @@ export function AppTopbar() {
       if (pinRef.current && !pinRef.current.contains(event.target as Node)) {
         setPinOpen(false)
       }
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+      if (
+        notifRef.current &&
+        !notifRef.current.contains(event.target as Node)
+      ) {
         setNotifOpen(false)
       }
-      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
+      if (
+        accountRef.current &&
+        !accountRef.current.contains(event.target as Node)
+      ) {
         setAccountOpen(false)
       }
     }
@@ -55,7 +61,10 @@ export function AppTopbar() {
   }, [])
 
   async function handleLogout() {
-    await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST", credentials: "include" })
+    await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    })
     router.push("/login")
     router.refresh()
   }
@@ -132,7 +141,9 @@ export function AppTopbar() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] text-foreground">
                       <b>{entry.who}</b> {entry.action}{" "}
-                      <span className="text-muted-foreground">{entry.target}</span>
+                      <span className="text-muted-foreground">
+                        {entry.target}
+                      </span>
                     </div>
                     <div className="mt-px text-[11px] text-[var(--ink-faint)]">
                       {entry.time}
@@ -154,7 +165,9 @@ export function AppTopbar() {
             setPinOpen(false)
           }}
           className="flex items-center gap-2 rounded-[10px] border border-border py-[5px] pr-2.5 pl-[5px]"
-          style={{ background: accountOpen ? "var(--primary-tint)" : "var(--card)" }}
+          style={{
+            background: accountOpen ? "var(--primary-tint)" : "var(--card)",
+          }}
         >
           <span className="flex size-7 items-center justify-center rounded-full bg-primary font-heading text-[11.5px] font-bold text-primary-foreground">
             {initials ?? "…"}
@@ -164,13 +177,29 @@ export function AppTopbar() {
         {accountOpen && (
           <Dropdown width={220} noPad>
             <div className="border-b border-border px-3.5 py-3">
-              <div className="text-[13.5px] font-semibold">{user?.displayName ?? "…"}</div>
-              <div className="text-[11.5px] text-muted-foreground">{user?.status ?? ""}</div>
+              <div className="text-[13.5px] font-semibold">
+                {user?.displayName ?? "…"}
+              </div>
+              <div className="text-[11.5px] text-muted-foreground">
+                {user?.status ?? ""}
+              </div>
             </div>
             <MenuRow icon={Bookmark} label="Bookmarks" />
-            <MenuRow icon={User} label="Profile" />
+            <MenuRow
+              icon={User}
+              label="Profile"
+              onClick={() => {
+                setAccountOpen(false)
+                router.push("/profile")
+              }}
+            />
             <div className="my-1 border-t border-border" />
-            <MenuRow icon={LogOut} label="Log out" danger onClick={handleLogout} />
+            <MenuRow
+              icon={LogOut}
+              label="Log out"
+              danger
+              onClick={handleLogout}
+            />
           </Dropdown>
         )}
       </div>
