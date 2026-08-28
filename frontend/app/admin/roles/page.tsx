@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Plus, Search } from "lucide-react"
+import { Grid3x3, Plus, Search } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
@@ -54,6 +54,13 @@ export default function RoleListPage() {
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
         </div>
+        <Link
+          href="/admin/roles/matrix"
+          className="flex items-center gap-1.5 rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
+        >
+          <Grid3x3 size={16} />
+          Permission Matrix
+        </Link>
         <Link
           href="/admin/roles/new"
           className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
