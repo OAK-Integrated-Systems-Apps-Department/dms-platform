@@ -63,7 +63,9 @@ export function UserEditForm({ user }: UserEditFormProps) {
     setSubmitError(null)
     const displayName = `${values.firstName} ${values.lastName}`.trim()
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${user.id}`, {
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE_URL}/api/v1/users/${user.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -80,6 +82,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
         additionalProfile: values.additionalProfile || undefined,
       }),
     })
+    } catch {
+      // fetch() throws (rather than resolving with a bad status) when the
+      // request never reached a server at all — e.g. the backend isn't
+      // running yet. Distinct from a 4xx/5xx below, which means the
+      // backend WAS reached and responded.
+      setSubmitError("Could not reach the server. Check that the backend is running and try again.")
+      return
+    }
 
     if (!response.ok) {
       const body = await response.json().catch(() => null)

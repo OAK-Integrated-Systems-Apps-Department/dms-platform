@@ -54,7 +54,9 @@ export function UserInviteForm() {
 
   async function onSubmit(values: UserInviteFormValues) {
     setSubmitError(null)
-    const response = await fetch(`${API_BASE_URL}/api/v1/users`, {
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE_URL}/api/v1/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -69,6 +71,13 @@ export function UserInviteForm() {
         additionalProfile: values.additionalProfile || undefined,
       }),
     })
+    } catch {
+      // fetch() throws when the request never reached a server at all —
+      // e.g. the backend isn't running yet. Distinct from a 4xx/5xx
+      // below, which means the backend WAS reached and responded.
+      setSubmitError("Could not reach the server. Check that the backend is running and try again.")
+      return
+    }
     if (!response.ok) {
       const body = await response.json().catch(() => null)
       setSubmitError(
