@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
 
-const PUBLIC_PATHS = ["/login", "/reset-password", "/update-password"]
+const PUBLIC_PATHS = ["/login", "/reset-password", "/update-password", "/error", "/login-timeout", "/session-expired"]
 
 // TEMPORARY — no backend is wired up yet, so there's no way to ever get a
 // dms_access_token cookie. Flip this back to false once your Java backend
