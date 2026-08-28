@@ -55,7 +55,12 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                 className="border-b border-border last:border-b-0 hover:bg-muted"
               >
                 <td className="px-3.5 py-3 text-[13.5px] font-semibold text-primary">
-                  {role.name}
+                  <Link
+                    href={`/admin/roles/${role.id}`}
+                    className="hover:underline"
+                  >
+                    {role.name}
+                  </Link>
                 </td>
                 <td className="max-w-[320px] truncate px-3.5 py-3 text-[13px] text-muted-foreground">
                   {role.description}

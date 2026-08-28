@@ -1,4 +1,4 @@
-import type { PermissionGroup, RoleRecord } from "./types"
+import type { PermissionGroup, RoleAssignedUser, RoleRecord } from "./types"
 
 /**
  * Permissions grouped by DMS functional area, matching the grouping used
@@ -105,3 +105,69 @@ export const initialRoles: RoleRecord[] = [
     permissions: ["doc.download", "search.basic"],
   },
 ]
+
+/**
+ * Assigned Users table on the Role Details screen (R4), keyed by role id.
+ * Row counts match each role's `assignedUsers` above. Swap for a
+ * `GET /admin/realms/{realm}/roles/{role-name}/users` fetch/query hook —
+ * see the caveat on the R4 wireframe screen.
+ */
+export const assignedUsersByRole: Record<string, RoleAssignedUser[]> = {
+  "role-admin": [
+    { id: "u-1", name: "Priya Raman", username: "praman", status: "Active" },
+    {
+      id: "u-2",
+      name: "Owen Castillo",
+      username: "ocastillo",
+      status: "Active",
+    },
+  ],
+  "role-compliance-officer": [
+    {
+      id: "u-3",
+      name: "Marta Lindqvist",
+      username: "mlindqvist",
+      status: "Active",
+    },
+    { id: "u-4", name: "Daniel Osei", username: "dosei", status: "Active" },
+  ],
+  "role-approver": [
+    { id: "u-5", name: "Renata Alves", username: "ralves", status: "Active" },
+    {
+      id: "u-6",
+      name: "Hassan Farouk",
+      username: "hfarouk",
+      status: "Inactive",
+    },
+  ],
+  "role-uploader": [
+    { id: "u-7", name: "Ines Dubois", username: "idubois", status: "Active" },
+    {
+      id: "u-8",
+      name: "Kenji Watanabe",
+      username: "kwatanabe",
+      status: "Active",
+    },
+    {
+      id: "u-9",
+      name: "Sofia Marchetti",
+      username: "smarchetti",
+      status: "Active",
+    },
+  ],
+  "role-viewer": [
+    { id: "u-10", name: "Tomas Nowak", username: "tnowak", status: "Inactive" },
+    {
+      id: "u-11",
+      name: "Grace Odhiambo",
+      username: "godhiambo",
+      status: "Active",
+    },
+    {
+      id: "u-12",
+      name: "Liam Fitzgerald",
+      username: "lfitzgerald",
+      status: "Active",
+    },
+  ],
+}
