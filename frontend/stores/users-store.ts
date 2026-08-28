@@ -6,6 +6,10 @@ import type { UserRecord } from "@/components/users/types"
 interface UsersState {
   users: UserRecord[]
   toggleStatus: (id: string) => void
+  updateUser: (
+    id: string,
+    updates: { firstName: string; lastName: string; email: string; additionalProfile?: string }
+  ) => void
 }
 
 /**
@@ -21,6 +25,22 @@ export const useUsersStore = create<UsersState>((set) => ({
     set((state) => ({
       users: state.users.map((user) =>
         user.id === id ? { ...user, status: user.status === "active" ? "inactive" : "active" } : user
+      ),
+    }))
+  },
+
+  updateUser: (id, updates) => {
+    set((state) => ({
+      users: state.users.map((user) =>
+        user.id === id
+          ? {
+              ...user,
+              firstName: updates.firstName,
+              lastName: updates.lastName,
+              name: `${updates.firstName} ${updates.lastName}`.trim(),
+              email: updates.email,
+            }
+          : user
       ),
     }))
   },

@@ -55,7 +55,18 @@ export function AppTopbar() {
   }, [])
 
   async function handleLogout() {
+    // Logging out client-side should still work even if the backend is
+    // unreachable (e.g. not running yet in dev) — the person's intent to
+    // leave shouldn't be blocked by a network error they can't fix from
+    // this button.
+    try {
     await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST", credentials: "include" })
+    } catch {
+      // Ignored — see comment above. If the backend IS reachable but
+      // rejects the request (4xx/5xx), fetch resolves rather than
+      // throwing, so this catch only ever fires on a real connectivity
+      // failure.
+    }
     router.push("/login")
     router.refresh()
   }

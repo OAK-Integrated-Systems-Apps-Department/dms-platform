@@ -16,13 +16,10 @@ const PAGE_SIZE = 5
 
 /**
  * User Management — User List, per dms-admin-users.html. Search/filter,
- * add a user (routes to the admin-invite flow at /admin/users/new), view
- * a user's full detail (routes to /admin/users/[userId], per
- * dms-view-user.html), or edit/activate/deactivate an existing account.
- *
- * "Edit" is still wired to a callback rather than a route — no mockup for
- * that screen exists yet, so I didn't invent it. Swap handleEdit for real
- * navigation once it does.
+ * add a user (routes to /admin/users/new), view a user's full detail
+ * (routes to /admin/users/[userId], per dms-view-user.html), edit a
+ * user's profile (routes to /admin/users/[userId]/edit, per
+ * dms-edit-user.html), or activate/deactivate an existing account inline.
  */
 export default function UserListPage() {
   const router = useRouter()
@@ -63,7 +60,7 @@ export default function UserListPage() {
     router.push(`/admin/users/${user.id}`)
   }
   function handleEdit(user: UserRecord) {
-    console.log("Edit user", user.id)
+    router.push(`/admin/users/${user.id}/edit`)
   }
 
   return (
