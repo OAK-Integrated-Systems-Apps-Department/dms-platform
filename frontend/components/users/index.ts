@@ -3,6 +3,7 @@
  * "@/components/users" instead of deep-importing individual files.
  */
 export * from "./data"
+export * from "./role-multi-select"
 export * from "./schema"
 export * from "./types"
 export * from "./user-invite-form"
