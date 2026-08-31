@@ -13,7 +13,10 @@ public record UpdateUserRequest(
 
         @NotBlank
         @Size(max = 255)
-        String displayName,
+        String firstName,
+
+        @Size(max = 255)
+        String lastName,
 
         @NotNull
         Boolean mfaEnabled,

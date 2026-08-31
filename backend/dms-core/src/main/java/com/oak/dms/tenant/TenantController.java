@@ -1,10 +1,11 @@
 package com.oak.dms.tenant;
 
 import com.oak.dms.tenant.dto.CreateTenantRequest;
+import com.oak.dms.tenant.dto.ProvisionTenantRequest;
+import com.oak.dms.tenant.dto.TenantProvisioningResponse;
 import com.oak.dms.tenant.dto.UpdateTenantRequest;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.tenant.dto.TenantResponse;
-import com.oak.dms.tenant.TenantService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,6 +32,7 @@ import java.util.UUID;
 public class TenantController {
 
     private final TenantService tenantService;
+    private final TenantProvisioningService tenantProvisioningService;
 
     @PostMapping
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
@@ -38,6 +40,19 @@ public class TenantController {
     public ResponseEntity<TenantResponse> createTenant(@Valid @RequestBody CreateTenantRequest request) {
         TenantResponse response = tenantService.createTenant(request);
         return ResponseEntity.created(URI.create("/api/v1/tenants/" + response.tenantId())).body(response);
+    }
+
+    @PostMapping("/provision")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "Onboard a new client: creates the tenant and its first TENANT_ADMIN user together, "
+            + "atomically. Prefer this over POST /api/v1/tenants when the tenant needs a working admin - "
+            + "there's no other endpoint that can create a user in a tenant other than the caller's own or "
+            + "grant TENANT_ADMIN.")
+    public ResponseEntity<TenantProvisioningResponse> provisionTenant(
+            @Valid @RequestBody ProvisionTenantRequest request) {
+        TenantProvisioningResponse response = tenantProvisioningService.provisionTenant(request);
+        return ResponseEntity.created(URI.create("/api/v1/tenants/" + response.tenant().tenantId()))
+                .body(response);
     }
 
     @GetMapping("/{tenantId}")

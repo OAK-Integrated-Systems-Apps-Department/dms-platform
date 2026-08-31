@@ -52,6 +52,25 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local dev-only fake mail server: catches every email Keycloak sends
+  # (verify-email, password reset) instead of trying to deliver it
+  # anywhere real. Web UI at http://localhost:8026 to actually read them -
+  # this is why account-creation/reset-password emails never arrived
+  # before: nothing was listening on the SMTP port Keycloak was
+  # configured to use. Do NOT point production Keycloak's smtpServer at
+  # this container - swap in a real SMTP relay/provider for that.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: oakdms-mailpit
+    ports:
+      - "8026:8025" # web UI (8025 is taken locally by dms-core sometimes; keeping 8026 to avoid clashing)
+      - "1026:1025" # SMTP - matches the realm's smtpServer.port below
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/api/v1/info"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.0
     container_name: oakdms-keycloak
@@ -64,6 +83,18 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Keycloak needs to know its own externally-reachable address to build
+      # links (e.g. the verify-email/update-password action link) that a
+      # browser can actually open. Without this, it derives the link's host
+      # from whatever Host header triggered the request - which for
+      # execute-actions-email is dms-core/keycloak-bootstrap calling over
+      # the internal docker network as "keycloak:8080", producing an
+      # unreachable link. hostname-strict=false lets internal callers keep
+      # using the "keycloak:8080" service name for the request itself; it
+      # only stops KC_HOSTNAME from being used to reject those requests -
+      # generated links always use KC_HOSTNAME regardless.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_STRICT: "false"
     ports:
       - "8081:8080"
     volumes:
@@ -89,6 +120,15 @@ services:
       KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_REALM: oak-dms
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      # Re-applied on every bootstrap run - see bootstrap.sh's SMTP config
+      # section for why this can't just live in oak-dms-realm.json alone.
+      KEYCLOAK_SMTP_HOST: mailpit
+      KEYCLOAK_SMTP_PORT: "1025"
+      KEYCLOAK_SMTP_FROM: no-reply@oakdms.local
+      KEYCLOAK_SMTP_FROM_DISPLAY_NAME: Oak DMS
+      KEYCLOAK_SMTP_AUTH: "false"
+      KEYCLOAK_SMTP_SSL: "false"
+      KEYCLOAK_SMTP_STARTTLS: "false"
     volumes:
       - ../keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
     depends_on:

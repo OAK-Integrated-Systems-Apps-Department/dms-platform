@@ -47,6 +47,13 @@ public class User {
     @Column(name = "email", nullable = false)
     private String email;
 
+    @Column(name = "first_name", nullable = false)
+    private String firstName;
+
+    /** Nullable/blank-allowed: not everyone has a distinct last name. */
+    @Column(name = "last_name")
+    private String lastName;
+
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
@@ -81,5 +88,18 @@ public class User {
 
     public enum UserStatus {
         active, locked, disabled
+    }
+
+    /**
+     * Single source of truth for building a display name from parts, used
+     * everywhere a {@link User} or the corresponding Keycloak account is
+     * created or renamed, so display_name can never drift out of sync with
+     * first_name/last_name (the previous approach - splitting a
+     * caller-supplied display name into first/last on whitespace - could
+     * silently produce a wrong split for single-word or 3+-word names).
+     */
+    public static String displayName(String firstName, String lastName) {
+        String trimmedLast = lastName == null ? "" : lastName.trim();
+        return trimmedLast.isEmpty() ? firstName.trim() : firstName.trim() + " " + trimmedLast;
     }
 }

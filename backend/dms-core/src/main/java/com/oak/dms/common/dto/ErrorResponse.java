@@ -15,6 +15,7 @@ public record ErrorResponse(
         OffsetDateTime timestamp,
         int status,
         String error,
+        String code,
         String message,
         String path,
         List<FieldValidationError> fieldErrors
@@ -23,11 +24,15 @@ public record ErrorResponse(
     }
 
     public static ErrorResponse of(int status, String error, String message, String path) {
-        return new ErrorResponse(OffsetDateTime.now(), status, error, message, path, null);
+        return new ErrorResponse(OffsetDateTime.now(), status, error, null, message, path, null);
+    }
+
+    public static ErrorResponse of(int status, String error, String code, String message, String path) {
+        return new ErrorResponse(OffsetDateTime.now(), status, error, code, message, path, null);
     }
 
     public static ErrorResponse ofValidation(int status, String error, String message, String path,
                                               List<FieldValidationError> fieldErrors) {
-        return new ErrorResponse(OffsetDateTime.now(), status, error, message, path, fieldErrors);
+        return new ErrorResponse(OffsetDateTime.now(), status, error, null, message, path, fieldErrors);
     }
 }

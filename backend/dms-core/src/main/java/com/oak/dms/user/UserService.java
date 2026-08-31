@@ -31,4 +31,7 @@ public interface UserService {
     UserResponse updateUser(UUID userId, UpdateUserRequest request);
 
     void deactivateUser(UUID userId);
+
+    /** Tenant-admin triggers a password reset email for one of their users. */
+    void resetPassword(UUID userId);
 }
