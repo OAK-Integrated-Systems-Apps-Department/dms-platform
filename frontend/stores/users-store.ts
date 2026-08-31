@@ -15,6 +15,10 @@ interface UsersState {
 
   resetMfaCredentials: (id: string) => void
 
+  revokeSession: (id: string, sessionId: string) => void
+
+  revokeAllSessions: (id: string) => void
+
   updateUser: (
     id: string,
     updates: {
@@ -28,9 +32,9 @@ interface UsersState {
 
 /**
  * In-memory user store — swap `initialUsers` / `toggleStatus` /
- * `sendPasswordReset` / `requireMfaSetup` / `resetMfaCredentials` for real
- * API calls (React Query + Keycloak admin endpoints) once the User
- * Management endpoints exist.
+ * `sendPasswordReset` / `requireMfaSetup` / `resetMfaCredentials` /
+ * `revokeSession` / `revokeAllSessions` for real API calls (React Query +
+ * Keycloak admin endpoints) once the User Management endpoints exist.
  *
  * Mirrors `stores/roles-store.ts`'s shape; zustand is already a project
  * dependency.
@@ -84,6 +88,41 @@ export const useUsersStore = create<UsersState>((set) => ({
               mfaEnrolled: false,
               mfaMethods: [],
               mfaEnrolledOn: null,
+            }
+          : user
+      ),
+    }))
+  },
+
+  revokeSession: (id, sessionId) => {
+    // `DELETE /admin/realms/{realm}/sessions/{sessionId}` (U9). Keeps
+    // `activeSessions` (the plain count View User shows) in sync with
+    // `sessions.length` (the detailed list U9 shows) so the two screens
+    // never disagree.
+    set((state) => ({
+      users: state.users.map((user) =>
+        user.id === id
+          ? {
+              ...user,
+              sessions: user.sessions.filter(
+                (session) => session.id !== sessionId
+              ),
+              activeSessions: Math.max(0, user.activeSessions - 1),
+            }
+          : user
+      ),
+    }))
+  },
+
+  revokeAllSessions: (id) => {
+    // `POST /admin/realms/{realm}/users/{id}/logout` (U9).
+    set((state) => ({
+      users: state.users.map((user) =>
+        user.id === id
+          ? {
+              ...user,
+              sessions: [],
+              activeSessions: 0,
             }
           : user
       ),

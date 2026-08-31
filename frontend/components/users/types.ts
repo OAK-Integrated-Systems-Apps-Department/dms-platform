@@ -2,7 +2,7 @@ import type { AssignedUserStatus } from "@/components/roles/types"
 
 /**
  * Shared types for the User Management feature (User List, View User, User
- * MFA Management).
+ * MFA Management, User Sessions).
  *
  * Kept separate from components/roles/types.ts the same way that folder
  * is kept separate from components/dashboard/types.ts — one feature, one
@@ -33,6 +33,34 @@ export interface UserActivityEntry {
   text: string
 
   actor: string
+}
+
+/**
+ * A single active login session for a user, as returned by
+ * `GET /admin/realms/{realm}/users/{id}/sessions`.
+ */
+export interface UserSessionEntry {
+  id: string
+
+  /**
+   * Device/browser label as reported by Keycloak, e.g.
+   * "Chrome on macOS".
+   */
+  device: string
+
+  ip: string
+
+  /**
+   * ISO-ish "YYYY-MM-DD HH:mm" string, matching the wireframe's
+   * "Started: YYYY-MM-DD HH:MM" format.
+   */
+  startedAt: string
+
+  /**
+   * Coarse geolocation string, e.g. "Colombo, LK". Best-effort — not
+   * always available depending on IP geolocation configuration.
+   */
+  location: string
 }
 
 /**
@@ -117,4 +145,17 @@ export interface UserRecord {
    * `mfaEnrolled` — a policy can require MFA before the user has enrolled.
    */
   mfaRequiredByPolicy: boolean
+
+  // --- Session-management-only fields, shown on User Sessions (U9) ---
+
+  /**
+   * Active login sessions. `activeSessions` above stays the plain count
+   * shown on the View User screen; this is the detailed, per-session list
+   * U9 lists and revokes from — kept in sync with `activeSessions.length`
+   * whenever a session is revoked (see `stores/users-store.ts`).
+   *
+   * Sourced from `GET /admin/realms/{realm}/users/{id}/sessions` in a
+   * real integration.
+   */
+  sessions: UserSessionEntry[]
 }

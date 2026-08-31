@@ -51,6 +51,15 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-09-12",
     mfaRequiredByPolicy: true,
+    sessions: [
+      {
+        id: "s1",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-24 09:12",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-2",
@@ -79,6 +88,22 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-10-01",
     mfaRequiredByPolicy: true,
+    sessions: [
+      {
+        id: "s2",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-23 09:12",
+        location: "Colombo, LK",
+      },
+      {
+        id: "s3",
+        device: "Safari on iPhone",
+        ip: "203.94.77.45",
+        startedAt: "2026-08-23 10:13",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-3",
@@ -119,6 +144,22 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-11-03",
     mfaRequiredByPolicy: false,
+    sessions: [
+      {
+        id: "s4",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-22 09:12",
+        location: "Colombo, LK",
+      },
+      {
+        id: "s5",
+        device: "Safari on iPhone",
+        ip: "203.94.77.45",
+        startedAt: "2026-08-22 10:13",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-4",
@@ -147,6 +188,7 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: [],
     mfaEnrolledOn: null,
     mfaRequiredByPolicy: false,
+    sessions: [],
   },
   {
     id: "u-5",
@@ -175,6 +217,15 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-12-14",
     mfaRequiredByPolicy: false,
+    sessions: [
+      {
+        id: "s6",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-20 09:12",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-6",
@@ -203,6 +254,15 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: [],
     mfaEnrolledOn: null,
     mfaRequiredByPolicy: false,
+    sessions: [
+      {
+        id: "s7",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-19 09:12",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-7",
@@ -231,6 +291,7 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-07-08",
     mfaRequiredByPolicy: true,
+    sessions: [],
   },
   {
     id: "u-8",
@@ -259,6 +320,15 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: [],
     mfaEnrolledOn: null,
     mfaRequiredByPolicy: false,
+    sessions: [
+      {
+        id: "s8",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-18 09:12",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-9",
@@ -287,6 +357,29 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-06-15",
     mfaRequiredByPolicy: true,
+    sessions: [
+      {
+        id: "s9",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-17 09:12",
+        location: "Colombo, LK",
+      },
+      {
+        id: "s10",
+        device: "Safari on iPhone",
+        ip: "203.94.77.45",
+        startedAt: "2026-08-17 10:13",
+        location: "Colombo, LK",
+      },
+      {
+        id: "s11",
+        device: "Chrome on Windows",
+        ip: "112.135.10.88",
+        startedAt: "2026-08-17 11:14",
+        location: "Kandy, LK",
+      },
+    ],
   },
   {
     id: "u-10",
@@ -315,6 +408,7 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: [],
     mfaEnrolledOn: null,
     mfaRequiredByPolicy: false,
+    sessions: [],
   },
   {
     id: "u-11",
@@ -343,6 +437,15 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: ["Authenticator app (TOTP)"],
     mfaEnrolledOn: "2025-09-29",
     mfaRequiredByPolicy: false,
+    sessions: [
+      {
+        id: "s12",
+        device: "Chrome on macOS",
+        ip: "203.94.77.12",
+        startedAt: "2026-08-15 09:12",
+        location: "Colombo, LK",
+      },
+    ],
   },
   {
     id: "u-12",
@@ -371,5 +474,6 @@ export const initialUsers: UserRecord[] = [
     mfaMethods: [],
     mfaEnrolledOn: null,
     mfaRequiredByPolicy: false,
+    sessions: [],
   },
 ]

@@ -206,8 +206,8 @@ export function UserDetailView({
         )}
       </div>
 
-      <div className="mt-6 flex items-center justify-between border-t border-dashed border-border pt-5">
-        <div className="flex items-center gap-4">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-dashed border-border pt-5">
+        <div className="flex flex-wrap items-center gap-4">
           <Link
             href={`/admin/users/${user.id}/access-summary`}
             className="text-[12.5px] font-semibold text-primary hover:underline"
@@ -219,6 +219,12 @@ export function UserDetailView({
             className="text-[12.5px] font-semibold text-primary hover:underline"
           >
             Manage MFA →
+          </Link>
+          <Link
+            href={`/admin/users/${user.id}/sessions`}
+            className="text-[12.5px] font-semibold text-primary hover:underline"
+          >
+            Manage Sessions →
           </Link>
         </div>
         <Link
