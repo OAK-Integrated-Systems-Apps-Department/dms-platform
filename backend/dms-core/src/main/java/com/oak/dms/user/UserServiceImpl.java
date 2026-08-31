@@ -55,7 +55,9 @@ public class UserServiceImpl implements UserService {
                 .tenantId(tenantId)
                 .keycloakId(keycloakId)
                 .email(email)
-                .displayName(request.displayName())
+                .firstName(request.firstName())
+                .lastName(request.lastName())
+                .displayName(User.displayName(request.firstName(), request.lastName()))
                 .status(User.UserStatus.active)
                 .build();
 
@@ -72,13 +74,16 @@ public class UserServiceImpl implements UserService {
             throw new DuplicateResourceException("A user already exists with email " + request.email());
         }
 
-        UUID keycloakId = keycloakUserService.createUser(request.email(), request.displayName(), tenantId);
+        UUID keycloakId = keycloakUserService.createUser(request.email(), request.firstName(), request.lastName(),
+                tenantId);
 
         User user = User.builder()
                 .tenantId(tenantId)
                 .keycloakId(keycloakId)
                 .email(request.email())
-                .displayName(request.displayName())
+                .firstName(request.firstName())
+                .lastName(request.lastName())
+                .displayName(User.displayName(request.firstName(), request.lastName()))
                 .status(User.UserStatus.active)
                 .createdBy(TenantContext.getUserId())
                 .build();
@@ -120,7 +125,9 @@ public class UserServiceImpl implements UserService {
     public UserResponse updateUser(UUID userId, UpdateUserRequest request) {
         User user = findOwnedByCallerTenant(userId);
 
-        user.setDisplayName(request.displayName());
+        user.setFirstName(request.firstName());
+        user.setLastName(request.lastName());
+        user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
         user.setMfaEnabled(request.mfaEnabled());
         user.setStatus(User.UserStatus.valueOf(request.status().name()));
         user.setUpdatedBy(TenantContext.getUserId());
@@ -150,6 +157,13 @@ public class UserServiceImpl implements UserService {
 
         keycloakUserService.disableUser(user.getKeycloakId());
         log.info("Deactivated user {}", userId);
+    }
+
+    @Override
+    public void resetPassword(UUID userId) {
+        User user = findOwnedByCallerTenant(userId);
+        keycloakUserService.sendPasswordResetEmail(user.getKeycloakId());
+        log.info("Sent password reset email for user {}", userId);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

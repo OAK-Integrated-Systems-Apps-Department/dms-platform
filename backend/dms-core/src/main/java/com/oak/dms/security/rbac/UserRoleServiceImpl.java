@@ -75,7 +75,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         // Narrower scopes (department/folder/document) stay DB-only and are
         // enforced exclusively via AuthorizationService / role_permissions.
         if (scopeType == UserRole.ScopeType.tenant) {
-            keycloakUserService.assignRealmRole(user.getKeycloakId(), role.getRoleName());
+            keycloakUserService.assignRealmRole(tenantId, user.getKeycloakId(), role.getRoleName());
         }
 
         log.info("Assigned role {} to user {} (scope={}/{})", role.getRoleId(), userId, scopeType, scopeId);
@@ -113,7 +113,8 @@ public class UserRoleServiceImpl implements UserRoleService {
 
         if (assignment.getScopeType() == UserRole.ScopeType.tenant) {
             roleRepository.findById(assignment.getRoleId())
-                    .ifPresent(role -> keycloakUserService.removeRealmRole(user.getKeycloakId(), role.getRoleName()));
+                    .ifPresent(role -> keycloakUserService.removeRealmRole(
+                            tenantId, user.getKeycloakId(), role.getRoleName()));
         }
 
         log.info("Revoked role assignment {} from user {}", userRoleId, userId);

@@ -9,6 +9,7 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.security.rbac.RoleMapper;
 import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.security.rbac.RoleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class RoleServiceImpl implements RoleService {
 
     private final RoleRepository roleRepository;
     private final RoleMapper roleMapper;
+    private final KeycloakUserService keycloakUserService;
 
     @Override
     public RoleResponse createRole(CreateRoleRequest request) {
@@ -41,6 +43,22 @@ public class RoleServiceImpl implements RoleService {
         if (roleRepository.existsByTenantIdAndRoleNameAndDeletedFalse(tenantId, request.roleName())) {
             throw new DuplicateResourceException("A role already exists named " + request.roleName());
         }
+        // Keycloak realm roles are unique per realm and all tenants share
+        // one realm (see KeycloakUserService), so a name that's free within
+        // this tenant can still collide with another tenant's role. Check
+        // globally too, or the Keycloak call below fails with a 409 that's
+        // much less clear to the caller than this one.
+        if (roleRepository.existsByRoleNameAndDeletedFalse(request.roleName())) {
+            throw new DuplicateResourceException(
+                    "Role name '" + request.roleName() + "' is not available. Please choose another name.");
+        }
+
+        // Tenant-wide assignments of this role are mirrored into Keycloak as
+        // a realm role (see UserRoleServiceImpl), so the realm role must
+        // exist before any assignment can succeed. Created before the DB
+        // write so a Keycloak failure aborts the transaction cleanly rather
+        // than leaving a DMS role with no corresponding realm role.
+        keycloakUserService.createRealmRole(tenantId, request.roleName(), request.description());
 
         Role role = Role.builder()
                 .tenantId(tenantId)
@@ -71,6 +89,17 @@ public class RoleServiceImpl implements RoleService {
     @Override
     public RoleResponse updateRole(UUID roleId, UpdateRoleRequest request) {
         Role role = findOwnedByCallerTenant(roleId);
+
+        // Keep the mirrored Keycloak realm role name in sync on rename, so
+        // future assign/revoke calls (which look the role up by current
+        // name) keep resolving correctly.
+        if (!request.roleName().equals(role.getRoleName())) {
+            if (roleRepository.existsByRoleNameAndDeletedFalse(request.roleName())) {
+                throw new DuplicateResourceException(
+                        "Role name '" + request.roleName() + "' is not available. Please choose another name.");
+            }
+            keycloakUserService.renameRealmRole(role.getTenantId(), role.getRoleName(), request.roleName());
+        }
 
         role.setRoleName(request.roleName());
         role.setDescription(request.description());

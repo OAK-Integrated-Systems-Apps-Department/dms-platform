@@ -77,6 +77,16 @@ public class UserController {
         return userService.updateUser(userId, request);
     }
 
+    @PostMapping("/{userId}/reset-password")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "Send a password reset email to a user in the caller's tenant. Sets a fresh "
+            + "temporary password server-side and emails the user a link to choose their own - no "
+            + "password is ever returned by this endpoint.")
+    public void resetPassword(@PathVariable UUID userId) {
+        userService.resetPassword(userId);
+    }
+
     @DeleteMapping("/{userId}")
     @PreAuthorize("@authz.hasPermission('user.manage')")
     @ResponseStatus(HttpStatus.NO_CONTENT)

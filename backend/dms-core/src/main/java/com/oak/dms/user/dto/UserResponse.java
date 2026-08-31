@@ -11,6 +11,8 @@ public record UserResponse(
         UUID tenantId,
         UUID keycloakId,
         String email,
+        String firstName,
+        String lastName,
         String displayName,
         boolean mfaEnabled,
         String status,

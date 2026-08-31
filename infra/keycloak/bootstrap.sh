@@ -1,101 +1,176 @@
-﻿#!/usr/bin/env bash
-#
-# Closes the one gap a Keycloak realm export genuinely can't express:
-# granting a client's service account a role on ANOTHER client
-# (realm-management's manage-users), which requires that other client to
-# already exist with a resolved internal id - a realm JSON import creates
-# everything in one pass and has no way to reference an id that doesn't
-# exist yet.
-#
-# Safe to re-run: checks current state before making any change, so this
-# can run every time the stack starts without erroring on a role that's
-# already granted.
-#
-# Deliberately uses ONLY kcadm.sh and bash builtins - no curl. The
-# official quay.io/keycloak/keycloak image does not reliably ship curl
-# (see github.com/keycloak/keycloak/issues/17438; there's no package
-# manager in the runtime image to install it with either), so a
-# curl-based readiness check would fail. kcadm.sh itself makes its HTTP
-# calls via the JVM, not curl, so it has no such dependency - this script
-# uses repeated kcadm.sh calls as its own readiness probe instead of
-# polling an HTTP endpoint separately.
-#
-# Works against ANY Keycloak instance reachable at KEYCLOAK_URL - local
-# Docker, a shared dev environment, or a real deployment - not just the
-# infra/local docker-compose stack.
-set -euo pipefail
+#!/bin/sh
+set -e
 
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8080}"
-BOOTSTRAP_ADMIN_USER="${KEYCLOAK_BOOTSTRAP_ADMIN_USER:-admin}"
-BOOTSTRAP_ADMIN_PASSWORD="${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
-REALM="${KEYCLOAK_REALM:-oak-dms}"
-ADMIN_CLIENT_ID="${KEYCLOAK_ADMIN_CLIENT_ID:-dms-core-admin}"
-SERVICE_ACCOUNT_ROLE="${KEYCLOAK_SERVICE_ACCOUNT_ROLE:-manage-users}"
-
-KCADM="${KCADM_BIN:-/opt/keycloak/bin/kcadm.sh}"
-SERVICE_ACCOUNT_USERNAME="service-account-${ADMIN_CLIENT_ID}"
-
-echo "==> Waiting for Keycloak at ${KEYCLOAK_URL} to accept admin logins..."
-attempt=0
-until "$KCADM" config credentials \
-        --server "$KEYCLOAK_URL" \
-        --realm master \
-        --user "$BOOTSTRAP_ADMIN_USER" \
-        --password "$BOOTSTRAP_ADMIN_PASSWORD" 2>/dev/null
-do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 60 ]; then
-        echo "==> ERROR: Keycloak did not become ready after $attempt attempts." >&2
-        exit 1
-    fi
-    sleep 2
-done
-echo "==> Authenticated."
-
-echo "==> Waiting for realm '${REALM}' to exist (created by --import-realm on first boot)"
-attempt=0
-until "$KCADM" get "realms/${REALM}" >/dev/null 2>&1; do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then
-        echo "==> ERROR: realm '${REALM}' never appeared. Check the realm import succeeded." >&2
-        exit 1
-    fi
-    sleep 2
-done
-
-echo "==> Checking whether ${SERVICE_ACCOUNT_USERNAME} already has ${SERVICE_ACCOUNT_ROLE}"
-if "$KCADM" get-roles \
-        -r "$REALM" \
-        --uusername "$SERVICE_ACCOUNT_USERNAME" \
-        --cclientid realm-management \
-    | grep -q "\"name\" *: *\"${SERVICE_ACCOUNT_ROLE}\""
-then
-    echo "==> Already granted - nothing to do."
-    exit 0
+if ! command -v curl > /dev/null; then
+  echo "Installing curl..."
+  apk add --no-cache curl
 fi
 
-echo "==> Granting ${SERVICE_ACCOUNT_ROLE} (client role on realm-management) to ${SERVICE_ACCOUNT_USERNAME}"
-# The pre-check above should already have caught an existing grant; this
-# add-roles call is also tolerant of that case in case of a false-negative
-# pre-check (e.g. unexpected kcadm output formatting), since Keycloak
-# treats re-adding an already-held role as a no-op rather than a hard error
-# in most versions - but we don't want a genuinely new failure (bad
-# credentials, unreachable realm-management client, etc.) to be silently
-# swallowed, so only ignore failure AFTER re-confirming the role is present.
-if ! "$KCADM" add-roles \
-        -r "$REALM" \
-        --uusername "$SERVICE_ACCOUNT_USERNAME" \
-        --cclientid realm-management \
-        --rolename "$SERVICE_ACCOUNT_ROLE"
-then
-    if "$KCADM" get-roles -r "$REALM" --uusername "$SERVICE_ACCOUNT_USERNAME" --cclientid realm-management \
-        | grep -q "\"name\" *: *\"${SERVICE_ACCOUNT_ROLE}\""
-    then
-        echo "==> add-roles reported an error but the role is present - treating as already-granted."
-    else
-        echo "==> ERROR: failed to grant ${SERVICE_ACCOUNT_ROLE} and it is still not present. See kcadm output above." >&2
-        exit 1
-    fi
+if ! command -v jq > /dev/null; then
+  echo "Installing jq..."
+  apk add --no-cache jq
 fi
 
-echo "==> Done. ${ADMIN_CLIENT_ID}'s service account can now call the Keycloak Admin REST API."
+echo "Waiting for Keycloak to be ready..."
+attempt=0
+max_attempts=60
+while [ $attempt -lt $max_attempts ]; do
+  if curl -s -f http://keycloak:8080/realms/master > /dev/null 2>&1; then
+    echo "Keycloak is ready"
+    break
+  fi
+  attempt=$((attempt + 1))
+  echo "Waiting... attempt $attempt/$max_attempts"
+  sleep 2
+done
+
+echo "Obtaining admin token..."
+RESPONSE=$(curl -s -X POST http://keycloak:8080/realms/master/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=admin-cli" \
+  -d "username=$KEYCLOAK_BOOTSTRAP_ADMIN_USER" \
+  -d "password=$KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD" \
+  -d "grant_type=password")
+
+TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+
+if [ -z "$TOKEN" ]; then
+  echo "Failed to obtain admin token"
+  echo "Response: $RESPONSE"
+  exit 1
+fi
+
+# dms-core's Admin REST API usage needs two realm-management client roles,
+# not just one:
+#   - manage-users: create/enable/disable/delete users, assign/remove
+#     realm-role mappings on a user (KeycloakUserService#createUser,
+#     assignRealmRole, removeRealmRole, etc.)
+#   - manage-realm: create/rename realm roles themselves
+#     (KeycloakUserService#createRealmRole, renameRealmRole) - defining a
+#     role is realm configuration, distinct from assigning an existing role
+#     to a user, so manage-users alone does not cover it.
+# Granting only manage-users (as this script previously did) leaves role
+# creation failing with 403 while user management appears to work fine,
+# which is a confusing split to debug from the caller's side - dms-core
+# only ever sees it as a generic 502 from the Keycloak Admin REST API.
+REQUIRED_ROLES="manage-users manage-realm"
+
+echo "Token obtained. Granting [$REQUIRED_ROLES] to $KEYCLOAK_ADMIN_CLIENT_ID..."
+
+USER_RESPONSE=$(curl -s -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users?username=service-account-$KEYCLOAK_ADMIN_CLIENT_ID&exact=true" \
+  -H "Authorization: Bearer $TOKEN")
+
+USER_ID=$(echo "$USER_RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+
+if [ -z "$USER_ID" ]; then
+  echo "Failed to find service account user"
+  echo "Response: $USER_RESPONSE"
+  exit 1
+fi
+
+CLIENT_RESPONSE=$(curl -s -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/clients?clientId=realm-management&exact=true" \
+  -H "Authorization: Bearer $TOKEN")
+
+REALM_MGMT_CLIENT_UUID=$(echo "$CLIENT_RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+
+if [ -z "$REALM_MGMT_CLIENT_UUID" ]; then
+  echo "Failed to find realm-management client"
+  echo "Response: $CLIENT_RESPONSE"
+  exit 1
+fi
+
+EXISTING_ROLES=$(curl -s -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users/$USER_ID/role-mappings/clients/$REALM_MGMT_CLIENT_UUID" \
+  -H "Authorization: Bearer $TOKEN")
+
+TO_GRANT_JSON=""
+for ROLE_NAME in $REQUIRED_ROLES; do
+  if echo "$EXISTING_ROLES" | grep -q "\"name\":\"$ROLE_NAME\""; then
+    echo "  $ROLE_NAME: already granted"
+    continue
+  fi
+
+  ROLE_RESPONSE=$(curl -s -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/clients/$REALM_MGMT_CLIENT_UUID/roles/$ROLE_NAME" \
+    -H "Authorization: Bearer $TOKEN")
+
+  ROLE_ID=$(echo "$ROLE_RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+
+  if [ -z "$ROLE_ID" ]; then
+    echo "Failed to find $ROLE_NAME role on realm-management client"
+    echo "Response: $ROLE_RESPONSE"
+    exit 1
+  fi
+
+  echo "  $ROLE_NAME: granting (role id $ROLE_ID)"
+  if [ -z "$TO_GRANT_JSON" ]; then
+    TO_GRANT_JSON="{\"id\":\"$ROLE_ID\",\"name\":\"$ROLE_NAME\"}"
+  else
+    TO_GRANT_JSON="$TO_GRANT_JSON,{\"id\":\"$ROLE_ID\",\"name\":\"$ROLE_NAME\"}"
+  fi
+done
+
+if [ -z "$TO_GRANT_JSON" ]; then
+  echo "Already granted - nothing to do."
+else
+  echo "User ID: $USER_ID, realm-management client UUID: $REALM_MGMT_CLIENT_UUID"
+
+  curl -s -f -X POST "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users/$USER_ID/role-mappings/clients/$REALM_MGMT_CLIENT_UUID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "[$TO_GRANT_JSON]"
+fi
+
+# --- SMTP config -------------------------------------------------------
+# oak-dms-realm.json's smtpServer block only applies the FIRST time this
+# realm is ever created (Keycloak's --import-realm uses IGNORE_EXISTING).
+# On every subsequent start where the realm already exists, that block is
+# never re-applied - so if it's edited later, or someone blanks the From
+# field via the admin console's Email tab (its form doesn't always
+# pre-fill on load), the realm silently keeps sending with no "from"
+# address. Keycloak then rejects the send with "Invalid sender address
+# 'null'" before it ever touches the network, which is easy to mistake
+# for an SMTP connectivity problem - see KC-SERVICES0088 in the Keycloak
+# logs. Re-applying this on every bootstrap run, unconditionally, means
+# it can never drift from what's configured here regardless of import
+# quirks or accidental console edits.
+: "${KEYCLOAK_SMTP_HOST:?KEYCLOAK_SMTP_HOST is required}"
+: "${KEYCLOAK_SMTP_PORT:?KEYCLOAK_SMTP_PORT is required}"
+: "${KEYCLOAK_SMTP_FROM:?KEYCLOAK_SMTP_FROM is required}"
+KEYCLOAK_SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-Oak DMS}"
+KEYCLOAK_SMTP_AUTH="${KEYCLOAK_SMTP_AUTH:-false}"
+KEYCLOAK_SMTP_SSL="${KEYCLOAK_SMTP_SSL:-false}"
+KEYCLOAK_SMTP_STARTTLS="${KEYCLOAK_SMTP_STARTTLS:-false}"
+
+echo "Applying SMTP config to realm $KEYCLOAK_REALM (host=$KEYCLOAK_SMTP_HOST, from=$KEYCLOAK_SMTP_FROM)..."
+
+SMTP_JSON=$(jq -n \
+  --arg host "$KEYCLOAK_SMTP_HOST" \
+  --arg port "$KEYCLOAK_SMTP_PORT" \
+  --arg from "$KEYCLOAK_SMTP_FROM" \
+  --arg fromDisplayName "$KEYCLOAK_SMTP_FROM_DISPLAY_NAME" \
+  --arg auth "$KEYCLOAK_SMTP_AUTH" \
+  --arg ssl "$KEYCLOAK_SMTP_SSL" \
+  --arg starttls "$KEYCLOAK_SMTP_STARTTLS" \
+  --arg user "${KEYCLOAK_SMTP_USER:-}" \
+  --arg password "${KEYCLOAK_SMTP_PASSWORD:-}" \
+  '{host: $host, port: $port, from: $from, fromDisplayName: $fromDisplayName,
+    auth: $auth, ssl: $ssl, starttls: $starttls}
+   + (if $auth == "true" then {user: $user, password: $password} else {} end)')
+
+REALM_REPRESENTATION=$(curl -s -f -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM" \
+  -H "Authorization: Bearer $TOKEN")
+
+if [ -z "$REALM_REPRESENTATION" ]; then
+  echo "Failed to fetch realm representation for $KEYCLOAK_REALM"
+  exit 1
+fi
+
+UPDATED_REALM=$(echo "$REALM_REPRESENTATION" | jq --argjson smtp "$SMTP_JSON" '.smtpServer = $smtp')
+
+curl -s -f -X PUT "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$UPDATED_REALM"
+
+echo "SMTP config applied"
+echo "Bootstrap completed successfully"
+exit 0
