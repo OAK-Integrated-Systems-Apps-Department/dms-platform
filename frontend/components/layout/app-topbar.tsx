@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   Bell,
   Bookmark,
@@ -12,10 +13,12 @@ import {
   User,
 } from "lucide-react"
 
-import { activityFeed, currentUser, recentDocuments } from "@/components/dashboard/data"
+import { activityFeed, recentDocuments } from "@/components/dashboard/data"
 import { fileIcon } from "@/components/dashboard/file-icon"
 import { Dropdown, MenuRow } from "@/components/ui/dropdown"
 import { IconButton } from "@/components/ui/icon-button"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { API_BASE_URL } from "@/lib/api-config"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 
@@ -24,6 +27,9 @@ const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
  * dropdown, and the account menu. Only one dropdown is open at a time.
  */
 export function AppTopbar() {
+  const router = useRouter()
+  const { data: user, initials } = useCurrentUser()
+
   const [pinOpen, setPinOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
@@ -37,16 +43,33 @@ export function AppTopbar() {
       if (pinRef.current && !pinRef.current.contains(event.target as Node)) {
         setPinOpen(false)
       }
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+      if (
+        notifRef.current &&
+        !notifRef.current.contains(event.target as Node)
+      ) {
         setNotifOpen(false)
       }
-      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
+      if (
+        accountRef.current &&
+        !accountRef.current.contains(event.target as Node)
+      ) {
         setAccountOpen(false)
       }
     }
     document.addEventListener("mousedown", handlePointerDown)
     return () => document.removeEventListener("mousedown", handlePointerDown)
   }, [])
+
+  async function handleLogout() {
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch {}
+    router.push("/login")
+    router.refresh()
+  }
 
   return (
     <header className="sticky top-0 z-20 flex items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
@@ -120,7 +143,9 @@ export function AppTopbar() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] text-foreground">
                       <b>{entry.who}</b> {entry.action}{" "}
-                      <span className="text-muted-foreground">{entry.target}</span>
+                      <span className="text-muted-foreground">
+                        {entry.target}
+                      </span>
                     </div>
                     <div className="mt-px text-[11px] text-[var(--ink-faint)]">
                       {entry.time}
@@ -142,23 +167,41 @@ export function AppTopbar() {
             setPinOpen(false)
           }}
           className="flex items-center gap-2 rounded-[10px] border border-border py-[5px] pr-2.5 pl-[5px]"
-          style={{ background: accountOpen ? "var(--primary-tint)" : "var(--card)" }}
+          style={{
+            background: accountOpen ? "var(--primary-tint)" : "var(--card)",
+          }}
         >
           <span className="flex size-7 items-center justify-center rounded-full bg-primary font-heading text-[11.5px] font-bold text-primary-foreground">
-            {currentUser.initials}
+            {initials ?? "…"}
           </span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </button>
         {accountOpen && (
           <Dropdown width={220} noPad>
             <div className="border-b border-border px-3.5 py-3">
-              <div className="text-[13.5px] font-semibold">{currentUser.name}</div>
-              <div className="text-[11.5px] text-muted-foreground">{currentUser.role}</div>
+              <div className="text-[13.5px] font-semibold">
+                {user?.displayName ?? "…"}
+              </div>
+              <div className="text-[11.5px] text-muted-foreground">
+                {user?.status ?? ""}
+              </div>
             </div>
             <MenuRow icon={Bookmark} label="Bookmarks" />
-            <MenuRow icon={User} label="Profile" />
+            <MenuRow
+              icon={User}
+              label="Profile"
+              onClick={() => {
+                setAccountOpen(false)
+                router.push("/profile")
+              }}
+            />
             <div className="my-1 border-t border-border" />
-            <MenuRow icon={LogOut} label="Log out" danger />
+            <MenuRow
+              icon={LogOut}
+              label="Log out"
+              danger
+              onClick={handleLogout}
+            />
           </Dropdown>
         )}
       </div>

@@ -1,0 +1,73 @@
+"use client"
+
+import { useSearchParams } from "next/navigation"
+import { AlertTriangle, Layers } from "lucide-react"
+
+// Reads ?message= from the URL, so this needs to opt out of static
+// rendering — same reasoning as the other pages that read search params.
+export const dynamic = "force-dynamic"
+
+const DEFAULT_MESSAGE =
+  "Something went wrong on our end. Please try again, and if it keeps happening, contact your workspace administrator."
+
+/**
+ * The one generic, no-detail error screen — for things like an expired or
+ * already-used action-token link (see app/update-password/page.tsx) or any
+ * other failure that isn't tied to a specific account. Deliberately NOT
+ * used for login failures: per the original design note, account-level
+ * denials (wrong password, disabled, locked) stay as an inline alert on
+ * the login form itself (app/login/page.tsx) precisely so this page never
+ * has to hint at account-specific detail.
+ *
+ * Public (see PUBLIC_PATHS in middleware.ts) — a person can land here with
+ * no session, e.g. from a stale emailed link.
+ */
+export default function ErrorPage() {
+  const searchParams = useSearchParams()
+  const message = searchParams.get("message") || DEFAULT_MESSAGE
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
+        <div className="mb-[30px] flex flex-col items-center">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+            <Layers size={22} color="var(--primary-foreground)" />
+          </div>
+          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
+            Ledger
+          </div>
+          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
+            DOCUMENT VAULT
+          </div>
+        </div>
+
+        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[#E4C3B6] bg-[var(--rust-tint)]">
+          <AlertTriangle size={26} className="text-[var(--rust)]" />
+        </div>
+
+        <h1 className="mb-3 font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+          We are sorry…
+        </h1>
+        <p className="mb-[26px] text-[13.5px] leading-[1.65] text-muted-foreground">{message}</p>
+
+        <a
+          href="/login"
+          className="inline-flex w-full items-center justify-center gap-[5px] border-t border-dashed border-border pt-1.5 text-[13px] font-semibold text-primary hover:underline"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          Back to login
+        </a>
+      </div>
+    </div>
+  )
+}
