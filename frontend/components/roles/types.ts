@@ -34,3 +34,5 @@ export interface RoleRecord {
    */
   system?: boolean
 }
+
+export type AssignedUserStatus = "Active" | "Inactive"

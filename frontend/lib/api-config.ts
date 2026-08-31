@@ -8,4 +8,16 @@
  * ("use client" pages), not on a Next.js server, so only env vars
  * exposed at build time are visible here.
  */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"
+
+/**
+ * Base URL of Keycloak's own hosted Account Console
+ * (`/realms/{realm}/account`), used by My Security Settings to deep-link
+ * into Keycloak's native password/MFA management rather than DMS building
+ * that UI itself — see the caveat on the S2 wireframe screen. Not yet
+ * configured on the backend, so this is a placeholder host.
+ */
+export const KEYCLOAK_ACCOUNT_URL =
+  process.env.NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL ??
+  "http://localhost:8081/realms/dms/account"

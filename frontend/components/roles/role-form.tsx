@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
@@ -141,7 +142,19 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         </span>
       </div>
       <p className="mb-4 text-[12.5px] text-muted-foreground">
-        Choose what this role can do, grouped by functional area.
+        Choose what this role can do, grouped by functional area. Toggle the
+        quick list below, or use{" "}
+        {mode === "edit" && role ? (
+          <Link
+            href={`/admin/roles/${role.id}/permissions`}
+            className="font-semibold text-primary hover:underline"
+          >
+            Role Permission Configuration →
+          </Link>
+        ) : (
+          "Role Permission Configuration"
+        )}{" "}
+        for a searchable, group-by-group view.
       </p>
 
       <div className="space-y-3.5">
