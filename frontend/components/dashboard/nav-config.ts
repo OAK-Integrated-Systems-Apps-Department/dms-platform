@@ -5,6 +5,7 @@ import {
   Pin,
   ScrollText,
   Search,
+  Shield,
   Users,
   Workflow,
 } from "lucide-react"
@@ -30,7 +31,8 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users & Roles", icon: Users, href: "/admin/roles" },
+      { label: "Users", icon: Users, href: "/admin/users" },
+      { label: "Roles", icon: Shield, href: "/admin/roles" },
       { label: "Audit Log", icon: ScrollText },
     ],
   },

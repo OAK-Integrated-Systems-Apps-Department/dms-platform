@@ -3,9 +3,12 @@
 import { useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
-import { AlertTriangle, Layers, ShieldCheck } from "lucide-react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import { AlertTriangle, Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
 
 import { OtpInput } from "@/components/auth/otp-input"
+import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
 import { API_BASE_URL } from "@/lib/api-config"
 
 // This page already only ever does client-side fetches (no server data),
@@ -24,6 +27,12 @@ interface LoginResponse {
  * Two calls to dms-core, not one — see the component doc comment below
  * for why the MFA check has to happen before the real login attempt
  * rather than being inferred from its result.
+ *
+ * The /auth/login call is wrapped in its own try/catch (unlike the
+ * /mfa-required check above, which is allowed to fail silently and just
+ * assume MFA isn't required): if the backend is unreachable here, that's
+ * the actual sign-in attempt failing, and the user needs to see that —
+ * not have it disappear into a rejected mutation with no onError handler.
  */
 async function login(username: string, password: string, totp?: string): Promise<LoginResponse> {
   if (!totp) {
@@ -38,7 +47,9 @@ async function login(username: string, password: string, totp?: string): Promise
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // credentials: "include" so the session cookie(s) your Java backend
@@ -46,6 +57,10 @@ async function login(username: string, password: string, totp?: string): Promise
     credentials: "include",
     body: JSON.stringify({ username, password, totp }),
   })
+  } catch {
+    return { ok: false, error: "Could not reach the server. Check that the backend is running and try again." }
+  }
+
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
     return { ok: false, error: body.message ?? "Invalid username or password." }
@@ -80,9 +95,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
   const [code, setCode] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  // Kept alongside the validated form state below — the OTP step's retry
+  // needs the credentials again, and OtpInput is a controlled component
+  // that doesn't fit cleanly into react-hook-form's register() pattern.
+  const [savedCredentials, setSavedCredentials] = useState({ username: "", password: "" })
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors: credentialErrors },
+  } = useForm<LoginCredentialsValues>({
+    resolver: zodResolver(loginCredentialsSchema),
+    defaultValues: { username: "", password: "" },
+  })
 
   const mutation = useMutation({
-    mutationFn: (totp?: string) => login(username, password, totp),
+    mutationFn: ({ username, password, totp }: { username: string; password: string; totp?: string }) =>
+      login(username, password, totp),
     onSuccess: (result) => {
       if (result.ok) {
         router.push("/")
@@ -95,15 +125,15 @@ export default function LoginPage() {
     },
   })
 
-  function handleCredentialsSubmit(event: FormEvent) {
-    event.preventDefault()
+  function handleCredentialsSubmit(values: LoginCredentialsValues) {
     mutation.reset()
-    mutation.mutate(undefined)
+    setSavedCredentials(values)
+    mutation.mutate({ username: values.username, password: values.password })
   }
 
   function handleOtpSubmit(event: FormEvent) {
     event.preventDefault()
-    mutation.mutate(code)
+    mutation.mutate({ ...savedCredentials, totp: code })
   }
 
   function handleBackToCredentials() {
@@ -156,7 +186,7 @@ export default function LoginPage() {
           </div>
         )}
 
-            <form onSubmit={handleCredentialsSubmit}>
+            <form onSubmit={handleSubmit(handleCredentialsSubmit)} noValidate>
           <div className="mb-[17px]">
             <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
               Username or email
@@ -166,25 +196,41 @@ export default function LoginPage() {
               type="text"
               placeholder="username"
               autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              {...register("username")}
               className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
             />
+            {credentialErrors.username && (
+              <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.username.message}</p>
+            )}
           </div>
 
           <div className="mb-[17px]">
             <label htmlFor="password" className="mb-[7px] block text-[13px] font-semibold text-foreground">
               Password
             </label>
+            <div className="relative">
             <input
               id="password"
-              type="password"
+                type={showPassword ? "text" : "password"}
               placeholder="••••••••••"
               autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+              {...register("password")}
+                className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
             />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            {credentialErrors.password && (
+              <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.password.message}</p>
+            )}
           </div>
 
           <div className="mb-[22px] flex items-center justify-between">
