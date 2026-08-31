@@ -36,16 +36,3 @@ export interface RoleRecord {
 }
 
 export type AssignedUserStatus = "Active" | "Inactive"
-
-/**
- * Row shape for the Assigned Users table on the Role Details screen (R4).
- * Sourced from the Keycloak admin `.../roles/{role-name}/users` endpoint in
- * a real integration — see `assignedUsersByRole` in `./data` for the mock.
- */
-export interface RoleAssignedUser {
-  id: string
-  name: string
-  /** Keycloak username / login id — not the DMS-writable profile fields. */
-  username: string
-  status: AssignedUserStatus
-}

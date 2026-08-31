@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
 import { Check, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { assignedUsersByRole, permissionGroups } from "@/components/roles/data"
+import { permissionGroups } from "@/components/roles/data"
 import { useRolesStore } from "@/stores/roles-store"
 import { useUsersStore } from "@/stores/users-store"
 
@@ -25,9 +26,11 @@ interface UserAccessSummaryProps {
  * returns which roles a user holds, but the effective-permission merge
  * across those roles is computed here, not returned by Keycloak directly
  * (same caveat as Permission Matrix and Role Permission Configuration).
- * `assignedUsersByRole` stands in for that role-mappings response until a
- * real `GET /admin/realms/{realm}/users/{id}/role-mappings` call replaces
- * it.
+ * `user.roles` (role names) stands in for that role-mappings response
+ * until a real `GET /admin/realms/{realm}/users/{id}/role-mappings` call
+ * replaces it — this reads the same field the User List and View User
+ * screens already display, rather than a separate id-based lookup, so
+ * there's one source of truth for "which roles does this user hold."
  *
  * Corner radius is fixed at 10px across every surface here (card, avatar,
  * badges), matching the rest of Role Management and Self-Service.
@@ -38,11 +41,8 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
 
   const rolesHeld = useMemo(
-    () =>
-      roles.filter((role) =>
-        (assignedUsersByRole[role.id] ?? []).some((u) => u.id === user.id)
-      ),
-    [roles, user.id]
+    () => roles.filter((role) => user.roles.includes(role.name)),
+    [roles, user.roles]
   )
 
   const effectivePermissions = useMemo(() => {
@@ -101,9 +101,17 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
       </div>
 
       {/* Roles held */}
-      <h3 className="mb-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-        Roles Held
-      </h3>
+      <div className="mb-2.5 flex items-center justify-between">
+        <h3 className="text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+          Roles Held
+        </h3>
+        <Link
+          href={`/admin/users/${user.id}`}
+          className="text-[12px] font-semibold text-primary hover:underline"
+        >
+          View full profile →
+        </Link>
+      </div>
       <div className="mb-6 flex flex-wrap gap-1.5">
         {rolesHeld.length === 0 && (
           <p className="text-[13px] text-muted-foreground">

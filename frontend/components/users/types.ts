@@ -37,10 +37,10 @@ export interface UserActivityEntry {
 /**
  * A DMS user.
  *
- * Mirrors `RoleAssignedUser` (`components/roles/types.ts`) plus the fields
- * Role Details doesn't need — email and tenant — so the same person shows
- * up consistently across Role Details' assigned-users table and User Access
- * Summary.
+ * Kept structurally close to `AssignedUserStatus` (`components/roles/types.ts`)
+ * for the status field, plus email and tenant that Role Details doesn't
+ * need, so the same person shows up consistently across Role Details'
+ * assigned-users table and User Access Summary.
  *
  * Sourced from Keycloak's admin user list
  * (`GET /admin/realms/{realm}/users`) in a real integration.

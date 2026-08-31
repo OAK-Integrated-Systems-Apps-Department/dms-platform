@@ -1,9 +1,10 @@
 import type { UserRecord } from "./types"
 
 /**
- * Mock DMS users — ids and names match `assignedUsersByRole` in
- * `components/roles/data.ts` so the same person appears consistently in
- * Role Details' Assigned Users table and here.
+ * Mock DMS users. Role Details' Assigned Users table now reads this same
+ * store (filtering by `user.roles.includes(role.name)`) instead of a
+ * separate role-keyed mock, so there's one source of truth for who holds
+ * what.
  *
  * Extended with the profile/security/activity detail that
  * `dms-view-user.html` needs. u-3 (Kasun Perera) matches that mockup's
@@ -23,7 +24,7 @@ export const initialUsers: UserRecord[] = [
     username: "priyanka.fernando",
     email: "priyanka.fernando@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Admin"],
     lastLogin: "2026-08-24",
     firstName: "Priyanka",
@@ -53,7 +54,7 @@ export const initialUsers: UserRecord[] = [
     username: "nadia.rajapaksa",
     email: "nadia.rajapaksa@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Compliance Officer"],
     lastLogin: "2026-08-23",
     firstName: "Nadia",
@@ -77,7 +78,7 @@ export const initialUsers: UserRecord[] = [
     username: "kasun.perera",
     email: "kasun.perera@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Approver", "Uploader"],
     lastLogin: "2026-08-22",
     firstName: "Kasun",
@@ -113,7 +114,7 @@ export const initialUsers: UserRecord[] = [
     username: "malik.silva",
     email: "malik.silva@oakdms.com",
     tenant: "oak-dms",
-    status: "inactive",
+    status: "Inactive",
     roles: ["Approver"],
     lastLogin: "2026-07-11",
     firstName: "Malik",
@@ -137,7 +138,7 @@ export const initialUsers: UserRecord[] = [
     username: "dilani.wickrama",
     email: "dilani.wickrama@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Uploader"],
     lastLogin: "2026-08-20",
     firstName: "Dilani",
@@ -161,7 +162,7 @@ export const initialUsers: UserRecord[] = [
     username: "ruwan.jayasuriya",
     email: "ruwan.jayasuriya@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Viewer"],
     lastLogin: "2026-08-19",
     firstName: "Ruwan",
@@ -185,7 +186,7 @@ export const initialUsers: UserRecord[] = [
     username: "anjali.guna",
     email: "anjali.guna@oakdms.com",
     tenant: "oak-dms",
-    status: "inactive",
+    status: "Inactive",
     roles: ["Compliance Officer", "Viewer"],
     lastLogin: "2026-06-02",
     firstName: "Anjali",
@@ -209,7 +210,7 @@ export const initialUsers: UserRecord[] = [
     username: "thilina.bandara",
     email: "thilina.bandara@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Uploader"],
     lastLogin: "2026-08-18",
     firstName: "Thilina",
@@ -233,7 +234,7 @@ export const initialUsers: UserRecord[] = [
     username: "chamari.rathnayake",
     email: "chamari.rathnayake@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Admin"],
     lastLogin: "2026-08-17",
     firstName: "Chamari",
@@ -257,7 +258,7 @@ export const initialUsers: UserRecord[] = [
     username: "suresh.kumar",
     email: "suresh.kumar@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Viewer"],
     lastLogin: "—",
     firstName: "Suresh",
@@ -281,7 +282,7 @@ export const initialUsers: UserRecord[] = [
     username: "ishara.desilva",
     email: "ishara.desilva@oakdms.com",
     tenant: "oak-dms",
-    status: "active",
+    status: "Active",
     roles: ["Approver"],
     lastLogin: "2026-08-15",
     firstName: "Ishara",
@@ -305,7 +306,7 @@ export const initialUsers: UserRecord[] = [
     username: "nimal.herath",
     email: "nimal.herath@oakdms.com",
     tenant: "oak-dms",
-    status: "inactive",
+    status: "Inactive",
     roles: ["Uploader", "Viewer"],
     lastLogin: "2026-05-30",
     firstName: "Nimal",

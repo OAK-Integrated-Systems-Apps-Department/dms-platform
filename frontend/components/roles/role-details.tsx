@@ -1,9 +1,13 @@
+"use client"
+
+import { useMemo } from "react"
 import Link from "next/link"
 import { Pencil, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { useUsersStore } from "@/stores/users-store"
 
-import { assignedUsersByRole, permissionGroups } from "./data"
+import { permissionGroups } from "./data"
 import { RoleStatusBadge } from "./role-status-badge"
 import type { RoleRecord } from "./types"
 
@@ -18,12 +22,29 @@ interface RoleDetailsProps {
  * the role's name/description/status via Edit Role — this screen is
  * reference-only, per the wireframe.
  *
+ * Assigned Users is computed live from `useUsersStore`, matching on
+ * `user.roles.includes(role.name)` — the same field User Management's own
+ * User List and View User screens read — rather than a separate mock
+ * keyed by role id. That separate mock used to drift from the real user
+ * data (same id, different mock person) now that User Management has its
+ * own richer dataset; reading the one canonical source removes that seam.
+ *
+ * The store is selected as the raw `users` array, with the role-name
+ * filter done in a separate `useMemo` — filtering *inside* the zustand
+ * selector would return a brand-new array every render, which breaks
+ * React's `useSyncExternalStore` ("getServerSnapshot should be cached")
+ * with an infinite render loop.
+ *
  * Corner radius is fixed at 10px across every surface on this screen
  * (card, table, badges, buttons) rather than following the app-wide
  * 9px/14px mix used elsewhere in Role Management.
  */
 export function RoleDetails({ role }: RoleDetailsProps) {
-  const assignedUsers = assignedUsersByRole[role.id] ?? []
+  const users = useUsersStore((state) => state.users)
+  const assignedUsers = useMemo(
+    () => users.filter((user) => user.roles.includes(role.name)),
+    [users, role.name]
+  )
 
   const permissionSummary = permissionGroups.map((group) => {
     const count = group.permissions.filter((permission) =>
@@ -120,7 +141,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
               >
                 <td className="px-3.5 py-3 text-[13.5px] font-medium text-foreground">
                   <Link
-                    href={`/admin/users/${user.id}/access-summary`}
+                    href={`/admin/users/${user.id}`}
                     className="text-primary hover:underline"
                   >
                     {user.name}

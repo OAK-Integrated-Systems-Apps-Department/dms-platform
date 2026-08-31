@@ -66,28 +66,30 @@ export function UserEditForm({ user }: UserEditFormProps) {
     let response: Response
     try {
       response = await fetch(`${API_BASE_URL}/api/v1/users/${user.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        displayName,
-        // Passed through unchanged — this form doesn't edit either of
-        // these, but UpdateUserRequest requires both. Real status values
-        // are active/locked/disabled on the backend; the mock "inactive"
-        // here maps to "disabled" as the closest equivalent.
-        mfaEnabled: user.mfaStatus.startsWith("Enabled"),
-        status: user.status === "active" ? "active" : "disabled",
-        // Not yet read by dms-core — see the KNOWN GAP note above.
-        email: values.email,
-        additionalProfile: values.additionalProfile || undefined,
-      }),
-    })
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          displayName,
+          // Passed through unchanged — this form doesn't edit either of
+          // these, but UpdateUserRequest requires both. Real status values
+          // are active/locked/disabled on the backend; the mock "Inactive"
+          // here maps to "disabled" as the closest equivalent.
+          mfaEnabled: user.mfaStatus.startsWith("Enabled"),
+          status: user.status === "Active" ? "active" : "disabled",
+          // Not yet read by dms-core — see the KNOWN GAP note above.
+          email: values.email,
+          additionalProfile: values.additionalProfile || undefined,
+        }),
+      })
     } catch {
       // fetch() throws (rather than resolving with a bad status) when the
       // request never reached a server at all — e.g. the backend isn't
       // running yet. Distinct from a 4xx/5xx below, which means the
       // backend WAS reached and responded.
-      setSubmitError("Could not reach the server. Check that the backend is running and try again.")
+      setSubmitError(
+        "Could not reach the server. Check that the backend is running and try again."
+      )
       return
     }
 
@@ -111,10 +113,16 @@ export function UserEditForm({ user }: UserEditFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]">
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]"
+    >
       {submitError && (
         <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
-          <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
+          <AlertTriangle
+            size={16}
+            className="mt-px shrink-0 text-[var(--rust)]"
+          />
           {submitError}
         </div>
       )}
@@ -124,22 +132,35 @@ export function UserEditForm({ user }: UserEditFormProps) {
           <Label htmlFor="firstName">First name</Label>
           <Input id="firstName" autoComplete="off" {...register("firstName")} />
           {errors.firstName && (
-            <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.firstName.message}</p>
+            <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+              {errors.firstName.message}
+            </p>
           )}
         </div>
         <div>
           <Label htmlFor="lastName">Last name</Label>
           <Input id="lastName" autoComplete="off" {...register("lastName")} />
           {errors.lastName && (
-            <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.lastName.message}</p>
+            <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+              {errors.lastName.message}
+            </p>
           )}
         </div>
       </div>
 
       <div className="mb-5">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" type="email" autoComplete="off" {...register("email")} />
-        {errors.email && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.email.message}</p>}
+        <Input
+          id="email"
+          type="email"
+          autoComplete="off"
+          {...register("email")}
+        />
+        {errors.email && (
+          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+            {errors.email.message}
+          </p>
+        )}
       </div>
 
       <div className="mb-5">
@@ -152,7 +173,12 @@ export function UserEditForm({ user }: UserEditFormProps) {
             Read-only — Keycloak-managed identity field
           </span>
         </Label>
-        <Input value={user.username} readOnly disabled className="cursor-not-allowed border-dashed" />
+        <Input
+          value={user.username}
+          readOnly
+          disabled
+          className="cursor-not-allowed border-dashed"
+        />
       </div>
 
       <div className="mb-5">
@@ -164,9 +190,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
             Optional
           </span>
         </Label>
-        <Textarea placeholder="e.g. department, job title, phone" {...register("additionalProfile")} />
+        <Textarea
+          placeholder="e.g. department, job title, phone"
+          {...register("additionalProfile")}
+        />
         {errors.additionalProfile && (
-          <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.additionalProfile.message}</p>
+          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+            {errors.additionalProfile.message}
+          </p>
         )}
       </div>
 
@@ -190,8 +221,9 @@ export function UserEditForm({ user }: UserEditFormProps) {
       </div>
 
       <p className="mt-[18px] text-center text-[11.5px] leading-[1.6] text-[var(--ink-faint)]">
-        Identity-related fields (username, primary login credential) are governed by Keycloak — this
-        screen exposes only fields DMS is permitted to write.
+        Identity-related fields (username, primary login credential) are
+        governed by Keycloak — this screen exposes only fields DMS is permitted
+        to write.
       </p>
     </form>
   )

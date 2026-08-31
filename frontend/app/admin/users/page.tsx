@@ -28,7 +28,9 @@ export default function UserListPage() {
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "Active" | "Inactive"
+  >("all")
   const [page, setPage] = useState(1)
 
   const filteredUsers = useMemo(() => {
@@ -39,15 +41,20 @@ export default function UserListPage() {
         user.name.toLowerCase().includes(q) ||
         user.username.toLowerCase().includes(q) ||
         user.email.toLowerCase().includes(q)
-      const matchesRole = roleFilter === "all" || user.roles.includes(roleFilter)
-      const matchesStatus = statusFilter === "all" || user.status === statusFilter
+      const matchesRole =
+        roleFilter === "all" || user.roles.includes(roleFilter)
+      const matchesStatus =
+        statusFilter === "all" || user.status === statusFilter
       return matchesQuery && matchesRole && matchesStatus
     })
   }, [users, query, roleFilter, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
-  const pageUsers = filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const pageUsers = filteredUsers.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  )
 
   function handleFilterChange(update: () => void) {
     update()
@@ -66,14 +73,14 @@ export default function UserListPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mb-[22px] max-w-[680px]">
-          <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-            User Management — User List
-          </h1>
-          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            Users within the current tenant. Search or filter by role and status, add a user, or view,
-            edit, and activate/deactivate existing accounts.
-          </p>
-        </div>
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+          User Management — User List
+        </h1>
+        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          Users within the current tenant. Search or filter by role and status,
+          add a user, or view, edit, and activate/deactivate existing accounts.
+        </p>
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <div className="relative min-w-[220px] flex-1">
@@ -84,7 +91,9 @@ export default function UserListPage() {
           <input
             type="text"
             value={query}
-            onChange={(event) => handleFilterChange(() => setQuery(event.target.value))}
+            onChange={(event) =>
+              handleFilterChange(() => setQuery(event.target.value))
+            }
             placeholder="Search by name, username, or email…"
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
@@ -93,7 +102,9 @@ export default function UserListPage() {
         <div className="relative w-[170px]">
           <select
             value={roleFilter}
-            onChange={(event) => handleFilterChange(() => setRoleFilter(event.target.value))}
+            onChange={(event) =>
+              handleFilterChange(() => setRoleFilter(event.target.value))
+            }
             className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {ROLE_OPTIONS.map((role) => (
@@ -112,13 +123,17 @@ export default function UserListPage() {
           <select
             value={statusFilter}
             onChange={(event) =>
-              handleFilterChange(() => setStatusFilter(event.target.value as "all" | "active" | "inactive"))
+              handleFilterChange(() =>
+                setStatusFilter(
+                  event.target.value as "all" | "Active" | "Inactive"
+                )
+              )
             }
             className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             <option value="all">All statuses</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
           </select>
           <ChevronDown
             size={14}
@@ -135,7 +150,12 @@ export default function UserListPage() {
         </Link>
       </div>
 
-      <UsersTable users={pageUsers} onToggleStatus={toggleStatus} onView={handleView} onEdit={handleEdit} />
+      <UsersTable
+        users={pageUsers}
+        onToggleStatus={toggleStatus}
+        onView={handleView}
+        onEdit={handleEdit}
+      />
 
       {totalPages > 1 && (
         <div className="mt-3.5 flex items-center justify-end gap-1.5">
@@ -147,7 +167,7 @@ export default function UserListPage() {
               className={
                 "flex size-7 items-center justify-center rounded-[6px] border text-[12.5px] " +
                 (n === currentPage
-                  ? "border-primary bg-primary-tint font-semibold text-primary"
+                  ? "bg-primary-tint border-primary font-semibold text-primary"
                   : "border-border bg-card text-muted-foreground")
               }
             >
