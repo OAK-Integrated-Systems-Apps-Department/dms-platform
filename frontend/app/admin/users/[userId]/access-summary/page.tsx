@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
-import { users } from "@/components/users/data"
+import { useUsersStore } from "@/stores/users-store"
 
 /**
  * User Access Summary (A1) — administrator view of what a user can
@@ -17,7 +17,9 @@ import { users } from "@/components/users/data"
  */
 export default function UserAccessSummaryPage() {
   const params = useParams<{ userId: string }>()
-  const user = users.find((u) => u.id === params.userId)
+  const user = useUsersStore((state) =>
+    state.users.find((u) => u.id === params.userId)
+  )
 
   if (!user) {
     notFound()

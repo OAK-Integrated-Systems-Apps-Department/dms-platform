@@ -1,12 +1,14 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Check, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { assignedUsersByRole, permissionGroups } from "@/components/roles/data"
 import { useRolesStore } from "@/stores/roles-store"
+import { useUsersStore } from "@/stores/users-store"
 
+import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
 
 interface UserAccessSummaryProps {
@@ -32,6 +34,8 @@ interface UserAccessSummaryProps {
  */
 export function UserAccessSummary({ user }: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
+  const toggleUserStatus = useUsersStore((state) => state.toggleStatus)
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
 
   const rolesHeld = useMemo(
     () =>
@@ -60,18 +64,40 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
   return (
     <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
-      <div className="mb-6 flex items-center gap-4">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-primary font-heading text-[18px] font-bold text-primary-foreground">
-          {initials}
-        </span>
-        <div>
-          <p className="mb-0.5 font-heading text-[17px] font-semibold">
-            {user.name}
-          </p>
-          <p className="font-mono text-[12px] text-muted-foreground">
-            {user.username} · Tenant: {user.tenant}
-          </p>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-4">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-primary font-heading text-[18px] font-bold text-primary-foreground">
+            {initials}
+          </span>
+          <div>
+            <div className="mb-0.5 flex items-center gap-2">
+              <p className="font-heading text-[17px] font-semibold">
+                {user.name}
+              </p>
+              <Badge
+                variant={user.status === "Active" ? "default" : "muted"}
+                className="gap-1.5 rounded-[10px]"
+              >
+                <span className="size-[5px] rounded-full bg-current" />
+                {user.status}
+              </Badge>
+            </div>
+            <p className="font-mono text-[12px] text-muted-foreground">
+              {user.username} · Tenant: {user.tenant}
+            </p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setStatusDialogOpen(true)}
+          className={
+            user.status === "Active"
+              ? "shrink-0 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+              : "shrink-0 rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+          }
+        >
+          {user.status === "Active" ? "Deactivate User" : "Activate User"}
+        </button>
       </div>
 
       {/* Roles held */}
@@ -149,6 +175,13 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
         Read-only, computed view — resolves overlapping or conflicting
         permissions across all assigned roles into a single effective set.
       </p>
+
+      <UserStatusDialog
+        user={user}
+        open={statusDialogOpen}
+        onOpenChange={setStatusDialogOpen}
+        onConfirm={() => toggleUserStatus(user.id)}
+      />
     </div>
   )
 }

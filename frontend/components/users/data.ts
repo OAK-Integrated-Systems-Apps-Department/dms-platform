@@ -5,8 +5,12 @@ import type { UserRecord } from "./types"
  * `components/roles/data.ts` so the same person appears consistently in
  * Role Details' Assigned Users table and here. Swap for a
  * `GET /admin/realms/{realm}/users` fetch/query hook later.
+ *
+ * Named `initialUsers` (not `users`) to match `initialRoles` in
+ * `components/roles/data.ts` — both are seed data for a zustand store
+ * (`stores/users-store.ts` / `stores/roles-store.ts`), not the live list.
  */
-export const users: UserRecord[] = [
+export const initialUsers: UserRecord[] = [
   {
     id: "u-1",
     name: "Priya Raman",
