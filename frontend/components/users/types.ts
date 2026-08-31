@@ -2,7 +2,7 @@ import type { AssignedUserStatus } from "@/components/roles/types"
 
 /**
  * Shared types for the User Management feature (User List, View User, User
- * MFA Management, User Sessions).
+ * MFA Management, User Sessions, User Activity / Audit History).
  *
  * Kept separate from components/roles/types.ts the same way that folder
  * is kept separate from components/dashboard/types.ts — one feature, one
@@ -33,6 +33,26 @@ export interface UserActivityEntry {
   text: string
 
   actor: string
+
+  /**
+   * Coarse category, used by User Activity / Audit History (U10)'s
+   * "Event type" filter. The View User screen's short activity list
+   * ignores this and just renders every entry.
+   *
+   * Kept broader than the wireframe's four named examples (login, failed
+   * login, role change, password reset) since `recentActivity` already
+   * carries ordinary document actions too — one array backs both the
+   * short list on View User and the full filterable feed on U10.
+   */
+  type:
+    | "login"
+    | "failed-login"
+    | "role-change"
+    | "status-change"
+    | "password-reset"
+    | "mfa"
+    | "document"
+    | "other"
 }
 
 /**

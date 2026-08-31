@@ -4,9 +4,11 @@
  */
 export * from "./access-summary"
 export * from "./data"
+export * from "./render-activity-text"
 export * from "./role-multi-select"
 export * from "./schema"
 export * from "./types"
+export * from "./user-audit-history"
 export * from "./user-detail-view"
 export * from "./user-edit-form"
 export * from "./user-invite-form"

@@ -1,9 +1,10 @@
-import { Fragment, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { KeyRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 
+import { renderActivityText } from "./render-activity-text"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
@@ -21,20 +22,6 @@ function initials(name: string): string {
     .join("")
     .slice(0, 2)
     .toUpperCase()
-}
-
-/** Renders `**bold**` segments as <strong> — matches the mockup's <b> tags in activity text. */
-function renderActivityText(text: string) {
-  const parts = text.split(/\*\*(.+?)\*\*/g)
-  return parts.map((part, i) =>
-    i % 2 === 1 ? (
-      <strong key={i} className="font-semibold text-foreground">
-        {part}
-      </strong>
-    ) : (
-      <Fragment key={i}>{part}</Fragment>
-    )
-  )
 }
 
 function InfoItem({
@@ -225,6 +212,12 @@ export function UserDetailView({
             className="text-[12.5px] font-semibold text-primary hover:underline"
           >
             Manage Sessions →
+          </Link>
+          <Link
+            href={`/admin/users/${user.id}/activity`}
+            className="text-[12.5px] font-semibold text-primary hover:underline"
+          >
+            View Audit History →
           </Link>
         </div>
         <Link

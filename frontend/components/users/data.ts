@@ -35,16 +35,25 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 1,
     recentActivity: [
       {
+        id: "a100",
+        time: "2026-08-24, 08:04",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-24, 08:40",
         text: "Approved **Q3 Board Resolution.pdf**",
         actor: "self / web",
+        type: "document",
       },
       {
         id: "a2",
         time: "2026-08-19, 14:12",
         text: "Role **Admin** granted",
         actor: "system / admin",
+        type: "role-change",
       },
     ],
     mfaEnrolled: true,
@@ -78,10 +87,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 2,
     recentActivity: [
       {
+        id: "a101",
+        time: "2026-08-23, 08:05",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-23, 11:05",
         text: "Reviewed **Audit Findings — H1 2026.pdf**",
         actor: "self / web",
+        type: "document",
       },
     ],
     mfaEnrolled: true,
@@ -122,22 +139,32 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 2,
     recentActivity: [
       {
+        id: "a102",
+        time: "2026-08-22, 08:00",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-22, 09:14",
         text: "Approved **Vendor MSA — Acme Textiles.pdf**",
         actor: "self / web",
+        type: "document",
       },
       {
         id: "a2",
         time: "2026-08-20, 16:02",
         text: "Uploaded **Supplier Onboarding — Ceylon Foods.pdf**",
         actor: "self / web",
+        type: "document",
       },
       {
         id: "a3",
         time: "2026-07-11, 11:47",
         text: "Role **Uploader** granted",
         actor: "system / admin",
+        type: "role-change",
       },
     ],
     mfaEnrolled: true,
@@ -178,10 +205,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 0,
     recentActivity: [
       {
+        id: "a103",
+        time: "2026-07-11, 08:01",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-07-11, 09:30",
         text: "Account **deactivated**",
         actor: "system / admin",
+        type: "status-change",
       },
     ],
     mfaEnrolled: false,
@@ -207,10 +242,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 1,
     recentActivity: [
       {
+        id: "a104",
+        time: "2026-08-20, 08:02",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-20, 10:18",
         text: "Uploaded **Warehouse Lease Renewal.pdf**",
         actor: "self / web",
+        type: "document",
       },
     ],
     mfaEnrolled: true,
@@ -244,10 +287,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 1,
     recentActivity: [
       {
+        id: "a105",
+        time: "2026-08-19, 08:03",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-19, 15:47",
         text: "Viewed **Insurance Policy 2026.pdf**",
         actor: "self / web",
+        type: "document",
       },
     ],
     mfaEnrolled: false,
@@ -281,10 +332,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 0,
     recentActivity: [
       {
+        id: "a106",
+        time: "2026-06-02, 08:04",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-06-02, 13:00",
         text: "Account **deactivated**",
         actor: "system / admin",
+        type: "status-change",
       },
     ],
     mfaEnrolled: true,
@@ -310,10 +369,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 1,
     recentActivity: [
       {
+        id: "a107",
+        time: "2026-08-18, 08:05",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-18, 09:02",
         text: "Uploaded **Fleet Maintenance Log — July.pdf**",
         actor: "self / web",
+        type: "document",
       },
     ],
     mfaEnrolled: false,
@@ -347,10 +414,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 3,
     recentActivity: [
       {
+        id: "a108",
+        time: "2026-08-17, 08:00",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-17, 17:22",
         text: "Role **Admin** granted to **Priyanka Fernando**",
         actor: "self / web",
+        type: "role-change",
       },
     ],
     mfaEnrolled: true,
@@ -402,6 +477,7 @@ export const initialUsers: UserRecord[] = [
         time: "2026-08-10, 09:00",
         text: "Account created — invitation email sent",
         actor: "system / admin",
+        type: "status-change",
       },
     ],
     mfaEnrolled: false,
@@ -427,10 +503,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 1,
     recentActivity: [
       {
+        id: "a109",
+        time: "2026-08-15, 08:01",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-08-15, 12:37",
         text: "Approved **NDA — Horizon Freight.pdf**",
         actor: "self / web",
+        type: "document",
       },
     ],
     mfaEnrolled: true,
@@ -464,10 +548,18 @@ export const initialUsers: UserRecord[] = [
     activeSessions: 0,
     recentActivity: [
       {
+        id: "a110",
+        time: "2026-05-30, 08:02",
+        text: "Signed in successfully",
+        actor: "self / web",
+        type: "login",
+      },
+      {
         id: "a1",
         time: "2026-05-30, 10:00",
         text: "Account **deactivated**",
         actor: "system / admin",
+        type: "status-change",
       },
     ],
     mfaEnrolled: false,
