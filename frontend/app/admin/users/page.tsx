@@ -19,12 +19,14 @@ const PAGE_SIZE = 5
  * add a user (routes to /admin/users/new), view a user's full detail
  * (routes to /admin/users/[userId], per dms-view-user.html), edit a
  * user's profile (routes to /admin/users/[userId]/edit, per
- * dms-edit-user.html), or activate/deactivate an existing account inline.
+ * dms-edit-user.html), activate/deactivate an existing account inline, or
+ * trigger a password reset (U7) inline.
  */
 export default function UserListPage() {
   const router = useRouter()
   const users = useUsersStore((state) => state.users)
   const toggleStatus = useUsersStore((state) => state.toggleStatus)
+  const sendPasswordReset = useUsersStore((state) => state.sendPasswordReset)
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
@@ -153,6 +155,7 @@ export default function UserListPage() {
       <UsersTable
         users={pageUsers}
         onToggleStatus={toggleStatus}
+        onResetPassword={sendPasswordReset}
         onView={handleView}
         onEdit={handleEdit}
       />

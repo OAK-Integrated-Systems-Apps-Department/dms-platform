@@ -1,17 +1,19 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, Pencil } from "lucide-react"
+import { Eye, KeyRound, Pencil } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
+import { UserResetPasswordDialog } from "./user-reset-password-dialog"
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
 
 interface UsersTableProps {
   users: UserRecord[]
   onToggleStatus: (id: string) => void
+  onResetPassword: (id: string) => void
   onView: (user: UserRecord) => void
   onEdit: (user: UserRecord) => void
 }
@@ -29,17 +31,21 @@ const HEADERS = [
 /**
  * Name / Username / Email / Role(s) / Status / Last login / Actions — per
  * dms-admin-users.html. Status changes always go through the confirmation
- * dialog (U6 / `UserStatusDialog`) — there's no instant switch here, since
- * deactivating blocks a real person's sign-in and shouldn't be a
- * one-click accident.
+ * dialog (U6 / `UserStatusDialog`), and password resets go through U7 /
+ * `UserResetPasswordDialog` — there's no instant action here, since both
+ * affect a real person's account and shouldn't be one-click accidents.
  */
 export function UsersTable({
   users,
   onToggleStatus,
+  onResetPassword,
   onView,
   onEdit,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
+  const [pendingResetUser, setPendingResetUser] = useState<UserRecord | null>(
+    null
+  )
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
@@ -126,6 +132,14 @@ export function UsersTable({
                     </button>
                     <button
                       type="button"
+                      onClick={() => setPendingResetUser(user)}
+                      className="flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+                    >
+                      <KeyRound size={13} />
+                      Reset Password
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setPendingUser(user)}
                       className={cn(
                         "text-[12.5px] font-semibold hover:underline",
@@ -154,6 +168,20 @@ export function UsersTable({
           onConfirm={() => {
             onToggleStatus(pendingUser.id)
             setPendingUser(null)
+          }}
+        />
+      )}
+
+      {pendingResetUser && (
+        <UserResetPasswordDialog
+          user={pendingResetUser}
+          open={pendingResetUser !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingResetUser(null)
+          }}
+          onConfirm={() => {
+            onResetPassword(pendingResetUser.id)
+            setPendingResetUser(null)
           }}
         />
       )}

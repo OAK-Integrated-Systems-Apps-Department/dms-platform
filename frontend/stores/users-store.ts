@@ -9,6 +9,8 @@ interface UsersState {
 
   toggleStatus: (id: string) => void
 
+  sendPasswordReset: (id: string) => void
+
   updateUser: (
     id: string,
     updates: {
@@ -21,9 +23,9 @@ interface UsersState {
 }
 
 /**
- * In-memory user store — swap `initialUsers` / `toggleStatus` for real API
- * calls (React Query + `PUT /admin/realms/{realm}/users/{id}`, body
- * `{ enabled }`) once the User Management endpoints exist.
+ * In-memory user store — swap `initialUsers` / `toggleStatus` /
+ * `sendPasswordReset` for real API calls (React Query + Keycloak admin
+ * endpoints) once the User Management endpoints exist.
  *
  * Mirrors `stores/roles-store.ts`'s shape; zustand is already a project
  * dependency.
@@ -45,6 +47,14 @@ export const useUsersStore = create<UsersState>((set) => ({
           : user
       ),
     }))
+  },
+
+  sendPasswordReset: (id) => {
+    // Placeholder for `PUT /admin/realms/{realm}/users/{id}/reset-password`
+    // or `.../execute-actions-email` (U7). Fire-and-forget from DMS's side
+    // — Keycloak owns the credential, so there's no local field to update
+    // here the way `toggleStatus` updates `status`.
+    console.info(`Password reset requested for user ${id}`)
   },
 
   updateUser: (id, updates) => {

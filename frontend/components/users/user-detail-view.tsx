@@ -1,14 +1,17 @@
 import { Fragment, useState } from "react"
 import Link from "next/link"
+import { KeyRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 
+import { UserResetPasswordDialog } from "./user-reset-password-dialog"
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
 
 interface UserDetailViewProps {
   user: UserRecord
   onToggleStatus: () => void
+  onResetPassword: () => void
 }
 
 function initials(name: string): string {
@@ -71,11 +74,17 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 /**
  * View User — per dms-view-user.html. Read-only; "Edit" links to the edit
- * screen. The status control opens the U6 confirmation dialog rather than
- * toggling instantly — same reasoning as `UsersTable`.
+ * screen. The status control opens the U6 confirmation dialog, and Reset
+ * Password opens the U7 confirmation dialog, rather than either acting
+ * instantly — same reasoning as `UsersTable`.
  */
-export function UserDetailView({ user, onToggleStatus }: UserDetailViewProps) {
+export function UserDetailView({
+  user,
+  onToggleStatus,
+  onResetPassword,
+}: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
 
   return (
     <div className="rounded-[14px] border border-border bg-card p-[26px] pt-[26px] pb-[28px] shadow-[var(--ledger-shadow)]">
@@ -98,17 +107,27 @@ export function UserDetailView({ user, onToggleStatus }: UserDetailViewProps) {
             {user.username} &nbsp;·&nbsp; {user.email}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setStatusDialogOpen(true)}
-          className={
-            user.status === "Active"
-              ? "shrink-0 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-              : "shrink-0 rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
-          }
-        >
-          {user.status === "Active" ? "Deactivate User" : "Activate User"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setResetPasswordDialogOpen(true)}
+            className="flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+          >
+            <KeyRound size={14} />
+            Reset Password
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusDialogOpen(true)}
+            className={
+              user.status === "Active"
+                ? "rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                : "rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+            }
+          >
+            {user.status === "Active" ? "Deactivate User" : "Activate User"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-[26px]">
@@ -209,6 +228,16 @@ export function UserDetailView({ user, onToggleStatus }: UserDetailViewProps) {
         onConfirm={() => {
           onToggleStatus()
           setStatusDialogOpen(false)
+        }}
+      />
+
+      <UserResetPasswordDialog
+        user={user}
+        open={resetPasswordDialogOpen}
+        onOpenChange={setResetPasswordDialogOpen}
+        onConfirm={() => {
+          onResetPassword()
+          setResetPasswordDialogOpen(false)
         }}
       />
     </div>
