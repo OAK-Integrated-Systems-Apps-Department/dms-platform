@@ -1,7 +1,8 @@
 import type { AssignedUserStatus } from "@/components/roles/types"
 
 /**
- * Shared types for the User Management feature (User List, View User).
+ * Shared types for the User Management feature (User List, View User, User
+ * MFA Management).
  *
  * Kept separate from components/roles/types.ts the same way that folder
  * is kept separate from components/dashboard/types.ts — one feature, one
@@ -86,4 +87,34 @@ export interface UserRecord {
   lastPasswordChange: string
   activeSessions: number
   recentActivity: UserActivityEntry[]
+
+  // --- MFA-management-only fields, shown on User MFA Management (U8) ---
+
+  /**
+   * Whether the user currently has an MFA credential enrolled. Drives the
+   * status chip on U8; `mfaStatus` above stays a free-text summary for the
+   * View User screen, this is the structured flag U8's chip/actions
+   * branch on.
+   */
+  mfaEnrolled: boolean
+
+  /**
+   * Registered credential type(s), e.g. "Authenticator app (TOTP)".
+   * Empty when `mfaEnrolled` is false.
+   *
+   * Sourced from `GET /admin/realms/{realm}/users/{id}/credentials` in a
+   * real integration.
+   */
+  mfaMethods: string[]
+
+  /**
+   * ISO date string, or null when `mfaEnrolled` is false.
+   */
+  mfaEnrolledOn: string | null
+
+  /**
+   * Whether the user's role/tenant currently mandates MFA. Independent of
+   * `mfaEnrolled` — a policy can require MFA before the user has enrolled.
+   */
+  mfaRequiredByPolicy: boolean
 }

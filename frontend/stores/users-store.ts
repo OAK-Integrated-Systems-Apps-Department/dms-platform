@@ -11,6 +11,10 @@ interface UsersState {
 
   sendPasswordReset: (id: string) => void
 
+  requireMfaSetup: (id: string) => void
+
+  resetMfaCredentials: (id: string) => void
+
   updateUser: (
     id: string,
     updates: {
@@ -24,8 +28,9 @@ interface UsersState {
 
 /**
  * In-memory user store — swap `initialUsers` / `toggleStatus` /
- * `sendPasswordReset` for real API calls (React Query + Keycloak admin
- * endpoints) once the User Management endpoints exist.
+ * `sendPasswordReset` / `requireMfaSetup` / `resetMfaCredentials` for real
+ * API calls (React Query + Keycloak admin endpoints) once the User
+ * Management endpoints exist.
  *
  * Mirrors `stores/roles-store.ts`'s shape; zustand is already a project
  * dependency.
@@ -55,6 +60,34 @@ export const useUsersStore = create<UsersState>((set) => ({
     // — Keycloak owns the credential, so there's no local field to update
     // here the way `toggleStatus` updates `status`.
     console.info(`Password reset requested for user ${id}`)
+  },
+
+  requireMfaSetup: (id) => {
+    // Placeholder for `PUT /admin/realms/{realm}/users/{id}` body
+    // `{ requiredActions: ["CONFIGURE_TOTP"] }` (U8). Doesn't change
+    // enrollment state today — it takes effect on the user's next
+    // sign-in — so there's no local field to flip yet, same reasoning as
+    // `sendPasswordReset`.
+    console.info(`MFA setup required for user ${id}`)
+  },
+
+  resetMfaCredentials: (id) => {
+    // `DELETE /admin/realms/{realm}/users/{id}/credentials/{credentialId}`
+    // (U8). Unlike the two placeholders above, this one has an immediate,
+    // locally-visible effect, so it's modeled as a real state update
+    // (mirrors `toggleStatus`) rather than a no-op.
+    set((state) => ({
+      users: state.users.map((user) =>
+        user.id === id
+          ? {
+              ...user,
+              mfaEnrolled: false,
+              mfaMethods: [],
+              mfaEnrolledOn: null,
+            }
+          : user
+      ),
+    }))
   },
 
   updateUser: (id, updates) => {

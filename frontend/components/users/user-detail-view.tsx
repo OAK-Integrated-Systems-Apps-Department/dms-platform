@@ -207,12 +207,20 @@ export function UserDetailView({
       </div>
 
       <div className="mt-6 flex items-center justify-between border-t border-dashed border-border pt-5">
-        <Link
-          href={`/admin/users/${user.id}/access-summary`}
-          className="text-[12.5px] font-semibold text-primary hover:underline"
-        >
-          View effective permissions →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href={`/admin/users/${user.id}/access-summary`}
+            className="text-[12.5px] font-semibold text-primary hover:underline"
+          >
+            View effective permissions →
+          </Link>
+          <Link
+            href={`/admin/users/${user.id}/mfa`}
+            className="text-[12.5px] font-semibold text-primary hover:underline"
+          >
+            Manage MFA →
+          </Link>
+        </div>
         <Link
           href={`/admin/users/${user.id}/edit`}
           className="rounded-[9px] border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
