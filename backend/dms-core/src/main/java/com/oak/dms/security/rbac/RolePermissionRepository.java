@@ -24,18 +24,21 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
     @Query("select rp from RolePermission rp where rp.rolePermissionId = :id and rp.tenantId = :tenantId")
     Optional<RolePermission> findByIdAndTenantId(@Param("id") UUID rolePermissionId, @Param("tenantId") UUID tenantId);
 
-    boolean existsByRoleIdAndPermissionCodeAndResourceScope(UUID roleId, String permissionCode, String resourceScope);
+    boolean existsByRoleIdAndPermissionIdAndResourceScope(UUID roleId, UUID permissionId, String resourceScope);
 
     /**
      * Effective permission codes for a user across all of their role
-     * assignments in the given tenant. Used by the authorization layer
-     * to build the permission set for a request.
+     * assignments in the given tenant, resolved through the Permission
+     * catalog now that role_permissions references it by id rather than
+     * storing the code as a free-form string. Used by the authorization
+     * layer to build the permission set for a request.
      */
     @Query("""
-            select distinct rp.permissionCode
+            select distinct p.permissionCode
             from RolePermission rp
             join UserRole ur on ur.roleId = rp.roleId
-            where ur.userId = :userId and ur.tenantId = :tenantId
+            join Permission p on p.permissionId = rp.permissionId
+            where ur.userId = :userId and ur.tenantId = :tenantId and p.deleted = false
             """)
     List<String> findEffectivePermissionCodes(@Param("userId") UUID userId, @Param("tenantId") UUID tenantId);
 }

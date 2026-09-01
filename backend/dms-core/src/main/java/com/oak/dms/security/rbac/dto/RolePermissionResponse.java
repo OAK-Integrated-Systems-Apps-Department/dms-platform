@@ -10,6 +10,7 @@ public record RolePermissionResponse(
         UUID rolePermissionId,
         UUID tenantId,
         UUID roleId,
+        UUID permissionId,
         String permissionCode,
         String resourceScope,
         OffsetDateTime createdAt
