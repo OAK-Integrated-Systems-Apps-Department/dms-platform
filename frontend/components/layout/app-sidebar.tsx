@@ -23,6 +23,8 @@ import { Toggle } from "@/components/ui/toggle"
 interface AppSidebarProps {
   activeLabel?: string
   onNavigate?: (label: string) => void
+  /** Defaults to true (visible). When false, collapses to zero width rather than unmounting. */
+  open?: boolean
 }
 
 /**
@@ -33,6 +35,7 @@ interface AppSidebarProps {
 export function AppSidebar({
   activeLabel = "My Documents",
   onNavigate,
+  open = true,
 }: AppSidebarProps) {
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
@@ -57,7 +60,14 @@ export function AppSidebar({
   }, [])
 
   return (
-    <aside className="sticky top-0 flex h-svh w-[248px] shrink-0 flex-col bg-sidebar px-3.5 py-[22px] text-sidebar-foreground">
+    <aside
+      className={cn(
+        "sticky top-0 flex h-svh shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,padding] duration-200 ease-in-out",
+        open ? "w-[248px] px-3.5 py-[22px]" : "w-0 px-0 py-[22px]"
+      )}
+      aria-hidden={!open}
+    >
+      <div className="flex h-full w-[221px] shrink-0 flex-col">
       <div className="mb-[30px] flex items-center gap-2.5 px-2">
         <div className="flex size-[34px] items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary">
           <Layers size={18} color="var(--sidebar-primary-foreground)" />
@@ -220,6 +230,7 @@ export function AppSidebar({
           <Settings size={16.5} />
           Settings
         </button>
+      </div>
       </div>
     </aside>
   )
