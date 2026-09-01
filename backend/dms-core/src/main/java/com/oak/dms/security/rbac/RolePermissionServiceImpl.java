@@ -23,7 +23,10 @@ import java.util.UUID;
  * See {@link RolePermissionService}. Grants are immutable once created -
  * revoking removes the row outright rather than editing it in place, which
  * is why {@link com.oak.dms.security.rbac.RolePermission} has no update
- * columns.
+ * columns. This is the write side of the Role &lt;-&gt; Permission
+ * many-to-many join: {@link #grantPermission} adds a row, {@link #revokePermission}
+ * removes one, and the same permission can be granted to any number of
+ * different roles independently.
  */
 @Slf4j
 @Service
@@ -33,29 +36,32 @@ public class RolePermissionServiceImpl implements RolePermissionService {
 
     private final RolePermissionRepository rolePermissionRepository;
     private final RoleRepository roleRepository;
+    private final PermissionRepository permissionRepository;
     private final RolePermissionMapper rolePermissionMapper;
 
     @Override
     public RolePermissionResponse grantPermission(UUID roleId, GrantPermissionRequest request) {
         Role role = requireOwnedRole(roleId);
+        Permission permission = permissionRepository.findByPermissionIdAndDeletedFalse(request.permissionId())
+                .orElseThrow(() -> new ResourceNotFoundException("Permission", request.permissionId()));
 
-        if (rolePermissionRepository.existsByRoleIdAndPermissionCodeAndResourceScope(
-                role.getRoleId(), request.permissionCode(), request.resourceScope())) {
+        if (rolePermissionRepository.existsByRoleIdAndPermissionIdAndResourceScope(
+                role.getRoleId(), permission.getPermissionId(), request.resourceScope())) {
             throw new DuplicateResourceException(
-                    "Role already has permission " + request.permissionCode()
+                    "Role already has permission " + permission.getPermissionCode()
                             + (request.resourceScope() != null ? " on scope " + request.resourceScope() : ""));
         }
 
         RolePermission grant = RolePermission.builder()
                 .tenantId(role.getTenantId())
                 .roleId(role.getRoleId())
-                .permissionCode(request.permissionCode())
+                .permissionId(permission.getPermissionId())
                 .resourceScope(request.resourceScope())
                 .build();
 
         RolePermission saved = rolePermissionRepository.save(grant);
-        log.info("Granted permission {} to role {}", request.permissionCode(), roleId);
-        return rolePermissionMapper.toResponse(saved);
+        log.info("Granted permission {} to role {}", permission.getPermissionCode(), roleId);
+        return rolePermissionMapper.toResponse(saved, permission.getPermissionCode());
     }
 
     @Override
@@ -63,7 +69,12 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     public List<RolePermissionResponse> listPermissionsForRole(UUID roleId) {
         requireOwnedRole(roleId);
         return rolePermissionRepository.findAllByRoleId(roleId).stream()
-                .map(rolePermissionMapper::toResponse)
+                .map(rp -> {
+                    String permissionCode = permissionRepository.findById(rp.getPermissionId())
+                            .map(Permission::getPermissionCode)
+                            .orElse("UNKNOWN");
+                    return rolePermissionMapper.toResponse(rp, permissionCode);
+                })
                 .toList();
     }
 

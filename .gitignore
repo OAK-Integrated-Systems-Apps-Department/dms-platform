@@ -2,3 +2,7 @@ infra/local/.env
 .idea/
 infra/secrets/*.env
 !infra/secrets/*.enc.env
+
+# Ignore dms-core encrypted secrets file
+infra/secrets/dms-core.secrets.enc.env
+infra/secrets/dms-core.secrets.env
