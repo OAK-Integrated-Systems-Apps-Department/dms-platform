@@ -1,9 +1,14 @@
--- Seeds the platform-wide permission_modules and permission_actions
--- catalog from the DMS Modularized Requirement Registry (32 functional
--- modules, 92 capability-level actions). Module codes match the FR-ID
--- prefixes used in the requirement registry (e.g. ASM = Access and
--- Security Management). Fine-grained CRUD steps within an action are
+-- Backfills descriptions onto the permission_modules and permission_actions
+-- catalog seeded in V6, from the DMS Modularized Requirement Registry
+-- (32 functional modules, 92 capability-level actions). Module codes match
+-- the FR-ID prefixes used in the requirement registry (e.g. ASM = Access
+-- and Security Management). Fine-grained CRUD steps within an action are
 -- intentionally excluded, per the registry.
+--
+-- This migration assumes V6 already inserted all 32 modules and 92
+-- actions. It uses ON CONFLICT ... DO UPDATE (not DO NOTHING) so the
+-- description column actually gets populated on those existing rows
+-- instead of being silently skipped.
 --
 -- Checked for duplicates before writing this migration: no duplicate
 -- module_code, no duplicate (module, action_code) pair, and no duplicate
@@ -45,13 +50,16 @@ INSERT INTO permission_modules (module_code, module_name, description) VALUES
     ('BRDR', 'Backup, Restoration and Disaster Recovery', 'Manages backup configuration and executes restoration and disaster recovery procedures.'),
     ('RBR', 'Recycle Bin and Recovery', 'Manages deleted documents in the recycle bin, including restoration, permanent purge, and retention.'),
     ('IAM', 'Third-Party Integration', 'Manages API access, webhooks, and connectors used to integrate with third-party systems.')
-ON CONFLICT (module_code) DO NOTHING;
+ON CONFLICT (module_code) DO UPDATE
+    SET description = EXCLUDED.description;
 
 -- =====================================================================
 -- permission_actions
 -- =====================================================================
 -- Inserted via a VALUES list joined back to permission_modules by
 -- module_code, so this migration doesn't need to guess module_id UUIDs.
+-- ON CONFLICT ... DO UPDATE backfills description onto the rows V6
+-- already created (DO NOTHING would silently skip them).
 INSERT INTO permission_actions (module_id, action_code, action_name, description)
 SELECT pm.module_id, v.action_code, v.action_name, v.description
 FROM (VALUES
@@ -149,28 +157,45 @@ FROM (VALUES
     ('IAM', 'VIEW_INTEGRATION_ACTIVITY_LOG', 'View Integration Activity Log', 'View the audit log of activity performed by third-party integrations.')
 ) AS v(module_code, action_code, action_name, description)
 JOIN permission_modules pm ON pm.module_code = v.module_code
-ON CONFLICT (module_id, action_code) DO NOTHING;
+ON CONFLICT (module_id, action_code) DO UPDATE
+    SET description = EXCLUDED.description;
 
 -- =====================================================================
 -- Post-insert sanity check: row counts must match the source registry
--- exactly (32 modules, 92 actions). Catches a silent ON CONFLICT skip
--- from a pre-existing row this migration didn't expect.
+-- exactly (32 modules, 92 actions), and every row must now have a
+-- non-null description. Catches a silent skip or a row this migration
+-- didn't expect.
 -- =====================================================================
 DO $$
 DECLARE
     module_count INT;
     action_count INT;
+    modules_missing_description INT;
+    actions_missing_description INT;
 BEGIN
     SELECT COUNT(*) INTO module_count FROM permission_modules
         WHERE module_code IN ('ASM', 'DE', 'DW', 'DSI', 'SEA', 'DOT', 'OTUA', 'DMA', 'FIE', 'VMSBDI', 'DFUP', 'OS', 'DSC', 'DLM', 'MDTM', 'DRM', 'DVC', 'CICO', 'WA', 'N', 'DSR', 'DPRM', 'PID', 'BD', 'OMD', 'SHAD', 'CRG', 'CRM', 'ABDR', 'BRDR', 'RBR', 'IAM');
     SELECT COUNT(*) INTO action_count FROM permission_actions pa
         JOIN permission_modules pm ON pm.module_id = pa.module_id
         WHERE pm.module_code IN ('ASM', 'DE', 'DW', 'DSI', 'SEA', 'DOT', 'OTUA', 'DMA', 'FIE', 'VMSBDI', 'DFUP', 'OS', 'DSC', 'DLM', 'MDTM', 'DRM', 'DVC', 'CICO', 'WA', 'N', 'DSR', 'DPRM', 'PID', 'BD', 'OMD', 'SHAD', 'CRG', 'CRM', 'ABDR', 'BRDR', 'RBR', 'IAM');
+    SELECT COUNT(*) INTO modules_missing_description FROM permission_modules
+        WHERE module_code IN ('ASM', 'DE', 'DW', 'DSI', 'SEA', 'DOT', 'OTUA', 'DMA', 'FIE', 'VMSBDI', 'DFUP', 'OS', 'DSC', 'DLM', 'MDTM', 'DRM', 'DVC', 'CICO', 'WA', 'N', 'DSR', 'DPRM', 'PID', 'BD', 'OMD', 'SHAD', 'CRG', 'CRM', 'ABDR', 'BRDR', 'RBR', 'IAM')
+        AND (description IS NULL OR description = '');
+    SELECT COUNT(*) INTO actions_missing_description FROM permission_actions pa
+        JOIN permission_modules pm ON pm.module_id = pa.module_id
+        WHERE pm.module_code IN ('ASM', 'DE', 'DW', 'DSI', 'SEA', 'DOT', 'OTUA', 'DMA', 'FIE', 'VMSBDI', 'DFUP', 'OS', 'DSC', 'DLM', 'MDTM', 'DRM', 'DVC', 'CICO', 'WA', 'N', 'DSR', 'DPRM', 'PID', 'BD', 'OMD', 'SHAD', 'CRG', 'CRM', 'ABDR', 'BRDR', 'RBR', 'IAM')
+        AND (pa.description IS NULL OR pa.description = '');
 
     IF module_count <> 32 THEN
         RAISE EXCEPTION 'Expected 32 seeded modules, found %', module_count;
     END IF;
     IF action_count <> 92 THEN
         RAISE EXCEPTION 'Expected 92 seeded actions, found %', action_count;
+    END IF;
+    IF modules_missing_description <> 0 THEN
+        RAISE EXCEPTION 'Expected all 32 modules to have a description, % are missing one', modules_missing_description;
+    END IF;
+    IF actions_missing_description <> 0 THEN
+        RAISE EXCEPTION 'Expected all 92 actions to have a description, % are missing one', actions_missing_description;
     END IF;
 END $$;
