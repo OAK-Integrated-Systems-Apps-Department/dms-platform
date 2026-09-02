@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
+import { getLeafPermissionIds } from "./permission-utils"
 import { RoleStatusBadge } from "./role-status-badge"
 import type { RoleRecord } from "./types"
 
@@ -46,12 +47,14 @@ export function RoleDetails({ role }: RoleDetailsProps) {
     [users, role.name]
   )
 
-  const permissionSummary = permissionGroups.map((group) => {
-    const count = group.permissions.filter((permission) =>
-      role.permissions.includes(permission.id)
-    ).length
-    return { area: group.area, count }
-  })
+  const permissionSummary = permissionGroups
+    .map((group) => {
+      const count = getLeafPermissionIds(group.permissions).filter((id) =>
+        role.permissions.includes(id)
+      ).length
+      return { module: group.module, moduleCode: group.moduleCode, count }
+    })
+    .sort((a, b) => a.module.localeCompare(b.module))
 
   return (
     <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
@@ -70,21 +73,36 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         {role.description || "No description provided."}
       </p>
 
-      {/* Permission summary */}
-      <h3 className="mb-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-        Permission Summary
+      {/* Permission summary — only modules this role touches; the full
+          module-by-module breakdown (including untouched modules) lives on
+          Role Permission Configuration. Sorted alphabetically by module
+          name so the badge list is easy to scan regardless of the order
+          modules are defined in `data.ts`. */}
+      <h3 className="mb-2.5 flex items-center justify-between text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+        <span>Permission Summary</span>
+        <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+          {permissionSummary.filter((g) => g.count > 0).length} of{" "}
+          {permissionSummary.length} modules
+        </span>
       </h3>
       <div className="mb-6 flex flex-wrap gap-2">
-        {permissionSummary.map((group) => (
-          <Badge
-            key={group.area}
-            variant={group.count > 0 ? "outline" : "muted"}
-            className="rounded-[10px] py-1"
-          >
-            {group.area} — {group.count}{" "}
-            {group.count === 1 ? "permission" : "permissions"}
-          </Badge>
-        ))}
+        {permissionSummary
+          .filter((group) => group.count > 0)
+          .map((group) => (
+            <Badge
+              key={group.module}
+              variant="outline"
+              className="rounded-[10px] py-1"
+            >
+              {group.moduleCode} — {group.module} — {group.count}{" "}
+              {group.count === 1 ? "permission" : "permissions"}
+            </Badge>
+          ))}
+        {permissionSummary.every((group) => group.count === 0) && (
+          <p className="text-[13px] text-muted-foreground">
+            No permissions granted yet.
+          </p>
+        )}
       </div>
       <p className="mb-6 text-[12px] text-muted-foreground">
         {role.permissions.length} total permissions granted.{" "}
