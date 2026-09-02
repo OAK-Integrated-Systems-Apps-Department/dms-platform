@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils"
 
-import type { UserStatus } from "./types"
+import type { AssignedUserStatus } from "@/components/roles/types"
 
 interface UserStatusToggleProps {
-  status: UserStatus
+  status: AssignedUserStatus
   onToggle: () => void
 }
 
 /** The pill switch + label from the mockup's .status-toggle / .status-label. */
 export function UserStatusToggle({ status, onToggle }: UserStatusToggleProps) {
-  const isActive = status === "active"
+  const isActive = status === "Active"
   return (
     <div className="flex items-center gap-2">
       <button
