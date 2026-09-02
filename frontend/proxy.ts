@@ -1,3 +1,4 @@
+// app/../proxy.ts  (same location as the old middleware.ts, at the frontend root alongside app/)
 import { NextResponse, type NextRequest } from "next/server"
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
@@ -10,7 +11,7 @@ const PUBLIC_PATHS = ["/login", "/reset-password", "/update-password", "/error",
 // stays open regardless of session.
 const DEV_BYPASS_AUTH = true
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (DEV_BYPASS_AUTH) {
     return NextResponse.next()
   }
