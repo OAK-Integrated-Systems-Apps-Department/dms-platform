@@ -11,14 +11,16 @@ import { useRolesStore } from "@/stores/roles-store"
 export default function EditRolePage() {
   const router = useRouter()
   const params = useParams<{ roleId: string }>()
-  const role = useRolesStore((state) =>
+  const roleFromStore = useRolesStore((state) =>
     state.roles.find((r) => r.id === params.roleId)
   )
   const updateRole = useRolesStore((state) => state.updateRole)
 
-  if (!role) {
+  if (!roleFromStore) {
     notFound()
   }
+
+  const role = roleFromStore as NonNullable<typeof roleFromStore>
 
   function handleSubmit(values: RoleFormValues) {
     updateRole(role.id, values)

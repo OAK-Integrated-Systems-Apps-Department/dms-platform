@@ -16,16 +16,18 @@ import { useRolesStore } from "@/stores/roles-store"
 export default function RolePermissionsPage() {
   const router = useRouter()
   const params = useParams<{ roleId: string }>()
-  const role = useRolesStore((state) =>
+  const roleFromStore = useRolesStore((state) =>
     state.roles.find((r) => r.id === params.roleId)
   )
   const updateRolePermissions = useRolesStore(
     (state) => state.updateRolePermissions
   )
 
-  if (!role) {
+  if (!roleFromStore) {
     notFound()
   }
+
+  const role = roleFromStore as NonNullable<typeof roleFromStore>
 
   function handleSave(permissions: string[]) {
     updateRolePermissions(role.id, permissions)
