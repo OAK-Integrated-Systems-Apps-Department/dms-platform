@@ -2,9 +2,15 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Check, X } from "lucide-react"
+import { Check, ChevronDown, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { cn } from "@/lib/utils"
 import { permissionGroups } from "@/components/roles/data"
 import { useRolesStore } from "@/stores/roles-store"
 import { useUsersStore } from "@/stores/users-store"
@@ -39,6 +45,9 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
   const toggleUserStatus = useUsersStore((state) => state.toggleStatus)
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  // 32 modules is too many to show fully expanded by default; open only
+  // modules where this user actually has a granted permission.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const rolesHeld = useMemo(
     () => roles.filter((role) => user.roles.includes(role.name)),
@@ -139,44 +148,67 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
       </div>
 
       <div className="space-y-3">
-        {permissionGroups.map((group) => (
-          <div
-            key={group.area}
-            className="overflow-hidden rounded-[10px] border border-border"
-          >
-            <div className="bg-muted px-3.5 py-2 text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-              {group.area}
-            </div>
-            <div className="divide-y divide-border">
-              {group.permissions.map((permission) => {
-                const granted = effectivePermissions.has(permission.id)
-                return (
-                  <div
-                    key={permission.id}
-                    className="flex items-center justify-between px-3.5 py-2.5"
-                  >
-                    <span className="text-[13px] text-foreground">
-                      {permission.label}
-                    </span>
-                    <span
-                      className={
-                        granted
-                          ? "flex size-[18px] items-center justify-center rounded-full bg-primary text-primary-foreground"
-                          : "flex size-[18px] items-center justify-center rounded-full border border-border text-[var(--ink-faint)]"
-                      }
+        {permissionGroups.map((group) => {
+          const grantedCount = group.permissions.filter((permission) =>
+            effectivePermissions.has(permission.id)
+          ).length
+          const isOpen =
+            expanded[group.module] ??
+            (grantedCount > 0 && expanded[group.module] !== false)
+
+          return (
+            <Collapsible
+              key={group.module}
+              open={isOpen}
+              onOpenChange={(open) =>
+                setExpanded((prev) => ({ ...prev, [group.module]: open }))
+              }
+              className="overflow-hidden rounded-[10px] border border-border"
+            >
+              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
+                <ChevronDown
+                  size={14}
+                  className={cn(
+                    "shrink-0 transition-transform",
+                    !isOpen && "-rotate-90"
+                  )}
+                />
+                {group.module}
+                <span className="font-mono text-[10px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                  {group.moduleCode} · {grantedCount}/{group.permissions.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="divide-y divide-border">
+                {group.permissions.map((permission) => {
+                  const granted = effectivePermissions.has(permission.id)
+                  return (
+                    <div
+                      key={permission.id}
+                      className="flex items-center justify-between px-3.5 py-2.5"
                     >
-                      {granted ? (
-                        <Check size={12} strokeWidth={3} />
-                      ) : (
-                        <X size={11} strokeWidth={3} />
-                      )}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+                      <span className="text-[13px] text-foreground">
+                        {permission.label}
+                      </span>
+                      <span
+                        className={
+                          granted
+                            ? "flex size-[18px] items-center justify-center rounded-full bg-primary text-primary-foreground"
+                            : "flex size-[18px] items-center justify-center rounded-full border border-border text-[var(--ink-faint)]"
+                        }
+                      >
+                        {granted ? (
+                          <Check size={12} strokeWidth={3} />
+                        ) : (
+                          <X size={11} strokeWidth={3} />
+                        )}
+                      </span>
+                    </div>
+                  )
+                })}
+              </CollapsibleContent>
+            </Collapsible>
+          )
+        })}
       </div>
 
       <p className="mt-4 text-[12px] text-muted-foreground">

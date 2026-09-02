@@ -44,7 +44,9 @@ export function RolePermissionConfig({
 
   const [permissions, setPermissions] = useState<string[]>(role.permissions)
   const [query, setQuery] = useState("")
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  // 32 modules is too many to show fully expanded by default, so groups
+  // start collapsed; a module with a match while searching auto-opens.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const isDirty = useMemo(() => {
     if (permissions.length !== role.permissions.length) return true
@@ -61,7 +63,7 @@ export function RolePermissionConfig({
         permissions: group.permissions.filter(
           (permission) =>
             permission.label.toLowerCase().includes(q) ||
-            group.area.toLowerCase().includes(q)
+            group.module.toLowerCase().includes(q)
         ),
       }))
       .filter((group) => group.permissions.length > 0)
@@ -152,14 +154,14 @@ export function RolePermissionConfig({
           ).length
           const allSelected =
             selectedCount === groupIds.length && groupIds.length > 0
-          const isOpen = collapsed[group.area] !== true
+          const isOpen = query.trim() !== "" || expanded[group.module] === true
 
           return (
             <Collapsible
-              key={group.area}
+              key={group.module}
               open={isOpen}
               onOpenChange={(open) =>
-                setCollapsed((prev) => ({ ...prev, [group.area]: !open }))
+                setExpanded((prev) => ({ ...prev, [group.module]: open }))
               }
               className="overflow-hidden rounded-[10px] border border-border"
             >
@@ -172,9 +174,9 @@ export function RolePermissionConfig({
                       !isOpen && "-rotate-90"
                     )}
                   />
-                  {group.area}
-                  <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
-                    ({selectedCount}/{groupIds.length})
+                  {group.module}
+                  <span className="font-mono text-[10px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                    {group.moduleCode} · {selectedCount}/{groupIds.length}
                   </span>
                 </CollapsibleTrigger>
                 {!isSystemRole && (

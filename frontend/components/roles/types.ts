@@ -7,15 +7,17 @@
 export type RoleStatus = "Active" | "Inactive"
 
 export interface PermissionItem {
-  /** Stable id used for storage/lookup, e.g. "doc.upload". */
+  /** Stable id used for storage/lookup, e.g. "asm.manage-roles-permissions". */
   id: string
   /** Human-readable action name shown in the checkbox row. */
   label: string
 }
 
 export interface PermissionGroup {
-  /** Functional area heading, e.g. "Document Management". */
-  area: string
+  /** Functional module name, e.g. "Access and Security Management". */
+  module: string
+  /** Short code for the module, matching the backend permission catalog (e.g. "ASM"). */
+  moduleCode: string
   permissions: PermissionItem[]
 }
 

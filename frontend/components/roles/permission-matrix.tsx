@@ -6,7 +6,7 @@ import { Check } from "lucide-react"
 import { permissionGroups } from "./data"
 import { useRolesStore } from "@/stores/roles-store"
 
-const ALL_AREAS = "All functional areas"
+const ALL_MODULES = "All modules"
 
 /**
  * Permission Matrix (R5) — read-only Roles × Permissions grid so admins can
@@ -25,14 +25,14 @@ const ALL_AREAS = "All functional areas"
  */
 export function PermissionMatrix() {
   const roles = useRolesStore((state) => state.roles)
-  const [area, setArea] = useState(ALL_AREAS)
+  const [module, setModule] = useState(ALL_MODULES)
 
   const visibleGroups = useMemo(
     () =>
-      area === ALL_AREAS
+      module === ALL_MODULES
         ? permissionGroups
-        : permissionGroups.filter((group) => group.area === area),
-    [area]
+        : permissionGroups.filter((group) => group.module === module),
+    [module]
   )
 
   return (
@@ -40,14 +40,14 @@ export function PermissionMatrix() {
       {/* Toolbar */}
       <div className="mb-5 flex items-center justify-between gap-3">
         <select
-          value={area}
-          onChange={(event) => setArea(event.target.value)}
+          value={module}
+          onChange={(event) => setModule(event.target.value)}
           className="h-[38px] rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
         >
-          <option value={ALL_AREAS}>{ALL_AREAS}</option>
+          <option value={ALL_MODULES}>{ALL_MODULES}</option>
           {permissionGroups.map((group) => (
-            <option key={group.area} value={group.area}>
-              {group.area}
+            <option key={group.module} value={group.module}>
+              {group.moduleCode} — {group.module}
             </option>
           ))}
         </select>
@@ -82,14 +82,14 @@ export function PermissionMatrix() {
           </thead>
           <tbody>
             {visibleGroups.map((group) => (
-              <Fragment key={group.area}>
-                {area === ALL_AREAS && (
+              <Fragment key={group.module}>
+                {module === ALL_MODULES && (
                   <tr className="bg-muted/60">
                     <td
                       colSpan={roles.length + 1}
                       className="px-3.5 py-1.5 text-[10.5px] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
                     >
-                      {group.area}
+                      {group.moduleCode} — {group.module}
                     </td>
                   </tr>
                 )}
