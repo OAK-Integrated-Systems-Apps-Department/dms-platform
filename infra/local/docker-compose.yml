@@ -192,4 +192,4 @@ services:
       - dms-core
 
 volumes:
-  postgres_data:
+  postgres_data:0
