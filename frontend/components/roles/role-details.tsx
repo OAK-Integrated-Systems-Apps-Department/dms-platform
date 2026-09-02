@@ -47,12 +47,14 @@ export function RoleDetails({ role }: RoleDetailsProps) {
     [users, role.name]
   )
 
-  const permissionSummary = permissionGroups.map((group) => {
-    const count = getLeafPermissionIds(group.permissions).filter((id) =>
-      role.permissions.includes(id)
-    ).length
-    return { module: group.module, moduleCode: group.moduleCode, count }
-  })
+  const permissionSummary = permissionGroups
+    .map((group) => {
+      const count = getLeafPermissionIds(group.permissions).filter((id) =>
+        role.permissions.includes(id)
+      ).length
+      return { module: group.module, moduleCode: group.moduleCode, count }
+    })
+    .sort((a, b) => a.module.localeCompare(b.module))
 
   return (
     <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
@@ -73,7 +75,9 @@ export function RoleDetails({ role }: RoleDetailsProps) {
 
       {/* Permission summary — only modules this role touches; the full
           module-by-module breakdown (including untouched modules) lives on
-          Role Permission Configuration. */}
+          Role Permission Configuration. Sorted alphabetically by module
+          name so the badge list is easy to scan regardless of the order
+          modules are defined in `data.ts`. */}
       <h3 className="mb-2.5 flex items-center justify-between text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
         <span>Permission Summary</span>
         <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
