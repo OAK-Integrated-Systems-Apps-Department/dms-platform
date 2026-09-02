@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, KeyRound, Pencil } from "lucide-react"
+import { Eye, KeyRound, Pencil, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -113,43 +114,89 @@ export function UsersTable({
                   {user.lastLogin}
                 </td>
                 <td className="px-3 py-3">
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
                     <button
+                            {...props}
                       type="button"
                       onClick={() => onView(user)}
-                      className="flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+                            aria-label={`View ${user.name}`}
+                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                     >
-                      <Eye size={13} />
-                      View
+                            <Eye size={15} />
                     </button>
+                        )}
+                      />
+                      <TooltipContent>View</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
                     <button
+                            {...props}
                       type="button"
                       onClick={() => onEdit(user)}
-                      className="flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+                            aria-label={`Edit ${user.name}`}
+                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                     >
-                      <Pencil size={13} />
-                      Edit
+                            <Pencil size={15} />
                     </button>
+                        )}
+                      />
+                      <TooltipContent>Edit</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
                     <button
+                            {...props}
                       type="button"
                       onClick={() => setPendingResetUser(user)}
-                      className="flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+                            aria-label={`Reset password for ${user.name}`}
+                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                     >
-                      <KeyRound size={13} />
-                      Reset Password
+                            <KeyRound size={15} />
                     </button>
+                        )}
+                      />
+                      <TooltipContent>Reset password</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
                     <button
+                            {...props}
                       type="button"
                       onClick={() => setPendingUser(user)}
+                            aria-label={
+                              user.status === "Active"
+                                ? `Deactivate ${user.name}`
+                                : `Activate ${user.name}`
+                            }
                       className={cn(
-                        "text-[12.5px] font-semibold hover:underline",
+                              "flex size-7 items-center justify-center rounded-[7px] transition-colors",
                         user.status === "Active"
-                          ? "text-[var(--rust)]"
-                          : "text-primary"
+                                ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                : "text-primary hover:bg-muted"
                       )}
                     >
-                      {user.status === "Active" ? "Deactivate" : "Activate"}
+                            {user.status === "Active" ? (
+                              <UserX size={15} />
+                            ) : (
+                              <UserCheck size={15} />
+                            )}
                     </button>
+                        )}
+                      />
+                      <TooltipContent>
+                        {user.status === "Active" ? "Deactivate" : "Activate"}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </td>
               </tr>

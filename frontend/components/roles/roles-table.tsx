@@ -1,11 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { Pencil, ShieldCheck } from "lucide-react"
+import { Pencil, ShieldCheck, UserCheck, UserX } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-import { RoleStatusBadge } from "./role-status-badge"
 import type { RoleRecord } from "./types"
 
 interface RolesTableProps {
@@ -66,7 +67,13 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                   {role.description}
                 </td>
                 <td className="px-3.5 py-3">
-                  <RoleStatusBadge status={role.status} />
+                  <Badge
+                    variant={role.status === "Active" ? "default" : "muted"}
+                    className="gap-1.5 rounded-[10px]"
+                  >
+                    <span className="size-[5px] rounded-full bg-current" />
+                    {role.status}
+                  </Badge>
                 </td>
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">
                   {role.assignedUsers}
@@ -78,26 +85,54 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                       System role
                     </span>
                   ) : (
-                    <div className="flex items-center gap-3.5">
+                    <div className="flex items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
                       <Link
+                              {...props}
                         href={`/admin/roles/${role.id}/edit`}
-                        className="flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+                              aria-label={`Edit ${role.name}`}
+                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                       >
-                        <Pencil size={13} />
-                        Edit
+                              <Pencil size={15} />
                       </Link>
+                          )}
+                        />
+                        <TooltipContent>Edit</TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
                       <button
+                              {...props}
                         type="button"
                         onClick={() => onToggleStatus(role.id)}
+                              aria-label={
+                                role.status === "Active"
+                                  ? `Deactivate ${role.name}`
+                                  : `Activate ${role.name}`
+                              }
                         className={cn(
-                          "text-[12.5px] font-semibold hover:underline",
+                                "flex size-7 items-center justify-center rounded-[7px] transition-colors",
                           role.status === "Active"
-                            ? "text-[var(--rust)]"
-                            : "text-primary"
+                                  ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                  : "text-primary hover:bg-muted"
                         )}
                       >
-                        {role.status === "Active" ? "Deactivate" : "Activate"}
+                              {role.status === "Active" ? (
+                                <UserX size={15} />
+                              ) : (
+                                <UserCheck size={15} />
+                              )}
                       </button>
+                          )}
+                        />
+                        <TooltipContent>
+                          {role.status === "Active" ? "Deactivate" : "Activate"}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   )}
                 </td>
