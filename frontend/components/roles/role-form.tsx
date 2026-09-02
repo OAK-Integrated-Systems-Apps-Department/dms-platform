@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 import { permissionGroups } from "./data"
+import { getLeafPermissionIds } from "./permission-utils"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
 
@@ -38,6 +39,10 @@ interface RoleFormProps {
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
+  // 32 modules is too much to show fully expanded in this quick-list view —
+  // collapsed by default; open individually, or head to Role Permission
+  // Configuration for search + expand/collapse-all.
+  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
 
   const {
     register,
@@ -57,8 +62,6 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   })
 
   const selectedPermissions = watch("permissions")
-  // 32 modules is too many to show fully expanded by default.
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   function togglePermission(id: string, checked: boolean) {
     setValue(
@@ -151,8 +154,8 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         </span>
       </div>
       <p className="mb-4 text-[12.5px] text-muted-foreground">
-        Choose what this role can do, grouped by module. Expand a module below,
-        or use{" "}
+        Choose what this role can do, grouped by functional area. Toggle the
+        quick list below, or use{" "}
         {mode === "edit" && role ? (
           <Link
             href={`/admin/roles/${role.id}/permissions`}
@@ -163,23 +166,26 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         ) : (
           "Role Permission Configuration"
         )}{" "}
-        for a searchable, module-by-module view.
+        for a searchable, group-by-group view.
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-3.5">
         {permissionGroups.map((group) => {
-          const groupIds = group.permissions.map((p) => p.id)
+          const groupIds = getLeafPermissionIds(group.permissions)
           const selectedCount = groupIds.filter((id) =>
             selectedPermissions.includes(id)
           ).length
-          const isOpen = expanded[group.module] === true
+          const isOpen = openModules[group.moduleCode] === true
 
           return (
             <Collapsible
-              key={group.module}
+              key={group.moduleCode}
               open={isOpen}
               onOpenChange={(open) =>
-                setExpanded((prev) => ({ ...prev, [group.module]: open }))
+                setOpenModules((prev) => ({
+                  ...prev,
+                  [group.moduleCode]: open,
+                }))
               }
               className="overflow-hidden rounded-[10px] border border-border"
             >
@@ -192,23 +198,50 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
                   )}
                 />
                 {group.module}
-                <span className="font-mono text-[10px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
                   {group.moduleCode} · {selectedCount}/{groupIds.length}
                 </span>
               </CollapsibleTrigger>
               <CollapsibleContent className="divide-y divide-border px-3.5">
-                {group.permissions.map((permission) => (
-                  <Checkbox
-                    key={permission.id}
-                    id={permission.id}
-                    label={permission.label}
-                    disabled={isSystemRole}
-                    checked={selectedPermissions.includes(permission.id)}
-                    onCheckedChange={(checked) =>
-                      togglePermission(permission.id, checked)
-                    }
-                  />
-                ))}
+                {group.permissions.map((permission) =>
+                  permission.permissions &&
+                  permission.permissions.length > 0 ? (
+                    // Action with fine-grained permissions nested under it
+                    // (e.g. "Manage Users") — its own id isn't grantable, so
+                    // list its children instead; use Role Permission
+                    // Configuration for select-all on these.
+                    <div key={permission.id} className="py-1.5">
+                      <p className="pt-1 pb-0.5 text-[11.5px] font-semibold tracking-[0.03em] text-muted-foreground uppercase">
+                        {permission.label}
+                      </p>
+                      <div className="divide-y divide-border border-t border-dashed border-border pl-4">
+                        {permission.permissions.map((child) => (
+                          <Checkbox
+                            key={child.id}
+                            id={child.id}
+                            label={child.label}
+                            disabled={isSystemRole}
+                            checked={selectedPermissions.includes(child.id)}
+                            onCheckedChange={(checked) =>
+                              togglePermission(child.id, checked)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Checkbox
+                      key={permission.id}
+                      id={permission.id}
+                      label={permission.label}
+                      disabled={isSystemRole}
+                      checked={selectedPermissions.includes(permission.id)}
+                      onCheckedChange={(checked) =>
+                        togglePermission(permission.id, checked)
+                      }
+                    />
+                  )
+                )}
               </CollapsibleContent>
             </Collapsible>
           )

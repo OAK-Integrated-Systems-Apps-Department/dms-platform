@@ -14,7 +14,8 @@ import {
 import { cn } from "@/lib/utils"
 
 import { permissionGroups } from "./data"
-import type { RoleRecord } from "./types"
+import { getLeafPermissionIds } from "./permission-utils"
+import type { PermissionItem, RoleRecord } from "./types"
 
 interface RolePermissionConfigProps {
   role: RoleRecord
@@ -44,9 +45,14 @@ export function RolePermissionConfig({
 
   const [permissions, setPermissions] = useState<string[]>(role.permissions)
   const [query, setQuery] = useState("")
-  // 32 modules is too many to show fully expanded by default, so groups
-  // start collapsed; a module with a match while searching auto-opens.
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Collapsible at both the module level and the action level (e.g. "Manage
+  // Users" nested under OTUA). Both start collapsed on load — 32 modules x
+  // ~92 actions is too much to show expanded by default — and open either
+  // on user click or automatically while a search query is narrowing things
+  // down, via `isModuleOpen`/`isActionOpen` below rather than this state
+  // directly.
+  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
+  const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
 
   const isDirty = useMemo(() => {
     if (permissions.length !== role.permissions.length) return true
@@ -54,20 +60,50 @@ export function RolePermissionConfig({
     return permissions.some((id) => !original.has(id))
   }, [permissions, role.permissions])
 
+  const isSearching = query.trim().length > 0
+
   const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return permissionGroups
     return permissionGroups
-      .map((group) => ({
-        ...group,
-        permissions: group.permissions.filter(
-          (permission) =>
-            permission.label.toLowerCase().includes(q) ||
-            group.module.toLowerCase().includes(q)
-        ),
-      }))
+      .map((group) => {
+        const moduleMatches = group.module.toLowerCase().includes(q)
+        const permissions = group.permissions
+          .map((permission): PermissionItem | null => {
+            if (permission.permissions && permission.permissions.length > 0) {
+              // Parent action: keep every child if the action/module itself
+              // matched, otherwise keep only the matching children.
+              const children =
+                moduleMatches || permission.label.toLowerCase().includes(q)
+                  ? permission.permissions
+                  : permission.permissions.filter((child) =>
+                      child.label.toLowerCase().includes(q)
+                    )
+              return children.length > 0
+                ? { ...permission, permissions: children }
+                : null
+            }
+            return moduleMatches || permission.label.toLowerCase().includes(q)
+              ? permission
+              : null
+          })
+          .filter(
+            (permission): permission is PermissionItem => permission !== null
+          )
+        return { ...group, permissions }
+      })
       .filter((group) => group.permissions.length > 0)
   }, [query])
+
+  // While searching, auto-expand every module/action left in the filtered
+  // results so matches are actually visible — collapsed-by-default only
+  // applies to the unfiltered, browse state.
+  function isModuleOpen(moduleCode: string) {
+    return isSearching || openModules[moduleCode] === true
+  }
+  function isActionOpen(actionId: string) {
+    return isSearching || openActions[actionId] === true
+  }
 
   function togglePermission(id: string, checked: boolean) {
     if (isSystemRole) return
@@ -112,9 +148,38 @@ export function RolePermissionConfig({
         </div>
         <span className="text-[12px] text-muted-foreground">
           {permissions.length} of{" "}
-          {permissionGroups.reduce((n, g) => n + g.permissions.length, 0)}{" "}
+          {permissionGroups.reduce(
+            (n, g) => n + getLeafPermissionIds(g.permissions).length,
+            0
+          )}{" "}
           permissions selected
         </span>
+      </div>
+
+      <div className="mb-5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            setOpenModules(
+              Object.fromEntries(
+                permissionGroups.map((g) => [g.moduleCode, true])
+              )
+            )
+          }
+          className="text-[11.5px] font-semibold text-primary hover:underline"
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpenModules({})
+            setOpenActions({})
+          }}
+          className="text-[11.5px] font-semibold text-primary hover:underline"
+        >
+          Collapse all
+        </button>
       </div>
 
       {isSystemRole && (
@@ -148,20 +213,23 @@ export function RolePermissionConfig({
         )}
 
         {filteredGroups.map((group) => {
-          const groupIds = group.permissions.map((p) => p.id)
+          const groupIds = getLeafPermissionIds(group.permissions)
           const selectedCount = groupIds.filter((id) =>
             permissions.includes(id)
           ).length
           const allSelected =
             selectedCount === groupIds.length && groupIds.length > 0
-          const isOpen = query.trim() !== "" || expanded[group.module] === true
+          const isOpen = isModuleOpen(group.moduleCode)
 
           return (
             <Collapsible
-              key={group.module}
+              key={group.moduleCode}
               open={isOpen}
               onOpenChange={(open) =>
-                setExpanded((prev) => ({ ...prev, [group.module]: open }))
+                setOpenModules((prev) => ({
+                  ...prev,
+                  [group.moduleCode]: open,
+                }))
               }
               className="overflow-hidden rounded-[10px] border border-border"
             >
@@ -175,7 +243,7 @@ export function RolePermissionConfig({
                     )}
                   />
                   {group.module}
-                  <span className="font-mono text-[10px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                  <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
                     {group.moduleCode} · {selectedCount}/{groupIds.length}
                   </span>
                 </CollapsibleTrigger>
@@ -190,18 +258,95 @@ export function RolePermissionConfig({
                 )}
               </div>
               <CollapsibleContent className="divide-y divide-border px-3.5">
-                {group.permissions.map((permission) => (
-                  <Checkbox
-                    key={permission.id}
-                    id={permission.id}
-                    label={permission.label}
-                    disabled={isSystemRole}
-                    checked={permissions.includes(permission.id)}
-                    onCheckedChange={(checked) =>
-                      togglePermission(permission.id, checked)
-                    }
-                  />
-                ))}
+                {group.permissions.map((permission) => {
+                  const children = permission.permissions
+                  if (!children || children.length === 0) {
+                    return (
+                      <Checkbox
+                        key={permission.id}
+                        id={permission.id}
+                        label={permission.label}
+                        disabled={isSystemRole}
+                        checked={permissions.includes(permission.id)}
+                        onCheckedChange={(checked) =>
+                          togglePermission(permission.id, checked)
+                        }
+                      />
+                    )
+                  }
+
+                  // Action with fine-grained permissions nested under it
+                  // (e.g. "Manage Users") — its own id isn't grantable, so
+                  // show it as a collapsible sub-heading with a select-all
+                  // for its children instead of a checkbox of its own.
+                  // Collapsed by default, same as the module it lives in.
+                  const childIds = children.map((child) => child.id)
+                  const childSelectedCount = childIds.filter((id) =>
+                    permissions.includes(id)
+                  ).length
+                  const allChildrenSelected =
+                    childSelectedCount === childIds.length &&
+                    childIds.length > 0
+                  const isActionOpenNow = isActionOpen(permission.id)
+
+                  return (
+                    <Collapsible
+                      key={permission.id}
+                      open={isActionOpenNow}
+                      onOpenChange={(open) =>
+                        setOpenActions((prev) => ({
+                          ...prev,
+                          [permission.id]: open,
+                        }))
+                      }
+                      className="py-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2 py-1.5">
+                        <CollapsibleTrigger className="flex flex-1 items-center gap-1.5 text-left text-[13px] font-semibold text-foreground">
+                          <ChevronDown
+                            size={12}
+                            className={cn(
+                              "shrink-0 text-muted-foreground transition-transform",
+                              !isActionOpenNow && "-rotate-90"
+                            )}
+                          />
+                          {permission.label}
+                          <span className="font-mono text-[10.5px] font-normal text-[var(--ink-faint)]">
+                            ({childSelectedCount}/{childIds.length})
+                          </span>
+                        </CollapsibleTrigger>
+                        {!isSystemRole && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGroupPermissions(
+                                childIds,
+                                !allChildrenSelected
+                              )
+                            }
+                            className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
+                          >
+                            {allChildrenSelected ? "Clear all" : "Select all"}
+                          </button>
+                        )}
+                      </div>
+                      <CollapsibleContent className="divide-y divide-border border-t border-dashed border-border pl-4">
+                        {children.map((child) => (
+                          <Checkbox
+                            key={child.id}
+                            id={child.id}
+                            label={child.label}
+                            disabled={isSystemRole}
+                            checked={permissions.includes(child.id)}
+                            onCheckedChange={(checked) =>
+                              togglePermission(child.id, checked)
+                            }
+                          />
+                        ))}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                })}
               </CollapsibleContent>
             </Collapsible>
           )

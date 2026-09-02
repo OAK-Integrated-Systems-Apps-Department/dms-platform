@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
+import { getLeafPermissionIds } from "./permission-utils"
 import { RoleStatusBadge } from "./role-status-badge"
 import type { RoleRecord } from "./types"
 
@@ -47,8 +48,8 @@ export function RoleDetails({ role }: RoleDetailsProps) {
   )
 
   const permissionSummary = permissionGroups.map((group) => {
-    const count = group.permissions.filter((permission) =>
-      role.permissions.includes(permission.id)
+    const count = getLeafPermissionIds(group.permissions).filter((id) =>
+      role.permissions.includes(id)
     ).length
     return { module: group.module, moduleCode: group.moduleCode, count }
   })

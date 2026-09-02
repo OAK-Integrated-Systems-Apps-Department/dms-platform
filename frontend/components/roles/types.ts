@@ -7,16 +7,27 @@
 export type RoleStatus = "Active" | "Inactive"
 
 export interface PermissionItem {
-  /** Stable id used for storage/lookup, e.g. "asm.manage-roles-permissions". */
+  /** Stable id used for storage/lookup, e.g. "doc.upload". */
   id: string
   /** Human-readable action name shown in the checkbox row. */
   label: string
+  /**
+   * Fine-grained permissions nested under this action (e.g. action
+   * "Manage Users" -> permissions "Create user", "Update user", "Reset
+   * user password", ...), matching the Module -> Action -> Permission
+   * breakdown in the Permission Catalog. When present, this item's own
+   * `id` is a grouping label only — it is never itself grantable and
+   * never appears in `RoleRecord.permissions`; roles grant the specific
+   * child permission ids instead. Optional because most actions stay
+   * single-level and remain directly grantable, as before.
+   */
+  permissions?: PermissionItem[]
 }
 
 export interface PermissionGroup {
-  /** Functional module name, e.g. "Access and Security Management". */
+  /** Functional module name, e.g. "Organization, Tenant and User Administration". */
   module: string
-  /** Short code for the module, matching the backend permission catalog (e.g. "ASM"). */
+  /** Short module code from the Permission Catalog, e.g. "OTUA". */
   moduleCode: string
   permissions: PermissionItem[]
 }
