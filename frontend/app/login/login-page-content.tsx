@@ -29,7 +29,7 @@ interface LoginResponse {
  * the actual sign-in attempt failing, and the user needs to see that —
  * not have it disappear into a rejected mutation with no onError handler.
  */
-async function login(username: string, password: string, totp?: string): Promise<LoginResponse> {
+async function login(username: string, password: string, rememberMe: boolean, totp?: string): Promise<LoginResponse> {
   if (!totp) {
     const mfaCheck = await fetch(
       `${API_BASE_URL}/api/v1/auth/mfa-required?username=${encodeURIComponent(username)}`,
@@ -50,7 +50,7 @@ async function login(username: string, password: string, totp?: string): Promise
     // credentials: "include" so the session cookie(s) your Java backend
     // sets on a successful login come back on every request after this.
     credentials: "include",
-    body: JSON.stringify({ username, password, totp }),
+    body: JSON.stringify({ username, password, totp, rememberMe }),
   })
   } catch {
     return { ok: false, error: "Could not reach the server. Check that the backend is running and try again." }
@@ -110,7 +110,7 @@ export function LoginPageContent() {
 
   const mutation = useMutation({
     mutationFn: ({ username, password, totp }: { username: string; password: string; totp?: string }) =>
-      login(username, password, totp),
+      login(username, password, rememberMe, totp),
     onSuccess: (result) => {
       if (result.ok) {
         router.push("/")

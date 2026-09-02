@@ -61,6 +61,30 @@ keycloak:
     realm: ${KEYCLOAK_REALM:oak-dms}
     client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:dms-core-admin}
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:changeme}
+  auth:
+    # Deliberately separate from keycloak.admin above: this identifies the
+    # public "oak-dms-web" client (no secret) that end-user credentials are
+    # exchanged under - see KeycloakAuthProperties for why these must not
+    # be merged.
+    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8081}
+    realm: ${KEYCLOAK_REALM:oak-dms}
+    client-id: ${KEYCLOAK_WEB_CLIENT_ID:oak-dms-web}
+    connect-timeout-ms: ${KEYCLOAK_AUTH_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${KEYCLOAK_AUTH_READ_TIMEOUT_MS:5000}
+
+app:
+  cors:
+    # Comma-separated exact origins - see SecurityConfig for why this can
+    # never be a wildcard now that CORS allows credentials.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    cookie:
+      # true works for both a real HTTPS deployment and local dev against
+      # http://localhost (browsers treat localhost as a secure context).
+      secure: ${AUTH_COOKIE_SECURE:true}
+      same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+      domain: ${AUTH_COOKIE_DOMAIN:}
+      path: /
 
 dms:
   outbox:
