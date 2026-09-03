@@ -4,11 +4,15 @@ import Link from "next/link"
 import { Pencil, ShieldCheck, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { SortableTh } from "@/components/ui/sortable-th"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useSortableTable } from "@/hooks/use-sortable-table"
 import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import type { RoleRecord } from "./types"
+
+type SortKey = "name" | "description" | "status" | "assignedUsers"
 
 interface RolesTableProps {
   roles: RoleRecord[]
@@ -17,24 +21,50 @@ interface RolesTableProps {
 
 /** Role Name / Description / Status / Assigned Users / Actions — per the R1 wireframe. */
 export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
+  const { sorted, sortKey, direction, toggleSort } = useSortableTable<
+    RoleRecord,
+    SortKey
+  >(roles, {
+    name: (r) => r.name,
+    description: (r) => r.description,
+    status: (r) => r.status,
+    assignedUsers: (r) => r.assignedUsers,
+  })
+
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Role Name
-              </th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Description
-              </th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Status
-              </th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Assigned Users
-              </th>
+              <SortableTh
+                label="Role Name"
+                active={sortKey === "name"}
+                direction={direction}
+                onClick={() => toggleSort("name")}
+                className="px-3.5"
+              />
+              <SortableTh
+                label="Description"
+                active={sortKey === "description"}
+                direction={direction}
+                onClick={() => toggleSort("description")}
+                className="px-3.5"
+              />
+              <SortableTh
+                label="Status"
+                active={sortKey === "status"}
+                direction={direction}
+                onClick={() => toggleSort("status")}
+                className="px-3.5"
+              />
+              <SortableTh
+                label="Assigned Users"
+                active={sortKey === "assignedUsers"}
+                direction={direction}
+                onClick={() => toggleSort("assignedUsers")}
+                className="px-3.5"
+              />
               <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 Actions
               </th>
@@ -51,7 +81,7 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                 </td>
               </tr>
             )}
-            {roles.map((role) => (
+            {sorted.map((role) => (
               <tr
                 key={role.id}
                 className="border-b border-border last:border-b-0 hover:bg-muted"

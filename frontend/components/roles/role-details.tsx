@@ -5,6 +5,8 @@ import Link from "next/link"
 import { Pencil, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { SortableTh } from "@/components/ui/sortable-th"
+import { useSortableTable } from "@/hooks/use-sortable-table"
 import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
@@ -14,6 +16,8 @@ import type { RoleRecord } from "./types"
 interface RoleDetailsProps {
   role: RoleRecord
 }
+
+type AssignedUserSortKey = "name" | "username" | "status"
 
 /**
  * Role Details / Assigned Users (R4) — read-only view of a role's
@@ -44,6 +48,20 @@ export function RoleDetails({ role }: RoleDetailsProps) {
   const assignedUsers = useMemo(
     () => users.filter((user) => user.roles.includes(role.name)),
     [users, role.name]
+  )
+
+  const {
+    sorted: sortedAssignedUsers,
+    sortKey: assignedUsersSortKey,
+    direction: assignedUsersDirection,
+    toggleSort: toggleAssignedUsersSort,
+  } = useSortableTable<(typeof assignedUsers)[number], AssignedUserSortKey>(
+    assignedUsers,
+    {
+      name: (u) => u.name,
+      username: (u) => u.username,
+      status: (u) => u.status,
+    }
   )
 
   const permissionSummary = permissionGroups
@@ -135,15 +153,24 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted">
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Name
-              </th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Username
-              </th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-                Status
-              </th>
+              <SortableTh
+                label="Name"
+                active={assignedUsersSortKey === "name"}
+                direction={assignedUsersDirection}
+                onClick={() => toggleAssignedUsersSort("name")}
+              />
+              <SortableTh
+                label="Username"
+                active={assignedUsersSortKey === "username"}
+                direction={assignedUsersDirection}
+                onClick={() => toggleAssignedUsersSort("username")}
+              />
+              <SortableTh
+                label="Status"
+                active={assignedUsersSortKey === "status"}
+                direction={assignedUsersDirection}
+                onClick={() => toggleAssignedUsersSort("status")}
+              />
             </tr>
           </thead>
           <tbody>
@@ -157,7 +184,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                 </td>
               </tr>
             )}
-            {assignedUsers.map((user) => (
+            {sortedAssignedUsers.map((user) => (
               <tr
                 key={user.id}
                 className="border-b border-border last:border-b-0 hover:bg-muted"
