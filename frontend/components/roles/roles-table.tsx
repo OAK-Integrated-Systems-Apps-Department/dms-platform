@@ -5,6 +5,7 @@ import { Pencil, ShieldCheck, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import type { RoleRecord } from "./types"
@@ -99,7 +100,7 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                       </Link>
                           )}
                         />
-                        <TooltipContent>Edit</TooltipContent>
+                        <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
                       </Tooltip>
 
                       <Tooltip>
@@ -130,7 +131,9 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                           )}
                         />
                         <TooltipContent>
-                          {role.status === "Active" ? "Deactivate" : "Activate"}
+                          {role.status === "Active"
+                            ? getTooltip("roles.actions.deactivate")
+                            : getTooltip("roles.actions.activate")}
                         </TooltipContent>
                       </Tooltip>
                     </div>

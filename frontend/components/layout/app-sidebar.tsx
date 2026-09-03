@@ -87,8 +87,8 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2.5 px-1 py-1">
-          <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary">
+        <div className="flex items-center gap-2.5 py-1">
+          <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary group-data-[collapsible=icon]:size-8">
           <Layers size={18} color="var(--sidebar-primary-foreground)" />
         </div>
           <div className="group-data-[collapsible=icon]:hidden">

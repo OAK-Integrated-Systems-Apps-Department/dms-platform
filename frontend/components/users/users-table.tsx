@@ -5,6 +5,7 @@ import { Eye, KeyRound, Pencil, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -129,7 +130,7 @@ export function UsersTable({
                     </button>
                         )}
                       />
-                      <TooltipContent>View</TooltipContent>
+                      <TooltipContent>{getTooltip("users.actions.view")}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
@@ -146,7 +147,7 @@ export function UsersTable({
                     </button>
                         )}
                       />
-                      <TooltipContent>Edit</TooltipContent>
+                      <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
@@ -163,7 +164,7 @@ export function UsersTable({
                     </button>
                         )}
                       />
-                      <TooltipContent>Reset password</TooltipContent>
+                      <TooltipContent>{getTooltip("users.actions.resetPassword")}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
@@ -194,7 +195,9 @@ export function UsersTable({
                         )}
                       />
                       <TooltipContent>
-                        {user.status === "Active" ? "Deactivate" : "Activate"}
+                        {user.status === "Active"
+                          ? getTooltip("users.actions.deactivate")
+                          : getTooltip("users.actions.activate")}
                       </TooltipContent>
                     </Tooltip>
                   </div>
