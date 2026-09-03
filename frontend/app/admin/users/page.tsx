@@ -7,6 +7,7 @@ import { ChevronDown, Plus, Search } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { initialRoles } from "@/components/roles/data"
+import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useUsersStore } from "@/stores/users-store"
@@ -160,25 +161,7 @@ export default function UserListPage() {
         onEdit={handleEdit}
       />
 
-      {totalPages > 1 && (
-        <div className="mt-3.5 flex items-center justify-end gap-1.5">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setPage(n)}
-              className={
-                "flex size-7 items-center justify-center rounded-[6px] border text-[12.5px] " +
-                (n === currentPage
-                  ? "bg-primary-tint border-primary font-semibold text-primary"
-                  : "border-border bg-card text-muted-foreground")
-              }
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      )}
+      <TablePagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </DashboardShell>
   )
 }

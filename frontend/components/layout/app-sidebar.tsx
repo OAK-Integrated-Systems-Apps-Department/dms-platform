@@ -18,24 +18,49 @@ import { cn } from "@/lib/utils"
 import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { Dropdown } from "@/components/ui/dropdown"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar"
 import { Toggle } from "@/components/ui/toggle"
 
 interface AppSidebarProps {
   activeLabel?: string
   onNavigate?: (label: string) => void
-  /** Defaults to true (visible). When false, collapses to zero width rather than unmounting. */
-  open?: boolean
 }
 
 /**
  * Left navigation rail — always the dark "vault" chrome, in both app
- * themes. Reads its items from `nav-config.ts`. The Settings popover at
- * the bottom controls dark mode (via next-themes) plus two demo toggles.
+ * themes (the --sidebar-* CSS variables in globals.css already matched
+ * this component's expectations before this rewrite, so the look didn't
+ * need to change). Reads its items from `nav-config.ts`.
+ *
+ * `collapsible="icon"` is the real shadcn Sidebar's own collapse mode —
+ * it shrinks to an icon-only rail rather than fully hiding, persists the
+ * open/closed state in a cookie, and responds to Cmd/Ctrl+B, all via
+ * SidebarProvider (see dashboard-shell.tsx). SidebarMenuButton's
+ * `tooltip` prop automatically shows the item's label on hover ONLY while
+ * collapsed — nothing extra to wire up for that.
+ *
+ * The Settings popover at the bottom controls dark mode (via next-themes)
+ * plus two demo toggles — kept as the existing custom Dropdown rather
+ * than converted to a Sidebar-specific primitive, since its content
+ * (toggle rows, a settings sub-link) doesn't map onto SidebarMenu*
+ * components anyway. It previously got visually clipped by the old
+ * sidebar's `overflow-hidden` (added for the width-collapse transition
+ * that's now gone) — the real Sidebar's collapsed panel doesn't clip its
+ * own contents the same way, which is what fixes that.
  */
 export function AppSidebar({
   activeLabel = "My Documents",
   onNavigate,
-  open = true,
 }: AppSidebarProps) {
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
@@ -60,19 +85,13 @@ export function AppSidebar({
   }, [])
 
   return (
-    <aside
-      className={cn(
-        "sticky top-0 flex h-svh shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,padding] duration-200 ease-in-out",
-        open ? "w-[248px] px-3.5 py-[22px]" : "w-0 px-0 py-[22px]"
-      )}
-      aria-hidden={!open}
-    >
-      <div className="flex h-full w-[221px] shrink-0 flex-col">
-      <div className="mb-[30px] flex items-center gap-2.5 px-2">
-        <div className="flex size-[34px] items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary">
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex items-center gap-2.5 py-1">
+          <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary group-data-[collapsible=icon]:size-8">
           <Layers size={18} color="var(--sidebar-primary-foreground)" />
         </div>
-        <div>
+          <div className="group-data-[collapsible=icon]:hidden">
           <div className="font-heading text-[17px] leading-none font-semibold">
             Ledger
           </div>
@@ -81,18 +100,17 @@ export function AppSidebar({
           </div>
         </div>
       </div>
+      </SidebarHeader>
 
+      <SidebarContent>
       {navSections.map((section, index) => (
-        <div key={section.label ?? `section-${index}`}>
+          <SidebarGroup key={section.label ?? `section-${index}`}>
           {section.label && (
-            <>
-              <div className="my-4 h-px bg-white/[0.08]" />
-              <div className="px-2.5 pb-1.5 text-[10.5px] tracking-[0.08em] text-[var(--sidebar-muted)]">
-                {section.label.toUpperCase()}
-              </div>
-            </>
+              <SidebarGroupLabel className="text-[10.5px] tracking-[0.08em] text-[var(--sidebar-muted)] uppercase">
+                {section.label}
+              </SidebarGroupLabel>
           )}
-          <nav className="flex flex-col gap-0.5">
+            <SidebarMenu>
             {section.items.map((item: NavItem) => {
               const isActive = item.href
                 ? item.href === "/"
@@ -100,18 +118,9 @@ export function AppSidebar({
                   : pathname.startsWith(item.href)
                 : item.label === activeLabel
               const Icon = item.icon
-              const itemClassName = cn(
-                "flex items-center gap-2.5 rounded-lg px-2.5 py-[9px] text-left text-[13.5px] transition-colors",
-                isActive
-                  ? "bg-sidebar-primary font-semibold text-sidebar-primary-foreground"
-                  : "font-medium text-sidebar-foreground hover:bg-sidebar-accent"
-              )
               const content = (
                 <>
-                  <Icon
-                    size={16.5}
-                    className={cn("shrink-0", !isActive && "opacity-85")}
-                  />
+                    <Icon size={16.5} className={cn(!isActive && "opacity-85")} />
                   <span className="flex-1">{item.label}</span>
                   {item.badge != null && (
                     <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
@@ -121,35 +130,44 @@ export function AppSidebar({
                 </>
               )
 
-              if (item.href) {
                 return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className={itemClassName}
+                  <SidebarMenuItem key={item.label}>
+                    {item.href ? (
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.label}
+                        render={<Link href={item.href} />}
+                        className={cn(
+                          "h-auto py-[9px] text-[13.5px]",
+                          isActive &&
+                            "bg-sidebar-primary font-semibold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                        )}
                   >
                     {content}
-                  </Link>
-                )
-              }
-
-              return (
-                <button
-                  key={item.label}
-                  type="button"
+                      </SidebarMenuButton>
+                    ) : (
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.label}
                   onClick={() => onNavigate?.(item.label)}
-                  className={itemClassName}
+                        className={cn(
+                          "h-auto py-[9px] text-[13.5px]",
+                          isActive &&
+                            "bg-sidebar-primary font-semibold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                        )}
                 >
                   {content}
-                </button>
+                      </SidebarMenuButton>
+                    )}
+                  </SidebarMenuItem>
               )
             })}
-          </nav>
-        </div>
+            </SidebarMenu>
+          </SidebarGroup>
       ))}
+      </SidebarContent>
 
-      <div className="flex-1" />
-
+      <SidebarFooter>
       <div ref={settingsRef} className="relative">
         {settingsOpen && (
           <Dropdown
@@ -222,16 +240,18 @@ export function AppSidebar({
         <button
           type="button"
           onClick={() => setSettingsOpen((value) => !value)}
+            title="Settings"
           className={cn(
             "flex w-full items-center gap-2.5 rounded-lg border border-white/[0.08] px-2.5 py-[9px] text-[13.5px]",
+              "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
             settingsOpen ? "bg-sidebar-primary" : "bg-transparent"
           )}
         >
-          <Settings size={16.5} />
-          Settings
+            <Settings size={16.5} className="shrink-0" />
+            <span className="group-data-[collapsible=icon]:hidden">Settings</span>
         </button>
       </div>
-      </div>
-    </aside>
+      </SidebarFooter>
+    </Sidebar>
   )
 }

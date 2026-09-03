@@ -1,0 +1,22 @@
+# Tooltip copy for the whole app, in one place.
+#
+# Organize by feature area / page, then a descriptive key. Reference from
+# components with `getTooltip("users.actions.view")` (see lib/tooltips.ts).
+#
+# After editing this file, regenerate the typed lookup module with:
+#   bun run gen:tooltips
+# (this also runs automatically before `dev` and `build`)
+
+users:
+  actions:
+    view: View
+    edit: Edit
+    resetPassword: Reset password
+    activate: Activate
+    deactivate: Deactivate
+
+roles:
+  actions:
+    edit: Edit
+    activate: Activate
+    deactivate: Deactivate

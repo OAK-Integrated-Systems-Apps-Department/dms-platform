@@ -3,6 +3,7 @@ import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
@@ -42,7 +43,9 @@ export default function RootLayout({
     >
       <body>
         <QueryClientProvider client={queryClient}>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ThemeProvider>
         </QueryClientProvider>
       </body>
     </html>

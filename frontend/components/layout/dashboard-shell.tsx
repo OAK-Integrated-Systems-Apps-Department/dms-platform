@@ -2,6 +2,8 @@
 
 import { useState, type ReactNode } from "react"
 
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+
 import { AppSidebar } from "./app-sidebar"
 import { AppTopbar } from "./app-topbar"
 
@@ -18,24 +20,25 @@ interface DashboardShellProps {
  *     ...page content...
  *   </DashboardShell>
  *
- * The sidebar's open/collapsed state lives here (not inside AppSidebar
- * itself) so the topbar's toggle button and the sidebar's own width both
- * react to the same piece of state.
+ * The sidebar's own open/collapsed state now lives inside SidebarProvider
+ * (components/ui/sidebar.tsx) — it persists across page loads via a
+ * cookie and responds to Cmd/Ctrl+B, both for free. This shell no longer
+ * tracks that state itself; AppTopbar's <SidebarTrigger> and AppSidebar
+ * both read it from context via useSidebar().
  */
 export function DashboardShell({
   children,
   initialActiveLabel = "My Documents",
 }: DashboardShellProps) {
   const [activeLabel, setActiveLabel] = useState(initialActiveLabel)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   return (
-    <div className="flex min-h-svh bg-background text-foreground">
-      <AppSidebar activeLabel={activeLabel} onNavigate={setActiveLabel} open={sidebarOpen} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((v) => !v)} />
-        <main className="flex-1 px-[30px] pt-[26px] pb-[50px]">{children}</main>
-      </div>
-    </div>
+    <SidebarProvider>
+      <AppSidebar activeLabel={activeLabel} onNavigate={setActiveLabel} />
+      <SidebarInset>
+        <AppTopbar />
+        <div className="flex-1 px-[30px] pt-[26px] pb-[50px]">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

@@ -9,7 +9,6 @@ import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
-import { RoleStatusBadge } from "./role-status-badge"
 import type { RoleRecord } from "./types"
 
 interface RoleDetailsProps {
@@ -61,7 +60,13 @@ export function RoleDetails({ role }: RoleDetailsProps) {
       {/* Identity */}
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <h2 className="font-heading text-[20px] font-semibold">{role.name}</h2>
-        <RoleStatusBadge status={role.status} />
+        <Badge
+          variant={role.status === "Active" ? "default" : "muted"}
+          className="gap-1.5 rounded-[10px]"
+        >
+          <span className="size-[5px] rounded-full bg-current" />
+          {role.status}
+        </Badge>
         {role.system && (
           <Badge variant="gold" className="rounded-[10px]">
             <ShieldCheck size={12} />
@@ -169,7 +174,13 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                   {user.username}
                 </td>
                 <td className="px-3.5 py-3">
-                  <RoleStatusBadge status={user.status} />
+                  <Badge
+                    variant={user.status === "Active" ? "default" : "muted"}
+                    className="gap-1.5 rounded-[10px]"
+                  >
+                    <span className="size-[5px] rounded-full bg-current" />
+                    {user.status}
+                  </Badge>
                 </td>
               </tr>
             ))}
