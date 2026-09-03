@@ -6,7 +6,10 @@ import { Grid3x3, Plus, Search } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
+import { TablePagination } from "@/components/ui/table-pagination"
 import { useRolesStore } from "@/stores/roles-store"
+
+const PAGE_SIZE = 5
 
 /**
  * Role Management — Role List (R1). Search roles, add a role, or
@@ -17,6 +20,7 @@ export default function RoleListPage() {
   const roles = useRolesStore((state) => state.roles)
   const toggleStatus = useRolesStore((state) => state.toggleStatus)
   const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -27,6 +31,18 @@ export default function RoleListPage() {
         role.description.toLowerCase().includes(q)
     )
   }, [roles, query])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRoles.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageRoles = filteredRoles.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  )
+
+  function handleQueryChange(value: string) {
+    setQuery(value)
+    setPage(1)
+  }
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
@@ -70,7 +86,9 @@ export default function RoleListPage() {
         </Link>
       </div>
 
-      <RolesTable roles={filteredRoles} onToggleStatus={toggleStatus} />
+      <RolesTable roles={pageRoles} onToggleStatus={toggleStatus} />
+
+      <TablePagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
 
       <p className="mt-3.5 text-[12px] text-muted-foreground">
         Add, edit, and activate/deactivate controls are only shown for custom

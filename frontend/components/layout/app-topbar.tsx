@@ -8,8 +8,6 @@ import {
   ChevronDown,
   HelpCircle,
   LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pin,
   Search,
   User,
@@ -19,23 +17,22 @@ import { activityFeed, recentDocuments } from "@/components/dashboard/data"
 import { fileIcon } from "@/components/dashboard/file-icon"
 import { Dropdown, MenuRow } from "@/components/ui/dropdown"
 import { IconButton } from "@/components/ui/icon-button"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { API_BASE_URL } from "@/lib/api-config"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 
-interface AppTopbarProps {
-  /** Current sidebar visibility, so the toggle button shows the right icon/label. */
-  sidebarOpen: boolean
-  onToggleSidebar: () => void
-}
-
 /**
  * Top bar: sidebar toggle, search, help, pinned-documents dropdown,
  * notifications dropdown, and the account menu. Only one dropdown is open
  * at a time.
+ *
+ * The sidebar toggle is the real <SidebarTrigger> now — it reads/writes
+ * the sidebar's open state via useSidebar() internally, so this component
+ * no longer needs sidebarOpen/onToggleSidebar props at all.
  */
-export function AppTopbar({ sidebarOpen, onToggleSidebar }: AppTopbarProps) {
+export function AppTopbar() {
   const router = useRouter()
   const { data: user, initials } = useCurrentUser()
 
@@ -82,13 +79,7 @@ export function AppTopbar({ sidebarOpen, onToggleSidebar }: AppTopbarProps) {
 
   return (
     <header className="sticky top-0 z-20 flex items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
-      <IconButton
-        onClick={onToggleSidebar}
-        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      >
-        {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-      </IconButton>
+      <SidebarTrigger />
 
       <div className="relative max-w-[460px] flex-1">
         <Search
