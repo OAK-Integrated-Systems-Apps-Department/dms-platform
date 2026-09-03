@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
-import { RoleStatusBadge } from "./role-status-badge"
 import { getLeafPermissionIds } from "./permission-utils"
 import type { RoleRecord } from "./types"
 
