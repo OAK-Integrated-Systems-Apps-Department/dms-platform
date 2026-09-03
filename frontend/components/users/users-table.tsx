@@ -4,7 +4,9 @@ import { useState } from "react"
 import { Eye, KeyRound, Pencil, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { SortableTh } from "@/components/ui/sortable-th"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useSortableTable } from "@/hooks/use-sortable-table"
 import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
@@ -20,15 +22,7 @@ interface UsersTableProps {
   onEdit: (user: UserRecord) => void
 }
 
-const HEADERS = [
-  "Name",
-  "Username",
-  "Email",
-  "Role(s)",
-  "Status",
-  "Last login",
-  "Actions",
-]
+type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
 
 /**
  * Name / Username / Email / Role(s) / Status / Last login / Actions — per
@@ -49,34 +43,73 @@ export function UsersTable({
     null
   )
 
+  const { sorted, sortKey, direction, toggleSort } = useSortableTable<
+    UserRecord,
+    SortKey
+  >(users, {
+    name: (u) => u.name,
+    username: (u) => u.username,
+    email: (u) => u.email,
+    status: (u) => u.status,
+    lastLogin: (u) => u.lastLogin,
+  })
+
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse">
           <thead>
             <tr className="border-b border-border">
-              {HEADERS.map((header) => (
-                <th
-                  key={header}
-                  className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
-                >
-                  {header}
+              <SortableTh
+                label="Name"
+                active={sortKey === "name"}
+                direction={direction}
+                onClick={() => toggleSort("name")}
+              />
+              <SortableTh
+                label="Username"
+                active={sortKey === "username"}
+                direction={direction}
+                onClick={() => toggleSort("username")}
+              />
+              <SortableTh
+                label="Email"
+                active={sortKey === "email"}
+                direction={direction}
+                onClick={() => toggleSort("email")}
+              />
+              <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Role(s)
                 </th>
-              ))}
+              <SortableTh
+                label="Status"
+                active={sortKey === "status"}
+                direction={direction}
+                onClick={() => toggleSort("status")}
+              />
+              <SortableTh
+                label="Last login"
+                active={sortKey === "lastLogin"}
+                direction={direction}
+                onClick={() => toggleSort("lastLogin")}
+              />
+              <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 && (
               <tr>
                 <td
-                  colSpan={HEADERS.length}
+                  colSpan={7}
                   className="px-3 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No users match your search or filters.
                 </td>
               </tr>
             )}
-            {users.map((user) => (
+            {sorted.map((user) => (
               <tr
                 key={user.id}
                 className="border-b border-border last:border-b-0 hover:bg-muted"
