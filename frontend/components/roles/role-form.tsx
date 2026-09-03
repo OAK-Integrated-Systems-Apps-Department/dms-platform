@@ -1,11 +1,18 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
+import { ChevronDown } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -13,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 import { permissionGroups } from "./data"
+import { getLeafPermissionIds } from "./permission-utils"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
 
@@ -31,6 +39,10 @@ interface RoleFormProps {
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
+  // 32 modules is too much to show fully expanded in this quick-list view —
+  // collapsed by default; open individually, or head to Role Permission
+  // Configuration for search + expand/collapse-all.
+  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
 
   const {
     register,
@@ -158,30 +170,82 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
       </p>
 
       <div className="space-y-3.5">
-        {permissionGroups.map((group) => (
-          <div
-            key={group.area}
-            className="overflow-hidden rounded-[10px] border border-border"
-          >
-            <div className="bg-muted px-3.5 py-2 text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-              {group.area}
-            </div>
-            <div className="divide-y divide-border px-3.5">
-              {group.permissions.map((permission) => (
-                <Checkbox
-                  key={permission.id}
-                  id={permission.id}
-                  label={permission.label}
-                  disabled={isSystemRole}
-                  checked={selectedPermissions.includes(permission.id)}
-                  onCheckedChange={(checked) =>
-                    togglePermission(permission.id, checked)
-                  }
+        {permissionGroups.map((group) => {
+          const groupIds = getLeafPermissionIds(group.permissions)
+          const selectedCount = groupIds.filter((id) =>
+            selectedPermissions.includes(id)
+          ).length
+          const isOpen = openModules[group.moduleCode] === true
+
+          return (
+            <Collapsible
+              key={group.moduleCode}
+              open={isOpen}
+              onOpenChange={(open) =>
+                setOpenModules((prev) => ({
+                  ...prev,
+                  [group.moduleCode]: open,
+                }))
+              }
+              className="overflow-hidden rounded-[10px] border border-border"
+            >
+              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
+                <ChevronDown
+                  size={14}
+                  className={cn(
+                    "shrink-0 transition-transform",
+                    !isOpen && "-rotate-90"
+                  )}
                 />
-              ))}
-            </div>
-          </div>
-        ))}
+                {group.module}
+                <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                  {group.moduleCode} · {selectedCount}/{groupIds.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="divide-y divide-border px-3.5">
+                {group.permissions.map((permission) =>
+                  permission.permissions &&
+                  permission.permissions.length > 0 ? (
+                    // Action with fine-grained permissions nested under it
+                    // (e.g. "Manage Users") — its own id isn't grantable, so
+                    // list its children instead; use Role Permission
+                    // Configuration for select-all on these.
+                    <div key={permission.id} className="py-1.5">
+                      <p className="pt-1 pb-0.5 text-[11.5px] font-semibold tracking-[0.03em] text-muted-foreground uppercase">
+                        {permission.label}
+                      </p>
+                      <div className="divide-y divide-border border-t border-dashed border-border pl-4">
+                        {permission.permissions.map((child) => (
+                          <Checkbox
+                            key={child.id}
+                            id={child.id}
+                            label={child.label}
+                            disabled={isSystemRole}
+                            checked={selectedPermissions.includes(child.id)}
+                            onCheckedChange={(checked) =>
+                              togglePermission(child.id, checked)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Checkbox
+                      key={permission.id}
+                      id={permission.id}
+                      label={permission.label}
+                      disabled={isSystemRole}
+                      checked={selectedPermissions.includes(permission.id)}
+                      onCheckedChange={(checked) =>
+                        togglePermission(permission.id, checked)
+                      }
+                    />
+                  )
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          )
+        })}
       </div>
 
       <hr className="my-6 border-dashed border-border" />
