@@ -5,11 +5,10 @@ import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
 
 const PUBLIC_PATHS = ["/login", "/reset-password", "/update-password", "/error", "/login-timeout", "/session-expired"]
 
-// TEMPORARY — no backend is wired up yet, so there's no way to ever get a
-// dms_access_token cookie. Flip this back to false once your Java backend
-// is connected and actually sets that cookie on login, or every route
-// stays open regardless of session.
-const DEV_BYPASS_AUTH = true
+// Backend is wired up: dms-core sets the dms_access_token cookie on a
+// successful /api/v1/auth/login call (see AuthCookieService), so route
+// gating can now rely on it instead of bypassing auth entirely.
+const DEV_BYPASS_AUTH = false
 
 export function proxy(request: NextRequest) {
   if (DEV_BYPASS_AUTH) {

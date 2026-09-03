@@ -2,10 +2,18 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Check, X } from "lucide-react"
+import { Check, ChevronDown, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { cn } from "@/lib/utils"
 import { permissionGroups } from "@/components/roles/data"
+import { getLeafPermissionIds } from "@/components/roles/permission-utils"
+import type { PermissionItem } from "@/components/roles/types"
 import { useRolesStore } from "@/stores/roles-store"
 import { useUsersStore } from "@/stores/users-store"
 
@@ -14,6 +22,85 @@ import type { UserRecord } from "./types"
 
 interface UserAccessSummaryProps {
   user: UserRecord
+}
+
+/** One permission row — a plain leaf, or (for an action like "Manage Users")
+ * a nested list of its fine-grained permissions shown inline with a granted
+ * count, since this view is read-only and doesn't need its own collapse
+ * state per action the way the editable configuration screens do. */
+function renderPermissionRow(
+  permission: PermissionItem,
+  effectivePermissions: Set<string>
+) {
+  const children = permission.permissions
+  if (!children || children.length === 0) {
+    const granted = effectivePermissions.has(permission.id)
+    return (
+      <div
+        key={permission.id}
+        className="flex items-center justify-between px-3.5 py-2.5"
+      >
+        <span className="text-[13px] text-foreground">{permission.label}</span>
+        <span
+          className={
+            granted
+              ? "flex size-[18px] items-center justify-center rounded-full bg-primary text-primary-foreground"
+              : "flex size-[18px] items-center justify-center rounded-full border border-border text-[var(--ink-faint)]"
+          }
+        >
+          {granted ? (
+            <Check size={12} strokeWidth={3} />
+          ) : (
+            <X size={11} strokeWidth={3} />
+          )}
+        </span>
+      </div>
+    )
+  }
+
+  const childIds = children.map((child) => child.id)
+  const grantedCount = childIds.filter((id) =>
+    effectivePermissions.has(id)
+  ).length
+
+  return (
+    <div key={permission.id} className="px-3.5 py-2.5">
+      <p className="mb-1.5 flex items-center justify-between text-[13px] font-semibold text-foreground">
+        {permission.label}
+        <span className="font-mono text-[10.5px] font-normal text-[var(--ink-faint)]">
+          {grantedCount}/{childIds.length}
+        </span>
+      </p>
+      <div className="divide-y divide-border border-t border-dashed border-border pl-4">
+        {children.map((child) => {
+          const granted = effectivePermissions.has(child.id)
+          return (
+            <div
+              key={child.id}
+              className="flex items-center justify-between py-2"
+            >
+              <span className="text-[12.5px] text-foreground">
+                {child.label}
+              </span>
+              <span
+                className={
+                  granted
+                    ? "flex size-[16px] items-center justify-center rounded-full bg-primary text-primary-foreground"
+                    : "flex size-[16px] items-center justify-center rounded-full border border-border text-[var(--ink-faint)]"
+                }
+              >
+                {granted ? (
+                  <Check size={10} strokeWidth={3} />
+                ) : (
+                  <X size={9} strokeWidth={3} />
+                )}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -39,6 +126,9 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
   const toggleUserStatus = useUsersStore((state) => state.toggleStatus)
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  // 32 modules is too many to show fully expanded by default; open only
+  // modules where this user actually has a granted permission.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const rolesHeld = useMemo(
     () => roles.filter((role) => user.roles.includes(role.name)),
@@ -134,49 +224,53 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
         </h3>
         <span className="text-[12px] text-muted-foreground">
           {effectivePermissions.size} of{" "}
-          {permissionGroups.reduce((n, g) => n + g.permissions.length, 0)}
+          {permissionGroups.reduce(
+            (n, g) => n + getLeafPermissionIds(g.permissions).length,
+            0
+          )}
         </span>
       </div>
 
       <div className="space-y-3">
-        {permissionGroups.map((group) => (
-          <div
-            key={group.area}
-            className="overflow-hidden rounded-[10px] border border-border"
-          >
-            <div className="bg-muted px-3.5 py-2 text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-              {group.area}
-            </div>
-            <div className="divide-y divide-border">
-              {group.permissions.map((permission) => {
-                const granted = effectivePermissions.has(permission.id)
-                return (
-                  <div
-                    key={permission.id}
-                    className="flex items-center justify-between px-3.5 py-2.5"
-                  >
-                    <span className="text-[13px] text-foreground">
-                      {permission.label}
-                    </span>
-                    <span
-                      className={
-                        granted
-                          ? "flex size-[18px] items-center justify-center rounded-full bg-primary text-primary-foreground"
-                          : "flex size-[18px] items-center justify-center rounded-full border border-border text-[var(--ink-faint)]"
-                      }
-                    >
-                      {granted ? (
-                        <Check size={12} strokeWidth={3} />
-                      ) : (
-                        <X size={11} strokeWidth={3} />
-                      )}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+        {permissionGroups.map((group) => {
+          const groupIds = getLeafPermissionIds(group.permissions)
+          const grantedCount = groupIds.filter((id) =>
+            effectivePermissions.has(id)
+          ).length
+          const isOpen =
+            expanded[group.moduleCode] ??
+            (grantedCount > 0 && expanded[group.moduleCode] !== false)
+
+          return (
+            <Collapsible
+              key={group.moduleCode}
+              open={isOpen}
+              onOpenChange={(open) =>
+                setExpanded((prev) => ({ ...prev, [group.moduleCode]: open }))
+              }
+              className="overflow-hidden rounded-[10px] border border-border"
+            >
+              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
+                <ChevronDown
+                  size={14}
+                  className={cn(
+                    "shrink-0 transition-transform",
+                    !isOpen && "-rotate-90"
+                  )}
+                />
+                {group.module}
+                <span className="font-mono text-[10px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                  {group.moduleCode} · {grantedCount}/{groupIds.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="divide-y divide-border">
+                {group.permissions.map((permission) =>
+                  renderPermissionRow(permission, effectivePermissions)
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          )
+        })}
       </div>
 
       <p className="mt-4 text-[12px] text-muted-foreground">

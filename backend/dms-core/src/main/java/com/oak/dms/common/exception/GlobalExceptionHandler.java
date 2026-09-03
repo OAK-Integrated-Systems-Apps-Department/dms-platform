@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.List;
 
 /**
- * Central translation from exceptions to {@link com.oak.dms.common.dto.ErrorResponse}.
+ * Central translation from exceptions to {@link ErrorResponse}.
  * Handles this module's own {@link ApiException} hierarchy plus the common
  * Spring exceptions (validation, data-integrity, access-denied) so
  * individual controllers never need their own try/catch blocks.
@@ -41,6 +41,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.ofValidation(HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         "Validation failed", request.getRequestURI(), fieldErrors));
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(jakarta.validation.ConstraintViolationException ex,
+                                                                    HttpServletRequest request) {
+        // Thrown by @Validated method-parameter checks (e.g. @RequestParam
+        // constraints), as opposed to MethodArgumentNotValidException above
+        // which covers @Valid @RequestBody. Same 400 shape either way so
+        // API consumers don't need to know which annotation style produced it.
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        "Validation failed", request.getRequestURI()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
