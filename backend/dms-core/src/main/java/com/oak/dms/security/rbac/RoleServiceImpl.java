@@ -64,6 +64,9 @@ public class RoleServiceImpl implements RoleService {
                 .tenantId(tenantId)
                 .roleName(request.roleName())
                 .description(request.description())
+                .status(request.status() == null
+                        ? Role.RoleStatus.active
+                        : Role.RoleStatus.valueOf(request.status().name()))
                 .createdBy(TenantContext.getUserId())
                 .build();
 
@@ -103,6 +106,7 @@ public class RoleServiceImpl implements RoleService {
 
         role.setRoleName(request.roleName());
         role.setDescription(request.description());
+        role.setStatus(Role.RoleStatus.valueOf(request.status().name()));
         role.setUpdatedBy(TenantContext.getUserId());
         role.setUpdatedAt(OffsetDateTime.now());
 

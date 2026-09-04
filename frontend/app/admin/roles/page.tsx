@@ -1,8 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Grid3x3, Plus, Search } from "lucide-react"
+import { AlertTriangle, Grid3x3, Loader2, Plus, Search } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
@@ -13,14 +13,31 @@ const PAGE_SIZE = 5
 
 /**
  * Role Management — Role List (R1). Search roles, add a role, or
- * edit/activate/deactivate an existing one. System roles are read-only —
- * see the footnote and `RolesTable`'s handling of `role.system`.
+ * edit/activate/deactivate/delete an existing one. System roles are
+ * read-only — see the footnote and `RolesTable`'s handling of
+ * `role.system`. (KNOWN GAP: the backend has no "system role" concept
+ * yet — see the note on `fromBackend` in `stores/roles-store.ts` — so
+ * every role this fetches from the API comes back editable/deletable
+ * regardless of that footnote.)
  */
 export default function RoleListPage() {
   const roles = useRolesStore((state) => state.roles)
+  const loading = useRolesStore((state) => state.loading)
+  const fetchError = useRolesStore((state) => state.error)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const toggleStatus = useRolesStore((state) => state.toggleStatus)
+  const deleteRole = useRolesStore((state) => state.deleteRole)
+
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchRoles()
+    // Only ever needs to run once on mount — `fetchRoles` is a stable
+    // zustand action reference, not a changing dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -44,6 +61,18 @@ export default function RoleListPage() {
     setPage(1)
   }
 
+  async function handleToggleStatus(id: string) {
+    setActionError(null)
+    const { error } = await toggleStatus(id)
+    if (error) setActionError(error)
+  }
+
+  async function handleDeleteRole(id: string) {
+    setActionError(null)
+    const { error } = await deleteRole(id)
+    return error
+  }
+
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mb-[22px] max-w-[680px]">
@@ -52,7 +81,7 @@ export default function RoleListPage() {
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Roles available within the current tenant. Search, add a role, or
-          view, edit, and activate/deactivate existing roles.
+          view, edit, activate/deactivate, or delete existing roles.
         </p>
       </div>
 
@@ -65,7 +94,7 @@ export default function RoleListPage() {
           <input
             type="text"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => handleQueryChange(event.target.value)}
             placeholder="Search roles…"
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
@@ -86,13 +115,48 @@ export default function RoleListPage() {
         </Link>
       </div>
 
-      <RolesTable roles={pageRoles} onToggleStatus={toggleStatus} />
+      {actionError && (
+        <div className="mb-4 flex items-start gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
-      <TablePagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
+      {loading && roles.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <Loader2 size={16} className="animate-spin" />
+          Loading roles…
+        </div>
+      ) : fetchError && roles.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+          <AlertTriangle size={20} className="text-[var(--rust)]" />
+          <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
+          <button
+            type="button"
+            onClick={() => fetchRoles()}
+            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+        <>
+          <RolesTable
+            roles={pageRoles}
+            onToggleStatus={handleToggleStatus}
+            onDeleteRole={handleDeleteRole}
+          />
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </>
+      )}
 
       <p className="mt-3.5 text-[12px] text-muted-foreground">
-        Add, edit, and activate/deactivate controls are only shown for custom
-        roles — system roles are read-only.
+        Add, edit, activate/deactivate, and delete controls are only shown
+        for custom roles — system roles are read-only.
       </p>
     </DashboardShell>
   )

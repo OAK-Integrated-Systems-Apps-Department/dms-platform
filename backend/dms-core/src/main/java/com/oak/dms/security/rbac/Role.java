@@ -42,6 +42,17 @@ public class Role {
     @Column(name = "description")
     private String description;
 
+    /**
+     * Activate/deactivate flag shown on Role List and Add/Edit Role.
+     * Distinct from {@link #deleted}: an inactive role still exists and
+     * can be reactivated, whereas a deleted role is gone (soft-deleted,
+     * same as {@link com.oak.dms.user.User#isDeleted()}).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    @Builder.Default
+    private RoleStatus status = RoleStatus.active;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -61,4 +72,8 @@ public class Role {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
+
+    public enum RoleStatus {
+        active, inactive
+    }
 }

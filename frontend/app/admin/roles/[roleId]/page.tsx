@@ -2,23 +2,25 @@
 
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
-import { ChevronLeft } from "lucide-react"
+import { AlertTriangle, ChevronLeft, Loader2 } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleDetails } from "@/components/roles/role-details"
-import { useRolesStore } from "@/stores/roles-store"
+import { useRole } from "@/components/roles/use-role"
 
 /**
  * Role Details / Assigned Users (R4) — read-only view of a role's
  * definition, permission summary, and assigned users.
+ *
+ * Uses `useRole` rather than reading straight off the store, since
+ * landing here directly (a bookmark, a refresh) can happen before the
+ * Role List's `fetchRoles()` has ever run — see the hook's own comment.
  */
 export default function RoleDetailsPage() {
   const params = useParams<{ roleId: string }>()
-  const role = useRolesStore((state) =>
-    state.roles.find((r) => r.id === params.roleId)
-  )
+  const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
 
-  if (!role) {
+  if (roleNotFound) {
     notFound()
   }
 
@@ -40,7 +42,20 @@ export default function RoleDetailsPage() {
             Definition, permissions, and users currently assigned to this role.
           </p>
         </div>
-        <RoleDetails role={role} />
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            <Loader2 size={16} className="animate-spin" />
+            Loading role…
+          </div>
+        ) : role ? (
+          <RoleDetails role={role} />
+        ) : (
+          <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            <AlertTriangle size={20} className="text-[var(--rust)]" />
+            Couldn&apos;t load this role.
+          </div>
+        )}
       </div>
     </DashboardShell>
   )

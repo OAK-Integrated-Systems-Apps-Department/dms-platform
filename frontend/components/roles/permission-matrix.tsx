@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react"
 
+
 import { cn } from "@/lib/utils"
 import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
@@ -133,12 +134,15 @@ const COL1_WIDTH = 340
  */
 export function PermissionMatrix() {
   const roles = useRolesStore((state) => state.roles)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const [area, setArea] = useState(ALL_AREAS)
   // Rows are grouped two levels deep (module, then action-with-children) and
   // both start collapsed — 32 modules x ~92 actions is far too much to lay
   // out flat by default. Keyed by moduleCode / action id.
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
   const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
+
+
 
   // Which roles are hidden from the matrix's columns. Absence of a key
   // means visible — that way newly-added roles show up by default instead

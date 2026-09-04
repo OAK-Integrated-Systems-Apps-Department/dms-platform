@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
-import { ChevronDown } from "lucide-react"
+import { AlertTriangle, ChevronDown } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -28,7 +28,8 @@ interface RoleFormProps {
   mode: "create" | "edit"
   /** Pass the existing role when editing — its id, `assignedUsers`, and `system` flag are preserved. */
   role?: RoleRecord
-  onSubmit: (values: RoleFormValues) => void
+  /** Resolves with an error message on failure (shown inline, form stays filled in), or null on success. */
+  onSubmit: (values: RoleFormValues) => Promise<string | null>
 }
 
 /**
@@ -43,6 +44,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   // collapsed by default; open individually, or head to Role Permission
   // Configuration for search + expand/collapse-all.
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
     register,
@@ -77,15 +79,28 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
     router.push("/admin/roles")
   }
 
+  async function handleFormSubmit(values: RoleFormValues) {
+    setSubmitError(null)
+    const error = await onSubmit(values)
+    if (error) setSubmitError(error)
+  }
+
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit(handleFormSubmit)}
       className="rounded-[14px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       {isSystemRole && (
         <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
           This is a system role. Its name, status, and permissions are managed
           by the platform and can&apos;t be edited here.
+        </div>
+      )}
+
+      {submitError && (
+        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{submitError}</span>
         </div>
       )}
 

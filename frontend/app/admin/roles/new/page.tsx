@@ -12,9 +12,11 @@ export default function AddRolePage() {
   const router = useRouter()
   const addRole = useRolesStore((state) => state.addRole)
 
-  function handleSubmit(values: RoleFormValues) {
-    addRole(values)
+  async function handleSubmit(values: RoleFormValues): Promise<string | null> {
+    const { error } = await addRole(values)
+    if (error) return error
     router.push("/admin/roles")
+    return null
   }
 
   return (

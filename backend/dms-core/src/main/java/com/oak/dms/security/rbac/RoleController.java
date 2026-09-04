@@ -55,7 +55,7 @@ public class RoleController {
 
     @PutMapping("/{roleId}")
     @PreAuthorize("@authz.hasPermission('role.manage')")
-    @Operation(summary = "Update a role's name/description")
+    @Operation(summary = "Update a role's name, description, and status")
     public RoleResponse updateRole(@PathVariable UUID roleId, @Valid @RequestBody UpdateRoleRequest request) {
         return roleService.updateRole(roleId, request);
     }
