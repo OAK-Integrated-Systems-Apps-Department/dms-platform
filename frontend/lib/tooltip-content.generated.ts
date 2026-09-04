@@ -3,6 +3,9 @@
 // Regenerate with: bun run gen:tooltips
 
 export const tooltipContent = {
+  "permissions.actions.delete": "Delete",
+  "permissions.actions.edit": "Edit",
+  "permissions.actions.view": "View",
   "roles.actions.activate": "Activate",
   "roles.actions.deactivate": "Deactivate",
   "roles.actions.delete": "Delete",

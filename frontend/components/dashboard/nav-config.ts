@@ -1,6 +1,7 @@
 import {
   BarChart3,
   FileText,
+  KeyRound,
   LayoutDashboard,
   Pin,
   ScrollText,
@@ -33,6 +34,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Users", icon: Users, href: "/admin/users" },
       { label: "Roles", icon: Shield, href: "/admin/roles" },
+      { label: "Permissions", icon: KeyRound, href: "/admin/permissions" },
       { label: "Audit Log", icon: ScrollText },
     ],
   },

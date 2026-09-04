@@ -38,6 +38,7 @@ public class PermissionServiceImpl implements PermissionService {
     private final PermissionRepository permissionRepository;
     private final PermissionActionRepository permissionActionRepository;
     private final PermissionModuleRepository permissionModuleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
     private final PermissionMapper permissionMapper;
 
     @Override
@@ -93,6 +94,18 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     public void deletePermission(UUID permissionId) {
         Permission permission = findActive(permissionId);
+
+        // Mirrors the same guard deleteAction/deleteModule already apply one
+        // level up the hierarchy - without it, deleting a permission still
+        // granted to a role would leave role_permissions rows pointing at a
+        // permission_id that no longer resolves, silently breaking that
+        // role's effective permission set instead of failing loudly here.
+        if (rolePermissionRepository.existsByPermissionId(permissionId)) {
+            throw new DuplicateResourceException(
+                    "Cannot delete permission " + permission.getPermissionCode()
+                            + " while it is still granted to one or more roles");
+        }
+
         permission.setDeleted(true);
         permission.setDeletedAt(OffsetDateTime.now());
         permission.setUpdatedBy(TenantContext.getUserId());
