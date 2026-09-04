@@ -31,6 +31,23 @@ const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
  * The sidebar toggle is the real <SidebarTrigger> now — it reads/writes
  * the sidebar's open state via useSidebar() internally, so this component
  * no longer needs sidebarOpen/onToggleSidebar props at all.
+ *
+ * Layout note: this is a flex row with a fixed-width sidebar trigger, a
+ * shrinkable search box, a spacer, and several fixed-width buttons. Flex
+ * items default to `min-width: auto`, meaning they refuse to shrink below
+ * their own content's intrinsic width even when the row is out of space —
+ * that let this header overflow its container on narrow viewports and,
+ * since the Sidebar is `fixed` (see components/ui/sidebar.tsx), made it
+ * look like the sidebar was overlapping the header. `min-w-0` on the
+ * header and on the search wrapper lets the search box be the thing that
+ * shrinks; `shrink-0` on the trigger/buttons/account menu keeps those at
+ * their natural size instead of squeezing icons.
+ *
+ * Deliberately NOT `overflow-hidden` on the header: the pin/notification/
+ * account dropdowns (`Dropdown`, in components/ui/dropdown.tsx) are
+ * absolutely positioned to extend below the header's own box on purpose.
+ * Clipping the header's overflow clips those dropdowns too — that's what
+ * was cutting them down to a sliver instead of letting them drop open.
  */
 export function AppTopbar() {
   const router = useRouter()
@@ -78,10 +95,10 @@ export function AppTopbar() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
-      <SidebarTrigger />
+    <header className="sticky top-0 z-20 flex min-w-0 items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
+      <SidebarTrigger className="shrink-0" />
 
-      <div className="relative max-w-[460px] flex-1">
+      <div className="relative min-w-0 max-w-[460px] flex-1">
         <Search
           size={16}
           className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--ink-faint)]"
@@ -89,17 +106,17 @@ export function AppTopbar() {
         <input
           type="text"
           placeholder="Search documents, folders, people…"
-          className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)]"
+          className="h-[38px] w-full min-w-0 rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)]"
         />
       </div>
 
       <div className="flex-1" />
 
-      <IconButton title="Help">
+      <IconButton title="Help" className="shrink-0">
         <HelpCircle size={17} />
       </IconButton>
 
-      <div ref={pinRef} className="relative">
+      <div ref={pinRef} className="relative shrink-0">
         <IconButton
           title="Pinned documents"
           active={pinOpen}
@@ -128,7 +145,7 @@ export function AppTopbar() {
         )}
       </div>
 
-      <div ref={notifRef} className="relative">
+      <div ref={notifRef} className="relative shrink-0">
         <IconButton
           title="Notifications"
           active={notifOpen}
@@ -166,7 +183,7 @@ export function AppTopbar() {
         )}
       </div>
 
-      <div ref={accountRef} className="relative">
+      <div ref={accountRef} className="relative shrink-0">
         <button
           type="button"
           onClick={() => {

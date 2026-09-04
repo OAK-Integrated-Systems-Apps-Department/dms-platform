@@ -1,12 +1,9 @@
-"use client"
 import { Inter, IBM_Plex_Mono } from "next/font/google"
+import { cookies } from "next/headers"
 
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { Providers } from "@/components/providers/providers"
 import { cn } from "@/lib/utils"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useState } from "react"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
@@ -22,12 +19,13 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-mono",
 })
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const [queryClient] = useState(() => new QueryClient())
+  const cookieStore = await cookies()
+  const sidebarOpen = cookieStore.get("sidebar_state")?.value !== "false" // defaults to expanded
 
   return (
     <html
@@ -42,11 +40,7 @@ export default function RootLayout({
       )}
     >
       <body>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <TooltipProvider>{children}</TooltipProvider>
-          </ThemeProvider>
-        </QueryClientProvider>
+        <Providers initialSidebarOpen={sidebarOpen}>{children}</Providers>
       </body>
     </html>
   )
