@@ -25,6 +25,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByTenantIdAndEmailAndDeletedFalse(UUID tenantId, String email);
 
-    @Query("select u from User u where u.tenantId = :tenantId and u.deleted = false")
-    Page<User> findAllActiveByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
+    // Includes deactivated (soft-deleted) users deliberately, unlike the
+    // three lookups above: the User List / View User screens need to keep
+    // showing a deactivated user (with status "disabled") so there's
+    // somewhere to click Reactivate. See UserServiceImpl#getUser and
+    // #listUsers, and UserServiceImpl#findOwnedByCallerTenant (still
+    // deleted=false-only, used by updateUser/deactivateUser/resetPassword,
+    // which genuinely shouldn't apply to an already-deactivated user).
+    @Query("select u from User u where u.tenantId = :tenantId")
+    Page<User> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
 }

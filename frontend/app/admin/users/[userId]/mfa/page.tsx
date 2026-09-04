@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
-import { useUsersStore } from "@/stores/users-store"
+import { useUser } from "@/lib/users/use-user"
 
 /**
  * User MFA Management (U8) — administrator view of a user's MFA
@@ -15,26 +15,34 @@ import { useUsersStore } from "@/stores/users-store"
  * wireframe's URL (`.../admin/users/1024/mfa`) and this project's existing
  * dynamic-segment convention (`app/admin/users/[userId]/access-summary`,
  * `app/admin/roles/[roleId]/...`).
+ *
+ * The user itself comes from dms-core (`useUser`, same as View User).
+ * `requireMfaSetup` / `resetMfaCredentials` below are inert placeholders —
+ * dms-core has no MFA-credential endpoints yet (that lives in Keycloak's
+ * `/admin/realms/{realm}/users/{id}/credentials`), so there's nothing real
+ * to call. Swap these for real mutations once that endpoint exists.
  */
 export default function UserMfaManagementPage() {
   const params = useParams<{ userId: string }>()
-  const user = useUsersStore((state) =>
-    state.users.find((u) => u.id === params.userId)
-  )
-  const requireMfaSetup = useUsersStore((state) => state.requireMfaSetup)
-  const resetMfaCredentials = useUsersStore(
-    (state) => state.resetMfaCredentials
-  )
+  const { data: user, isPending, isError, error } = useUser(params.userId)
 
-  if (!user) {
+  if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
+  }
+
+  function handleRequireSetup() {
+    console.info(`MFA setup required for user ${params.userId}`)
+  }
+
+  function handleResetCredentials() {
+    console.info(`MFA credentials reset for user ${params.userId}`)
   }
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
         <Link
-          href={`/admin/users/${user.id}`}
+          href={user ? `/admin/users/${user.id}` : "/admin/users"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
@@ -45,16 +53,26 @@ export default function UserMfaManagementPage() {
             User MFA Management
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            View {user.name}&apos;s multi-factor authentication status and
-            perform permitted administrative actions such as requiring MFA setup
-            or resetting registered credentials.
+            {user
+              ? `View ${user.name}'s multi-factor authentication status and perform permitted administrative actions such as requiring MFA setup or resetting registered credentials.`
+              : "View this user's multi-factor authentication status and perform permitted administrative actions such as requiring MFA setup or resetting registered credentials."}
           </p>
         </div>
-        <UserMfaManagement
-          user={user}
-          onRequireSetup={() => requireMfaSetup(user.id)}
-          onResetCredentials={() => resetMfaCredentials(user.id)}
-        />
+        {isPending ? (
+          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            Loading user…
+          </div>
+        ) : isError ? (
+          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+            {error instanceof Error ? error.message : "Could not load this user."}
+          </div>
+        ) : (
+          <UserMfaManagement
+            user={user}
+            onRequireSetup={handleRequireSetup}
+            onResetCredentials={handleResetCredentials}
+          />
+        )}
       </div>
     </DashboardShell>
   )
