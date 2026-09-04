@@ -167,3 +167,70 @@
     @apply font-sans;
     }
 }
+
+/* Hide native browser password-reveal/clear icons so only our custom toggle shows */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-textfield-decoration-container {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
+/* =========================================================================
+   CUSTOM SCROLLBAR — themed to match "Ledger & Seal" tokens
+   ========================================================================= */
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) transparent;
+}
+
+/* WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--primary);
+    border-radius: var(--radius-xl);
+    border: 2px solid var(--background);
+    background-clip: padding-box;
+    opacity: 0.6;
+    transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--gold);
+}
+
+::-webkit-scrollbar-thumb:active {
+    background-color: var(--rust);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Optional: a slimmer variant for inner scrollable panels
+   (sidebars, tables, modals) — apply with class="scrollbar-thin" */
+.scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+    border-width: 1px;
+    border-radius: var(--radius-lg);
+}
