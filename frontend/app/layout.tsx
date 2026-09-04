@@ -1,5 +1,5 @@
 "use client"
-import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google"
+import { Inter, IBM_Plex_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -10,7 +10,7 @@ import { useState } from "react"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
-const fraunces = Fraunces({
+const headingFont = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["500", "600"],
   variable: "--font-heading",
@@ -38,7 +38,7 @@ export default function RootLayout({
         plexMono.variable,
         "font-sans",
         inter.variable,
-        fraunces.variable
+        headingFont.variable
       )}
     >
       <body>
