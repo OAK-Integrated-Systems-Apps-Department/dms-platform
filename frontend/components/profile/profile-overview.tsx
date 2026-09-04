@@ -46,8 +46,8 @@ export function ProfileOverview() {
           <p className="mb-1 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
             Tenant
           </p>
-          <p className="text-[13.5px] text-foreground">
-            {profileSupplement.tenant}
+          <p className="font-mono text-[12.5px] text-foreground">
+            {user?.tenantId ?? "—"}
           </p>
         </div>
         <div>
@@ -67,7 +67,7 @@ export function ProfileOverview() {
             Account Created
           </p>
           <p className="font-mono text-[12.5px] text-foreground">
-            {profileSupplement.accountCreated}
+            {user?.createdAt ? user.createdAt.slice(0, 10) : "—"}
           </p>
         </div>
         <div>

@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { KEYCLOAK_ACCOUNT_URL } from "@/lib/api-config"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
 
 import { securitySupplement } from "./data"
 
@@ -20,6 +21,8 @@ import { securitySupplement } from "./data"
  * screens rather than the app-wide 9px/14px mix used elsewhere.
  */
 export function SecurityOverview() {
+  const { data: user } = useCurrentUser()
+
   return (
     <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Password */}
@@ -64,11 +67,11 @@ export function SecurityOverview() {
             Status
           </p>
           <Badge
-            variant={securitySupplement.mfaEnrolled ? "default" : "muted"}
+            variant={user?.mfaEnabled ? "default" : "muted"}
             className="gap-1.5 rounded-[10px]"
           >
             <span className="size-[5px] rounded-full bg-current" />
-            {securitySupplement.mfaEnrolled ? "Enrolled" : "Not enrolled"}
+            {user?.mfaEnabled ? "Enrolled" : "Not enrolled"}
           </Badge>
         </div>
         <div>
