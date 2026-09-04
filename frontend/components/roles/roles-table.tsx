@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
-import { Pencil, ShieldCheck, UserCheck, UserX } from "lucide-react"
+import { Pencil, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -10,6 +11,7 @@ import { useSortableTable } from "@/hooks/use-sortable-table"
 import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
+import { RoleDeleteDialog } from "./role-delete-dialog"
 import type { RoleRecord } from "./types"
 
 type SortKey = "name" | "description" | "status" | "assignedUsers"
@@ -17,10 +19,12 @@ type SortKey = "name" | "description" | "status" | "assignedUsers"
 interface RolesTableProps {
   roles: RoleRecord[]
   onToggleStatus: (id: string) => void
+  /** Resolves with an error message on failure, or null on success — passed straight through to `RoleDeleteDialog`. */
+  onDeleteRole: (id: string) => Promise<string | null>
 }
 
 /** Role Name / Description / Status / Assigned Users / Actions — per the R1 wireframe. */
-export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
+export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTableProps) {
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     RoleRecord,
     SortKey
@@ -30,6 +34,8 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
     status: (r) => r.status,
     assignedUsers: (r) => r.assignedUsers,
   })
+
+  const [pendingDeleteRole, setPendingDeleteRole] = useState<RoleRecord | null>(null)
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
@@ -120,14 +126,14 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (
-                      <Link
+                            <Link
                               {...props}
-                        href={`/admin/roles/${role.id}/edit`}
+                              href={`/admin/roles/${role.id}/edit`}
                               aria-label={`Edit ${role.name}`}
                               className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                      >
+                            >
                               <Pencil size={15} />
-                      </Link>
+                            </Link>
                           )}
                         />
                         <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
@@ -136,28 +142,28 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (
-                      <button
+                            <button
                               {...props}
-                        type="button"
-                        onClick={() => onToggleStatus(role.id)}
+                              type="button"
+                              onClick={() => onToggleStatus(role.id)}
                               aria-label={
                                 role.status === "Active"
                                   ? `Deactivate ${role.name}`
                                   : `Activate ${role.name}`
                               }
-                        className={cn(
+                              className={cn(
                                 "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                          role.status === "Active"
+                                role.status === "Active"
                                   ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                   : "text-primary hover:bg-muted"
-                        )}
-                      >
+                              )}
+                            >
                               {role.status === "Active" ? (
                                 <UserX size={15} />
                               ) : (
                                 <UserCheck size={15} />
                               )}
-                      </button>
+                            </button>
                           )}
                         />
                         <TooltipContent>
@@ -165,6 +171,23 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
                             ? getTooltip("roles.actions.deactivate")
                             : getTooltip("roles.actions.activate")}
                         </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <button
+                              {...props}
+                              type="button"
+                              onClick={() => setPendingDeleteRole(role)}
+                              aria-label={`Delete ${role.name}`}
+                              className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        />
+                        <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
                       </Tooltip>
                     </div>
                   )}
@@ -174,6 +197,17 @@ export function RolesTable({ roles, onToggleStatus }: RolesTableProps) {
           </tbody>
         </table>
       </div>
+
+      {pendingDeleteRole && (
+        <RoleDeleteDialog
+          role={pendingDeleteRole}
+          open={pendingDeleteRole !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingDeleteRole(null)
+          }}
+          onConfirm={() => onDeleteRole(pendingDeleteRole.id)}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, Fragment } from "react"
+import { useEffect, useMemo, useState, Fragment } from "react"
 import { Check, ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -27,12 +27,23 @@ const ALL_AREAS = "All functional areas"
  */
 export function PermissionMatrix() {
   const roles = useRolesStore((state) => state.roles)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const [area, setArea] = useState(ALL_AREAS)
   // Rows are grouped two levels deep (module, then action-with-children) and
   // both start collapsed — 32 modules x ~92 actions is far too much to lay
   // out flat by default. Keyed by moduleCode / action id.
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
   const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
+
+  // The roles store no longer ships pre-seeded with mock data — it starts
+  // empty until something fetches it (see stores/roles-store.ts). The
+  // Role List screen triggers that fetch itself, but someone can land
+  // directly on this screen without ever visiting Role List first, so
+  // this pulls its own copy in that case rather than showing an empty grid.
+  useEffect(() => {
+    if (roles.length === 0) fetchRoles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const visibleGroups = useMemo(
     () =>
