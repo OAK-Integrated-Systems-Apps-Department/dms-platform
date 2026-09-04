@@ -4,14 +4,14 @@ import { notFound, useParams } from "next/navigation"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserEditForm } from "@/components/users/user-edit-form"
-import { useUsersStore } from "@/stores/users-store"
+import { useUser } from "@/lib/users/use-user"
 
 /** Edit User — per dms-edit-user.html. Reached from the "Edit" action on the User List or the View User screen. */
 export default function EditUserPage() {
   const params = useParams<{ userId: string }>()
-  const user = useUsersStore((state) => state.users.find((u) => u.id === params.userId))
+  const { data: user, isPending, isError, error } = useUser(params.userId)
 
-  if (!user) {
+  if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
   }
 
@@ -25,7 +25,17 @@ export default function EditUserPage() {
             attributes. Identity-related fields follow the Keycloak integration rules.
           </p>
         </div>
+        {isPending ? (
+          <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            Loading user…
+          </div>
+        ) : isError ? (
+          <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+            {error instanceof Error ? error.message : "Could not load this user."}
+          </div>
+        ) : (
         <UserEditForm user={user} />
+        )}
       </div>
     </DashboardShell>
   )

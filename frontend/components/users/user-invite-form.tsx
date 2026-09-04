@@ -25,16 +25,16 @@ const ROLE_OPTIONS = initialRoles.map((role) => role.name)
  * (see app/update-password/page.tsx). Nothing here is reachable without
  * an existing admin session.
  *
- * KNOWN GAP: dms-core's CreateUserRequest currently only accepts
- * {email, displayName} (see backend/.../user/dto/CreateUserRequest.java).
- * `username`, `roles`, and `additionalProfile` are captured here and sent
- * in the request body below, but the backend will silently ignore them
- * until CreateUserRequest, UserServiceImpl, and KeycloakUserService are
- * extended to read and act on them (setting the Keycloak username
- * distinctly from email, assigning realm roles, storing profile notes).
- * The form works end-to-end for name/email/invite-email today; role
- * assignment and the username/profile fields need that backend work
- * before they take effect.
+ * KNOWN GAP: dms-core's CreateUserRequest only accepts
+ * {email, firstName, lastName} (see
+ * backend/.../user/dto/CreateUserRequest.java). `username`, `roles`, and
+ * `additionalProfile` are captured here and sent in the request body below,
+ * but the backend will silently ignore them until CreateUserRequest,
+ * UserServiceImpl, and KeycloakUserService are extended to read and act on
+ * them (setting the Keycloak username distinctly from email, assigning
+ * realm roles, storing profile notes). The form works end-to-end for
+ * name/email/invite-email today; role assignment and the username/profile
+ * fields need that backend work before they take effect.
  */
 export function UserInviteForm() {
   const router = useRouter()
@@ -62,7 +62,8 @@ export function UserInviteForm() {
       credentials: "include",
       body: JSON.stringify({
         email: values.email,
-        displayName: `${values.firstName} ${values.lastName}`.trim(),
+        firstName: values.firstName,
+        lastName: values.lastName,
         // Sent for when the backend is extended to read them — see the
         // KNOWN GAP note above. Harmless to send today; dms-core just
         // won't act on them yet.

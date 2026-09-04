@@ -71,6 +71,12 @@ function SidebarProvider({
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
+  // `defaultOpen` should be derived server-side (e.g. read from the
+  // `sidebar_state` cookie in a Server Component and passed down) so the
+  // very first client render matches the server-rendered HTML exactly.
+  // Do NOT read document.cookie here — that runs during render on both
+  // server and client and will produce a hydration mismatch, since the
+  // server has no `document` to read from.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
   const setOpen = React.useCallback(

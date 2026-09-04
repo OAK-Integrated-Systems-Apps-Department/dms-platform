@@ -37,7 +37,7 @@ export function SegmentedControl<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "flex h-9 items-center gap-2 rounded-[9px] border px-3.5 text-[13px] font-medium transition-colors",
+              "flex h-10 items-center gap-2 rounded-[9px] border px-3.5 text-[13px] font-medium transition-colors",
               active
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-[var(--border-strong)] bg-muted text-muted-foreground",

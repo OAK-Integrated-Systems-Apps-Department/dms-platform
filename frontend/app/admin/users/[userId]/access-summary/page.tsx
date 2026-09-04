@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
-import { useUsersStore } from "@/stores/users-store"
+import { useUser } from "@/lib/users/use-user"
 
 /**
  * User Access Summary (A1) — administrator view of what a user can
@@ -17,11 +17,11 @@ import { useUsersStore } from "@/stores/users-store"
  */
 export default function UserAccessSummaryPage() {
   const params = useParams<{ userId: string }>()
-  const user = useUsersStore((state) =>
-    state.users.find((u) => u.id === params.userId)
+  const { data: user, isPending, isError, error, toggleStatus } = useUser(
+    params.userId
   )
 
-  if (!user) {
+  if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
   }
 
@@ -40,11 +40,22 @@ export default function UserAccessSummaryPage() {
             User Access Summary
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            What {user.name} can actually access, computed across every role
-            they hold.
+            {user
+              ? `What ${user.name} can actually access, computed across every role they hold.`
+              : "What this user can actually access, computed across every role they hold."}
           </p>
         </div>
-        <UserAccessSummary user={user} />
+        {isPending ? (
+          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            Loading user…
+          </div>
+        ) : isError ? (
+          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+            {error instanceof Error ? error.message : "Could not load this user."}
+          </div>
+        ) : (
+          <UserAccessSummary user={user} onToggleStatus={toggleStatus} />
+        )}
       </div>
     </DashboardShell>
   )

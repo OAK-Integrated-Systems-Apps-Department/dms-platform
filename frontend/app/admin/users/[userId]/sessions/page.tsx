@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
+import { useUser } from "@/lib/users/use-user"
 import { useUsersStore } from "@/stores/users-store"
 
 /**
@@ -14,16 +15,22 @@ import { useUsersStore } from "@/stores/users-store"
  * matching the wireframe's URL (`.../admin/users/1024/sessions`) and this
  * project's existing dynamic-segment convention
  * (`app/admin/users/[userId]/mfa`, `.../access-summary`).
+ *
+ * The user itself now comes from dms-core (`useUser`, same as View User).
+ * `revokeSession` / `revokeAllSessions` stay wired to the mock
+ * `users-store` placeholders below — dms-core has no session endpoints yet
+ * (that lives in Keycloak's `/admin/realms/{realm}/sessions` /
+ * `.../users/{id}/logout`), so there's nothing real to call yet, and the
+ * session list itself is always empty until that integration exists.
+ * Swap these for real mutations once that endpoint exists.
  */
 export default function UserSessionsPage() {
   const params = useParams<{ userId: string }>()
-  const user = useUsersStore((state) =>
-    state.users.find((u) => u.id === params.userId)
-  )
+  const { data: user, isPending, isError, error } = useUser(params.userId)
   const revokeSession = useUsersStore((state) => state.revokeSession)
   const revokeAllSessions = useUsersStore((state) => state.revokeAllSessions)
 
-  if (!user) {
+  if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
   }
 
@@ -31,7 +38,7 @@ export default function UserSessionsPage() {
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
         <Link
-          href={`/admin/users/${user.id}`}
+          href={user ? `/admin/users/${user.id}` : "/admin/users"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
@@ -42,15 +49,26 @@ export default function UserSessionsPage() {
             User Sessions
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            View {user.name}&apos;s active sessions and terminate one or all of
-            them where required.
+            {user
+              ? `View ${user.name}'s active sessions and terminate one or all of them where required.`
+              : "View this user's active sessions and terminate one or all of them where required."}
           </p>
         </div>
-        <UserSessions
-          user={user}
-          onRevokeSession={(sessionId) => revokeSession(user.id, sessionId)}
-          onRevokeAllSessions={() => revokeAllSessions(user.id)}
-        />
+        {isPending ? (
+          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            Loading user…
+          </div>
+        ) : isError ? (
+          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+            {error instanceof Error ? error.message : "Could not load this user."}
+          </div>
+        ) : (
+          <UserSessions
+            user={user}
+            onRevokeSession={(sessionId) => revokeSession(user.id, sessionId)}
+            onRevokeAllSessions={() => revokeAllSessions(user.id)}
+          />
+        )}
       </div>
     </DashboardShell>
   )
