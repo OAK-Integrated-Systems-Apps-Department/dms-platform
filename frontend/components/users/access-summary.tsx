@@ -15,13 +15,13 @@ import { permissionGroups } from "@/components/roles/data"
 import { getLeafPermissionIds } from "@/components/roles/permission-utils"
 import type { PermissionItem } from "@/components/roles/types"
 import { useRolesStore } from "@/stores/roles-store"
-import { useUsersStore } from "@/stores/users-store"
 
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
 
 interface UserAccessSummaryProps {
   user: UserRecord
+  onToggleStatus: () => void
 }
 
 /** One permission row — a plain leaf, or (for an action like "Manage Users")
@@ -122,9 +122,11 @@ function renderPermissionRow(
  * Corner radius is fixed at 10px across every surface here (card, avatar,
  * badges), matching the rest of Role Management and Self-Service.
  */
-export function UserAccessSummary({ user }: UserAccessSummaryProps) {
+export function UserAccessSummary({
+  user,
+  onToggleStatus,
+}: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
-  const toggleUserStatus = useUsersStore((state) => state.toggleStatus)
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   // 32 modules is too many to show fully expanded by default; open only
   // modules where this user actually has a granted permission.
@@ -282,7 +284,7 @@ export function UserAccessSummary({ user }: UserAccessSummaryProps) {
         user={user}
         open={statusDialogOpen}
         onOpenChange={setStatusDialogOpen}
-        onConfirm={() => toggleUserStatus(user.id)}
+        onConfirm={() => onToggleStatus()}
       />
     </div>
   )
