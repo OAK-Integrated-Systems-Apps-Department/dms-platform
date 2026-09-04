@@ -104,20 +104,41 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         </div>
       )}
 
-      <div className="mb-5">
-        <Label htmlFor="role-name">Role Name</Label>
-        <Input
-          id="role-name"
-          placeholder="e.g. Compliance Officer"
-          disabled={isSystemRole}
-          aria-invalid={Boolean(errors.name)}
-          {...register("name")}
-        />
-        {errors.name && (
-          <p className="mt-1.5 text-[12px] text-destructive">
-            {errors.name.message}
-          </p>
-        )}
+      <div className="mb-5 flex flex-col gap-5 sm:flex-row sm:items-start">
+        <div className="flex-1">
+          <Label htmlFor="role-name">Role Name</Label>
+          <Input
+            id="role-name"
+            placeholder="e.g. Compliance Officer"
+            disabled={isSystemRole}
+            aria-invalid={Boolean(errors.name)}
+            {...register("name")}
+          />
+          {errors.name && (
+            <p className="mt-1.5 text-[12px] text-destructive">
+              {errors.name.message}
+            </p>
+          )}
+        </div>
+
+        <div className="sm:w-[240px] sm:shrink-0">
+          <Label>Status</Label>
+          <Controller
+            name="status"
+            control={control}
+            render={({ field }) => (
+              <SegmentedControl
+                value={field.value}
+                onChange={field.onChange}
+                disabled={isSystemRole}
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "Inactive", label: "Inactive" },
+                ]}
+              />
+            )}
+          />
+        </div>
       </div>
 
       <div className="mb-6">
@@ -139,25 +160,6 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
             {errors.description.message}
           </p>
         )}
-      </div>
-
-      <div className="mb-6">
-        <Label>Status</Label>
-        <Controller
-          name="status"
-          control={control}
-          render={({ field }) => (
-            <SegmentedControl
-              value={field.value}
-              onChange={field.onChange}
-              disabled={isSystemRole}
-              options={[
-                { value: "Active", label: "Active" },
-                { value: "Inactive", label: "Inactive" },
-              ]}
-            />
-          )}
-        />
       </div>
 
       <hr className="my-6 border-dashed border-border" />
@@ -184,7 +186,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         for a searchable, group-by-group view.
       </p>
 
-      <div className="space-y-3.5">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
         {permissionGroups.map((group) => {
           const groupIds = getLeafPermissionIds(group.permissions)
           const selectedCount = groupIds.filter((id) =>
@@ -202,7 +204,10 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
                   [group.moduleCode]: open,
                 }))
               }
-              className="overflow-hidden rounded-[10px] border border-border"
+              className={cn(
+                "overflow-hidden rounded-[10px] border border-border",
+                isOpen && "sm:col-span-2 lg:col-span-3"
+              )}
             >
               <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
                 <ChevronDown
@@ -212,8 +217,8 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
                     !isOpen && "-rotate-90"
                   )}
                 />
-                {group.module}
-                <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+                <span className="flex-1 truncate">{group.module}</span>
+                <span className="shrink-0 font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
                   {group.moduleCode} · {selectedCount}/{groupIds.length}
                 </span>
               </CollapsibleTrigger>
