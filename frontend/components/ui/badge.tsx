@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold whitespace-nowrap [&_svg]:pointer-events-none [&_svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-[5px] border px-2.5 py-0.5 text-[11.5px] font-semibold whitespace-nowrap [&_svg]:pointer-events-none [&_svg]:size-3",
   {
     variants: {
       variant: {
@@ -26,12 +26,27 @@ interface BadgeProps extends VariantProps<typeof badgeVariants> {
   className?: string
 }
 
-/** Small pill label — role name tags, selected-count and read-only indicators. */
+/**
+ * Small pill label — role name tags, selected-count and read-only indicators.
+ *
+ * Corner radius is intentionally NOT overridable per call site: any
+ * `rounded-*` class passed in via `className` is stripped before merging,
+ * so every badge in the app shares exactly one radius, controlled only by
+ * `rounded-[5px]` above. Plenty of call sites still pass a leftover
+ * `rounded-[10px]` from before this existed — that's harmless now, it's
+ * dropped here rather than needing to be cleaned up at 15+ call sites.
+ * Change the radius by editing the line above, not by passing one in.
+ */
 function Badge({ className, variant, children }: BadgeProps) {
+  const withoutRadius = className
+    ?.split(" ")
+    .filter((token) => token && !/^rounded(-|$)/.test(token))
+    .join(" ")
+
   return (
     <span
       data-slot="badge"
-      className={cn(badgeVariants({ variant }), className)}
+      className={cn(badgeVariants({ variant }), withoutRadius)}
     >
       {children}
     </span>
