@@ -3,17 +3,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
+  deactivateUser,
   fetchUser,
   fetchUserRoles,
+  reactivateUser,
   sendPasswordReset as sendPasswordResetRequest,
   toUserRecord,
-  updateUserStatus,
 } from "@/lib/users/api"
 
 /**
  * Loads a single user from dms-core (`GET /api/v1/users/{userId}` +
  * `GET /api/v1/users/{userId}/roles`) for the View User screen, replacing
  * the mock lookup in `stores/users-store.ts`.
+ *
+ * `GET /api/v1/users/{userId}` deliberately still returns a deactivated
+ * user (see UserServiceImpl#getUser on the backend) rather than 404ing,
+ * specifically so this page keeps working for one and can offer
+ * Reactivate instead of just vanishing.
  */
 export function useUser(userId: string) {
   const query = useQuery({
@@ -34,8 +40,17 @@ export function useUser(userId: string) {
   const toggleStatusMutation = useMutation({
     mutationFn: async () => {
       const current = await fetchUser(userId)
-      const nextStatus = current.status === "active" ? "disabled" : "active"
-      await updateUserStatus(userId, current, nextStatus)
+      if (current.status === "active") {
+        // A real soft-delete (DELETE /api/v1/users/{id}), not a
+        // status-field PUT — see deactivateUser in lib/users/api.ts.
+        await deactivateUser(userId)
+      } else {
+        // Reachable now: getUser (above) no longer excludes deactivated
+        // users, so `current` here really can be one, and reactivateUser
+        // (POST .../reactivate) is the endpoint that actually undoes
+        // deactivateUser.
+        await reactivateUser(userId)
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", userId] })
@@ -46,9 +61,28 @@ export function useUser(userId: string) {
     mutationFn: () => sendPasswordResetRequest(userId),
   })
 
+  // Standalone rather than folded into toggleStatus above: toggleStatus's
+  // mutationFn calls fetchUser(userId) first to read the current status,
+  // and fetchUser 404s for any user that's actually deactivated (same
+  // deleted=false filter as every other lookup) — so that branch can
+  // structurally never reach a genuinely-deactivated user, and neither
+  // can this whole page (its own top-level query would already have
+  // 404'd and redirected to not-found before this dialog could render).
+  // This exists so the real reactivate endpoint is available to call by
+  // id once there's a UI surface that can list/find deactivated users —
+  // there isn't one today.
+
+  // const reactivateMutation = useMutation({
+  //   mutationFn: () => reactivateUserRequest(userId),
+  //   onSuccess: () => {
+  //     queryClient.invalidateQueries({ queryKey: ["user", userId] })
+  //   },
+  // })
+
   return {
     ...query,
     toggleStatus: () => toggleStatusMutation.mutate(),
     sendPasswordReset: () => sendPasswordResetMutation.mutate(),
+    // reactivate: () => reactivateMutation.mutate(),
   }
 }

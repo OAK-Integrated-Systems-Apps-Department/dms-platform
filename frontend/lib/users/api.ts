@@ -86,27 +86,104 @@ export async function fetchUsersPage(
   return response.json()
 }
 
-export async function updateUserStatus(
+export async function deactivateUser(userId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  })
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "Could not deactivate this user.")
+    )
+  }
+}
+
+/**
+ * Undoes `deactivateUser` via the new `POST /api/v1/users/{userId}/reactivate`
+ * endpoint. Doesn't need a `current` snapshot re-supplied like a PUT to
+ * `/api/v1/users/{userId}` would — dms-core reads the existing row itself
+ * and 409s if it isn't actually deactivated, so there's nothing for the
+ * caller to get stale or resend.
+ */
+export async function reactivateUser(userId: string): Promise<UserResponseDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/users/${userId}/reactivate`,
+    { method: "POST", credentials: "include" }
+  )
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "Could not reactivate this user.")
+    )
+  }
+  return response.json()
+}
+
+// /**
+//  * Re-enables a user via `PUT /api/v1/users/{userId}` with `status: "active"`
+//  * — for a user whose status is "locked"/"disabled" but who was never
+//  * actually deactivated (soft-deleted). For a genuinely deactivated user,
+//  * use `reactivateUser` above instead — this PUT's own lookup filters out
+//  * deleted rows the same as every other endpoint, so it 404s for them.
+//  */
+// export async function activateUser(
+//   userId: string,
+//   current: UserResponseDto
+// ): Promise<void> {
+//   await updateUserStatus(userId, current, "active")
+// }
+
+// export async function updateUserStatus(
+//   userId: string,
+//   current: UserResponseDto,
+//   nextStatus: UserResponseDto["status"]
+// ): Promise<void> {
+//   const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
+//     method: "PUT",
+//     credentials: "include",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({
+//       firstName: current.firstName,
+//       lastName: current.lastName,
+//       mfaEnabled: current.mfaEnabled,
+//       status: nextStatus,
+//     }),
+//   })
+//   if (!response.ok) {
+//     throw new Error(
+//       await parseErrorMessage(response, "Could not update this user's status.")
+//     )
+//   }
+// }
+
+/**
+ * Full profile update via `PUT /api/v1/users/{userId}` — accepts
+ * `firstName`, `lastName`, `mfaEnabled`, and `status`, and returns the
+ * updated `UserResponseDto` (see the schema on the endpoint's Swagger
+ * page). Used by the Edit User form; `mfaEnabled`/`status` are unrelated
+ * to what that form edits, so callers should pass through a freshly
+ * fetched user's current values for those two rather than guessing.
+ */
+export async function updateUserProfile(
   userId: string,
-  current: UserResponseDto,
-  nextStatus: UserResponseDto["status"]
-): Promise<void> {
+  patch: {
+    firstName: string
+    lastName: string
+    mfaEnabled: boolean
+    status: UserResponseDto["status"]
+  }
+): Promise<UserResponseDto> {
   const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      firstName: current.firstName,
-      lastName: current.lastName,
-      mfaEnabled: current.mfaEnabled,
-      status: nextStatus,
-    }),
+    body: JSON.stringify(patch),
   })
   if (!response.ok) {
     throw new Error(
-      await parseErrorMessage(response, "Could not update this user's status.")
+      await parseErrorMessage(response, "Could not save changes.")
     )
   }
+  return response.json()
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {

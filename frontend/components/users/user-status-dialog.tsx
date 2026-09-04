@@ -23,10 +23,21 @@ interface UserStatusDialogProps {
 
 /**
  * Activate / Deactivate User (U6) — confirmation dialog for enabling or
- * disabling a user's account. Deactivating prevents future DMS sign-in
- * without deleting historical records or audit history; it's a state
- * toggle (`PUT /admin/realms/{realm}/users/{id}`, body `{ enabled }`), not
- * a delete.
+ * disabling a user's account.
+ *
+ * Deactivating calls `DELETE /api/v1/users/{id}` (a real soft-delete —
+ * dms-core marks the row `deleted` and disables the Keycloak account).
+ * Activating calls `POST /api/v1/users/{id}/reactivate`, which clears that
+ * soft-delete and re-enables the account. The backend deliberately keeps
+ * returning a deactivated user from `GET /api/v1/users` and
+ * `GET /api/v1/users/{id}` (see UserServiceImpl#listUsers / #getUser)
+ * rather than filtering them out, specifically so this dialog's "Activate"
+ * direction has a user to act on — otherwise a deactivated user would
+ * vanish from the list and this page would 404 on them. See
+ * lib/users/api.ts (`deactivateUser` / `reactivateUser`) for where this is
+ * actually implemented; this component only renders copy and confirms the
+ * click — the caller's `onConfirm` decides which endpoint to hit based on
+ * `user.status`.
  *
  * One component handles both directions, matching the wireframe's own
  * note: "same interface pattern is reused for Activate, with inverted copy
@@ -67,7 +78,8 @@ export function UserStatusDialog({
                   {user.name}
                 </strong>{" "}
                 ({user.username}) will no longer be able to sign in to DMS.
-                Historical records and audit history are retained.
+                Historical records and audit history are retained, and the
+                account can be reactivated from here later if needed.
               </>
             ) : (
               <>

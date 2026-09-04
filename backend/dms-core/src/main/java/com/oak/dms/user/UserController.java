@@ -95,6 +95,15 @@ public class UserController {
         userService.deactivateUser(userId);
     }
 
+    @PostMapping("/{userId}/reactivate")
+    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
+            description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
+                    + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")
+    public UserResponse reactivateUser(@PathVariable UUID userId) {
+        return userService.reactivateUser(userId);
+    }
+
     /**
      * Self-provisioning is the one endpoint that reads identity straight out
      * of the JWT rather than from {@link com.oak.dms.security.auth.TenantContext},

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { AlertTriangle, Lock } from "lucide-react"
@@ -9,8 +10,7 @@ import { AlertTriangle, Lock } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { API_BASE_URL } from "@/lib/api-config"
-import { useUsersStore } from "@/stores/users-store"
+import { fetchUser, updateUserProfile } from "@/lib/users/api"
 
 import { userEditFormSchema, type UserEditFormValues } from "./schema"
 import type { UserRecord } from "./types"
@@ -25,24 +25,22 @@ interface UserEditFormProps {
  * credential) are Keycloak-managed and this screen only exposes what DMS
  * is permitted to write.
  *
- * KNOWN GAP, more specific than the one on UserInviteForm: the real
- * backend contract here (UpdateUserRequest.java — PUT /api/v1/users/{id})
- * only accepts `displayName` (one combined string, not separate
- * first/last), `mfaEnabled`, and `status`. It has no field for email or
- * for "additional profile attributes" at all — email in particular looks
- * to be Keycloak-managed like username, just not yet marked read-only in
- * this design. Submitting sends `displayName` for real (joining
- * firstName + lastName) and passes through the user's existing
- * mfaEnabled/status unchanged so the required fields are satisfied;
- * `email` and `additionalProfile` are included in the request body for
- * when the backend is extended to accept them, but dms-core ignores them
- * today. The local store update (so this change is visible immediately
- * on the View User screen) applies all four regardless, since it's still
- * mocked data either way.
+ * KNOWN GAP: `PUT /api/v1/users/{userId}` only accepts `firstName`,
+ * `lastName`, `mfaEnabled`, and `status` (see UpdateUserRequest.java / the
+ * endpoint's Swagger page) — there's no field for email or "additional
+ * profile attributes" at all. Those two stay on the form because the
+ * mockup calls for them, but they're not sent to the backend; email in
+ * particular looks to be Keycloak-managed like username, just not yet
+ * marked read-only in this design.
+ *
+ * `mfaEnabled`/`status` are passed through unmodified from a freshly
+ * fetched copy of the user (not the `user` prop, which may be a moment
+ * stale) — this form has no controls for either, so it must never
+ * silently flip one while saving name changes.
  */
 export function UserEditForm({ user }: UserEditFormProps) {
   const router = useRouter()
-  const updateUser = useUsersStore((state) => state.updateUser)
+  const queryClient = useQueryClient()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
@@ -61,54 +59,27 @@ export function UserEditForm({ user }: UserEditFormProps) {
 
   async function onSubmit(values: UserEditFormValues) {
     setSubmitError(null)
-    const displayName = `${values.firstName} ${values.lastName}`.trim()
 
-    let response: Response
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/users/${user.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          displayName,
-          // Passed through unchanged — this form doesn't edit either of
-          // these, but UpdateUserRequest requires both. Real status values
-          // are active/locked/disabled on the backend; the mock "Inactive"
-          // here maps to "disabled" as the closest equivalent.
-          mfaEnabled: user.mfaStatus.startsWith("Enabled"),
-          status: user.status === "Active" ? "active" : "disabled",
-          // Not yet read by dms-core — see the KNOWN GAP note above.
-          email: values.email,
-          additionalProfile: values.additionalProfile || undefined,
-        }),
+      const current = await fetchUser(user.id)
+      await updateUserProfile(user.id, {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        // Not edited on this form — carried over as-is from the current
+        // record so saving a name change can't accidentally toggle MFA
+        // or flip a locked/disabled account back to active.
+        mfaEnabled: current.mfaEnabled,
+        status: current.status,
       })
-    } catch {
-      // fetch() throws (rather than resolving with a bad status) when the
-      // request never reached a server at all — e.g. the backend isn't
-      // running yet. Distinct from a 4xx/5xx below, which means the
-      // backend WAS reached and responded.
+    } catch (err) {
       setSubmitError(
-        "Could not reach the server. Check that the backend is running and try again."
+        err instanceof Error ? err.message : "Could not save changes."
       )
       return
     }
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
-      setSubmitError(
-        response.status === 403
-          ? "You don't have permission to edit this user."
-          : (body?.message ?? "Could not save changes.")
-      )
-      return
-    }
-
-    updateUser(user.id, {
-      firstName: values.firstName,
-      lastName: values.lastName,
-      email: values.email,
-      additionalProfile: values.additionalProfile,
-    })
+    queryClient.invalidateQueries({ queryKey: ["user", user.id] })
+    queryClient.invalidateQueries({ queryKey: ["users"] })
     router.push(`/admin/users/${user.id}`)
   }
 

@@ -32,6 +32,16 @@ public interface UserService {
 
     void deactivateUser(UUID userId);
 
+    /**
+     * Undoes {@link #deactivateUser}: clears the soft-delete, sets status
+     * back to active, and re-enables the Keycloak account. Only valid for a
+     * user that actually went through deactivateUser — a user whose status
+     * was changed via {@link #updateUser} (locked/disabled, never deleted)
+     * isn't a valid target here; that direction reverses via updateUser's
+     * own status field instead.
+     */
+    UserResponse reactivateUser(UUID userId);
+
     /** Tenant-admin triggers a password reset email for one of their users. */
     void resetPassword(UUID userId);
 }

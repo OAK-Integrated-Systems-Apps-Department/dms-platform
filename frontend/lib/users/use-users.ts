@@ -3,12 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
+  deactivateUser,
   fetchUser,
   fetchUserRoles,
   fetchUsersPage,
+  reactivateUser,
   sendPasswordReset as sendPasswordResetRequest,
   toUserRecord,
-  updateUserStatus,
 } from "@/lib/users/api"
 
 import type { UserRecord } from "@/components/users/types"
@@ -45,6 +46,11 @@ async function fetchAllUsers(): Promise<UserRecord[]> {
  * (`GET /api/v1/users`, paged, plus `GET /api/v1/users/{id}/roles` per
  * user) for the User List screen, replacing the mock `users` array in
  * `stores/users-store.ts`.
+ *
+ * `GET /api/v1/users` deliberately still includes deactivated users (see
+ * UserServiceImpl#listUsers on the backend) rather than filtering them
+ * out, so a deactivated user stays visible in the table with an Inactive
+ * badge instead of just disappearing on the next refetch.
  */
 export function useUsers() {
   const query = useQuery({
@@ -58,8 +64,20 @@ export function useUsers() {
   const toggleStatusMutation = useMutation({
     mutationFn: async (userId: string) => {
       const current = await fetchUser(userId)
-      const nextStatus = current.status === "active" ? "disabled" : "active"
-      await updateUserStatus(userId, current, nextStatus)
+      if (current.status === "active") {
+        // A real soft-delete (DELETE /api/v1/users/{id}): removes the row
+        // from every OTHER lookup (auth, duplicate-email checks) but not
+        // from this list or the View User page — see deactivateUser in
+        // lib/users/api.ts and UserServiceImpl#listUsers/#getUser.
+        await deactivateUser(userId)
+      } else {
+        // Reachable now: listUsers (above) no longer excludes deactivated
+        // users, so a row for one really can be sitting here with
+        // current.status !== "active". reactivateUser (POST
+        // .../reactivate) is the endpoint that actually undoes
+        // deactivateUser.
+        await reactivateUser(userId)
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] })
@@ -70,11 +88,27 @@ export function useUsers() {
     mutationFn: (userId: string) => sendPasswordResetRequest(userId),
   })
 
+  // Standalone for the same reason as use-user.ts: toggleStatus's
+  // mutationFn calls fetchUser(userId) first, which 404s for a genuinely
+  // deactivated user (and that user has already vanished from `users`
+  // above on the previous refetch, so there's no row here to click
+  // "Activate" on in the first place). This makes the real reactivate
+  // endpoint callable by id for whenever there's a UI surface — a
+  // "Deactivated users" filter/tab, say — that can actually list them;
+  // none exists yet.
+  // const reactivateMutation = useMutation({
+  //   mutationFn: (userId: string) => reactivateUserRequest(userId),
+  //   onSuccess: () => {
+  //     queryClient.invalidateQueries({ queryKey: ["users"] })
+  //   },
+  // })
+
   return {
     ...query,
     users: query.data ?? [],
     toggleStatus: (userId: string) => toggleStatusMutation.mutate(userId),
     sendPasswordReset: (userId: string) =>
       sendPasswordResetMutation.mutate(userId),
+    // reactivate: (userId: string) => reactivateMutation.mutate(userId),
   }
 }
