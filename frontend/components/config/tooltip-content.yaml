@@ -20,3 +20,4 @@ roles:
     edit: Edit
     activate: Activate
     deactivate: Deactivate
+    delete: Delete

@@ -2,34 +2,37 @@
 
 import { notFound, useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, Loader2 } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
+import { useRole } from "@/components/roles/use-role"
 import { useRolesStore } from "@/stores/roles-store"
 
 /**
  * Role Permission Configuration (R3) — configure the permissions granted
  * by a single role, reached from the Edit Role screen's
  * "Configure Permissions" action.
+ *
+ * Uses `useRole` (fetches the single role individually if a direct link
+ * lands here before the Role List has populated the store) rather than a
+ * bare store lookup — same reasoning as Role Details / Edit Role.
+ * `updateRolePermissions` itself stays local-only: permission grants
+ * aren't persisted to the backend yet (RoleResponse carries no
+ * permissions field — see the note in `stores/roles-store.ts`).
  */
 export default function RolePermissionsPage() {
   const router = useRouter()
   const params = useParams<{ roleId: string }>()
-  const roleFromStore = useRolesStore((state) =>
-    state.roles.find((r) => r.id === params.roleId)
-  )
-  const updateRolePermissions = useRolesStore(
-    (state) => state.updateRolePermissions
-  )
+  const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
+  const updateRolePermissions = useRolesStore((state) => state.updateRolePermissions)
 
-  if (!roleFromStore) {
+  if (roleNotFound) {
     notFound()
   }
 
-  const role = roleFromStore as NonNullable<typeof roleFromStore>
-
   function handleSave(permissions: string[]) {
+    if (!role) return
     updateRolePermissions(role.id, permissions)
     router.push(`/admin/roles/${role.id}/edit`)
   }
@@ -38,22 +41,31 @@ export default function RolePermissionsPage() {
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
         <Link
-          href={`/admin/roles/${role.id}/edit`}
+          href={role ? `/admin/roles/${role.id}/edit` : "/admin/roles"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
-          Back to {role.name}
+          {role ? `Back to ${role.name}` : "Back to Role List"}
         </Link>
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Role Permission Configuration
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            Choose what {role.name} can do in the current tenant, grouped by
-            functional area.
+            {role
+              ? <>Choose what {role.name} can do in the current tenant, grouped by functional area.</>
+              : "Choose what this role can do in the current tenant, grouped by functional area."}
           </p>
         </div>
-        <RolePermissionConfig role={role} onSave={handleSave} />
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            <Loader2 size={16} className="animate-spin" />
+            Loading role…
+          </div>
+        ) : role ? (
+          <RolePermissionConfig role={role} onSave={handleSave} />
+        ) : null}
       </div>
     </DashboardShell>
   )

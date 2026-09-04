@@ -1,16 +1,19 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Pencil, ShieldCheck } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Pencil, ShieldCheck, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
 import { useSortableTable } from "@/hooks/use-sortable-table"
+import { useRolesStore } from "@/stores/roles-store"
 import { useUsersStore } from "@/stores/users-store"
 
 import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
+import { RoleDeleteDialog } from "./role-delete-dialog"
 import type { RoleRecord } from "./types"
 
 interface RoleDetailsProps {
@@ -24,7 +27,9 @@ type AssignedUserSortKey = "name" | "username" | "status"
  * definition, its permissions by functional area, and the users currently
  * holding it. Permissions are edited via Role Permission Configuration, and
  * the role's name/description/status via Edit Role — this screen is
- * reference-only, per the wireframe.
+ * reference-only, per the wireframe. Delete Role is the one exception:
+ * it's destructive rather than an edit, so it lives here as its own
+ * confirm-and-act flow rather than folding into Edit Role.
  *
  * Assigned Users is computed live from `useUsersStore`, matching on
  * `user.roles.includes(role.name)` — the same field User Management's own
@@ -44,6 +49,10 @@ type AssignedUserSortKey = "name" | "username" | "status"
  * 9px/14px mix used elsewhere in Role Management.
  */
 export function RoleDetails({ role }: RoleDetailsProps) {
+  const router = useRouter()
+  const deleteRole = useRolesStore((state) => state.deleteRole)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+
   const users = useUsersStore((state) => state.users)
   const assignedUsers = useMemo(
     () => users.filter((user) => user.roles.includes(role.name)),
@@ -218,21 +227,42 @@ export function RoleDetails({ role }: RoleDetailsProps) {
       <hr className="my-6 border-dashed border-border" />
 
       {/* Actions */}
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2.5">
         {role.system ? (
           <span className="text-[12px] text-muted-foreground">
-            System roles can&apos;t be edited.
+            System roles can&apos;t be edited or deleted.
           </span>
         ) : (
-          <Link
-            href={`/admin/roles/${role.id}/edit`}
-            className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
-          >
-            <Pencil size={14} />
-            Edit Role
-          </Link>
+          <>
+            <button
+              type="button"
+              onClick={() => setShowDeleteDialog(true)}
+              className="flex items-center gap-1.5 rounded-[10px] border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
+            >
+              <Trash2 size={14} />
+              Delete Role
+            </button>
+            <Link
+              href={`/admin/roles/${role.id}/edit`}
+              className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+            >
+              <Pencil size={14} />
+              Edit Role
+            </Link>
+          </>
         )}
       </div>
+
+      <RoleDeleteDialog
+        role={role}
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={async () => {
+          const { error } = await deleteRole(role.id)
+          if (!error) router.push("/admin/roles")
+          return error
+        }}
+      />
     </div>
   )
 }
