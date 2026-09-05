@@ -4,9 +4,11 @@ import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { AlertTriangle, ChevronLeft, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleDetails } from "@/components/roles/role-details"
 import { useRole } from "@/components/roles/use-role"
+import { usePageTitle } from "@/lib/use-page-title"
 
 /**
  * Role Details / Assigned Users (R4) — read-only view of a role's
@@ -20,43 +22,44 @@ export default function RoleDetailsPage() {
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
 
+  usePageTitle(role ? role.name : "Role Details")
+
   if (roleNotFound) {
     notFound()
   }
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[760px]">
-        <Link
-          href="/admin/roles"
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to Role List
-        </Link>
-        <div className="mb-[22px]">
-          <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-            Role Details
-          </h1>
-          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            Definition, permissions, and users currently assigned to this role.
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <Loader2 size={16} className="animate-spin" />
-            Loading role…
-          </div>
-        ) : role ? (
-          <RoleDetails role={role} />
-        ) : (
-          <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <AlertTriangle size={20} className="text-[var(--rust)]" />
-            Couldn&apos;t load this role.
-          </div>
-        )}
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[
+          { label: "Dashboard", href: "/" },
+          { label: "Roles", href: "/admin/roles" },
+          { label: role?.name ?? "Role Details" },
+        ]}
+      />
+      <div className="mb-[22px] max-w-[680px]">
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+          Role Details
+        </h1>
+        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          Definition, permissions, and users currently assigned to this role.
+        </p>
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <Loader2 size={16} className="animate-spin" />
+          Loading role…
+        </div>
+      ) : role ? (
+        <RoleDetails role={role} />
+      ) : (
+        <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <AlertTriangle size={20} className="text-[var(--rust)]" />
+          Couldn&apos;t load this role.
+        </div>
+      )}
     </DashboardShell>
   )
 }

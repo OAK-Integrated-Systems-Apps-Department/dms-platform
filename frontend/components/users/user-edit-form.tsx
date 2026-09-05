@@ -236,12 +236,6 @@ export function UserEditForm({ user }: UserEditFormProps) {
           {isSubmitting ? "Saving…" : "Save changes"}
         </button>
       </div>
-
-      <p className="mt-[18px] text-center text-[11.5px] leading-[1.6] text-[var(--ink-faint)]">
-        Identity-related fields (username, primary login credential) are
-        governed by Keycloak — this screen exposes only fields DMS is permitted
-        to write.
-      </p>
     </form>
   )
 }

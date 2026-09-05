@@ -5,8 +5,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ChevronDown, Plus, Search } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { initialRoles } from "@/components/roles/data"
+import { usePageTitle } from "@/lib/use-page-title"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
@@ -24,6 +26,8 @@ const PAGE_SIZE = 5
  * trigger a password reset (U7) inline.
  */
 export default function UserListPage() {
+  usePageTitle("User List")
+
   const router = useRouter()
   const {
     users,
@@ -80,6 +84,10 @@ export default function UserListPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "Users" }]}
+      />
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           User Management — User List

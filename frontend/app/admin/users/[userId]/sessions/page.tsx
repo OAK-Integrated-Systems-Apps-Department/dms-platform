@@ -4,8 +4,10 @@ import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { ChevronLeft } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 import { useUsersStore } from "@/stores/users-store"
 
@@ -30,6 +32,8 @@ export default function UserSessionsPage() {
   const revokeSession = useUsersStore((state) => state.revokeSession)
   const revokeAllSessions = useUsersStore((state) => state.revokeAllSessions)
 
+  usePageTitle(user ? `${user.name} Sessions` : "User Sessions")
+
   if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
   }
@@ -37,6 +41,18 @@ export default function UserSessionsPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Users", href: "/admin/users" },
+            {
+              label: user?.name ?? "View User",
+              href: user ? `/admin/users/${user.id}` : undefined,
+            },
+            { label: "Sessions" },
+          ]}
+        />
         <Link
           href={user ? `/admin/users/${user.id}` : "/admin/users"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
