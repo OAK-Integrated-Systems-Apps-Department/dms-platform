@@ -3,9 +3,12 @@
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserInviteForm } from "@/components/users/user-invite-form"
+import { usePageTitle } from "@/lib/use-page-title"
 
 /** Add User — invite a new user into the current tenant. Admin-only; not self-registration. */
 export default function AddUserPage() {
+  usePageTitle("Add User")
+
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <AdminBreadcrumb

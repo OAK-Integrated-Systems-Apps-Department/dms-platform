@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionMatrix } from "@/components/roles/permission-matrix"
+import { usePageTitle } from "@/lib/use-page-title"
 
 /**
  * Permission Matrix (R5) — administrative Roles × Permissions grid.
@@ -21,6 +22,8 @@ import { PermissionMatrix } from "@/components/roles/permission-matrix"
  * heading above the full-width `RolesTable`.
  */
 export default function PermissionMatrixPage() {
+  usePageTitle("Permission Matrix")
+
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <AdminBreadcrumb
@@ -31,6 +34,13 @@ export default function PermissionMatrixPage() {
           { label: "Permission Matrix" },
         ]}
       />
+      <Link
+        href="/admin/roles"
+        className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
+      >
+        <ChevronLeft size={14} />
+        Back to Role List
+      </Link>
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Permission Matrix

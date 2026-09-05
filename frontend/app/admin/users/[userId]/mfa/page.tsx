@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
 /**
@@ -26,6 +27,8 @@ import { useUser } from "@/lib/users/use-user"
 export default function UserMfaManagementPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error } = useUser(params.userId)
+
+  usePageTitle(user ? `${user.name} MFA` : "User MFA")
 
   if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()

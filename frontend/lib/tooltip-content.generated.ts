@@ -7,6 +7,7 @@ export const tooltipContent = {
   "roles.actions.deactivate": "Deactivate",
   "roles.actions.delete": "Delete",
   "roles.actions.edit": "Edit",
+  "roles.actions.view": "View",
   "users.actions.activate": "Activate",
   "users.actions.deactivate": "Deactivate",
   "users.actions.edit": "Edit",

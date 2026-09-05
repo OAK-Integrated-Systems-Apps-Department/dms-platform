@@ -17,6 +17,7 @@ users:
 
 roles:
   actions:
+    view: View
     edit: Edit
     activate: Activate
     deactivate: Deactivate
