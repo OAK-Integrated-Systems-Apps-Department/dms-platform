@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Pencil, ShieldCheck, Trash2 } from "lucide-react"
+import { AlertTriangle, Loader2, Pencil, ShieldCheck, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
 import { useSortableTable } from "@/hooks/use-sortable-table"
 import { useRolesStore } from "@/stores/roles-store"
-import { useUsersStore } from "@/stores/users-store"
+import { useUsers } from "@/lib/users/use-users"
 
-import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
 import { RoleDeleteDialog } from "./role-delete-dialog"
 import type { RoleRecord } from "./types"
+import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RoleDetailsProps {
   role: RoleRecord
@@ -31,29 +31,26 @@ type AssignedUserSortKey = "name" | "username" | "status"
  * it's destructive rather than an edit, so it lives here as its own
  * confirm-and-act flow rather than folding into Edit Role.
  *
- * Assigned Users is computed live from `useUsersStore`, matching on
- * `user.roles.includes(role.name)` — the same field User Management's own
- * User List and View User screens read — rather than a separate mock
- * keyed by role id. That separate mock used to drift from the real user
- * data (same id, different mock person) now that User Management has its
- * own richer dataset; reading the one canonical source removes that seam.
- *
- * The store is selected as the raw `users` array, with the role-name
- * filter done in a separate `useMemo` — filtering *inside* the zustand
- * selector would return a brand-new array every render, which breaks
- * React's `useSyncExternalStore` ("getServerSnapshot should be cached")
- * with an infinite render loop.
- *
- * Corner radius is fixed at 10px across every surface on this screen
- * (card, table, badges, buttons) rather than following the app-wide
- * 9px/14px mix used elsewhere in Role Management.
+ * FIXED KNOWN GAP: Assigned Users used to read `stores/users-store.ts`, a
+ * pure in-memory mock store seeded from `components/users/data.ts` and
+ * never connected to the backend — so this table always showed the same
+ * hardcoded mock users regardless of who was actually assigned. It now
+ * reads `useUsers()` (`lib/users/use-users.ts`), the same real,
+ * backend-backed data source the User List and View User screens use,
+ * matching on `user.roles.includes(role.name)` exactly as before — that
+ * part of the logic wasn't wrong, only what it was reading from was.
+ * There's no dedicated "users by role" backend endpoint yet, so this
+ * pays the same cost `useUsers()` already pays elsewhere (fetching every
+ * user in the tenant plus each one's role list); fine at tenant-roster
+ * scale, would need a real `GET /api/v1/roles/{roleId}/users` endpoint to
+ * scale further.
  */
 export function RoleDetails({ role }: RoleDetailsProps) {
   const router = useRouter()
   const deleteRole = useRolesStore((state) => state.deleteRole)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  const users = useUsersStore((state) => state.users)
+  const { users, isPending: usersLoading, isError: usersError } = useUsers()
   const assignedUsers = useMemo(
     () => users.filter((user) => user.roles.includes(role.name)),
     [users, role.name]
@@ -72,6 +69,8 @@ export function RoleDetails({ role }: RoleDetailsProps) {
       status: (u) => u.status,
     }
   )
+
+  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
 
   const permissionSummary = permissionGroups
     .map((group) => {
@@ -109,33 +108,42 @@ export function RoleDetails({ role }: RoleDetailsProps) {
           module-by-module breakdown (including untouched modules) lives on
           Role Permission Configuration. Sorted alphabetically by module
           name so the badge list is easy to scan regardless of the order
-          modules are defined in `data.ts`. */}
+          the catalog returns modules in. */}
       <h3 className="mb-2.5 flex items-center justify-between text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
         <span>Permission Summary</span>
-        <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
-          {permissionSummary.filter((g) => g.count > 0).length} of{" "}
-          {permissionSummary.length} modules
-        </span>
-      </h3>
-      <div className="mb-6 flex flex-wrap gap-2">
-        {permissionSummary
-          .filter((group) => group.count > 0)
-          .map((group) => (
-            <Badge
-              key={group.module}
-              variant="outline"
-              className="rounded-[10px] py-1"
-            >
-              {group.moduleCode} — {group.module} — {group.count}{" "}
-              {group.count === 1 ? "permission" : "permissions"}
-            </Badge>
-          ))}
-        {permissionSummary.every((group) => group.count === 0) && (
-          <p className="text-[13px] text-muted-foreground">
-            No permissions granted yet.
-          </p>
+        {!catalogLoading && (
+          <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
+            {permissionSummary.filter((g) => g.count > 0).length} of{" "}
+            {permissionSummary.length} modules
+          </span>
         )}
-      </div>
+      </h3>
+      {catalogLoading ? (
+        <div className="mb-6 flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Loader2 size={14} className="animate-spin" />
+          Loading permission catalog…
+        </div>
+      ) : (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {permissionSummary
+            .filter((group) => group.count > 0)
+            .map((group) => (
+              <Badge
+                key={group.module}
+                variant="outline"
+                className="rounded-[10px] py-1"
+              >
+                {group.moduleCode} — {group.module} — {group.count}{" "}
+                {group.count === 1 ? "permission" : "permissions"}
+              </Badge>
+            ))}
+          {permissionSummary.every((group) => group.count === 0) && (
+            <p className="text-[13px] text-muted-foreground">
+              No permissions granted yet.
+            </p>
+          )}
+        </div>
+      )}
       <p className="mb-6 text-[12px] text-muted-foreground">
         {role.permissions.length} total permissions granted.{" "}
         <Link
@@ -153,76 +161,90 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         <h3 className="text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
           Assigned Users
         </h3>
-        <span className="text-[12px] text-muted-foreground">
-          {assignedUsers.length} user{assignedUsers.length === 1 ? "" : "s"}
-        </span>
+        {!usersLoading && !usersError && (
+          <span className="text-[12px] text-muted-foreground">
+            {assignedUsers.length} user{assignedUsers.length === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
 
-      <div className="overflow-hidden rounded-[10px] border border-border">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-border bg-muted">
-              <SortableTh
-                label="Name"
-                active={assignedUsersSortKey === "name"}
-                direction={assignedUsersDirection}
-                onClick={() => toggleAssignedUsersSort("name")}
-              />
-              <SortableTh
-                label="Username"
-                active={assignedUsersSortKey === "username"}
-                direction={assignedUsersDirection}
-                onClick={() => toggleAssignedUsersSort("username")}
-              />
-              <SortableTh
-                label="Status"
-                active={assignedUsersSortKey === "status"}
-                direction={assignedUsersDirection}
-                onClick={() => toggleAssignedUsersSort("status")}
-              />
-            </tr>
-          </thead>
-          <tbody>
-            {assignedUsers.length === 0 && (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-3.5 py-8 text-center text-[13px] text-muted-foreground"
+      {usersLoading ? (
+        <div className="flex items-center gap-2 rounded-[10px] border border-border py-8 text-[13px] text-muted-foreground">
+          <Loader2 size={14} className="mx-auto animate-spin" />
+          <span className="mx-auto">Loading assigned users…</span>
+        </div>
+      ) : usersError ? (
+        <div className="flex items-center justify-center gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] py-6 text-[13px] text-[var(--rust)]">
+          <AlertTriangle size={14} />
+          Could not load assigned users.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-[10px] border border-border">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-muted">
+                <SortableTh
+                  label="Name"
+                  active={assignedUsersSortKey === "name"}
+                  direction={assignedUsersDirection}
+                  onClick={() => toggleAssignedUsersSort("name")}
+                />
+                <SortableTh
+                  label="Username"
+                  active={assignedUsersSortKey === "username"}
+                  direction={assignedUsersDirection}
+                  onClick={() => toggleAssignedUsersSort("username")}
+                />
+                <SortableTh
+                  label="Status"
+                  active={assignedUsersSortKey === "status"}
+                  direction={assignedUsersDirection}
+                  onClick={() => toggleAssignedUsersSort("status")}
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {assignedUsers.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-3.5 py-8 text-center text-[13px] text-muted-foreground"
+                  >
+                    No users are currently assigned this role.
+                  </td>
+                </tr>
+              )}
+              {sortedAssignedUsers.map((user) => (
+                <tr
+                  key={user.id}
+                  className="border-b border-border last:border-b-0 hover:bg-muted"
                 >
-                  No users are currently assigned this role.
-                </td>
-              </tr>
-            )}
-            {sortedAssignedUsers.map((user) => (
-              <tr
-                key={user.id}
-                className="border-b border-border last:border-b-0 hover:bg-muted"
-              >
-                <td className="px-3.5 py-3 text-[13.5px] font-medium text-foreground">
-                  <Link
-                    href={`/admin/users/${user.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {user.name}
-                  </Link>
-                </td>
-                <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">
-                  {user.username}
-                </td>
-                <td className="px-3.5 py-3">
-                  <Badge
-                    variant={user.status === "Active" ? "default" : "muted"}
-                    className="gap-1.5 rounded-[10px]"
-                  >
-                    <span className="size-[5px] rounded-full bg-current" />
-                    {user.status}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  <td className="px-3.5 py-3 text-[13.5px] font-medium text-foreground">
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {user.name}
+                    </Link>
+                  </td>
+                  <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">
+                    {user.username}
+                  </td>
+                  <td className="px-3.5 py-3">
+                    <Badge
+                      variant={user.status === "Active" ? "default" : "muted"}
+                      className="gap-1.5 rounded-[10px]"
+                    >
+                      <span className="size-[5px] rounded-full bg-current" />
+                      {user.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <hr className="my-6 border-dashed border-border" />
 

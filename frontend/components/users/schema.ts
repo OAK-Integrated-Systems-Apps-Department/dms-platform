@@ -23,11 +23,16 @@ export type UserInviteFormValues = z.infer<typeof userInviteFormSchema>
  * Validation for the Edit User form, per dms-edit-user.html. No username
  * field — it's read-only there (Keycloak-managed identity), so it's never
  * part of the editable values.
+ *
+ * `roles` was added alongside the fix wiring this form up to real role
+ * assignment (`syncUserRoles` in `lib/users/api.ts`) — previously this
+ * screen had no way to change a user's roles after creation at all.
  */
 export const userEditFormSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(60, "Keep it under 60 characters"),
   lastName: z.string().trim().min(1, "Last name is required").max(60, "Keep it under 60 characters"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
+  roles: z.array(z.string()),
   additionalProfile: z.string().trim().max(500, "Keep it under 500 characters").optional().or(z.literal("")),
 })
 

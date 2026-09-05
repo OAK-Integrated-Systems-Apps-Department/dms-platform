@@ -3,6 +3,7 @@ import { create } from "zustand"
 import type { RoleFormValues } from "@/components/roles/schema"
 import type { RoleRecord, RoleStatus } from "@/components/roles/types"
 import { API_BASE_URL } from "@/lib/api-config"
+import { usePermissionsStore } from "@/stores/permissions-store"
 
 /** Shape returned by `RoleResponse.java`. */
 interface BackendRoleResponse {
@@ -15,6 +16,24 @@ interface BackendRoleResponse {
   updatedAt: string | null
 }
 
+/** Shape returned by `RolePermissionResponse.java`. */
+interface BackendRolePermissionResponse {
+  rolePermissionId: string
+  tenantId: string
+  roleId: string
+  permissionId: string
+  permissionCode: string
+  resourceScope: string | null
+  createdAt: string
+}
+
+/** A single permission grant on a role, as tracked locally for revocation (needs `rolePermissionId`, not just the permission code). */
+interface RolePermissionGrant {
+  rolePermissionId: string
+  permissionId: string
+  permissionCode: string
+}
+
 function toRoleStatus(status: BackendRoleResponse["status"]): RoleStatus {
   return status === "active" ? "Active" : "Inactive"
 }
@@ -23,21 +42,34 @@ function toBackendStatus(status: RoleStatus): "active" | "inactive" {
   return status === "Active" ? "active" : "inactive"
 }
 
+function fromBackendGrant(g: BackendRolePermissionResponse): RolePermissionGrant {
+  return {
+    rolePermissionId: g.rolePermissionId,
+    permissionId: g.permissionId,
+    permissionCode: g.permissionCode,
+  }
+}
+
 /**
- * Maps a backend role onto a `RoleRecord`, preserving `permissions` /
- * `assignedUsers` / `system` from whatever local copy already exists.
+ * Maps a backend role onto a `RoleRecord`, preserving `assignedUsers` /
+ * `system` from whatever local copy already exists, and `permissions`
+ * from whatever local copy already exists *until* `fetchRolePermissions`
+ * overwrites it with the real granted set.
  *
- * KNOWN GAP: `RoleResponse` doesn't carry permissions or an assigned-user
- * count yet (see RoleResponse.java) — those still live only in this
- * store, set by the standalone Role Permission Configuration screen and
- * never sent to the backend, per the earlier note that permission storage
- * isn't wired up yet. Re-fetching a role must not silently wipe that
- * local-only data back to `[]` / `0`, so it's carried forward from
- * `existing` when present. Likewise `system` — the backend has no
- * "built-in role" concept at all right now, so every role it returns
- * comes back editable/deletable; `existing?.system` only matters for
- * roles that were seeded in `components/roles/data.ts` and never touched
- * the backend.
+ * `permissions` used to be entirely local-only (see the old KNOWN GAP note
+ * this replaces) — it's now backed by the real `role_permissions` table
+ * via `GET /api/v1/roles/{roleId}/permissions`, seeded by
+ * `V10__seed_fine_grained_permissions.sql`. `fetchRole` calls that
+ * automatically; `fetchRoles` (the list screen) deliberately does not —
+ * fetching every role's full grant list on every page load would be an
+ * N+1 call for a field the list table doesn't even display. Until a role
+ * has had its permissions individually fetched at least once (Role
+ * Details, Edit Role, or Role Permission Configuration), `permissions`
+ * here is just whatever was last known locally, same as before.
+ *
+ * `assignedUsers` and `system` remain genuinely local-only — the backend
+ * still has no assigned-user count on `RoleResponse` and no "system role"
+ * concept at all (see the same caveats noted when Role CRUD was wired up).
  */
 function fromBackend(role: BackendRoleResponse, existing?: RoleRecord): RoleRecord {
   return {
@@ -65,30 +97,54 @@ const NETWORK_ERROR =
 
 interface RolesState {
   roles: RoleRecord[]
+  /** roleId -> that role's current permission grants, incl. `rolePermissionId` for revocation. Populated by `fetchRolePermissions`. */
+  roleGrants: Record<string, RolePermissionGrant[]>
   loading: boolean
   error: string | null
 
-  /** GET /api/v1/roles — populates the list (Role List screen). */
+  /** GET /api/v1/roles — populates the list (Role List screen). Does NOT fetch each role's permissions — see `fromBackend`'s doc comment. */
   fetchRoles: () => Promise<void>
   /**
    * GET /api/v1/roles/{roleId} — resolves a single role, for direct links
    * / refreshes into Role Details, Edit Role, or Permission Configuration
-   * that land before `fetchRoles` has ever populated the store. Returns
-   * the resolved role, or `null` if it doesn't exist / isn't accessible.
+   * that land before `fetchRoles` has ever populated the store. Also
+   * fetches that role's real granted permissions. Returns the resolved
+   * role, or `null` if it doesn't exist / isn't accessible.
    */
   fetchRole: (id: string) => Promise<RoleRecord | null>
+  /**
+   * GET /api/v1/roles/{roleId}/permissions — resolves a role's currently
+   * granted permission codes, and patches both `roles` (the `permissions`
+   * field) and `roleGrants` (for `syncRolePermissions` to diff against).
+   * Exposed on its own (not just via `fetchRole`) so the Permission
+   * Matrix can pull every visible role's grants in parallel without
+   * re-fetching each role's name/description/status too.
+   */
+  fetchRolePermissions: (roleId: string) => Promise<{ codes: string[]; error: string | null }>
 
-  /** POST /api/v1/roles. Returns the created role, or an error message. */
+  /** POST /api/v1/roles, then grants any initially-selected permissions. Returns the created role, or an error message. */
   addRole: (
     values: RoleFormValues
   ) => Promise<{ role: RoleRecord | null; error: string | null }>
-  /** PUT /api/v1/roles/{id}. Returns the updated role, or an error message. */
+  /** PUT /api/v1/roles/{id}. Returns the updated role, or an error message. Does not touch permissions — call `syncRolePermissions` separately. */
   updateRole: (
     id: string,
     values: RoleFormValues
   ) => Promise<{ role: RoleRecord | null; error: string | null }>
-  /** Local-only — see the KNOWN GAP note on `fromBackend` above. */
-  updateRolePermissions: (id: string, permissions: string[]) => void
+  /**
+   * Reconciles a role's real permission grants to match `desiredCodes`:
+   * re-fetches the role's current grants, diffs against `desiredCodes`,
+   * and issues the necessary `POST`/`DELETE` calls against
+   * `/api/v1/roles/{roleId}/permissions` in parallel. Always re-fetches
+   * the real post-sync state before resolving (win or lose), so
+   * `RoleRecord.permissions` never reflects a desired-but-not-actually-
+   * applied set. Returns a single combined error message if any of the
+   * grant/revoke calls failed, or null if everything applied cleanly.
+   */
+  syncRolePermissions: (
+    roleId: string,
+    desiredCodes: string[]
+  ) => Promise<{ error: string | null }>
   /** PUT /api/v1/roles/{id}, resending the role's current name/description with status flipped. */
   toggleStatus: (id: string) => Promise<{ error: string | null }>
   /** DELETE /api/v1/roles/{id} (soft-delete). */
@@ -96,16 +152,19 @@ interface RolesState {
 }
 
 /**
- * Role store, backed by the real `/api/v1/roles` endpoints (RoleController
- * / RoleServiceImpl). Previously this held an in-memory copy of
- * `components/roles/data.ts`'s `initialRoles` and every action mutated it
- * directly; that mock array is no longer read here at all, though it's
- * still imported elsewhere (e.g. the role picker in User Invite/Edit,
- * which isn't part of this integration) — see that file for the "used
- * elsewhere" note before removing it.
+ * Role store, backed by the real `/api/v1/roles` and
+ * `/api/v1/roles/{roleId}/permissions` endpoints (RoleController /
+ * RoleServiceImpl / RolePermissionController / RolePermissionServiceImpl).
+ * Previously this held an in-memory copy of `components/roles/data.ts`'s
+ * `initialRoles` and every action mutated it directly; that mock array is
+ * no longer read here at all, though it's still imported elsewhere (e.g.
+ * the role picker in User Invite/Edit, which isn't part of this
+ * integration) — see that file for the "used elsewhere" note before
+ * removing it.
  */
 export const useRolesStore = create<RolesState>((set, get) => ({
   roles: [],
+  roleGrants: {},
   loading: false,
   error: null,
 
@@ -171,7 +230,46 @@ export const useRolesStore = create<RolesState>((set, get) => ({
         ? state.roles.map((role) => (role.id === id ? resolved : role))
         : [resolved, ...state.roles],
     }))
-    return resolved
+
+    // RoleResponse doesn't carry permissions (see `fromBackend`'s doc
+    // comment) — fetch the real granted set separately. Non-fatal if this
+    // part fails: the role itself loaded fine, so surface the error but
+    // still return what we have rather than treating the whole fetch as
+    // failed.
+    const { error: permError } = await get().fetchRolePermissions(id)
+    if (permError) set({ error: permError })
+    return get().roles.find((role) => role.id === id) ?? resolved
+  },
+
+  fetchRolePermissions: async (roleId) => {
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE_URL}/api/v1/roles/${roleId}/permissions`, {
+        credentials: "include",
+      })
+    } catch {
+      return { codes: [], error: NETWORK_ERROR }
+    }
+
+    if (!response.ok) {
+      return {
+        codes: [],
+        error: await parseErrorMessage(response, "Could not load this role's granted permissions."),
+      }
+    }
+
+    const body: BackendRolePermissionResponse[] = await response.json()
+    const grants = body.map(fromBackendGrant)
+    const codes = grants.map((g) => g.permissionCode)
+
+    set((state) => ({
+      roleGrants: { ...state.roleGrants, [roleId]: grants },
+      roles: state.roles.map((role) =>
+        role.id === roleId ? { ...role, permissions: codes } : role
+      ),
+    }))
+
+    return { codes, error: null }
   },
 
   addRole: async (values) => {
@@ -199,12 +297,24 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     }
 
     const body: BackendRoleResponse = await response.json()
-    // Permissions chosen on the Add Role form aren't sent to the backend
-    // (see the KNOWN GAP note on `fromBackend`) — kept locally so the new
-    // role's summary still reflects what was picked.
-    const role = fromBackend(body, { permissions: values.permissions } as RoleRecord)
+    const role = fromBackend(body)
     set((state) => ({ roles: [role, ...state.roles] }))
-    return { role, error: null }
+
+    // CreateRoleRequest has no permissions field (see GrantPermissionRequest —
+    // grants are a separate call, and need a roleId that only exists after
+    // this point) — so anything selected on the Add Role form is applied
+    // as a second step, once the role itself exists.
+    if (values.permissions.length > 0) {
+      const { error: permError } = await get().syncRolePermissions(body.roleId, values.permissions)
+      if (permError) {
+        return {
+          role: get().roles.find((r) => r.id === body.roleId) ?? role,
+          error: `The role "${values.name}" was created, but its permissions could not be fully applied: ${permError} You can finish assigning them from the role's Edit page.`,
+        }
+      }
+    }
+
+    return { role: get().roles.find((r) => r.id === body.roleId) ?? role, error: null }
   },
 
   updateRole: async (id, values) => {
@@ -236,10 +346,9 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     set((state) => ({
       roles: state.roles.map((role) => {
         if (role.id !== id) return role
-        // Permissions are edited on the separate Permission Configuration
-        // screen, not this form — carry the existing selection forward
-        // rather than clearing it (RoleFormValues.permissions isn't
-        // touched by Edit Role's own fields).
+        // Permissions are synced separately (`syncRolePermissions`) by
+        // whichever screen called this — carry the existing selection
+        // forward here rather than clearing it.
         updated = { ...fromBackend(body, role), permissions: role.permissions }
         return updated
       }),
@@ -247,10 +356,74 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     return { role: updated, error: null }
   },
 
-  updateRolePermissions: (id, permissions) => {
-    set((state) => ({
-      roles: state.roles.map((role) => (role.id === id ? { ...role, permissions } : role)),
-    }))
+  syncRolePermissions: async (roleId, desiredCodes) => {
+    // Re-fetch current grants fresh rather than trusting whatever's
+    // cached in `roleGrants` — a stale local diff could under- or
+    // over-apply changes another tab/session already made.
+    const { codes: currentCodes, error: fetchError } = await get().fetchRolePermissions(roleId)
+    if (fetchError) return { error: fetchError }
+
+    const currentGrants = get().roleGrants[roleId] ?? []
+    const currentSet = new Set(currentCodes)
+    const desiredSet = new Set(desiredCodes)
+
+    const toGrant = desiredCodes.filter((code) => !currentSet.has(code))
+    const toRevoke = currentGrants.filter((grant) => !desiredSet.has(grant.permissionCode))
+
+    if (toGrant.length === 0 && toRevoke.length === 0) {
+      return { error: null }
+    }
+
+    // Resolve permission code -> permissionId via the Permission Catalog
+    // store's flat list — every screen that calls this has already
+    // triggered a fetch of it via `components/roles/use-permission-catalog.ts`.
+    const permissionIdByCode = new Map(
+      usePermissionsStore.getState().permissions.map((p) => [p.code, p.id])
+    )
+
+    const grantResults = toGrant.map(async (code) => {
+      const permissionId = permissionIdByCode.get(code)
+      if (!permissionId) {
+        throw new Error(`"${code}" isn't in the current permission catalog.`)
+      }
+      const response = await fetch(`${API_BASE_URL}/api/v1/roles/${roleId}/permissions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ permissionId }),
+      })
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, `Could not grant "${code}".`))
+      }
+    })
+
+    const revokeResults = toRevoke.map(async (grant) => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/roles/${roleId}/permissions/${grant.rolePermissionId}`,
+        { method: "DELETE", credentials: "include" }
+      )
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, `Could not revoke "${grant.permissionCode}".`))
+      }
+    })
+
+    const results = await Promise.allSettled([...grantResults, ...revokeResults])
+
+    // Re-fetch the real post-sync state regardless of outcome, so
+    // `RoleRecord.permissions` always reflects what's actually granted
+    // server-side rather than the locally-desired set, which may only be
+    // partially applied if something below failed.
+    await get().fetchRolePermissions(roleId)
+
+    const failures = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    )
+    if (failures.length === 0) return { error: null }
+    if (failures.length === 1) {
+      const reason = failures[0].reason
+      return { error: reason instanceof Error ? reason.message : "Could not update this role's permissions." }
+    }
+    return { error: `${failures.length} permission changes could not be applied. Please review and try again.` }
   },
 
   toggleStatus: async (id) => {

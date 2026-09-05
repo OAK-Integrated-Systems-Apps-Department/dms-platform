@@ -17,6 +17,7 @@ export default function EditRolePage() {
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
   const updateRole = useRolesStore((state) => state.updateRole)
+  const syncRolePermissions = useRolesStore((state) => state.syncRolePermissions)
 
   usePageTitle(role ? `Edit ${role.name}` : "Edit Role")
 
@@ -28,6 +29,12 @@ export default function EditRolePage() {
     if (!role) return "Role not loaded yet."
     const { error } = await updateRole(role.id, values)
     if (error) return error
+    // Name/description/status and permissions are two separate API calls
+    // (UpdateRoleRequest carries no permissions field — see
+    // stores/roles-store.ts) - both need to succeed for the inline
+    // picker's changes to actually stick.
+    const { error: permError } = await syncRolePermissions(role.id, values.permissions)
+    if (permError) return permError
     router.push("/admin/roles")
     return null
   }
