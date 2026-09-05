@@ -5,14 +5,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Loader2,
   SlidersHorizontal,
 } from "lucide-react"
 
-
 import { cn } from "@/lib/utils"
-import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
 import { useRolesStore } from "@/stores/roles-store"
+import { usePermissionCatalog } from "./use-permission-catalog"
 
 const ALL_AREAS = "All functional areas"
 
@@ -27,11 +27,18 @@ const COL1_WIDTH = 340
  * see at a glance which role grants which DMS action, per the wireframe.
  * Editing still happens on Role Permission Configuration, not here.
  *
- * This view is necessarily a DMS-side composition: Keycloak has no single
- * endpoint that returns a roles-by-permissions grid, so in a real
- * integration this comes from `GET /admin/realms/{realm}/roles` plus each
- * role's stored permission mapping (see the same caveat on Role Permission
- * Configuration and Role Details).
+ * Reads the live catalog via `usePermissionCatalog` (backed by
+ * `V10__seed_fine_grained_permissions.sql`, not the hardcoded
+ * `components/roles/data.ts` this used to read from) and each role's real
+ * granted permissions via `fetchRolePermissions`, fetched in parallel for
+ * every role once the role list loads — see the effect right after
+ * `visibleRoles` below, and note it deliberately fetches for every role,
+ * not just the ones the Roles filter currently shows, so toggling a
+ * hidden role back on shows real data immediately rather than kicking
+ * off a fresh fetch. This is the one screen where that N-role fan-out is
+ * actually justified: a matrix inherently needs every role's full grant
+ * set at once, unlike the Role List table (which never fetches
+ * permissions per role; see `stores/roles-store.ts`).
  *
  * Corner radius is fixed at 10px across every surface here (card, table
  * wrapper, filter control), matching Role Details rather than the app-wide
@@ -135,7 +142,10 @@ const COL1_WIDTH = 340
 export function PermissionMatrix() {
   const roles = useRolesStore((state) => state.roles)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  const fetchRolePermissions = useRolesStore((state) => state.fetchRolePermissions)
+  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
   const [area, setArea] = useState(ALL_AREAS)
+  const [grantsLoading, setGrantsLoading] = useState(true)
   // Rows are grouped two levels deep (module, then action-with-children) and
   // both start collapsed — 32 modules x ~92 actions is far too much to lay
   // out flat by default. Keyed by moduleCode / action id.
@@ -171,12 +181,38 @@ export function PermissionMatrix() {
     [roles, hiddenRoleIds]
   )
 
+  // `fetchRoles` doesn't fetch each role's permissions (see
+  // stores/roles-store.ts's doc comment on `fromBackend`) — a full Roles ×
+  // Permissions grid needs every one of them, so pull them in parallel
+  // once the role list itself has loaded. Fetches for *every* role, not
+  // just `visibleRoles` — hiding a role from the column filter shouldn't
+  // skip loading its grants, since toggling it back visible should show
+  // real data immediately rather than triggering a fresh fetch. Re-runs
+  // if the set of role ids changes (e.g. a role gets added elsewhere) but
+  // not on every render.
+  const roleIdsKey = roles.map((r) => r.id).join(",")
+  useEffect(() => {
+    if (roles.length === 0) {
+      setGrantsLoading(false)
+      return
+    }
+    let cancelled = false
+    setGrantsLoading(true)
+    Promise.all(roles.map((role) => fetchRolePermissions(role.id))).then(() => {
+      if (!cancelled) setGrantsLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleIdsKey])
+
   const visibleGroups = useMemo(
     () =>
       area === ALL_AREAS
         ? permissionGroups
         : permissionGroups.filter((group) => group.module === area),
-    [area]
+    [area, permissionGroups]
   )
 
   // Headers/data columns only make sense once something is expanded —
@@ -199,6 +235,15 @@ export function PermissionMatrix() {
   }
   function toggleRoleVisible(roleId: string) {
     setHiddenRoleIds((prev) => ({ ...prev, [roleId]: !prev[roleId] }))
+  }
+
+  if (catalogLoading || grantsLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <Loader2 size={16} className="animate-spin" />
+        Loading the permission matrix…
+      </div>
+    )
   }
 
   return (

@@ -16,12 +16,25 @@ interface UseRoleResult {
  * Resolves a single role by id for Role Details, Edit Role, and
  * Permission Configuration.
  *
- * Roles reach the store two ways: already present, because the person
- * came from the Role List (which calls `fetchRoles()` on mount), or not
- * yet loaded — a direct link, a bookmark, or a page refresh landing
- * straight on `/admin/roles/{id}` before any list fetch has happened.
- * This hook covers the second case by fetching the one role individually
- * (`GET /api/v1/roles/{id}`) instead of requiring a full list reload.
+ * FIXED BUG: this used to skip fetching entirely whenever a role object
+ * already existed in the store — which happens for every role after a
+ * single visit to Role List, since that screen's `fetchRoles()` caches
+ * every role right away. The problem: `fetchRoles()` deliberately never
+ * populates `permissions` (see `stores/roles-store.ts`'s `fromBackend`
+ * doc comment — doing so would mean an N+1 fetch across every role just
+ * to render a list that doesn't even show permissions). Only the
+ * single-role fetch below (`fetchRole` → `fetchRolePermissions`)
+ * populates real data. So the old "already cached, skip fetching" check
+ * left `permissions` stuck at its list-fetch placeholder (`[]`)
+ * *forever*, on every role, the moment it had ever appeared in the list
+ * — Role Details would show "No permissions granted yet." regardless of
+ * what was actually granted in the database.
+ *
+ * Now this always re-fetches on mount / roleId change, using the
+ * already-cached copy (if any) only to avoid a loading-spinner flash —
+ * `role` still renders immediately from whatever's cached, and swaps to
+ * the real, complete data as soon as the fetch resolves (zustand
+ * re-renders the component automatically once the store updates).
  */
 export function useRole(roleId: string): UseRoleResult {
   const role = useRolesStore((state) => state.roles.find((r) => r.id === roleId))
@@ -30,13 +43,12 @@ export function useRole(roleId: string): UseRoleResult {
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    if (role) {
-      setLoading(false)
-      return
-    }
-
     let cancelled = false
-    setLoading(true)
+    // Only show the spinner when there's nothing to render meanwhile —
+    // if a cached (possibly partial) copy exists, keep it on screen
+    // while this fetch refreshes it in the background instead of
+    // blanking the page.
+    if (!role) setLoading(true)
     setNotFound(false)
 
     fetchRole(roleId).then((result) => {
@@ -49,9 +61,7 @@ export function useRole(roleId: string): UseRoleResult {
       cancelled = true
     }
     // Deliberately excludes `role`/`fetchRole` — this should only re-run
-    // when navigating to a different role id, not on every store update
-    // (which would refire the fetch as soon as the role dep changes from
-    // undefined to defined).
+    // when navigating to a different role id, not on every store update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleId])
 

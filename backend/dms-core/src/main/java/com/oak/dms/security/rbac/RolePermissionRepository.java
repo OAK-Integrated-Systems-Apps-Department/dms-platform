@@ -27,15 +27,6 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
     boolean existsByRoleIdAndPermissionIdAndResourceScope(UUID roleId, UUID permissionId, String resourceScope);
 
     /**
-     * Used to guard permission deletion - a permission still granted to any
-     * role can't be removed from the catalog, mirroring how
-     * {@link PermissionActionServiceImpl#deleteAction} and
-     * {@link PermissionModuleServiceImpl#deleteModule} already guard their
-     * own children one level up the hierarchy.
-     */
-    boolean existsByPermissionId(UUID permissionId);
-
-    /**
      * Effective permission codes for a user across all of their role
      * assignments in the given tenant, resolved through the Permission
      * catalog now that role_permissions references it by id rather than
