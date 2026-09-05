@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react"
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAuditHistory } from "@/components/users/user-audit-history"
-import { useUsersStore } from "@/stores/users-store"
+import { useUser } from "@/lib/users/use-user"
 
 /**
  * User Activity / Audit History (U10) — filterable, paginated feed of
@@ -15,14 +15,16 @@ import { useUsersStore } from "@/stores/users-store"
  * (`.../admin/users/1024/activity`) and this project's existing
  * dynamic-segment convention (`app/admin/users/[userId]/mfa`,
  * `.../sessions`, `.../access-summary`).
+ *
+ * The user itself now comes from dms-core (`useUser`, same as View User).
+ * `recentActivity` is always empty until an audit-log endpoint exists on
+ * the backend — see `lib/users/api.ts`'s `toUserRecord` for the same gap.
  */
 export default function UserAuditHistoryPage() {
   const params = useParams<{ userId: string }>()
-  const user = useUsersStore((state) =>
-    state.users.find((u) => u.id === params.userId)
-  )
+  const { data: user, isPending, isError, error } = useUser(params.userId)
 
-  if (!user) {
+  if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()
   }
 
@@ -30,7 +32,7 @@ export default function UserAuditHistoryPage() {
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
         <Link
-          href={`/admin/users/${user.id}`}
+          href={user ? `/admin/users/${user.id}` : "/admin/users"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft size={14} />
@@ -41,12 +43,22 @@ export default function UserAuditHistoryPage() {
             User Activity / Audit History
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            Security and administrative activity for {user.name} — login, failed
-            login, role changes, activation/deactivation, password reset, and
-            other significant account events.
+            {user
+              ? `Security and administrative activity for ${user.name} — login, failed login, role changes, activation/deactivation, password reset, and other significant account events.`
+              : "Security and administrative activity for this user — login, failed login, role changes, activation/deactivation, password reset, and other significant account events."}
           </p>
         </div>
+        {isPending ? (
+          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            Loading user…
+          </div>
+        ) : isError ? (
+          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+            {error instanceof Error ? error.message : "Could not load this user."}
+          </div>
+        ) : (
         <UserAuditHistory user={user} />
+        )}
       </div>
     </DashboardShell>
   )

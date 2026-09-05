@@ -10,7 +10,7 @@ import { initialRoles } from "@/components/roles/data"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
-import { useUsersStore } from "@/stores/users-store"
+import { useUsers } from "@/lib/users/use-users"
 
 const ROLE_OPTIONS = ["all", ...initialRoles.map((role) => role.name)]
 const PAGE_SIZE = 5
@@ -25,9 +25,14 @@ const PAGE_SIZE = 5
  */
 export default function UserListPage() {
   const router = useRouter()
-  const users = useUsersStore((state) => state.users)
-  const toggleStatus = useUsersStore((state) => state.toggleStatus)
-  const sendPasswordReset = useUsersStore((state) => state.sendPasswordReset)
+  const {
+    users,
+    isPending,
+    isError,
+    error,
+    toggleStatus,
+    sendPasswordReset,
+  } = useUsers()
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
@@ -153,6 +158,16 @@ export default function UserListPage() {
         </Link>
       </div>
 
+      {isPending ? (
+        <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          Loading users…
+        </div>
+      ) : isError ? (
+        <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          {error instanceof Error ? error.message : "Could not load users."}
+        </div>
+      ) : (
+        <>
       <UsersTable
         users={pageUsers}
         onToggleStatus={toggleStatus}
@@ -161,7 +176,13 @@ export default function UserListPage() {
         onEdit={handleEdit}
       />
 
-      <TablePagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </>
+      )}
     </DashboardShell>
   )
 }

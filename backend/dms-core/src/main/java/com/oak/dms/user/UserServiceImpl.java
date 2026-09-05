@@ -6,6 +6,7 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.user.User;
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.outbox.OutboxEventPublisher;
@@ -104,7 +105,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse getUser(UUID userId) {
-        User user = findOwnedByCallerTenant(userId);
+        User user = findAnyOwnedByCallerTenant(userId);
         return userMapper.toResponse(user);
     }
 
@@ -117,7 +118,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public Page<UserResponse> listUsers(Pageable pageable) {
-        return userRepository.findAllActiveByTenant(TenantContext.getTenantId(), pageable)
+        return userRepository.findAllByTenant(TenantContext.getTenantId(), pageable)
                 .map(userMapper::toResponse);
     }
 
@@ -160,6 +161,30 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public UserResponse reactivateUser(UUID userId) {
+        User user = findDeletedOwnedByCallerTenant(userId);
+
+        user.setDeleted(false);
+        user.setDeletedAt(null);
+        user.setStatus(User.UserStatus.active);
+        user.setUpdatedBy(TenantContext.getUserId());
+        user.setUpdatedAt(OffsetDateTime.now());
+
+        User saved = userRepository.save(user);
+
+        // Same call order as deactivateUser (DB write, then Keycloak).
+        // Safe either way: the class-level @Transactional means if
+        // enableUser throws, this whole method's transaction rolls back —
+        // the save() above never actually commits — so a Keycloak-side
+        // failure can't leave the local row reactivated while the account
+        // stays disabled there.
+        keycloakUserService.enableUser(user.getKeycloakId());
+
+        log.info("Reactivated user {}", userId);
+        return userMapper.toResponse(saved);
+    }
+
+    @Override
     public void resetPassword(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
         keycloakUserService.sendPasswordResetEmail(user.getKeycloakId());
@@ -172,6 +197,45 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", userId));
         if (!user.getTenantId().equals(TenantContext.getTenantId())) {
             throw new TenantMismatchException("User", userId);
+        }
+        return user;
+    }
+
+    /**
+     * Same tenant-ownership check as {@link #findOwnedByCallerTenant}, but
+     * doesn't exclude deleted rows - used by {@link #getUser} (and, via
+     * that, {@link #listUsers}'s per-row mapping is unaffected since that
+     * one goes through the repository directly) so a deactivated user is
+     * still viewable rather than 404ing, which is what lets the View User
+     * page and User List show a "Reactivate" action instead of the row
+     * just vanishing.
+     */
+    private User findAnyOwnedByCallerTenant(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!user.getTenantId().equals(TenantContext.getTenantId())) {
+            throw new TenantMismatchException("User", userId);
+        }
+        return user;
+    }
+
+    /**
+     * Same shape as {@link #findOwnedByCallerTenant}, but for
+     * {@link #reactivateUser}, which needs the opposite filter: it only
+     * makes sense against a user that IS currently soft-deleted. A
+     * not-deleted user id (never deactivated, or only ever
+     * locked/disabled via {@link #updateUser}) is a 409, not a 404 - the
+     * user exists and the caller can see it via getUser/listUsers, it's
+     * just not in the state this operation requires.
+     */
+    private User findDeletedOwnedByCallerTenant(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!user.getTenantId().equals(TenantContext.getTenantId())) {
+            throw new TenantMismatchException("User", userId);
+        }
+        if (!user.isDeleted()) {
+            throw new InvalidUserStateException("User " + userId + " is not deactivated");
         }
         return user;
     }
