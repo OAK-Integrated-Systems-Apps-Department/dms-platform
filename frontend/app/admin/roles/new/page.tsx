@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
@@ -22,6 +23,14 @@ export default function AddRolePage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[1300px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Roles", href: "/admin/roles" },
+            { label: "Add Role" },
+          ]}
+        />
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Add Role

@@ -4,6 +4,7 @@ import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { ChevronLeft } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
 import { useUser } from "@/lib/users/use-user"
@@ -28,6 +29,18 @@ export default function UserAccessSummaryPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Users", href: "/admin/users" },
+            {
+              label: user?.name ?? "View User",
+              href: user ? `/admin/users/${user.id}` : undefined,
+            },
+            { label: "Access Summary" },
+          ]}
+        />
         <Link
           href="/admin/users"
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"

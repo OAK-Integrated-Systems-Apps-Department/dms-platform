@@ -4,6 +4,7 @@ import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { AlertTriangle, ChevronLeft, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleDetails } from "@/components/roles/role-details"
 import { useRole } from "@/components/roles/use-role"
@@ -27,6 +28,14 @@ export default function RoleDetailsPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Roles", href: "/admin/roles" },
+            { label: role?.name ?? "Role Details" },
+          ]}
+        />
         <Link
           href="/admin/roles"
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
