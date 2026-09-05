@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ChevronDown, Plus, Search } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { initialRoles } from "@/components/roles/data"
 import { TablePagination } from "@/components/ui/table-pagination"
@@ -80,6 +81,10 @@ export default function UserListPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "Users" }]}
+      />
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           User Management — User List

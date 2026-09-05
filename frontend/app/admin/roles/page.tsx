@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, Grid3x3, Loader2, Plus, Search } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { TablePagination } from "@/components/ui/table-pagination"
@@ -75,6 +76,10 @@ export default function RoleListPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "Roles" }]}
+      />
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Role Management — Role List
@@ -153,11 +158,6 @@ export default function RoleListPage() {
           />
         </>
       )}
-
-      <p className="mt-3.5 text-[12px] text-muted-foreground">
-        Add, edit, activate/deactivate, and delete controls are only shown
-        for custom roles — system roles are read-only.
-      </p>
     </DashboardShell>
   )
 }

@@ -3,6 +3,7 @@
 import { notFound, useParams, useRouter } from "next/navigation"
 import { AlertTriangle, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
@@ -31,6 +32,18 @@ export default function EditRolePage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[1300px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Roles", href: "/admin/roles" },
+            {
+              label: role?.name ?? "Role Details",
+              href: role ? `/admin/roles/${role.id}` : undefined,
+            },
+            { label: "Edit" },
+          ]}
+        />
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Edit Role

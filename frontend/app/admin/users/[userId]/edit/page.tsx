@@ -2,6 +2,7 @@
 
 import { notFound, useParams } from "next/navigation"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserEditForm } from "@/components/users/user-edit-form"
 import { useUser } from "@/lib/users/use-user"
@@ -18,6 +19,18 @@ export default function EditUserPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Users", href: "/admin/users" },
+            {
+              label: user?.name ?? "View User",
+              href: user ? `/admin/users/${user.id}` : undefined,
+            },
+            { label: "Edit" },
+          ]}
+        />
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Edit User</h1>
           <p className="max-w-[620px] text-[13.5px] leading-[1.6] text-muted-foreground">

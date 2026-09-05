@@ -4,6 +4,7 @@ import { notFound, useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronLeft, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
 import { useRole } from "@/components/roles/use-role"
@@ -40,6 +41,18 @@ export default function RolePermissionsPage() {
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Roles", href: "/admin/roles" },
+            {
+              label: role?.name ?? "Role Details",
+              href: role ? `/admin/roles/${role.id}` : undefined,
+            },
+            { label: "Permissions" },
+          ]}
+        />
         <Link
           href={role ? `/admin/roles/${role.id}/edit` : "/admin/roles"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
