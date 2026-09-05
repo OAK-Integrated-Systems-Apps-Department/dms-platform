@@ -8,6 +8,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
 import { useRole } from "@/components/roles/use-role"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
 /** Edit Role (R2, edit mode) — update a role's details and permissions. */
@@ -16,6 +17,8 @@ export default function EditRolePage() {
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
   const updateRole = useRolesStore((state) => state.updateRole)
+
+  usePageTitle(role ? `Edit ${role.name}` : "Edit Role")
 
   if (roleNotFound) {
     notFound()
@@ -31,44 +34,42 @@ export default function EditRolePage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[1300px]">
-        <AdminBreadcrumb
-          className="mb-3"
-          segments={[
-            { label: "Dashboard", href: "/" },
-            { label: "Roles", href: "/admin/roles" },
-            {
-              label: role?.name ?? "Role Details",
-              href: role ? `/admin/roles/${role.id}` : undefined,
-            },
-            { label: "Edit" },
-          ]}
-        />
-        <div className="mb-[22px]">
-          <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-            Edit Role
-          </h1>
-          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            {role
-              ? <>Update {role.name}&apos;s description, status, and permissions.</>
-              : "Update this role's description, status, and permissions."}
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <Loader2 size={16} className="animate-spin" />
-            Loading role…
-          </div>
-        ) : role ? (
-          <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
-        ) : (
-          <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <AlertTriangle size={20} className="text-[var(--rust)]" />
-            Couldn&apos;t load this role.
-          </div>
-        )}
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[
+          { label: "Dashboard", href: "/" },
+          { label: "Roles", href: "/admin/roles" },
+          {
+            label: role?.name ?? "Role Details",
+            href: role ? `/admin/roles/${role.id}` : undefined,
+          },
+          { label: "Edit" },
+        ]}
+      />
+      <div className="mb-[22px] max-w-[680px]">
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+          Edit Role
+        </h1>
+        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          {role
+            ? <>Update {role.name}&apos;s description, status, and permissions.</>
+            : "Update this role's description, status, and permissions."}
+        </p>
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <Loader2 size={16} className="animate-spin" />
+          Loading role…
+        </div>
+      ) : role ? (
+        <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
+      ) : (
+        <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <AlertTriangle size={20} className="text-[var(--rust)]" />
+          Couldn&apos;t load this role.
+        </div>
+      )}
     </DashboardShell>
   )
 }

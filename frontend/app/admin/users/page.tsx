@@ -8,6 +8,7 @@ import { ChevronDown, Plus, Search } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { initialRoles } from "@/components/roles/data"
+import { usePageTitle } from "@/lib/use-page-title"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
@@ -25,6 +26,8 @@ const PAGE_SIZE = 5
  * trigger a password reset (U7) inline.
  */
 export default function UserListPage() {
+  usePageTitle("User List")
+
   const router = useRouter()
   const {
     users,

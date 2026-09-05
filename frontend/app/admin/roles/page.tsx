@@ -8,6 +8,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
 const PAGE_SIZE = 5
@@ -22,6 +23,8 @@ const PAGE_SIZE = 5
  * regardless of that footnote.)
  */
 export default function RoleListPage() {
+  usePageTitle("Role List")
+
   const roles = useRolesStore((state) => state.roles)
   const loading = useRolesStore((state) => state.loading)
   const fetchError = useRolesStore((state) => state.error)
@@ -82,7 +85,7 @@ export default function RoleListPage() {
       />
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-          Role Management — Role List
+          Role Management - Role List
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Roles available within the current tenant. Search, add a role, or

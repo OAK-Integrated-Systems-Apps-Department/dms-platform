@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
 /**
@@ -21,6 +22,8 @@ export default function UserAccessSummaryPage() {
   const { data: user, isPending, isError, error, toggleStatus } = useUser(
     params.userId
   )
+
+  usePageTitle(user ? `${user.name} Access Summary` : "User Access Summary")
 
   if (isError && error instanceof Error && error.message.includes("not found")) {
     notFound()

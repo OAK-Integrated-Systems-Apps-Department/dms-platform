@@ -122,10 +122,6 @@ export function UserInviteForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]">
-      <div className="mb-[26px] inline-flex items-center gap-1.5 rounded-full bg-[var(--sidebar,var(--primary-dark))] px-3 py-1.5 font-mono text-[10.5px] font-medium tracking-[0.08em] text-[var(--sidebar-ink,white)] uppercase">
-        <ShieldCheck size={12} className="text-[var(--gold)]" />
-        Created under: current tenant
-      </div>
 
       {submitError && (
         <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
 /** View User — per dms-view-user.html. Read-only overview reached from the "View" action on the User List. */
@@ -13,6 +14,8 @@ export default function ViewUserPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error, toggleStatus, sendPasswordReset } =
     useUser(params.userId)
+
+  usePageTitle(user ? user.name : "View User")
 
   // A missing user (deleted, wrong tenant, bad id) surfaces as a fetch
   // error from dms-core rather than an empty local-store lookup — route

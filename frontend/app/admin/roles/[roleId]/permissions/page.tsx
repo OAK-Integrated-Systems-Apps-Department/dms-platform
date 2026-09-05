@@ -8,6 +8,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
 import { useRole } from "@/components/roles/use-role"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
 /**
@@ -27,6 +28,8 @@ export default function RolePermissionsPage() {
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
   const updateRolePermissions = useRolesStore((state) => state.updateRolePermissions)
+
+  usePageTitle(role ? `${role.name} Permissions` : "Role Permissions")
 
   if (roleNotFound) {
     notFound()

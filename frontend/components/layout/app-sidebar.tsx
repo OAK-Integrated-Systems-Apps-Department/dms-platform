@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { APP_NAME } from "@/lib/app-config"
 import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { Dropdown } from "@/components/ui/dropdown"
@@ -93,7 +94,7 @@ export function AppSidebar({
         </div>
           <div className="group-data-[collapsible=icon]:hidden">
           <div className="font-heading text-[17px] leading-none font-semibold">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-0.5 text-[10.5px] tracking-[0.08em] text-[var(--sidebar-muted)]">
             DOCUMENT VAULT
