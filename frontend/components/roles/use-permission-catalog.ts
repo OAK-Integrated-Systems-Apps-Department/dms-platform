@@ -27,6 +27,23 @@ interface UsePermissionCatalogResult {
  * see the same live catalog, kept up to date by the Permission Catalog
  * admin screens (`/admin/permissions`) rather than a frozen snapshot.
  *
+ * FIXED BUG: this used to only fetch once per store lifetime
+ * (`if (permissions.length === 0) fetchPermissions()`), never again for
+ * the rest of the browser session. `usePermissionsStore` persists across
+ * every client-side route change, so the moment any one of these four
+ * screens had ever been visited once, every later visit — from any of
+ * them — reused that same frozen snapshot forever. Editing a permission's
+ * module/action via `/admin/permissions/{id}/edit` in the same session
+ * updates the store correctly at the time, but any Role screen that
+ * mounts *after* that edit with its own fresh `usePermissionCatalog()`
+ * call had no way to know a re-fetch was ever needed — leading to a mix
+ * of stale and fresh grouping info depending on exactly what had been
+ * visited when, which is what produced a permission appearing to sit
+ * under both its old and new module at once. This now re-fetches fresh
+ * on every mount, unconditionally — still not one request per screen if
+ * nothing changed (loading briefly shows cached data, not a blank
+ * screen), but it's guaranteed correct.
+ *
  * Grouping: permissions are grouped by `actionId`, and actions by
  * `moduleCode`, mirroring the DB's actual Module -> Action -> Permission
  * hierarchy (`Permission.java`). An action with more than one permission
@@ -47,14 +64,19 @@ export function usePermissionCatalog(): UsePermissionCatalogResult {
   const permissions = usePermissionsStore((state) => state.permissions)
   const modules = usePermissionsStore((state) => state.modules)
   const actions = usePermissionsStore((state) => state.actions)
-  const loading = usePermissionsStore((state) => state.loading)
-  const catalogLoaded = usePermissionsStore((state) => state.catalogLoaded)
-  const fetchPermissions = usePermissionsStore((state) => state.fetchPermissions)
+  const fetchPermissions = usePermissionsStore(
+    (state) => state.fetchPermissions
+  )
   const fetchCatalog = usePermissionsStore((state) => state.fetchCatalog)
 
   useEffect(() => {
-    if (permissions.length === 0) fetchPermissions()
-    if (!catalogLoaded) fetchCatalog()
+    // Always re-fetch on mount, regardless of whether a cached copy
+    // already exists in the store — see the doc comment above for why
+    // "fetch once ever" was wrong here. Whatever's already cached still
+    // renders immediately in the meantime (see `loading` below), so this
+    // doesn't blank the screen while the fresh data comes in.
+    fetchPermissions()
+    fetchCatalog()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -64,8 +86,13 @@ export function usePermissionCatalog(): UsePermissionCatalogResult {
   )
 
   return {
+    // True only when there's nothing at all to show yet (first-ever
+    // load this session) — once any data is cached, it renders
+    // immediately and silently swaps to the fresh copy once the
+    // request above resolves, rather than flashing a spinner on every
+    // single navigation between these four screens.
     groups,
-    loading: (permissions.length === 0 || !catalogLoaded) && loading,
+    loading: permissions.length === 0 || modules.length === 0,
   }
 }
 
@@ -82,7 +109,9 @@ function buildPermissionGroups(
   }
 
   const itemsByModuleCode = new Map<string, PermissionItem[]>()
-  for (const action of [...actions].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const action of [...actions].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  )) {
     const actionPermissions = permissionsByActionId.get(action.id)
     if (!actionPermissions || actionPermissions.length === 0) continue
 
@@ -93,7 +122,23 @@ function buildPermissionGroups(
     const item: PermissionItem =
       leaves.length > 1
         ? {
-            id: `${action.moduleCode}.${action.code}`.toLowerCase(),
+            // Was `${moduleCode}.${actionCode}`.toLowerCase() — which, for
+            // any action whose module/action-code pair happens to spell
+            // out an existing permission_code (e.g. USER/VIEW → "user.view",
+            // which collides with the actual seeded permission of that
+            // exact code once any second permission — like a custom
+            // "test.tst" — is also filed under that same action), produced
+            // a group id *identical* to one of its own children's leaf id.
+            // React uses these ids as list keys; two nodes sharing a key
+            // in the same tree makes reconciliation unreliable, especially
+            // across a re-render triggered by editing a permission's
+            // module/action (which changes this tree's shape and sort
+            // order) — showing stale/duplicated content instead of
+            // cleanly replacing it. `action.id` is a real UUID and can
+            // never equal a dot-separated permission code, so it can't
+            // collide with any leaf under it, no matter how many
+            // permissions end up sharing one action.
+            id: `group:${action.id}`,
             label: action.name,
             permissions: leaves,
           }
