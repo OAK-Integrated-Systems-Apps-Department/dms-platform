@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Loader2, Plus, Search } from "lucide-react"
+import { AlertTriangle, Loader2, Plus, Search, X } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionsTable } from "@/components/permissions/permissions-table"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { CheckboxFilter } from "@/components/ui/checkbox-filter"
+import { usePageTitle } from "@/lib/use-page-title"
 import { usePermissionsStore } from "@/stores/permissions-store"
 
-const PAGE_SIZE = 10
+const DEFAULT_PAGE_SIZE = 10
 
 /**
  * Permission Catalog — Permission List. The platform-wide catalog of
@@ -19,6 +22,8 @@ const PAGE_SIZE = 10
  * `stores/permissions-store.ts` for how this relates to that screen).
  */
 export default function PermissionListPage() {
+  usePageTitle("Permission Catalog")
+
   const permissions = usePermissionsStore((state) => state.permissions)
   const loading = usePermissionsStore((state) => state.loading)
   const fetchError = usePermissionsStore((state) => state.error)
@@ -26,7 +31,11 @@ export default function PermissionListPage() {
   const deletePermission = usePermissionsStore((state) => state.deletePermission)
 
   const [query, setQuery] = useState("")
+  // Empty array = "all selected" / no filter applied
+  const [moduleFilters, setModuleFilters] = useState<string[]>([])
+  const [actionFilters, setActionFilters] = useState<string[]>([])
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -34,29 +43,57 @@ export default function PermissionListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const moduleOptions = useMemo(
+    () => Array.from(new Set(permissions.map((p) => p.moduleCode))).sort(),
+    [permissions]
+  )
+  const actionOptions = useMemo(
+    () => Array.from(new Set(permissions.map((p) => p.actionCode))).sort(),
+    [permissions]
+  )
+
   const filteredPermissions = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return permissions
-    return permissions.filter(
-      (p) =>
+    return permissions.filter((p) => {
+      const matchesQuery =
+        !q ||
         p.code.toLowerCase().includes(q) ||
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
         p.moduleCode.toLowerCase().includes(q) ||
         p.actionCode.toLowerCase().includes(q)
-    )
-  }, [permissions, query])
+      const matchesModule =
+        moduleFilters.length === 0 || moduleFilters.includes(p.moduleCode)
+      const matchesAction =
+        actionFilters.length === 0 || actionFilters.includes(p.actionCode)
+      return matchesQuery && matchesModule && matchesAction
+    })
+  }, [permissions, query, moduleFilters, actionFilters])
 
-  const totalPages = Math.max(1, Math.ceil(filteredPermissions.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filteredPermissions.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pagePermissions = filteredPermissions.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   )
 
-  function handleQueryChange(value: string) {
-    setQuery(value)
+  const hasActiveFilters = moduleFilters.length > 0 || actionFilters.length > 0
+
+  function handlePageSizeChange(size: number) {
+    setPageSize(size)
     setPage(1)
+  }
+
+  function handleFilterChange(update: () => void) {
+    update()
+    setPage(1)
+  }
+
+  function handleClearAllFilters() {
+    handleFilterChange(() => {
+      setModuleFilters([])
+      setActionFilters([])
+    })
   }
 
   async function handleDeletePermission(id: string) {
@@ -67,6 +104,10 @@ export default function PermissionListPage() {
 
   return (
     <DashboardShell initialActiveLabel="Permissions">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "Permissions" }]}
+      />
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Permission Catalog
@@ -87,14 +128,42 @@ export default function PermissionListPage() {
           <input
             type="text"
             value={query}
-            onChange={(event) => handleQueryChange(event.target.value)}
+            onChange={(event) =>
+              handleFilterChange(() => setQuery(event.target.value))
+            }
             placeholder="Search permissions, modules, or actions…"
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
         </div>
+
+        <CheckboxFilter
+          label="Module"
+          options={moduleOptions}
+          selected={moduleFilters}
+          onChange={(next) => handleFilterChange(() => setModuleFilters(next))}
+        />
+
+        <CheckboxFilter
+          label="Action"
+          options={actionOptions}
+          selected={actionFilters}
+          onChange={(next) => handleFilterChange(() => setActionFilters(next))}
+        />
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={handleClearAllFilters}
+            className="flex h-[38px] items-center gap-1.5 rounded-[9px] border border-border bg-muted px-3 text-[13.5px] font-semibold text-muted-foreground hover:border-[var(--border-strong)] hover:bg-card hover:text-foreground"
+          >
+            <X size={14} />
+            Clear filters
+          </button>
+        )}
+
         <Link
           href="/admin/permissions/new"
-          className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+          className="ml-auto flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
         >
           <Plus size={16} />
           Add Permission
@@ -135,14 +204,11 @@ export default function PermissionListPage() {
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
           />
         </>
       )}
-
-      <p className="mt-3.5 text-[12px] text-muted-foreground">
-        A permission can&apos;t be deleted while it&apos;s still granted to a role —
-        remove it from every role first.
-      </p>
     </DashboardShell>
   )
 }
