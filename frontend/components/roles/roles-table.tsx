@@ -12,6 +12,7 @@ import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import { RoleDeleteDialog } from "./role-delete-dialog"
+import { formatRoleNameForDisplay } from "./role-utils"
 import type { RoleRecord } from "./types"
 
 type SortKey = "name" | "description" | "status" | "assignedUsers"
@@ -87,13 +88,15 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                 </td>
               </tr>
             )}
-            {sorted.map((role) => (
+            {sorted.map((role) => {
+              const displayName = formatRoleNameForDisplay(role.name)
+              return (
               <tr
                 key={role.id}
                 className="border-b border-border last:border-b-0 hover:bg-muted"
               >
                 <td className="px-3.5 py-3 text-[13.5px] font-semibold text-primary">
-                  {role.name}
+                  {displayName}
                 </td>
                 <td className="max-w-[320px] truncate px-3.5 py-3 text-[13px] text-muted-foreground">
                   {role.description}
@@ -118,7 +121,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                           <Link
                             {...props}
                             href={`/admin/roles/${role.id}`}
-                            aria-label={`View ${role.name}`}
+                            aria-label={`View ${displayName}`}
                             className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                           >
                             <Eye size={15} />
@@ -141,7 +144,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                               <Link
                                 {...props}
                                 href={`/admin/roles/${role.id}/edit`}
-                                aria-label={`Edit ${role.name}`}
+                                aria-label={`Edit ${displayName}`}
                                 className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
                               >
                                 <Pencil size={15} />
@@ -160,8 +163,8 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                                 onClick={() => onToggleStatus(role.id)}
                                 aria-label={
                                   role.status === "Active"
-                                    ? `Deactivate ${role.name}`
-                                    : `Activate ${role.name}`
+                                    ? `Deactivate ${displayName}`
+                                    : `Activate ${displayName}`
                                 }
                                 className={cn(
                                   "flex size-7 items-center justify-center rounded-[7px] transition-colors",
@@ -192,7 +195,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                                 {...props}
                                 type="button"
                                 onClick={() => setPendingDeleteRole(role)}
-                                aria-label={`Delete ${role.name}`}
+                                aria-label={`Delete ${displayName}`}
                                 className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
                               >
                                 <Trash2 size={15} />
@@ -206,7 +209,8 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                   </div>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

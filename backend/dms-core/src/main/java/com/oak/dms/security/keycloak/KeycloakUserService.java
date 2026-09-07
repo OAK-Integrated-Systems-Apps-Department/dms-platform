@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -259,6 +260,58 @@ public class KeycloakUserService {
         } catch (Exception e) {
             throw new KeycloakIntegrationException(
                     "Failed to remove realm role " + realmRoleName + " from " + keycloakId, e);
+        }
+    }
+
+    /**
+     * The two fixed platform realm roles surfaced by this method — see
+     * {@link #assignPlatformRealmRole}, which still supports assigning
+     * PLATFORM_ADMIN itself (it's a real, valid realm role, just not one
+     * shown back through the DMS user screens this list feeds - a
+     * cross-tenant platform administrator isn't scoped to any one tenant's
+     * user management view the way TENANT_ADMIN/MEMBER are, so listing it
+     * here isn't meaningful in the same way). Not stored anywhere in
+     * dms-core's own database.
+     */
+    private static final Set<String> PLATFORM_ROLE_NAMES = Set.of("TENANT_ADMIN", "MEMBER");
+
+    /**
+     * Returns whichever of the platform roles in {@link #PLATFORM_ROLE_NAMES}
+     * this Keycloak user directly holds (deliberately excludes
+     * PLATFORM_ADMIN even if held - see that constant's doc comment).
+     * <p>
+     * Until this existed, there was no way to answer "does this user have
+     * TENANT_ADMIN?" outside of decoding that specific user's own live JWT
+     * at the moment they're logged in — nothing queryable for an arbitrary
+     * user from an admin screen. This calls Keycloak's own role-mappings
+     * API instead, so it works for any user regardless of whether they're
+     * currently logged in.
+     * <p>
+     * Uses {@code realmLevel().listAll()} (the user's directly-assigned
+     * realm roles) rather than {@code listEffective()} (which would also
+     * expand composite roles) - deliberately, so realm plumbing roles like
+     * {@code default-roles-<realm>}, {@code offline_access}, and
+     * {@code uma_authorization} (all real assignments, but meaningless to
+     * show as a "role" in the DMS UI) don't need filtering out here beyond
+     * the explicit platform-role allowlist below. Any tenant-defined DMS
+     * role this user also holds is deliberately excluded too - those are
+     * already fully surfaced via {@code UserRoleController} /
+     * {@code user_roles}; this method exists specifically to surface the
+     * roles that aren't visible anywhere else.
+     */
+    public List<String> getPlatformRealmRoles(UUID keycloakId) {
+        try {
+            return realm().users().get(keycloakId.toString())
+                    .roles().realmLevel().listAll()
+                    .stream()
+                    .map(RoleRepresentation::getName)
+                    .filter(PLATFORM_ROLE_NAMES::contains)
+                    .toList();
+        } catch (WebApplicationException e) {
+            throw keycloakFailure("list platform realm roles for " + keycloakId, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException(
+                    "Failed to list platform realm roles for " + keycloakId, e);
         }
     }
 
