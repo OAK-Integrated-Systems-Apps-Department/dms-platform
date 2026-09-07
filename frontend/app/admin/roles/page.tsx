@@ -11,7 +11,7 @@ import { TablePagination } from "@/components/ui/table-pagination"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 10
 
 /**
  * Role Management — Role List (R1). Search roles, add a role, or
