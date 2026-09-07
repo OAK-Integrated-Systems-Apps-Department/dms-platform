@@ -49,6 +49,22 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/oak-dms}
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/oak-dms/protocol/openid-connect/certs}
 
+  # Used only by PasswordResetService's own reset-link emails - unrelated
+  # to Keycloak's SMTP config (infra/local/docker-compose.yml's mailpit
+  # service / KEYCLOAK_SMTP_* env vars), which is a separate SMTP client
+  # inside Keycloak itself for its own account-creation/verify-email mail.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1026}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+
 server:
   port: ${SERVER_PORT:8080}
   error:
@@ -85,6 +101,16 @@ app:
       same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
       domain: ${AUTH_COOKIE_DOMAIN:}
       path: /
+  # Origin the frontend is actually served from, used only to build the
+  # link inside password-reset emails (PasswordResetService) - e.g.
+  # "${frontend-base-url}/update-password?token=...". Deliberately
+  # separate from app.cors.allowed-origins: that's a list (CORS may allow
+  # several origins), this is the one canonical origin a person should
+  # land on.
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  password-reset:
+    token-ttl-minutes: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:30}
+    mail-from: ${PASSWORD_RESET_MAIL_FROM:no-reply@oakdms.local}
 
 dms:
   outbox:

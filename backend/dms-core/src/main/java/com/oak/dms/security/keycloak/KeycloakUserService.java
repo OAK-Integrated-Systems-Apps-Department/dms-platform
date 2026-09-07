@@ -115,20 +115,24 @@ public class KeycloakUserService {
     }
 
     /**
-     * Sets a fresh random temporary password (never returned to the
-     * caller - it exists only to force Keycloak to require a real one be
-     * chosen) and emails the user a link to set their own, via the same
-     * UPDATE_PASSWORD required action used at account creation. A
-     * plaintext password never touches this API, its logs, or the
-     * database - Keycloak remains the sole custodian of credentials.
+     * Sets the user's real, permanent password directly - used only by
+     * {@link com.oak.dms.security.auth.PasswordResetService} once it has
+     * independently verified a valid dms-core-issued reset token. Unlike
+     * {@link #setTemporaryPassword}, {@code temporary} is false: the
+     * person just chose this password themselves on our own
+     * {@code /update-password} page, so there's nothing left to force a
+     * follow-up change for. Keycloak's Admin API still enforces the
+     * realm's password policy on this call - a policy violation surfaces
+     * as a {@link jakarta.ws.rs.BadRequestException} (HTTP 400), which
+     * the caller is expected to translate into a user-facing message
+     * rather than letting it fall through as a generic integration error.
      */
-    public void sendPasswordResetEmail(UUID keycloakId) {
-        setTemporaryPassword(keycloakId, UUID.randomUUID().toString());
-        try {
-            realm().users().get(keycloakId.toString()).executeActionsEmail(List.of("UPDATE_PASSWORD"));
-        } catch (Exception e) {
-            throw new KeycloakIntegrationException("Failed to send password reset email to " + keycloakId, e);
-        }
+    public void setPassword(UUID keycloakId, String newPassword) {
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(newPassword);
+        credential.setTemporary(false);
+        realm().users().get(keycloakId.toString()).resetPassword(credential);
     }
 
     private void updateEnabled(UUID keycloakId, boolean enabled) {

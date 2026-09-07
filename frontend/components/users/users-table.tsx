@@ -30,6 +30,9 @@ type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
  * dialog (U6 / `UserStatusDialog`), and password resets go through U7 /
  * `UserResetPasswordDialog` — there's no instant action here, since both
  * affect a real person's account and shouldn't be one-click accidents.
+ * Reset Password is hidden entirely for an inactive user — resetting the
+ * password of an account nobody can currently sign into isn't a
+ * meaningful action; reactivate first.
  */
 export function UsersTable({
   users,
@@ -183,22 +186,24 @@ export function UsersTable({
                       <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
                     </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                    <button
-                            {...props}
-                      type="button"
-                      onClick={() => setPendingResetUser(user)}
-                            aria-label={`Reset password for ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                    >
-                            <KeyRound size={15} />
-                    </button>
-                        )}
-                      />
-                      <TooltipContent>{getTooltip("users.actions.resetPassword")}</TooltipContent>
-                    </Tooltip>
+                    {user.status === "Active" && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                      <button
+                              {...props}
+                        type="button"
+                        onClick={() => setPendingResetUser(user)}
+                              aria-label={`Reset password for ${user.name}`}
+                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                      >
+                              <KeyRound size={15} />
+                      </button>
+                          )}
+                        />
+                        <TooltipContent>{getTooltip("users.actions.resetPassword")}</TooltipContent>
+                      </Tooltip>
+                    )}
 
                     <Tooltip>
                       <TooltipTrigger
