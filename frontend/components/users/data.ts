@@ -25,6 +25,7 @@ export const initialUsers: UserRecord[] = [
     email: "priyanka.fernando@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Admin"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-24",
@@ -78,6 +79,7 @@ export const initialUsers: UserRecord[] = [
     email: "nadia.rajapaksa@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Compliance Officer"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-23",
@@ -131,6 +133,7 @@ export const initialUsers: UserRecord[] = [
     email: "kasun.perera@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Approver", "Uploader"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-22",
@@ -198,6 +201,7 @@ export const initialUsers: UserRecord[] = [
     email: "malik.silva@oakdms.com",
     tenant: "oak-dms",
     status: "Inactive",
+    verified: true,
     roles: ["Approver"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-07-11",
@@ -236,6 +240,7 @@ export const initialUsers: UserRecord[] = [
     email: "dilani.wickrama@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Uploader"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-20",
@@ -282,6 +287,7 @@ export const initialUsers: UserRecord[] = [
     email: "ruwan.jayasuriya@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Viewer"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-19",
@@ -328,6 +334,7 @@ export const initialUsers: UserRecord[] = [
     email: "anjali.guna@oakdms.com",
     tenant: "oak-dms",
     status: "Inactive",
+    verified: true,
     roles: ["Compliance Officer", "Viewer"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-06-02",
@@ -366,6 +373,7 @@ export const initialUsers: UserRecord[] = [
     email: "thilina.bandara@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Uploader"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-18",
@@ -412,6 +420,7 @@ export const initialUsers: UserRecord[] = [
     email: "chamari.rathnayake@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Admin"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-17",
@@ -472,6 +481,7 @@ export const initialUsers: UserRecord[] = [
     email: "suresh.kumar@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Viewer"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "—",
@@ -503,6 +513,7 @@ export const initialUsers: UserRecord[] = [
     email: "ishara.desilva@oakdms.com",
     tenant: "oak-dms",
     status: "Active",
+    verified: true,
     roles: ["Approver"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-15",
@@ -549,6 +560,7 @@ export const initialUsers: UserRecord[] = [
     email: "nimal.herath@oakdms.com",
     tenant: "oak-dms",
     status: "Inactive",
+    verified: true,
     roles: ["Uploader", "Viewer"],
     platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-05-30",

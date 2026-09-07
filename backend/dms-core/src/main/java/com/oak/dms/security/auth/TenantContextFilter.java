@@ -1,6 +1,7 @@
 package com.oak.dms.security.auth;
 
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.user.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +28,15 @@ import java.util.UUID;
  * request and cleared afterwards, since ThreadLocals are reused across
  * requests on pooled threads.
  *
+ * Also marks the resolved user verified (see {@link UserService#markVerified})
+ * the first time this happens for them: reaching this point at all means
+ * their JWT was valid, which Keycloak won't issue while the VERIFY_EMAIL /
+ * UPDATE_PASSWORD required actions set at invite time are still
+ * outstanding — so successfully getting here is itself the completion
+ * signal, no separate callback/webhook from Keycloak needed. A no-op once
+ * already verified, so this doesn't add a write to every request forever,
+ * just the first one after setup completes.
+ *
  * Requests whose JWT does not yet correspond to a provisioned local user
  * (e.g. the very first call after a Keycloak signup, before the
  * self-provisioning endpoint has run) proceed with no context bound;
@@ -45,6 +55,7 @@ import java.util.UUID;
 public class TenantContextFilter extends OncePerRequestFilter {
 
     private final UserRepository userRepository;
+    private final UserService userService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -53,8 +64,12 @@ public class TenantContextFilter extends OncePerRequestFilter {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
                 resolveKeycloakId(jwt).ifPresent(keycloakId ->
-                        userRepository.findByKeycloakIdAndDeletedFalse(keycloakId)
-                                .ifPresent(user -> TenantContext.set(user.getTenantId(), user.getUserId())));
+                        userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(user -> {
+                            TenantContext.set(user.getTenantId(), user.getUserId());
+                            if (!user.isVerified()) {
+                                userService.markVerified(user.getUserId());
+                            }
+                        }));
             }
             chain.doFilter(request, response);
         } finally {

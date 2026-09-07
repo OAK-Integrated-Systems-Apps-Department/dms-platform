@@ -15,7 +15,9 @@ export const tooltipContent = {
   "users.actions.deactivate": "Deactivate",
   "users.actions.edit": "Edit",
   "users.actions.resetPassword": "Reset password",
-  "users.actions.view": "View"
+  "users.actions.view": "View",
+  "users.pending.deactivateDisabled": "This user hasn't set up their account yet",
+  "users.pending.resetPasswordDisabled": "This user hasn't set up their account yet"
 } as const
 
 export type TooltipKey = keyof typeof tooltipContent

@@ -122,6 +122,25 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void markVerified(UUID userId) {
+        // Deliberately doesn't go through findOwnedByCallerTenant/
+        // findAnyOwnedByCallerTenant: this is called from
+        // TenantContextFilter on every request, before TenantContext is
+        // necessarily useful for anything else, and a missing/mismatched
+        // row here just means "nothing to mark" rather than an error the
+        // caller should see — the filter doesn't (and shouldn't) fail a
+        // request over this.
+        userRepository.findById(userId).ifPresent(user -> {
+            if (!user.isVerified()) {
+                user.setVerified(true);
+                user.setVerifiedAt(OffsetDateTime.now());
+                userRepository.save(user);
+                log.info("User {} completed account setup (verified)", userId);
+            }
+        });
+    }
+
+    @Override
     public UserResponse updateUser(UUID userId, UpdateUserRequest request) {
         User user = findOwnedByCallerTenant(userId);
 

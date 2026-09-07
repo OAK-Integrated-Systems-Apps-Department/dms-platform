@@ -7,9 +7,12 @@ import { API_BASE_URL } from "@/lib/api-config"
 /** Mirrors backend/dms-core's UserResponse DTO (only the fields the UI uses). */
 export interface CurrentUser {
   userId: string
+  tenantId: string
   email: string
   displayName: string
+  mfaEnabled: boolean
   status: string
+  createdAt: string
 }
 
 function initialsOf(displayName: string): string {
