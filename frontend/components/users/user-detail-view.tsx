@@ -129,6 +129,15 @@ export function UserDetailView({
             label="Roles"
             value={
               <div className="flex flex-wrap gap-1.5">
+                {user.platformRoles.map((role) => (
+                  <span
+                    key={role}
+                    title="Platform role — assigned directly in Keycloak, not a tenant-defined DMS role"
+                    className="rounded-[6px] border border-transparent bg-[var(--gold-tint)] px-2 py-0.5 text-[11px] font-semibold text-[#7a5b00]"
+                  >
+                    {role}
+                  </span>
+                ))}
                 {user.roles.map((role) => (
                   <span
                     key={role}
@@ -137,6 +146,11 @@ export function UserDetailView({
                     {role}
                   </span>
                 ))}
+                {user.platformRoles.length === 0 && user.roles.length === 0 && (
+                  <span className="text-[12px] text-muted-foreground">
+                    No roles assigned.
+                  </span>
+                )}
               </div>
             }
           />

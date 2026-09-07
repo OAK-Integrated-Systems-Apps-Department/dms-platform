@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   deactivateUser,
   fetchUser,
+  fetchUserPlatformRoles,
   fetchUserRoles,
   reactivateUser,
   sendPasswordReset as sendPasswordResetRequest,
@@ -13,8 +14,9 @@ import {
 
 /**
  * Loads a single user from dms-core (`GET /api/v1/users/{userId}` +
- * `GET /api/v1/users/{userId}/roles`) for the View User screen, replacing
- * the mock lookup in `stores/users-store.ts`.
+ * `GET /api/v1/users/{userId}/roles` + `GET /api/v1/users/{userId}/platform-roles`)
+ * for the View User screen, replacing the mock lookup in
+ * `stores/users-store.ts`.
  *
  * `GET /api/v1/users/{userId}` deliberately still returns a deactivated
  * user (see UserServiceImpl#getUser on the backend) rather than 404ing,
@@ -25,11 +27,12 @@ export function useUser(userId: string) {
   const query = useQuery({
     queryKey: ["user", userId],
     queryFn: async () => {
-      const [user, roles] = await Promise.all([
+      const [user, roles, platformRoles] = await Promise.all([
         fetchUser(userId),
         fetchUserRoles(userId),
+        fetchUserPlatformRoles(userId),
       ])
-      return toUserRecord(user, roles)
+      return toUserRecord(user, roles, platformRoles)
     },
     retry: false,
     enabled: Boolean(userId),

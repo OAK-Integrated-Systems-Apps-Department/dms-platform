@@ -19,6 +19,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -49,7 +50,7 @@ public class UserController {
     }
 
     @PostMapping
-    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
     @Operation(summary = "Invite a new user into the caller's tenant")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponse response = userService.createUser(request);
@@ -57,28 +58,41 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    // @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
     @Operation(summary = "Get a user by id, within the caller's tenant")
     public UserResponse getUser(@PathVariable UUID userId) {
         return userService.getUser(userId);
     }
 
+    @GetMapping("/{userId}/platform-roles")
+    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @Operation(summary = "List the fixed platform roles (TENANT_ADMIN, MEMBER) this user holds",
+            description = "These are Keycloak-only realm roles, never rows in the roles/user_roles "
+                    + "tables - see GET /{userId}/roles (UserRoleController) for tenant-defined DMS "
+                    + "roles instead. A user can hold both kinds at once; they're returned separately "
+                    + "because only tenant-defined roles have permissions/descriptions/edit screens "
+                    + "behind them. PLATFORM_ADMIN is deliberately excluded even if held - see "
+                    + "KeycloakUserService#PLATFORM_ROLE_NAMES for why.")
+    public List<String> getPlatformRoles(@PathVariable UUID userId) {
+        return userService.getPlatformRoles(userId);
+    }
+
     @GetMapping
-    // @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
     @Operation(summary = "List users in the caller's tenant")
     public PageResponse<UserResponse> listUsers(Pageable pageable) {
         return PageResponse.from(userService.listUsers(pageable));
     }
 
     @PutMapping("/{userId}")
-    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
     @Operation(summary = "Update a user's profile/status")
     public UserResponse updateUser(@PathVariable UUID userId, @Valid @RequestBody UpdateUserRequest request) {
         return userService.updateUser(userId, request);
     }
 
     @PostMapping("/{userId}/reset-password")
-    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "Send a password reset email to a user in the caller's tenant. Sets a fresh "
             + "temporary password server-side and emails the user a link to choose their own - no "
@@ -88,7 +102,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a user")
     public void deactivateUser(@PathVariable UUID userId) {
@@ -96,7 +110,7 @@ public class UserController {
     }
 
     @PostMapping("/{userId}/reactivate")
-    // @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('user.manage')")
     @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
             description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
                     + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")

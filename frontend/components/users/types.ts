@@ -107,8 +107,22 @@ export interface UserRecord {
 
   /**
    * Role names, matching RoleRecord.name in components/roles/types.ts.
+   * Tenant-defined DMS roles only — see `platformRoles` for the fixed
+   * Keycloak-only roles (PLATFORM_ADMIN/TENANT_ADMIN/MEMBER) that never
+   * have a RoleRecord backing them.
    */
   roles: string[]
+
+  /**
+   * The fixed platform roles (PLATFORM_ADMIN, TENANT_ADMIN, MEMBER) this
+   * user holds in Keycloak, if any — kept separate from `roles` because
+   * these have no RoleRecord, no permissions/description, and no Role
+   * Management screen to click into; they're surfaced here purely for
+   * visibility (e.g. so an account like the seeded TENANT_ADMIN doesn't
+   * appear to have "no role" just because it was never assigned a
+   * tenant-defined one). See `GET /api/v1/users/{userId}/platform-roles`.
+   */
+  platformRoles: string[]
 
   /**
    * Reuses the Roles feature's status type so User Management and
