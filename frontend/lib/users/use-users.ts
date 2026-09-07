@@ -24,7 +24,7 @@ import type { UserRecord } from "@/components/users/types"
 const PAGE_FETCH_SIZE = 100
 
 async function fetchAllUsers(): Promise<UserRecord[]> {
-  const users = []
+  const users: Awaited<ReturnType<typeof fetchUsersPage>>["content"] = []
   let page = 0
   while (true) {
     const response = await fetchUsersPage(page, PAGE_FETCH_SIZE)
@@ -33,7 +33,13 @@ async function fetchAllUsers(): Promise<UserRecord[]> {
     page += 1
   }
 
-  const records = await Promise.all(
+  // Promise.all rejects the WHOLE list the instant any single user's
+  // /roles call fails — one bad row (a deactivated user hitting a
+  // backend edge case, a transient network blip, whatever) then takes
+  // down the page for every other user too, who are all otherwise fine.
+  // Promise.allSettled + a per-user fallback keeps that failure scoped
+  // to just the one row instead.
+  const settled = await Promise.allSettled(
     users.map(async (user) => {
       const [roles, platformRoles] = await Promise.all([
         fetchUserRoles(user.userId),
@@ -42,7 +48,15 @@ async function fetchAllUsers(): Promise<UserRecord[]> {
       return toUserRecord(user, roles, platformRoles)
     })
   )
-  return records
+
+  return settled.map((result, index) => {
+    if (result.status === "fulfilled") return result.value
+    console.error(
+      `Failed to load roles for user ${users[index].userId}:`,
+      result.reason
+    )
+    return toUserRecord(users[index], [])
+  })
 }
 
 /**

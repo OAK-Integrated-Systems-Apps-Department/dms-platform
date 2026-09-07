@@ -11,7 +11,7 @@ interface UserAuditHistoryProps {
   user: UserRecord
 }
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 10
 
 const EVENT_TYPE_OPTIONS: {
   value: UserActivityEntry["type"] | "all"

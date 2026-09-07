@@ -12,7 +12,7 @@ import type { UserRecord } from "@/components/users/types"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 10
 
 /**
  * User Management — User List, per dms-admin-users.html. Search/filter,

@@ -1,6 +1,6 @@
 "use client"
 
-import { UserCheck, UserX } from "lucide-react"
+import { UserCheck, UserX, type LucideIcon } from "lucide-react"
 
 import {
   AlertDialog,
@@ -20,6 +20,54 @@ interface UserStatusDialogProps {
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
 }
+
+/**
+ * Per-direction copy/visuals for the Activate / Deactivate dialog.
+ * Keeping this as a lookup (rather than a chain of ternaries inline in the
+ * JSX) is what makes this a *single* component for both directions instead
+ * of two dialogs to keep in sync — see the module doc below for why that
+ * matters for U6.
+ */
+const STATUS_DIALOG_CONFIG = {
+  deactivate: {
+    icon: UserX,
+    iconClassName: "bg-[var(--rust-tint)] text-[var(--rust)]",
+    title: "Deactivate this user?",
+    description: (user: UserRecord) => (
+      <>
+        <strong className="font-semibold text-foreground">{user.name}</strong>{" "}
+        will lose access immediately. Their records and
+        audit history stay intact, and you can reactivate the account
+        anytime from here.
+      </>
+    ),
+    confirmLabel: "Deactivate User",
+    confirmClassName: "border-[var(--rust)] bg-[var(--rust)] text-white",
+  },
+  activate: {
+    icon: UserCheck,
+    iconClassName: "bg-primary/10 text-primary",
+    title: "Activate this user?",
+    description: (user: UserRecord) => (
+      <>
+        <strong className="font-semibold text-foreground">{user.name}</strong>{" "}
+         will be able to sign in again right away.
+      </>
+    ),
+    confirmLabel: "Activate User",
+    confirmClassName: "border-primary bg-primary text-primary-foreground",
+  },
+} as const satisfies Record<
+  "deactivate" | "activate",
+  {
+    icon: LucideIcon
+    iconClassName: string
+    title: string
+    description: (user: UserRecord) => React.ReactNode
+    confirmLabel: string
+    confirmClassName: string
+  }
+>
 
 /**
  * Activate / Deactivate User (U6) — confirmation dialog for enabling or
@@ -42,8 +90,9 @@ interface UserStatusDialogProps {
  * One component handles both directions, matching the wireframe's own
  * note: "same interface pattern is reused for Activate, with inverted copy
  * and a neutral/accent confirm action instead of danger." `user.status`
- * decides which copy and button color render — there's no separate
- * "deactivate dialog" vs "activate dialog" to keep in sync.
+ * decides which copy and button color render via STATUS_DIALOG_CONFIG above
+ * — there's no separate "deactivate dialog" vs "activate dialog" to keep in
+ * sync, and no duplicated ternary chains in the JSX.
  */
 export function UserStatusDialog({
   user,
@@ -52,44 +101,24 @@ export function UserStatusDialog({
   onConfirm,
 }: UserStatusDialogProps) {
   const isDeactivating = user.status === "Active"
-  const Icon = isDeactivating ? UserX : UserCheck
+  const variant = STATUS_DIALOG_CONFIG[isDeactivating ? "deactivate" : "activate"]
+  const Icon = variant.icon
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
-        <AlertDialogPopup>
+        <AlertDialogPopup className="sm:max-w-2xl">
           <span
             className={cn(
               "mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px]",
-              isDeactivating
-                ? "bg-[var(--rust-tint)] text-[var(--rust)]"
-                : "bg-primary/10 text-primary"
+              variant.iconClassName
             )}
           >
-            <Icon size={20} />
+            <Icon size={20} aria-hidden="true" />
           </span>
-          <AlertDialogTitle>
-            {isDeactivating ? "Deactivate this user?" : "Activate this user?"}
-          </AlertDialogTitle>
+          <AlertDialogTitle>{variant.title}</AlertDialogTitle>
           <AlertDialogDescription>
-            {isDeactivating ? (
-              <>
-                <strong className="font-semibold text-foreground">
-                  {user.name}
-                </strong>{" "}
-                ({user.username}) will no longer be able to sign in to DMS.
-                Historical records and audit history are retained, and the
-                account can be reactivated from here later if needed.
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold text-foreground">
-                  {user.name}
-                </strong>{" "}
-                ({user.username}) will be able to sign in to DMS again
-                immediately.
-              </>
-            )}
+            {variant.description(user)}
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
@@ -99,12 +128,10 @@ export function UserStatusDialog({
               onClick={onConfirm}
               className={cn(
                 "rounded-[10px] border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
-                isDeactivating
-                  ? "border-[var(--rust)] bg-[var(--rust)] text-white"
-                  : "border-primary bg-primary text-primary-foreground"
+                variant.confirmClassName
               )}
             >
-              {isDeactivating ? "Deactivate User" : "Activate User"}
+              {variant.confirmLabel}
             </AlertDialogClose>
           </div>
         </AlertDialogPopup>

@@ -34,13 +34,6 @@ export default function PermissionMatrixPage() {
           { label: "Permission Matrix" },
         ]}
       />
-      <Link
-        href="/admin/roles"
-        className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft size={14} />
-        Back to Role List
-      </Link>
       <div className="mb-[22px] max-w-[680px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Permission Matrix

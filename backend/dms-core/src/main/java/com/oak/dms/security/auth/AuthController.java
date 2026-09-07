@@ -1,7 +1,10 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.security.auth.dto.ForgotPasswordRequest;
 import com.oak.dms.security.auth.dto.LoginRequest;
 import com.oak.dms.security.auth.dto.MfaRequiredResponse;
+import com.oak.dms.security.auth.dto.ResetPasswordRequest;
+import com.oak.dms.security.auth.dto.ValidateResetTokenResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +38,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final LoginAttemptLimiter rateLimiter;
+    private final PasswordResetService passwordResetService;
 
     @GetMapping("/mfa-required")
     @Operation(summary = "Check whether a username requires a TOTP code, without revealing whether it exists")
@@ -68,6 +72,40 @@ public class AuthController {
     @Operation(summary = "End the session: revoke the refresh token in Keycloak and clear the session cookies")
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         authService.logout(request, response);
+        return noStoreVoid();
+    }
+
+    /**
+     * Always responds 200 with the same generic body whether or not
+     * {@code usernameOrEmail} matches an account - see
+     * {@link PasswordResetService#requestReset} for why. The frontend's
+     * "Check your email" copy is written accordingly and doesn't need
+     * anything from this response body.
+     */
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Request a password reset email; always responds the same way regardless of match")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest requestBody,
+                                                HttpServletRequest request) {
+        rateLimiter.checkAndRecord(request);
+        passwordResetService.requestReset(requestBody.usernameOrEmail().trim(), request);
+        return noStoreVoid();
+    }
+
+    @GetMapping("/reset-password/validate")
+    @Operation(summary = "Check whether a password reset token is still valid, before rendering the set-new-password form")
+    public ResponseEntity<ValidateResetTokenResponse> validateResetToken(
+            @RequestParam @NotBlank @Size(max = 512) String token,
+            HttpServletRequest request) {
+        rateLimiter.checkAndRecord(request);
+        return noStore(new ValidateResetTokenResponse(passwordResetService.isTokenValid(token)));
+    }
+
+    @PostMapping("/reset-password")
+    @Operation(summary = "Redeem a password reset token and set a new password, entirely on dms-core's own domain")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest requestBody,
+                                               HttpServletRequest request) {
+        rateLimiter.checkAndRecord(request);
+        passwordResetService.resetPassword(requestBody.token(), requestBody.newPassword());
         return noStoreVoid();
     }
 

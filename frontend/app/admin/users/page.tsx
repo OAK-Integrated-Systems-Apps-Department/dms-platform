@@ -15,7 +15,7 @@ import type { UserRecord } from "@/components/users/types"
 import { useUsers } from "@/lib/users/use-users"
 
 const ROLE_OPTIONS = ["all", ...initialRoles.map((role) => role.name)]
-const PAGE_SIZE = 5
+const DEFAULT_PAGE_SIZE = 10
 
 /**
  * User Management — User List, per dms-admin-users.html. Search/filter,
@@ -44,6 +44,7 @@ export default function UserListPage() {
     "all" | "Active" | "Inactive"
   >("all")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -61,12 +62,17 @@ export default function UserListPage() {
     })
   }, [users, query, roleFilter, statusFilter])
 
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pageUsers = filteredUsers.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   )
+
+  function handlePageSizeChange(size: number) {
+    setPageSize(size)
+    setPage(1)
+  }
 
   function handleFilterChange(update: () => void) {
     update()
@@ -188,6 +194,8 @@ export default function UserListPage() {
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
           />
         </>
       )}
