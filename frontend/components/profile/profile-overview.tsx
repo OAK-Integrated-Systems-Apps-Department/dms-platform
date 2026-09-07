@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { useTenant } from "@/lib/tenants/use-tenant"
 
 import { profileSupplement } from "./data"
 
@@ -22,6 +23,10 @@ import { profileSupplement } from "./data"
  */
 export function ProfileOverview() {
   const { data: user, initials, isLoading } = useCurrentUser()
+  // Resolves tenantId -> tenantName; GET /api/v1/tenants/{tenantId} allows
+  // any user in that tenant, not just admins, so this works for a regular
+  // end-user viewing their own profile.
+  const { data: tenant, isLoading: isTenantLoading } = useTenant(user?.tenantId)
 
   return (
     <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
@@ -46,8 +51,8 @@ export function ProfileOverview() {
           <p className="mb-1 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
             Tenant
           </p>
-          <p className="text-[13.5px] text-foreground">
-            {profileSupplement.tenant}
+          <p className="font-mono text-[12.5px] text-foreground">
+            {tenant?.tenantName ?? (isLoading || isTenantLoading ? "…" : "—")}
           </p>
         </div>
         <div>
@@ -67,7 +72,7 @@ export function ProfileOverview() {
             Account Created
           </p>
           <p className="font-mono text-[12.5px] text-foreground">
-            {profileSupplement.accountCreated}
+            {user?.createdAt ? user.createdAt.slice(0, 10) : "—"}
           </p>
         </div>
         <div>

@@ -86,6 +86,23 @@ public class User {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    /**
+     * Whether this user has actually completed account setup (verified
+     * their email and set a real password via Keycloak's VERIFY_EMAIL /
+     * UPDATE_PASSWORD required actions), as opposed to still sitting on
+     * an unopened invite. False from the moment createUser() invites
+     * them; flipped by UserServiceImpl#markVerified the first time they
+     * successfully authenticate. Independent of {@link #status} — a
+     * freshly-invited, still-pending user has status active and
+     * verified false at the same time.
+     */
+    @Column(name = "verified", nullable = false)
+    @Builder.Default
+    private boolean verified = false;
+
+    @Column(name = "verified_at")
+    private OffsetDateTime verifiedAt;
+
     public enum UserStatus {
         active, locked, disabled
     }

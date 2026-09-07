@@ -9,7 +9,6 @@ import { AlertTriangle, Lock } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -29,11 +28,14 @@ interface UserEditFormProps {
  *
  * KNOWN GAP: `PUT /api/v1/users/{userId}` only accepts `firstName`,
  * `lastName`, `mfaEnabled`, and `status` (see UpdateUserRequest.java / the
- * endpoint's Swagger page) — there's no field for email or "additional
- * profile attributes" at all. Those two stay on the form because the
- * mockup calls for them, but they're not sent to the backend; email in
- * particular looks to be Keycloak-managed like username, just not yet
- * marked read-only in this design.
+ * endpoint's Swagger page) — there's no field for email at all. Email
+ * stays on the form because the mockup calls for it, but it's not sent to
+ * the backend; it looks to be Keycloak-managed like username, just not
+ * yet marked read-only in this design.
+ *
+ * The "additional profile attributes" field from the mockup has been
+ * removed — it was never wired to a backend field, so it wasn't actually
+ * used.
  *
  * `mfaEnabled`/`status` are passed through unmodified from a freshly
  * fetched copy of the user (not the `user` prop, which may be a moment
@@ -74,7 +76,6 @@ export function UserEditForm({ user }: UserEditFormProps) {
       lastName: user.lastName,
       email: user.email,
       roles: user.roles,
-      additionalProfile: "",
     },
   })
 
@@ -194,26 +195,6 @@ export function UserEditForm({ user }: UserEditFormProps) {
         {errors.roles && (
           <p className="mt-1.5 text-[12px] text-[var(--rust)]">
             {errors.roles.message}
-          </p>
-        )}
-      </div>
-
-      <div className="mb-5">
-        <Label className="mb-[7px] flex items-center gap-2 normal-case">
-          <span className="text-[11px] font-semibold tracking-[0.07em] text-muted-foreground uppercase">
-            Additional profile attributes
-          </span>
-          <span className="rounded-full border border-[var(--border-strong)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-            Optional
-          </span>
-        </Label>
-        <Textarea
-          placeholder="e.g. department, job title, phone"
-          {...register("additionalProfile")}
-        />
-        {errors.additionalProfile && (
-          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-            {errors.additionalProfile.message}
           </p>
         )}
       </div>
