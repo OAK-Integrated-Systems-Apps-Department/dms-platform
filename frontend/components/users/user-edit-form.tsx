@@ -1,17 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { AlertTriangle, Lock } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { fetchUser, updateUserProfile } from "@/lib/users/api"
+import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
+import { useRolesStore } from "@/stores/roles-store"
 
+import { RoleMultiSelect } from "./role-multi-select"
 import { userEditFormSchema, type UserEditFormValues } from "./schema"
 import type { UserRecord } from "./types"
 
@@ -37,15 +39,33 @@ interface UserEditFormProps {
  * fetched copy of the user (not the `user` prop, which may be a moment
  * stale) — this form has no controls for either, so it must never
  * silently flip one while saving name changes.
+ *
+ * FIXED KNOWN GAP: roles previously had no editing surface on this screen
+ * at all — `user.roles` (from `useUser`/`toUserRecord`) was display-only.
+ * `roles` is now a real form field, submitted via `syncUserRoles`
+ * (`lib/users/api.ts`), which diffs the selection against the user's
+ * actual current assignments and issues the necessary
+ * `POST`/`DELETE /api/v1/users/{userId}/roles` calls — each of which the
+ * backend mirrors into Keycloak as a realm role for tenant-wide
+ * assignments (see `UserRoleServiceImpl`), not just the local database.
  */
 export function UserEditForm({ user }: UserEditFormProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  const roles = useRolesStore((state) => state.roles)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  useEffect(() => {
+    if (roles.length === 0) fetchRoles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const ROLE_OPTIONS = roles.map((role) => role.name)
+
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<UserEditFormValues>({
     resolver: zodResolver(userEditFormSchema),
@@ -53,6 +73,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      roles: user.roles,
       additionalProfile: "",
     },
   })
@@ -75,6 +96,15 @@ export function UserEditForm({ user }: UserEditFormProps) {
       setSubmitError(
         err instanceof Error ? err.message : "Could not save changes."
       )
+      return
+    }
+
+    const { error: roleError } = await syncUserRoles(user.id, values.roles, roles)
+    if (roleError) {
+      // The profile fields above already saved successfully — say so,
+      // rather than implying the whole save failed and inviting a
+      // confusing retry.
+      setSubmitError(`Profile changes saved, but roles could not be fully updated: ${roleError}`)
       return
     }
 
@@ -150,6 +180,22 @@ export function UserEditForm({ user }: UserEditFormProps) {
           disabled
           className="cursor-not-allowed border-dashed"
         />
+      </div>
+
+      <div className="mb-5">
+        <Label>Roles</Label>
+        <Controller
+          name="roles"
+          control={control}
+          render={({ field }) => (
+            <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
+          )}
+        />
+        {errors.roles && (
+          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+            {errors.roles.message}
+          </p>
+        )}
       </div>
 
       <div className="mb-5">

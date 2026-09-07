@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ChevronDown, RotateCcw, Search, ShieldCheck } from "lucide-react"
+import { AlertTriangle, ChevronDown, Loader2, RotateCcw, Search, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -13,13 +13,14 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 
-import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
 import type { PermissionItem, RoleRecord } from "./types"
+import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RolePermissionConfigProps {
   role: RoleRecord
-  onSave: (permissions: string[]) => void
+  /** Resolves with an error message on failure (shown inline, panel stays open), or null on success. */
+  onSave: (permissions: string[]) => Promise<string | null>
 }
 
 /**
@@ -29,12 +30,11 @@ interface RolePermissionConfigProps {
  * permissions for a fast path) so this can be reached on its own, per the
  * wireframe's "CONFIGURE PERMISSIONS →" flow from Add/Edit Role.
  *
- * Caveat carried over from the wireframe: Keycloak realm roles are flat
- * name+description records with no native concept of fine-grained
- * permissions. This grouped model assumes a DMS-side table mapping role →
- * permission ids (enforced in DMS's own authorization logic) rather than
- * Keycloak's heavier Authorization Services feature — confirm which
- * approach the backend actually takes before wiring this up to a real API.
+ * Reads the live catalog via `usePermissionCatalog` (backed by
+ * `V10__seed_fine_grained_permissions.sql`) instead of the hardcoded
+ * `components/roles/data.ts` this used to import, and `onSave` now
+ * actually reaches the database — see `useRolesStore`'s
+ * `syncRolePermissions`, which the parent page wires this up to.
  */
 export function RolePermissionConfig({
   role,
@@ -42,9 +42,12 @@ export function RolePermissionConfig({
 }: RolePermissionConfigProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role.system)
+  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
 
   const [permissions, setPermissions] = useState<string[]>(role.permissions)
   const [query, setQuery] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   // Collapsible at both the module level and the action level (e.g. "Manage
   // Users" nested under OTUA). Both start collapsed on load — 32 modules x
   // ~92 actions is too much to show expanded by default — and open either
@@ -93,7 +96,7 @@ export function RolePermissionConfig({
         return { ...group, permissions }
       })
       .filter((group) => group.permissions.length > 0)
-  }, [query])
+  }, [query, permissionGroups])
 
   // While searching, auto-expand every module/action left in the filtered
   // results so matches are actually visible — collapsed-by-default only
@@ -130,7 +133,12 @@ export function RolePermissionConfig({
 
   function handleSave() {
     if (isSystemRole) return
-    onSave(permissions)
+    setSubmitError(null)
+    setSaving(true)
+    onSave(permissions).then((error) => {
+      setSaving(false)
+      if (error) setSubmitError(error)
+    })
   }
 
   return (
@@ -189,6 +197,13 @@ export function RolePermissionConfig({
         </div>
       )}
 
+      {submitError && (
+        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{submitError}</span>
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative mb-5">
         <Search
@@ -206,11 +221,18 @@ export function RolePermissionConfig({
 
       {/* Permission groups */}
       <div className="space-y-3">
-        {filteredGroups.length === 0 && (
-          <p className="rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
-            No permissions match &quot;{query}&quot;.
-          </p>
-        )}
+        {catalogLoading ? (
+          <div className="flex items-center gap-2 rounded-[10px] border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
+            <Loader2 size={15} className="animate-spin" />
+            Loading the permission catalog…
+          </div>
+        ) : (
+          <>
+            {filteredGroups.length === 0 && (
+              <p className="rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+                No permissions match &quot;{query}&quot;.
+              </p>
+            )}
 
         {filteredGroups.map((group) => {
           const groupIds = getLeafPermissionIds(group.permissions)
@@ -351,6 +373,8 @@ export function RolePermissionConfig({
             </Collapsible>
           )
         })}
+          </>
+        )}
       </div>
 
       <hr className="my-6 border-dashed border-border" />
@@ -377,13 +401,13 @@ export function RolePermissionConfig({
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSystemRole || !isDirty}
+            disabled={isSystemRole || !isDirty || saving}
             className={cn(
               "rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
               "disabled:cursor-not-allowed disabled:opacity-60"
             )}
           >
-            Save Permissions
+            {saving ? "Saving…" : "Save Permissions"}
           </button>
         </div>
       </div>

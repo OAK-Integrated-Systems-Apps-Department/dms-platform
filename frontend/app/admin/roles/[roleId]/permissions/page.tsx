@@ -19,15 +19,16 @@ import { useRolesStore } from "@/stores/roles-store"
  * Uses `useRole` (fetches the single role individually if a direct link
  * lands here before the Role List has populated the store) rather than a
  * bare store lookup — same reasoning as Role Details / Edit Role.
- * `updateRolePermissions` itself stays local-only: permission grants
- * aren't persisted to the backend yet (RoleResponse carries no
- * permissions field — see the note in `stores/roles-store.ts`).
+ * `onSave` now calls `syncRolePermissions`, which reconciles the real
+ * `role_permissions` grants against the desired set via
+ * `/api/v1/roles/{roleId}/permissions` — see that function's doc comment
+ * in `stores/roles-store.ts` for how the diff/grant/revoke works.
  */
 export default function RolePermissionsPage() {
   const router = useRouter()
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
-  const updateRolePermissions = useRolesStore((state) => state.updateRolePermissions)
+  const syncRolePermissions = useRolesStore((state) => state.syncRolePermissions)
 
   usePageTitle(role ? `${role.name} Permissions` : "Role Permissions")
 
@@ -35,10 +36,12 @@ export default function RolePermissionsPage() {
     notFound()
   }
 
-  function handleSave(permissions: string[]) {
-    if (!role) return
-    updateRolePermissions(role.id, permissions)
+  async function handleSave(permissions: string[]): Promise<string | null> {
+    if (!role) return "Role not loaded yet."
+    const { error } = await syncRolePermissions(role.id, permissions)
+    if (error) return error
     router.push(`/admin/roles/${role.id}/edit`)
+    return null
   }
 
   return (
