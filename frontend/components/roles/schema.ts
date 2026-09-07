@@ -10,7 +10,11 @@ export const roleFormSchema = z.object({
     .string()
     .trim()
     .min(2, "Role name must be at least 2 characters")
-    .max(60, "Role name must be under 60 characters"),
+    .max(60, "Role name must be under 60 characters")
+    .regex(
+      /^\S+$/,
+      "Role name cannot contain spaces — use underscores instead, e.g. Compliance_Officer"
+    ),
   description: z
     .string()
     .trim()
