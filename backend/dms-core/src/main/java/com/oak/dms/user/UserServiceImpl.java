@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -189,6 +190,17 @@ public class UserServiceImpl implements UserService {
         User user = findOwnedByCallerTenant(userId);
         keycloakUserService.sendPasswordResetEmail(user.getKeycloakId());
         log.info("Sent password reset email for user {}", userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> getPlatformRoles(UUID userId) {
+        // findAnyOwnedByCallerTenant, not findOwnedByCallerTenant - a
+        // deactivated user's platform role (if they held one) shouldn't
+        // disappear from their profile just because their account is
+        // currently deactivated, matching getUser's own choice of lookup.
+        User user = findAnyOwnedByCallerTenant(userId);
+        return keycloakUserService.getPlatformRealmRoles(user.getKeycloakId());
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

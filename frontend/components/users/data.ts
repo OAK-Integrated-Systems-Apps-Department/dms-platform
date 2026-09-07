@@ -26,6 +26,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Admin"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-24",
     firstName: "Priyanka",
     lastName: "Fernando",
@@ -78,6 +79,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Compliance Officer"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-23",
     firstName: "Nadia",
     lastName: "Rajapaksa",
@@ -130,6 +132,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Approver", "Uploader"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-22",
     firstName: "Kasun",
     lastName: "Perera",
@@ -196,6 +199,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Inactive",
     roles: ["Approver"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-07-11",
     firstName: "Malik",
     lastName: "Silva",
@@ -233,6 +237,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Uploader"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-20",
     firstName: "Dilani",
     lastName: "Wickramasinghe",
@@ -278,6 +283,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Viewer"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-19",
     firstName: "Ruwan",
     lastName: "Jayasuriya",
@@ -323,6 +329,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Inactive",
     roles: ["Compliance Officer", "Viewer"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-06-02",
     firstName: "Anjali",
     lastName: "Gunawardena",
@@ -360,6 +367,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Uploader"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-18",
     firstName: "Thilina",
     lastName: "Bandara",
@@ -405,6 +413,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Admin"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-17",
     firstName: "Chamari",
     lastName: "Rathnayake",
@@ -464,6 +473,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Viewer"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "—",
     firstName: "Suresh",
     lastName: "Kumar",
@@ -494,6 +504,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Active",
     roles: ["Approver"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-08-15",
     firstName: "Ishara",
     lastName: "De Silva",
@@ -539,6 +550,7 @@ export const initialUsers: UserRecord[] = [
     tenant: "oak-dms",
     status: "Inactive",
     roles: ["Uploader", "Viewer"],
+    platformRoles: [], // mock records never had a platform role
     lastLogin: "2026-05-30",
     firstName: "Nimal",
     lastName: "Herath",

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   deactivateUser,
   fetchUser,
+  fetchUserPlatformRoles,
   fetchUserRoles,
   fetchUsersPage,
   reactivateUser,
@@ -34,8 +35,11 @@ async function fetchAllUsers(): Promise<UserRecord[]> {
 
   const records = await Promise.all(
     users.map(async (user) => {
-      const roles = await fetchUserRoles(user.userId)
-      return toUserRecord(user, roles)
+      const [roles, platformRoles] = await Promise.all([
+        fetchUserRoles(user.userId),
+        fetchUserPlatformRoles(user.userId),
+      ])
+      return toUserRecord(user, roles, platformRoles)
     })
   )
   return records

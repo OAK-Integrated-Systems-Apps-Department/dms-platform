@@ -67,6 +67,24 @@ export async function fetchUserRoles(
 }
 
 /**
+ * The fixed platform roles (PLATFORM_ADMIN/TENANT_ADMIN/MEMBER) this user
+ * holds in Keycloak — see `UserRecord.platformRoles`'s doc comment for why
+ * these are fetched and surfaced separately from `fetchUserRoles`.
+ */
+export async function fetchUserPlatformRoles(userId: string): Promise<string[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/users/${userId}/platform-roles`,
+    { credentials: "include" }
+  )
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "Could not load this user's platform roles.")
+    )
+  }
+  return response.json()
+}
+
+/**
  * One page of `GET /api/v1/users`. The endpoint takes a Spring `Pageable`
  * (`page`, `size`, `sort` query params) and returns no search or role
  * filter of its own — those stay client-side in `useUsers`, same as they
@@ -319,7 +337,8 @@ export async function syncUserRoles(
  */
 export function toUserRecord(
   user: UserResponseDto,
-  roles: UserRoleResponseDto[]
+  roles: UserRoleResponseDto[],
+  platformRoles: string[] = []
 ): UserRecord {
   const status: UserRecord["status"] =
     user.status === "active" ? "Active" : "Inactive"
@@ -336,6 +355,7 @@ export function toUserRecord(
     // hiding the field entirely.
     tenant: user.tenantId,
     roles: roles.map((role) => role.roleName),
+    platformRoles,
     status,
     lastLogin: "—",
     firstName: user.firstName,

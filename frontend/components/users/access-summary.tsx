@@ -205,17 +205,34 @@ export function UserAccessSummary({
         </Link>
       </div>
       <div className="mb-6 flex flex-wrap gap-1.5">
-        {rolesHeld.length === 0 && (
+        {rolesHeld.length === 0 && user.platformRoles.length === 0 && (
           <p className="text-[13px] text-muted-foreground">
             This user isn&apos;t assigned any roles.
           </p>
         )}
+        {user.platformRoles.map((role) => (
+          <Badge
+            key={role}
+            variant="gold"
+            className="rounded-[10px]"
+          >
+            {role}
+          </Badge>
+        ))}
         {rolesHeld.map((role) => (
           <Badge key={role.id} variant="outline" className="rounded-[10px]">
             {role.name}
           </Badge>
         ))}
       </div>
+      {user.platformRoles.length > 0 && (
+        <p className="mb-6 -mt-4 text-[12px] text-muted-foreground">
+          {user.platformRoles.join(", ")} {user.platformRoles.length === 1 ? "is a" : "are"}{" "}
+          platform role{user.platformRoles.length === 1 ? "" : "s"}, not a tenant-defined DMS
+          role — the effective-permissions breakdown below reflects only tenant-defined roles,
+          since platform roles grant full access outright rather than a specific permission set.
+        </p>
+      )}
 
       <hr className="my-6 border-dashed border-border" />
 
