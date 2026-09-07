@@ -13,6 +13,8 @@ export interface UserResponseDto {
   displayName: string
   mfaEnabled: boolean
   status: "active" | "locked" | "disabled"
+  verified: boolean
+  verifiedAt: string | null
   createdAt: string
   updatedAt: string | null
 }
@@ -337,6 +339,7 @@ export function toUserRecord(
     tenant: user.tenantId,
     roles: roles.map((role) => role.roleName),
     status,
+    verified: user.verified,
     lastLogin: "—",
     firstName: user.firstName,
     lastName: user.lastName,

@@ -14,7 +14,6 @@ export const userInviteFormSchema = z.object({
     .regex(/^[a-z0-9._-]+$/i, "Use only letters, numbers, dots, dashes, and underscores"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
   roles: z.array(z.string()).min(1, "Select at least one role"),
-  additionalProfile: z.string().trim().max(500, "Keep it under 500 characters").optional().or(z.literal("")),
 })
 
 export type UserInviteFormValues = z.infer<typeof userInviteFormSchema>
@@ -33,7 +32,6 @@ export const userEditFormSchema = z.object({
   lastName: z.string().trim().min(1, "Last name is required").max(60, "Keep it under 60 characters"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
   roles: z.array(z.string()),
-  additionalProfile: z.string().trim().max(500, "Keep it under 500 characters").optional().or(z.literal("")),
 })
 
 export type UserEditFormValues = z.infer<typeof userEditFormSchema>

@@ -117,6 +117,16 @@ export interface UserRecord {
   status: AssignedUserStatus
 
   /**
+   * Whether this person has actually completed account setup (verified
+   * their email and set a real password), independent of `status` — a
+   * freshly invited user has status "Active" and verified false at the
+   * same time. Drives the "Pending" indicator and disables Reset
+   * Password / Deactivate on the User List and View User screens until
+   * they've actually logged in once.
+   */
+  verified: boolean
+
+  /**
    * ISO date string, or "—" for a user who has never logged in.
    */
   lastLogin: string

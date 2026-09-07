@@ -8,7 +8,6 @@ import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { API_BASE_URL } from "@/lib/api-config"
 import { assignUserRole } from "@/lib/users/api"
 import { useRolesStore } from "@/stores/roles-store"
@@ -39,9 +38,9 @@ import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
  * (see `UserRoleServiceImpl.assignRole`), not just written to the local
  * database.
  *
- * `username` and `additionalProfile` remain unsent — `CreateUserRequest`
- * still has no field for either, and there's no separate endpoint for
- * them the way there now is for roles.
+ * `username` remains unsent — `CreateUserRequest` still has no field for
+ * it, and there's no separate endpoint for it the way there now is for
+ * roles.
  */
 export function UserInviteForm() {
   const router = useRouter()
@@ -64,7 +63,7 @@ export function UserInviteForm() {
     formState: { errors, isSubmitting },
   } = useForm<UserInviteFormValues>({
     resolver: zodResolver(userInviteFormSchema),
-    defaultValues: { firstName: "", lastName: "", username: "", email: "", roles: [], additionalProfile: "" },
+    defaultValues: { firstName: "", lastName: "", username: "", email: "", roles: [] },
   })
 
   async function onSubmit(values: UserInviteFormValues) {
@@ -219,26 +218,6 @@ export function UserInviteForm() {
           )}
         />
         {errors.roles && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.roles.message}</p>}
-      </div>
-
-      <div className="mb-5">
-        <Label className="mb-[7px] inline-flex items-center gap-2 normal-case">
-          <span className="text-[11px] font-semibold tracking-[0.07em] text-muted-foreground uppercase">
-            Additional profile fields
-          </span>
-          <span className="rounded-full border border-[var(--border-strong)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-            Optional / config-dependent
-          </span>
-        </Label>
-        <Textarea
-          placeholder="e.g. department, job title, phone"
-          {...register("additionalProfile")}
-        />
-        {errors.additionalProfile && (
-          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-            {errors.additionalProfile.message}
-          </p>
-        )}
       </div>
 
       <hr className="my-5 border-t border-dashed border-border" />

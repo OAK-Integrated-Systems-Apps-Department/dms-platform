@@ -16,6 +16,8 @@ public record UserResponse(
         String displayName,
         boolean mfaEnabled,
         String status,
+        boolean verified,
+        OffsetDateTime verifiedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

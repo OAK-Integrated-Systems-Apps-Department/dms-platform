@@ -28,6 +28,16 @@ public interface UserService {
 
     Page<UserResponse> listUsers(Pageable pageable);
 
+    /**
+     * Called once, from {@link com.oak.dms.security.auth.TenantContextFilter},
+     * the first time a user's JWT resolves successfully — proof they've
+     * completed both the VERIFY_EMAIL and UPDATE_PASSWORD required actions
+     * Keycloak gates login on (see KeycloakUserService#createUser). A no-op
+     * if the user is already verified, so it's safe to call on every
+     * request without checking first.
+     */
+    void markVerified(UUID userId);
+
     UserResponse updateUser(UUID userId, UpdateUserRequest request);
 
     void deactivateUser(UUID userId);

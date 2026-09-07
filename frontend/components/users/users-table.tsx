@@ -30,6 +30,14 @@ type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
  * dialog (U6 / `UserStatusDialog`), and password resets go through U7 /
  * `UserResetPasswordDialog` — there's no instant action here, since both
  * affect a real person's account and shouldn't be one-click accidents.
+ *
+ * A "Pending" badge and disabled Reset Password / Deactivate buttons show
+ * for `!user.verified` — someone who was invited but hasn't actually
+ * logged in yet (see `User#verified` on the backend). Resetting a
+ * password that was never set, or deactivating an account nobody has
+ * used, aren't meaningful actions; Activate is deliberately NOT gated the
+ * same way, since reactivating a still-unverified-but-deactivated user is
+ * a distinct admin decision.
  */
 export function UsersTable({
   users,
@@ -121,7 +129,15 @@ export function UsersTable({
                   {user.username}
                 </td>
                 <td className="px-3 py-3 text-[13px] text-muted-foreground">
-                  {user.email}
+                  <div className="flex items-center gap-1.5">
+                    
+                    {user.email}
+                    {!user.verified && (
+                      <Badge variant="gold" className="text-[10px] font-semibold">
+                        Pending
+                      </Badge>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-1">
@@ -189,15 +205,27 @@ export function UsersTable({
                     <button
                             {...props}
                       type="button"
-                      onClick={() => setPendingResetUser(user)}
+                      onClick={() =>
+                        user.verified && setPendingResetUser(user)
+                      }
+                            disabled={!user.verified}
                             aria-label={`Reset password for ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                            className={cn(
+                              "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                              user.verified
+                                ? "text-primary hover:bg-muted"
+                                : "cursor-not-allowed text-muted-foreground opacity-50"
+                            )}
                     >
                             <KeyRound size={15} />
                     </button>
                         )}
                       />
-                      <TooltipContent>{getTooltip("users.actions.resetPassword")}</TooltipContent>
+                      <TooltipContent>
+                        {user.verified
+                          ? getTooltip("users.actions.resetPassword")
+                          : getTooltip("users.pending.resetPasswordDisabled")}
+                      </TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
@@ -206,7 +234,12 @@ export function UsersTable({
                     <button
                             {...props}
                       type="button"
-                      onClick={() => setPendingUser(user)}
+                      onClick={() => {
+                        const disabled =
+                          user.status === "Active" && !user.verified
+                        if (!disabled) setPendingUser(user)
+                      }}
+                            disabled={user.status === "Active" && !user.verified}
                             aria-label={
                               user.status === "Active"
                                 ? `Deactivate ${user.name}`
@@ -214,7 +247,9 @@ export function UsersTable({
                             }
                       className={cn(
                               "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                        user.status === "Active"
+                              user.status === "Active" && !user.verified
+                                ? "cursor-not-allowed text-muted-foreground opacity-50"
+                                : user.status === "Active"
                                 ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                 : "text-primary hover:bg-muted"
                       )}
@@ -229,7 +264,9 @@ export function UsersTable({
                       />
                       <TooltipContent>
                         {user.status === "Active"
+                          ? user.verified
                           ? getTooltip("users.actions.deactivate")
+                            : getTooltip("users.pending.deactivateDisabled")
                           : getTooltip("users.actions.activate")}
                       </TooltipContent>
                     </Tooltip>

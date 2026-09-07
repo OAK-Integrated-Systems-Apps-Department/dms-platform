@@ -3,6 +3,9 @@ import Link from "next/link"
 import { KeyRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
+import { cn } from "@/lib/utils"
 
 import { renderActivityText } from "./render-activity-text"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -89,31 +92,80 @@ export function UserDetailView({
               <span className="size-[5px] rounded-full bg-current" />
               {user.status}
             </Badge>
+            {!user.verified && (
+              <Badge
+                variant="gold"
+                className="align-middle text-[11px] font-semibold"
+              >
+                Pending
+              </Badge>
+            )}
           </div>
           <div className="font-mono text-[12.5px] text-muted-foreground">
             {user.username} &nbsp;·&nbsp; {user.email}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => (
           <button
+                  {...props}
             type="button"
-            onClick={() => setResetPasswordDialogOpen(true)}
-            className="flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+                  onClick={() =>
+                    user.verified && setResetPasswordDialogOpen(true)
+                  }
+                  disabled={!user.verified}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-[10px] border px-4 py-2.5 text-[13px] font-semibold",
+                    user.verified
+                      ? "border-[var(--border-strong)] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+                      : "cursor-not-allowed border-[var(--border-strong)] text-muted-foreground opacity-50"
+                  )}
           >
             <KeyRound size={14} />
             Reset Password
           </button>
+              )}
+            />
+            {!user.verified && (
+              <TooltipContent>
+                {getTooltip("users.pending.resetPasswordDisabled")}
+              </TooltipContent>
+            )}
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => {
+                const deactivateDisabled =
+                  user.status === "Active" && !user.verified
+                return (
           <button
+                    {...props}
             type="button"
-            onClick={() => setStatusDialogOpen(true)}
+                    onClick={() => {
+                      if (!deactivateDisabled) setStatusDialogOpen(true)
+                    }}
+                    disabled={deactivateDisabled}
             className={
-              user.status === "Active"
+                      deactivateDisabled
+                        ? "cursor-not-allowed rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
+                        : user.status === "Active"
                 ? "rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
                 : "rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
             }
           >
             {user.status === "Active" ? "Deactivate User" : "Activate User"}
           </button>
+                )
+              }}
+            />
+            {user.status === "Active" && !user.verified && (
+              <TooltipContent>
+                {getTooltip("users.pending.deactivateDisabled")}
+              </TooltipContent>
+            )}
+          </Tooltip>
         </div>
       </div>
 
