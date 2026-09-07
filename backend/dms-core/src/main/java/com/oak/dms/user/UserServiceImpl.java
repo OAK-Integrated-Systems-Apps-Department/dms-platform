@@ -4,17 +4,14 @@ import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
-import com.oak.dms.user.User;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
-import com.oak.dms.user.UserMapper;
-import com.oak.dms.user.UserRepository;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.user.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -43,6 +40,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final KeycloakUserService keycloakUserService;
+    private final PasswordResetService passwordResetService;
     private final OutboxEventPublisher outboxEventPublisher;
 
     @Override
@@ -187,7 +185,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public void resetPassword(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
-        keycloakUserService.sendPasswordResetEmail(user.getKeycloakId());
+        passwordResetService.issueForAdminReset(user);
         log.info("Sent password reset email for user {}", userId);
     }
 

@@ -22,13 +22,15 @@ interface UserResetPasswordDialogProps {
 
 /**
  * Reset User Password (U7) — administrator-initiated password reset
- * confirmation. Depending on final Keycloak configuration this triggers a
- * temporary-password or reset-link flow:
- *   `PUT /admin/realms/{realm}/users/{id}/reset-password`
- *   `PUT /admin/realms/{realm}/users/{id}/execute-actions-email`
+ * confirmation. Triggers `POST /api/v1/users/{id}/reset-password`, which
+ * calls `PasswordResetService#issueForAdminReset` on the backend: the
+ * user gets an emailed link to dms-core's own `/update-password` page
+ * (the same custom flow as the self-service "Forgot password?" link on
+ * the login page), not a Keycloak-hosted page or a temporary password
+ * shown anywhere in DMS.
  *
  * DMS never sets or displays the password itself — this dialog only asks
- * for confirmation before handing off to Keycloak, same "pause before an
+ * for confirmation before sending that link, same "pause before an
  * account-affecting action" reasoning as `UserStatusDialog` (U6), and
  * built as its own component rather than folded into that one since a
  * password reset isn't a status toggle and always confirms forward (no
@@ -52,9 +54,8 @@ export function UserResetPasswordDialog({
             <strong className="font-semibold text-foreground">
               {user.name}
             </strong>{" "}
-            ({user.username}) will receive a temporary password or reset link,
-            depending on tenant configuration. DMS does not set or view the
-            password directly.
+            ({user.username}) will receive an email with a link to set a new
+            password. DMS does not set or view the password directly.
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">

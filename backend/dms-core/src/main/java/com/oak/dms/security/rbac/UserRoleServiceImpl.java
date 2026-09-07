@@ -86,7 +86,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Transactional(readOnly = true)
     public List<UserRoleResponse> listRolesForUser(UUID userId) {
         UUID tenantId = TenantContext.getTenantId();
-        requireOwnedUser(userId, tenantId);
+        requireAnyOwnedUser(userId, tenantId);
 
         return userRoleRepository.findAllByUserIdAndTenantId(userId, tenantId).stream()
                 .map(ur -> {
@@ -123,6 +123,35 @@ public class UserRoleServiceImpl implements UserRoleService {
     private User requireOwnedUser(UUID userId, UUID tenantId) {
         User user = userRepository.findById(userId)
                 .filter(u -> !u.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!user.getTenantId().equals(tenantId)) {
+            throw new TenantMismatchException("User", userId);
+        }
+        return user;
+    }
+
+    /**
+     * Same tenant-ownership check as {@link #requireOwnedUser}, but doesn't
+     * exclude deactivated (soft-deleted) users — mirrors
+     * {@code UserServiceImpl#findAnyOwnedByCallerTenant}.
+     * {@code UserServiceImpl#deactivateUser} only soft-deletes a user
+     * (sets {@code deleted = true}, doesn't remove the row), and
+     * listUsers/getUser were deliberately updated to keep returning a
+     * deactivated user rather than 404ing so the row stays visible with
+     * an Inactive badge. {@link #listRolesForUser} needs the same
+     * treatment: a deactivated user's previously-assigned roles still
+     * need to be readable, or GET /api/v1/users/{id}/roles 404s on every
+     * deactivated user, which — since the frontend's fetchAllUsers loads
+     * every user's roles via Promise.all — takes the whole User List
+     * fetch down with it, not just that one row.
+     *
+     * assignRole/revokeRole intentionally keep using the strict
+     * {@link #requireOwnedUser} check above — a deactivated user's
+     * existing roles should stay visible, but new grants/revokes
+     * shouldn't be possible against a soft-deleted account.
+     */
+    private User requireAnyOwnedUser(UUID userId, UUID tenantId) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", userId));
         if (!user.getTenantId().equals(tenantId)) {
             throw new TenantMismatchException("User", userId);
