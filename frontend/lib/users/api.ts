@@ -199,6 +199,113 @@ export async function sendPasswordReset(userId: string): Promise<void> {
 }
 
 /**
+ * Grants a role to a user via `POST /api/v1/users/{userId}/roles`. Always
+ * tenant-scoped (`scopeType: "tenant"`) — narrower scopes (department/
+ * folder/document) have no UI surface yet, per `AssignRoleRequest.java`'s
+ * own doc comment on why `scopeId` isn't a foreign key. This is also the
+ * one call in this file that reaches Keycloak indirectly: dms-core mirrors
+ * a tenant-wide assignment into a Keycloak realm role as part of the same
+ * request (see `UserRoleServiceImpl.assignRole`), so a role granted here
+ * shows up in both places, not just the local database.
+ */
+export async function assignUserRole(
+  userId: string,
+  roleId: string
+): Promise<UserRoleResponseDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/users/${userId}/roles`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId, scopeType: "tenant" }),
+    }
+  )
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not assign this role."))
+  }
+  return response.json()
+}
+
+/** Revokes a role assignment via `DELETE /api/v1/users/{userId}/roles/{userRoleId}` — also mirrored to Keycloak for tenant-wide assignments, same as `assignUserRole`. */
+export async function revokeUserRole(
+  userId: string,
+  userRoleId: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/users/${userId}/roles/${userRoleId}`,
+    { method: "DELETE", credentials: "include" }
+  )
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not remove this role."))
+  }
+}
+
+/**
+ * Reconciles a user's tenant-wide role assignments to match
+ * `desiredRoleNames`: re-fetches their current real assignments, diffs
+ * against the desired set, and issues the necessary assign/revoke calls
+ * in parallel. Mirrors the same shape `stores/roles-store.ts`'s
+ * `syncRolePermissions` uses for a role's permissions — the backend only
+ * exposes one-at-a-time assign/revoke, not a bulk "set to exactly this
+ * list" endpoint, so this bridges that gap on the client.
+ *
+ * `availableRoles` resolves a selected name back to the `roleId`
+ * `assignUserRole` needs — pass the live list from `useRolesStore`, not
+ * a stale snapshot, since a role renamed between page load and save would
+ * otherwise resolve to the wrong id or fail to resolve at all.
+ */
+export async function syncUserRoles(
+  userId: string,
+  desiredRoleNames: string[],
+  availableRoles: { id: string; name: string }[]
+): Promise<{ error: string | null }> {
+  let currentGrants: UserRoleResponseDto[]
+  try {
+    currentGrants = await fetchUserRoles(userId)
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Could not load this user's current roles.",
+    }
+  }
+
+  const currentNames = new Set(currentGrants.map((g) => g.roleName))
+  const desiredNames = new Set(desiredRoleNames)
+
+  const toAssign = desiredRoleNames.filter((name) => !currentNames.has(name))
+  const toRevoke = currentGrants.filter((g) => !desiredNames.has(g.roleName))
+
+  if (toAssign.length === 0 && toRevoke.length === 0) {
+    return { error: null }
+  }
+
+  const roleIdByName = new Map(availableRoles.map((r) => [r.name, r.id]))
+
+  const results = await Promise.allSettled([
+    ...toAssign.map((name) => {
+      const roleId = roleIdByName.get(name)
+      if (!roleId) {
+        return Promise.reject(new Error(`"${name}" isn't in the current role list.`))
+      }
+      return assignUserRole(userId, roleId)
+    }),
+    ...toRevoke.map((grant) => revokeUserRole(userId, grant.userRoleId)),
+  ])
+
+  const failures = results.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected"
+  )
+  if (failures.length === 0) return { error: null }
+  if (failures.length === 1) {
+    const reason = failures[0].reason
+    return {
+      error: reason instanceof Error ? reason.message : "Could not update this user's roles.",
+    }
+  }
+  return { error: `${failures.length} role changes could not be applied. Please review and try again.` }
+}
+
+/**
  * Maps the DTOs above onto `UserRecord` (components/users/types.ts) so
  * `UserDetailView` / `UsersTable` don't need to change to consume live
  * data.

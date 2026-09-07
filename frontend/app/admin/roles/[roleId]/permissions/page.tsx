@@ -4,9 +4,11 @@ import { notFound, useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronLeft, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
 import { useRole } from "@/components/roles/use-role"
+import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
 /**
@@ -17,29 +19,46 @@ import { useRolesStore } from "@/stores/roles-store"
  * Uses `useRole` (fetches the single role individually if a direct link
  * lands here before the Role List has populated the store) rather than a
  * bare store lookup — same reasoning as Role Details / Edit Role.
- * `updateRolePermissions` itself stays local-only: permission grants
- * aren't persisted to the backend yet (RoleResponse carries no
- * permissions field — see the note in `stores/roles-store.ts`).
+ * `onSave` now calls `syncRolePermissions`, which reconciles the real
+ * `role_permissions` grants against the desired set via
+ * `/api/v1/roles/{roleId}/permissions` — see that function's doc comment
+ * in `stores/roles-store.ts` for how the diff/grant/revoke works.
  */
 export default function RolePermissionsPage() {
   const router = useRouter()
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
-  const updateRolePermissions = useRolesStore((state) => state.updateRolePermissions)
+  const syncRolePermissions = useRolesStore((state) => state.syncRolePermissions)
+
+  usePageTitle(role ? `${role.name} Permissions` : "Role Permissions")
 
   if (roleNotFound) {
     notFound()
   }
 
-  function handleSave(permissions: string[]) {
-    if (!role) return
-    updateRolePermissions(role.id, permissions)
+  async function handleSave(permissions: string[]): Promise<string | null> {
+    if (!role) return "Role not loaded yet."
+    const { error } = await syncRolePermissions(role.id, permissions)
+    if (error) return error
     router.push(`/admin/roles/${role.id}/edit`)
+    return null
   }
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
       <div className="mx-auto w-full max-w-[760px]">
+        <AdminBreadcrumb
+          className="mb-3"
+          segments={[
+            { label: "Dashboard", href: "/" },
+            { label: "Roles", href: "/admin/roles" },
+            {
+              label: role?.name ?? "Role Details",
+              href: role ? `/admin/roles/${role.id}` : undefined,
+            },
+            { label: "Permissions" },
+          ]}
+        />
         <Link
           href={role ? `/admin/roles/${role.id}/edit` : "/admin/roles"}
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"

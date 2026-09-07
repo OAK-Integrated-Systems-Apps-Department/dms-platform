@@ -14,9 +14,13 @@ interface RoleMultiSelectProps {
 /**
  * "Select one or more roles…" chip picker from dms-add-user.html,
  * rebuilt as controlled React instead of the mockup's manual DOM/Set
- * manipulation. `options` is meant to be sourced from
- * components/roles/data.ts (initialRoles.map(r => r.name)) — same single
- * source of truth already used for the role filter on the User List page.
+ * manipulation. `options` should be the live tenant role list — pass
+ * `useRolesStore().roles.map(r => r.name)`, after making sure the store
+ * has been fetched (`fetchRoles()`), not the hardcoded
+ * `components/roles/data.ts` catalog. This component only knows role
+ * names, not ids; the caller is responsible for resolving a selected
+ * name back to a `roleId` when actually granting it (see
+ * `syncUserRoles` / `assignUserRole` in `lib/users/api.ts`).
  */
 export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelectProps) {
   const [open, setOpen] = useState(false)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
@@ -9,13 +9,12 @@ import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { initialRoles } from "@/components/roles/data"
 import { API_BASE_URL } from "@/lib/api-config"
+import { assignUserRole } from "@/lib/users/api"
+import { useRolesStore } from "@/stores/roles-store"
 
 import { RoleMultiSelect } from "./role-multi-select"
 import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
-
-const ROLE_OPTIONS = initialRoles.map((role) => role.name)
 
 /**
  * Add User form, per dms-add-user.html. Still an invite, not a signup —
@@ -25,21 +24,37 @@ const ROLE_OPTIONS = initialRoles.map((role) => role.name)
  * (see app/update-password/page.tsx). Nothing here is reachable without
  * an existing admin session.
  *
- * KNOWN GAP: dms-core's CreateUserRequest only accepts
- * {email, firstName, lastName} (see
- * backend/.../user/dto/CreateUserRequest.java). `username`, `roles`, and
- * `additionalProfile` are captured here and sent in the request body below,
- * but the backend will silently ignore them until CreateUserRequest,
- * UserServiceImpl, and KeycloakUserService are extended to read and act on
- * them (setting the Keycloak username distinctly from email, assigning
- * realm roles, storing profile notes). The form works end-to-end for
- * name/email/invite-email today; role assignment and the username/profile
- * fields need that backend work before they take effect.
+ * Role options come from the real tenant role list (`useRolesStore`), not
+ * the hardcoded `components/roles/data.ts` catalog this used to read from.
+ *
+ * FIXED KNOWN GAP: `CreateUserRequest` only accepts
+ * {email, firstName, lastName} — it has no `roles` field, and never did,
+ * so a role selected here used to be silently dropped: sent in the POST
+ * body, accepted by nothing. Role assignment is a genuinely separate API
+ * (`POST /api/v1/users/{userId}/roles`, see `UserRoleController`) that
+ * needs a `userId`, which doesn't exist until the user itself is created —
+ * so this now creates the user first, then assigns each selected role as
+ * a second step once a real `userId` is available. Each assignment is
+ * tenant-scoped and mirrored into Keycloak as a realm role by the backend
+ * (see `UserRoleServiceImpl.assignRole`), not just written to the local
+ * database.
+ *
+ * `username` and `additionalProfile` remain unsent — `CreateUserRequest`
+ * still has no field for either, and there's no separate endpoint for
+ * them the way there now is for roles.
  */
 export function UserInviteForm() {
   const router = useRouter()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null)
+
+  const roles = useRolesStore((state) => state.roles)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  useEffect(() => {
+    if (roles.length === 0) fetchRoles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const ROLE_OPTIONS = roles.map((role) => role.name)
 
   const {
     register,
@@ -57,21 +72,15 @@ export function UserInviteForm() {
     let response: Response
     try {
       response = await fetch(`${API_BASE_URL}/api/v1/users`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        email: values.email,
-        firstName: values.firstName,
-        lastName: values.lastName,
-        // Sent for when the backend is extended to read them — see the
-        // KNOWN GAP note above. Harmless to send today; dms-core just
-        // won't act on them yet.
-        username: values.username,
-        roles: values.roles,
-        additionalProfile: values.additionalProfile || undefined,
-      }),
-    })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: values.email,
+          firstName: values.firstName,
+          lastName: values.lastName,
+        }),
+      })
     } catch {
       // fetch() throws when the request never reached a server at all —
       // e.g. the backend isn't running yet. Distinct from a 4xx/5xx
@@ -88,6 +97,38 @@ export function UserInviteForm() {
       )
       return
     }
+
+    const created: { userId: string } = await response.json()
+
+    if (values.roles.length > 0) {
+      const roleIdByName = new Map(roles.map((r) => [r.name, r.id]))
+      const results = await Promise.allSettled(
+        values.roles.map((name) => {
+          const roleId = roleIdByName.get(name)
+          if (!roleId) {
+            return Promise.reject(new Error(`"${name}" isn't in the current role list.`))
+          }
+          return assignUserRole(created.userId, roleId)
+        })
+      )
+      const failures = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected"
+      )
+      if (failures.length > 0) {
+        // The user genuinely exists at this point — don't leave the form
+        // implying creation failed. Explain the partial outcome instead,
+        // and point at where to finish the job, same tradeoff used when
+        // creating a role with permissions pre-selected (see
+        // stores/roles-store.ts's addRole).
+        setSubmitError(
+          `${values.email} was created, but ${failures.length === values.roles.length ? "no roles could" : "some roles could not"} be assigned. Finish assigning roles from their Edit page.`
+        )
+        setInvitedEmail(values.email)
+        reset()
+        return
+      }
+    }
+
     setInvitedEmail(values.email)
     reset()
   }
@@ -122,10 +163,6 @@ export function UserInviteForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]">
-      <div className="mb-[26px] inline-flex items-center gap-1.5 rounded-full bg-[var(--sidebar,var(--primary-dark))] px-3 py-1.5 font-mono text-[10.5px] font-medium tracking-[0.08em] text-[var(--sidebar-ink,white)] uppercase">
-        <ShieldCheck size={12} className="text-[var(--gold)]" />
-        Created under: current tenant
-      </div>
 
       {submitError && (
         <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
@@ -198,7 +235,9 @@ export function UserInviteForm() {
           {...register("additionalProfile")}
         />
         {errors.additionalProfile && (
-          <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.additionalProfile.message}</p>
+          <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+            {errors.additionalProfile.message}
+          </p>
         )}
       </div>
 

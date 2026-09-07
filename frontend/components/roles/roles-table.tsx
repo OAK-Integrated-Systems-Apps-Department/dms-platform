@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Pencil, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react"
+import { Eye, Pencil, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -93,12 +93,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                 className="border-b border-border last:border-b-0 hover:bg-muted"
               >
                 <td className="px-3.5 py-3 text-[13.5px] font-semibold text-primary">
-                  <Link
-                    href={`/admin/roles/${role.id}`}
-                    className="hover:underline"
-                  >
-                    {role.name}
-                  </Link>
+                  {role.name}
                 </td>
                 <td className="max-w-[320px] truncate px-3.5 py-3 text-[13px] text-muted-foreground">
                   {role.description}
@@ -116,81 +111,99 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                   {role.assignedUsers}
                 </td>
                 <td className="px-3.5 py-3">
-                  {role.system ? (
-                    <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                      <ShieldCheck size={13} />
-                      System role
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <Link
-                              {...props}
-                              href={`/admin/roles/${role.id}/edit`}
-                              aria-label={`Edit ${role.name}`}
-                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                            >
-                              <Pencil size={15} />
-                            </Link>
-                          )}
-                        />
-                        <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
-                      </Tooltip>
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
+                          <Link
+                            {...props}
+                            href={`/admin/roles/${role.id}`}
+                            aria-label={`View ${role.name}`}
+                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                          >
+                            <Eye size={15} />
+                          </Link>
+                        )}
+                      />
+                      <TooltipContent>{getTooltip("roles.actions.view")}</TooltipContent>
+                    </Tooltip>
 
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <button
-                              {...props}
-                              type="button"
-                              onClick={() => onToggleStatus(role.id)}
-                              aria-label={
-                                role.status === "Active"
-                                  ? `Deactivate ${role.name}`
-                                  : `Activate ${role.name}`
-                              }
-                              className={cn(
-                                "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                                role.status === "Active"
-                                  ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
-                                  : "text-primary hover:bg-muted"
-                              )}
-                            >
-                              {role.status === "Active" ? (
-                                <UserX size={15} />
-                              ) : (
-                                <UserCheck size={15} />
-                              )}
-                            </button>
-                          )}
-                        />
-                        <TooltipContent>
-                          {role.status === "Active"
-                            ? getTooltip("roles.actions.deactivate")
-                            : getTooltip("roles.actions.activate")}
-                        </TooltipContent>
-                      </Tooltip>
+                    {role.system ? (
+                      <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                        <ShieldCheck size={13} />
+                        System role
+                      </span>
+                    ) : (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <Link
+                                {...props}
+                                href={`/admin/roles/${role.id}/edit`}
+                                aria-label={`Edit ${role.name}`}
+                                className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                              >
+                                <Pencil size={15} />
+                              </Link>
+                            )}
+                          />
+                          <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
+                        </Tooltip>
 
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <button
-                              {...props}
-                              type="button"
-                              onClick={() => setPendingDeleteRole(role)}
-                              aria-label={`Delete ${role.name}`}
-                              className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
-                        />
-                        <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )}
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <button
+                                {...props}
+                                type="button"
+                                onClick={() => onToggleStatus(role.id)}
+                                aria-label={
+                                  role.status === "Active"
+                                    ? `Deactivate ${role.name}`
+                                    : `Activate ${role.name}`
+                                }
+                                className={cn(
+                                  "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                  role.status === "Active"
+                                    ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                    : "text-primary hover:bg-muted"
+                                )}
+                              >
+                                {role.status === "Active" ? (
+                                  <UserX size={15} />
+                                ) : (
+                                  <UserCheck size={15} />
+                                )}
+                              </button>
+                            )}
+                          />
+                          <TooltipContent>
+                            {role.status === "Active"
+                              ? getTooltip("roles.actions.deactivate")
+                              : getTooltip("roles.actions.activate")}
+                          </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <button
+                                {...props}
+                                type="button"
+                                onClick={() => setPendingDeleteRole(role)}
+                                aria-label={`Delete ${role.name}`}
+                                className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          />
+                          <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
+                        </Tooltip>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

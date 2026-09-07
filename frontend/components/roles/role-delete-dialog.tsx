@@ -69,7 +69,7 @@ export function RoleDeleteDialog({
       }}
     >
       <AlertDialogPortal>
-        <AlertDialogPopup>
+        <AlertDialogPopup className="max-w-[460px]">
           <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>

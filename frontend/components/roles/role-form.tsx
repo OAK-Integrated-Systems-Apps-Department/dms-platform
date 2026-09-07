@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
-import { AlertTriangle, ChevronDown } from "lucide-react"
+import { AlertTriangle, ChevronDown, Loader2 } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -19,10 +19,10 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-import { permissionGroups } from "./data"
 import { getLeafPermissionIds } from "./permission-utils"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
+import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RoleFormProps {
   mode: "create" | "edit"
@@ -40,6 +40,7 @@ interface RoleFormProps {
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
+  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
   // 32 modules is too much to show fully expanded in this quick-list view —
   // collapsed by default; open individually, or head to Role Permission
   // Configuration for search + expand/collapse-all.
@@ -187,7 +188,13 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
       </p>
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-        {permissionGroups.map((group) => {
+        {catalogLoading ? (
+          <div className="col-span-full flex items-center gap-2 rounded-[9px] border border-dashed border-border py-6 text-[13px] text-muted-foreground">
+            <Loader2 size={15} className="ml-4 animate-spin" />
+            Loading the permission catalog…
+          </div>
+        ) : (
+          permissionGroups.map((group) => {
           const groupIds = getLeafPermissionIds(group.permissions)
           const selectedCount = groupIds.filter((id) =>
             selectedPermissions.includes(id)
@@ -265,7 +272,8 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
               </CollapsibleContent>
             </Collapsible>
           )
-        })}
+        })
+        )}
       </div>
 
       <hr className="my-6 border-dashed border-border" />
