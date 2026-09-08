@@ -33,7 +33,7 @@
         "prettier-plugin-tailwindcss": "^0.8.0",
         "tailwindcss": "^4",
         "typescript": "^5",
-        "yaml": "^2.6.1",
+        "yaml": "^2.9.0",
       },
     },
   },
