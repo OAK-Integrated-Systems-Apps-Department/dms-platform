@@ -31,20 +31,12 @@ type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
  * `UserResetPasswordDialog` — there's no instant action here, since both
  * affect a real person's account and shouldn't be one-click accidents.
  *
- * A "Pending" badge and disabled Reset Password / Deactivate buttons show
- * for `!user.verified` — someone who was invited but hasn't actually
- * logged in yet (see `User#verified` on the backend). Resetting a
- * password that was never set, or deactivating an account nobody has
- * used, aren't meaningful actions; Activate is deliberately NOT gated the
- * same way, since reactivating a still-unverified-but-deactivated user is
- * a distinct admin decision.
- *
- * Reset Password is also disabled once `user.status` is "Inactive" — a
+ * Reset Password is disabled once `user.status` is "Inactive" — a
  * deactivated account has no active session or login ability to reset a
- * password for. Kept as a disabled button with an explanatory tooltip
- * rather than removed outright, same as the `!user.verified` case, so
- * the action stays visible and predictable in the row rather than the
- * row's actions shifting around based on status.
+ * password for. It is NOT gated by `user.verified` anymore — pending
+ * (unverified) users can still have a password reset.
+ *
+ * Activate/Deactivate is always enabled regardless of `verified`.
  */
 export function UsersTable({
   users,
@@ -218,8 +210,7 @@ export function UsersTable({
                     </Tooltip>
 
                     {(() => {
-                      const canResetPassword =
-                        user.verified && user.status === "Active"
+                      const canResetPassword = user.status === "Active"
                       return (
                         <Tooltip>
                           <TooltipTrigger
@@ -244,11 +235,9 @@ export function UsersTable({
                             )}
                           />
                           <TooltipContent>
-                            {!user.verified
-                              ? getTooltip("users.pending.resetPasswordDisabled")
-                              : user.status !== "Active"
-                              ? getTooltip("users.pending.resetPasswordDisabled")
-                              : getTooltip("users.actions.resetPassword")}
+                            {canResetPassword
+                              ? getTooltip("users.actions.resetPassword")
+                              : getTooltip("users.pending.resetPasswordDisabled")}
                           </TooltipContent>
                         </Tooltip>
                       )
@@ -260,12 +249,7 @@ export function UsersTable({
                           <button
                             {...props}
                             type="button"
-                            onClick={() => {
-                              const disabled =
-                                user.status === "Active" && !user.verified
-                              if (!disabled) setPendingUser(user)
-                            }}
-                            disabled={user.status === "Active" && !user.verified}
+                            onClick={() => setPendingUser(user)}
                             aria-label={
                               user.status === "Active"
                                 ? `Deactivate ${user.name}`
@@ -273,9 +257,7 @@ export function UsersTable({
                             }
                             className={cn(
                               "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                              user.status === "Active" && !user.verified
-                                ? "cursor-not-allowed text-muted-foreground opacity-50"
-                                : user.status === "Active"
+                              user.status === "Active"
                                 ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                 : "text-primary hover:bg-muted"
                             )}
@@ -290,9 +272,7 @@ export function UsersTable({
                       />
                       <TooltipContent>
                         {user.status === "Active"
-                          ? user.verified
-                            ? getTooltip("users.actions.deactivate")
-                            : getTooltip("users.pending.deactivateDisabled")
+                          ? getTooltip("users.actions.deactivate")
                           : getTooltip("users.actions.activate")}
                       </TooltipContent>
                     </Tooltip>

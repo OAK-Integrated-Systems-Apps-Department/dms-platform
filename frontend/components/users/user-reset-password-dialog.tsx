@@ -45,7 +45,7 @@ export function UserResetPasswordDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
-        <AlertDialogPopup>
+        <AlertDialogPopup className="max-w-[480px]">
           <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
             <KeyRound size={20} />
           </span>
@@ -54,7 +54,7 @@ export function UserResetPasswordDialog({
             <strong className="font-semibold text-foreground">
               {user.name}
             </strong>{" "}
-            ({user.username}) will receive an email with a link to set a new
+             will receive an email with a link to set a new
             password. DMS does not set or view the password directly.
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">

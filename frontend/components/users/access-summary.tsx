@@ -10,7 +10,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { getTooltip } from "@/lib/tooltips"
 import { permissionGroups } from "@/components/roles/data"
 import { getLeafPermissionIds } from "@/components/roles/permission-utils"
 import type { PermissionItem } from "@/components/roles/types"
@@ -179,17 +181,29 @@ export function UserAccessSummary({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setStatusDialogOpen(true)}
-          className={
-            user.status === "Active"
-              ? "shrink-0 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-              : "shrink-0 rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
-          }
-        >
-          {user.status === "Active" ? "Deactivate User" : "Activate User"}
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={(props) => (
+              <button
+                {...props}
+                type="button"
+                onClick={() => setStatusDialogOpen(true)}
+                className={
+                  user.status === "Active"
+                    ? "shrink-0 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                    : "shrink-0 rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                }
+              >
+                {user.status === "Active" ? "Deactivate User" : "Activate User"}
+              </button>
+            )}
+          />
+          <TooltipContent>
+            {user.status === "Active"
+              ? getTooltip("users.actions.deactivate")
+              : getTooltip("users.actions.activate")}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Roles held */}
