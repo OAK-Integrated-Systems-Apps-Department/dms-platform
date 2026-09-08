@@ -182,7 +182,13 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                     id="permission-module"
                     value={field.value}
                     onChange={(event) => {
-                      field.onChange(event.target.value)
+                      // Explicit shouldValidate, not field.onChange — before
+                      // the form's first submit, RHF only auto-revalidates
+                      // fields that already have an error, so a plain
+                      // onChange here wouldn't clear a stale "Choose a
+                      // module" error either. Same reasoning as the action
+                      // select below.
+                      setValue("moduleId", event.target.value, { shouldValidate: true })
                       // The previously-selected action almost certainly
                       // doesn't belong to the newly-chosen module — clear
                       // it rather than silently submitting a mismatched
@@ -225,7 +231,18 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                   <select
                     id="permission-action"
                     value={field.value}
-                    onChange={(event) => field.onChange(event.target.value)}
+                    onChange={(event) =>
+                      // setValue(..., { shouldValidate: true }) rather than
+                      // field.onChange — picking a module resets actionId
+                      // via an explicit validated setValue (see above),
+                      // which sets the "Choose an action" error. RHF only
+                      // auto-revalidates a field on plain onChange once the
+                      // form has been submitted at least once, so before
+                      // that, a bare field.onChange here would update the
+                      // value but leave that stale error on screen even
+                      // once a real action is picked.
+                      setValue("actionId", event.target.value, { shouldValidate: true })
+                    }
                     disabled={!selectedModuleId}
                     aria-invalid={Boolean(errors.actionId)}
                     className={selectClassName}

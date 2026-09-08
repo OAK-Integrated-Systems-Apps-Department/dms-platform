@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Check, ChevronDown, Search, X } from "lucide-react"
 
@@ -87,7 +87,7 @@ export function CheckboxFilter({
     }
   }, [open])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
       setSearch("")
       setPosition(null)
@@ -131,7 +131,16 @@ export function CheckboxFilter({
       window.removeEventListener("scroll", handleScroll, true)
       window.removeEventListener("resize", updatePosition)
     }
-  }, [open])
+    // Selecting/clearing an option can itself move the trigger — its own
+    // label text changes length, and the sibling "Clear filters" button
+    // (rendered by the parent) appears/disappears the moment
+    // `selected.length` crosses 0, which can reflow the whole filter
+    // toolbar row. Neither of those fires a scroll or resize event, so
+    // without `selected`/`options` here the popover would stay anchored
+    // to wherever the trigger was BEFORE that reflow — still rendering,
+    // just no longer aligned with the (now-moved) trigger button.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selected, options])
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -240,6 +249,22 @@ export function CheckboxFilter({
                   return (
                     <label
                       key={option}
+                      // The default browser behavior for clicking a <label>
+                      // is to focus (and, since the input is visually
+                      // hidden via sr-only below, auto-SCROLL to reveal)
+                      // its associated <input>. That native scroll was
+                      // the real cause of the popover's height blowing up
+                      // when picking an option further down the list —
+                      // it happened right as updatePosition() re-measured
+                      // the trigger's position, catching it mid-scroll.
+                      // Handling the toggle here ourselves and preventing
+                      // the label's default action avoids that scroll
+                      // entirely; keyboard/screen-reader users tabbing
+                      // directly to the input below are unaffected.
+                      onClick={(event) => {
+                        event.preventDefault()
+                        toggleOption(option)
+                      }}
                       className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12.5px] text-foreground hover:bg-muted"
                     >
                       <span

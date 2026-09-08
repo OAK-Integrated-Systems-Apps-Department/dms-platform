@@ -3,6 +3,7 @@
 import { notFound, useParams, useRouter } from "next/navigation"
 import { AlertTriangle, Loader2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionForm } from "@/components/permissions/permission-form"
 import type { PermissionFormValues } from "@/components/permissions/schema"
@@ -32,6 +33,18 @@ export default function EditPermissionPage() {
 
   return (
     <DashboardShell initialActiveLabel="Permissions">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[
+          { label: "Dashboard", href: "/" },
+          { label: "Permissions", href: "/admin/permissions" },
+          {
+            label: permission?.name ?? "Permission Details",
+            href: permission ? `/admin/permissions/${permission.id}` : undefined,
+          },
+          { label: "Edit" },
+        ]}
+      />
       <div className="mx-auto w-full max-w-[760px]">
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">

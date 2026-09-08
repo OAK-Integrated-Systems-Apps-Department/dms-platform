@@ -3,8 +3,9 @@
 import { useState } from "react"
 import Link from "next/link"
 import { notFound, useParams, useRouter } from "next/navigation"
-import { AlertTriangle, ChevronLeft, Loader2, Pencil, Trash2 } from "lucide-react"
+import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { Badge } from "@/components/ui/badge"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionDeleteDialog } from "@/components/permissions/permission-delete-dialog"
@@ -32,15 +33,15 @@ export default function PermissionDetailsPage() {
 
   return (
     <DashboardShell initialActiveLabel="Permissions">
-      <div className="mx-auto w-full max-w-[680px]">
-        <Link
-          href="/admin/permissions"
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to Permission Catalog
-        </Link>
-        <div className="mb-[22px]">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[
+          { label: "Dashboard", href: "/" },
+          { label: "Permissions", href: "/admin/permissions" },
+          { label: permission?.name ?? "Permission Details" },
+        ]}
+      />
+      <div className="mb-[22px] max-w-[680px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Permission Details
           </h1>
@@ -120,7 +121,6 @@ export default function PermissionDetailsPage() {
             Couldn&apos;t load this permission.
           </div>
         )}
-      </div>
     </DashboardShell>
   )
 }
