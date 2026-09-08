@@ -5,7 +5,6 @@ import { KeyRound } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getTooltip } from "@/lib/tooltips"
-import { cn } from "@/lib/utils"
 
 import { renderActivityText } from "./render-activity-text"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -67,6 +66,13 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
  * screen. The status control opens the U6 confirmation dialog, and Reset
  * Password opens the U7 confirmation dialog, rather than either acting
  * instantly — same reasoning as `UsersTable`.
+ *
+ * Reset Password is disabled once `user.status` is "Inactive" — a
+ * deactivated account has no active session or login ability to reset a
+ * password for. It is NOT gated by `user.verified` — pending (unverified)
+ * users can still have a password reset.
+ *
+ * Activate/Deactivate is always enabled regardless of `verified`.
  */
 export function UserDetailView({
   user,
@@ -75,6 +81,8 @@ export function UserDetailView({
 }: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
+
+  const canResetPassword = user.status === "Active"
 
   return (
     <div className="rounded-[14px] border border-border bg-card p-[26px] pt-[26px] pb-[28px] shadow-[var(--ledger-shadow)]">
@@ -109,62 +117,50 @@ export function UserDetailView({
           <Tooltip>
             <TooltipTrigger
               render={(props) => (
-          <button
+                <button
                   {...props}
-            type="button"
-                  onClick={() =>
-                    user.verified && setResetPasswordDialogOpen(true)
+                  type="button"
+                  onClick={() => canResetPassword && setResetPasswordDialogOpen(true)}
+                  disabled={!canResetPassword}
+                  className={
+                    canResetPassword
+                      ? "flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+                      : "flex cursor-not-allowed items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
                   }
-                  disabled={!user.verified}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-[10px] border px-4 py-2.5 text-[13px] font-semibold",
-                    user.verified
-                      ? "border-[var(--border-strong)] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
-                      : "cursor-not-allowed border-[var(--border-strong)] text-muted-foreground opacity-50"
-                  )}
-          >
-            <KeyRound size={14} />
-            Reset Password
-          </button>
+                >
+                  <KeyRound size={14} />
+                  Reset Password
+                </button>
               )}
             />
-            {!user.verified && (
-              <TooltipContent>
-                {getTooltip("users.pending.resetPasswordDisabled")}
-              </TooltipContent>
-            )}
+            <TooltipContent>
+              {canResetPassword
+                ? getTooltip("users.actions.resetPassword")
+                : getTooltip("users.pending.resetPasswordDisabled")}
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger
-              render={(props) => {
-                const deactivateDisabled =
-                  user.status === "Active" && !user.verified
-                return (
-          <button
-                    {...props}
-            type="button"
-                    onClick={() => {
-                      if (!deactivateDisabled) setStatusDialogOpen(true)
-                    }}
-                    disabled={deactivateDisabled}
-            className={
-                      deactivateDisabled
-                        ? "cursor-not-allowed rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
-                        : user.status === "Active"
-                ? "rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-                : "rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
-            }
-          >
-            {user.status === "Active" ? "Deactivate User" : "Activate User"}
-          </button>
-                )
-              }}
+              render={(props) => (
+                <button
+                  {...props}
+                  type="button"
+                  onClick={() => setStatusDialogOpen(true)}
+                  className={
+                    user.status === "Active"
+                      ? "rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                      : "rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                  }
+                >
+                  {user.status === "Active" ? "Deactivate User" : "Activate User"}
+                </button>
+              )}
             />
-            {user.status === "Active" && !user.verified && (
-              <TooltipContent>
-                {getTooltip("users.pending.deactivateDisabled")}
-              </TooltipContent>
-            )}
+            <TooltipContent>
+              {user.status === "Active"
+                ? getTooltip("users.actions.deactivate")
+                : getTooltip("users.actions.activate")}
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>
