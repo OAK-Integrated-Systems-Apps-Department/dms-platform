@@ -40,6 +40,11 @@ interface TablePaginationProps {
  * once there are more than 7 pages, so it doesn't visually break with
  * large datasets — with small ones (the common case here right now) it
  * just renders every page number.
+ *
+ * Hides entirely (page controls AND the rows-per-page selector) once
+ * everything fits on a single page — there's nothing to page through,
+ * and a "10 records" selector sitting above a 2-row table with nowhere
+ * to apply it reads as clutter, not a real control.
  */
 export function TablePagination({
   currentPage,
@@ -52,10 +57,7 @@ export function TablePagination({
   const showPageSizeSelector =
     pageSize !== undefined && onPageSizeChange !== undefined
 
-  // Only the page-size selector matters with a single page of results —
-  // still worth keeping visible so rows-per-page stays changeable even
-  // when there's nothing to page through yet.
-  if (totalPages <= 1 && !showPageSizeSelector) return null
+  if (totalPages <= 1) return null
 
   function go(page: number) {
     if (page >= 1 && page <= totalPages && page !== currentPage) {
