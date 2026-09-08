@@ -31,7 +31,6 @@ export default function UserAccessSummaryPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[760px]">
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -72,7 +71,6 @@ export default function UserAccessSummaryPage() {
         ) : (
           <UserAccessSummary user={user} onToggleStatus={toggleStatus} />
         )}
-      </div>
     </DashboardShell>
   )
 }

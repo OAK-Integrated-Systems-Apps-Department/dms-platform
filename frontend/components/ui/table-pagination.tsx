@@ -17,8 +17,8 @@ interface TablePaginationProps {
 
   /**
    * Rows-per-page selector, rendered to the left of the page controls.
-   * Optional — omit `pageSize`/`onPageSizeChange` (as the Roles list
-   * still does) and no selector renders, same as before this was added.
+   * Optional — omit `pageSize`/`onPageSizeChange` and no selector
+   * renders. Both the Users and Roles lists now pass these.
    */
   pageSize?: number
   pageSizeOptions?: number[]
