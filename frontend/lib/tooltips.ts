@@ -1,15 +1,25 @@
-import { tooltipContent, type TooltipKey } from "./tooltip-content.generated"
+import tooltipYaml from "@/config/tooltip-content.yaml"
 
-export type { TooltipKey }
+interface TooltipNode {
+  [key: string]: TooltipNode | string
+}
 
-/**
- * Look up tooltip copy by key, e.g. `getTooltip("users.actions.view")`.
- *
- * All tooltip text lives in one place: config/tooltip-content.yaml. Edit
- * that file, then run `bun run gen:tooltips` (or just `bun run dev` /
- * `bun run build`, which do it for you) to regenerate the typed keys this
- * reads from — an unknown key is a TypeScript error, not a runtime surprise.
- */
-export function getTooltip(key: TooltipKey): string {
-  return tooltipContent[key]
+const tooltipContent = tooltipYaml as Record<string, TooltipNode | string>
+
+export function getTooltip(key: string): string {
+  const parts = key.split(".")
+  let node: TooltipNode | string = tooltipContent
+
+  for (const part of parts) {
+    if (typeof node !== "object" || node === null || !(part in node)) {
+      throw new Error(`getTooltip: unknown tooltip key "${key}" ...`)
+    }
+    node = node[part]
+  }
+
+  if (typeof node !== "string") {
+    throw new Error(`getTooltip: tooltip key "${key}" does not resolve to a string`)
+  }
+
+  return node
 }

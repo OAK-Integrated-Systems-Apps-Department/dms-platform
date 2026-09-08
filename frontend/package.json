@@ -4,15 +4,12 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "predev": "node scripts/generate-tooltip-content.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/generate-tooltip-content.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
-    "gen:tooltips": "node scripts/generate-tooltip-content.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -43,6 +40,6 @@
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "yaml": "^2.9.0"
+    "yaml-loader": "^0.9.0"
   }
 }
