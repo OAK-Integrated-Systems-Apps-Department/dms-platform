@@ -92,12 +92,7 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
                 className="border-b border-border last:border-b-0 hover:bg-muted"
               >
                 <td className="px-3.5 py-3 font-mono text-[12.5px] font-semibold text-primary">
-                  <Link
-                    href={`/admin/permissions/${permission.id}`}
-                    className="hover:underline"
-                  >
                     {permission.code}
-                  </Link>
                 </td>
                 <td className="px-3.5 py-3 text-[13.5px] text-foreground">
                   {permission.name}

@@ -131,7 +131,7 @@ export default function PermissionListPage() {
             onChange={(event) =>
               handleFilterChange(() => setQuery(event.target.value))
             }
-            placeholder="Search permissions, modules, or actions…"
+            placeholder="Search permissions…"
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
         </div>
