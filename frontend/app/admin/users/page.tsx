@@ -9,6 +9,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { usePageTitle } from "@/lib/use-page-title"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { RoleFilterSelect } from "@/components/users/role-filter-select"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useUsers } from "@/lib/users/use-users"
@@ -46,13 +47,10 @@ export default function UserListPage() {
     if (roles.length === 0) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const ROLE_OPTIONS = useMemo(
-    () => ["all", ...roles.map((role) => role.name)],
-    [roles]
-  )
+  const ROLE_OPTIONS = useMemo(() => roles.map((role) => role.name), [roles])
 
   const [query, setQuery] = useState("")
-  const [roleFilter, setRoleFilter] = useState("all")
+  const [roleFilter, setRoleFilter] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<
     "all" | "Active" | "Inactive"
   >("all")
@@ -68,7 +66,8 @@ export default function UserListPage() {
         user.username.toLowerCase().includes(q) ||
         user.email.toLowerCase().includes(q)
       const matchesRole =
-        roleFilter === "all" || user.roles.includes(roleFilter)
+        roleFilter.length === 0 ||
+        user.roles.some((role) => roleFilter.includes(role))
       const matchesStatus =
         statusFilter === "all" || user.status === statusFilter
       return matchesQuery && matchesRole && matchesStatus
@@ -134,25 +133,12 @@ export default function UserListPage() {
           />
         </div>
 
-        <div className="relative w-[170px]">
-          <select
-            value={roleFilter}
-            onChange={(event) =>
-              handleFilterChange(() => setRoleFilter(event.target.value))
-            }
-            className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
-          >
-            {ROLE_OPTIONS.map((role) => (
-              <option key={role} value={role}>
-                {role === "all" ? "All roles" : role}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
-          />
-        </div>
+        <RoleFilterSelect
+          className="w-[170px]"
+          options={ROLE_OPTIONS}
+          selected={roleFilter}
+          onChange={(roles) => handleFilterChange(() => setRoleFilter(roles))}
+        />
 
         <div className="relative w-[150px]">
           <select

@@ -38,6 +38,13 @@ type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
  * used, aren't meaningful actions; Activate is deliberately NOT gated the
  * same way, since reactivating a still-unverified-but-deactivated user is
  * a distinct admin decision.
+ *
+ * Reset Password is also disabled once `user.status` is "Inactive" — a
+ * deactivated account has no active session or login ability to reset a
+ * password for. Kept as a disabled button with an explanatory tooltip
+ * rather than removed outright, same as the `!user.verified` case, so
+ * the action stays visible and predictable in the row rather than the
+ * row's actions shifting around based on status.
  */
 export function UsersTable({
   users,
@@ -130,7 +137,6 @@ export function UsersTable({
                 </td>
                 <td className="px-3 py-3 text-[13px] text-muted-foreground">
                   <div className="flex items-center gap-1.5">
-                    
                     {user.email}
                     {!user.verified && (
                       <Badge variant="gold" className="text-[10px] font-semibold">
@@ -180,15 +186,15 @@ export function UsersTable({
                     <Tooltip>
                       <TooltipTrigger
                         render={(props) => (
-                    <button
+                          <button
                             {...props}
-                      type="button"
-                      onClick={() => onView(user)}
+                            type="button"
+                            onClick={() => onView(user)}
                             aria-label={`View ${user.name}`}
                             className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                    >
+                          >
                             <Eye size={15} />
-                    </button>
+                          </button>
                         )}
                       />
                       <TooltipContent>{getTooltip("users.actions.view")}</TooltipContent>
@@ -197,87 +203,95 @@ export function UsersTable({
                     <Tooltip>
                       <TooltipTrigger
                         render={(props) => (
-                    <button
+                          <button
                             {...props}
-                      type="button"
-                      onClick={() => onEdit(user)}
+                            type="button"
+                            onClick={() => onEdit(user)}
                             aria-label={`Edit ${user.name}`}
                             className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                    >
+                          >
                             <Pencil size={15} />
-                    </button>
+                          </button>
                         )}
                       />
                       <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
                     </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                    <button
-                            {...props}
-                      type="button"
-                      onClick={() =>
-                        user.verified && setPendingResetUser(user)
-                      }
-                            disabled={!user.verified}
-                            aria-label={`Reset password for ${user.name}`}
-                            className={cn(
-                              "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                              user.verified
-                                ? "text-primary hover:bg-muted"
-                                : "cursor-not-allowed text-muted-foreground opacity-50"
+                    {(() => {
+                      const canResetPassword =
+                        user.verified && user.status === "Active"
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <button
+                                {...props}
+                                type="button"
+                                onClick={() =>
+                                  canResetPassword && setPendingResetUser(user)
+                                }
+                                disabled={!canResetPassword}
+                                aria-label={`Reset password for ${user.name}`}
+                                className={cn(
+                                  "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                  canResetPassword
+                                    ? "text-primary hover:bg-muted"
+                                    : "cursor-not-allowed text-muted-foreground opacity-50"
+                                )}
+                              >
+                                <KeyRound size={15} />
+                              </button>
                             )}
-                    >
-                            <KeyRound size={15} />
-                    </button>
-                        )}
-                      />
-                      <TooltipContent>
-                        {user.verified
-                          ? getTooltip("users.actions.resetPassword")
-                          : getTooltip("users.pending.resetPasswordDisabled")}
-                      </TooltipContent>
-                    </Tooltip>
+                          />
+                          <TooltipContent>
+                            {!user.verified
+                              ? getTooltip("users.pending.resetPasswordDisabled")
+                              : user.status !== "Active"
+                              ? getTooltip("users.pending.resetPasswordDisabled")
+                              : getTooltip("users.actions.resetPassword")}
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    })()}
 
                     <Tooltip>
                       <TooltipTrigger
                         render={(props) => (
-                    <button
+                          <button
                             {...props}
-                      type="button"
-                      onClick={() => {
-                        const disabled =
-                          user.status === "Active" && !user.verified
-                        if (!disabled) setPendingUser(user)
-                      }}
+                            type="button"
+                            onClick={() => {
+                              const disabled =
+                                user.status === "Active" && !user.verified
+                              if (!disabled) setPendingUser(user)
+                            }}
                             disabled={user.status === "Active" && !user.verified}
                             aria-label={
                               user.status === "Active"
                                 ? `Deactivate ${user.name}`
                                 : `Activate ${user.name}`
                             }
-                      className={cn(
+                            className={cn(
                               "flex size-7 items-center justify-center rounded-[7px] transition-colors",
                               user.status === "Active" && !user.verified
                                 ? "cursor-not-allowed text-muted-foreground opacity-50"
                                 : user.status === "Active"
                                 ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                 : "text-primary hover:bg-muted"
-                      )}
-                    >
+                            )}
+                          >
                             {user.status === "Active" ? (
                               <UserX size={15} />
                             ) : (
                               <UserCheck size={15} />
                             )}
-                    </button>
+                          </button>
                         )}
                       />
                       <TooltipContent>
                         {user.status === "Active"
                           ? user.verified
-                          ? getTooltip("users.actions.deactivate")
+                            ? getTooltip("users.actions.deactivate")
                             : getTooltip("users.pending.deactivateDisabled")
                           : getTooltip("users.actions.activate")}
                       </TooltipContent>
