@@ -44,7 +44,6 @@ export default function UserMfaManagementPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[760px]">
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -89,7 +88,6 @@ export default function UserMfaManagementPage() {
             onResetCredentials={handleResetCredentials}
           />
         )}
-      </div>
     </DashboardShell>
   )
 }
