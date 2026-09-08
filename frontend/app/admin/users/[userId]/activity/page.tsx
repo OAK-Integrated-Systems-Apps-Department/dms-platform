@@ -34,7 +34,6 @@ export default function UserAuditHistoryPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[760px]">
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -75,7 +74,6 @@ export default function UserAuditHistoryPage() {
         ) : (
         <UserAuditHistory user={user} />
         )}
-      </div>
     </DashboardShell>
   )
 }

@@ -26,7 +26,6 @@ export default function ViewUserPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[820px]">
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -62,7 +61,6 @@ export default function ViewUserPage() {
             onResetPassword={sendPasswordReset}
         />
         )}
-      </div>
     </DashboardShell>
   )
 }

@@ -11,7 +11,7 @@ import { TablePagination } from "@/components/ui/table-pagination"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
-const PAGE_SIZE = 10
+const DEFAULT_PAGE_SIZE = 10
 
 /**
  * Role Management — Role List (R1). Search roles, add a role, or
@@ -34,6 +34,7 @@ export default function RoleListPage() {
 
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -53,15 +54,20 @@ export default function RoleListPage() {
     )
   }, [roles, query])
 
-  const totalPages = Math.max(1, Math.ceil(filteredRoles.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filteredRoles.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pageRoles = filteredRoles.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   )
 
   function handleQueryChange(value: string) {
     setQuery(value)
+    setPage(1)
+  }
+
+  function handlePageSizeChange(size: number) {
+    setPageSize(size)
     setPage(1)
   }
 
@@ -158,6 +164,8 @@ export default function RoleListPage() {
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
           />
         </>
       )}

@@ -1,20 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ChevronDown, Plus, Search } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
-import { initialRoles } from "@/components/roles/data"
 import { usePageTitle } from "@/lib/use-page-title"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useUsers } from "@/lib/users/use-users"
+import { useRolesStore } from "@/stores/roles-store"
 
-const ROLE_OPTIONS = ["all", ...initialRoles.map((role) => role.name)]
 const DEFAULT_PAGE_SIZE = 10
 
 /**
@@ -37,6 +36,20 @@ export default function UserListPage() {
     toggleStatus,
     sendPasswordReset,
   } = useUsers()
+
+  // Live tenant role list from the DB (same store the Roles list and
+  // RoleMultiSelect use) rather than the hardcoded components/roles/data.ts
+  // catalog, so this filter always matches roles that actually exist.
+  const roles = useRolesStore((state) => state.roles)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  useEffect(() => {
+    if (roles.length === 0) fetchRoles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const ROLE_OPTIONS = useMemo(
+    () => ["all", ...roles.map((role) => role.name)],
+    [roles]
+  )
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
