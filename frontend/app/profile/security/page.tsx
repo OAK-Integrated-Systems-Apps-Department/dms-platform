@@ -16,7 +16,6 @@ import { SecurityOverview } from "@/components/profile/security-overview"
 export default function SecurityPage() {
   return (
     <DashboardShell>
-      <div className="mx-auto w-full max-w-[640px]">
         <Link
           href="/profile"
           className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
@@ -24,7 +23,7 @@ export default function SecurityPage() {
           <ChevronLeft size={14} />
           Back to My Profile
         </Link>
-        <div className="mb-[22px]">
+      <div className="mb-[22px] max-w-[640px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             My Security Settings
           </h1>
@@ -33,7 +32,6 @@ export default function SecurityPage() {
           </p>
         </div>
         <SecurityOverview />
-      </div>
     </DashboardShell>
   )
 }

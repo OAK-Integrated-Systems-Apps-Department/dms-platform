@@ -1,5 +1,6 @@
 "use client"
 
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { ProfileOverview } from "@/components/profile/profile-overview"
 
@@ -12,8 +13,11 @@ import { ProfileOverview } from "@/components/profile/profile-overview"
 export default function ProfilePage() {
   return (
     <DashboardShell>
-      <div className="mx-auto w-full max-w-[640px]">
-        <div className="mb-[22px]">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "My Profile" }]}
+      />
+      <div className="mb-[22px] max-w-[640px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             My Profile
           </h1>
@@ -22,7 +26,6 @@ export default function ProfilePage() {
           </p>
         </div>
         <ProfileOverview />
-      </div>
     </DashboardShell>
   )
 }
