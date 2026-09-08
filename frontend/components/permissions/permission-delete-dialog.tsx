@@ -67,14 +67,13 @@ export function PermissionDeleteDialog({
       }}
     >
       <AlertDialogPortal>
-        <AlertDialogPopup>
+        <AlertDialogPopup className="max-w-[460px]">
           <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>
           <AlertDialogTitle>Delete this permission?</AlertDialogTitle>
           <AlertDialogDescription>
             <strong className="font-semibold text-foreground">{permission.name}</strong>{" "}
-            (<code className="font-mono text-[12px]">{permission.code}</code>) will be
             removed from the catalog. This can&apos;t be undone, and it can&apos;t be
             done while any role still holds it.
           </AlertDialogDescription>
