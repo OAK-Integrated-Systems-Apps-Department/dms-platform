@@ -27,6 +27,15 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
     boolean existsByRoleIdAndPermissionIdAndResourceScope(UUID roleId, UUID permissionId, String resourceScope);
 
     /**
+     * Used to guard permission deletion - a permission still granted to
+     * any role can't be removed from the catalog, mirroring how
+     * deleteAction/deleteModule in PermissionActionServiceImpl /
+     * PermissionModuleServiceImpl already guard their own children one
+     * level up the hierarchy (see PermissionServiceImpl#deletePermission).
+     */
+    boolean existsByPermissionId(UUID permissionId);
+
+    /**
      * Effective permission codes for a user across all of their role
      * assignments in the given tenant, resolved through the Permission
      * catalog now that role_permissions references it by id rather than
@@ -47,6 +56,19 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
      * reached - covers any pre-existing orphaned {@code user_roles} rows
      * too, not just new activity going forward.
      * <p>
+     * Also joins to {@link PermissionAction} and {@link PermissionModule}
+     * and requires both non-deleted, for the same reason: it's currently
+     * impossible for a non-deleted {@link Permission} to have a deleted
+     * action/module as its parent, but only because
+     * {@code PermissionActionServiceImpl#deleteAction} /
+     * {@code PermissionModuleServiceImpl#deleteModule} guard against it at
+     * write time - the exact kind of "guaranteed by a rule elsewhere"
+     * assumption that already broke twice in this codebase (both the Role
+     * guards and {@link com.oak.dms.security.rbac.PermissionServiceImpl#deletePermission}'s
+     * own guard were silently lost and had to be reapplied). Checking it
+     * here too means this query stays correct even if those guards are
+     * ever lost again, not just today.
+     * <p>
      * {@code r.status = ...active} uses a fully-qualified JPQL enum
      * literal rather than a bound parameter, matching the existing
      * pattern in {@code OutboxEventRepository} - comparing a
@@ -60,8 +82,12 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
             join UserRole ur on ur.roleId = rp.roleId
             join Role r on r.roleId = rp.roleId
             join Permission p on p.permissionId = rp.permissionId
+            join PermissionAction a on a.actionId = p.actionId
+            join PermissionModule m on m.moduleId = a.moduleId
             where ur.userId = :userId and ur.tenantId = :tenantId
               and p.deleted = false
+              and a.deleted = false
+              and m.deleted = false
               and r.deleted = false
               and r.status = com.oak.dms.security.rbac.Role.RoleStatus.active
             """)
