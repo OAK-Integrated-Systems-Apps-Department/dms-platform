@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import {
   deactivateUser,
+  deleteUser as deleteUserRequest,
   fetchUser,
   fetchUserPlatformRoles,
   fetchUserRoles,
@@ -108,6 +109,40 @@ export function useUsers() {
     },
   })
 
+  // Gating (only the tenant admin may call this, never for the
+  // TENANT_ADMIN account itself) lives in the caller — see
+  // `use-is-tenant-admin.ts` and `UsersTable`'s `canDelete` prop — this
+  // mutation just performs the delete once the caller has confirmed it's
+  // allowed.
+  //
+  // `deleteUserRequest` hits the exact same soft-delete endpoint
+  // `toggleStatusMutation` does, and `GET /api/v1/users` deliberately
+  // keeps returning a deactivated user (see the doc comment on `useUsers`
+  // above) so it can show an Inactive badge with a Reactivate path
+  // instead of the row just vanishing.
+  //
+  // This used to strip the row straight out of the cached `["users"]`
+  // list via `setQueryData` to make Delete look like a hard delete. That
+  // was cosmetic only — the very next refetch (navigating away and back,
+  // a window refocus, cache going stale) re-pulls the same still-soft-
+  // deleted row from the server and it reappears as Inactive, at which
+  // point its Delete button called this same mutation again and 404'd
+  // ("User not found") because the backend's lookup for an already-
+  // deleted user comes back empty. Invalidating instead keeps the cache
+  // truthful: the row shows Inactive right away and stays that way on
+  // every future refetch, and `UsersTable` now disables Delete once a row
+  // is Inactive so there's no dead click left to make.
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId: string) => deleteUserRequest(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+      toast.success("User deleted.")
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Could not delete this user.")
+    },
+  })
+
   const sendPasswordResetMutation = useMutation({
     mutationFn: (userId: string) => sendPasswordResetRequest(userId),
     onSuccess: () => {
@@ -137,6 +172,7 @@ export function useUsers() {
     ...query,
     users: query.data ?? [],
     toggleStatus: (userId: string) => toggleStatusMutation.mutate(userId),
+    deleteUser: (userId: string) => deleteUserMutation.mutate(userId),
     sendPasswordReset: (userId: string) =>
       sendPasswordResetMutation.mutate(userId),
     // reactivate: (userId: string) => reactivateMutation.mutate(userId),

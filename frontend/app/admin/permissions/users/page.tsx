@@ -9,6 +9,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
+import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -30,8 +31,10 @@ export default function UserListPage() {
     isError,
     error,
     toggleStatus,
+    deleteUser,
     sendPasswordReset,
   } = useUsers()
+  const { isTenantAdmin } = useIsTenantAdmin()
 
   // Role filter options come from the real tenant role list, not the
   // hardcoded components/roles/data.ts catalog — see the KNOWN GAP fix in
@@ -186,6 +189,8 @@ export default function UserListPage() {
         users={pageUsers}
         onToggleStatus={toggleStatus}
         onResetPassword={sendPasswordReset}
+        onDelete={deleteUser}
+        canDelete={isTenantAdmin}
         onView={handleView}
         onEdit={handleEdit}
       />
