@@ -1,6 +1,7 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import {
   deactivateUser,
@@ -47,21 +48,32 @@ export function useUser(userId: string) {
         // A real soft-delete (DELETE /api/v1/users/{id}), not a
         // status-field PUT — see deactivateUser in lib/users/api.ts.
         await deactivateUser(userId)
-      } else {
-        // Reachable now: getUser (above) no longer excludes deactivated
-        // users, so `current` here really can be one, and reactivateUser
-        // (POST .../reactivate) is the endpoint that actually undoes
-        // deactivateUser.
-        await reactivateUser(userId)
+        return "deactivated" as const
       }
+      // Reachable now: getUser (above) no longer excludes deactivated
+      // users, so `current` here really can be one, and reactivateUser
+      // (POST .../reactivate) is the endpoint that actually undoes
+      // deactivateUser.
+      await reactivateUser(userId)
+      return "reactivated" as const
     },
-    onSuccess: () => {
+    onSuccess: (action) => {
       queryClient.invalidateQueries({ queryKey: ["user", userId] })
+      toast.success(action === "deactivated" ? "User deactivated." : "User reactivated.")
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Could not update this user's status.")
     },
   })
 
   const sendPasswordResetMutation = useMutation({
     mutationFn: () => sendPasswordResetRequest(userId),
+    onSuccess: () => {
+      toast.success("Password reset email sent.")
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Could not send the password reset email.")
+    },
   })
 
   // Standalone rather than folded into toggleStatus above: toggleStatus's

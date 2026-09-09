@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { notFound, useParams, useRouter } from "next/navigation"
 import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { Badge } from "@/components/ui/badge"
@@ -110,7 +111,12 @@ export default function PermissionDetailsPage() {
               onOpenChange={setShowDeleteDialog}
               onConfirm={async () => {
                 const { error } = await deletePermission(permission.id)
-                if (!error) router.push("/admin/permissions")
+                if (!error) {
+                  toast.success(`${permission.name} deleted.`)
+                  router.push("/admin/permissions")
+                } else {
+                  toast.error(error)
+                }
                 return error
               }}
             />

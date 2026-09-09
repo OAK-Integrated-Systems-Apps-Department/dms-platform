@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react"
 import { useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Eye, EyeOff, Layers, XCircle } from "lucide-react"
+import { toast } from "sonner"
 
 import { API_BASE_URL } from "@/lib/api-config"
 
@@ -72,6 +73,12 @@ export function UpdatePasswordPageContent() {
 
   const mutation = useMutation({
     mutationFn: () => submitNewPassword(token, newPassword),
+    onSuccess: () => {
+      toast.success("Password updated.")
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.")
+    },
   })
 
   function handleSubmit(event: FormEvent) {

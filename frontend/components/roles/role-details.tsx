@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AlertTriangle, Loader2, Pencil, ShieldCheck, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -281,7 +282,12 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         onOpenChange={setShowDeleteDialog}
         onConfirm={async () => {
           const { error } = await deleteRole(role.id)
-          if (!error) router.push("/admin/roles")
+          if (!error) {
+            toast.success(`${role.name} deleted.`)
+            router.push("/admin/roles")
+          } else {
+            toast.error(error)
+          }
           return error
         }}
       />

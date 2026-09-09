@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Layers } from "lucide-react"
+import { toast } from "sonner"
 
 import { API_BASE_URL } from "@/lib/api-config"
 
@@ -39,6 +40,9 @@ export default function ResetPasswordPage() {
 
   const mutation = useMutation({
     mutationFn: () => requestPasswordReset(usernameOrEmail.trim()),
+    onSuccess: () => {
+      toast.success("If that account exists, a reset link is on its way.")
+    },
   })
 
   function handleSubmit(event: FormEvent) {

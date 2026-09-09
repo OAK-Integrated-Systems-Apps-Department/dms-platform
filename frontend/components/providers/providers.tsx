@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
 
@@ -32,6 +33,7 @@ export function Providers({
           <SidebarCookieProvider initialOpen={initialSidebarOpen}>
             {children}
           </SidebarCookieProvider>
+          <Toaster position="top-right" />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
