@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
 import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react"
+import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -84,16 +85,19 @@ export function UserInviteForm() {
       // fetch() throws when the request never reached a server at all —
       // e.g. the backend isn't running yet. Distinct from a 4xx/5xx
       // below, which means the backend WAS reached and responded.
-      setSubmitError("Could not reach the server. Check that the backend is running and try again.")
+      const message = "Could not reach the server. Check that the backend is running and try again."
+      setSubmitError(message)
+      toast.error(message)
       return
     }
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      setSubmitError(
+      const message =
         response.status === 403
           ? "You don't have permission to invite users."
           : (body?.message ?? "Could not create the user.")
-      )
+      setSubmitError(message)
+      toast.error(message)
       return
     }
 
@@ -119,15 +123,16 @@ export function UserInviteForm() {
         // and point at where to finish the job, same tradeoff used when
         // creating a role with permissions pre-selected (see
         // stores/roles-store.ts's addRole).
-        setSubmitError(
-          `${values.email} was created, but ${failures.length === values.roles.length ? "no roles could" : "some roles could not"} be assigned. Finish assigning roles from their Edit page.`
-        )
+        const message = `${values.email} was created, but ${failures.length === values.roles.length ? "no roles could" : "some roles could not"} be assigned. Finish assigning roles from their Edit page.`
+        setSubmitError(message)
+        toast.error(message)
         setInvitedEmail(values.email)
         reset()
         return
       }
     }
 
+    toast.success("User created.")
     setInvitedEmail(values.email)
     reset()
   }

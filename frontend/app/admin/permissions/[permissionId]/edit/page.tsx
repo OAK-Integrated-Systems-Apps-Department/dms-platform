@@ -2,6 +2,7 @@
 
 import { notFound, useParams, useRouter } from "next/navigation"
 import { AlertTriangle, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -26,7 +27,11 @@ export default function EditPermissionPage() {
   async function handleSubmit(values: PermissionFormValues): Promise<string | null> {
     if (!permission) return "Permission not loaded yet."
     const { error } = await updatePermission(permission.id, values)
-    if (error) return error
+    if (error) {
+      toast.error(error)
+      return error
+    }
+    toast.success(`Permission "${values.name}" updated.`)
     router.push(`/admin/permissions/${permission.id}`)
     return null
   }

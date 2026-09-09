@@ -7,6 +7,7 @@ import { useMutation } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { AlertTriangle, Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
+import { toast } from "sonner"
 
 import { OtpInput } from "@/components/auth/otp-input"
 import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
@@ -113,13 +114,16 @@ export function LoginPageContent() {
       login(username, password, rememberMe, totp),
     onSuccess: (result) => {
       if (result.ok) {
+        toast.success("Signed in successfully.")
         router.push("/")
         router.refresh()
         return
       }
       if (result.mfaRequired) {
         setStep("otp")
+        return
       }
+      toast.error(result.error ?? "Invalid username or password.")
     },
   })
 
