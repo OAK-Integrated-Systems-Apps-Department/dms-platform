@@ -53,7 +53,11 @@ export function UserInviteForm() {
     if (roles.length === 0) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const ROLE_OPTIONS = roles.map((role) => role.name)
+  // Only active roles can be newly assigned (see the backend guard in
+  // UserRoleServiceImpl#assignRole) — filtering here means the picker
+  // simply doesn't offer an inactive one, rather than letting someone
+  // pick it and then showing a rejection after the fact.
+  const ROLE_OPTIONS = roles.filter((role) => role.status === "Active").map((role) => role.name)
 
   const {
     register,
