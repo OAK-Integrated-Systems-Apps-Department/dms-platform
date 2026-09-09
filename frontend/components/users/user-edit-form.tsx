@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
 import { AlertTriangle, Lock } from "lucide-react"
+import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -101,9 +102,9 @@ export function UserEditForm({ user }: UserEditFormProps) {
         status: current.status,
       })
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Could not save changes."
-      )
+      const message = err instanceof Error ? err.message : "Could not save changes."
+      setSubmitError(message)
+      toast.error(message)
       return
     }
 
@@ -112,12 +113,15 @@ export function UserEditForm({ user }: UserEditFormProps) {
       // The profile fields above already saved successfully — say so,
       // rather than implying the whole save failed and inviting a
       // confusing retry.
-      setSubmitError(`Profile changes saved, but roles could not be fully updated: ${roleError}`)
+      const message = `Profile changes saved, but roles could not be fully updated: ${roleError}`
+      setSubmitError(message)
+      toast.error(message)
       return
     }
 
     queryClient.invalidateQueries({ queryKey: ["user", user.id] })
     queryClient.invalidateQueries({ queryKey: ["users"] })
+    toast.success("User updated.")
     router.push(`/admin/users/${user.id}`)
   }
 

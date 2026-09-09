@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, Loader2, Plus, Search, X } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -98,7 +99,13 @@ export default function PermissionListPage() {
 
   async function handleDeletePermission(id: string) {
     setActionError(null)
+    const permission = permissions.find((p) => p.id === id)
     const { error } = await deletePermission(id)
+    if (error) {
+      toast.error(error)
+    } else {
+      toast.success(permission ? `${permission.name} deleted.` : "Permission deleted.")
+    }
     return error
   }
 

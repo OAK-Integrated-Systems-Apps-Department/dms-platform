@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, Grid3x3, Loader2, Plus, Search } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -73,13 +74,29 @@ export default function RoleListPage() {
 
   async function handleToggleStatus(id: string) {
     setActionError(null)
+    const role = roles.find((r) => r.id === id)
     const { error } = await toggleStatus(id)
-    if (error) setActionError(error)
+    if (error) {
+      setActionError(error)
+      toast.error(error)
+      return
+    }
+    toast.success(
+      role
+        ? `${role.name} is now ${role.status === "Active" ? "inactive" : "active"}.`
+        : "Role status updated."
+    )
   }
 
   async function handleDeleteRole(id: string) {
     setActionError(null)
+    const role = roles.find((r) => r.id === id)
     const { error } = await deleteRole(id)
+    if (error) {
+      toast.error(error)
+    } else {
+      toast.success(role ? `${role.name} deleted.` : "Role deleted.")
+    }
     return error
   }
 

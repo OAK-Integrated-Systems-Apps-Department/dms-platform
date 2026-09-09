@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -15,7 +16,11 @@ export default function AddPermissionPage() {
 
   async function handleSubmit(values: PermissionFormValues): Promise<string | null> {
     const { error } = await addPermission(values)
-    if (error) return error
+    if (error) {
+      toast.error(error)
+      return error
+    }
+    toast.success(`Permission "${values.name}" created.`)
     router.push("/admin/permissions")
     return null
   }
@@ -30,8 +35,7 @@ export default function AddPermissionPage() {
           { label: "Add Permission" },
         ]}
       />
-      <div className="mx-auto w-full max-w-[760px]">
-        <div className="mb-[22px]">
+      <div className="mb-[22px] max-w-[680px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Add Permission
           </h1>
@@ -42,7 +46,6 @@ export default function AddPermissionPage() {
           </p>
         </div>
         <PermissionForm mode="create" onSubmit={handleSubmit} />
-      </div>
     </DashboardShell>
   )
 }
