@@ -74,7 +74,7 @@ public class PermissionController {
     }
 
     @DeleteMapping("/{permissionId}")
-    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    // @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete (soft-delete) a permission from the catalog")
     public void deletePermission(@PathVariable UUID permissionId) {

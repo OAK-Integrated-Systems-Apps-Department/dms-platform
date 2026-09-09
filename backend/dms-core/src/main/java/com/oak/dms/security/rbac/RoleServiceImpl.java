@@ -5,6 +5,7 @@ import com.oak.dms.security.rbac.dto.UpdateRoleRequest;
 import com.oak.dms.security.rbac.dto.RoleResponse;
 import com.oak.dms.security.rbac.Role;
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.common.exception.InvalidRoleStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.security.rbac.RoleMapper;
 import com.oak.dms.security.rbac.RoleRepository;
@@ -24,7 +25,10 @@ import java.util.UUID;
 /**
  * See {@link RoleService}. Deletion is a soft-delete, consistent with
  * {@link com.oak.dms.tenant.TenantServiceImpl} and
- * {@link com.oak.dms.user.UserServiceImpl}.
+ * {@link com.oak.dms.user.UserServiceImpl}. Both deactivating (via
+ * {@link #updateRole}) and deleting (via {@link #deleteRole}) a role are
+ * blocked while it's still assigned to any user - see those methods for
+ * why.
  */
 @Slf4j
 @Service
@@ -35,6 +39,7 @@ public class RoleServiceImpl implements RoleService {
     private final RoleRepository roleRepository;
     private final RoleMapper roleMapper;
     private final KeycloakUserService keycloakUserService;
+    private final UserRoleRepository userRoleRepository;
 
     @Override
     public RoleResponse createRole(CreateRoleRequest request) {
@@ -93,6 +98,25 @@ public class RoleServiceImpl implements RoleService {
     public RoleResponse updateRole(UUID roleId, UpdateRoleRequest request) {
         Role role = findOwnedByCallerTenant(roleId);
 
+        // Deactivating a role while it's still assigned to a user would be
+        // easy to mistake for actually cutting off that user's access -
+        // it currently doesn't (findEffectivePermissionCodes has no join
+        // back to Role at all, so an assigned user keeps every permission
+        // an "Inactive" role grants them, completely unaffected by this
+        // flag). Until/unless that's changed to make Inactive genuinely
+        // revoke access, blocking the transition here is the safer
+        // default: it forces unassigning the role first, an explicit,
+        // visible action, rather than letting deactivation look like it
+        // did something it silently didn't.
+        boolean deactivating = request.status() == UpdateRoleRequest.Status.inactive
+                && role.getStatus() == Role.RoleStatus.active;
+        if (deactivating && userRoleRepository.existsByRoleId(roleId)) {
+            throw new InvalidRoleStateException(
+                    "Cannot deactivate role '" + role.getRoleName()
+                            + "' while it is still assigned to one or more users. "
+                            + "Remove it from every user first.");
+        }
+
         // Keep the mirrored Keycloak realm role name in sync on rename, so
         // future assign/revoke calls (which look the role up by current
         // name) keep resolving correctly.
@@ -118,6 +142,22 @@ public class RoleServiceImpl implements RoleService {
     @Override
     public void deleteRole(UUID roleId) {
         Role role = findOwnedByCallerTenant(roleId);
+
+        // Same reasoning as the deactivate guard in updateRole, but more
+        // pressing here: deleting a role still assigned to a user would
+        // orphan every row in user_roles pointing at it - RoleResponse
+        // becomes unreachable (findOwnedByCallerTenant filters on
+        // deletedFalse), but findEffectivePermissionCodes has no such
+        // filter, so the assigned user would keep silently exercising
+        // every permission that now-deleted role granted, with nothing
+        // left in Role Management even showing it exists to revoke.
+        if (userRoleRepository.existsByRoleId(roleId)) {
+            throw new InvalidRoleStateException(
+                    "Cannot delete role '" + role.getRoleName()
+                            + "' while it is still assigned to one or more users. "
+                            + "Remove it from every user first.");
+        }
+
         role.setDeleted(true);
         role.setDeletedAt(OffsetDateTime.now());
         role.setUpdatedBy(TenantContext.getUserId());

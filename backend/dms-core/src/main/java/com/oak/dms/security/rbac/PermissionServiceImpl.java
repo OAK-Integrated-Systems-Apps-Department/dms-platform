@@ -21,7 +21,9 @@ import java.util.UUID;
  * tenant-scoped, unlike {@link Role}) - it's the platform's fixed set of
  * grantable capabilities, so every tenant's roles draw from the same list
  * via {@link RolePermission}. Deletion is a soft-delete, consistent with
- * the rest of the RBAC module (see {@link RoleServiceImpl}).
+ * the rest of the RBAC module (see {@link RoleServiceImpl}), and - like
+ * {@link RoleServiceImpl#deleteRole} - blocked while any role still holds
+ * the permission (see {@link #deletePermission}).
  *
  * Every permission belongs to exactly one {@link PermissionAction}, which
  * in turn belongs to exactly one {@link PermissionModule} - see
@@ -38,6 +40,7 @@ public class PermissionServiceImpl implements PermissionService {
     private final PermissionRepository permissionRepository;
     private final PermissionActionRepository permissionActionRepository;
     private final PermissionModuleRepository permissionModuleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
     private final PermissionMapper permissionMapper;
 
     @Override
@@ -93,6 +96,23 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     public void deletePermission(UUID permissionId) {
         Permission permission = findActive(permissionId);
+
+        // Mirrors deleteAction/deleteModule one level up - a permission
+        // still granted to any role can't be removed. Without this, the
+        // permission disappears from the Permission Catalog (findActive
+        // above excludes it) while role_permissions still nominally
+        // grants it - not a live access leak (findEffectivePermissionCodes
+        // already filters p.deleted = false, so it never actually applies
+        // to anyone), but an orphaned reference an admin has no way to see
+        // or knowingly clean up: Role Permission Configuration would keep
+        // listing a permission code that no longer resolves to anything
+        // visible in the catalog.
+        if (rolePermissionRepository.existsByPermissionId(permissionId)) {
+            throw new DuplicateResourceException(
+                    "Cannot delete permission " + permission.getPermissionCode()
+                            + " while it is still granted to one or more roles");
+        }
+
         permission.setDeleted(true);
         permission.setDeletedAt(OffsetDateTime.now());
         permission.setUpdatedBy(TenantContext.getUserId());

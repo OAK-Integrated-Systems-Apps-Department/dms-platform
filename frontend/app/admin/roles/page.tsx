@@ -10,6 +10,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { usePageTitle } from "@/lib/use-page-title"
+import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
 
 const DEFAULT_PAGE_SIZE = 10
@@ -33,6 +34,32 @@ export default function RoleListPage() {
   const toggleStatus = useRolesStore((state) => state.toggleStatus)
   const deleteRole = useRolesStore((state) => state.deleteRole)
 
+  // FIXED KNOWN GAP: `RoleRecord.assignedUsers` from the store is always
+  // 0 — there's no `GET /api/v1/roles/{roleId}/users` endpoint, so it was
+  // never wired to anything real (see `fromBackend`'s doc comment in
+  // `stores/roles-store.ts`). Same fix Role Details already used: pull
+  // the real user list (`useUsers()`, the same data source the User List
+  // page itself is built on) and count matches on `user.roles.includes`
+  // client-side, rather than trusting the store's placeholder field.
+  const { users } = useUsers()
+  const assignedUserCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const user of users) {
+      for (const roleName of user.roles) {
+        counts.set(roleName, (counts.get(roleName) ?? 0) + 1)
+      }
+    }
+    return counts
+  }, [users])
+  const rolesWithRealCounts = useMemo(
+    () =>
+      roles.map((role) => ({
+        ...role,
+        assignedUsers: assignedUserCounts.get(role.name) ?? 0,
+      })),
+    [roles, assignedUserCounts]
+  )
+
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
@@ -47,13 +74,13 @@ export default function RoleListPage() {
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return roles
-    return roles.filter(
+    if (!q) return rolesWithRealCounts
+    return rolesWithRealCounts.filter(
       (role) =>
         role.name.toLowerCase().includes(q) ||
         role.description.toLowerCase().includes(q)
     )
-  }, [roles, query])
+  }, [rolesWithRealCounts, query])
 
   const totalPages = Math.max(1, Math.ceil(filteredRoles.length / pageSize))
   const currentPage = Math.min(page, totalPages)

@@ -22,4 +22,14 @@ public interface UserRoleRepository extends JpaRepository<UserRole, UUID> {
 
     boolean existsByUserIdAndRoleIdAndScopeTypeAndScopeId(UUID userId, UUID roleId,
                                                             UserRole.ScopeType scopeType, UUID scopeId);
+
+    /**
+     * Used to guard deactivating and deleting a role - a role still
+     * assigned to any user can be neither (see RoleServiceImpl#updateRole
+     * / #deleteRole), the same general shape as the existing
+     * deletePermission guard in PermissionServiceImpl (a permission still
+     * granted to a role can't be removed) and deleteAction/deleteModule
+     * one level up from that.
+     */
+    boolean existsByRoleId(UUID roleId);
 }

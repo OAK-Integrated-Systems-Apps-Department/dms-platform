@@ -6,6 +6,7 @@ import com.oak.dms.security.rbac.Role;
 import com.oak.dms.user.User;
 import com.oak.dms.security.rbac.UserRole;
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.common.exception.InvalidRoleStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
@@ -29,6 +30,7 @@ import java.util.UUID;
  * are mirrored into Keycloak as realm roles so coarse ROLE_* checks work
  * straight off the JWT; narrower scopes stay DB-only and are enforced
  * exclusively through {@link com.oak.dms.security.auth.AuthorizationService}.
+ * {@link #assignRole} rejects assigning a role that's currently inactive.
  */
 @Slf4j
 @Service
@@ -48,6 +50,18 @@ public class UserRoleServiceImpl implements UserRoleService {
         User user = requireOwnedUser(userId, tenantId);
         Role role = roleRepository.findByRoleIdAndTenantIdAndDeletedFalse(request.roleId(), tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", request.roleId()));
+
+        // An inactive role granting nothing (see the status check now in
+        // RolePermissionRepository#findEffectivePermissionCodes) would make
+        // assigning one today a no-op that looks like it worked - a
+        // confusing state to let someone create in the first place, even
+        // setting aside that reactivating the role later would then
+        // silently hand out access nobody consciously re-granted.
+        if (role.getStatus() != Role.RoleStatus.active) {
+            throw new InvalidRoleStateException(
+                    "Cannot assign role '" + role.getRoleName()
+                            + "' because it is currently inactive. Activate it first.");
+        }
 
         UserRole.ScopeType scopeType = UserRole.ScopeType.valueOf(request.scopeType().name());
         if (scopeType != UserRole.ScopeType.tenant && request.scopeId() == null) {

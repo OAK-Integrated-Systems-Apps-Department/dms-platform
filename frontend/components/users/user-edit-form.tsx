@@ -63,7 +63,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
     if (roles.length === 0) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const ROLE_OPTIONS = roles.map((role) => role.name)
+  // Only active roles can be newly assigned (see the backend guard in
+  // UserRoleServiceImpl#assignRole) — filtering here means the picker
+  // simply doesn't offer an inactive one for a *new* selection. If this
+  // user already holds one that's since gone inactive, it still shows as
+  // a removable chip regardless (RoleMultiSelect renders `selected`
+  // chips independent of `options` — see that component's own
+  // implementation), so there's still a way to unassign it here.
+  const ROLE_OPTIONS = roles.filter((role) => role.status === "Active").map((role) => role.name)
 
   const {
     register,
