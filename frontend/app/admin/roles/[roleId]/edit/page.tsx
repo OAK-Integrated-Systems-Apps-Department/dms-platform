@@ -2,6 +2,7 @@
 
 import { notFound, useParams, useRouter } from "next/navigation"
 import { AlertTriangle, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -28,13 +29,20 @@ export default function EditRolePage() {
   async function handleSubmit(values: RoleFormValues): Promise<string | null> {
     if (!role) return "Role not loaded yet."
     const { error } = await updateRole(role.id, values)
-    if (error) return error
+    if (error) {
+      toast.error(error)
+      return error
+    }
     // Name/description/status and permissions are two separate API calls
     // (UpdateRoleRequest carries no permissions field — see
     // stores/roles-store.ts) - both need to succeed for the inline
     // picker's changes to actually stick.
     const { error: permError } = await syncRolePermissions(role.id, values.permissions)
-    if (permError) return permError
+    if (permError) {
+      toast.error(permError)
+      return permError
+    }
+    toast.success(`Role "${values.name}" updated.`)
     router.push("/admin/roles")
     return null
   }

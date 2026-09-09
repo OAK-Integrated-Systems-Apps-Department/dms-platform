@@ -3,6 +3,7 @@
 import { notFound, useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ChevronLeft, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -39,7 +40,11 @@ export default function RolePermissionsPage() {
   async function handleSave(permissions: string[]): Promise<string | null> {
     if (!role) return "Role not loaded yet."
     const { error } = await syncRolePermissions(role.id, permissions)
-    if (error) return error
+    if (error) {
+      toast.error(error)
+      return error
+    }
+    toast.success("Permissions updated.")
     router.push(`/admin/roles/${role.id}/edit`)
     return null
   }

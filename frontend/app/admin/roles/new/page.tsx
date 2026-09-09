@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -18,7 +19,11 @@ export default function AddRolePage() {
 
   async function handleSubmit(values: RoleFormValues): Promise<string | null> {
     const { error } = await addRole(values)
-    if (error) return error
+    if (error) {
+      toast.error(error)
+      return error
+    }
+    toast.success(`Role "${values.name}" created.`)
     router.push("/admin/roles")
     return null
   }
