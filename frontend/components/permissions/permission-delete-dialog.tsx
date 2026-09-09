@@ -67,7 +67,7 @@ export function PermissionDeleteDialog({
       }}
     >
       <AlertDialogPortal>
-        <AlertDialogPopup className="max-w-[460px]">
+        <AlertDialogPopup className="max-w-[740px]">
           <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>
