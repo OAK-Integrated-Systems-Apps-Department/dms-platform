@@ -119,6 +119,20 @@ export async function deactivateUser(userId: string): Promise<void> {
 }
 
 /**
+ * Backs the User List's Delete row action. dms-core has no separate
+ * hard-delete endpoint for users (see UserController#deactivateUser's own
+ * doc comment) — `DELETE /api/v1/users/{userId}` already *is* the delete,
+ * so this is a thin, separately-named wrapper around `deactivateUser`
+ * rather than a new call. Kept as its own function (instead of just
+ * reusing `deactivateUser` inline at every call site) so the Delete
+ * action's call sites read as what they are and don't need a comment
+ * explaining the reuse each time.
+ */
+export async function deleteUser(userId: string): Promise<void> {
+  await deactivateUser(userId)
+}
+
+/**
  * Undoes `deactivateUser` via the new `POST /api/v1/users/{userId}/reactivate`
  * endpoint. Doesn't need a `current` snapshot re-supplied like a PUT to
  * `/api/v1/users/{userId}` would — dms-core reads the existing row itself
