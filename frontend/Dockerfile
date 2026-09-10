@@ -18,6 +18,15 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
+# Turbopack (the default `next build` bundler on Next 16) has known
+# non-determinism bugs that can silently drop a route from the build
+# output on some runs and not others (vercel/next.js#87283). Rather than
+# ship a broken image and only find out from a 404 in the browser, fail
+# the build here if a known route's server output is missing. Add more
+# paths below as needed.
+RUN test -d ".next/server/app/admin/users/[userId]/edit" || \
+    (echo "BUILD INCOMPLETE: /admin/users/[userId]/edit missing from .next/server/app - Turbopack build flake, retry the build" && exit 1)
+
 # ---- runtime: minimal standalone server ----
 FROM oven/bun:1 AS runtime
 RUN groupadd -r oakdms && useradd -r -g oakdms oakdms
