@@ -119,17 +119,27 @@ export async function deactivateUser(userId: string): Promise<void> {
 }
 
 /**
- * Backs the User List's Delete row action. dms-core has no separate
- * hard-delete endpoint for users (see UserController#deactivateUser's own
- * doc comment) — `DELETE /api/v1/users/{userId}` already *is* the delete,
- * so this is a thin, separately-named wrapper around `deactivateUser`
- * rather than a new call. Kept as its own function (instead of just
- * reusing `deactivateUser` inline at every call site) so the Delete
- * action's call sites read as what they are and don't need a comment
- * explaining the reuse each time.
+ * Backs the User List's Delete row action — a genuine hard delete
+ * (`DELETE /api/v1/users/{userId}/permanent`, `UserController#purgeUser`):
+ * the user's profile row and their Keycloak account are both actually
+ * removed, not just marked inactive the way `deactivateUser` does. No
+ * undo, unlike Deactivate/Reactivate. The backend additionally restricts
+ * this endpoint to the tenant admin, on top of the `canDelete` gating
+ * `UsersTable` already does client-side.
  */
 export async function deleteUser(userId: string): Promise<void> {
-  await deactivateUser(userId)
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/users/${userId}/permanent`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    }
+  )
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "Could not delete this user.")
+    )
+  }
 }
 
 /**

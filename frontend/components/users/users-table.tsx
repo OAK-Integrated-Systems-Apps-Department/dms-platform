@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, KeyRound, Pencil, UserCheck, UserX } from "lucide-react"
+import { Eye, KeyRound, Pencil, Trash2, UserCheck, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -10,6 +10,7 @@ import { useSortableTable } from "@/hooks/use-sortable-table"
 import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
+import { UserDeleteDialog } from "./user-delete-dialog"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
@@ -18,8 +19,17 @@ interface UsersTableProps {
   users: UserRecord[]
   onToggleStatus: (id: string) => void
   onResetPassword: (id: string) => void
+  onDelete: (id: string) => void
   onView: (user: UserRecord) => void
   onEdit: (user: UserRecord) => void
+
+  /**
+   * Whether the signed-in user may delete other accounts at all — only
+   * the tenant admin can (see `lib/auth/use-is-tenant-admin.ts`). The
+   * Delete column is left out entirely for everyone else, rather than
+   * shown disabled, since it isn't a capability they can ever use.
+   */
+  canDelete: boolean
 }
 
 type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
@@ -31,25 +41,33 @@ type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
  * `UserResetPasswordDialog` — there's no instant action here, since both
  * affect a real person's account and shouldn't be one-click accidents.
  *
- * A "Pending" badge shows for `!user.verified` — someone who was invited
- * but hasn't actually logged in yet (see `User#verified` on the backend).
- * Reset Password and Activate/Deactivate are no longer gated on
- * verification status — both are always available while the account is
- * in a state where the action is otherwise applicable.
+ * Reset Password is disabled once `user.status` is "Inactive" — a
+ * deactivated account has no active session or login ability to reset a
+ * password for. It is NOT gated by `user.verified` anymore — pending
+ * (unverified) users can still have a password reset.
  *
- * The Reset Password action itself is hidden entirely (not just
- * disabled) once `user.status` is "Inactive" — a deactivated account has
- * no active session or login ability to reset a password for.
+ * Activate/Deactivate is always enabled regardless of `verified`.
+ *
+ * Delete only renders for callers with `canDelete` (the tenant admin —
+ * see `lib/auth/use-is-tenant-admin.ts`), and is disabled for the
+ * TENANT_ADMIN account's own row even then, so the tenant can't be left
+ * without an admin. Goes through `UserDeleteDialog` the same way status
+ * changes go through `UserStatusDialog` — no one-click delete either.
  */
 export function UsersTable({
   users,
   onToggleStatus,
   onResetPassword,
+  onDelete,
   onView,
   onEdit,
+  canDelete,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
   const [pendingResetUser, setPendingResetUser] = useState<UserRecord | null>(
+    null
+  )
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<UserRecord | null>(
     null
   )
 
@@ -212,26 +230,39 @@ export function UsersTable({
                       <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
                     </Tooltip>
 
-                    {user.status === "Active" && (
+                    {(() => {
+                      const canResetPassword = user.status === "Active"
+                      return (
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (
                             <button
                               {...props}
                               type="button"
-                              onClick={() => setPendingResetUser(user)}
+                                onClick={() =>
+                                  canResetPassword && setPendingResetUser(user)
+                                }
+                                disabled={!canResetPassword}
                               aria-label={`Reset password for ${user.name}`}
-                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                                className={cn(
+                                  "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                  canResetPassword
+                                    ? "text-primary hover:bg-muted"
+                                    : "cursor-not-allowed text-muted-foreground opacity-50"
+                                )}
                             >
                               <KeyRound size={15} />
                             </button>
                           )}
                         />
                         <TooltipContent>
-                          {getTooltip("users.actions.resetPassword")}
+                            {canResetPassword
+                              ? getTooltip("users.actions.resetPassword")
+                              : getTooltip("users.pending.resetPasswordDisabled")}
                         </TooltipContent>
                       </Tooltip>
-                    )}
+                      )
+                    })()}
 
                     <Tooltip>
                       <TooltipTrigger
@@ -266,6 +297,43 @@ export function UsersTable({
                           : getTooltip("users.actions.activate")}
                       </TooltipContent>
                     </Tooltip>
+
+                    {canDelete &&
+                      (() => {
+                        const isTenantAdmin =
+                          user.platformRoles.includes("TENANT_ADMIN")
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() =>
+                                    !isTenantAdmin &&
+                                    setPendingDeleteUser(user)
+                                  }
+                                  disabled={isTenantAdmin}
+                                  aria-label={`Delete ${user.name}`}
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                    isTenantAdmin
+                                      ? "cursor-not-allowed text-muted-foreground opacity-50"
+                                      : "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                  )}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            />
+                            <TooltipContent>
+                              {isTenantAdmin
+                                ? getTooltip("users.tenantAdmin.deleteDisabled")
+                                : getTooltip("users.actions.delete")}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
                   </div>
                 </td>
               </tr>
@@ -298,6 +366,20 @@ export function UsersTable({
           onConfirm={() => {
             onResetPassword(pendingResetUser.id)
             setPendingResetUser(null)
+          }}
+        />
+      )}
+
+      {pendingDeleteUser && (
+        <UserDeleteDialog
+          user={pendingDeleteUser}
+          open={pendingDeleteUser !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingDeleteUser(null)
+          }}
+          onConfirm={() => {
+            onDelete(pendingDeleteUser.id)
+            setPendingDeleteUser(null)
           }}
         />
       )}

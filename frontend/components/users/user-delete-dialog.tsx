@@ -21,19 +21,19 @@ interface UserDeleteDialogProps {
 }
 
 /**
- * Delete User — confirmation dialog for the User List's new Delete row
+ * Delete User — confirmation dialog for the User List's Delete row
  * action.
  *
- * Calls the same `DELETE /api/v1/users/{id}` endpoint `UserStatusDialog`'s
- * "Deactivate" direction already uses (dms-core has no separate hard-delete
- * — see UserController#deactivateUser) — see `deleteUser` in
- * `lib/users/use-users.ts`. Kept as its own dialog/action rather than
- * folded into `UserStatusDialog` because the two are gated differently:
- * Activate/Deactivate stays available to anyone with `user.manage`, while
- * Delete is additionally restricted to the tenant admin
- * (`UsersTable`'s `canDelete` prop) and is always disabled for the
- * TENANT_ADMIN account itself, regardless of who's asking — see
- * `users-table.tsx`.
+ * Unlike `UserStatusDialog`'s "Deactivate" direction (soft-delete,
+ * reversible via Reactivate), this is a genuine, permanent hard delete —
+ * `DELETE /api/v1/users/{id}/permanent`, `UserController#purgeUser` — see
+ * `deleteUser` in `lib/users/api.ts`. Kept as its own dialog/action
+ * rather than folded into `UserStatusDialog` because the two are gated
+ * differently: Activate/Deactivate stays available to anyone with
+ * `user.manage`, while Delete is additionally restricted to the tenant
+ * admin (`UsersTable`'s `canDelete` prop, enforced server-side too) and
+ * is always disabled for the TENANT_ADMIN account itself, regardless of
+ * who's asking — see `users-table.tsx`.
  */
 export function UserDeleteDialog({
   user,
@@ -53,9 +53,9 @@ export function UserDeleteDialog({
             <strong className="font-semibold text-foreground">
               {user.name}
             </strong>{" "}
-            ({user.username}) will lose access immediately. Their records and
-            audit history stay intact, and an admin can restore the account
-            from here afterward.
+            ({user.username}) will be permanently removed, along with their
+            account. This can't be undone — there's no Reactivate for a
+            deleted user the way there is for a deactivated one.
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
