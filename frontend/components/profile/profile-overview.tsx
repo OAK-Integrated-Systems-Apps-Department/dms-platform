@@ -97,11 +97,6 @@ export function ProfileOverview() {
           <ArrowRight size={14} />
         </Link>
       </div>
-
-      <p className="mt-3.5 text-[12px] text-muted-foreground">
-        Read-mostly screen — identity fields follow the same Keycloak-managed
-        rules as the admin Edit User screen.
-      </p>
     </div>
   )
 }

@@ -91,11 +91,6 @@ export function SecurityOverview() {
       </div>
 
       <hr className="my-6 border-dashed border-border" />
-
-      <p className="text-[12px] text-muted-foreground">
-        The exact set of self-service actions available here depends on what
-        tenant policy delegates to DMS vs. handles natively in Keycloak.
-      </p>
     </div>
   )
 }
