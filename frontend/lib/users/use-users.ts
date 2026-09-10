@@ -115,27 +115,19 @@ export function useUsers() {
   // mutation just performs the delete once the caller has confirmed it's
   // allowed.
   //
-  // `deleteUserRequest` hits the exact same soft-delete endpoint
-  // `toggleStatusMutation` does, and `GET /api/v1/users` deliberately
-  // keeps returning a deactivated user (see the doc comment on `useUsers`
-  // above) so it can show an Inactive badge with a Reactivate path
-  // instead of the row just vanishing.
-  //
-  // This used to strip the row straight out of the cached `["users"]`
-  // list via `setQueryData` to make Delete look like a hard delete. That
-  // was cosmetic only — the very next refetch (navigating away and back,
-  // a window refocus, cache going stale) re-pulls the same still-soft-
-  // deleted row from the server and it reappears as Inactive, at which
-  // point its Delete button called this same mutation again and 404'd
-  // ("User not found") because the backend's lookup for an already-
-  // deleted user comes back empty. Invalidating instead keeps the cache
-  // truthful: the row shows Inactive right away and stays that way on
-  // every future refetch, and `UsersTable` now disables Delete once a row
-  // is Inactive so there's no dead click left to make.
+  // `deleteUserRequest` is a real hard delete now (`DELETE
+  // /api/v1/users/{userId}/permanent`, UserController#purgeUser) — the
+  // row is actually gone server-side, so this could just as well
+  // `invalidateQueries` and let a refetch confirm it. `setQueryData`
+  // removes it from the cache immediately instead, purely so the row
+  // disappears the instant you confirm rather than waiting on a
+  // round-trip.
   const deleteUserMutation = useMutation({
     mutationFn: (userId: string) => deleteUserRequest(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] })
+    onSuccess: (_data, userId) => {
+      queryClient.setQueryData<UserRecord[]>(["users"], (current) =>
+        current ? current.filter((user) => user.id !== userId) : current
+      )
       toast.success("User deleted.")
     },
     onError: (error) => {

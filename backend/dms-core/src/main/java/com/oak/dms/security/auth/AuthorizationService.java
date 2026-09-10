@@ -70,6 +70,21 @@ public class AuthorizationService {
         return false;
     }
 
+    /**
+     * Whether the caller holds the TENANT_ADMIN or PLATFORM_ADMIN Keycloak
+     * realm role - same check {@link #hasFullAccess()} already does for
+     * every fine-grained permission, exposed here as its own method for
+     * call sites that specifically need to restrict something to the
+     * tenant admin rather than to a `user.manage`-style permission.
+     * Currently only {@code UserController#purgeUser} (the User List's
+     * permanent-delete action) uses this - unlike ordinary
+     * activate/deactivate, which stays available to anyone with
+     * `user.manage`, permanently removing a user is tenant-admin-only.
+     */
+    public boolean isTenantAdmin() {
+        return hasFullAccess();
+    }
+
     private Set<String> effectivePermissions() {
         List<String> codes = rolePermissionRepository.findEffectivePermissionCodes(
                 TenantContext.getUserId(), TenantContext.getTenantId());

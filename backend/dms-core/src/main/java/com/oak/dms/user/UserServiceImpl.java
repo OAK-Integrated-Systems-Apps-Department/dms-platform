@@ -179,6 +179,30 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void purgeUser(UUID userId) {
+        // findPurgeableOwnedByCallerTenant, not findOwnedByCallerTenant:
+        // the latter excludes anything already deleted=true, which a
+        // merely-deactivated ("Inactive") user already is, and deleting an
+        // inactive user from the list is exactly what this is for.
+        User user = findPurgeableOwnedByCallerTenant(userId);
+        UUID keycloakId = user.getKeycloakId();
+
+        // A real DELETE FROM users, not another flavor of the soft-delete
+        // deactivateUser already does - see V13__allow_hard_delete_of_users
+        // for the ON DELETE SET NULL / CASCADE behavior this relies on for
+        // every other table with a foreign key to users.user_id.
+        userRepository.delete(user);
+
+        // Same call order as deactivateUser/reactivateUser (DB write,
+        // then Keycloak) and the same reasoning: the class-level
+        // @Transactional means if this throws, the delete() above never
+        // actually commits, so a Keycloak-side failure can't leave the
+        // local row gone while the account still exists there.
+        keycloakUserService.deleteUser(keycloakId);
+        log.info("Permanently deleted user {}", userId);
+    }
+
+    @Override
     public UserResponse reactivateUser(UUID userId) {
         User user = findDeletedOwnedByCallerTenant(userId);
 
@@ -265,6 +289,22 @@ public class UserServiceImpl implements UserService {
         }
         if (!user.isDeleted()) {
             throw new InvalidUserStateException("User " + userId + " is not deactivated");
+        }
+        return user;
+    }
+
+    /**
+     * Lookup for {@link #purgeUser}. Deliberately ignores {@code deleted}
+     * (unlike {@link #findOwnedByCallerTenant}) since permanently deleting
+     * an already-deactivated ("Inactive") user is exactly what the User
+     * List's Delete action is for - any user id owned by the caller's
+     * tenant is a valid target, active or not.
+     */
+    private User findPurgeableOwnedByCallerTenant(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!user.getTenantId().equals(TenantContext.getTenantId())) {
+            throw new TenantMismatchException("User", userId);
         }
         return user;
     }
