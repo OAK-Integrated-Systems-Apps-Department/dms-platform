@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Grid3x3, Loader2, Plus, Search } from "lucide-react"
+import { AlertTriangle, ChevronDown, Grid3x3, Loader2, Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -61,6 +61,9 @@ export default function RoleListPage() {
   )
 
   const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "Active" | "Inactive"
+  >("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -74,13 +77,16 @@ export default function RoleListPage() {
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return rolesWithRealCounts
-    return rolesWithRealCounts.filter(
-      (role) =>
+    return rolesWithRealCounts.filter((role) => {
+      const matchesQuery =
+        !q ||
         role.name.toLowerCase().includes(q) ||
         role.description.toLowerCase().includes(q)
-    )
-  }, [rolesWithRealCounts, query])
+      const matchesStatus =
+        statusFilter === "all" || role.status === statusFilter
+      return matchesQuery && matchesStatus
+    })
+  }, [rolesWithRealCounts, query, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredRoles.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -91,6 +97,11 @@ export default function RoleListPage() {
 
   function handleQueryChange(value: string) {
     setQuery(value)
+    setPage(1)
+  }
+
+  function handleStatusFilterChange(value: "all" | "Active" | "Inactive") {
+    setStatusFilter(value)
     setPage(1)
   }
 
@@ -138,8 +149,9 @@ export default function RoleListPage() {
           Role Management - Role List
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          Roles available within the current tenant. Search, add a role, or
-          view, edit, activate/deactivate, or delete existing roles.
+          Roles available within the current tenant. Search or filter by
+          status, add a role, or view, edit, activate/deactivate, or delete
+          existing roles.
         </p>
       </div>
 
@@ -157,6 +169,27 @@ export default function RoleListPage() {
             className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
         </div>
+
+        <div className="relative w-[150px]">
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              handleStatusFilterChange(
+                event.target.value as "all" | "Active" | "Inactive"
+              )
+            }
+            className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+          >
+            <option value="all">All statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+          <ChevronDown
+            size={14}
+            className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
+          />
+        </div>
+
         <Link
           href="/admin/roles/matrix"
           className="flex items-center gap-1.5 rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
