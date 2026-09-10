@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, Plus, Search } from "lucide-react"
+import { ChevronDown, Plus } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { usePageTitle } from "@/lib/use-page-title"
+import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { RoleFilterSelect } from "@/components/users/role-filter-select"
 import { UsersTable } from "@/components/users/users-table"
@@ -120,21 +121,12 @@ export default function UserListPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        <div className="relative min-w-[220px] flex-1">
-          <Search
-            size={16}
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--ink-faint)]"
-          />
-          <input
-            type="text"
+        <SearchInput
+          className="min-w-[220px] flex-1"
             value={query}
-            onChange={(event) =>
-              handleFilterChange(() => setQuery(event.target.value))
-            }
+          onChange={(value) => handleFilterChange(() => setQuery(value))}
             placeholder="Search by name, username, or email…"
-            className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
-        </div>
 
         <RoleFilterSelect
           className="w-[170px]"

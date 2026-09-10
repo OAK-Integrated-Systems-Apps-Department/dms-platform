@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ChevronDown, X } from "lucide-react"
 
+import { SearchInput } from "@/components/ui/search-input"
 import { renderActivityText } from "./render-activity-text"
 import type { UserActivityEntry, UserRecord } from "./types"
 
@@ -329,14 +330,13 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
           />
         </div>
 
-        <input
-          type="text"
+        <SearchInput
+          className="w-[200px]"
+          showIcon={false}
           value={keyword}
-          onChange={(event) =>
-            handleFilterChange(() => setKeyword(event.target.value))
-          }
+          onChange={(value) => handleFilterChange(() => setKeyword(value))}
           placeholder="Search activity…"
-          className="h-[38px] w-[200px] rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none placeholder:font-normal placeholder:text-muted-foreground focus-visible:border-primary focus-visible:bg-card"
+          inputClassName="rounded-[10px] text-[13px] font-medium placeholder:font-normal placeholder:text-muted-foreground"
         />
 
         {filtersActive && (

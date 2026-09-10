@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, ChevronDown, Grid3x3, Loader2, Plus, Search } from "lucide-react"
+import { AlertTriangle,  ChevronDown,Grid3x3, Loader2, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
+import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUsers } from "@/lib/users/use-users"
@@ -156,17 +157,11 @@ export default function RoleListPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        <div className="relative min-w-[220px] flex-1">
-          <Search
-            size={16}
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--ink-faint)]"
-          />
-          <input
-            type="text"
+        <SearchInput
+          className="min-w-[220px] flex-1"
             value={query}
-            onChange={(event) => handleQueryChange(event.target.value)}
+          onChange={handleQueryChange}
             placeholder="Search roles…"
-            className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
           />
         </div>
 
