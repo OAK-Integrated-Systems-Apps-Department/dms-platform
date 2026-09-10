@@ -43,6 +43,14 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
   const fetchCatalog = usePermissionsStore((state) => state.fetchCatalog)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Someone can still land here directly via the /edit URL even though
+  // the Edit button itself is hidden for shared permissions on the table
+  // and detail screens — the backend already rejects the write
+  // (InvalidPermissionStateException), but failing only on submit isn't
+  // great UX. Disable the whole form up front instead, same treatment
+  // role-form.tsx gives a system role.
+  const isSharedPermission = mode === "edit" && Boolean(permission?.shared)
+
   useEffect(() => {
     if (!catalogLoaded) fetchCatalog()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,6 +100,14 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         </div>
       )}
 
+      {isSharedPermission && (
+        <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+          This is part of the platform&apos;s shared permission catalog.
+          It&apos;s visible to every tenant and can&apos;t be edited from
+          here.
+        </div>
+      )}
+
       <div className="mb-5">
         <Label htmlFor="permission-code">Permission Code</Label>
         {mode === "edit" ? (
@@ -127,6 +143,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         <Input
           id="permission-name"
           placeholder="e.g. Approve Documents"
+          disabled={isSharedPermission}
           aria-invalid={Boolean(errors.name)}
           {...register("name")}
         />
@@ -143,6 +160,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         <Textarea
           id="permission-description"
           placeholder="What this permission allows and when it should be granted…"
+          disabled={isSharedPermission}
           aria-invalid={Boolean(errors.description)}
           {...register("description")}
         />
@@ -195,6 +213,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                       // module/action pair.
                       setValue("actionId", "", { shouldValidate: true })
                     }}
+                    disabled={isSharedPermission}
                     aria-invalid={Boolean(errors.moduleId)}
                     className={selectClassName}
                   >
@@ -243,7 +262,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                       // once a real action is picked.
                       setValue("actionId", event.target.value, { shouldValidate: true })
                     }
-                    disabled={!selectedModuleId}
+                    disabled={!selectedModuleId || isSharedPermission}
                     aria-invalid={Boolean(errors.actionId)}
                     className={selectClassName}
                   >
@@ -289,7 +308,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || catalogLoading}
+          disabled={isSubmitting || catalogLoading || isSharedPermission}
           className="rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           {mode === "create" ? "Create Permission" : "Save Changes"}

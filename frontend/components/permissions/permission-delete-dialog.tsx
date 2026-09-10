@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
 import {
   AlertDialog,
@@ -25,16 +25,16 @@ interface PermissionDeleteDialogProps {
 /**
  * Delete Permission — confirmation dialog for retiring a permission from
  * the catalog (`DELETE /api/v1/permissions/{id}`, a soft-delete
- * server-side). The backend now rejects this while any role still holds
- * the permission (see the guard added to
- * `PermissionServiceImpl.deletePermission`), so the error banner here is
- * often exactly that message rather than a generic failure.
+ * server-side). The backend rejects this while any role still holds the
+ * permission (see the guard in `PermissionServiceImpl.deletePermission`);
+ * that rejection surfaces to the user as a toast, not inline here.
  *
  * Same shape as `components/roles/role-delete-dialog.tsx`: the confirm
  * button is a plain `<button>`, not an `AlertDialogClose`, because the
  * delete is async and can fail — `AlertDialogClose` always closes on
  * click regardless of outcome, which would hide that failure instead of
- * showing it.
+ * leaving the dialog open. The failure message itself is surfaced by the
+ * caller via a toast rather than repeated here.
  */
 export function PermissionDeleteDialog({
   permission,
@@ -43,15 +43,12 @@ export function PermissionDeleteDialog({
   onConfirm,
 }: PermissionDeleteDialogProps) {
   const [deleting, setDeleting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function handleConfirm() {
     setDeleting(true)
-    setError(null)
     const message = await onConfirm()
     setDeleting(false)
     if (message) {
-      setError(message)
       return
     }
     onOpenChange(false)
@@ -62,7 +59,6 @@ export function PermissionDeleteDialog({
       open={open}
       onOpenChange={(next) => {
         if (deleting) return
-        setError(null)
         onOpenChange(next)
       }}
     >
@@ -77,13 +73,6 @@ export function PermissionDeleteDialog({
             removed from the catalog. This can&apos;t be undone, and it can&apos;t be
             done while any role still holds it.
           </AlertDialogDescription>
-
-          {error && (
-            <div className="mb-4 flex items-start gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
 
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose

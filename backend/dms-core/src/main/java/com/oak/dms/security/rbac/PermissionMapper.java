@@ -12,11 +12,14 @@ import org.mapstruct.Mapping;
  * generated mapping is extended with a manual overload that accepts the
  * resolved {@link PermissionAction} and {@link PermissionModule} as
  * separate parameters, matching {@link RolePermissionMapper}'s pattern for
- * permissionCode.
+ * permissionCode. `shared` is likewise derived (`tenantId == null`) rather
+ * than a real entity field, so it's ignored in the generated mapping and
+ * computed in the manual overload too.
  */
 @Mapper(componentModel = "spring")
 public interface PermissionMapper {
 
+    @Mapping(target = "shared", ignore = true)
     @Mapping(target = "actionCode", ignore = true)
     @Mapping(target = "moduleId", ignore = true)
     @Mapping(target = "moduleCode", ignore = true)
@@ -25,7 +28,7 @@ public interface PermissionMapper {
     default PermissionResponse toResponse(Permission permission, PermissionAction action, PermissionModule module) {
         PermissionResponse base = toResponse(permission);
         return new PermissionResponse(base.permissionId(), base.permissionCode(), base.name(),
-                base.description(), base.actionId(), action.getActionCode(), module.getModuleId(),
-                module.getModuleCode(), base.createdAt(), base.updatedAt());
+                base.description(), permission.getTenantId() == null, base.actionId(), action.getActionCode(),
+                module.getModuleId(), module.getModuleCode(), base.createdAt(), base.updatedAt());
     }
 }

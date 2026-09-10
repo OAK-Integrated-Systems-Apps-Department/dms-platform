@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Eye, Pencil, Trash2 } from "lucide-react"
+import { Eye, Pencil, ShieldCheck, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -21,7 +21,7 @@ interface PermissionsTableProps {
   onDeletePermission: (id: string) => Promise<string | null>
 }
 
-/** Code / Name / Module / Action / Actions — the Permission List table. */
+/** Code / Name / Module / Action / Scope / Actions — the Permission List table. */
 export function PermissionsTable({ permissions, onDeletePermission }: PermissionsTableProps) {
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     PermissionRecord,
@@ -39,7 +39,7 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="w-full min-w-[900px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh
@@ -71,6 +71,9 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
                 className="px-3.5"
               />
               <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Scope
+              </th>
+              <th className="px-3.5 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 Actions
               </th>
             </tr>
@@ -79,7 +82,7 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
             {permissions.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-3.5 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No permissions match your search.
@@ -108,6 +111,19 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
                   </Badge>
                 </td>
                 <td className="px-3.5 py-3">
+                  {permission.shared ? (
+                    <Badge
+                      variant="gold"
+                      className="gap-1"
+                    >
+                      <ShieldCheck size={11} />
+                      Shared
+                    </Badge>
+                  ) : (
+                    <Badge variant="muted">Custom</Badge>
+                  )}
+                </td>
+                <td className="px-3.5 py-3">
                   <div className="flex items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger
@@ -125,38 +141,46 @@ export function PermissionsTable({ permissions, onDeletePermission }: Permission
                       <TooltipContent>{getTooltip("permissions.actions.view")}</TooltipContent>
                     </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <Link
-                            {...props}
-                            href={`/admin/permissions/${permission.id}/edit`}
-                            aria-label={`Edit ${permission.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                          >
-                            <Pencil size={15} />
-                          </Link>
-                        )}
-                      />
-                      <TooltipContent>{getTooltip("permissions.actions.edit")}</TooltipContent>
-                    </Tooltip>
+                    {permission.shared ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 text-[11.5px] text-muted-foreground">
+                        Platform-managed
+                      </span>
+                    ) : (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <Link
+                                {...props}
+                                href={`/admin/permissions/${permission.id}/edit`}
+                                aria-label={`Edit ${permission.name}`}
+                                className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                              >
+                                <Pencil size={15} />
+                              </Link>
+                            )}
+                          />
+                          <TooltipContent>{getTooltip("permissions.actions.edit")}</TooltipContent>
+                        </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <button
-                            {...props}
-                            type="button"
-                            onClick={() => setPendingDeletePermission(permission)}
-                            aria-label={`Delete ${permission.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        )}
-                      />
-                      <TooltipContent>{getTooltip("permissions.actions.delete")}</TooltipContent>
-                    </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(props) => (
+                              <button
+                                {...props}
+                                type="button"
+                                onClick={() => setPendingDeletePermission(permission)}
+                                aria-label={`Delete ${permission.name}`}
+                                className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          />
+                          <TooltipContent>{getTooltip("permissions.actions.delete")}</TooltipContent>
+                        </Tooltip>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

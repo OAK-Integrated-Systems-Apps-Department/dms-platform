@@ -44,6 +44,17 @@ import java.util.UUID;
  * Management - so both entry points land the user on the same custom
  * {@code /update-password} page instead of one going through dms-core
  * and the other through Keycloak's UI.
+ * <p>
+ * {@link #issueForNewUser} is the same mechanism again, used by
+ * {@code UserServiceImpl#createUser} right after a brand-new account is
+ * provisioned. Newly-created Keycloak users get an unguessable temporary
+ * password nobody is ever told (see
+ * {@link com.oak.dms.security.keycloak.KeycloakUserService#createUser}),
+ * so this is effectively how their account is activated - deliberately
+ * not via Keycloak's own {@code executeActionsEmail(["VERIFY_EMAIL",
+ * "UPDATE_PASSWORD"])}, which would send Keycloak's default-themed email
+ * and land the person on Keycloak's own hosted page instead of dms-core's
+ * branded one.
  */
 @Slf4j
 @Service
@@ -96,7 +107,7 @@ public class PasswordResetService {
                 return;
             }
 
-            issueTokenAndSendEmail(dmsUser.get(), clientIp(request));
+            issueTokenAndSendEmail(dmsUser.get(), clientIp(request), EmailKind.SELF_SERVICE);
         } catch (Exception e) {
             // Never let a lookup/send failure distinguish this response
             // from the success path, or surface as a 500 that would do
@@ -117,7 +128,20 @@ public class PasswordResetService {
      */
     @Transactional
     public void issueForAdminReset(User user) {
-        issueTokenAndSendEmail(user, null);
+        issueTokenAndSendEmail(user, null, EmailKind.ADMIN_RESET);
+    }
+
+    /**
+     * Called from {@code UserServiceImpl#createUser} immediately after a
+     * new account is provisioned - this is the invited user's only route
+     * to setting a real password and signing in, so unlike
+     * {@link #issueForAdminReset} a send failure here is left to propagate
+     * (same reasoning as that method's own doc comment: there's a real
+     * person on the other end of this call who needs to know it worked).
+     */
+    @Transactional
+    public void issueForNewUser(User user) {
+        issueTokenAndSendEmail(user, null, EmailKind.NEW_USER);
     }
 
     /** Read-only check used by the frontend to show "link invalid/expired" before rendering the form. */
@@ -176,15 +200,16 @@ public class PasswordResetService {
     }
 
     /**
-     * Shared by {@link #requestReset} and {@link #issueForAdminReset}:
-     * invalidates the user's other outstanding tokens (so an
+     * Shared by {@link #requestReset}, {@link #issueForAdminReset}, and
+     * {@link #issueForNewUser}: invalidates the user's other outstanding
+     * tokens (so an
      * already-emailed link can never be redeemed once a newer reset has
      * been issued), stores a new one, and emails the link. {@code requestedIp}
      * is null for the admin-triggered path - there's no end-user request
      * to attribute it to, only the admin's own authenticated action,
      * which is already captured elsewhere in the audit trail.
      */
-    private void issueTokenAndSendEmail(User user, String requestedIp) {
+    private void issueTokenAndSendEmail(User user, String requestedIp, EmailKind kind) {
         String rawToken = generateToken();
         PasswordResetToken token = PasswordResetToken.builder()
                 .userId(user.getUserId())
@@ -196,7 +221,7 @@ public class PasswordResetService {
         invalidateOutstandingTokens(user.getUserId());
         tokenRepository.save(token);
 
-        sendResetEmail(user, rawToken);
+        sendEmail(user, rawToken, kind);
     }
 
     /**
@@ -213,20 +238,46 @@ public class PasswordResetService {
         return matches.stream().findFirst();
     }
 
-    private void sendResetEmail(User user, String rawToken) {
+    /**
+     * Which of the three flows in this class triggered the email - only
+     * changes the subject/body copy below. All three land the person on
+     * the exact same {@code /update-password?token=...} page and go
+     * through the exact same token issuance/redemption code.
+     */
+    private enum EmailKind {
+        SELF_SERVICE,
+        ADMIN_RESET,
+        NEW_USER
+    }
+
+    private void sendEmail(User user, String rawToken, EmailKind kind) {
         String link = frontendBaseUrl + "/update-password?token=" + rawToken;
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(mailFrom);
         message.setTo(user.getEmail());
-        message.setSubject("Reset your Oak DMS password");
-        message.setText(
-                "Hi " + user.getFirstName() + ",\n\n"
-                        + "We received a request to reset your Oak DMS password. Click the link below to choose a new one:\n\n"
-                        + link + "\n\n"
-                        + "This link expires in " + tokenTtlMinutes + " minutes. "
-                        + "If you didn't request this, you can safely ignore this email.\n\n"
-                        + "- Oak DMS");
+
+        if (kind == EmailKind.NEW_USER) {
+            message.setSubject("Welcome to Oak DMS - set your password");
+            message.setText(
+                    "Hi " + user.getFirstName() + ",\n\n"
+                            + "An Oak DMS account has been created for you. Click the link below to choose a "
+                            + "password and finish setting up your account:\n\n"
+                            + link + "\n\n"
+                            + "This link expires in " + tokenTtlMinutes + " minutes. "
+                            + "If you weren't expecting this, you can safely ignore this email.\n\n"
+                            + "- Oak DMS");
+        } else {
+            message.setSubject("Reset your Oak DMS password");
+            message.setText(
+                    "Hi " + user.getFirstName() + ",\n\n"
+                            + "We received a request to reset your Oak DMS password. Click the link below to choose a new one:\n\n"
+                            + link + "\n\n"
+                            + "This link expires in " + tokenTtlMinutes + " minutes. "
+                            + "If you didn't request this, you can safely ignore this email.\n\n"
+                            + "- Oak DMS");
+        }
+
         mailSender.send(message);
     }
 
