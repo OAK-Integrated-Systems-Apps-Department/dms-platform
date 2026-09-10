@@ -44,6 +44,20 @@ public interface UserService {
     void deactivateUser(UUID userId);
 
     /**
+     * Permanently removes a user from the tenant — a genuine hard delete
+     * (the row, and the corresponding Keycloak account, are both actually
+     * gone), unlike {@link #deactivateUser}, which the User List's
+     * Activate/Deactivate toggle uses and which only soft-deletes, keeping
+     * the row visible with a "Reactivate" action (see
+     * {@link UserRepository#findAllByTenant}'s own doc comment). There is
+     * no corresponding "un-delete" the way {@link #reactivateUser} undoes
+     * a deactivation — once purged, the user is gone for good. Restricted
+     * to the tenant admin — see {@code UserController#purgeUser}'s
+     * {@code @PreAuthorize}.
+     */
+    void purgeUser(UUID userId);
+
+    /**
      * Undoes {@link #deactivateUser}: clears the soft-delete, sets status  
      * back to active, and re-enables the Keycloak account. Only valid for a
      * user that actually went through deactivateUser — a user whose status

@@ -118,6 +118,18 @@ public class UserController {
         return userService.reactivateUser(userId);
     }
 
+    @DeleteMapping("/{userId}/permanent")
+    @PreAuthorize("@authz.isTenantAdmin()")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Permanently delete a user",
+            description = "A genuine hard delete: removes the local profile row and the corresponding "
+                    + "Keycloak account outright, unlike deactivateUser (soft-delete, reversible via "
+                    + "reactivateUser). There is no undo. Restricted to the tenant admin, unlike every "
+                    + "other endpoint here, which only requires the user.manage permission.")
+    public void purgeUser(@PathVariable UUID userId) {
+        userService.purgeUser(userId);
+    }
+
     /**
      * Self-provisioning is the one endpoint that reads identity straight out
      * of the JWT rather than from {@link com.oak.dms.security.auth.TenantContext},

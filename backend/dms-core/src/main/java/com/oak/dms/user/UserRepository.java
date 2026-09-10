@@ -32,6 +32,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // #listUsers, and UserServiceImpl#findOwnedByCallerTenant (still
     // deleted=false-only, used by updateUser/deactivateUser/resetPassword,
     // which genuinely shouldn't apply to an already-deactivated user).
+    //
+    // A user removed via UserServiceImpl#purgeUser (the User List's Delete
+    // action) needs no filter here at all - unlike deactivateUser, purgeUser
+    // is a real DELETE FROM users, so a purged user is simply gone from
+    // this query's results already.
     @Query("select u from User u where u.tenantId = :tenantId")
     Page<User> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
 }
