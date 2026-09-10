@@ -69,6 +69,15 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
      * here too means this query stays correct even if those guards are
      * ever lost again, not just today.
      * <p>
+     * {@code p.tenantId is null or p.tenantId = :tenantId} defends the
+     * same way against {@link Permission}'s own hybrid tenant-scoping: a
+     * permission is either shared (tenantId null, granted to anyone) or
+     * owned by one specific tenant. {@code RolePermissionServiceImpl#grantPermission}
+     * already refuses to grant a role a permission outside its own tenant
+     * boundary, so this should be unreachable in practice - included for
+     * the same defense-in-depth reason as the action/module check just
+     * above, not because it's currently exploitable.
+     * <p>
      * {@code r.status = ...active} uses a fully-qualified JPQL enum
      * literal rather than a bound parameter, matching the existing
      * pattern in {@code OutboxEventRepository} - comparing a
@@ -86,6 +95,7 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
             join PermissionModule m on m.moduleId = a.moduleId
             where ur.userId = :userId and ur.tenantId = :tenantId
               and p.deleted = false
+              and (p.tenantId is null or p.tenantId = :tenantId)
               and a.deleted = false
               and m.deleted = false
               and r.deleted = false

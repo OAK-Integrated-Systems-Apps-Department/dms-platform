@@ -1,6 +1,7 @@
 package com.oak.dms.security.rbac;
 
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.common.exception.InvalidPermissionStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.dto.CreatePermissionRequest;
@@ -17,19 +18,26 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * See {@link PermissionService}. The permission catalog is global (not
- * tenant-scoped, unlike {@link Role}) - it's the platform's fixed set of
- * grantable capabilities, so every tenant's roles draw from the same list
- * via {@link RolePermission}. Deletion is a soft-delete, consistent with
- * the rest of the RBAC module (see {@link RoleServiceImpl}), and - like
- * {@link RoleServiceImpl#deleteRole} - blocked while any role still holds
- * the permission (see {@link #deletePermission}).
- *
+ * See {@link PermissionService}. Hybrid tenant-scoping (see {@link Permission}'s
+ * doc comment for the full rationale): every permission this creates
+ * belongs to the caller's own tenant - there's no way to create a shared/
+ * platform-wide permission through this API, only via a migration. Reads
+ * (get/list) return the shared catalog plus the caller's own tenant's
+ * permissions; writes (update/delete) only ever succeed against the
+ * caller's own tenant's permissions - the shared catalog is read-only from
+ * every tenant's perspective, since one tenant renaming or deleting it
+ * would affect every other tenant relying on it too.
+ * <p>
+ * Deletion is a soft-delete, consistent with the rest of the RBAC module
+ * (see {@link RoleServiceImpl}), and - like {@link RoleServiceImpl#deleteRole} -
+ * blocked while any role still holds the permission (see {@link #deletePermission}).
+ * <p>
  * Every permission belongs to exactly one {@link PermissionAction}, which
  * in turn belongs to exactly one {@link PermissionModule} - see
- * {@link Permission#getActionId()}. Responses are enriched with the
- * resolved action/module so callers get "MODULE / ACTION" without a
- * second request; see {@link PermissionMapper}.
+ * {@link Permission#getActionId()}. Both stay fully global regardless of
+ * which tenant a permission itself belongs to - see {@link Permission}.
+ * Responses are enriched with the resolved action/module so callers get
+ * "MODULE / ACTION" without a second request; see {@link PermissionMapper}.
  */
 @Slf4j
 @Service
@@ -45,7 +53,23 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     public PermissionResponse createPermission(CreatePermissionRequest request) {
-        if (permissionRepository.existsByPermissionCodeAndDeletedFalse(request.permissionCode())) {
+        UUID tenantId = TenantContext.getTenantId();
+
+        // Every code created here becomes this tenant's own - so it must
+        // be free both within the shared catalog (a tenant shouldn't be
+        // able to silently shadow a platform-default permission other
+        // tenants also rely on) and within this tenant's own existing
+        // custom permissions. Two *different* tenants independently using
+        // the same code is fine and expected - see the partial unique
+        // indexes in V11__add_tenant_scoping_to_permissions.sql, which
+        // only enforce each of these two checks separately and can't
+        // express "doesn't collide with the shared catalog either" as a
+        // single DB constraint.
+        if (permissionRepository.existsByPermissionCodeAndTenantIdIsNullAndDeletedFalse(request.permissionCode())) {
+            throw new DuplicateResourceException(
+                    "'" + request.permissionCode() + "' is already used by the platform's shared permission catalog");
+        }
+        if (permissionRepository.existsByPermissionCodeAndTenantIdAndDeletedFalse(request.permissionCode(), tenantId)) {
             throw new DuplicateResourceException(
                     "A permission already exists with code " + request.permissionCode());
         }
@@ -56,30 +80,32 @@ public class PermissionServiceImpl implements PermissionService {
                 .permissionCode(request.permissionCode())
                 .name(request.name())
                 .description(request.description())
+                .tenantId(tenantId)
                 .actionId(action.getActionId())
                 .createdBy(TenantContext.getUserId())
                 .build();
 
         Permission saved = permissionRepository.save(permission);
-        log.info("Created permission {} ({})", saved.getPermissionId(), saved.getPermissionCode());
+        log.info("Created permission {} ({}) for tenant {}", saved.getPermissionId(), saved.getPermissionCode(), tenantId);
         return toEnrichedResponse(saved, action);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PermissionResponse getPermission(UUID permissionId) {
-        return toEnrichedResponse(findActive(permissionId), null);
+        return toEnrichedResponse(findVisible(permissionId), null);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<PermissionResponse> listPermissions(Pageable pageable) {
-        return permissionRepository.findAllActive(pageable).map(p -> toEnrichedResponse(p, null));
+        return permissionRepository.findAllVisibleToTenant(TenantContext.getTenantId(), pageable)
+                .map(p -> toEnrichedResponse(p, null));
     }
 
     @Override
     public PermissionResponse updatePermission(UUID permissionId, UpdatePermissionRequest request) {
-        Permission permission = findActive(permissionId);
+        Permission permission = requireOwnedByCallerTenant(permissionId);
         PermissionAction action = requireActiveAction(request.actionId());
 
         permission.setName(request.name());
@@ -95,11 +121,11 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     public void deletePermission(UUID permissionId) {
-        Permission permission = findActive(permissionId);
+        Permission permission = requireOwnedByCallerTenant(permissionId);
 
         // Mirrors deleteAction/deleteModule one level up - a permission
         // still granted to any role can't be removed. Without this, the
-        // permission disappears from the Permission Catalog (findActive
+        // permission disappears from the Permission Catalog (findVisible
         // above excludes it) while role_permissions still nominally
         // grants it - not a live access leak (findEffectivePermissionCodes
         // already filters p.deleted = false, so it never actually applies
@@ -121,9 +147,29 @@ public class PermissionServiceImpl implements PermissionService {
         log.info("Deleted permission {}", permissionId);
     }
 
-    private Permission findActive(UUID permissionId) {
-        return permissionRepository.findByPermissionIdAndDeletedFalse(permissionId)
+    /** Visible to the caller (shared, or owned by their tenant) - used by reads, which are allowed to return shared permissions. */
+    private Permission findVisible(UUID permissionId) {
+        return permissionRepository.findVisibleToTenant(permissionId, TenantContext.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Permission", permissionId));
+    }
+
+    /**
+     * Owned by the caller's own tenant specifically - used by update/delete,
+     * which must never succeed against the shared catalog even though reads
+     * can see it. A shared permission resolves fine via {@link #findVisible}
+     * but fails this check, since {@code tenantId} is null for it - the
+     * distinct message here (rather than a plain not-found) tells the
+     * caller why, instead of implying the permission doesn't exist at all
+     * when it does, just not editable by them.
+     */
+    private Permission requireOwnedByCallerTenant(UUID permissionId) {
+        Permission permission = findVisible(permissionId);
+        if (permission.getTenantId() == null) {
+            throw new InvalidPermissionStateException(
+                    "'" + permission.getPermissionCode() + "' is part of the platform's shared permission "
+                            + "catalog and can't be edited or deleted from a single tenant.");
+        }
+        return permission;
     }
 
     private PermissionAction requireActiveAction(UUID actionId) {
