@@ -1,8 +1,7 @@
 "use client"
 
 import { notFound, useParams, useRouter } from "next/navigation"
-import Link from "next/link"
-import { ChevronLeft, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -51,7 +50,6 @@ export default function RolePermissionsPage() {
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
-      <div className="mx-auto w-full max-w-[760px]">
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -64,13 +62,6 @@ export default function RolePermissionsPage() {
             { label: "Permissions" },
           ]}
         />
-        <Link
-          href={role ? `/admin/roles/${role.id}/edit` : "/admin/roles"}
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          {role ? `Back to ${role.name}` : "Back to Role List"}
-        </Link>
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Role Permission Configuration
@@ -90,7 +81,6 @@ export default function RolePermissionsPage() {
         ) : role ? (
           <RolePermissionConfig role={role} onSave={handleSave} />
         ) : null}
-      </div>
     </DashboardShell>
   )
 }
