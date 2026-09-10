@@ -20,6 +20,17 @@ const nextConfig: NextConfig = {
       },
     },
   },
+
+  // Turbopack's persistent build cache (.next/cache/turbopack) has known
+  // correctness issues that can silently drop routes/chunks from a build
+  // (see vercel/next.js#87283) - this is what was causing intermittent
+  // 404s on pages like /admin/users/[userId]/edit after a Docker rebuild.
+  // Docker builds start from a clean layer every time anyway, so this
+  // cache is never reused across builds - disabling it costs nothing and
+  // removes a whole class of build non-determinism.
+  experimental: {
+    turbopackFileSystemCacheForBuild: false,
+  },
 }
 
 export default nextConfig
