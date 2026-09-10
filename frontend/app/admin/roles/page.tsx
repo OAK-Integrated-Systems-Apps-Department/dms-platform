@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle,  ChevronDown,Grid3x3, Loader2, Plus } from "lucide-react"
+import { AlertTriangle, ChevronDown, Grid3x3, Loader2, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -163,8 +163,7 @@ export default function RoleListPage() {
           onChange={handleQueryChange}
             placeholder="Search roles…"
           />
-        </div>
-
+        
         <div className="relative w-[150px]">
           <select
             value={statusFilter}
