@@ -42,7 +42,13 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Override
     public RolePermissionResponse grantPermission(UUID roleId, GrantPermissionRequest request) {
         Role role = requireOwnedRole(roleId);
-        Permission permission = permissionRepository.findByPermissionIdAndDeletedFalse(request.permissionId())
+        // findVisibleToTenant, not the plain findByPermissionIdAndDeletedFalse
+        // - a role can only be granted a permission that's either shared
+        // (tenantId null) or owned by this same tenant (role.getTenantId()
+        // is always the caller's own, via requireOwnedRole above); another
+        // tenant's custom permission 404s here exactly like it doesn't
+        // exist, rather than being grantable across a tenant boundary.
+        Permission permission = permissionRepository.findVisibleToTenant(request.permissionId(), role.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Permission", request.permissionId()));
 
         if (rolePermissionRepository.existsByRoleIdAndPermissionIdAndResourceScope(

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { notFound, useParams, useRouter } from "next/navigation"
-import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react"
+import { AlertTriangle, Loader2, Pencil, ShieldCheck, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -62,10 +62,26 @@ export default function PermissionDetailsPage() {
               <h2 className="font-heading text-[20px] font-semibold">
                 {permission.name}
               </h2>
+              {permission.shared ? (
+                <Badge variant="gold" className="gap-1">
+                  <ShieldCheck size={11} />
+                  Shared
+                </Badge>
+              ) : (
+                <Badge variant="muted">Custom</Badge>
+              )}
             </div>
             <p className="mb-6 font-mono text-[13px] text-muted-foreground">
               {permission.code}
             </p>
+
+            {permission.shared && (
+              <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+                This is part of the platform&apos;s shared permission
+                catalog. It&apos;s visible to every tenant and can&apos;t be
+                edited or deleted from here.
+              </div>
+            )}
 
             <p className="mb-6 text-[13.5px] leading-[1.6] text-foreground">
               {permission.description || "No description provided."}
@@ -87,23 +103,25 @@ export default function PermissionDetailsPage() {
 
             <hr className="my-6 border-dashed border-border" />
 
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowDeleteDialog(true)}
-                className="flex items-center gap-1.5 rounded-[10px] border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
-              >
-                <Trash2 size={14} />
-                Delete Permission
-              </button>
-              <Link
-                href={`/admin/permissions/${permission.id}/edit`}
-                className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
-              >
-                <Pencil size={14} />
-                Edit Permission
-              </Link>
-            </div>
+            {!permission.shared && (
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteDialog(true)}
+                  className="flex items-center gap-1.5 rounded-[10px] border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
+                >
+                  <Trash2 size={14} />
+                  Delete Permission
+                </button>
+                <Link
+                  href={`/admin/permissions/${permission.id}/edit`}
+                  className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+                >
+                  <Pencil size={14} />
+                  Edit Permission
+                </Link>
+              </div>
+            )}
 
             <PermissionDeleteDialog
               permission={permission}

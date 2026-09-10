@@ -12,17 +12,32 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "permissions", uniqueConstraints = {
-        @UniqueConstraint(name = "uq_permissions_code", columnNames = {"permission_code"})
-})
+@Table(name = "permissions")
 /**
  * A single grantable capability (e.g. "role.manage", "document.approve") in
- * the platform-wide permission catalog. Unlike {@link Role}, permissions are
- * NOT tenant-scoped - every tenant draws from the same catalog; only the
- * grant of a permission to a role, tracked in {@link RolePermission}, is
- * tenant-scoped. This is the many-to-many join partner for {@link Role}: a
- * permission can be granted to any number of roles, and a role can hold any
- * number of permissions.
+ * the permission catalog. Hybrid tenant-scoping via {@link #tenantId}: null
+ * means it's part of the platform's shared/default catalog (every
+ * permission seeded by a migration, visible to and grantable by every
+ * tenant); a real tenant id means a tenant created it themselves through
+ * the Permission Catalog screens, and it's visible/manageable only within
+ * that tenant. Unlike {@link Role} (always tenant-scoped) or the old
+ * fully-global design this replaced, a permission's tenant boundary is
+ * therefore optional rather than mandatory - see
+ * {@link com.oak.dms.security.rbac.PermissionServiceImpl} for how reads
+ * and writes enforce it. {@link PermissionAction}/{@link PermissionModule}
+ * stay fully global regardless - only the permission itself, not the
+ * taxonomy it's filed under, can be tenant-specific.
+ * <p>
+ * permission_code's uniqueness is enforced by two partial unique indexes
+ * (see V11__add_tenant_scoping_to_permissions.sql) rather than the single
+ * {@code uniqueConstraints} this class used to declare: a code must be
+ * unique among the shared catalog, and independently unique within each
+ * tenant's own custom permissions, but two different tenants may each use
+ * the same code without conflicting with one another.
+ * <p>
+ * This is the many-to-many join partner for {@link Role}: a permission
+ * can be granted to any number of roles, and a role can hold any number
+ * of permissions.
  */
 @Getter
 @Setter
@@ -49,6 +64,14 @@ public class Permission {
 
     @Column(name = "description")
     private String description;
+
+    /**
+     * Null for the platform's shared catalog; a real tenant id for a
+     * permission that tenant created themselves. See this class's own
+     * doc comment for the full hybrid-scoping rationale.
+     */
+    @Column(name = "tenant_id")
+    private UUID tenantId;
 
     /**
      * FK to the {@link PermissionAction} this permission belongs to (which

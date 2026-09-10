@@ -14,6 +14,7 @@ interface BackendPermissionResponse {
   permissionCode: string
   name: string
   description: string | null
+  shared: boolean
   actionId: string
   actionCode: string
   moduleId: string
@@ -50,6 +51,7 @@ function fromBackendPermission(p: BackendPermissionResponse): PermissionRecord {
     code: p.permissionCode,
     name: p.name,
     description: p.description ?? "",
+    shared: p.shared,
     actionId: p.actionId,
     actionCode: p.actionCode,
     moduleId: p.moduleId,
