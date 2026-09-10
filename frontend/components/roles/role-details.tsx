@@ -21,7 +21,7 @@ interface RoleDetailsProps {
   role: RoleRecord
 }
 
-type AssignedUserSortKey = "name" | "username" | "status"
+type AssignedUserSortKey = "name" | "username" | "email" | "status"
 
 /**
  * Role Details / Assigned Users (R4) — read-only view of a role's
@@ -67,6 +67,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
     {
       name: (u) => u.name,
       username: (u) => u.username,
+      email: (u) => u.email,
       status: (u) => u.status,
     }
   )
@@ -197,6 +198,12 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                   onClick={() => toggleAssignedUsersSort("username")}
                 />
                 <SortableTh
+                  label="Email"
+                  active={assignedUsersSortKey === "email"}
+                  direction={assignedUsersDirection}
+                  onClick={() => toggleAssignedUsersSort("email")}
+                />
+                <SortableTh
                   label="Status"
                   active={assignedUsersSortKey === "status"}
                   direction={assignedUsersDirection}
@@ -208,7 +215,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
               {assignedUsers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={4}
                     className="px-3.5 py-8 text-center text-[13px] text-muted-foreground"
                   >
                     No users are currently assigned this role.
@@ -230,6 +237,9 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                   </td>
                   <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">
                     {user.username}
+                  </td>
+                  <td className="px-3.5 py-3 text-[13px] text-muted-foreground">
+                    {user.email}
                   </td>
                   <td className="px-3.5 py-3">
                     <Badge
