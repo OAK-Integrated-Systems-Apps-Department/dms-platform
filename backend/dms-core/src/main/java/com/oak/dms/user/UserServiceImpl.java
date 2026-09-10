@@ -28,7 +28,9 @@ import java.util.UUID;
  * See {@link UserService}. Every method after provisioning enforces tenant
  * ownership via {@link #findOwnedByCallerTenant} before returning or mutating
  * a user, so one tenant can never read or modify another tenant's users even
- * given a guessed id. createUser() also emits a user.created outbox event.
+ * given a guessed id. createUser() also sends the new user a branded
+ * "set your password" email (see {@code PasswordResetService#issueForNewUser})
+ * and emits a user.created outbox event.
  */
 @Slf4j
 @Service
@@ -91,10 +93,19 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(user);
         log.info("Created user {} ({}) in tenant {}", saved.getUserId(), saved.getEmail(), tenantId);
 
+        // dms-core's own branded "set your password" email (see
+        // PasswordResetService#issueForNewUser) - deliberately not
+        // Keycloak's hosted executeActionsEmail flow, so the invited
+        // person lands on our own /update-password page instead of
+        // Keycloak's default-themed one.
+        passwordResetService.issueForNewUser(saved);
+
         // Same transaction as the save() above: either both the user row
         // and this outbox row commit, or neither does. OutboxRelay picks
         // this up asynchronously and forwards it to RabbitMQ for whichever
-        // workers care (e.g. integration-worker sending a welcome email).
+        // workers care (the welcome email itself is sent synchronously
+        // above, not via this event - this is for other side effects,
+        // e.g. search indexing or audit/analytics).
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, saved.getUserId(), "user.created",
                 Map.of("userId", saved.getUserId(), "tenantId", tenantId, "email", saved.getEmail()));
 

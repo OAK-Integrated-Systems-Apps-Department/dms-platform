@@ -1,6 +1,7 @@
 package com.oak.dms.tenant;
 
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.tenant.dto.ProvisionTenantRequest;
 import com.oak.dms.tenant.dto.TenantProvisioningResponse;
@@ -46,6 +47,7 @@ public class TenantProvisioningService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final KeycloakUserService keycloakUserService;
+    private final PasswordResetService passwordResetService;
 
     @Transactional
     public TenantProvisioningResponse provisionTenant(ProvisionTenantRequest request) {
@@ -62,10 +64,13 @@ public class TenantProvisioningService {
         tenant = tenantRepository.save(tenant);
         UUID tenantId = tenant.getTenantId();
 
-        // Creates the Keycloak user, sets a temporary password, and sends
-        // the verify-email/set-password required-actions email - same as
-        // a normal user invite (see KeycloakUserService#createUser). If
-        // this throws, nothing else has happened yet: the tenant insert
+        // Creates the Keycloak user and sets an unguessable temporary
+        // password nobody is told - same as a normal user invite (see
+        // KeycloakUserService#createUser). It does NOT send any email
+        // itself; the welcome/set-password email is sent below, once the
+        // local User row exists, via the same PasswordResetService path
+        // UserServiceImpl#createUser uses for invited users. If this
+        // throws, nothing else has happened yet: the tenant insert
         // above rolls back automatically with the rest of this
         // transaction, so no manual cleanup is needed.
         UUID keycloakId = keycloakUserService.createUser(request.adminEmail(), request.adminFirstName(),
@@ -84,6 +89,13 @@ public class TenantProvisioningService {
                     .status(User.UserStatus.active)
                     .build();
             User savedAdmin = userRepository.save(admin);
+
+            // Same call UserServiceImpl#createUser makes for an ordinary
+            // invited user - this is the tenant admin's only route to
+            // setting a real password and signing in, so a send failure
+            // is deliberately left to propagate into the catch block
+            // below rather than being swallowed.
+            passwordResetService.issueForNewUser(savedAdmin);
 
             log.info("Provisioned tenant {} ({}) with first admin {} ({})",
                     tenantId, tenant.getDomain(), savedAdmin.getUserId(), savedAdmin.getEmail());

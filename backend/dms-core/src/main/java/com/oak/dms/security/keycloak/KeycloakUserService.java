@@ -66,20 +66,20 @@ public class KeycloakUserService {
             }
             if (response.getStatus() != 201) {
                 throw new KeycloakIntegrationException(
-                        "Failed to create Keycloak user, status=" + response.getStatus());
+                        "Failed to create user, status=" + response.getStatus());
             }
             String location = response.getLocation().getPath();
             UUID keycloakId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
             setTemporaryPassword(keycloakId, UUID.randomUUID().toString());
-            sendRequiredActionsEmail(keycloakId);
 
-            log.info("Created Keycloak user {} for tenant {}", keycloakId, tenantId);
+            log.info("Created user {} for tenant {}", keycloakId, tenantId);
+
             return keycloakId;
         } catch (KeycloakUserAlreadyExistsException | KeycloakIntegrationException e) {
             throw e;
         } catch (Exception e) {
-            throw new KeycloakIntegrationException("Failed to create Keycloak user for " + email, e);
+            throw new KeycloakIntegrationException("Failed to create user for " + email, e);
         }
     }
 
@@ -92,18 +92,6 @@ public class KeycloakUserService {
             realm().users().get(keycloakId.toString()).resetPassword(credential);
         } catch (Exception e) {
             throw new KeycloakIntegrationException("Failed to set temporary password for " + keycloakId, e);
-        }
-    }
-
-    /** Emails the user a link to verify their address and set their own password. */
-    public void sendRequiredActionsEmail(UUID keycloakId) {
-        try {
-            realm().users().get(keycloakId.toString())
-                    .executeActionsEmail(List.of("VERIFY_EMAIL", "UPDATE_PASSWORD"));
-        } catch (Exception e) {
-            // Non-fatal: the account exists and can still be activated by an
-            // administrator resending the action email later.
-            log.warn("Failed to send required-actions email to Keycloak user {}: {}", keycloakId, e.getMessage());
         }
     }
 
