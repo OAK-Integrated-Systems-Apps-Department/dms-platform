@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
 import {
   AlertDialog,
@@ -32,11 +32,11 @@ interface RoleDeleteDialogProps {
  *
  * The confirm button is a plain `<button>` rather than an
  * `AlertDialogClose`: deleting is async and can fail (e.g. a permission
- * error, or a future backend rule against deleting a role that's still
- * assigned to users), and `AlertDialogClose` always closes on click
- * regardless of outcome. This dialog instead stays open and shows the
- * error inline on failure, and only calls `onOpenChange(false)` itself
- * once the delete actually succeeds.
+ * error, or a backend rule against deleting a role that's still assigned
+ * to users), and `AlertDialogClose` always closes on click regardless of
+ * outcome. This dialog instead stays open on failure — the caller already
+ * surfaces the error via a toast, so it isn't repeated here — and only
+ * calls `onOpenChange(false)` itself once the delete actually succeeds.
  */
 export function RoleDeleteDialog({
   role,
@@ -45,15 +45,12 @@ export function RoleDeleteDialog({
   onConfirm,
 }: RoleDeleteDialogProps) {
   const [deleting, setDeleting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function handleConfirm() {
     setDeleting(true)
-    setError(null)
     const message = await onConfirm()
     setDeleting(false)
     if (message) {
-      setError(message)
       return
     }
     onOpenChange(false)
@@ -64,7 +61,6 @@ export function RoleDeleteDialog({
       open={open}
       onOpenChange={(next) => {
         if (deleting) return
-        setError(null)
         onOpenChange(next)
       }}
     >
@@ -87,13 +83,6 @@ export function RoleDeleteDialog({
             )}
             . This can't be undone.
           </AlertDialogDescription>
-
-          {error && (
-            <div className="mb-4 flex items-start gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
 
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose
