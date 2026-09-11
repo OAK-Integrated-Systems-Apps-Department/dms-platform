@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
-import { AlertTriangle, ChevronDown, Loader2 } from "lucide-react"
+import { AlertTriangle, ChevronDown, Loader2, Search, X } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -19,7 +19,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-import { getLeafPermissionIds } from "./permission-utils"
+import { filterPermissionGroups, getLeafPermissionIds } from "./permission-utils"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
 import { usePermissionCatalog } from "./use-permission-catalog"
@@ -45,7 +45,11 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   // collapsed by default; open individually, or head to Role Permission
   // Configuration for search + expand/collapse-all.
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
+  const [permSearch, setPermSearch] = useState("")
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const isSearchingPermissions = permSearch.trim().length > 0
+  const searchedGroups = filterPermissionGroups(permissionGroups, permSearch)
 
   const {
     register,
@@ -187,19 +191,49 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         for a searchable, group-by-group view.
       </p>
 
+      <div className="relative mb-4">
+        <Search
+          size={14}
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+        />
+        <input
+          type="text"
+          value={permSearch}
+          onChange={(event) => setPermSearch(event.target.value)}
+          placeholder="Search permissions…"
+          disabled={isSystemRole}
+          className="h-9 w-full rounded-lg border border-border bg-background pr-8 pl-8 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-60 sm:w-[280px]"
+        />
+        {isSearchingPermissions && (
+          <button
+            type="button"
+            onClick={() => setPermSearch("")}
+            aria-label="Clear search"
+            className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
         {catalogLoading ? (
           <div className="col-span-full flex items-center gap-2 rounded-[9px] border border-dashed border-border py-6 text-[13px] text-muted-foreground">
             <Loader2 size={15} className="ml-4 animate-spin" />
             Loading the permission catalog…
           </div>
+        ) : searchedGroups.length === 0 ? (
+          <div className="col-span-full rounded-[9px] border border-dashed border-border py-6 text-center text-[13px] text-muted-foreground">
+            No permissions match &quot;{permSearch}&quot;.
+          </div>
         ) : (
-          permissionGroups.map((group) => {
+          searchedGroups.map((group) => {
           const groupIds = getLeafPermissionIds(group.permissions)
           const selectedCount = groupIds.filter((id) =>
             selectedPermissions.includes(id)
           ).length
-          const isOpen = openModules[group.moduleCode] === true
+          const isOpen =
+            isSearchingPermissions || openModules[group.moduleCode] === true
 
           return (
             <Collapsible

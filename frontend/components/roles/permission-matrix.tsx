@@ -6,11 +6,13 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Search,
   SlidersHorizontal,
+  X,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { getLeafPermissionIds } from "./permission-utils"
+import { filterPermissionGroups, getLeafPermissionIds } from "./permission-utils"
 import { useRolesStore } from "@/stores/roles-store"
 import { usePermissionCatalog } from "./use-permission-catalog"
 
@@ -145,6 +147,7 @@ export function PermissionMatrix() {
   const fetchRolePermissions = useRolesStore((state) => state.fetchRolePermissions)
   const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
   const [area, setArea] = useState(ALL_AREAS)
+  const [search, setSearch] = useState("")
   const [grantsLoading, setGrantsLoading] = useState(true)
   // Rows are grouped two levels deep (module, then action-with-children) and
   // both start collapsed — 32 modules x ~92 actions is far too much to lay
@@ -207,7 +210,7 @@ export function PermissionMatrix() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleIdsKey])
 
-  const visibleGroups = useMemo(
+  const areaFilteredGroups = useMemo(
     () =>
       area === ALL_AREAS
         ? permissionGroups
@@ -215,11 +218,26 @@ export function PermissionMatrix() {
     [area, permissionGroups]
   )
 
+  const isSearching = search.trim().length > 0
+
+  // Search narrows down further, on top of the area filter — matches are
+  // found recursively (module name, action name, or leaf permission label)
+  // so a user can jump straight to e.g. "encryption key rotation" without
+  // knowing which module it lives under.
+  const visibleGroups = useMemo(
+    () => filterPermissionGroups(areaFilteredGroups, search),
+    [areaFilteredGroups, search]
+  )
+
   // Headers/data columns only make sense once something is expanded —
   // otherwise every row is just a collapsed module heading with nothing to
-  // check off yet.
+  // check off yet. An active search auto-expands everything that matched,
+  // same reasoning: there's no point making someone click into a module
+  // whose whole reason for showing up is a match inside it.
   const anyModuleOpen =
-    area !== ALL_AREAS || Object.values(openModules).some(Boolean)
+    area !== ALL_AREAS ||
+    isSearching ||
+    Object.values(openModules).some(Boolean)
 
   const hiddenCount = roles.length - visibleRoles.length
   const permCount = visibleGroups.reduce(
@@ -354,13 +372,39 @@ export function PermissionMatrix() {
             )}
           </div>
 
+          {/* Permission search */}
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search permissions…"
+              className="h-9 w-[220px] rounded-lg border border-border bg-background pr-8 pl-8 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary"
+            />
+            {isSearching && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
           {/* Active-filter reset, only shown when filtering something */}
-          {(area !== ALL_AREAS || hiddenCount > 0) && (
+          {(area !== ALL_AREAS || hiddenCount > 0 || isSearching) && (
             <button
               type="button"
               onClick={() => {
                 setArea(ALL_AREAS)
                 setHiddenRoleIds({})
+                setSearch("")
               }}
               className="text-[12px] font-medium text-muted-foreground hover:text-foreground hover:underline"
             >
@@ -410,6 +454,11 @@ export function PermissionMatrix() {
       </div>
 
       {/* Matrix — horizontal scroll only; vertical scroll is the page's */}
+      {visibleGroups.length === 0 ? (
+        <div className="rounded-[10px] border border-dashed border-border py-14 text-center text-[13px] text-muted-foreground">
+          No permissions match &quot;{search}&quot;.
+        </div>
+      ) : (
       <div className="overflow-x-auto rounded-[10px] border border-border">
         <table
           className="w-full border-collapse"
@@ -451,7 +500,9 @@ export function PermissionMatrix() {
             {visibleGroups.map((group) => {
               const groupIds = getLeafPermissionIds(group.permissions)
               const moduleOpen =
-                area !== ALL_AREAS || openModules[group.moduleCode] === true
+                area !== ALL_AREAS ||
+                isSearching ||
+                openModules[group.moduleCode] === true
 
               return (
                 <Fragment key={group.moduleCode}>
@@ -509,7 +560,8 @@ export function PermissionMatrix() {
                       // sub-heading row, collapsed by default, followed by
                       // one row per grantable child permission when open.
                       if (hasChildren) {
-                        const actionOpen = openActions[permission.id] === true
+                        const actionOpen =
+                          isSearching || openActions[permission.id] === true
                         return (
                           <Fragment key={permission.id}>
                             <tr className="border-b border-border bg-muted/40">
@@ -642,6 +694,7 @@ export function PermissionMatrix() {
           </tbody>
         </table>
       </div>
+      )}
 
       <p className="mt-3.5 text-[12px] text-muted-foreground">
         Read-only reference view — permissions are edited via Role Permission
