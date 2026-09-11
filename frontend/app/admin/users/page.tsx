@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, Plus } from "lucide-react"
+import { AlertTriangle, ChevronDown, Plus, Search } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
@@ -36,6 +36,7 @@ export default function UserListPage() {
     isPending,
     isError,
     error,
+    refetch,
     toggleStatus,
     deleteUser,
     sendPasswordReset,
@@ -171,8 +172,18 @@ export default function UserListPage() {
           Loading users…
         </div>
       ) : isError ? (
-        <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-          {error instanceof Error ? error.message : "Could not load users."}
+        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+          <AlertTriangle size={20} className="text-[var(--rust)]" />
+          <p className="text-[13.5px] text-muted-foreground">
+            {error instanceof Error ? error.message : "Could not load users."}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+          >
+            Try again
+          </button>
         </div>
       ) : (
         <>
