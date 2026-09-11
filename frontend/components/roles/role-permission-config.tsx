@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ChevronDown, Loader2, RotateCcw, Search, ShieldCheck } from "lucide-react"
+import { AlertTriangle, ChevronDown, Loader2, RotateCcw, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -11,6 +11,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { SearchInput } from "@/components/ui/search-input"
 import { cn } from "@/lib/utils"
 
 import { getLeafPermissionIds } from "./permission-utils"
@@ -165,6 +166,7 @@ export function RolePermissionConfig({
       </div>
 
       <div className="mb-5 flex items-center gap-3">
+        <div className="flex items-center rounded-lg border border-border p-0.5">
         <button
           type="button"
           onClick={() =>
@@ -174,20 +176,22 @@ export function RolePermissionConfig({
               )
             )
           }
-          className="text-[11.5px] font-semibold text-primary hover:underline"
+            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           Expand all
         </button>
+          <div className="h-4 w-px bg-border" />
         <button
           type="button"
           onClick={() => {
             setOpenModules({})
             setOpenActions({})
           }}
-          className="text-[11.5px] font-semibold text-primary hover:underline"
+            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           Collapse all
         </button>
+      </div>
       </div>
 
       {isSystemRole && (
@@ -205,31 +209,24 @@ export function RolePermissionConfig({
       )}
 
       {/* Search */}
-      <div className="relative mb-5">
-        <Search
-          size={16}
-          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--ink-faint)]"
-        />
-        <input
-          type="text"
+      <SearchInput
+        className="mb-5"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+        onChange={setQuery}
           placeholder="Search permissions…"
-          className="h-[38px] w-full rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
         />
-      </div>
 
       {/* Permission groups */}
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
         {catalogLoading ? (
-          <div className="flex items-center gap-2 rounded-[10px] border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
+          <div className="col-span-full flex items-center gap-2 rounded-[10px] border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
             Loading the permission catalog…
           </div>
         ) : (
           <>
             {filteredGroups.length === 0 && (
-              <p className="rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+              <p className="col-span-full rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
                 No permissions match &quot;{query}&quot;.
               </p>
             )}
@@ -253,7 +250,10 @@ export function RolePermissionConfig({
                   [group.moduleCode]: open,
                 }))
               }
-              className="overflow-hidden rounded-[10px] border border-border"
+              className={cn(
+                "overflow-hidden rounded-[10px] border border-border",
+                isOpen && "sm:col-span-2 lg:col-span-3"
+              )}
             >
               <div className="flex items-center justify-between gap-3 bg-muted px-3.5 py-2">
                 <CollapsibleTrigger className="flex flex-1 items-center gap-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">

@@ -9,7 +9,6 @@ import {
   HelpCircle,
   LogOut,
   Pin,
-  Search,
   User,
 } from "lucide-react"
 
@@ -17,6 +16,7 @@ import { activityFeed, recentDocuments } from "@/components/dashboard/data"
 import { fileIcon } from "@/components/dashboard/file-icon"
 import { Dropdown, MenuRow } from "@/components/ui/dropdown"
 import { IconButton } from "@/components/ui/icon-button"
+import { SearchInput } from "@/components/ui/search-input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { API_BASE_URL } from "@/lib/api-config"
@@ -56,6 +56,7 @@ export function AppTopbar() {
   const [pinOpen, setPinOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const pinRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
@@ -98,17 +99,12 @@ export function AppTopbar() {
     <header className="sticky top-0 z-20 flex min-w-0 items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
       <SidebarTrigger className="shrink-0" />
 
-      <div className="relative min-w-0 max-w-[460px] flex-1">
-        <Search
-          size={16}
-          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--ink-faint)]"
-        />
-        <input
-          type="text"
+      <SearchInput
+        className="min-w-0 max-w-[460px] flex-1"
+        value={searchQuery}
+        onChange={setSearchQuery}
           placeholder="Search documents, folders, people…"
-          className="h-[38px] w-full min-w-0 rounded-[9px] border border-border bg-muted pr-3 pl-9 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)]"
         />
-      </div>
 
       <div className="flex-1" />
 
