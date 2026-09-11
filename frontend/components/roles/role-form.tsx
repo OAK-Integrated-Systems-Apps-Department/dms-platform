@@ -11,8 +11,6 @@ import {
   ChevronDown,
   Loader2,
   Minus,
-  Search,
-  X,
 } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
@@ -23,6 +21,7 @@ import {
 } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { SearchInput } from "@/components/ui/search-input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -313,30 +312,12 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         for a searchable, group-by-group view.
       </p>
 
-      <div className="relative mb-4">
-        <Search
-          size={14}
-          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-        />
-        <input
-          type="text"
-          value={permSearch}
-          onChange={(event) => setPermSearch(event.target.value)}
-          placeholder="Search permissions…"
-          disabled={isSystemRole}
-          className="h-9 w-full rounded-lg border border-border bg-background pr-8 pl-8 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-60 sm:w-[280px]"
-        />
-        {isSearchingPermissions && (
-          <button
-            type="button"
-            onClick={() => setPermSearch("")}
-            aria-label="Clear search"
-            className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X size={13} />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        className="mb-4 sm:w-[280px]"
+        value={permSearch}
+        onChange={setPermSearch}
+        placeholder="Search permissions…"
+      />
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
         {catalogLoading ? (

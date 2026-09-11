@@ -6,11 +6,10 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
-  Search,
   SlidersHorizontal,
-  X,
 } from "lucide-react"
 
+import { SearchInput } from "@/components/ui/search-input"
 import { cn } from "@/lib/utils"
 import { filterPermissionGroups, getLeafPermissionIds } from "./permission-utils"
 import { useRolesStore } from "@/stores/roles-store"
@@ -373,29 +372,12 @@ export function PermissionMatrix() {
           </div>
 
           {/* Permission search */}
-          <div className="relative">
-            <Search
-              size={14}
-              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              type="text"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search permissions…"
-              className="h-9 w-[220px] rounded-lg border border-border bg-background pr-8 pl-8 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary"
-            />
-            {isSearching && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            className="w-[220px]"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search permissions…"
+          />
 
           {/* Active-filter reset, only shown when filtering something */}
           {(area !== ALL_AREAS || hiddenCount > 0 || isSearching) && (
