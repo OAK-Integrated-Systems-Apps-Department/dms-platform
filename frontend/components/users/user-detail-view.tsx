@@ -5,6 +5,7 @@ import { KeyRound } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getTooltip } from "@/lib/tooltips"
+import { useTenant } from "@/lib/tenants/use-tenant"
 
 import { renderActivityText } from "./render-activity-text"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -81,6 +82,12 @@ export function UserDetailView({
 }: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
+
+  // `user.tenant` is a raw tenantId, not a display name — resolve it the
+  // same way My Profile does. GET /api/v1/tenants/{tenantId} allows any
+  // caller in that same tenant (not just PLATFORM_ADMIN), so this works
+  // fine for a tenant admin viewing one of their own users.
+  const { data: tenant } = useTenant(user.tenant)
 
   const canResetPassword = user.status === "Active"
 
@@ -172,7 +179,7 @@ export function UserDetailView({
             label="First / last name"
             value={`${user.firstName} ${user.lastName}`}
           />
-          <InfoItem label="Tenant" value={user.tenant} />
+          <InfoItem label="Tenant" value={tenant?.tenantName ?? user.tenant} />
           <InfoItem
             label="Roles"
             value={
