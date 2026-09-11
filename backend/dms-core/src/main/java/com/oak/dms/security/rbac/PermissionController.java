@@ -44,7 +44,7 @@ public class PermissionController {
     private final PermissionService permissionService;
 
     @PostMapping
-    // @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "Add a permission to the platform catalog")
     public ResponseEntity<PermissionResponse> createPermission(@Valid @RequestBody CreatePermissionRequest request) {
         PermissionResponse response = permissionService.createPermission(request);
@@ -66,7 +66,7 @@ public class PermissionController {
     }
 
     @PutMapping("/{permissionId}")
-    // @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "Update a permission's name/description/action")
     public PermissionResponse updatePermission(@PathVariable UUID permissionId,
                                                 @Valid @RequestBody UpdatePermissionRequest request) {
@@ -74,7 +74,7 @@ public class PermissionController {
     }
 
     @DeleteMapping("/{permissionId}")
-    // @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete (soft-delete) a permission from the catalog")
     public void deletePermission(@PathVariable UUID permissionId) {

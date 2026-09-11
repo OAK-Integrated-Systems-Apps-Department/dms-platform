@@ -32,9 +32,9 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users", icon: Users, href: "/admin/users" },
-      { label: "Roles", icon: Shield, href: "/admin/roles" },
-      { label: "Permissions", icon: KeyRound, href: "/admin/permissions" },
+      { label: "Users", icon: Users, href: "/admin/users", permission: ["user.view", "user.manage"] },
+      { label: "Roles", icon: Shield, href: "/admin/roles", permission: ["role.view", "role.manage"] },
+      { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: ["role.view", "role.manage"] },
       { label: "Audit Log", icon: ScrollText },
     ],
   },

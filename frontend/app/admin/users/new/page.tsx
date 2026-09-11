@@ -1,6 +1,7 @@
 "use client"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserInviteForm } from "@/components/users/user-invite-form"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -26,7 +27,9 @@ export default function AddUserPage() {
           and set their own password and there&apos;s no self-registration in this app.
         </p>
       </div>
-      <UserInviteForm />
+      <PermissionGate permission="user.manage">
+        <UserInviteForm />
+      </PermissionGate>
     </DashboardShell>
   )
 }

@@ -4,8 +4,10 @@ import { notFound } from "next/navigation"
 import { useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -14,6 +16,7 @@ export default function ViewUserPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error, toggleStatus, sendPasswordReset } =
     useUser(params.userId)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? user.name : "View User")
 
@@ -48,7 +51,9 @@ export default function ViewUserPage() {
           <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             Loading user…
           </div>
-        ) : isError ? (
+        ) : (
+        <PermissionGate permission={["user.view", "user.manage"]}>
+        {isError ? (
           <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
               ? error.message
@@ -59,7 +64,10 @@ export default function ViewUserPage() {
           user={user}
             onToggleStatus={toggleStatus}
             onResetPassword={sendPasswordReset}
+            canManage={hasPermission("user.manage")}
         />
+        )}
+        </PermissionGate>
         )}
     </DashboardShell>
   )

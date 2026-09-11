@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { APP_NAME } from "@/lib/app-config"
 import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -66,6 +67,26 @@ export function AppSidebar({
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
   const pathname = usePathname()
+  const { hasAnyPermission } = usePermissions()
+
+  // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
+  // always visible; items that name one are hidden entirely — not shown
+  // disabled or left to 403 on click — for anyone who can't satisfy it,
+  // same reasoning as every action-button gate elsewhere (see
+  // `usePermissions`). Sections that end up with zero visible items are
+  // dropped too, rather than rendering an empty group header.
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) =>
+          !item.permission ||
+          hasAnyPermission(
+            ...(Array.isArray(item.permission) ? item.permission : [item.permission])
+          )
+      ),
+    }))
+    .filter((section) => section.items.length > 0)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [requireSignature, setRequireSignature] = useState(true)
@@ -104,7 +125,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-      {navSections.map((section, index) => (
+      {visibleSections.map((section, index) => (
           <SidebarGroup key={section.label ?? `section-${index}`}>
           {section.label && (
               <SidebarGroupLabel className="text-[10.5px] tracking-[0.08em] text-[var(--sidebar-muted)] uppercase">

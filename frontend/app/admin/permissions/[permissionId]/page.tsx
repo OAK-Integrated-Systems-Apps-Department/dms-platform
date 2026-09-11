@@ -1,32 +1,29 @@
 "use client"
 
-import { useState } from "react"
-import Link from "next/link"
-import { notFound, useParams, useRouter } from "next/navigation"
-import { AlertTriangle, Loader2, Pencil, ShieldCheck, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { notFound, useParams } from "next/navigation"
+import { AlertTriangle, Loader2 } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { Badge } from "@/components/ui/badge"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
-import { PermissionDeleteDialog } from "@/components/permissions/permission-delete-dialog"
 import { usePermission } from "@/components/permissions/use-permission"
-import { usePermissionsStore } from "@/stores/permissions-store"
 
 /**
  * View Permission — read-only retrieval of a single permission's details.
- * Editing happens on Edit Permission; this screen is reference-only plus
- * the one destructive action (Delete), matching how Role Details handles
- * Delete Role alongside its own read-only view.
+ * Permissions are a fixed, platform-managed set (each one maps 1:1 to an
+ * `@PreAuthorize` check in the backend — see `PermissionController`,
+ * which restricts create/update/delete to PLATFORM_ADMIN), so this screen
+ * is reference-only: no Edit/Delete actions, and no raw `permission_code`
+ * or shared/custom distinction surfaced — just the name, description, and
+ * where it sits in the Module/Action taxonomy, same fields as the
+ * Permission List.
  */
 export default function PermissionDetailsPage() {
-  const router = useRouter()
   const params = useParams<{ permissionId: string }>()
   const { permission, loading, notFound: permissionNotFound } = usePermission(
     params.permissionId
   )
-  const deletePermission = usePermissionsStore((state) => state.deletePermission)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   if (permissionNotFound) {
     notFound()
@@ -56,32 +53,13 @@ export default function PermissionDetailsPage() {
             <Loader2 size={16} className="animate-spin" />
             Loading permission…
           </div>
-        ) : permission ? (
+        ) : (
+        <PermissionGate permission={["role.view", "role.manage"]}>
+        {permission ? (
           <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
-            <div className="mb-1 flex flex-wrap items-center gap-2.5">
-              <h2 className="font-heading text-[20px] font-semibold">
-                {permission.name}
-              </h2>
-              {permission.shared ? (
-                <Badge variant="gold" className="gap-1">
-                  <ShieldCheck size={11} />
-                  Shared
-                </Badge>
-              ) : (
-                <Badge variant="muted">Custom</Badge>
-              )}
-            </div>
-            <p className="mb-6 font-mono text-[13px] text-muted-foreground">
-              {permission.code}
-            </p>
-
-            {permission.shared && (
-              <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
-                This is part of the platform&apos;s shared permission
-                catalog. It&apos;s visible to every tenant and can&apos;t be
-                edited or deleted from here.
-              </div>
-            )}
+            <h2 className="mb-6 font-heading text-[20px] font-semibold">
+              {permission.name}
+            </h2>
 
             <p className="mb-6 text-[13.5px] leading-[1.6] text-foreground">
               {permission.description || "No description provided."}
@@ -92,58 +70,22 @@ export default function PermissionDetailsPage() {
             <h3 className="mb-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
               Module &amp; Action
             </h3>
-            <div className="mb-6 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               <Badge variant="outline" className="font-mono text-[12px]">
-                Module: {permission.moduleCode}
+                Module: {permission.moduleName}
               </Badge>
               <Badge variant="outline" className="font-mono text-[12px]">
-                Action: {permission.actionCode}
+                Action: {permission.actionName}
               </Badge>
             </div>
-
-            <hr className="my-6 border-dashed border-border" />
-
-            {!permission.shared && (
-              <div className="flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="flex items-center gap-1.5 rounded-[10px] border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
-                >
-                  <Trash2 size={14} />
-                  Delete Permission
-                </button>
-                <Link
-                  href={`/admin/permissions/${permission.id}/edit`}
-                  className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
-                >
-                  <Pencil size={14} />
-                  Edit Permission
-                </Link>
-              </div>
-            )}
-
-            <PermissionDeleteDialog
-              permission={permission}
-              open={showDeleteDialog}
-              onOpenChange={setShowDeleteDialog}
-              onConfirm={async () => {
-                const { error } = await deletePermission(permission.id)
-                if (!error) {
-                  toast.success(`${permission.name} deleted.`)
-                  router.push("/admin/permissions")
-                } else {
-                  toast.error(error)
-                }
-                return error
-              }}
-            />
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             <AlertTriangle size={20} className="text-[var(--rust)]" />
             Couldn&apos;t load this permission.
           </div>
+        )}
+        </PermissionGate>
         )}
     </DashboardShell>
   )

@@ -19,6 +19,12 @@ import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RoleDetailsProps {
   role: RoleRecord
+  /**
+   * Whether the signed-in user may edit or delete this role — requires
+   * `role.manage` (see `usePermissions`). Someone with only `role.view`
+   * can reach this read-only page at all, but gets neither button.
+   */
+  canManage: boolean
 }
 
 type AssignedUserSortKey = "name" | "username" | "email" | "status"
@@ -46,7 +52,7 @@ type AssignedUserSortKey = "name" | "username" | "email" | "status"
  * scale, would need a real `GET /api/v1/roles/{roleId}/users` endpoint to
  * scale further.
  */
-export function RoleDetails({ role }: RoleDetailsProps) {
+export function RoleDetails({ role, canManage }: RoleDetailsProps) {
   const router = useRouter()
   const deleteRole = useRolesStore((state) => state.deleteRole)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -147,13 +153,18 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         </div>
       )}
       <p className="mb-6 text-[12px] text-muted-foreground">
-        {role.permissions.length} total permissions granted.{" "}
-        <Link
-          href={`/admin/roles/${role.id}/permissions`}
-          className="font-semibold text-primary hover:underline"
-        >
-          View full configuration →
-        </Link>
+        {role.permissions.length} total permissions granted.
+        {canManage && (
+          <>
+            {" "}
+            <Link
+              href={`/admin/roles/${role.id}/permissions`}
+              className="font-semibold text-primary hover:underline"
+            >
+              View full configuration →
+            </Link>
+          </>
+        )}
       </p>
 
       <hr className="my-6 border-dashed border-border" />
@@ -265,7 +276,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
           <span className="text-[12px] text-muted-foreground">
             System roles can&apos;t be edited or deleted.
           </span>
-        ) : (
+        ) : canManage ? (
           <>
             <button
               type="button"
@@ -283,24 +294,26 @@ export function RoleDetails({ role }: RoleDetailsProps) {
               Edit Role
             </Link>
           </>
-        )}
+        ) : null}
       </div>
 
-      <RoleDeleteDialog
-        role={role}
-        open={showDeleteDialog}
-        onOpenChange={setShowDeleteDialog}
-        onConfirm={async () => {
-          const { error } = await deleteRole(role.id)
-          if (!error) {
-            toast.success(`${role.name} deleted.`)
-            router.push("/admin/roles")
-          } else {
-            toast.error(error)
-          }
-          return error
-        }}
-      />
+      {canManage && (
+        <RoleDeleteDialog
+          role={role}
+          open={showDeleteDialog}
+          onOpenChange={setShowDeleteDialog}
+          onConfirm={async () => {
+            const { error } = await deleteRole(role.id)
+            if (!error) {
+              toast.success(`${role.name} deleted.`)
+              router.push("/admin/roles")
+            } else {
+              toast.error(error)
+            }
+            return error
+          }}
+        />
+      )}
     </div>
   )
 }

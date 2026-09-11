@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -22,6 +23,7 @@ export default function UserAccessSummaryPage() {
   const { data: user, isPending, isError, error, toggleStatus } = useUser(
     params.userId
   )
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Access Summary` : "User Access Summary")
 
@@ -69,7 +71,11 @@ export default function UserAccessSummaryPage() {
             {error instanceof Error ? error.message : "Could not load this user."}
           </div>
         ) : (
-          <UserAccessSummary user={user} onToggleStatus={toggleStatus} />
+          <UserAccessSummary
+            user={user}
+            onToggleStatus={toggleStatus}
+            canManage={hasPermission("user.manage")}
+          />
         )}
     </DashboardShell>
   )

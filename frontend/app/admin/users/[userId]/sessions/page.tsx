@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 import { useUsersStore } from "@/stores/users-store"
@@ -31,6 +32,7 @@ export default function UserSessionsPage() {
   const { data: user, isPending, isError, error } = useUser(params.userId)
   const revokeSession = useUsersStore((state) => state.revokeSession)
   const revokeAllSessions = useUsersStore((state) => state.revokeAllSessions)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Sessions` : "User Sessions")
 
@@ -82,6 +84,7 @@ export default function UserSessionsPage() {
             user={user}
             onRevokeSession={(sessionId) => revokeSession(user.id, sessionId)}
             onRevokeAllSessions={() => revokeAllSessions(user.id)}
+            canManage={hasPermission("user.manage")}
           />
         )}
     </DashboardShell>

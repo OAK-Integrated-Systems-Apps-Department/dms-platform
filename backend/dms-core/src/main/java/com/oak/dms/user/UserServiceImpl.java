@@ -9,6 +9,7 @@ import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.security.auth.TenantContext;
@@ -45,6 +46,7 @@ public class UserServiceImpl implements UserService {
     private final KeycloakUserService keycloakUserService;
     private final PasswordResetService passwordResetService;
     private final OutboxEventPublisher outboxEventPublisher;
+    private final AuthorizationService authorizationService;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email,
@@ -122,7 +124,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse getCurrentUser() {
-        return getUser(TenantContext.getUserId());
+        // Doesn't delegate to getUser(TenantContext.getUserId()) - this
+        // needs the manual mapper overload that also resolves and attaches
+        // the caller's own effective permission set (see UserResponse's
+        // and UserMapper's own doc comments for why that's "me"-only).
+        User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
+        return userMapper.toResponse(user, authorizationService.myEffectivePermissionCodes());
     }
 
     @Override

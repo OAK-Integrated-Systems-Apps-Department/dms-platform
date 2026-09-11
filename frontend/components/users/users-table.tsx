@@ -24,6 +24,18 @@ interface UsersTableProps {
   onEdit: (user: UserRecord) => void
 
   /**
+   * Whether the signed-in user may edit, reset the password of, or
+   * activate/deactivate other accounts — requires `user.manage` (see
+   * `usePermissions`). Someone with only `user.view` can reach this page
+   * and list at all, but gets none of these controls: they're hidden
+   * entirely rather than shown disabled, so a view-only user never sees
+   * an Edit/Reset/Deactivate button that would just 403 on click. View
+   * itself has no separate gate here since reaching this table at all
+   * already required `user.view` or `user.manage`.
+   */
+  canManage: boolean
+
+  /**
    * Whether the signed-in user may delete other accounts at all — only
    * the tenant admin can (see `lib/auth/use-is-tenant-admin.ts`). The
    * Delete column is left out entirely for everyone else, rather than
@@ -61,6 +73,7 @@ export function UsersTable({
   onDelete,
   onView,
   onEdit,
+  canManage,
   canDelete,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
@@ -213,24 +226,27 @@ export function UsersTable({
                       <TooltipContent>{getTooltip("users.actions.view")}</TooltipContent>
                     </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <button
-                            {...props}
-                            type="button"
-                            onClick={() => onEdit(user)}
-                            aria-label={`Edit ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                        )}
-                      />
-                      <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
-                    </Tooltip>
+                    {canManage && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <button
+                              {...props}
+                              type="button"
+                              onClick={() => onEdit(user)}
+                              aria-label={`Edit ${user.name}`}
+                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          )}
+                        />
+                        <TooltipContent>{getTooltip("users.actions.edit")}</TooltipContent>
+                      </Tooltip>
+                    )}
 
-                    {(() => {
+                    {canManage &&
+                      (() => {
                       const canResetPassword = user.status === "Active"
                       return (
                       <Tooltip>
@@ -264,39 +280,41 @@ export function UsersTable({
                       )
                     })()}
 
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <button
-                            {...props}
-                            type="button"
-                            onClick={() => setPendingUser(user)}
-                            aria-label={
-                              user.status === "Active"
-                                ? `Deactivate ${user.name}`
-                                : `Activate ${user.name}`
-                            }
-                            className={cn(
-                              "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                              user.status === "Active"
-                                ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
-                                : "text-primary hover:bg-muted"
-                            )}
-                          >
-                            {user.status === "Active" ? (
-                              <UserX size={15} />
-                            ) : (
-                              <UserCheck size={15} />
-                            )}
-                          </button>
-                        )}
-                      />
-                      <TooltipContent>
-                        {user.status === "Active"
-                          ? getTooltip("users.actions.deactivate")
-                          : getTooltip("users.actions.activate")}
-                      </TooltipContent>
-                    </Tooltip>
+                    {canManage && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <button
+                              {...props}
+                              type="button"
+                              onClick={() => setPendingUser(user)}
+                              aria-label={
+                                user.status === "Active"
+                                  ? `Deactivate ${user.name}`
+                                  : `Activate ${user.name}`
+                              }
+                              className={cn(
+                                "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                user.status === "Active"
+                                  ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                  : "text-primary hover:bg-muted"
+                              )}
+                            >
+                              {user.status === "Active" ? (
+                                <UserX size={15} />
+                              ) : (
+                                <UserCheck size={15} />
+                              )}
+                            </button>
+                          )}
+                        />
+                        <TooltipContent>
+                          {user.status === "Active"
+                            ? getTooltip("users.actions.deactivate")
+                            : getTooltip("users.actions.activate")}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
 
                     {canDelete &&
                       (() => {

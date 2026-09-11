@@ -22,10 +22,19 @@ interface RolesTableProps {
   onToggleStatus: (id: string) => void
   /** Resolves with an error message on failure, or null on success — passed straight through to `RoleDeleteDialog`. */
   onDeleteRole: (id: string) => Promise<string | null>
+  /**
+   * Whether the signed-in user may edit, activate/deactivate, or delete
+   * roles — requires `role.manage` (see `usePermissions`). Someone with
+   * only `role.view` can reach this list at all, but gets none of these
+   * controls: View stays available either way since it needs no separate
+   * gate (reaching this table at all already required `role.view` or
+   * `role.manage`).
+   */
+  canManage: boolean
 }
 
 /** Role Name / Description / Status / Assigned Users / Actions — per the R1 wireframe. */
-export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTableProps) {
+export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: RolesTableProps) {
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     RoleRecord,
     SortKey
@@ -136,7 +145,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                         <ShieldCheck size={13} />
                         System role
                       </span>
-                    ) : (
+                    ) : canManage ? (
                       <>
                         <Tooltip>
                           <TooltipTrigger
@@ -205,7 +214,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                           <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
                         </Tooltip>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </td>
               </tr>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { ChevronDown, Plus } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { usePageTitle } from "@/lib/use-page-title"
 import { SearchInput } from "@/components/ui/search-input"
@@ -14,6 +15,7 @@ import { RoleFilterSelect } from "@/components/users/role-filter-select"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -41,16 +43,26 @@ export default function UserListPage() {
     sendPasswordReset,
   } = useUsers()
   const { isTenantAdmin } = useIsTenantAdmin()
+  const { hasPermission, hasAnyPermission } = usePermissions()
+  const canManage = hasPermission("user.manage")
+  const canViewRoles = hasAnyPermission("role.view", "role.manage")
 
   // Live tenant role list from the DB (same store the Roles list and
   // RoleMultiSelect use) rather than the hardcoded components/roles/data.ts
   // catalog, so this filter always matches roles that actually exist.
   const roles = useRolesStore((state) => state.roles)
+  const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   useEffect(() => {
-    if (roles.length === 0) fetchRoles()
+    // GET /api/v1/roles requires role.view or role.manage — someone with
+    // only user.view/user.manage lacks both, so this filter's role list
+    // just can't be populated for them. Skipping the call entirely (and
+    // not retrying once `rolesError` is already set) avoids repeatedly
+    // 403ing for a permission that isn't going to change mid-session; the
+    // filter itself is hidden below for the same reason.
+    if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canViewRoles])
   const ROLE_OPTIONS = useMemo(() => roles.map((role) => role.name), [roles])
 
   const [query, setQuery] = useState("")
@@ -120,6 +132,7 @@ export default function UserListPage() {
         </p>
       </div>
 
+      <PermissionGate permission={["user.view", "user.manage"]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"
@@ -128,12 +141,14 @@ export default function UserListPage() {
             placeholder="Search by name, username, or email…"
           />
 
-        <RoleFilterSelect
-          className="w-[170px]"
-          options={ROLE_OPTIONS}
-          selected={roleFilter}
-          onChange={(roles) => handleFilterChange(() => setRoleFilter(roles))}
-        />
+        {canViewRoles && (
+          <RoleFilterSelect
+            className="w-[170px]"
+            options={ROLE_OPTIONS}
+            selected={roleFilter}
+            onChange={(roles) => handleFilterChange(() => setRoleFilter(roles))}
+          />
+        )}
 
         <div className="relative w-[150px]">
           <select
@@ -157,13 +172,15 @@ export default function UserListPage() {
           />
         </div>
 
-        <Link
-          href="/admin/users/new"
-          className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
-        >
-          <Plus size={16} />
-          Add user
-        </Link>
+        {canManage && (
+          <Link
+            href="/admin/users/new"
+            className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+          >
+            <Plus size={16} />
+            Add user
+          </Link>
+        )}
       </div>
 
       {isPending ? (
@@ -181,6 +198,7 @@ export default function UserListPage() {
         onToggleStatus={toggleStatus}
         onResetPassword={sendPasswordReset}
         onDelete={deleteUser}
+        canManage={canManage}
         canDelete={isTenantAdmin}
         onView={handleView}
         onEdit={handleEdit}
@@ -195,6 +213,7 @@ export default function UserListPage() {
           />
         </>
       )}
+      </PermissionGate>
     </DashboardShell>
   )
 }

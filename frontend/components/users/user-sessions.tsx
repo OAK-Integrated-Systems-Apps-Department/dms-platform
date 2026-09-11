@@ -14,14 +14,18 @@ interface UserSessionsProps {
   user: UserRecord
   onRevokeSession: (sessionId: string) => void
   onRevokeAllSessions: () => void
+  /** Whether the signed-in user may revoke sessions — requires `user.manage` (see `usePermissions`). */
+  canManage: boolean
 }
 
 function SessionRow({
   session,
   onRevoke,
+  canManage,
 }: {
   session: UserSessionEntry
   onRevoke: () => void
+  canManage: boolean
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-dashed border-border py-3 last:border-b-0">
@@ -39,14 +43,16 @@ function SessionRow({
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onRevoke}
-        className="flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--rust)]"
-      >
-        <LogOut size={13} />
-        Revoke
-      </button>
+      {canManage && (
+        <button
+          type="button"
+          onClick={onRevoke}
+          className="flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--rust)]"
+        >
+          <LogOut size={13} />
+          Revoke
+        </button>
+      )}
     </div>
   )
 }
@@ -70,6 +76,7 @@ export function UserSessions({
   user,
   onRevokeSession,
   onRevokeAllSessions,
+  canManage,
 }: UserSessionsProps) {
   const [pendingTarget, setPendingTarget] =
     useState<RevokeSessionTarget | null>(null)
@@ -118,6 +125,7 @@ export function UserSessions({
               key={session.id}
               session={session}
               onRevoke={() => setPendingTarget({ kind: "one", session })}
+              canManage={canManage}
             />
           ))}
         </div>
@@ -125,16 +133,18 @@ export function UserSessions({
 
       <hr className="my-6 border-dashed border-border" />
 
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setPendingTarget({ kind: "all" })}
-          disabled={user.sessions.length === 0}
-          className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Revoke All Sessions
-        </button>
-      </div>
+      {canManage && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setPendingTarget({ kind: "all" })}
+            disabled={user.sessions.length === 0}
+            className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Revoke All Sessions
+          </button>
+        </div>
+      )}
 
       {pendingTarget && (
         <RevokeSessionDialog

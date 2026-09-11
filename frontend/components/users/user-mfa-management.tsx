@@ -16,6 +16,12 @@ interface UserMfaManagementProps {
   user: UserRecord
   onRequireSetup: () => void
   onResetCredentials: () => void
+  /**
+   * Whether the signed-in user may run these administrative actions —
+   * requires `user.manage` (see `usePermissions`). The component's status
+   * section stays visible either way; only the action buttons are gated.
+   */
+  canManage: boolean
 }
 
 function MfaKvItem({
@@ -58,6 +64,7 @@ export function UserMfaManagement({
   user,
   onRequireSetup,
   onResetCredentials,
+  canManage,
 }: UserMfaManagementProps) {
   const [pendingAction, setPendingAction] = useState<UserMfaAction | null>(null)
 
@@ -123,6 +130,7 @@ export function UserMfaManagement({
       </div>
 
       {/* Administrative actions */}
+      {canManage && (
       <div>
         <h3 className="mb-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
           Administrative Actions
@@ -151,6 +159,7 @@ export function UserMfaManagement({
           are typically restricted to users managing administrator accounts.
         </p>
       </div>
+      )}
 
       {pendingAction && (
         <UserMfaActionDialog

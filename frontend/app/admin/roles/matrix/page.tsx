@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ChevronLeft } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionMatrix } from "@/components/roles/permission-matrix"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -43,7 +44,9 @@ export default function PermissionMatrixPage() {
           area.
         </p>
       </div>
-      <PermissionMatrix />
+      <PermissionGate permission={["role.view", "role.manage"]}>
+        <PermissionMatrix />
+      </PermissionGate>
     </DashboardShell>
   )
 }

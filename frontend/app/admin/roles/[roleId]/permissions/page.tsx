@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
 import { useRole } from "@/components/roles/use-role"
@@ -79,7 +80,9 @@ export default function RolePermissionsPage() {
             Loading role…
           </div>
         ) : role ? (
-          <RolePermissionConfig role={role} onSave={handleSave} />
+          <PermissionGate permission="role.manage">
+            <RolePermissionConfig role={role} onSave={handleSave} />
+          </PermissionGate>
         ) : null}
     </DashboardShell>
   )

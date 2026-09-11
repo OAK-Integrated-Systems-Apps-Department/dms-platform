@@ -11,6 +11,7 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
 import { RoleMultiSelect } from "./role-multi-select"
@@ -58,11 +59,19 @@ export function UserEditForm({ user }: UserEditFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const roles = useRolesStore((state) => state.roles)
+  const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  const { hasAnyPermission } = usePermissions()
+  const canViewRoles = hasAnyPermission("role.view", "role.manage")
   useEffect(() => {
-    if (roles.length === 0) fetchRoles()
+    // GET /api/v1/roles requires role.view or role.manage — user.manage
+    // alone (what actually gates reaching this form) doesn't imply it, so
+    // skip the call entirely for a caller without either, rather than
+    // 403 and, since nothing here marks that permanent otherwise, keep
+    // re-firing it on every remount for the rest of the session.
+    if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canViewRoles])
   // Only active roles can be newly assigned (see the backend guard in
   // UserRoleServiceImpl#assignRole) — filtering here means the picker
   // simply doesn't offer an inactive one for a *new* selection. If this
@@ -196,13 +205,20 @@ export function UserEditForm({ user }: UserEditFormProps) {
 
       <div className="mb-5">
         <Label>Roles</Label>
-        <Controller
-          name="roles"
-          control={control}
-          render={({ field }) => (
-            <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
-          )}
-        />
+        {canViewRoles ? (
+          <Controller
+            name="roles"
+            control={control}
+            render={({ field }) => (
+              <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
+            )}
+          />
+        ) : (
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+            You don&apos;t have permission to view the role catalog, so roles
+            can&apos;t be changed here.
+          </p>
+        )}
         {errors.roles && (
           <p className="mt-1.5 text-[12px] text-[var(--rust)]">
             {errors.roles.message}

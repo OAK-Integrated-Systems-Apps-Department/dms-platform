@@ -1,7 +1,10 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.security.rbac.Permission;
+import com.oak.dms.security.rbac.PermissionRepository;
 import com.oak.dms.security.rbac.RolePermissionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -9,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Data-driven, fine-grained permission checks on top of the
@@ -23,6 +27,7 @@ import java.util.Set;
 public class AuthorizationService {
 
     private final RolePermissionRepository rolePermissionRepository;
+    private final PermissionRepository permissionRepository;
 
     public boolean hasPermission(String permissionCode) {
         return hasFullAccess() || effectivePermissions().contains(permissionCode);
@@ -83,6 +88,73 @@ public class AuthorizationService {
      */
     public boolean isTenantAdmin() {
         return hasFullAccess();
+    }
+
+    /**
+     * The fixed platform roles (PLATFORM_ADMIN, TENANT_ADMIN, MEMBER) the
+     * currently authenticated caller holds, read straight off the
+     * authorities {@code JwtAuthConverter} already derived from their own
+     * validated JWT for this very request.
+     * <p>
+     * Deliberately distinct from
+     * {@link com.oak.dms.security.keycloak.KeycloakUserService#getPlatformRealmRoles(java.util.UUID)},
+     * which looks up an <em>arbitrary other</em> user via the Keycloak
+     * admin API for tenant-admin-facing screens (User List / View User)
+     * and, per that method's own doc comment, deliberately excludes
+     * PLATFORM_ADMIN there since a cross-tenant platform administrator
+     * isn't meaningful to surface on one tenant's user management view.
+     * That exclusion doesn't apply here: this is always the caller asking
+     * about themselves, so there's no cross-tenant disclosure risk in
+     * telling them they hold PLATFORM_ADMIN - and the frontend needs
+     * exactly that to decide whether to show platform-admin-only screens
+     * like Permission Catalog management (see {@code UserController#getMyPlatformRoles}).
+     */
+    public List<String> myPlatformRoles() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return List.of();
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(name -> name.startsWith("ROLE_"))
+                .map(name -> name.substring("ROLE_".length()))
+                .filter(PLATFORM_ROLE_NAMES::contains)
+                .collect(Collectors.toList());
+    }
+
+    private static final Set<String> PLATFORM_ROLE_NAMES = Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "MEMBER");
+
+    /**
+     * The caller's own resolved permission set - what {@link #hasPermission}
+     * actually checks against, exposed for {@code GET /api/v1/users/me} so
+     * the frontend can gate its own UI (which buttons/links to show) the
+     * same way the backend gates the request itself, rather than the
+     * frontend guessing from the coarse Keycloak role name alone (a
+     * tenant-defined role name like "KP" carries no permission
+     * information the frontend could decode).
+     * <p>
+     * TENANT_ADMIN/PLATFORM_ADMIN need special handling here, the same way
+     * {@link #hasFullAccess} already special-cases them for every
+     * individual check: neither necessarily has any {@code role_permissions}
+     * rows of their own (see {@link #hasFullAccess}'s own doc comment - a
+     * freshly provisioned tenant admin has zero), so returning
+     * {@link #effectivePermissions()} unmodified for one of them would
+     * under-report what they can actually do and the frontend would hide
+     * controls a full-access caller is completely entitled to use. Instead,
+     * for those two, this returns every permission code visible to the
+     * caller's own tenant (shared catalog + that tenant's own custom
+     * permissions - see {@link PermissionRepository#findAllVisibleToTenant}) -
+     * i.e. "the full catalog", which is what full access actually means.
+     * Everyone else gets their real, role-assignment-derived set.
+     */
+    public List<String> myEffectivePermissionCodes() {
+        if (hasFullAccess()) {
+            return permissionRepository
+                    .findAllVisibleToTenant(TenantContext.getTenantId(), Pageable.unpaged())
+                    .map(Permission::getPermissionCode)
+                    .toList();
+        }
+        return List.copyOf(effectivePermissions());
     }
 
     private Set<String> effectivePermissions() {

@@ -21,6 +21,16 @@ export interface CheckboxFilterProps {
   triggerWidth?: number
   /** Optional minimum width for the popover. Defaults to 240px. */
   popoverMinWidth?: number
+  /**
+   * Optional display label for an option value, e.g. mapping a raw
+   * "MANAGE_ROLES_AND_PERMISSIONS" code to "Manage Roles & Permissions".
+   * Used for the option list, the trigger's single-selection summary, the
+   * selected-value chips, and search matching — `selected`/`onChange`
+   * still deal exclusively in the raw `options` values, so filtering
+   * keys off the underlying value regardless of what's displayed.
+   * Defaults to the identity function (show the value as-is).
+   */
+  getLabel?: (value: string) => string
 }
 
 interface PopoverPosition {
@@ -57,6 +67,7 @@ export function CheckboxFilter({
   onChange,
   triggerWidth = 190,
   popoverMinWidth = 240,
+  getLabel = (value) => value,
 }: CheckboxFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -145,8 +156,8 @@ export function CheckboxFilter({
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return options
-    return options.filter((option) => option.toLowerCase().includes(q))
-  }, [options, search])
+    return options.filter((option) => getLabel(option).toLowerCase().includes(q))
+  }, [options, search, getLabel])
 
   function toggleOption(option: string) {
     if (selected.includes(option)) {
@@ -169,7 +180,7 @@ export function CheckboxFilter({
     selected.length === 0
       ? `All ${label.toLowerCase()}s`
       : selected.length === 1
-        ? selected[0]
+        ? getLabel(selected[0])
         : `${selected.length} ${label.toLowerCase()}s`
 
   return (
@@ -282,7 +293,7 @@ export function CheckboxFilter({
                         onChange={() => toggleOption(option)}
                         className="sr-only"
                       />
-                      <span className="truncate">{option}</span>
+                      <span className="truncate">{getLabel(option)}</span>
                     </label>
                   )
                 })
@@ -296,7 +307,7 @@ export function CheckboxFilter({
                     key={value}
                     className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-foreground"
                   >
-                    {value}
+                    {getLabel(value)}
                     <button
                       type="button"
                       onClick={() => toggleOption(value)}

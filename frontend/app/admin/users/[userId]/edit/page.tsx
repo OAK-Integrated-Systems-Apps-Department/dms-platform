@@ -3,6 +3,7 @@
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserEditForm } from "@/components/users/user-edit-form"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -49,7 +50,9 @@ export default function EditUserPage() {
           {error instanceof Error ? error.message : "Could not load this user."}
         </div>
       ) : (
-      <UserEditForm user={user} />
+        <PermissionGate permission="user.manage">
+          <UserEditForm user={user} />
+        </PermissionGate>
       )}
     </DashboardShell>
   )

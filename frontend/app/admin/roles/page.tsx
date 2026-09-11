@@ -6,10 +6,12 @@ import { AlertTriangle, ChevronDown, Grid3x3, Loader2, Plus } from "lucide-react
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
@@ -34,6 +36,9 @@ export default function RoleListPage() {
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const toggleStatus = useRolesStore((state) => state.toggleStatus)
   const deleteRole = useRolesStore((state) => state.deleteRole)
+  const { hasPermission, hasAnyPermission } = usePermissions()
+  const canManage = hasPermission("role.manage")
+  const canView = hasAnyPermission("role.view", "role.manage")
 
   // FIXED KNOWN GAP: `RoleRecord.assignedUsers` from the store is always
   // 0 — there's no `GET /api/v1/roles/{roleId}/users` endpoint, so it was
@@ -70,11 +75,13 @@ export default function RoleListPage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchRoles()
-    // Only ever needs to run once on mount — `fetchRoles` is a stable
-    // zustand action reference, not a changing dependency.
+    // GET /api/v1/roles requires role.view or role.manage — skip the call
+    // entirely for a caller with neither, rather than let it 403 and,
+    // since nothing here ever marks that permanent, keep re-firing it on
+    // every remount for the rest of the session.
+    if (canView) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canView])
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -156,6 +163,7 @@ export default function RoleListPage() {
         </p>
       </div>
 
+      <PermissionGate permission={["role.view", "role.manage"]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"
@@ -191,13 +199,15 @@ export default function RoleListPage() {
           <Grid3x3 size={16} />
           Permission Matrix
         </Link>
-        <Link
-          href="/admin/roles/new"
-          className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
-        >
-          <Plus size={16} />
-          Add Role
-        </Link>
+        {canManage && (
+          <Link
+            href="/admin/roles/new"
+            className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+          >
+            <Plus size={16} />
+            Add Role
+          </Link>
+        )}
       </div>
 
       {actionError && (
@@ -207,39 +217,41 @@ export default function RoleListPage() {
         </div>
       )}
 
-      {loading && roles.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          <Loader2 size={16} className="animate-spin" />
-          Loading roles…
-        </div>
-      ) : fetchError && roles.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
-          <AlertTriangle size={20} className="text-[var(--rust)]" />
-          <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
-          <button
-            type="button"
-            onClick={() => fetchRoles()}
-            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
-          >
-            Try again
-          </button>
-        </div>
-      ) : (
-        <>
-          <RolesTable
-            roles={pageRoles}
-            onToggleStatus={handleToggleStatus}
-            onDeleteRole={handleDeleteRole}
-          />
-          <TablePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            pageSize={pageSize}
-            onPageSizeChange={handlePageSizeChange}
-          />
-        </>
-      )}
+        {loading && roles.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+            <Loader2 size={16} className="animate-spin" />
+            Loading roles…
+          </div>
+        ) : fetchError && roles.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+            <AlertTriangle size={20} className="text-[var(--rust)]" />
+            <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
+            <button
+              type="button"
+              onClick={() => fetchRoles()}
+              className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <>
+            <RolesTable
+              roles={pageRoles}
+              onToggleStatus={handleToggleStatus}
+              onDeleteRole={handleDeleteRole}
+              canManage={canManage}
+            />
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          </>
+        )}
+      </PermissionGate>
     </DashboardShell>
   )
 }

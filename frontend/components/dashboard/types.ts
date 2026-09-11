@@ -17,6 +17,15 @@ export interface NavItem {
    * `onNavigate`-only demo behavior.
    */
   href?: string
+  /**
+   * Permission code(s) required to see this item at all — an array is
+   * "any of", matching the backend's own `@PreAuthorize` checks (e.g.
+   * `role.view` OR `role.manage`). Checked via `usePermissions()` in
+   * `AppSidebar`. Omit for items that don't correspond to a
+   * permission-gated backend resource (e.g. "Dashboard", "Search") —
+   * those stay visible to everyone.
+   */
+  permission?: string | string[]
 }
 
 export interface NavSection {

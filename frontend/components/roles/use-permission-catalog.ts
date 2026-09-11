@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react"
 
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePermissionsStore } from "@/stores/permissions-store"
 import type {
   PermissionActionRecord,
@@ -24,25 +25,27 @@ interface UsePermissionCatalogResult {
  * used to import the static `permissionGroups` — Add/Edit Role's inline
  * picker, Role Permission Configuration, the Permission Matrix, and Role
  * Details' permission summary — now calls this hook instead, so all four
- * see the same live catalog, kept up to date by the Permission Catalog
- * admin screens (`/admin/permissions`) rather than a frozen snapshot.
+ * see the same live catalog, kept up to date by the platform team (see
+ * `PermissionController`, which restricts create/update/delete to
+ * PLATFORM_ADMIN — there's no in-app admin screen for editing the catalog
+ * itself anymore) rather than a frozen snapshot.
  *
  * FIXED BUG: this used to only fetch once per store lifetime
  * (`if (permissions.length === 0) fetchPermissions()`), never again for
  * the rest of the browser session. `usePermissionsStore` persists across
  * every client-side route change, so the moment any one of these four
  * screens had ever been visited once, every later visit — from any of
- * them — reused that same frozen snapshot forever. Editing a permission's
- * module/action via `/admin/permissions/{id}/edit` in the same session
- * updates the store correctly at the time, but any Role screen that
- * mounts *after* that edit with its own fresh `usePermissionCatalog()`
- * call had no way to know a re-fetch was ever needed — leading to a mix
- * of stale and fresh grouping info depending on exactly what had been
- * visited when, which is what produced a permission appearing to sit
- * under both its old and new module at once. This now re-fetches fresh
- * on every mount, unconditionally — still not one request per screen if
- * nothing changed (loading briefly shows cached data, not a blank
- * screen), but it's guaranteed correct.
+ * them — reused that same frozen snapshot forever. A permission's
+ * module/action regrouping made directly against the backend API in the
+ * same session updates the store correctly at the time, but any Role
+ * screen that mounts *after* that change with its own fresh
+ * `usePermissionCatalog()` call had no way to know a re-fetch was ever
+ * needed — leading to a mix of stale and fresh grouping info depending on
+ * exactly what had been visited when, which is what produced a permission
+ * appearing to sit under both its old and new module at once. This now
+ * re-fetches fresh on every mount, unconditionally — still not one
+ * request per screen if nothing changed (loading briefly shows cached
+ * data, not a blank screen), but it's guaranteed correct.
  *
  * Grouping: permissions are grouped by `actionId`, and actions by
  * `moduleCode`, mirroring the DB's actual Module -> Action -> Permission
@@ -59,8 +62,21 @@ interface UsePermissionCatalogResult {
  * Modules with no actions that have any permissions yet (and actions with
  * no permissions yet) are omitted rather than shown as empty groups —
  * there's nothing to grant under them.
+ *
+ * Gated on `role.view`/`role.manage` (see `usePermissions`) — the
+ * backend's `GET /api/v1/permissions` and `GET /api/v1/permission-actions`
+ * require one of those, so calling them for a caller who holds neither
+ * just produces a 403 no screen using this hook could ever recover from.
+ * Without this, every mount of any of the four screens above re-fired
+ * both requests (per the "always re-fetch on mount" fix above) for as
+ * long as that caller kept navigating between them, each one landing
+ * back on the same 403 — this stops it at the source instead of letting
+ * it happen and reacting to the failure.
  */
 export function usePermissionCatalog(): UsePermissionCatalogResult {
+  const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions()
+  const canView = hasAnyPermission("role.view", "role.manage")
+
   const permissions = usePermissionsStore((state) => state.permissions)
   const modules = usePermissionsStore((state) => state.modules)
   const actions = usePermissionsStore((state) => state.actions)
@@ -75,10 +91,17 @@ export function usePermissionCatalog(): UsePermissionCatalogResult {
     // "fetch once ever" was wrong here. Whatever's already cached still
     // renders immediately in the meantime (see `loading` below), so this
     // doesn't blank the screen while the fresh data comes in.
-    fetchPermissions()
-    fetchCatalog()
+    //
+    // Skipped entirely while `canView` is false: both endpoints below
+    // require `role.view` or `role.manage`, so a caller with neither
+    // would just get a 403 there's nothing to recover from and no reason
+    // to keep asking — see the doc comment above.
+    if (canView) {
+      fetchPermissions()
+      fetchCatalog()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canView])
 
   const groups = useMemo(
     () => buildPermissionGroups(permissions, modules, actions),
@@ -90,9 +113,15 @@ export function usePermissionCatalog(): UsePermissionCatalogResult {
     // load this session) — once any data is cached, it renders
     // immediately and silently swaps to the fresh copy once the
     // request above resolves, rather than flashing a spinner on every
-    // single navigation between these four screens.
+    // single navigation between these four screens. Also true while
+    // `usePermissions()` itself is still resolving, so `canView` isn't
+    // trusted until it's actually known one way or the other - and
+    // false (not stuck loading) once it resolves to `false`, since
+    // there's nothing left to wait for.
     groups,
-    loading: permissions.length === 0 || modules.length === 0,
+    loading:
+      permissionsLoading ||
+      (canView && (permissions.length === 0 || modules.length === 0)),
   }
 }
 

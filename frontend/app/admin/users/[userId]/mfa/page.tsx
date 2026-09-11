@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -27,6 +28,7 @@ import { useUser } from "@/lib/users/use-user"
 export default function UserMfaManagementPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error } = useUser(params.userId)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} MFA` : "User MFA")
 
@@ -86,6 +88,7 @@ export default function UserMfaManagementPage() {
             user={user}
             onRequireSetup={handleRequireSetup}
             onResetCredentials={handleResetCredentials}
+            canManage={hasPermission("user.manage")}
           />
         )}
     </DashboardShell>

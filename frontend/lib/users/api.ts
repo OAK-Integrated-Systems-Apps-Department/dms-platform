@@ -87,6 +87,26 @@ export async function fetchUserPlatformRoles(userId: string): Promise<string[]> 
 }
 
 /**
+ * The signed-in caller's own platform roles, via `GET /api/v1/users/me/platform-roles`.
+ * Unlike `fetchUserPlatformRoles` above (which looks up some *other* user
+ * and deliberately excludes PLATFORM_ADMIN — see that endpoint's backend
+ * doc comment), this is self-referential and includes PLATFORM_ADMIN, so
+ * it's what `useIsPlatformAdmin` calls to decide whether to show
+ * platform-admin-only screens like Permission Catalog management.
+ */
+export async function fetchMyPlatformRoles(): Promise<string[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/me/platform-roles`, {
+    credentials: "include",
+  })
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "Could not load your platform roles.")
+    )
+  }
+  return response.json()
+}
+
+/**
  * One page of `GET /api/v1/users`. The endpoint takes a Spring `Pageable`
  * (`page`, `size`, `sort` query params) and returns no search or role
  * filter of its own — those stay client-side in `useUsers`, same as they

@@ -24,6 +24,8 @@ import type { UserRecord } from "./types"
 interface UserAccessSummaryProps {
   user: UserRecord
   onToggleStatus: () => void
+  /** Whether the signed-in user may activate/deactivate this account — requires `user.manage` (see `usePermissions`). */
+  canManage: boolean
 }
 
 /** One permission row — a plain leaf, or (for an action like "Manage Users")
@@ -127,6 +129,7 @@ function renderPermissionRow(
 export function UserAccessSummary({
   user,
   onToggleStatus,
+  canManage,
 }: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
@@ -181,6 +184,7 @@ export function UserAccessSummary({
             </p>
           </div>
         </div>
+        {canManage && (
         <Tooltip>
           <TooltipTrigger
             render={(props) => (
@@ -204,6 +208,7 @@ export function UserAccessSummary({
               : getTooltip("users.actions.activate")}
           </TooltipContent>
         </Tooltip>
+        )}
       </div>
 
       {/* Roles held */}

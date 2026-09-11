@@ -15,6 +15,14 @@ interface UserDetailViewProps {
   user: UserRecord
   onToggleStatus: () => void
   onResetPassword: () => void
+  /**
+   * Whether the signed-in user may edit this user's profile, reset their
+   * password, or activate/deactivate their account — requires
+   * `user.manage` (see `usePermissions`). Someone with only `user.view`
+   * can reach this read-only page at all, but gets none of these
+   * controls.
+   */
+  canManage: boolean
 }
 
 function initials(name: string): string {
@@ -78,6 +86,7 @@ export function UserDetailView({
   user,
   onToggleStatus,
   onResetPassword,
+  canManage,
 }: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
@@ -114,6 +123,7 @@ export function UserDetailView({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
+          {canManage && (
           <Tooltip>
             <TooltipTrigger
               render={(props) => (
@@ -139,6 +149,8 @@ export function UserDetailView({
                 : getTooltip("users.pending.resetPasswordDisabled")}
             </TooltipContent>
           </Tooltip>
+          )}
+          {canManage && (
           <Tooltip>
             <TooltipTrigger
               render={(props) => (
@@ -162,6 +174,7 @@ export function UserDetailView({
                 : getTooltip("users.actions.activate")}
             </TooltipContent>
           </Tooltip>
+          )}
         </div>
       </div>
 
@@ -282,12 +295,14 @@ export function UserDetailView({
             View Audit History →
           </Link>
         </div>
-        <Link
-          href={`/admin/users/${user.id}/edit`}
-          className="rounded-[9px] border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
-        >
-          Edit
-        </Link>
+        {canManage && (
+          <Link
+            href={`/admin/users/${user.id}/edit`}
+            className="rounded-[9px] border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+          >
+            Edit
+          </Link>
+        )}
       </div>
 
       <UserStatusDialog

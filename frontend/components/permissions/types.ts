@@ -19,8 +19,12 @@ export interface PermissionRecord {
   actionId: string
   /** Denormalized from the related action, so the table can show "MODULE / ACTION" without a second lookup. */
   actionCode: string
+  /** Human-readable label for `actionCode` (e.g. "Manage Roles & Permissions"), for display in place of the raw code. Falls back to a humanized version of `actionCode` if the backend ever returns one blank — see `humanizeCode`. */
+  actionName: string
   moduleId: string
   moduleCode: string
+  /** Human-readable label for `moduleCode` (e.g. "Access and Security Management"), for display in place of the raw code. Falls back to a humanized version of `moduleCode` if the backend ever returns one blank — see `humanizeCode`. */
+  moduleName: string
 }
 
 /** A verb available under a module (mirrors `PermissionActionResponse.java`). */

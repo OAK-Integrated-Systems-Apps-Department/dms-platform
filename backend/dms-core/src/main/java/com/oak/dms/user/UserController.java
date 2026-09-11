@@ -1,6 +1,7 @@
 package com.oak.dms.user;
 
 import com.oak.dms.common.exception.ApiException;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
@@ -29,6 +30,7 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final AuthorizationService authorizationService;
 
     @PostMapping("/me/provision")
     @Operation(summary = "Self-provision the local Oak DMS profile for the calling Keycloak principal")
@@ -47,6 +49,20 @@ public class UserController {
     @Operation(summary = "Get the calling user's own profile")
     public UserResponse getCurrentUser() {
         return userService.getCurrentUser();
+    }
+
+    @GetMapping("/me/platform-roles")
+    @Operation(summary = "List every fixed platform role (PLATFORM_ADMIN, TENANT_ADMIN, MEMBER) the caller holds",
+            description = "Unlike GET /{userId}/platform-roles below - which tenant-admin screens use to "
+                    + "inspect some *other* user and deliberately excludes PLATFORM_ADMIN, see "
+                    + "KeycloakUserService#PLATFORM_ROLE_NAMES for why - this is always the caller asking "
+                    + "about themselves, so PLATFORM_ADMIN is included here. Read directly off the "
+                    + "authorities already derived from the caller's own validated JWT for this request "
+                    + "(see AuthorizationService#myPlatformRoles), not a Keycloak admin lookup. This is what "
+                    + "the frontend calls to decide whether to show platform-admin-only screens, such as "
+                    + "Permission Catalog create/edit/delete.")
+    public List<String> getMyPlatformRoles() {
+        return authorizationService.myPlatformRoles();
     }
 
     @PostMapping

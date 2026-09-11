@@ -10,6 +10,11 @@ import java.util.UUID;
  * {@link com.oak.dms.security.rbac.PermissionModule} rows so a client can
  * render "MODULE / ACTION" (replacing the old free-text `category` field)
  * without a second round trip - see {@link com.oak.dms.security.rbac.PermissionMapper}.
+ * {@code actionName}/{@code moduleName} are the same rows' human-readable
+ * labels (e.g. actionCode "MANAGE_ROLES_AND_PERMISSIONS" / actionName
+ * "Manage Roles & Permissions"), denormalized the same way, so a client
+ * can show a friendly label instead of the machine code without a second
+ * round trip either.
  * <p>
  * {@code shared} is {@code true} for the platform's default catalog
  * (visible to and usable by every tenant) and {@code false} for a
@@ -30,8 +35,10 @@ public record PermissionResponse(
         boolean shared,
         UUID actionId,
         String actionCode,
+        String actionName,
         UUID moduleId,
         String moduleCode,
+        String moduleName,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

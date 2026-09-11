@@ -13,6 +13,16 @@ export interface CurrentUser {
   mfaEnabled: boolean
   status: string
   createdAt: string
+  /**
+   * The caller's own resolved permission codes (role assignments'
+   * grants, flattened/deduplicated server-side — see
+   * `AuthorizationService#myEffectivePermissionCodes`). Only ever
+   * present on this "me" call, not on any other endpoint that happens to
+   * return the same shape. `usePermissions()` is the intended way to
+   * read this — components shouldn't reach into `useCurrentUser` for it
+   * directly.
+   */
+  permissions: string[]
 }
 
 function initialsOf(displayName: string): string {

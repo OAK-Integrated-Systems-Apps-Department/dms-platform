@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
@@ -47,7 +48,9 @@ export default function AddRolePage() {
           to the current tenant only.
         </p>
       </div>
-      <RoleForm mode="create" onSubmit={handleSubmit} />
+      <PermissionGate permission="role.manage">
+        <RoleForm mode="create" onSubmit={handleSubmit} />
+      </PermissionGate>
     </DashboardShell>
   )
 }

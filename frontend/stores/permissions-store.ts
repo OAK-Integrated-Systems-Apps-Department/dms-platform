@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-import type { PermissionFormValues } from "@/components/permissions/schema"
+import { humanizeCode } from "@/components/permissions/format"
 import type {
   PermissionActionRecord,
   PermissionModuleRecord,
@@ -17,8 +17,10 @@ interface BackendPermissionResponse {
   shared: boolean
   actionId: string
   actionCode: string
+  actionName: string | null
   moduleId: string
   moduleCode: string
+  moduleName: string | null
   createdAt: string
   updatedAt: string | null
 }
@@ -54,8 +56,10 @@ function fromBackendPermission(p: BackendPermissionResponse): PermissionRecord {
     shared: p.shared,
     actionId: p.actionId,
     actionCode: p.actionCode,
+    actionName: p.actionName || humanizeCode(p.actionCode),
     moduleId: p.moduleId,
     moduleCode: p.moduleCode,
+    moduleName: p.moduleName || humanizeCode(p.moduleCode),
   }
 }
 
@@ -96,48 +100,34 @@ interface PermissionsState {
   modules: PermissionModuleRecord[]
   actions: PermissionActionRecord[]
   loading: boolean
-  /** True once modules + actions have loaded at least once, so the Add/Edit Permission form knows whether to fetch them itself or reuse what's already here. */
-  catalogLoaded: boolean
   error: string | null
 
   /** GET /api/v1/permissions — populates the Permission List screen. */
   fetchPermissions: () => Promise<void>
-  /** GET /api/v1/permissions/{id} — resolves a single permission for direct links into View/Edit Permission. Returns null if it doesn't exist. */
+  /** GET /api/v1/permissions/{id} — resolves a single permission for direct links into the read-only Permission Details screen. Returns null if it doesn't exist. */
   fetchPermission: (id: string) => Promise<PermissionRecord | null>
-  /** GET /api/v1/permission-modules + GET /api/v1/permission-actions — populates the Add/Edit Permission form's cascading Module → Action selects. */
+  /** GET /api/v1/permission-modules + GET /api/v1/permission-actions — populates the Module/Action grouping used by `usePermissionCatalog` (the Role Permission Configuration picker). */
   fetchCatalog: () => Promise<void>
-
-  /** POST /api/v1/permissions. Returns the created permission, or an error message. */
-  addPermission: (
-    values: PermissionFormValues
-  ) => Promise<{ permission: PermissionRecord | null; error: string | null }>
-  /** PUT /api/v1/permissions/{id}. Returns the updated permission, or an error message. */
-  updatePermission: (
-    id: string,
-    values: PermissionFormValues
-  ) => Promise<{ permission: PermissionRecord | null; error: string | null }>
-  /** DELETE /api/v1/permissions/{id} (soft-delete; backend rejects this while any role still holds the permission). */
-  deletePermission: (id: string) => Promise<{ error: string | null }>
 }
 
 /**
  * Permission catalog store, backed by the real `/api/v1/permissions`,
  * `/api/v1/permission-actions`, and `/api/v1/permission-modules`
- * endpoints. Distinct from the permission *picker* on the Add/Edit Role
- * and Role Permission Configuration screens (`components/roles/data.ts`'s
- * `permissionGroups`), which is a separate, still-mocked concern — see the
- * KNOWN GAP note in `stores/roles-store.ts`. This store manages the
- * catalog itself (creating/editing/retiring permissions and the
- * modules/actions they belong to); that one manages which of an existing
- * catalog's permissions a given role holds. They'll eventually need to
- * read from the same source, but merging them isn't part of this change.
+ * endpoints. Read-only: permissions are a fixed, platform-managed set —
+ * create/update/delete are PLATFORM_ADMIN-only in the backend (see
+ * `PermissionController`) and there's no create/edit/delete UI for them
+ * in this app anymore, so this store only ever fetches. Distinct from the
+ * permission *picker* on the Add/Edit Role and Role Permission
+ * Configuration screens (`components/roles/use-permission-catalog.ts`),
+ * which reads `modules`/`actions`/`permissions` from here but is a
+ * separate concern: this store manages the catalog's own data, that hook
+ * groups it for the Role screens' checkbox picker.
  */
-export const usePermissionsStore = create<PermissionsState>((set, get) => ({
+export const usePermissionsStore = create<PermissionsState>((set) => ({
   permissions: [],
   modules: [],
   actions: [],
   loading: false,
-  catalogLoaded: false,
   error: null,
 
   fetchPermissions: async () => {
@@ -239,103 +229,7 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
         .map(fromBackendModule)
         .sort((a, b) => a.name.localeCompare(b.name)),
       actions: actionsBody.content.map(fromBackendAction),
-      catalogLoaded: true,
       error: null,
     })
-  },
-
-  addPermission: async (values) => {
-    let response: Response
-    try {
-      response = await fetch(`${API_BASE_URL}/api/v1/permissions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          permissionCode: values.code,
-          name: values.name,
-          description: values.description || undefined,
-          actionId: values.actionId,
-        }),
-      })
-    } catch {
-      return { permission: null, error: NETWORK_ERROR }
-    }
-
-    if (!response.ok) {
-      return {
-        permission: null,
-        error: await parseErrorMessage(response, "Could not create the permission."),
-      }
-    }
-
-    const body: BackendPermissionResponse = await response.json()
-    const permission = fromBackendPermission(body)
-    set((state) => ({ permissions: [permission, ...state.permissions] }))
-    return { permission, error: null }
-  },
-
-  updatePermission: async (id, values) => {
-    let response: Response
-    try {
-      // permissionCode is deliberately not sent — UpdatePermissionRequest
-      // doesn't accept it (see the record's own doc comment: it's matched
-      // against @authz.hasPermission(...) checks and existing grants
-      // throughout the backend, so it's immutable after creation).
-      response = await fetch(`${API_BASE_URL}/api/v1/permissions/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: values.name,
-          description: values.description || undefined,
-          actionId: values.actionId,
-        }),
-      })
-    } catch {
-      return { permission: null, error: NETWORK_ERROR }
-    }
-
-    if (!response.ok) {
-      return {
-        permission: null,
-        error: await parseErrorMessage(response, "Could not save changes."),
-      }
-    }
-
-    const body: BackendPermissionResponse = await response.json()
-    const permission = fromBackendPermission(body)
-    set((state) => ({
-      permissions: state.permissions.map((p) => (p.id === id ? permission : p)),
-    }))
-    return { permission, error: null }
-  },
-
-  deletePermission: async (id) => {
-    let response: Response
-    try {
-      response = await fetch(`${API_BASE_URL}/api/v1/permissions/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      })
-    } catch {
-      return { error: NETWORK_ERROR }
-    }
-
-    if (!response.ok) {
-      // The backend now rejects this (409-ish, via DuplicateResourceException)
-      // while any role still holds the permission — see the guard added to
-      // PermissionServiceImpl.deletePermission — so this message is the
-      // most common failure case in practice, not just a generic fallback.
-      return {
-        error: await parseErrorMessage(
-          response,
-          "Could not delete the permission. It may still be granted to a role."
-        ),
-      }
-    }
-
-    set((state) => ({ permissions: state.permissions.filter((p) => p.id !== id) }))
-    return { error: null }
   },
 }))
