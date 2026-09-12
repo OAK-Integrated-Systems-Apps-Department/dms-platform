@@ -5,21 +5,15 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
-import { AlertTriangle, ChevronDown, Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-import { getLeafPermissionIds } from "./permission-utils"
+import { PermissionPicker } from "./permission-picker"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
 import { usePermissionCatalog } from "./use-permission-catalog"
@@ -35,16 +29,15 @@ interface RoleFormProps {
 /**
  * Add/Edit Role form. Combines the R2 (Add/Edit Role) and R3 (Role
  * Permission Configuration) wireframe screens into a single page — see
- * the note in the chat response for why.
+ * the note in the chat response for why. The permission picker itself is
+ * `PermissionPicker`, shared with `RolePermissionConfig` so both screens
+ * get the same search/expand-collapse/select-all behavior instead of
+ * this form maintaining its own simplified copy.
  */
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
   const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
-  // 32 modules is too much to show fully expanded in this quick-list view —
-  // collapsed by default; open individually, or head to Role Permission
-  // Configuration for search + expand/collapse-all.
-  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
@@ -72,6 +65,16 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
       checked
         ? [...selectedPermissions, id]
         : selectedPermissions.filter((p) => p !== id),
+      { shouldDirty: true }
+    )
+  }
+
+  function setGroupPermissions(ids: string[], checked: boolean) {
+    setValue(
+      "permissions",
+      checked
+        ? [...new Set([...selectedPermissions, ...ids])]
+        : selectedPermissions.filter((p) => !ids.includes(p)),
       { shouldDirty: true }
     )
   }
@@ -172,109 +175,29 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         </span>
       </div>
       <p className="mb-4 text-[12.5px] text-muted-foreground">
-        Choose what this role can do, grouped by functional area. Toggle the
-        quick list below, or use{" "}
-        {mode === "edit" && role ? (
-          <Link
-            href={`/admin/roles/${role.id}/permissions`}
-            className="font-semibold text-primary hover:underline"
-          >
-            Role Permission Configuration →
-          </Link>
-        ) : (
-          "Role Permission Configuration"
-        )}{" "}
-        for a searchable, group-by-group view.
+        Choose what this role can do, grouped by functional area.
+        {mode === "edit" && role && (
+          <>
+            {" "}
+            Can also be managed separately via{" "}
+            <Link
+              href={`/admin/roles/${role.id}/permissions`}
+              className="font-semibold text-primary hover:underline"
+            >
+              Role Permission Configuration →
+            </Link>
+          </>
+        )}
       </p>
 
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-        {catalogLoading ? (
-          <div className="col-span-full flex items-center gap-2 rounded-[9px] border border-dashed border-border py-6 text-[13px] text-muted-foreground">
-            <Loader2 size={15} className="ml-4 animate-spin" />
-            Loading the permission catalog…
-          </div>
-        ) : (
-          permissionGroups.map((group) => {
-          const groupIds = getLeafPermissionIds(group.permissions)
-          const selectedCount = groupIds.filter((id) =>
-            selectedPermissions.includes(id)
-          ).length
-          const isOpen = openModules[group.moduleCode] === true
-
-          return (
-            <Collapsible
-              key={group.moduleCode}
-              open={isOpen}
-              onOpenChange={(open) =>
-                setOpenModules((prev) => ({
-                  ...prev,
-                  [group.moduleCode]: open,
-                }))
-              }
-              className={cn(
-                "overflow-hidden rounded-[10px] border border-border",
-                isOpen && "sm:col-span-2 lg:col-span-3"
-              )}
-            >
-              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-                <ChevronDown
-                  size={14}
-                  className={cn(
-                    "shrink-0 transition-transform",
-                    !isOpen && "-rotate-90"
-                  )}
-                />
-                <span className="flex-1 truncate">{group.module}</span>
-                <span className="shrink-0 font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
-                  {group.moduleCode} · {selectedCount}/{groupIds.length}
-                </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="divide-y divide-border px-3.5">
-                {group.permissions.map((permission) =>
-                  permission.permissions &&
-                  permission.permissions.length > 0 ? (
-                    // Action with fine-grained permissions nested under it
-                    // (e.g. "Manage Users") — its own id isn't grantable, so
-                    // list its children instead; use Role Permission
-                    // Configuration for select-all on these.
-                    <div key={permission.id} className="py-1.5">
-                      <p className="pt-1 pb-0.5 text-[11.5px] font-semibold tracking-[0.03em] text-muted-foreground uppercase">
-                        {permission.label}
-                      </p>
-                      <div className="divide-y divide-border border-t border-dashed border-border pl-4">
-                        {permission.permissions.map((child) => (
-                          <Checkbox
-                            key={child.id}
-                            id={child.id}
-                            label={child.label}
-                            disabled={isSystemRole}
-                            checked={selectedPermissions.includes(child.id)}
-                            onCheckedChange={(checked) =>
-                              togglePermission(child.id, checked)
-                            }
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <Checkbox
-                      key={permission.id}
-                      id={permission.id}
-                      label={permission.label}
-                      disabled={isSystemRole}
-                      checked={selectedPermissions.includes(permission.id)}
-                      onCheckedChange={(checked) =>
-                        togglePermission(permission.id, checked)
-                      }
-                    />
-                  )
-                )}
-              </CollapsibleContent>
-            </Collapsible>
-          )
-        })
-        )}
-      </div>
+      <PermissionPicker
+        groups={permissionGroups}
+        loading={catalogLoading}
+        selected={selectedPermissions}
+        onToggle={togglePermission}
+        onSetGroup={setGroupPermissions}
+        disabled={isSystemRole}
+      />
 
       <hr className="my-6 border-dashed border-border" />
 
