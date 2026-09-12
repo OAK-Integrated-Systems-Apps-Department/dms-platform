@@ -10,13 +10,21 @@ import { API_BASE_URL } from "@/lib/api-config"
 
 type TokenStatus = "checking" | "valid" | "invalid"
 
-async function validateToken(token: string): Promise<boolean> {
+/** Mirrors `PasswordResetToken.TokenKind` on the backend. */
+type TokenKind = "NEW_USER" | "PASSWORD_RESET"
+
+interface ValidateTokenResult {
+  valid: boolean
+  kind: TokenKind | null
+}
+
+async function validateToken(token: string): Promise<ValidateTokenResult> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/auth/reset-password/validate?token=${encodeURIComponent(token)}`
   )
-  if (!response.ok) return false
-  const body = await response.json().catch(() => ({ valid: false }))
-  return Boolean(body.valid)
+  if (!response.ok) return { valid: false, kind: null }
+  const body = await response.json().catch(() => ({ valid: false, kind: null }))
+  return { valid: Boolean(body.valid), kind: body.kind ?? null }
 }
 
 async function submitNewPassword(token: string, newPassword: string): Promise<void> {
@@ -33,21 +41,30 @@ async function submitNewPassword(token: string, newPassword: string): Promise<vo
 
 /**
  * Public page (see PUBLIC_PATHS in proxy.ts) — lands here from the link in
- * the password-reset email sent by dms-core's
- * `PasswordResetService.requestReset` (see the /reset-password page for
- * step one of this flow). Entirely on our own domain and styled to match
- * the rest of Ledger: unlike the account-creation flow, this never
- * redirects to Keycloak's own hosted UPDATE_PASSWORD required-action page
- * — dms-core verifies the `token` query param itself
- * (`GET /api/v1/auth/reset-password/validate`) and, on submit, redeems it
- * (`POST /api/v1/auth/reset-password`), which sets the real password in
- * Keycloak via the Admin API without ever routing the browser through it.
+ * either a password-reset email (`PasswordResetService.requestReset` /
+ * `issueForAdminReset` — see the /reset-password page for step one of the
+ * self-service flow) or a new-user invite email (`issueForNewUser`).
+ * Entirely on our own domain and styled to match the rest of Ledger:
+ * unlike the account-creation flow, this never redirects to Keycloak's
+ * own hosted UPDATE_PASSWORD required-action page — dms-core verifies the
+ * `token` query param itself (`GET /api/v1/auth/reset-password/validate`,
+ * which also returns which of the two kinds below this token is) and, on
+ * submit, redeems it (`POST /api/v1/auth/reset-password`), which sets the
+ * real password in Keycloak via the Admin API without ever routing the
+ * browser through it.
+ * <p>
+ * `tokenKind` only changes the heading/subtext/button copy on the
+ * "valid, show the form" branch — the checking/invalid/success branches
+ * render identically either way, since a plain "invalid or expired" or
+ * "password updated" message reads fine regardless of which flow sent the
+ * person here.
  */
 export function UpdatePasswordPageContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token") ?? ""
 
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>(token ? "checking" : "invalid")
+  const [tokenKind, setTokenKind] = useState<TokenKind | null>(null)
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -60,8 +77,10 @@ export function UpdatePasswordPageContent() {
     }
     let cancelled = false
     validateToken(token)
-      .then((valid) => {
-        if (!cancelled) setTokenStatus(valid ? "valid" : "invalid")
+      .then((result) => {
+        if (cancelled) return
+        setTokenStatus(result.valid ? "valid" : "invalid")
+        setTokenKind(result.kind)
       })
       .catch(() => {
         if (!cancelled) setTokenStatus("invalid")
@@ -70,6 +89,8 @@ export function UpdatePasswordPageContent() {
       cancelled = true
     }
   }, [token])
+
+  const isNewUser = tokenKind === "NEW_USER"
 
   const mutation = useMutation({
     mutationFn: () => submitNewPassword(token, newPassword),
@@ -166,10 +187,12 @@ export function UpdatePasswordPageContent() {
         {tokenStatus === "valid" && !mutation.isSuccess && (
           <>
             <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Choose a new password
+              {isNewUser ? "Welcome to Ledger — set your password to get started" : "Choose a new password"}
             </h1>
             <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              Must be at least 8 characters.
+              {isNewUser
+                ? "Choose a password to activate your account. Must be at least 8 characters."
+                : "Must be at least 8 characters."}
             </p>
 
             <form onSubmit={handleSubmit}>
@@ -232,7 +255,13 @@ export function UpdatePasswordPageContent() {
                 disabled={mutation.isPending || !newPassword || !confirmPassword}
                 className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {mutation.isPending ? "Updating…" : "Update password"}
+                {isNewUser
+                  ? mutation.isPending
+                    ? "Setting up…"
+                    : "Set password"
+                  : mutation.isPending
+                    ? "Updating…"
+                    : "Update password"}
               </button>
             </form>
           </>

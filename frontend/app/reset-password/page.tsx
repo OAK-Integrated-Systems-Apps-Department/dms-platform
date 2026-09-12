@@ -29,11 +29,16 @@ async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
  * app/login/page.tsx.
  *
  * There's no separate "reset password" form with new-password fields here
- * on purpose: this only submits the username/email to
- * dms-core's /api/v1/auth/forgot-password. Keycloak's own emailed link is what actually
- * lets the person set a new password (executeActionsEmail(["UPDATE_PASSWORD"])
- * on the backend), the same mechanism used for the admin-invite flow in
- * app/register/page.tsx.
+ * on purpose: this only submits the username/email to dms-core's
+ * `POST /api/v1/auth/forgot-password` (see `PasswordResetService.requestReset`).
+ * That issues a single-use token and emails a link to our own
+ * `/update-password?token=...` page, entirely on dms-core's domain -
+ * deliberately not Keycloak's hosted `executeActionsEmail(["UPDATE_PASSWORD"])`
+ * required-action page, which this flow exists to avoid. New-user invites
+ * (`components/users/user-invite-form.tsx` → `POST /api/v1/users` →
+ * `PasswordResetService.issueForNewUser`) land on that same
+ * `/update-password` page via the same token mechanism, distinguished
+ * only by `PasswordResetToken.kind` once the link is opened.
  */
 export default function ResetPasswordPage() {
   const [usernameOrEmail, setUsernameOrEmail] = useState("")

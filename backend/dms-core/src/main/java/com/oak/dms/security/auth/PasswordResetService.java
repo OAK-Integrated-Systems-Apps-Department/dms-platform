@@ -144,10 +144,15 @@ public class PasswordResetService {
         issueTokenAndSendEmail(user, null, EmailKind.NEW_USER);
     }
 
-    /** Read-only check used by the frontend to show "link invalid/expired" before rendering the form. */
+    /**
+     * Used by the frontend to show "link invalid/expired" before
+     * rendering the form and, when valid, which of the two
+     * {@code /update-password} interfaces to show - see
+     * {@link PasswordResetToken.TokenKind}.
+     */
     @Transactional(readOnly = true)
-    public boolean isTokenValid(String rawToken) {
-        return findValidToken(rawToken).isPresent();
+    public Optional<PasswordResetToken.TokenKind> validateToken(String rawToken) {
+        return findValidToken(rawToken).map(PasswordResetToken::getKind);
     }
 
     /**
@@ -216,6 +221,7 @@ public class PasswordResetService {
                 .tokenHash(hash(rawToken))
                 .expiresAt(OffsetDateTime.now().plusMinutes(tokenTtlMinutes))
                 .requestedIp(requestedIp)
+                .kind(toTokenKind(kind))
                 .build();
 
         invalidateOutstandingTokens(user.getUserId());
@@ -242,12 +248,29 @@ public class PasswordResetService {
      * Which of the three flows in this class triggered the email - only
      * changes the subject/body copy below. All three land the person on
      * the exact same {@code /update-password?token=...} page and go
-     * through the exact same token issuance/redemption code.
+     * through the exact same token issuance/redemption code. Persisted on
+     * the token as the coarser {@link PasswordResetToken.TokenKind} (see
+     * {@link #toTokenKind}) so {@code /update-password} can tell
+     * "welcome, set your password" apart from "reset your password" once
+     * the link is actually clicked - unlike this enum, which never
+     * survives past the email send.
      */
     private enum EmailKind {
         SELF_SERVICE,
         ADMIN_RESET,
         NEW_USER
+    }
+
+    /**
+     * {@code SELF_SERVICE} and {@code ADMIN_RESET} both collapse to
+     * {@code PASSWORD_RESET} - end users experience the two identically,
+     * so {@code /update-password} only needs to distinguish "setting a
+     * password for the first time" from "everything else".
+     */
+    private static PasswordResetToken.TokenKind toTokenKind(EmailKind kind) {
+        return kind == EmailKind.NEW_USER
+                ? PasswordResetToken.TokenKind.NEW_USER
+                : PasswordResetToken.TokenKind.PASSWORD_RESET;
     }
 
     private void sendEmail(User user, String rawToken, EmailKind kind) {
