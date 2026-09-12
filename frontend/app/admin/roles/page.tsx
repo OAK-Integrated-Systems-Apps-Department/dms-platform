@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, ChevronDown, Grid3x3, Loader2, Plus } from "lucide-react"
+import { AlertTriangle, ChevronDown, Grid3x3, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -11,6 +11,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { LoadingState } from "@/components/ui/loading-state"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -231,10 +232,7 @@ export default function RoleListPage() {
       )}
 
         {loading && roles.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <Loader2 size={16} className="animate-spin" />
-            Loading roles…
-          </div>
+          <LoadingState message="Loading roles…" />
         ) : fetchError && roles.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
             <AlertTriangle size={20} className="text-[var(--rust)]" />

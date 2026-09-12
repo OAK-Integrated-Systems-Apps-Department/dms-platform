@@ -7,6 +7,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
+import { LoadingState } from "@/components/ui/loading-state"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -49,9 +50,7 @@ export default function ViewUserPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : (
         <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
         {isError ? (

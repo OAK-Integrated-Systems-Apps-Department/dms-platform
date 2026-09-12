@@ -1,8 +1,9 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
+import { LoadingState } from "@/components/ui/loading-state"
 import { usePermissions } from "@/lib/auth/use-permissions"
 
 interface PermissionGateProps {
@@ -41,12 +42,7 @@ export function PermissionGate({ permission, children, message }: PermissionGate
   const allowed = hasAnyPermission(...codes)
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-        <Loader2 size={16} className="animate-spin" />
-        Loading…
-      </div>
-    )
+    return <LoadingState />
   }
 
   if (!allowed) {

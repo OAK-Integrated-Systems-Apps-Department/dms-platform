@@ -1,13 +1,14 @@
 "use client"
 
 import { notFound, useParams, useRouter } from "next/navigation"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
+import { LoadingState } from "@/components/ui/loading-state"
 import type { RoleFormValues } from "@/components/roles/schema"
 import { useRole } from "@/components/roles/use-role"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -75,10 +76,7 @@ export default function EditRolePage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          <Loader2 size={16} className="animate-spin" />
-          Loading role…
-        </div>
+        <LoadingState message="Loading role…" />
       ) : role ? (
         // This form calls both updateRole (update-role) and
         // syncRolePermissions (assign-permissions) - gate on either.

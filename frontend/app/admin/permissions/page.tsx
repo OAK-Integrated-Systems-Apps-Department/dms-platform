@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Loader2, X } from "lucide-react"
+import { AlertTriangle, X } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
@@ -10,6 +10,7 @@ import { PermissionsTable } from "@/components/permissions/permissions-table"
 import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { CheckboxFilter } from "@/components/ui/checkbox-filter"
+import { LoadingState } from "@/components/ui/loading-state"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { usePermissionsStore } from "@/stores/permissions-store"
@@ -228,10 +229,7 @@ export default function PermissionListPage() {
       </div>
 
       {loading && permissions.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          <Loader2 size={16} className="animate-spin" />
-          Loading permissions…
-        </div>
+        <LoadingState message="Loading permissions…" />
       ) : fetchError && permissions.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />

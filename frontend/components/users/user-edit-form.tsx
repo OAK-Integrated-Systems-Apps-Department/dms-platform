@@ -53,6 +53,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const roles = useRolesStore((state) => state.roles)
+  const rolesLoading = useRolesStore((state) => state.loading)
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const { hasAnyPermission } = usePermissions()
@@ -208,7 +209,12 @@ export function UserEditForm({ user }: UserEditFormProps) {
             name="roles"
             control={control}
             render={({ field }) => (
-              <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
+              <RoleMultiSelect
+                options={ROLE_OPTIONS}
+                selected={field.value}
+                onChange={field.onChange}
+                loading={rolesLoading && roles.length === 0}
+              />
             )}
           />
         ) : (

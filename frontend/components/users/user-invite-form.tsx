@@ -49,6 +49,7 @@ export function UserInviteForm() {
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null)
 
   const roles = useRolesStore((state) => state.roles)
+  const rolesLoading = useRolesStore((state) => state.loading)
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const { hasAnyPermission } = usePermissions()
@@ -229,7 +230,12 @@ export function UserInviteForm() {
             name="roles"
             control={control}
             render={({ field }) => (
-              <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
+              <RoleMultiSelect
+                options={ROLE_OPTIONS}
+                selected={field.value}
+                onChange={field.onChange}
+                loading={rolesLoading && roles.length === 0}
+              />
             )}
           />
         ) : (

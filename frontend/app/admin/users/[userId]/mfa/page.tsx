@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
+import { LoadingState } from "@/components/ui/loading-state"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -77,9 +78,7 @@ export default function UserMfaManagementPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-md border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : isError ? (
           <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error ? error.message : "Could not load this user."}

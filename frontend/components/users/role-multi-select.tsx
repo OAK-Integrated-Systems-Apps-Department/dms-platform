@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, ChevronDown, Search, X } from "lucide-react"
+import { Check, ChevronDown, Loader2, Search, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -9,6 +9,15 @@ interface RoleMultiSelectProps {
   options: string[]
   selected: string[]
   onChange: (roles: string[]) => void
+  /**
+   * True while `options` is still loading (the tenant role list hasn't
+   * been fetched yet). Shows the trigger disabled with a small inline
+   * spinner in place of the normal placeholder/chips, rather than the
+   * shared full-card `LoadingState` — this is a ~44px form control, not a
+   * content area, so swapping in a `py-16` card here would blow out the
+   * surrounding form's layout far more than the missing options do.
+   */
+  loading?: boolean
 }
 
 /**
@@ -28,7 +37,7 @@ interface RoleMultiSelectProps {
  * resets whenever the panel closes so re-opening always starts from the
  * full list.
  */
-export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelectProps) {
+export function RoleMultiSelect({ options, selected, onChange, loading }: RoleMultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,6 +60,15 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
       setQuery("")
     }
   }, [open])
+
+  if (loading) {
+    return (
+      <div className="flex min-h-11 w-full items-center gap-2 rounded-btn border border-[var(--border-strong)] bg-muted py-2 pr-9 pl-2.5 text-[13.5px] text-[var(--ink-faint)]">
+        <Loader2 size={13} className="animate-spin" />
+        Loading roles…
+      </div>
+    )
+  }
 
   function toggleRole(role: string) {
     onChange(selected.includes(role) ? selected.filter((r) => r !== role) : [...selected, role])

@@ -5,6 +5,7 @@ import { ExternalLink, KeyRound } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { LoadingState } from "@/components/ui/loading-state"
 import { KEYCLOAK_ACCOUNT_URL } from "@/lib/api-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
@@ -32,7 +33,7 @@ import { securitySupplement } from "./data"
  * screens rather than the app-wide 9px/14px mix used elsewhere.
  */
 export function SecurityOverview() {
-  const { data: user } = useCurrentUser()
+  const { data: user, isLoading } = useCurrentUser()
   const [isSendingReset, setIsSendingReset] = useState(false)
 
   async function handleChangePassword() {
@@ -44,6 +45,10 @@ export function SecurityOverview() {
     } finally {
       setIsSendingReset(false)
     }
+  }
+
+  if (isLoading) {
+    return <LoadingState message="Loading…" />
   }
 
   return (

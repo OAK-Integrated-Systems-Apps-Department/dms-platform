@@ -11,6 +11,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { usePageTitle } from "@/lib/use-page-title"
 import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { LoadingState } from "@/components/ui/loading-state"
 import { RoleFilterSelect } from "@/components/users/role-filter-select"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
@@ -194,9 +195,7 @@ export default function UserListPage() {
       </div>
 
       {isPending ? (
-        <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          Loading users…
-        </div>
+        <LoadingState message="Loading users…" />
       ) : isError ? (
         <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
           {error instanceof Error ? error.message : "Could not load users."}

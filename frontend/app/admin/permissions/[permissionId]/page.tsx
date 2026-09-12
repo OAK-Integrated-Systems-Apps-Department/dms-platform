@@ -1,12 +1,13 @@
 "use client"
 
 import { notFound, useParams } from "next/navigation"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { Badge } from "@/components/ui/badge"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { LoadingState } from "@/components/ui/loading-state"
 import { usePermission } from "@/components/permissions/use-permission"
 
 /**
@@ -49,10 +50,7 @@ export default function PermissionDetailsPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            <Loader2 size={16} className="animate-spin" />
-            Loading permission…
-          </div>
+          <LoadingState message="Loading permission…" />
         ) : (
         <PermissionGate permission={["role.view", "role.manage"]}>
         {permission ? (
