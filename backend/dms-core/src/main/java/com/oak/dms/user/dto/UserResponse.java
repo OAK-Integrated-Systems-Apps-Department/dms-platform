@@ -7,6 +7,15 @@ import java.util.UUID;
 /**
  * Public API representation of a {@link com.oak.dms.user.User}.
  * <p>
+ * {@code tenantName} is resolved from {@link com.oak.dms.tenant.Tenant} by
+ * {@code tenantId} - {@code User} itself only carries the bare
+ * {@code tenantId} column (no JPA relation), so every {@code UserMapper}
+ * caller in {@code UserServiceImpl} looks it up via
+ * {@code TenantRepository} and passes it in; {@code listUsers} batches
+ * this across the page instead of resolving it per row. {@code null} only
+ * if the tenant row is somehow missing/deleted, which shouldn't happen for
+ * a user's own tenant in practice.
+ * <p>
  * {@code permissions} is the caller's own resolved permission-code set
  * (their role assignments' grants, flattened and deduplicated - see
  * {@link com.oak.dms.security.auth.AuthorizationService#myEffectivePermissionCodes()}),
@@ -22,6 +31,7 @@ import java.util.UUID;
 public record UserResponse(
         UUID userId,
         UUID tenantId,
+        String tenantName,
         UUID keycloakId,
         String email,
         String firstName,
@@ -34,6 +44,8 @@ public record UserResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         OffsetDateTime lastLoginAt,
+        /** See {@link com.oak.dms.user.User#getLastPasswordChangedAt()}'s doc comment. */
+        OffsetDateTime lastPasswordChangedAt,
         List<String> permissions
 ) {
 }

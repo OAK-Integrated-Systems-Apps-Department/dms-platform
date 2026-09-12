@@ -60,13 +60,7 @@ export default function UserMfaManagementPage() {
             { label: "MFA" },
           ]}
         />
-        <Link
-          href={user ? `/admin/users/${user.id}` : "/admin/users"}
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to View User
-        </Link>
+        
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             User MFA Management

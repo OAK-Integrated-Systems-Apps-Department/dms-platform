@@ -183,11 +183,30 @@ public class PasswordResetService {
             throw e;
         }
 
+        recordPasswordChanged(user);
+
         token.setUsedAt(OffsetDateTime.now());
         tokenRepository.save(token);
         invalidateOutstandingTokens(user.getUserId());
 
         log.info("Password reset completed via self-service flow for user {}", user.getUserId());
+    }
+
+    /**
+     * Best-effort, mirroring {@code AuthService#recordLastLogin}'s own
+     * reasoning: the Keycloak credential write in {@link #resetPassword}
+     * has already succeeded by the time this is called, so a failure
+     * persisting this timestamp locally shouldn't be reported back as a
+     * failed password reset - the person's password really did change
+     * either way.
+     */
+    private void recordPasswordChanged(User user) {
+        try {
+            user.setLastPasswordChangedAt(OffsetDateTime.now());
+            userRepository.save(user);
+        } catch (Exception e) {
+            log.warn("Could not record last password change for user {}: {}", user.getUserId(), e.getMessage());
+        }
     }
 
     private Optional<PasswordResetToken> findValidToken(String rawToken) {

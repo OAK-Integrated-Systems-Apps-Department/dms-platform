@@ -8,6 +8,8 @@ import type { UserRecord } from "@/components/users/types"
 export interface UserResponseDto {
   userId: string
   tenantId: string
+  /** Human-readable tenant name, resolved server-side — null only if the tenant row is somehow missing/deleted. */
+  tenantName: string | null
   keycloakId: string
   email: string
   firstName: string
@@ -21,6 +23,14 @@ export interface UserResponseDto {
   updatedAt: string | null
   /** ISO timestamp of this user's last successful login, or null if they've never logged in. */
   lastLoginAt: string | null
+  /**
+   * ISO timestamp of this user's last password change via our own
+   * /update-password or /reset-password flow, or null if they've never
+   * changed it under this tracking. Doesn't see a password changed
+   * directly through Keycloak's own hosted Account Console — same class
+   * of gap as `lastLoginAt` not seeing anything Keycloak-side.
+   */
+  lastPasswordChangedAt: string | null
 }
 
 /** Mirrors backend/dms-core's UserRoleResponse DTO (only the fields the UI uses). */
@@ -346,9 +356,19 @@ export async function syncUserRoles(
  * in Keycloak or an audit service that dms-core doesn't expose through
  * UserController today (see stores/users-store.ts's own placeholder
  * comments for the same gap). Those fall back to empty/"—" here rather
- * than being invented client-side. `lastLogin` is no longer one of them —
- * see `UserResponseDto.lastLoginAt` (backed by `users.last_login_at`,
- * written by `AuthService#login` on every successful direct-grant login).
+ * than being invented client-side. `lastLogin`, `tenant`, and
+ * `lastPasswordChange` are no longer among them — see
+ * `UserResponseDto.lastLoginAt` (backed by `users.last_login_at`, written
+ * by `AuthService#login` on every successful direct-grant login),
+ * `UserResponseDto.tenantName` (resolved server-side from `Tenant`), and
+ * `UserResponseDto.lastPasswordChangedAt` (backed by
+ * `users.last_password_changed_at`, written by
+ * `PasswordResetService#resetPassword` — the single place a real password
+ * change actually completes, covering both the self-service and
+ * admin-triggered reset flows). `lastPasswordChange` can't see a change
+ * made directly through Keycloak's own hosted Account Console, which
+ * stays a known gap, same as `lastLogin` not seeing anything
+ * Keycloak-side.
  */
 export function toUserRecord(
   user: UserResponseDto,
@@ -366,9 +386,9 @@ export function toUserRecord(
     // next to itself in the header.
     username: user.email.split("@")[0],
     email: user.email,
-    // No tenant-name lookup exists yet; showing the id is better than
-    // hiding the field entirely.
-    tenant: user.tenantId,
+    // Falls back to the raw id only in the (shouldn't-happen) case the
+    // backend couldn't resolve a name for it — see UserResponseDto.tenantName.
+    tenant: user.tenantName ?? user.tenantId,
     roles: roles.map((role) => role.roleName),
     platformRoles,
     status,
@@ -382,7 +402,12 @@ export function toUserRecord(
     lastName: user.lastName,
     createdOn: user.createdAt.slice(0, 10),
     mfaStatus: user.mfaEnabled ? "Enabled" : "Not enrolled",
-    lastPasswordChange: "—",
+    // Date-only, matching createdOn above (and the mock data this
+    // replaces) rather than lastLogin's date+time — a user who has never
+    // changed their password under this tracking (including one still on
+    // their initial invite-provisioned temporary password) has
+    // lastPasswordChangedAt: null, which falls back to "—".
+    lastPasswordChange: user.lastPasswordChangedAt ? user.lastPasswordChangedAt.slice(0, 10) : "—",
     activeSessions: 0,
     recentActivity: [],
     mfaEnrolled: user.mfaEnabled,
