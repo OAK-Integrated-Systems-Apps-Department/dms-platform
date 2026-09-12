@@ -10,6 +10,8 @@ export interface CurrentUser {
   userId: string
   tenantId: string
   email: string
+  firstName: string
+  lastName: string
   displayName: string
   mfaEnabled: boolean
   status: string

@@ -2,6 +2,7 @@ package com.oak.dms.user;
 
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
+import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
@@ -130,6 +131,21 @@ public class UserServiceImpl implements UserService {
         // and UserMapper's own doc comments for why that's "me"-only).
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, authorizationService.myEffectivePermissionCodes());
+    }
+
+    @Override
+    public UserResponse updateCurrentUser(UpdateOwnProfileRequest request) {
+        User user = findOwnedByCallerTenant(TenantContext.getUserId());
+
+        user.setFirstName(request.firstName());
+        user.setLastName(request.lastName());
+        user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
+        user.setUpdatedBy(user.getUserId());
+        user.setUpdatedAt(OffsetDateTime.now());
+
+        User saved = userRepository.save(user);
+        log.info("User {} updated their own profile", saved.getUserId());
+        return userMapper.toResponse(saved, authorizationService.myEffectivePermissionCodes());
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
+import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.user.dto.UserResponse;
@@ -49,6 +50,15 @@ public class UserController {
     @Operation(summary = "Get the calling user's own profile")
     public UserResponse getCurrentUser() {
         return userService.getCurrentUser();
+    }
+
+    @PutMapping("/me")
+    @Operation(summary = "Update the calling user's own first/last name",
+            description = "Deliberately narrower than PUT /{userId} (the admin-facing equivalent): only "
+                    + "firstName/lastName are accepted, so a caller can never use this to change their own "
+                    + "tenant, role assignments, MFA flag, or status - see UpdateOwnProfileRequest.")
+    public UserResponse updateCurrentUser(@Valid @RequestBody UpdateOwnProfileRequest request) {
+        return userService.updateCurrentUser(request);
     }
 
     @GetMapping("/me/platform-roles")

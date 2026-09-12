@@ -204,6 +204,29 @@ export async function updateUserProfile(
   )
 }
 
+/**
+ * Self-service equivalent of `updateUserProfile`, via `PUT /api/v1/users/me`
+ * — only `firstName`/`lastName`, matching `UpdateOwnProfileRequest` on the
+ * backend. Used by My Profile's inline edit; unlike the admin Edit User
+ * form, there's no `mfaEnabled`/`status`/roles to pass through here at all,
+ * since this endpoint doesn't accept them (a caller can't use it to change
+ * their own tenant, role, or account status).
+ */
+export async function updateCurrentUserProfile(patch: {
+  firstName: string
+  lastName: string
+}): Promise<UserResponseDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    "Could not save changes."
+  )
+}
+
 export async function sendPasswordReset(userId: string): Promise<void> {
   await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/reset-password`,
