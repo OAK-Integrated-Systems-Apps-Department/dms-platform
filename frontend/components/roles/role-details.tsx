@@ -38,19 +38,13 @@ type AssignedUserSortKey = "name" | "username" | "email" | "status"
  * it's destructive rather than an edit, so it lives here as its own
  * confirm-and-act flow rather than folding into Edit Role.
  *
- * FIXED KNOWN GAP: Assigned Users used to read `stores/users-store.ts`, a
- * pure in-memory mock store seeded from `components/users/data.ts` and
- * never connected to the backend — so this table always showed the same
- * hardcoded mock users regardless of who was actually assigned. It now
- * reads `useUsers()` (`lib/users/use-users.ts`), the same real,
- * backend-backed data source the User List and View User screens use,
- * matching on `user.roles.includes(role.name)` exactly as before — that
- * part of the logic wasn't wrong, only what it was reading from was.
- * There's no dedicated "users by role" backend endpoint yet, so this
- * pays the same cost `useUsers()` already pays elsewhere (fetching every
- * user in the tenant plus each one's role list); fine at tenant-roster
- * scale, would need a real `GET /api/v1/roles/{roleId}/users` endpoint to
- * scale further.
+ * Assigned Users reads `useUsers()` (`lib/users/use-users.ts`), the same
+ * real, backend-backed data source the User List and View User screens
+ * use, matching on `user.roles.includes(role.name)`. There's no dedicated
+ * "users by role" backend endpoint yet, so this pays the same cost
+ * `useUsers()` already pays elsewhere (fetching every user in the tenant
+ * plus each one's role list); fine at tenant-roster scale, would need a
+ * real `GET /api/v1/roles/{roleId}/users` endpoint to scale further.
  */
 export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: RoleDetailsProps) {
   const router = useRouter()

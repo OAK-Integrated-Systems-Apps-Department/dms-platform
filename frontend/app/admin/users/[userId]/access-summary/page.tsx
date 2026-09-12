@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -74,7 +75,7 @@ export default function UserAccessSummaryPage() {
           <UserAccessSummary
             user={user}
             onToggleStatus={toggleStatus}
-            canManage={hasPermission("otua.manage-users.activate-deactivate")}
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)}
           />
         )}
     </DashboardShell>

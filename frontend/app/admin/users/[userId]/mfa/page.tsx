@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -89,9 +90,9 @@ export default function UserMfaManagementPage() {
             onRequireSetup={handleRequireSetup}
             onResetCredentials={handleResetCredentials}
             // No dedicated granular code for MFA admin actions in the
-            // catalog - otua.manage-users.update is the closest "manage
-            // this account" equivalent to the old user.manage.
-            canManage={hasPermission("otua.manage-users.update")}
+            // catalog - OTUA_USERS_UPDATE is the closest "manage this
+            // account" equivalent to the old user.manage.
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
     </DashboardShell>

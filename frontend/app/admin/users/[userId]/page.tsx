@@ -7,6 +7,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -52,7 +53,7 @@ export default function ViewUserPage() {
             Loading user…
           </div>
         ) : (
-        <PermissionGate permission={["otua.manage-users.view", "otua.manage-users.update"]}>
+        <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
         {isError ? (
           <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
@@ -64,9 +65,9 @@ export default function ViewUserPage() {
           user={user}
             onToggleStatus={toggleStatus}
             onResetPassword={sendPasswordReset}
-            canResetPassword={hasPermission("otua.manage-users.reset-password")}
-            canActivateDeactivate={hasPermission("otua.manage-users.activate-deactivate")}
-            canEdit={hasPermission("otua.manage-users.update")}
+            canResetPassword={hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)}
+            canActivateDeactivate={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)}
+            canEdit={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
         />
         )}
         </PermissionGate>

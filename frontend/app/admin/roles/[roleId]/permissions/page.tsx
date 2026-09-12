@@ -9,6 +9,7 @@ import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolePermissionConfig } from "@/components/roles/role-permission-config"
 import { useRole } from "@/components/roles/use-role"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -80,7 +81,7 @@ export default function RolePermissionsPage() {
             Loading role…
           </div>
         ) : role ? (
-          <PermissionGate permission="asm.manage-roles-permissions.assign-permissions">
+          <PermissionGate permission={PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS}>
             <RolePermissionConfig role={role} onSave={handleSave} />
           </PermissionGate>
         ) : null}

@@ -29,7 +29,7 @@ public class RolePermissionController {
     private final RolePermissionService rolePermissionService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission('asm.manage-roles-permissions.assign-permissions')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "Grant a permission code to a role")
     public ResponseEntity<RolePermissionResponse> grantPermission(@PathVariable UUID roleId,
                                                                     @Valid @RequestBody GrantPermissionRequest request) {
@@ -40,14 +40,14 @@ public class RolePermissionController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission('asm.manage-roles-permissions.view-role', 'asm.manage-roles-permissions.assign-permissions')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_VIEW_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "List permissions granted to a role")
     public List<RolePermissionResponse> listPermissions(@PathVariable UUID roleId) {
         return rolePermissionService.listPermissionsForRole(roleId);
     }
 
     @DeleteMapping("/{rolePermissionId}")
-    @PreAuthorize("@authz.hasPermission('asm.manage-roles-permissions.assign-permissions')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Revoke a permission grant from a role")
     public void revokePermission(@PathVariable UUID roleId, @PathVariable UUID rolePermissionId) {

@@ -32,7 +32,7 @@ public class RoleController {
     private final RoleService roleService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission('asm.manage-roles-permissions.create-role')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_CREATE_ROLE)")
     @Operation(summary = "Create a role in the caller's tenant")
     public ResponseEntity<RoleResponse> createRole(@Valid @RequestBody CreateRoleRequest request) {
         RoleResponse response = roleService.createRole(request);
@@ -40,28 +40,28 @@ public class RoleController {
     }
 
     @GetMapping("/{roleId}")
-    @PreAuthorize("@authz.hasAnyPermission('asm.manage-roles-permissions.view-role', 'asm.manage-roles-permissions.update-role')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_VIEW_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_UPDATE_ROLE)")
     @Operation(summary = "Get a role by id")
     public RoleResponse getRole(@PathVariable UUID roleId) {
         return roleService.getRole(roleId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission('asm.manage-roles-permissions.view-role', 'asm.manage-roles-permissions.update-role')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_VIEW_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_UPDATE_ROLE)")
     @Operation(summary = "List roles in the caller's tenant")
     public PageResponse<RoleResponse> listRoles(Pageable pageable) {
         return PageResponse.from(roleService.listRoles(pageable));
     }
 
     @PutMapping("/{roleId}")
-    @PreAuthorize("@authz.hasPermission('asm.manage-roles-permissions.update-role')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_UPDATE_ROLE)")
     @Operation(summary = "Update a role's name, description, and status")
     public RoleResponse updateRole(@PathVariable UUID roleId, @Valid @RequestBody UpdateRoleRequest request) {
         return roleService.updateRole(roleId, request);
     }
 
     @DeleteMapping("/{roleId}")
-    @PreAuthorize("@authz.hasPermission('asm.manage-roles-permissions.delete-role')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_DELETE_ROLE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete (soft-delete) a role")
     public void deleteRole(@PathVariable UUID roleId) {

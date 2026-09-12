@@ -4,6 +4,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserInviteForm } from "@/components/users/user-invite-form"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 
 /** Add User — invite a new user into the current tenant. Admin-only; not self-registration. */
@@ -31,7 +32,7 @@ export default function AddUserPage() {
           initial role is picked, POST /api/v1/users/{userId}/roles
           (assign-role) - gate on either, matching the two backend actions
           it can trigger. */}
-      <PermissionGate permission={["otua.manage-users.create", "otua.manage-users.assign-role"]}>
+      <PermissionGate permission={[PermissionCodes.OTUA_USERS_CREATE, PermissionCodes.OTUA_USERS_ASSIGN_ROLE]}>
         <UserInviteForm />
       </PermissionGate>
     </DashboardShell>

@@ -11,6 +11,7 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -28,25 +29,18 @@ interface UserEditFormProps {
  * credential) are Keycloak-managed and this screen only exposes what DMS
  * is permitted to write.
  *
- * KNOWN GAP: `PUT /api/v1/users/{userId}` only accepts `firstName`,
- * `lastName`, `mfaEnabled`, and `status` (see UpdateUserRequest.java / the
- * endpoint's Swagger page) — there's no field for email at all. Email
- * stays on the form because the mockup calls for it, but it's not sent to
- * the backend; it looks to be Keycloak-managed like username, just not
- * yet marked read-only in this design.
- *
- * The "additional profile attributes" field from the mockup has been
- * removed — it was never wired to a backend field, so it wasn't actually
- * used.
+ * `PUT /api/v1/users/{userId}` only accepts `firstName`, `lastName`,
+ * `mfaEnabled`, and `status` (see UpdateUserRequest.java) — there's no
+ * field for email at all. Email stays on the form because the mockup
+ * calls for it, but it's not sent to the backend; it's Keycloak-managed
+ * like username, just not yet marked read-only in this design.
  *
  * `mfaEnabled`/`status` are passed through unmodified from a freshly
  * fetched copy of the user (not the `user` prop, which may be a moment
  * stale) — this form has no controls for either, so it must never
  * silently flip one while saving name changes.
  *
- * FIXED KNOWN GAP: roles previously had no editing surface on this screen
- * at all — `user.roles` (from `useUser`/`toUserRecord`) was display-only.
- * `roles` is now a real form field, submitted via `syncUserRoles`
+ * `roles` is a real form field, submitted via `syncUserRoles`
  * (`lib/users/api.ts`), which diffs the selection against the user's
  * actual current assignments and issues the necessary
  * `POST`/`DELETE /api/v1/users/{userId}/roles` calls — each of which the
@@ -63,8 +57,8 @@ export function UserEditForm({ user }: UserEditFormProps) {
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const { hasAnyPermission } = usePermissions()
   const canViewRoles = hasAnyPermission(
-    "asm.manage-roles-permissions.view-role",
-    "asm.manage-roles-permissions.update-role"
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
   useEffect(() => {
     // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or

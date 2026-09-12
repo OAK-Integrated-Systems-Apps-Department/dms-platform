@@ -11,6 +11,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUsers } from "@/lib/users/use-users"
@@ -22,10 +23,10 @@ const DEFAULT_PAGE_SIZE = 10
  * Role Management — Role List (R1). Search roles, add a role, or
  * edit/activate/deactivate/delete an existing one. System roles are
  * read-only — see the footnote and `RolesTable`'s handling of
- * `role.system`. (KNOWN GAP: the backend has no "system role" concept
- * yet — see the note on `fromBackend` in `stores/roles-store.ts` — so
- * every role this fetches from the API comes back editable/deletable
- * regardless of that footnote.)
+ * `role.system`. The backend has no "system role" concept yet (see
+ * `fromBackend` in `stores/roles-store.ts`), so every role fetched from
+ * the API currently comes back editable/deletable regardless of that
+ * footnote.
  */
 export default function RoleListPage() {
   usePageTitle("Role List")
@@ -41,23 +42,23 @@ export default function RoleListPage() {
   // (see stores/roles-store.ts's addRole) - gate the link on either code
   // the target page's form can actually exercise.
   const canCreateRole = hasAnyPermission(
-    "asm.manage-roles-permissions.create-role",
-    "asm.manage-roles-permissions.assign-permissions"
+    PermissionCodes.ASM_ROLES_CREATE_ROLE,
+    PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS
   )
-  const canUpdateRole = hasPermission("asm.manage-roles-permissions.update-role")
-  const canDeleteRole = hasPermission("asm.manage-roles-permissions.delete-role")
+  const canUpdateRole = hasPermission(PermissionCodes.ASM_ROLES_UPDATE_ROLE)
+  const canDeleteRole = hasPermission(PermissionCodes.ASM_ROLES_DELETE_ROLE)
   const canView = hasAnyPermission(
-    "asm.manage-roles-permissions.view-role",
-    "asm.manage-roles-permissions.update-role"
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
 
-  // FIXED KNOWN GAP: `RoleRecord.assignedUsers` from the store is always
-  // 0 — there's no `GET /api/v1/roles/{roleId}/users` endpoint, so it was
-  // never wired to anything real (see `fromBackend`'s doc comment in
-  // `stores/roles-store.ts`). Same fix Role Details already used: pull
-  // the real user list (`useUsers()`, the same data source the User List
-  // page itself is built on) and count matches on `user.roles.includes`
-  // client-side, rather than trusting the store's placeholder field.
+  // `RoleRecord.assignedUsers` from the store is always 0 — there's no
+  // `GET /api/v1/roles/{roleId}/users` endpoint (see `fromBackend`'s doc
+  // comment in `stores/roles-store.ts`). Pull the real user list
+  // (`useUsers()`, the same data source the User List page is built on)
+  // and count matches on `user.roles.includes` client-side instead of
+  // trusting the store's placeholder field - same approach Role Details
+  // uses.
   const { users } = useUsers()
   const assignedUserCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -175,7 +176,7 @@ export default function RoleListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"]}>
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"

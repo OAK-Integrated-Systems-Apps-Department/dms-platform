@@ -6,6 +6,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserEditForm } from "@/components/users/user-edit-form"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -50,10 +51,10 @@ export default function EditUserPage() {
           {error instanceof Error ? error.message : "Could not load this user."}
         </div>
       ) : (
-        {/* This form calls both PUT /api/v1/users/{userId} (update) and, if
-            roles changed, POST/DELETE /api/v1/users/{userId}/roles
-            (assign-role) - gate on either. */}
-        <PermissionGate permission={["otua.manage-users.update", "otua.manage-users.assign-role"]}>
+        // This form calls both PUT /api/v1/users/{userId} (update) and, if
+        // roles changed, POST/DELETE /api/v1/users/{userId}/roles
+        // (assign-role) - gate on either.
+        <PermissionGate permission={[PermissionCodes.OTUA_USERS_UPDATE, PermissionCodes.OTUA_USERS_ASSIGN_ROLE]}>
           <UserEditForm user={user} />
         </PermissionGate>
       )}

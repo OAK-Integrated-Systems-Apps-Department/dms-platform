@@ -15,6 +15,7 @@ import { RoleFilterSelect } from "@/components/users/role-filter-select"
 import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
@@ -44,15 +45,15 @@ export default function UserListPage() {
   } = useUsers()
   const { isTenantAdmin } = useIsTenantAdmin()
   const { hasPermission, hasAnyPermission } = usePermissions()
-  const canCreateUser = hasPermission("otua.manage-users.create")
-  const canEditUser = hasPermission("otua.manage-users.update")
-  const canResetPassword = hasPermission("otua.manage-users.reset-password")
-  const canActivateDeactivate = hasPermission("otua.manage-users.activate-deactivate")
+  const canCreateUser = hasPermission(PermissionCodes.OTUA_USERS_CREATE)
+  const canEditUser = hasPermission(PermissionCodes.OTUA_USERS_UPDATE)
+  const canResetPassword = hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)
+  const canActivateDeactivate = hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)
   // GET /api/v1/roles (RoleController) - view-role or update-role, not the
   // legacy role.view/role.manage this used to check.
   const canViewRoles = hasAnyPermission(
-    "asm.manage-roles-permissions.view-role",
-    "asm.manage-roles-permissions.update-role"
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
 
   // Live tenant role list from the DB (same store the Roles list and
@@ -141,7 +142,7 @@ export default function UserListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["otua.manage-users.view", "otua.manage-users.update"]}>
+      <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"

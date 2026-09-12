@@ -9,6 +9,7 @@ import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleDetails } from "@/components/roles/role-details"
 import { useRole } from "@/components/roles/use-role"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 
@@ -50,7 +51,7 @@ export default function RoleDetailsPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"]}>
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE]}>
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <Loader2 size={16} className="animate-spin" />
@@ -59,11 +60,11 @@ export default function RoleDetailsPage() {
       ) : role ? (
         <RoleDetails
           role={role}
-          canEdit={hasPermission("asm.manage-roles-permissions.update-role")}
-          canDelete={hasPermission("asm.manage-roles-permissions.delete-role")}
+          canEdit={hasPermission(PermissionCodes.ASM_ROLES_UPDATE_ROLE)}
+          canDelete={hasPermission(PermissionCodes.ASM_ROLES_DELETE_ROLE)}
           canManagePermissions={hasAnyPermission(
-            "asm.manage-roles-permissions.view-role",
-            "asm.manage-roles-permissions.assign-permissions"
+            PermissionCodes.ASM_ROLES_VIEW_ROLE,
+            PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS
           )}
         />
       ) : (

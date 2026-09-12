@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react"
 
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePermissionsStore } from "@/stores/permissions-store"
 import type {
@@ -30,22 +31,14 @@ interface UsePermissionCatalogResult {
  * PLATFORM_ADMIN — there's no in-app admin screen for editing the catalog
  * itself anymore) rather than a frozen snapshot.
  *
- * FIXED BUG: this used to only fetch once per store lifetime
- * (`if (permissions.length === 0) fetchPermissions()`), never again for
- * the rest of the browser session. `usePermissionsStore` persists across
- * every client-side route change, so the moment any one of these four
- * screens had ever been visited once, every later visit — from any of
- * them — reused that same frozen snapshot forever. A permission's
- * module/action regrouping made directly against the backend API in the
- * same session updates the store correctly at the time, but any Role
- * screen that mounts *after* that change with its own fresh
- * `usePermissionCatalog()` call had no way to know a re-fetch was ever
- * needed — leading to a mix of stale and fresh grouping info depending on
- * exactly what had been visited when, which is what produced a permission
- * appearing to sit under both its old and new module at once. This now
- * re-fetches fresh on every mount, unconditionally — still not one
- * request per screen if nothing changed (loading briefly shows cached
- * data, not a blank screen), but it's guaranteed correct.
+ * Always re-fetches on mount, unconditionally, rather than only fetching
+ * once per `usePermissionsStore` lifetime — that store persists across
+ * every client-side route change, so a permission's module/action
+ * regrouping made against the backend API in one of these four screens
+ * would otherwise leave any other screen that mounts afterward holding a
+ * stale grouping until a full page reload. Re-fetching on every mount
+ * still isn't one request per screen if nothing changed (loading briefly
+ * shows cached data, not a blank screen), but stays guaranteed correct.
  *
  * Grouping: permissions are grouped by `actionId`, and actions by
  * `moduleCode`, mirroring the DB's actual Module -> Action -> Permission
@@ -75,7 +68,7 @@ interface UsePermissionCatalogResult {
  */
 export function usePermissionCatalog(): UsePermissionCatalogResult {
   const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions()
-  const canView = hasAnyPermission("role.view", "role.manage")
+  const canView = hasAnyPermission(PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE)
 
   const permissions = usePermissionsStore((state) => state.permissions)
   const modules = usePermissionsStore((state) => state.modules)

@@ -19,8 +19,10 @@ import java.util.stream.Collectors;
  * role_permissions / user_roles tables, complementing the coarse
  * ROLE_* checks derived straight from the Keycloak token.
  *
- * Usage in controllers:
- *   {@code @PreAuthorize("@authz.hasPermission('otua.manage-users.update')")}
+ * Usage in controllers - reference permission codes via {@link com.oak.dms.security.rbac.PermissionCodes}
+ * rather than a raw string literal (Spring EL has no notion of a Java
+ * import, so this needs a fully-qualified {@code T(...)} type reference):
+ *   {@code @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")}
  */
 @Component("authz")
 @RequiredArgsConstructor

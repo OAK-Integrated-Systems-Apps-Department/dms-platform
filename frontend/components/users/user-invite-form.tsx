@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { API_BASE_URL } from "@/lib/api-config"
 import { assignUserRole } from "@/lib/users/api"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -25,24 +26,20 @@ import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
  * (see app/update-password/page.tsx). Nothing here is reachable without
  * an existing admin session.
  *
- * Role options come from the real tenant role list (`useRolesStore`), not
- * the hardcoded `components/roles/data.ts` catalog this used to read from.
+ * Role options come from the real tenant role list (`useRolesStore`).
  *
- * FIXED KNOWN GAP: `CreateUserRequest` only accepts
- * {email, firstName, lastName} — it has no `roles` field, and never did,
- * so a role selected here used to be silently dropped: sent in the POST
- * body, accepted by nothing. Role assignment is a genuinely separate API
+ * `CreateUserRequest` only accepts {email, firstName, lastName} — it has
+ * no `roles` field. Role assignment is a genuinely separate API
  * (`POST /api/v1/users/{userId}/roles`, see `UserRoleController`) that
  * needs a `userId`, which doesn't exist until the user itself is created —
- * so this now creates the user first, then assigns each selected role as
- * a second step once a real `userId` is available. Each assignment is
+ * so this creates the user first, then assigns each selected role as a
+ * second step once a real `userId` is available. Each assignment is
  * tenant-scoped and mirrored into Keycloak as a realm role by the backend
  * (see `UserRoleServiceImpl.assignRole`), not just written to the local
  * database.
  *
- * `username` remains unsent — `CreateUserRequest` still has no field for
- * it, and there's no separate endpoint for it the way there now is for
- * roles.
+ * `username` remains unsent — `CreateUserRequest` has no field for it,
+ * and there's no separate endpoint for it the way there is for roles.
  */
 export function UserInviteForm() {
   const router = useRouter()
@@ -54,8 +51,8 @@ export function UserInviteForm() {
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const { hasAnyPermission } = usePermissions()
   const canViewRoles = hasAnyPermission(
-    "asm.manage-roles-permissions.view-role",
-    "asm.manage-roles-permissions.update-role"
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
   useEffect(() => {
     // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or

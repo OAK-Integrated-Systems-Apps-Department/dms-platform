@@ -66,7 +66,7 @@ public class UserController {
     }
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission('otua.manage-users.create')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_CREATE)")
     @Operation(summary = "Invite a new user into the caller's tenant")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponse response = userService.createUser(request);
@@ -74,14 +74,14 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    @PreAuthorize("@authz.hasAnyPermission('otua.manage-users.view', 'otua.manage-users.update')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "Get a user by id, within the caller's tenant")
     public UserResponse getUser(@PathVariable UUID userId) {
         return userService.getUser(userId);
     }
 
     @GetMapping("/{userId}/platform-roles")
-    @PreAuthorize("@authz.hasAnyPermission('otua.manage-users.view', 'otua.manage-users.update')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "List the fixed platform roles (TENANT_ADMIN, MEMBER) this user holds",
             description = "These are Keycloak-only realm roles, never rows in the roles/user_roles "
                     + "tables - see GET /{userId}/roles (UserRoleController) for tenant-defined DMS "
@@ -94,21 +94,21 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission('otua.manage-users.view', 'otua.manage-users.update')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "List users in the caller's tenant")
     public PageResponse<UserResponse> listUsers(Pageable pageable) {
         return PageResponse.from(userService.listUsers(pageable));
     }
 
     @PutMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission('otua.manage-users.update')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "Update a user's profile/status")
     public UserResponse updateUser(@PathVariable UUID userId, @Valid @RequestBody UpdateUserRequest request) {
         return userService.updateUser(userId, request);
     }
 
     @PostMapping("/{userId}/reset-password")
-    @PreAuthorize("@authz.hasPermission('otua.manage-users.reset-password')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD)")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "Send a password reset email to a user in the caller's tenant. Sets a fresh "
             + "temporary password server-side and emails the user a link to choose their own - no "
@@ -118,7 +118,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission('otua.manage-users.activate-deactivate')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a user")
     public void deactivateUser(@PathVariable UUID userId) {
@@ -126,7 +126,7 @@ public class UserController {
     }
 
     @PostMapping("/{userId}/reactivate")
-    @PreAuthorize("@authz.hasPermission('otua.manage-users.activate-deactivate')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
     @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
             description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
                     + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")

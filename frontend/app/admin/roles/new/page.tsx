@@ -8,6 +8,7 @@ import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -52,7 +53,7 @@ export default function AddRolePage() {
           (create-role) and, for any permissions pre-selected in the quick
           picker, syncRolePermissions (assign-permissions) - gate on
           either. */}
-      <PermissionGate permission={["asm.manage-roles-permissions.create-role", "asm.manage-roles-permissions.assign-permissions"]}>
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_CREATE_ROLE, PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS]}>
         <RoleForm mode="create" onSubmit={handleSubmit} />
       </PermissionGate>
     </DashboardShell>

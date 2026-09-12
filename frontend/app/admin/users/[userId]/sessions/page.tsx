@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -86,7 +87,7 @@ export default function UserSessionsPage() {
             onRevokeAllSessions={() => revokeAllSessions(user.id)}
             // No dedicated granular code for session revocation - closest
             // "manage this account" equivalent to the old user.manage.
-            canManage={hasPermission("otua.manage-users.update")}
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
     </DashboardShell>

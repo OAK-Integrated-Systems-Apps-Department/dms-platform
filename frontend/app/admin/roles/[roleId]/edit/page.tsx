@@ -10,6 +10,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
 import { useRole } from "@/components/roles/use-role"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -81,7 +82,7 @@ export default function EditRolePage() {
       ) : role ? (
         // This form calls both updateRole (update-role) and
         // syncRolePermissions (assign-permissions) - gate on either.
-        <PermissionGate permission={["asm.manage-roles-permissions.update-role", "asm.manage-roles-permissions.assign-permissions"]}>
+        <PermissionGate permission={[PermissionCodes.ASM_ROLES_UPDATE_ROLE, PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS]}>
           <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
         </PermissionGate>
       ) : (
