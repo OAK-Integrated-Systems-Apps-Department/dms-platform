@@ -49,13 +49,13 @@ export default function ViewUserPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             Loading user…
           </div>
         ) : (
         <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
         {isError ? (
-          <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
               ? error.message
               : "Could not load this user."}

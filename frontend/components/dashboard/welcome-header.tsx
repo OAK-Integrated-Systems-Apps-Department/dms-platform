@@ -13,10 +13,10 @@ interface WelcomeHeaderProps {
 }
 
 const btnGhostClass =
-  "flex items-center gap-[7px] rounded-[9px] border border-[var(--border-strong)] bg-card px-[15px] py-[9px] text-[13px] font-semibold text-foreground"
+  "flex items-center gap-[7px] rounded-btn border border-[var(--border-strong)] bg-card px-[15px] py-[9px] text-[13px] font-semibold text-foreground"
 
 const btnPrimaryClass =
-  "flex items-center gap-[7px] rounded-[9px] border border-primary bg-primary px-[15px] py-[9px] text-[13px] font-semibold text-primary-foreground"
+  "flex items-center gap-[7px] rounded-btn border border-primary bg-primary px-[15px] py-[9px] text-[13px] font-semibold text-primary-foreground"
 
 /** Date eyebrow + greeting + the two primary quick actions. */
 export function WelcomeHeader({ firstName, dateLabel, onUpload, onCreateFolder }: WelcomeHeaderProps) {

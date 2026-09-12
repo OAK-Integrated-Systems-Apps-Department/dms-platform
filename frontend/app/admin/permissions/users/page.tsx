@@ -122,7 +122,7 @@ export default function UserListPage() {
             onChange={(event) =>
               handleFilterChange(() => setRoleFilter(event.target.value))
             }
-            className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {ROLE_OPTIONS.map((role) => (
               <option key={role} value={role}>
@@ -146,7 +146,7 @@ export default function UserListPage() {
                 )
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             <option value="all">All statuses</option>
             <option value="Active">Active</option>
@@ -160,7 +160,7 @@ export default function UserListPage() {
 
         <Link
           href="/admin/users/new"
-          className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+          className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
         >
           <Plus size={16} />
           Add user
@@ -168,11 +168,11 @@ export default function UserListPage() {
       </div>
 
       {isPending ? (
-        <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           Loading users…
         </div>
       ) : isError ? (
-        <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
           {error instanceof Error ? error.message : "Could not load users."}
         </div>
       ) : (

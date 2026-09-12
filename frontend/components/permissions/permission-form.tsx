@@ -23,7 +23,7 @@ interface PermissionFormProps {
 }
 
 const selectClassName =
-  "h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 pr-9 text-[13.5px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+  "h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 pr-9 text-[13.5px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:cursor-not-allowed disabled:opacity-60"
 
 /**
  * Add/Edit Permission form. Every permission belongs to exactly one
@@ -91,17 +91,17 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
   return (
     <form
       onSubmit={handleSubmit(handleFormSubmit)}
-      className="rounded-[14px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
+      className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       {submitError && (
-        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-6 flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{submitError}</span>
         </div>
       )}
 
       {isSharedPermission && (
-        <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+        <div className="mb-6 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           This is part of the platform&apos;s shared permission catalog.
           It&apos;s visible to every tenant and can&apos;t be edited from
           here.
@@ -183,7 +183,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
       </p>
 
       {catalogLoading ? (
-        <div className="flex items-center gap-2 rounded-[9px] border border-dashed border-border py-6 text-[13px] text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-btn border border-dashed border-border py-6 text-[13px] text-muted-foreground">
           <Loader2 size={15} className="ml-4 animate-spin" />
           Loading modules and actions…
         </div>
@@ -302,14 +302,14 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         <button
           type="button"
           onClick={() => router.push("/admin/permissions")}
-          className="rounded-[9px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting || catalogLoading || isSharedPermission}
-          className="rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           {mode === "create" ? "Create Permission" : "Save Changes"}
         </button>

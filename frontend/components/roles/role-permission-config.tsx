@@ -88,7 +88,7 @@ export function RolePermissionConfig({
   }
 
   return (
-    <div className="rounded-[14px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Role identity strip */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -111,14 +111,14 @@ export function RolePermissionConfig({
       </div>
 
       {isSystemRole && (
-        <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+        <div className="mb-6 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           This is a system role. Its permissions are managed by the platform and
           can&apos;t be edited here.
         </div>
       )}
 
       {submitError && (
-        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-6 flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{submitError}</span>
         </div>
@@ -150,7 +150,7 @@ export function RolePermissionConfig({
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+            className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
           >
             Cancel
           </button>
@@ -159,7 +159,7 @@ export function RolePermissionConfig({
             onClick={handleSave}
             disabled={isSystemRole || !isDirty || saving}
             className={cn(
-              "rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+              "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
               "disabled:cursor-not-allowed disabled:opacity-60"
             )}
           >

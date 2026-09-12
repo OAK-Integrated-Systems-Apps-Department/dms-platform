@@ -59,14 +59,14 @@
 //         </div>
 
 //         {platformAdminLoading ? (
-//           <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+//           <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
 //             <Loader2 size={16} className="animate-spin" />
 //             Loading…
 //           </div>
 //         ) : isPlatformAdmin ? (
 //           <PermissionForm mode="create" onSubmit={handleSubmit} />
 //         ) : (
-//           <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+//           <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
 //             <AlertTriangle size={20} className="text-[var(--rust)]" />
 //             Only a platform administrator can add permissions to the catalog.
 //           </div>

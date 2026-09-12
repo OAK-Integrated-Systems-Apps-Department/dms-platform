@@ -75,7 +75,7 @@ export default function EditRolePage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <Loader2 size={16} className="animate-spin" />
           Loading role…
         </div>
@@ -86,7 +86,7 @@ export default function EditRolePage() {
           <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
         </PermissionGate>
       ) : (
-        <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />
           Couldn&apos;t load this role.
         </div>

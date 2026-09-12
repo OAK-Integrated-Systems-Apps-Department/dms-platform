@@ -135,10 +135,10 @@ export function UserEditForm({ user }: UserEditFormProps) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]"
+      className="rounded-lg border border-border bg-card p-[30px] pb-[26px]"
     >
       {submitError && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+        <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
           <AlertTriangle
             size={16}
             className="mt-px shrink-0 text-[var(--rust)]"
@@ -230,14 +230,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
         <button
           type="button"
           onClick={() => router.push(`/admin/users/${user.id}`)}
-          className="rounded-[9px] border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[9px] border border-[#123527] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving…" : "Save changes"}
         </button>

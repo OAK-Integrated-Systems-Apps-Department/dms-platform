@@ -47,7 +47,7 @@ export function SearchInput({
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}
         className={cn(
-          "h-[38px] w-full min-w-0 rounded-[9px] border border-border bg-muted text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card",
+          "h-[38px] w-full min-w-0 rounded-btn border border-border bg-muted text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card",
           showIcon ? "pl-9" : "pl-3",
           value ? "pr-9" : "pr-3",
           inputClassName

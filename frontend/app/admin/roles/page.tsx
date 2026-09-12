@@ -193,7 +193,7 @@ export default function RoleListPage() {
                 event.target.value as "all" | "Active" | "Inactive"
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             <option value="all">All statuses</option>
             <option value="Active">Active</option>
@@ -207,7 +207,7 @@ export default function RoleListPage() {
 
         <Link
           href="/admin/roles/matrix"
-          className="flex items-center gap-1.5 rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           <Grid3x3 size={16} />
           Permission Matrix
@@ -215,7 +215,7 @@ export default function RoleListPage() {
         {canCreateRole && (
           <Link
             href="/admin/roles/new"
-            className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+            className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
           >
             <Plus size={16} />
             Add Role
@@ -224,25 +224,25 @@ export default function RoleListPage() {
       </div>
 
       {actionError && (
-        <div className="mb-4 flex items-start gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{actionError}</span>
         </div>
       )}
 
         {loading && roles.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             <Loader2 size={16} className="animate-spin" />
             Loading roles…
           </div>
         ) : fetchError && roles.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
             <AlertTriangle size={20} className="text-[var(--rust)]" />
             <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
             <button
               type="button"
               onClick={() => fetchRoles()}
-              className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+              className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
             >
               Try again
             </button>

@@ -99,7 +99,7 @@ export function UserDetailView({
   const canResetThisUser = canResetPassword && user.status === "Active"
 
   return (
-    <div className="rounded-[14px] border border-border bg-card p-[26px] pt-[26px] pb-[28px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card p-[26px] pt-[26px] pb-[28px] shadow-[var(--ledger-shadow)]">
       <div className="mb-[26px] flex items-center gap-4">
         <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-xl font-semibold text-primary-foreground">
           {initials(user.name)}
@@ -109,7 +109,7 @@ export function UserDetailView({
             {user.name}
             <Badge
               variant={user.status === "Active" ? "default" : "muted"}
-              className="gap-1.5 rounded-[10px] align-middle text-[11px] font-semibold"
+              className="gap-1.5 rounded-md align-middle text-[11px] font-semibold"
             >
               <span className="size-[5px] rounded-full bg-current" />
               {user.status}
@@ -139,8 +139,8 @@ export function UserDetailView({
                   disabled={!canResetThisUser}
                   className={
                     canResetThisUser
-                      ? "flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
-                      : "flex cursor-not-allowed items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
+                      ? "flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+                      : "flex cursor-not-allowed items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
                   }
                 >
                   <KeyRound size={14} />
@@ -165,8 +165,8 @@ export function UserDetailView({
                   onClick={() => setStatusDialogOpen(true)}
                   className={
                     user.status === "Active"
-                      ? "rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-                      : "rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                      ? "rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                      : "rounded-md border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
                   }
                 >
                   {user.status === "Active" ? "Deactivate User" : "Activate User"}
@@ -196,13 +196,13 @@ export function UserDetailView({
             value={
               <div className="flex flex-wrap gap-1.5">
                 {user.platformRoles.map((role) => (
-                  <span
+                  <Badge
                     key={role}
+                    variant="gold"
                     title="Platform role — assigned directly in Keycloak, not a tenant-defined DMS role"
-                    className="rounded-[6px] border border-transparent bg-[var(--gold-tint)] px-2 py-0.5 text-[11px] font-semibold text-[#7a5b00]"
                   >
                     {role}
-                  </span>
+                  </Badge>
                 ))}
                 {user.roles.map((role) => (
                   <span
@@ -303,7 +303,7 @@ export function UserDetailView({
         {canEdit && (
           <Link
             href={`/admin/users/${user.id}/edit`}
-            className="rounded-[9px] border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+            className="rounded-btn border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
           >
             Edit
           </Link>

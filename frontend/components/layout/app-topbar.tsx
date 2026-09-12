@@ -188,7 +188,7 @@ export function AppTopbar() {
             setNotifOpen(false)
             setPinOpen(false)
           }}
-          className="flex items-center gap-2 rounded-[10px] border border-border py-[5px] pr-2.5 pl-[5px]"
+          className="flex items-center gap-2 rounded-md border border-border py-[5px] pr-2.5 pl-[5px]"
           style={{
             background: accountOpen ? "var(--primary-tint)" : "var(--card)",
           }}

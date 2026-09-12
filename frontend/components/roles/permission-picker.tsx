@@ -133,14 +133,14 @@ export function PermissionPicker({
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
-          <div className="col-span-full flex items-center gap-2 rounded-[10px] border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
+          <div className="col-span-full flex items-center gap-2 rounded-md border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
             Loading the permission catalog…
           </div>
         ) : (
           <>
             {filteredGroups.length === 0 && (
-              <p className="col-span-full rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+              <p className="col-span-full rounded-md border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
                 No permissions match &quot;{query}&quot;.
               </p>
             )}
@@ -166,7 +166,7 @@ export function PermissionPicker({
                     }))
                   }
                   className={cn(
-                    "overflow-hidden rounded-[10px] border border-border",
+                    "overflow-hidden rounded-md border border-border",
                     isOpen && "sm:col-span-2 lg:col-span-3"
                   )}
                 >

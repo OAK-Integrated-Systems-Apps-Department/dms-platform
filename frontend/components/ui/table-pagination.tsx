@@ -135,7 +135,7 @@ export function TablePagination({
             id="table-page-size"
             value={pageSize}
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className="h-[34px] appearance-none rounded-[9px] border border-border bg-card py-0 pr-8 pl-3.5 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
+            className="h-[34px] appearance-none rounded-btn border border-border bg-card py-0 pr-8 pl-3.5 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
           >
             {pageSizeOptions.map((option) => (
               <option key={option} value={option}>

@@ -148,7 +148,7 @@ export function UserInviteForm() {
 
   if (invitedEmail) {
     return (
-      <div className="rounded-[14px] border border-primary/30 bg-primary-tint p-6 text-center">
+      <div className="rounded-lg border border-primary/30 bg-primary-tint p-6 text-center">
         <CheckCircle2 size={26} className="mx-auto mb-3 text-primary" />
         <p className="mb-4 text-[13.5px] leading-[1.6] text-foreground">
           User created. An email has been sent to <span className="font-semibold">{invitedEmail}</span> to
@@ -158,14 +158,14 @@ export function UserInviteForm() {
           <button
             type="button"
             onClick={() => setInvitedEmail(null)}
-            className="rounded-[9px] border border-[var(--border-strong)] px-4 py-2 text-[13px] font-semibold text-foreground"
+            className="rounded-btn border border-[var(--border-strong)] px-4 py-2 text-[13px] font-semibold text-foreground"
           >
             Add another user
           </button>
           <button
             type="button"
             onClick={() => router.push("/admin/users")}
-            className="rounded-[9px] border border-primary bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground"
+            className="rounded-btn border border-primary bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground"
           >
             Back to user list
           </button>
@@ -175,10 +175,10 @@ export function UserInviteForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]">
+    <form onSubmit={handleSubmit(onSubmit)} className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
 
       {submitError && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+        <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
           <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
           {submitError}
         </div>
@@ -248,14 +248,14 @@ export function UserInviteForm() {
         <button
           type="button"
           onClick={() => router.push("/admin/users")}
-          className="rounded-[9px] border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[9px] border border-[#123527] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Creating…" : "Create user"}
         </button>

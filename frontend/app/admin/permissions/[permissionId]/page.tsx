@@ -49,14 +49,14 @@ export default function PermissionDetailsPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             <Loader2 size={16} className="animate-spin" />
             Loading permission…
           </div>
         ) : (
         <PermissionGate permission={["role.view", "role.manage"]}>
         {permission ? (
-          <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
             <h2 className="mb-6 font-heading text-[20px] font-semibold">
               {permission.name}
             </h2>
@@ -80,7 +80,7 @@ export default function PermissionDetailsPage() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <div className="flex flex-col items-center gap-2 rounded-md border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             <AlertTriangle size={20} className="text-[var(--rust)]" />
             Couldn&apos;t load this permission.
           </div>

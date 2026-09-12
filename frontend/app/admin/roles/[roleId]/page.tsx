@@ -53,7 +53,7 @@ export default function RoleDetailsPage() {
 
       <PermissionGate permission={[PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE]}>
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <Loader2 size={16} className="animate-spin" />
           Loading role…
         </div>
@@ -68,7 +68,7 @@ export default function RoleDetailsPage() {
           )}
         />
       ) : (
-        <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex flex-col items-center gap-2 rounded-md border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />
           Couldn&apos;t load this role.
         </div>

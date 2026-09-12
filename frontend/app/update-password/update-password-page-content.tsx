@@ -125,13 +125,13 @@ export function UpdatePasswordPageContent() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[480px] rounded-[18px] border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[480px] rounded-xl border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
         <div className="mb-7 flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
@@ -159,7 +159,7 @@ export function UpdatePasswordPageContent() {
             </p>
             
               <a href="/reset-password"
-              className="mt-4 flex w-full items-center justify-center rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
+              className="mt-4 flex w-full items-center justify-center rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
             >
               Request a new link
             </a>
@@ -179,7 +179,7 @@ export function UpdatePasswordPageContent() {
             </p>
             
               <a href="/login"
-              className="mt-4 flex w-full items-center justify-center rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
+              className="mt-4 flex w-full items-center justify-center rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
             >
               Go to login
             </a>
@@ -226,7 +226,7 @@ export function UpdatePasswordPageContent() {
                     autoComplete="new-password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                   />
                   <button
                     type="button"
@@ -255,7 +255,7 @@ export function UpdatePasswordPageContent() {
                   autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                 />
               </div>
 
@@ -268,7 +268,7 @@ export function UpdatePasswordPageContent() {
               <button
                 type="submit"
                 disabled={mutation.isPending || !newPassword || !confirmPassword}
-                className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isNewUser
                   ? mutation.isPending

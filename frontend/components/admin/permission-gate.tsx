@@ -42,7 +42,7 @@ export function PermissionGate({ permission, children, message }: PermissionGate
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
         <Loader2 size={16} className="animate-spin" />
         Loading…
       </div>
@@ -51,7 +51,7 @@ export function PermissionGate({ permission, children, message }: PermissionGate
 
   if (!allowed) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
         <AlertTriangle size={20} className="text-[var(--rust)]" />
         {message ?? "You don't have permission to view this page."}
       </div>

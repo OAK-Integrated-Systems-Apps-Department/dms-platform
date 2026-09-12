@@ -50,7 +50,7 @@ export function RevokeSessionDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup>
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
             <Icon size={20} />
           </span>
           <AlertDialogTitle>
@@ -78,12 +78,12 @@ export function RevokeSessionDialog({
             )}
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
               onClick={onConfirm}
-              className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white"
+              className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white"
             >
               {isAll ? "Revoke All Sessions" : "Revoke Session"}
             </AlertDialogClose>

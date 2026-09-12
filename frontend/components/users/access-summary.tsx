@@ -159,11 +159,11 @@ export function UserAccessSummary({
       .toUpperCase() || "?"
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-primary font-heading text-[18px] font-bold text-primary-foreground">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-primary font-heading text-[18px] font-bold text-primary-foreground">
             {initials}
           </span>
           <div>
@@ -173,7 +173,7 @@ export function UserAccessSummary({
               </p>
               <Badge
                 variant={user.status === "Active" ? "default" : "muted"}
-                className="gap-1.5 rounded-[10px]"
+                className="gap-1.5 rounded-md"
               >
                 <span className="size-[5px] rounded-full bg-current" />
                 {user.status}
@@ -194,8 +194,8 @@ export function UserAccessSummary({
                 onClick={() => setStatusDialogOpen(true)}
                 className={
                   user.status === "Active"
-                    ? "shrink-0 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-                    : "shrink-0 rounded-[10px] border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                    ? "shrink-0 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                    : "shrink-0 rounded-md border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
                 }
               >
                 {user.status === "Active" ? "Deactivate User" : "Activate User"}
@@ -233,13 +233,13 @@ export function UserAccessSummary({
           <Badge
             key={role}
             variant="gold"
-            className="rounded-[10px]"
+            className="rounded-md"
           >
             {role}
           </Badge>
         ))}
         {rolesHeld.map((role) => (
-          <Badge key={role.id} variant="outline" className="rounded-[10px]">
+          <Badge key={role.id} variant="outline" className="rounded-md">
             {role.name}
           </Badge>
         ))}
@@ -286,7 +286,7 @@ export function UserAccessSummary({
               onOpenChange={(open) =>
                 setExpanded((prev) => ({ ...prev, [group.moduleCode]: open }))
               }
-              className="overflow-hidden rounded-[10px] border border-border"
+              className="overflow-hidden rounded-md border border-border"
             >
               <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted px-3.5 py-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
                 <ChevronDown

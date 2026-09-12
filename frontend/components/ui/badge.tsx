@@ -11,7 +11,7 @@ const badgeVariants = cva(
         default: "border-transparent bg-primary/10 text-primary",
         muted: "border-border bg-muted text-muted-foreground",
         outline: "border-[var(--border-strong)] bg-card text-foreground",
-        gold: "border-transparent bg-[var(--gold-tint)] text-[#7a5b00]",
+        gold: "border-transparent bg-[var(--gold-tint)] text-[var(--gold-foreground)]",
         rust: "border-transparent bg-[var(--rust-tint)] text-[var(--rust)]",
       },
     },
@@ -24,6 +24,7 @@ const badgeVariants = cva(
 interface BadgeProps extends VariantProps<typeof badgeVariants> {
   children: ReactNode
   className?: string
+  title?: string
 }
 
 /**
@@ -33,11 +34,11 @@ interface BadgeProps extends VariantProps<typeof badgeVariants> {
  * `rounded-*` class passed in via `className` is stripped before merging,
  * so every badge in the app shares exactly one radius, controlled only by
  * `rounded-[5px]` above. Plenty of call sites still pass a leftover
- * `rounded-[10px]` from before this existed — that's harmless now, it's
+ * `rounded-md` from before this existed — that's harmless now, it's
  * dropped here rather than needing to be cleaned up at 15+ call sites.
  * Change the radius by editing the line above, not by passing one in.
  */
-function Badge({ className, variant, children }: BadgeProps) {
+function Badge({ className, variant, children, title }: BadgeProps) {
   const withoutRadius = className
     ?.split(" ")
     .filter((token) => token && !/^rounded(-|$)/.test(token))
@@ -46,6 +47,7 @@ function Badge({ className, variant, children }: BadgeProps) {
   return (
     <span
       data-slot="badge"
+      title={title}
       className={cn(badgeVariants({ variant }), withoutRadius)}
     >
       {children}

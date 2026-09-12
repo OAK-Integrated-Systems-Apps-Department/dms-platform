@@ -190,7 +190,7 @@ export function CheckboxFilter({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         style={{ width: triggerWidth }}
-        className="flex h-[38px] items-center justify-between gap-2 rounded-[9px] border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+        className="flex h-[38px] items-center justify-between gap-2 rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
       >
         <span className="truncate">
           <span className="text-[var(--ink-faint)]">{label}: </span>
@@ -213,7 +213,7 @@ export function CheckboxFilter({
               width: Math.max(position.width, popoverMinWidth),
               maxHeight: position.maxHeight,
             }}
-            className="z-50 flex flex-col overflow-hidden rounded-[10px] border border-border bg-card shadow-[var(--ledger-shadow)]"
+            className="z-50 flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--ledger-shadow)]"
           >
             <div className="shrink-0 border-b border-border p-2">
               <div className="relative">
@@ -227,7 +227,7 @@ export function CheckboxFilter({
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={`Search ${label.toLowerCase()}s…`}
-                  className="h-[30px] w-full rounded-[7px] border border-border bg-muted pr-2 pl-7 text-[12.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary"
+                  className="h-[30px] w-full rounded-sm border border-border bg-muted pr-2 pl-7 text-[12.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary"
                 />
               </div>
             </div>

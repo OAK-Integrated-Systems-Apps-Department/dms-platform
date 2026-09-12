@@ -102,7 +102,7 @@ export function UsersTable({
   })
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse">
           <thead>
@@ -180,13 +180,13 @@ export function UsersTable({
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-1">
                     {user.platformRoles.map((role) => (
-                      <span
+                      <Badge
                         key={role}
+                        variant="gold"
                         title="Platform role — assigned directly in Keycloak, not a tenant-defined DMS role"
-                        className="rounded-[6px] border border-transparent bg-[var(--gold-tint)] px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-[#7a5b00]"
                       >
                         {role}
-                      </span>
+                      </Badge>
                     ))}
                     {user.roles.map((role) => (
                       <span
@@ -204,7 +204,7 @@ export function UsersTable({
                 <td className="px-3 py-3">
                   <Badge
                     variant={user.status === "Active" ? "default" : "muted"}
-                    className="gap-1.5 rounded-[10px]"
+                    className="gap-1.5 rounded-md"
                   >
                     <span className="size-[5px] rounded-full bg-current" />
                     {user.status}
@@ -223,7 +223,7 @@ export function UsersTable({
                             type="button"
                             onClick={() => onView(user)}
                             aria-label={`View ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                            className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
                           >
                             <Eye size={15} />
                           </button>
@@ -241,7 +241,7 @@ export function UsersTable({
                               type="button"
                               onClick={() => onEdit(user)}
                               aria-label={`Edit ${user.name}`}
-                              className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
                             >
                               <Pencil size={15} />
                             </button>
@@ -267,7 +267,7 @@ export function UsersTable({
                                 disabled={!canResetThisUser}
                               aria-label={`Reset password for ${user.name}`}
                                 className={cn(
-                                  "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                  "flex size-7 items-center justify-center rounded-sm transition-colors",
                                   canResetThisUser
                                     ? "text-primary hover:bg-muted"
                                     : "cursor-not-allowed text-muted-foreground opacity-50"
@@ -300,7 +300,7 @@ export function UsersTable({
                                   : `Activate ${user.name}`
                               }
                               className={cn(
-                                "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                "flex size-7 items-center justify-center rounded-sm transition-colors",
                                 user.status === "Active"
                                   ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                   : "text-primary hover:bg-muted"
@@ -340,7 +340,7 @@ export function UsersTable({
                                   disabled={isTenantAdmin}
                                   aria-label={`Delete ${user.name}`}
                                   className={cn(
-                                    "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                    "flex size-7 items-center justify-center rounded-sm transition-colors",
                                     isTenantAdmin
                                       ? "cursor-not-allowed text-muted-foreground opacity-50"
                                       : "text-[var(--rust)] hover:bg-[var(--rust-tint)]"

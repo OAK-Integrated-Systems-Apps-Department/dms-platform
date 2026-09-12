@@ -36,7 +36,7 @@ export function PermissionsTable({ permissions }: PermissionsTableProps) {
   })
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] border-collapse">
           <thead>

@@ -76,7 +76,7 @@ export default function RolePermissionsPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
             <Loader2 size={16} className="animate-spin" />
             Loading role…
           </div>

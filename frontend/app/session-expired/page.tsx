@@ -38,13 +38,13 @@ export default function SessionExpiredPage() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-xl border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
         <div className="mb-[30px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
@@ -55,7 +55,7 @@ export default function SessionExpiredPage() {
           </div>
         </div>
 
-        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[#E3CFA0] bg-[var(--gold-tint)]">
+        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--gold)_40%,transparent)] bg-[var(--gold-tint)]">
           <ShieldOff size={26} className="text-[var(--gold)]" />
         </div>
 
@@ -70,7 +70,7 @@ export default function SessionExpiredPage() {
         <button
           type="button"
           onClick={handleSignInAgain}
-          className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
+          className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
         >
           Sign in again
         </button>

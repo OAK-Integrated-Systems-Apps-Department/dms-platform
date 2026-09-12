@@ -92,17 +92,17 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   return (
     <form
       onSubmit={handleSubmit(handleFormSubmit)}
-      className="rounded-[14px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
+      className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       {isSystemRole && (
-        <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+        <div className="mb-6 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           This is a system role. Its name, status, and permissions are managed
           by the platform and can&apos;t be edited here.
         </div>
       )}
 
       {submitError && (
-        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-6 flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{submitError}</span>
         </div>
@@ -205,7 +205,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         <button
           type="button"
           onClick={handleCancel}
-          className="rounded-[9px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
@@ -213,7 +213,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
           type="submit"
           disabled={isSubmitting || isSystemRole}
           className={cn(
-            "rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+            "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >

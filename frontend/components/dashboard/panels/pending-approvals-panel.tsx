@@ -4,10 +4,10 @@ import { pendingApprovals } from "@/components/dashboard/data"
 import { Panel } from "@/components/ui/panel"
 
 const approveClass =
-  "flex items-center gap-[5px] rounded-[7px] border border-primary bg-primary/10 px-[11px] py-[6px] text-xs font-semibold text-primary"
+  "flex items-center gap-[5px] rounded-sm border border-primary bg-primary/10 px-[11px] py-[6px] text-xs font-semibold text-primary"
 
 const rejectClass =
-  "flex items-center gap-[5px] rounded-[7px] border border-[var(--border-strong)] bg-card px-[11px] py-[6px] text-xs font-semibold text-muted-foreground"
+  "flex items-center gap-[5px] rounded-sm border border-[var(--border-strong)] bg-card px-[11px] py-[6px] text-xs font-semibold text-muted-foreground"
 
 /** Self-contained — delete this file's import from the page to remove the panel. */
 export function PendingApprovalsPanel() {

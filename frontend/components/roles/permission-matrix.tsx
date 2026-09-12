@@ -239,7 +239,7 @@ export function PermissionMatrix() {
 
   if (catalogLoading || grantsLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+      <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
         <Loader2 size={16} className="animate-spin" />
         Loading the permission matrix…
       </div>
@@ -247,7 +247,7 @@ export function PermissionMatrix() {
   }
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Toolbar */}
       <div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Left: filters */}
@@ -302,7 +302,7 @@ export function PermissionMatrix() {
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
             {roleFilterOpen && (
-              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-[10px] border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
+              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-md border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
                 <div className="flex items-center justify-between border-b border-border px-3.5 pt-1 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                     Show roles
@@ -410,7 +410,7 @@ export function PermissionMatrix() {
       </div>
 
       {/* Matrix — horizontal scroll only; vertical scroll is the page's */}
-      <div className="overflow-x-auto rounded-[10px] border border-border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <table
           className="w-full border-collapse"
           style={{

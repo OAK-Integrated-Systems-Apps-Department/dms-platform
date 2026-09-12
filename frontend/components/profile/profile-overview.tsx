@@ -94,10 +94,10 @@ export function ProfileOverview() {
   }
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center gap-4">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-primary font-heading text-[18px] font-bold text-primary-foreground">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-primary font-heading text-[18px] font-bold text-primary-foreground">
           {initials ?? "…"}
         </span>
         <div>
@@ -113,7 +113,7 @@ export function ProfileOverview() {
       {isEditing ? (
         <form onSubmit={handleSubmit(onSubmit)}>
           {submitError && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+            <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
               <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
               {submitError}
             </div>
@@ -139,14 +139,14 @@ export function ProfileOverview() {
               type="button"
               onClick={cancelEditing}
               disabled={isSubmitting}
-              className="rounded-[9px] border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[9px] border border-[#123527] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSubmitting ? "Saving…" : "Save changes"}
             </button>
@@ -175,7 +175,7 @@ export function ProfileOverview() {
               type="button"
               onClick={startEditing}
               disabled={isLoading}
-              className="flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               <Pencil size={13} />
               Edit name
@@ -200,7 +200,7 @@ export function ProfileOverview() {
           </p>
           <div className="flex flex-wrap gap-1.5">
             {profileSupplement.roles.map((role) => (
-              <Badge key={role} variant="outline" className="rounded-[10px]">
+              <Badge key={role} variant="outline" className="rounded-md">
                 {role}
               </Badge>
             ))}

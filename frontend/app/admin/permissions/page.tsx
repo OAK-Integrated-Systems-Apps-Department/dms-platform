@@ -219,7 +219,7 @@ export default function PermissionListPage() {
           <button
             type="button"
             onClick={handleClearAllFilters}
-            className="flex h-[38px] items-center gap-1.5 rounded-[9px] border border-border bg-muted px-3 text-[13.5px] font-semibold text-muted-foreground hover:border-[var(--border-strong)] hover:bg-card hover:text-foreground"
+            className="flex h-[38px] items-center gap-1.5 rounded-btn border border-border bg-muted px-3 text-[13.5px] font-semibold text-muted-foreground hover:border-[var(--border-strong)] hover:bg-card hover:text-foreground"
           >
             <X size={14} />
             Clear filters
@@ -228,18 +228,18 @@ export default function PermissionListPage() {
       </div>
 
       {loading && permissions.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <Loader2 size={16} className="animate-spin" />
           Loading permissions…
         </div>
       ) : fetchError && permissions.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />
           <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
           <button
             type="button"
             onClick={() => fetchPermissions()}
-            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+            className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
           >
             Try again
           </button>

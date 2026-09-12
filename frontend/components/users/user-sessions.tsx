@@ -30,7 +30,7 @@ function SessionRow({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-dashed border-border py-3 last:border-b-0">
       <div className="flex items-center gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-muted text-muted-foreground">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <Monitor size={16} />
         </span>
         <div>
@@ -47,7 +47,7 @@ function SessionRow({
         <button
           type="button"
           onClick={onRevoke}
-          className="flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--rust)]"
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--rust)]"
         >
           <LogOut size={13} />
           Revoke
@@ -66,7 +66,7 @@ function SessionRow({
  *
  * Same "screen card" shape as `UserMfaManagement` (U8) and
  * `UserAccessSummary` (A1) — identity header, then the feature content,
- * all in one `rounded-[10px]` card. Both revoke actions route through
+ * all in one `rounded-md` card. Both revoke actions route through
  * `RevokeSessionDialog` rather than firing instantly, same reasoning as
  * every other account-affecting action in this feature (U6/U7/U8) — a
  * revoke signs a real device out immediately and can't be undone from
@@ -82,7 +82,7 @@ export function UserSessions({
     useState<RevokeSessionTarget | null>(null)
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
@@ -139,7 +139,7 @@ export function UserSessions({
             type="button"
             onClick={() => setPendingTarget({ kind: "all" })}
             disabled={user.sessions.length === 0}
-            className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             Revoke All Sessions
           </button>
