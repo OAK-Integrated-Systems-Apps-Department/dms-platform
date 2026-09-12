@@ -12,7 +12,7 @@ import { toast } from "sonner"
 import { OtpInput } from "@/components/auth/otp-input"
 import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetchJson } from "@/lib/api-fetch"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
 interface LoginResponse {
   ok: boolean
@@ -63,7 +63,11 @@ async function login(username: string, password: string, rememberMe: boolean, to
   }
 
   try {
-    await apiFetchJson(
+    // apiFetch, not apiFetchJson: dms-core's /auth/login responds 200 with
+    // an empty body (ResponseEntity<Void>) on success, and response.json()
+    // on an empty body throws "Unexpected end of JSON input" - this call
+    // only needs apiFetch's status-code error handling, not a parsed body.
+    await apiFetch(
       `${API_BASE_URL}/api/v1/auth/login`,
       {
         method: "POST",
