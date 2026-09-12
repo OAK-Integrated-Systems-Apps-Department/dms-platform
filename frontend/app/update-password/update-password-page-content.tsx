@@ -7,6 +7,7 @@ import { CheckCircle2, Eye, EyeOff, Layers, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import { API_BASE_URL } from "@/lib/api-config"
+import { cn } from "@/lib/utils"
 
 type TokenStatus = "checking" | "valid" | "invalid"
 
@@ -127,7 +128,7 @@ export function UpdatePasswordPageContent() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[480px] rounded-[18px] border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
         <div className="mb-7 flex flex-col items-center">
           <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
             <Layers size={22} color="var(--primary-foreground)" />
@@ -155,8 +156,8 @@ export function UpdatePasswordPageContent() {
             <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
               This password reset link is no longer valid. Request a new one to continue.
             </p>
-            <a
-              href="/reset-password"
+            
+              <a href="/reset-password"
               className="mt-4 flex w-full items-center justify-center rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
             >
               Request a new link
@@ -175,8 +176,8 @@ export function UpdatePasswordPageContent() {
             <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
               Your password has been changed. You can now sign in with your new password.
             </p>
-            <a
-              href="/login"
+            
+              <a href="/login"
               className="mt-4 flex w-full items-center justify-center rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527]"
             >
               Go to login
@@ -186,7 +187,20 @@ export function UpdatePasswordPageContent() {
 
         {tokenStatus === "valid" && !mutation.isSuccess && (
           <>
-            <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+            <h1
+              className={cn(
+                "mb-2 text-center font-heading font-semibold tracking-[-0.01em] text-foreground",
+                // The NEW_USER headline is nearly 2x the word count of every
+                // other heading on this page — at this card's width (down to
+                // 22px on narrower viewports too) it wraps to 3 uneven lines
+                // at the shared text-[22px] size. Sized down (and given a
+                // tighter line-height) just for this one case so it lands on
+                // 2 balanced lines instead, without touching the shared card
+                // width (used by /reset-password and /login too) or this
+                // page's other, single-line headings.
+                isNewUser ? "text-[15px] leading-[1.35] sm:text-[18px]" : "text-[22px]"
+              )}
+            >
               {isNewUser ? "Welcome to Ledger — set your password to get started" : "Choose a new password"}
             </h1>
             <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
@@ -267,8 +281,8 @@ export function UpdatePasswordPageContent() {
           </>
         )}
 
-        <a
-          href="/login"
+        
+         <a href="/login"
           className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">
