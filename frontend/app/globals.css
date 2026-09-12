@@ -171,6 +171,16 @@
   html {
     @apply font-sans;
     }
+  /* Tailwind v4 Preflight no longer sets a pointer cursor on <button> (it
+     matches native browser behavior instead, which is cursor: default) —
+     restore it here so every button in the app hovers like a button,
+     without needing cursor-pointer added by hand at ~90+ call sites. Every
+     custom clickable <div>/<label> already applies cursor-pointer itself,
+     so this only needs to cover real buttons and ARIA button-role elements. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+    }
 }
 
 /* Hide native browser password-reveal/clear icons so only our custom toggle shows */
