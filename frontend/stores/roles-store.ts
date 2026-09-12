@@ -1,5 +1,6 @@
 import { create } from "zustand"
 
+import { toBackendRoleName } from "@/components/roles/role-utils"
 import type { RoleFormValues } from "@/components/roles/schema"
 import type { RoleRecord, RoleStatus } from "@/components/roles/types"
 import { API_BASE_URL } from "@/lib/api-config"
@@ -246,7 +247,7 @@ export const useRolesStore = create<RolesState>((set, get) => ({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            roleName: values.name,
+            roleName: toBackendRoleName(values.name),
             description: values.description || undefined,
             status: toBackendStatus(values.status),
           }),
@@ -286,7 +287,7 @@ export const useRolesStore = create<RolesState>((set, get) => ({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            roleName: values.name,
+            roleName: toBackendRoleName(values.name),
             description: values.description || undefined,
             status: toBackendStatus(values.status),
           }),

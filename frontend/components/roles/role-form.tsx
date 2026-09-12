@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 import { PermissionPicker } from "./permission-picker"
+import { formatRoleNameForDisplay } from "./role-utils"
 import { roleFormSchema, type RoleFormValues } from "./schema"
 import type { RoleRecord } from "./types"
 import { usePermissionCatalog } from "./use-permission-catalog"
@@ -50,7 +51,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   } = useForm<RoleFormValues>({
     resolver: zodResolver(roleFormSchema),
     defaultValues: {
-      name: role?.name ?? "",
+      name: role?.name ? formatRoleNameForDisplay(role.name) : "",
       description: role?.description ?? "",
       status: role?.status ?? "Active",
       permissions: role?.permissions ?? [],
