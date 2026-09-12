@@ -155,31 +155,45 @@ export function UserDetailView({
             </TooltipContent>
           </Tooltip>
           )}
-          {canActivateDeactivate && (
-          <Tooltip>
-            <TooltipTrigger
-              render={(props) => (
-                <button
-                  {...props}
-                  type="button"
-                  onClick={() => setStatusDialogOpen(true)}
-                  className={
-                    user.status === "Active"
-                      ? "rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-                      : "rounded-md border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
-                  }
-                >
-                  {user.status === "Active" ? "Deactivate User" : "Activate User"}
-                </button>
-              )}
-            />
-            <TooltipContent>
-              {user.status === "Active"
-                ? getTooltip("users.actions.deactivate")
-                : getTooltip("users.actions.activate")}
-            </TooltipContent>
-          </Tooltip>
-          )}
+          {canActivateDeactivate && (() => {
+            // Blanket rule, same as users-table.tsx's row action and
+            // Delete — see UserServiceImpl#deactivateUser's doc comment
+            // on the backend for why this isn't a "last admin" headcount.
+            // Only blocks the Deactivate direction.
+            const blockDeactivate =
+              user.status === "Active" &&
+              user.platformRoles.includes("TENANT_ADMIN")
+            return (
+            <Tooltip>
+              <TooltipTrigger
+                render={(props) => (
+                  <button
+                    {...props}
+                    type="button"
+                    onClick={() => !blockDeactivate && setStatusDialogOpen(true)}
+                    disabled={blockDeactivate}
+                    className={
+                      blockDeactivate
+                        ? "cursor-not-allowed rounded-md border border-border px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
+                        : user.status === "Active"
+                          ? "rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
+                          : "rounded-md border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                    }
+                  >
+                    {user.status === "Active" ? "Deactivate User" : "Activate User"}
+                  </button>
+                )}
+              />
+              <TooltipContent>
+                {blockDeactivate
+                  ? getTooltip("users.tenantAdmin.deactivateDisabled")
+                  : user.status === "Active"
+                    ? getTooltip("users.actions.deactivate")
+                    : getTooltip("users.actions.activate")}
+              </TooltipContent>
+            </Tooltip>
+            )
+          })()}
         </div>
       </div>
 
@@ -199,7 +213,6 @@ export function UserDetailView({
                   <Badge
                     key={role}
                     variant="gold"
-                    title="Platform role — assigned directly in Keycloak, not a tenant-defined DMS role"
                   >
                     {role}
                   </Badge>

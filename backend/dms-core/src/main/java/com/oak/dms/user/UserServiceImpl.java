@@ -200,6 +200,16 @@ public class UserServiceImpl implements UserService {
         user.setLastName(request.lastName());
         user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
         user.setMfaEnabled(request.mfaEnabled());
+
+        // Same blanket rule as deactivateUser - this Edit User status
+        // dropdown is a second route to the exact same outcome (disabled
+        // status + Keycloak account disabled), and would otherwise bypass
+        // that check entirely.
+        if (request.status() == UpdateUserRequest.Status.disabled
+                && keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+            throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
+        }
+
         user.setStatus(User.UserStatus.valueOf(request.status().name()));
         user.setUpdatedBy(TenantContext.getUserId());
         user.setUpdatedAt(OffsetDateTime.now());
@@ -218,6 +228,18 @@ public class UserServiceImpl implements UserService {
     @Override
     public void deactivateUser(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
+
+        // Blanket rule, same as the tenant admin account already being
+        // undeletable (see purgeUser's own frontend-side guard in
+        // UsersTable) - not a "last admin" headcount, which would need
+        // real counting infrastructure that doesn't exist for a Keycloak
+        // realm role like TENANT_ADMIN (no repository column, no bulk
+        // membership lookup) and would be racy to check safely anyway
+        // (two admins deactivating two different admins at once could
+        // each pass an "are there others" check before either commits).
+        if (keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+            throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
+        }
 
         user.setDeleted(true);
         user.setDeletedAt(OffsetDateTime.now());

@@ -20,6 +20,7 @@ users:
     deactivateDisabled: This user hasn't set up their account yet
   tenantAdmin:
     deleteDisabled: The tenant admin account can't be deleted
+    deactivateDisabled: The tenant admin account can't be deactivated
 
 roles:
   actions:

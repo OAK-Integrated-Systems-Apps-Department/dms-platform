@@ -183,7 +183,6 @@ export function UsersTable({
                       <Badge
                         key={role}
                         variant="gold"
-                        title="Platform role — assigned directly in Keycloak, not a tenant-defined DMS role"
                       >
                         {role}
                       </Badge>
@@ -286,41 +285,62 @@ export function UsersTable({
                       )
                     })()}
 
-                    {canActivateDeactivate && (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <button
-                              {...props}
-                              type="button"
-                              onClick={() => setPendingUser(user)}
-                              aria-label={
-                                user.status === "Active"
-                                  ? `Deactivate ${user.name}`
-                                  : `Activate ${user.name}`
-                              }
-                              className={cn(
-                                "flex size-7 items-center justify-center rounded-sm transition-colors",
-                                user.status === "Active"
-                                  ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
-                                  : "text-primary hover:bg-muted"
+                    {canActivateDeactivate &&
+                      (() => {
+                        // Blanket rule, same as Delete just below — a
+                        // tenant admin account can't be deactivated
+                        // either, regardless of how many other tenant
+                        // admins exist (see UserServiceImpl#deactivateUser's
+                        // own doc comment on the backend for why this
+                        // isn't a "last admin" headcount). Only blocks the
+                        // Deactivate direction — reactivating an already-
+                        // inactive tenant admin is unaffected.
+                        const blockDeactivate =
+                          user.status === "Active" &&
+                          user.platformRoles.includes("TENANT_ADMIN")
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() =>
+                                    !blockDeactivate && setPendingUser(user)
+                                  }
+                                  disabled={blockDeactivate}
+                                  aria-label={
+                                    user.status === "Active"
+                                      ? `Deactivate ${user.name}`
+                                      : `Activate ${user.name}`
+                                  }
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-sm transition-colors",
+                                    blockDeactivate
+                                      ? "cursor-not-allowed text-muted-foreground opacity-50"
+                                      : user.status === "Active"
+                                        ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
+                                        : "text-primary hover:bg-muted"
+                                  )}
+                                >
+                                  {user.status === "Active" ? (
+                                    <UserX size={15} />
+                                  ) : (
+                                    <UserCheck size={15} />
+                                  )}
+                                </button>
                               )}
-                            >
-                              {user.status === "Active" ? (
-                                <UserX size={15} />
-                              ) : (
-                                <UserCheck size={15} />
-                              )}
-                            </button>
-                          )}
-                        />
-                        <TooltipContent>
-                          {user.status === "Active"
-                            ? getTooltip("users.actions.deactivate")
-                            : getTooltip("users.actions.activate")}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+                            />
+                            <TooltipContent>
+                              {blockDeactivate
+                                ? getTooltip("users.tenantAdmin.deactivateDisabled")
+                                : user.status === "Active"
+                                  ? getTooltip("users.actions.deactivate")
+                                  : getTooltip("users.actions.activate")}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
 
                     {canDelete &&
                       (() => {
