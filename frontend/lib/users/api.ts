@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
+import { formatDateTime } from "@/lib/utils"
 
 import type { UserRecord } from "@/components/users/types"
 
@@ -408,10 +409,11 @@ export function toUserRecord(
     platformRoles,
     status,
     verified: user.verified,
-    // Same "YYYY-MM-DD" slice as createdOn below — a user who has never
-    // logged in has lastLoginAt: null, which falls back to "—" rather
-    // than a fabricated date.
-    lastLogin: user.lastLoginAt ? user.lastLoginAt.slice(0, 10) : "—",
+    // Date + time (not just the day, unlike createdOn below) — matches
+    // the app's existing timestamp convention (see formatDateTime's own
+    // doc comment). A user who has never logged in has lastLoginAt:
+    // null, which falls back to "—" rather than a fabricated date.
+    lastLogin: user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "—",
     firstName: user.firstName,
     lastName: user.lastName,
     createdOn: user.createdAt.slice(0, 10),

@@ -141,7 +141,9 @@ export interface UserRecord {
   verified: boolean
 
   /**
-   * ISO date string, or "—" for a user who has never logged in.
+   * "YYYY-MM-DD, HH:mm" (see `formatDateTime` in lib/utils.ts — date and
+   * time, unlike the date-only fields below), or "—" for a user who has
+   * never logged in.
    */
   lastLogin: string
 
