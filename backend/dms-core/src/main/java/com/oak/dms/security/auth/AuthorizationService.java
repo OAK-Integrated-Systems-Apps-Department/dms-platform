@@ -80,11 +80,14 @@ public class AuthorizationService {
      * realm role - same check {@link #hasFullAccess()} already does for
      * every fine-grained permission, exposed here as its own method for
      * call sites that specifically need to restrict something to the
-     * tenant admin rather than to a `user.manage`-style permission.
-     * Currently only {@code UserController#purgeUser} (the User List's
-     * permanent-delete action) uses this - unlike ordinary
-     * activate/deactivate, which stays available to anyone with
-     * `user.manage`, permanently removing a user is tenant-admin-only.
+     * tenant admin rather than to any permission code. Currently only
+     * {@code UserController#purgeUser} (the User List's permanent-delete
+     * action) uses this - unlike ordinary activate/deactivate, which stays
+     * available to anyone holding the granular
+     * {@code otua.manage-users.activate-deactivate} permission, permanently
+     * removing a user is deliberately kept off the permission-code system
+     * entirely (see that method's own doc comment for why) and restricted
+     * to the fixed tenant-admin realm role instead.
      */
     public boolean isTenantAdmin() {
         return hasFullAccess();

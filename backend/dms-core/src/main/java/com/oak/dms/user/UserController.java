@@ -134,14 +134,31 @@ public class UserController {
         return userService.reactivateUser(userId);
     }
 
+    /**
+     * Deliberately gated on {@code @authz.isTenantAdmin()} rather than a
+     * granular {@code @authz.hasPermission(...)} check like every other
+     * endpoint in this controller - true before the Stage 1 granular sweep
+     * and still true after it, not an oversight. A hard delete has no
+     * undo (unlike deactivateUser, reversible via reactivateUser), and
+     * the fine-grained permission catalog is itself something any tenant
+     * admin can grant to an arbitrary custom role via Role Permission
+     * Configuration - so gating this on a permission code (even a
+     * dedicated one; the catalog's own {@code otua.manage-users.delete}
+     * exists but is intentionally never checked anywhere) would let a
+     * tenant admin hand irreversible, cross-system account removal to any
+     * role they define. Restricting it to the fixed TENANT_ADMIN Keycloak
+     * realm role instead keeps that one destructive action outside the
+     * same self-service permission system it would otherwise have to
+     * trust. Do not "fix" this by wiring it to a permission code.
+     */
     @DeleteMapping("/{userId}/permanent")
     @PreAuthorize("@authz.isTenantAdmin()")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Permanently delete a user",
             description = "A genuine hard delete: removes the local profile row and the corresponding "
                     + "Keycloak account outright, unlike deactivateUser (soft-delete, reversible via "
-                    + "reactivateUser). There is no undo. Restricted to the tenant admin, unlike every "
-                    + "other endpoint here, which only requires the user.manage permission.")
+                    + "reactivateUser). There is no undo. Restricted to the tenant admin - deliberately "
+                    + "not gated by any permission code, unlike every other endpoint here.")
     public void purgeUser(@PathVariable UUID userId) {
         userService.purgeUser(userId);
     }
