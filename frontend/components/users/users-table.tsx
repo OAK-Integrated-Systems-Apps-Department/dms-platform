@@ -23,17 +23,21 @@ interface UsersTableProps {
   onView: (user: UserRecord) => void
   onEdit: (user: UserRecord) => void
 
+  /** Whether the signed-in user may edit another account's profile — requires `otua.manage-users.update` (see `usePermissions`). Hidden entirely rather than shown disabled, so a view-only user never sees a button that would just 403 on click. */
+  canEdit: boolean
+
+  /** Whether the signed-in user may reset another account's password — requires `otua.manage-users.reset-password`. */
+  canResetPassword: boolean
+
   /**
-   * Whether the signed-in user may edit, reset the password of, or
-   * activate/deactivate other accounts — requires `user.manage` (see
-   * `usePermissions`). Someone with only `user.view` can reach this page
-   * and list at all, but gets none of these controls: they're hidden
-   * entirely rather than shown disabled, so a view-only user never sees
-   * an Edit/Reset/Deactivate button that would just 403 on click. View
-   * itself has no separate gate here since reaching this table at all
-   * already required `user.view` or `user.manage`.
+   * Whether the signed-in user may activate/deactivate another account —
+   * requires `otua.manage-users.activate-deactivate`. Someone with only
+   * `otua.manage-users.view` can reach this page and list at all, but gets
+   * none of these three controls. View itself has no separate gate here
+   * since reaching this table at all already required
+   * `otua.manage-users.view` or `.update`.
    */
-  canManage: boolean
+  canActivateDeactivate: boolean
 
   /**
    * Whether the signed-in user may delete other accounts at all — only
@@ -73,7 +77,9 @@ export function UsersTable({
   onDelete,
   onView,
   onEdit,
-  canManage,
+  canEdit,
+  canResetPassword,
+  canActivateDeactivate,
   canDelete,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
@@ -226,7 +232,7 @@ export function UsersTable({
                       <TooltipContent>{getTooltip("users.actions.view")}</TooltipContent>
                     </Tooltip>
 
-                    {canManage && (
+                    {canEdit && (
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (
@@ -245,9 +251,9 @@ export function UsersTable({
                       </Tooltip>
                     )}
 
-                    {canManage &&
+                    {canResetPassword &&
                       (() => {
-                      const canResetPassword = user.status === "Active"
+                      const canResetThisUser = user.status === "Active"
                       return (
                       <Tooltip>
                         <TooltipTrigger
@@ -256,13 +262,13 @@ export function UsersTable({
                               {...props}
                               type="button"
                                 onClick={() =>
-                                  canResetPassword && setPendingResetUser(user)
+                                  canResetThisUser && setPendingResetUser(user)
                                 }
-                                disabled={!canResetPassword}
+                                disabled={!canResetThisUser}
                               aria-label={`Reset password for ${user.name}`}
                                 className={cn(
                                   "flex size-7 items-center justify-center rounded-[7px] transition-colors",
-                                  canResetPassword
+                                  canResetThisUser
                                     ? "text-primary hover:bg-muted"
                                     : "cursor-not-allowed text-muted-foreground opacity-50"
                                 )}
@@ -272,7 +278,7 @@ export function UsersTable({
                           )}
                         />
                         <TooltipContent>
-                            {canResetPassword
+                            {canResetThisUser
                               ? getTooltip("users.actions.resetPassword")
                               : getTooltip("users.pending.resetPasswordDisabled")}
                         </TooltipContent>
@@ -280,7 +286,7 @@ export function UsersTable({
                       )
                     })()}
 
-                    {canManage && (
+                    {canActivateDeactivate && (
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (

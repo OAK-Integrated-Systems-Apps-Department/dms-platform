@@ -74,7 +74,7 @@ export default function UserAccessSummaryPage() {
           <UserAccessSummary
             user={user}
             onToggleStatus={toggleStatus}
-            canManage={hasPermission("user.manage")}
+            canManage={hasPermission("otua.manage-users.activate-deactivate")}
           />
         )}
     </DashboardShell>

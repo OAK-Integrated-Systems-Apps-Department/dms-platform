@@ -19,12 +19,12 @@ import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RoleDetailsProps {
   role: RoleRecord
-  /**
-   * Whether the signed-in user may edit or delete this role — requires
-   * `role.manage` (see `usePermissions`). Someone with only `role.view`
-   * can reach this read-only page at all, but gets neither button.
-   */
-  canManage: boolean
+  /** Whether the signed-in user may edit this role — requires `asm.manage-roles-permissions.update-role` (see `usePermissions`). Someone with only `.view-role` can reach this read-only page at all, but gets none of the three buttons below. */
+  canEdit: boolean
+  /** Whether the signed-in user may delete this role — requires `asm.manage-roles-permissions.delete-role`. */
+  canDelete: boolean
+  /** Whether the signed-in user may reach Role Permission Configuration for this role — requires `asm.manage-roles-permissions.assign-permissions` (that page grants/revokes permissions, a separate action from editing the role's own name/status). */
+  canManagePermissions: boolean
 }
 
 type AssignedUserSortKey = "name" | "username" | "email" | "status"
@@ -52,7 +52,7 @@ type AssignedUserSortKey = "name" | "username" | "email" | "status"
  * scale, would need a real `GET /api/v1/roles/{roleId}/users` endpoint to
  * scale further.
  */
-export function RoleDetails({ role, canManage }: RoleDetailsProps) {
+export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: RoleDetailsProps) {
   const router = useRouter()
   const deleteRole = useRolesStore((state) => state.deleteRole)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -154,7 +154,7 @@ export function RoleDetails({ role, canManage }: RoleDetailsProps) {
       )}
       <p className="mb-6 text-[12px] text-muted-foreground">
         {role.permissions.length} total permissions granted.
-        {canManage && (
+        {canManagePermissions && (
           <>
             {" "}
             <Link
@@ -276,8 +276,9 @@ export function RoleDetails({ role, canManage }: RoleDetailsProps) {
           <span className="text-[12px] text-muted-foreground">
             System roles can&apos;t be edited or deleted.
           </span>
-        ) : canManage ? (
+        ) : canEdit || canDelete ? (
           <>
+            {canDelete && (
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
@@ -286,6 +287,8 @@ export function RoleDetails({ role, canManage }: RoleDetailsProps) {
               <Trash2 size={14} />
               Delete Role
             </button>
+            )}
+            {canEdit && (
             <Link
               href={`/admin/roles/${role.id}/edit`}
               className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
@@ -293,11 +296,12 @@ export function RoleDetails({ role, canManage }: RoleDetailsProps) {
               <Pencil size={14} />
               Edit Role
             </Link>
+            )}
           </>
         ) : null}
       </div>
 
-      {canManage && (
+      {canDelete && (
         <RoleDeleteDialog
           role={role}
           open={showDeleteDialog}

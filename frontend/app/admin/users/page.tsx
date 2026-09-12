@@ -44,8 +44,16 @@ export default function UserListPage() {
   } = useUsers()
   const { isTenantAdmin } = useIsTenantAdmin()
   const { hasPermission, hasAnyPermission } = usePermissions()
-  const canManage = hasPermission("user.manage")
-  const canViewRoles = hasAnyPermission("role.view", "role.manage")
+  const canCreateUser = hasPermission("otua.manage-users.create")
+  const canEditUser = hasPermission("otua.manage-users.update")
+  const canResetPassword = hasPermission("otua.manage-users.reset-password")
+  const canActivateDeactivate = hasPermission("otua.manage-users.activate-deactivate")
+  // GET /api/v1/roles (RoleController) - view-role or update-role, not the
+  // legacy role.view/role.manage this used to check.
+  const canViewRoles = hasAnyPermission(
+    "asm.manage-roles-permissions.view-role",
+    "asm.manage-roles-permissions.update-role"
+  )
 
   // Live tenant role list from the DB (same store the Roles list and
   // RoleMultiSelect use) rather than the hardcoded components/roles/data.ts
@@ -54,12 +62,13 @@ export default function UserListPage() {
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   useEffect(() => {
-    // GET /api/v1/roles requires role.view or role.manage — someone with
-    // only user.view/user.manage lacks both, so this filter's role list
-    // just can't be populated for them. Skipping the call entirely (and
-    // not retrying once `rolesError` is already set) avoids repeatedly
-    // 403ing for a permission that isn't going to change mid-session; the
-    // filter itself is hidden below for the same reason.
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — someone with only otua.manage-users.* lacks both, so
+    // this filter's role list just can't be populated for them. Skipping
+    // the call entirely (and not retrying once `rolesError` is already
+    // set) avoids repeatedly 403ing for a permission that isn't going to
+    // change mid-session; the filter itself is hidden below for the same
+    // reason.
     if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewRoles])
@@ -132,7 +141,7 @@ export default function UserListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["user.view", "user.manage"]}>
+      <PermissionGate permission={["otua.manage-users.view", "otua.manage-users.update"]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"
@@ -172,7 +181,7 @@ export default function UserListPage() {
           />
         </div>
 
-        {canManage && (
+        {canCreateUser && (
           <Link
             href="/admin/users/new"
             className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
@@ -198,7 +207,9 @@ export default function UserListPage() {
         onToggleStatus={toggleStatus}
         onResetPassword={sendPasswordReset}
         onDelete={deleteUser}
-        canManage={canManage}
+        canEdit={canEditUser}
+        canResetPassword={canResetPassword}
+        canActivateDeactivate={canActivateDeactivate}
         canDelete={isTenantAdmin}
         onView={handleView}
         onEdit={handleEdit}

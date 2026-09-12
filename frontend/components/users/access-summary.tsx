@@ -24,7 +24,7 @@ import type { UserRecord } from "./types"
 interface UserAccessSummaryProps {
   user: UserRecord
   onToggleStatus: () => void
-  /** Whether the signed-in user may activate/deactivate this account — requires `user.manage` (see `usePermissions`). */
+  /** Whether the signed-in user may activate/deactivate this account — requires `otua.manage-users.activate-deactivate` (see `usePermissions`). */
   canManage: boolean
 }
 

@@ -53,13 +53,17 @@ export function UserInviteForm() {
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
   const { hasAnyPermission } = usePermissions()
-  const canViewRoles = hasAnyPermission("role.view", "role.manage")
+  const canViewRoles = hasAnyPermission(
+    "asm.manage-roles-permissions.view-role",
+    "asm.manage-roles-permissions.update-role"
+  )
   useEffect(() => {
-    // GET /api/v1/roles requires role.view or role.manage — user.manage
-    // alone (what actually gates reaching this form) doesn't imply it, so
-    // skip the call entirely for a caller without either, rather than
-    // 403 and, since nothing here marks that permanent otherwise, keep
-    // re-firing it on every remount for the rest of the session.
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — otua.manage-users.* alone (what actually gates
+    // reaching this form) doesn't imply it, so skip the call entirely for
+    // a caller without either, rather than 403 and, since nothing here
+    // marks that permanent otherwise, keep re-firing it on every remount
+    // for the rest of the session.
     if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewRoles])

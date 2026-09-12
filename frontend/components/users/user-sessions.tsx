@@ -14,7 +14,7 @@ interface UserSessionsProps {
   user: UserRecord
   onRevokeSession: (sessionId: string) => void
   onRevokeAllSessions: () => void
-  /** Whether the signed-in user may revoke sessions — requires `user.manage` (see `usePermissions`). */
+  /** Whether the signed-in user may revoke sessions — requires `otua.manage-users.update` (see `usePermissions`; no dedicated granular code exists for session revocation). */
   canManage: boolean
 }
 

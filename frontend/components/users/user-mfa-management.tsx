@@ -18,8 +18,11 @@ interface UserMfaManagementProps {
   onResetCredentials: () => void
   /**
    * Whether the signed-in user may run these administrative actions —
-   * requires `user.manage` (see `usePermissions`). The component's status
-   * section stays visible either way; only the action buttons are gated.
+   * requires `otua.manage-users.update` (see `usePermissions`; there's no
+   * dedicated granular code for MFA admin actions, so this uses the
+   * closest "manage this account" equivalent to the old `user.manage`).
+   * The component's status section stays visible either way; only the
+   * action buttons are gated.
    */
   canManage: boolean
 }

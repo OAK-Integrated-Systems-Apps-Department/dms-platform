@@ -52,7 +52,7 @@ export default function ViewUserPage() {
             Loading user…
           </div>
         ) : (
-        <PermissionGate permission={["user.view", "user.manage"]}>
+        <PermissionGate permission={["otua.manage-users.view", "otua.manage-users.update"]}>
         {isError ? (
           <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
@@ -64,7 +64,9 @@ export default function ViewUserPage() {
           user={user}
             onToggleStatus={toggleStatus}
             onResetPassword={sendPasswordReset}
-            canManage={hasPermission("user.manage")}
+            canResetPassword={hasPermission("otua.manage-users.reset-password")}
+            canActivateDeactivate={hasPermission("otua.manage-users.activate-deactivate")}
+            canEdit={hasPermission("otua.manage-users.update")}
         />
         )}
         </PermissionGate>

@@ -50,7 +50,10 @@ export default function EditUserPage() {
           {error instanceof Error ? error.message : "Could not load this user."}
         </div>
       ) : (
-        <PermissionGate permission="user.manage">
+        {/* This form calls both PUT /api/v1/users/{userId} (update) and, if
+            roles changed, POST/DELETE /api/v1/users/{userId}/roles
+            (assign-role) - gate on either. */}
+        <PermissionGate permission={["otua.manage-users.update", "otua.manage-users.assign-role"]}>
           <UserEditForm user={user} />
         </PermissionGate>
       )}

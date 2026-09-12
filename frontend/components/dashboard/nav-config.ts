@@ -32,8 +32,12 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users", icon: Users, href: "/admin/users", permission: ["user.view", "user.manage"] },
-      { label: "Roles", icon: Shield, href: "/admin/roles", permission: ["role.view", "role.manage"] },
+      { label: "Users", icon: Users, href: "/admin/users", permission: ["otua.manage-users.view", "otua.manage-users.update"] },
+      { label: "Roles", icon: Shield, href: "/admin/roles", permission: ["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"] },
+      // Permissions catalog is served by PermissionController, which was NOT
+      // part of the granular sweep (see UserController/UserRoleController/
+      // RoleController/RolePermissionController) - it still checks the
+      // legacy role.view/role.manage codes, so this nav item must too.
       { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: ["role.view", "role.manage"] },
       { label: "Audit Log", icon: ScrollText },
     ],

@@ -84,7 +84,9 @@ export default function UserSessionsPage() {
             user={user}
             onRevokeSession={(sessionId) => revokeSession(user.id, sessionId)}
             onRevokeAllSessions={() => revokeAllSessions(user.id)}
-            canManage={hasPermission("user.manage")}
+            // No dedicated granular code for session revocation - closest
+            // "manage this account" equivalent to the old user.manage.
+            canManage={hasPermission("otua.manage-users.update")}
           />
         )}
     </DashboardShell>

@@ -88,7 +88,10 @@ export default function UserMfaManagementPage() {
             user={user}
             onRequireSetup={handleRequireSetup}
             onResetCredentials={handleResetCredentials}
-            canManage={hasPermission("user.manage")}
+            // No dedicated granular code for MFA admin actions in the
+            // catalog - otua.manage-users.update is the closest "manage
+            // this account" equivalent to the old user.manage.
+            canManage={hasPermission("otua.manage-users.update")}
           />
         )}
     </DashboardShell>

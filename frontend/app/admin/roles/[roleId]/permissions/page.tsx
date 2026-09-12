@@ -80,7 +80,7 @@ export default function RolePermissionsPage() {
             Loading role…
           </div>
         ) : role ? (
-          <PermissionGate permission="role.manage">
+          <PermissionGate permission="asm.manage-roles-permissions.assign-permissions">
             <RolePermissionConfig role={role} onSave={handleSave} />
           </PermissionGate>
         ) : null}

@@ -23,18 +23,21 @@ interface RolesTableProps {
   /** Resolves with an error message on failure, or null on success — passed straight through to `RoleDeleteDialog`. */
   onDeleteRole: (id: string) => Promise<string | null>
   /**
-   * Whether the signed-in user may edit, activate/deactivate, or delete
-   * roles — requires `role.manage` (see `usePermissions`). Someone with
-   * only `role.view` can reach this list at all, but gets none of these
-   * controls: View stays available either way since it needs no separate
-   * gate (reaching this table at all already required `role.view` or
-   * `role.manage`).
+   * Whether the signed-in user may edit or activate/deactivate roles —
+   * both go through `PUT /api/v1/roles/{id}`, so both require
+   * `asm.manage-roles-permissions.update-role` (see `usePermissions`).
+   * Someone with only `.view-role` can reach this list at all, but gets
+   * none of these controls: View stays available either way since it
+   * needs no separate gate (reaching this table at all already required
+   * `.view-role` or `.update-role`).
    */
-  canManage: boolean
+  canUpdate: boolean
+  /** Whether the signed-in user may delete roles — requires `asm.manage-roles-permissions.delete-role`. */
+  canDelete: boolean
 }
 
 /** Role Name / Description / Status / Assigned Users / Actions — per the R1 wireframe. */
-export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: RolesTableProps) {
+export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, canDelete }: RolesTableProps) {
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     RoleRecord,
     SortKey
@@ -145,8 +148,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: R
                         <ShieldCheck size={13} />
                         System role
                       </span>
-                    ) : canManage ? (
+                    ) : (
                       <>
+                        {canUpdate && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -162,7 +166,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: R
                           />
                           <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
                         </Tooltip>
+                        )}
 
+                        {canUpdate && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -196,7 +202,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: R
                               : getTooltip("roles.actions.activate")}
                           </TooltipContent>
                         </Tooltip>
+                        )}
 
+                        {canDelete && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -213,8 +221,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canManage }: R
                           />
                           <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
                         </Tooltip>
+                        )}
                       </>
-                    ) : null}
+                    )}
                   </div>
                 </td>
               </tr>

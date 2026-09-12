@@ -37,8 +37,19 @@ export default function RoleListPage() {
   const toggleStatus = useRolesStore((state) => state.toggleStatus)
   const deleteRole = useRolesStore((state) => state.deleteRole)
   const { hasPermission, hasAnyPermission } = usePermissions()
-  const canManage = hasPermission("role.manage")
-  const canView = hasAnyPermission("role.view", "role.manage")
+  // Add Role also syncs the role's initial permissions in the same flow
+  // (see stores/roles-store.ts's addRole) - gate the link on either code
+  // the target page's form can actually exercise.
+  const canCreateRole = hasAnyPermission(
+    "asm.manage-roles-permissions.create-role",
+    "asm.manage-roles-permissions.assign-permissions"
+  )
+  const canUpdateRole = hasPermission("asm.manage-roles-permissions.update-role")
+  const canDeleteRole = hasPermission("asm.manage-roles-permissions.delete-role")
+  const canView = hasAnyPermission(
+    "asm.manage-roles-permissions.view-role",
+    "asm.manage-roles-permissions.update-role"
+  )
 
   // FIXED KNOWN GAP: `RoleRecord.assignedUsers` from the store is always
   // 0 — there's no `GET /api/v1/roles/{roleId}/users` endpoint, so it was
@@ -75,10 +86,11 @@ export default function RoleListPage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
-    // GET /api/v1/roles requires role.view or role.manage — skip the call
-    // entirely for a caller with neither, rather than let it 403 and,
-    // since nothing here ever marks that permanent, keep re-firing it on
-    // every remount for the rest of the session.
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — skip the call entirely for a caller with neither,
+    // rather than let it 403 and, since nothing here ever marks that
+    // permanent, keep re-firing it on every remount for the rest of the
+    // session.
     if (canView) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView])
@@ -163,7 +175,7 @@ export default function RoleListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["role.view", "role.manage"]}>
+      <PermissionGate permission={["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"
@@ -199,7 +211,7 @@ export default function RoleListPage() {
           <Grid3x3 size={16} />
           Permission Matrix
         </Link>
-        {canManage && (
+        {canCreateRole && (
           <Link
             href="/admin/roles/new"
             className="flex items-center gap-1.5 rounded-[9px] border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
@@ -240,7 +252,8 @@ export default function RoleListPage() {
               roles={pageRoles}
               onToggleStatus={handleToggleStatus}
               onDeleteRole={handleDeleteRole}
-              canManage={canManage}
+              canUpdate={canUpdateRole}
+              canDelete={canDeleteRole}
             />
             <TablePagination
               currentPage={currentPage}

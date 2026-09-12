@@ -48,7 +48,11 @@ export default function AddRolePage() {
           to the current tenant only.
         </p>
       </div>
-      <PermissionGate permission="role.manage">
+      {/* addRole (stores/roles-store.ts) calls both POST /api/v1/roles
+          (create-role) and, for any permissions pre-selected in the quick
+          picker, syncRolePermissions (assign-permissions) - gate on
+          either. */}
+      <PermissionGate permission={["asm.manage-roles-permissions.create-role", "asm.manage-roles-permissions.assign-permissions"]}>
         <RoleForm mode="create" onSubmit={handleSubmit} />
       </PermissionGate>
     </DashboardShell>

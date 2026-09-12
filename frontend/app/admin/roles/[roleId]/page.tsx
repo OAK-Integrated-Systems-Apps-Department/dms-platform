@@ -23,7 +23,7 @@ import { usePageTitle } from "@/lib/use-page-title"
 export default function RoleDetailsPage() {
   const params = useParams<{ roleId: string }>()
   const { role, loading, notFound: roleNotFound } = useRole(params.roleId)
-  const { hasPermission } = usePermissions()
+  const { hasPermission, hasAnyPermission } = usePermissions()
 
   usePageTitle(role ? role.name : "Role Details")
 
@@ -50,14 +50,22 @@ export default function RoleDetailsPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["role.view", "role.manage"]}>
+      <PermissionGate permission={["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"]}>
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-[10px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <Loader2 size={16} className="animate-spin" />
           Loading role…
         </div>
       ) : role ? (
-        <RoleDetails role={role} canManage={hasPermission("role.manage")} />
+        <RoleDetails
+          role={role}
+          canEdit={hasPermission("asm.manage-roles-permissions.update-role")}
+          canDelete={hasPermission("asm.manage-roles-permissions.delete-role")}
+          canManagePermissions={hasAnyPermission(
+            "asm.manage-roles-permissions.view-role",
+            "asm.manage-roles-permissions.assign-permissions"
+          )}
+        />
       ) : (
         <div className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />

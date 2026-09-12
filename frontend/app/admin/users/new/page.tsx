@@ -27,7 +27,11 @@ export default function AddUserPage() {
           and set their own password and there&apos;s no self-registration in this app.
         </p>
       </div>
-      <PermissionGate permission="user.manage">
+      {/* This form calls both POST /api/v1/users (create) and, when an
+          initial role is picked, POST /api/v1/users/{userId}/roles
+          (assign-role) - gate on either, matching the two backend actions
+          it can trigger. */}
+      <PermissionGate permission={["otua.manage-users.create", "otua.manage-users.assign-role"]}>
         <UserInviteForm />
       </PermissionGate>
     </DashboardShell>

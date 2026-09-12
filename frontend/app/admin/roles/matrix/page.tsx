@@ -44,7 +44,14 @@ export default function PermissionMatrixPage() {
           area.
         </p>
       </div>
-      <PermissionGate permission={["role.view", "role.manage"]}>
+      {/* PermissionMatrix reads roles (GET /api/v1/roles, changed to the
+          granular codes below) AND the permission catalog (GET
+          /api/v1/permissions, still PermissionController - unchanged,
+          still role.view/role.manage - see usePermissionCatalog's own
+          gate). This route guard only covers the roles half; a caller
+          who fails the catalog's own internal gate still sees an empty
+          matrix rather than a 403 here. */}
+      <PermissionGate permission={["asm.manage-roles-permissions.view-role", "asm.manage-roles-permissions.update-role"]}>
         <PermissionMatrix />
       </PermissionGate>
     </DashboardShell>

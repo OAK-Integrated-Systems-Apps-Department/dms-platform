@@ -79,7 +79,9 @@ export default function EditRolePage() {
           Loading role…
         </div>
       ) : role ? (
-        <PermissionGate permission="role.manage">
+        // This form calls both updateRole (update-role) and
+        // syncRolePermissions (assign-permissions) - gate on either.
+        <PermissionGate permission={["asm.manage-roles-permissions.update-role", "asm.manage-roles-permissions.assign-permissions"]}>
           <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
         </PermissionGate>
       ) : (
