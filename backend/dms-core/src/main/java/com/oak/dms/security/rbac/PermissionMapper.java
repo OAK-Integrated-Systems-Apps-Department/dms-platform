@@ -32,6 +32,6 @@ public interface PermissionMapper {
         return new PermissionResponse(base.permissionId(), base.permissionCode(), base.name(),
                 base.description(), permission.getTenantId() == null, base.actionId(), action.getActionCode(),
                 action.getActionName(), module.getModuleId(), module.getModuleCode(), module.getModuleName(),
-                base.createdAt(), base.updatedAt());
+                permission.isDeprecated(), base.createdAt(), base.updatedAt());
     }
 }

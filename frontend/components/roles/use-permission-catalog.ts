@@ -132,6 +132,15 @@ function buildPermissionGroups(
 ): PermissionGroup[] {
   const permissionsByActionId = new Map<string, PermissionRecord[]>()
   for (const permission of permissions) {
+    // Deprecated permissions (the 4 legacy coarse codes - see V15 and
+    // `PermissionRecord.deprecated`) are excluded from every Role builder
+    // screen that grants NEW permissions. Their granular equivalents
+    // (otua.manage-users.*/asm.manage-roles-permissions.*) already cover
+    // everything they used to, and V15 backfilled every role that held one
+    // of them - so hiding them here loses nothing, it just stops new roles
+    // from being built against a code no @authz.hasPermission(...) check
+    // reads anymore.
+    if (permission.deprecated) continue
     const list = permissionsByActionId.get(permission.actionId) ?? []
     list.push(permission)
     permissionsByActionId.set(permission.actionId, list)

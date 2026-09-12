@@ -26,6 +26,11 @@ import java.util.UUID;
  * every context this response is used from. Only permissions where
  * {@code shared} is false can be edited or deleted - see
  * {@link com.oak.dms.security.rbac.PermissionServiceImpl#updatePermission}.
+ * <p>
+ * {@code deprecated} is true for a permission kept only for backward
+ * compatibility (currently just the 4 original coarse codes) - clients
+ * should still show it wherever a role already holds it, but omit it from
+ * pickers used to grant new permissions.
  */
 public record PermissionResponse(
         UUID permissionId,
@@ -39,6 +44,7 @@ public record PermissionResponse(
         UUID moduleId,
         String moduleCode,
         String moduleName,
+        boolean deprecated,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

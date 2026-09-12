@@ -21,6 +21,7 @@ interface BackendPermissionResponse {
   moduleId: string
   moduleCode: string
   moduleName: string | null
+  deprecated: boolean
   createdAt: string
   updatedAt: string | null
 }
@@ -60,6 +61,7 @@ function fromBackendPermission(p: BackendPermissionResponse): PermissionRecord {
     moduleId: p.moduleId,
     moduleCode: p.moduleCode,
     moduleName: p.moduleName || humanizeCode(p.moduleCode),
+    deprecated: p.deprecated,
   }
 }
 

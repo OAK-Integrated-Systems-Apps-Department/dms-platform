@@ -104,4 +104,19 @@ public class Permission {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
+
+    /**
+     * True for a permission kept only for backward compatibility - no
+     * longer checked by any {@code @authz.hasPermission(...)} call and
+     * hidden from the Role builder's permission picker (see
+     * {@code use-permission-catalog.ts}), but left grantable/queryable
+     * like any other row so existing {@link RolePermission} grants aren't
+     * disturbed. Set for the 4 original coarse codes (role.view/
+     * role.manage/user.view/user.manage) by V15, once their granular
+     * equivalents took over every {@code @PreAuthorize} check that used
+     * to reference them.
+     */
+    @Column(name = "is_deprecated", nullable = false)
+    @Builder.Default
+    private boolean deprecated = false;
 }

@@ -31,7 +31,7 @@ public class UserRoleController {
     private final UserRoleService userRoleService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('otua.manage-users.assign-role')")
     @Operation(summary = "Assign a role to a user, optionally scoped to a department/folder/document")
     public ResponseEntity<UserRoleResponse> assignRole(@PathVariable UUID userId,
                                                          @Valid @RequestBody AssignRoleRequest request) {
@@ -42,14 +42,14 @@ public class UserRoleController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasAnyPermission('otua.manage-users.view', 'otua.manage-users.update')")
     @Operation(summary = "List a user's role assignments")
     public List<UserRoleResponse> listRoles(@PathVariable UUID userId) {
         return userRoleService.listRolesForUser(userId);
     }
 
     @DeleteMapping("/{userRoleId}")
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission('otua.manage-users.assign-role')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Revoke a role assignment from a user")
     public void revokeRole(@PathVariable UUID userId, @PathVariable UUID userRoleId) {

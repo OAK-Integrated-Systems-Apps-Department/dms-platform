@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  * ROLE_* checks derived straight from the Keycloak token.
  *
  * Usage in controllers:
- *   {@code @PreAuthorize("@authz.hasPermission('user.manage')")}
+ *   {@code @PreAuthorize("@authz.hasPermission('otua.manage-users.update')")}
  */
 @Component("authz")
 @RequiredArgsConstructor
