@@ -10,8 +10,6 @@ import { KEYCLOAK_ACCOUNT_URL } from "@/lib/api-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 
-import { securitySupplement } from "./data"
-
 /**
  * Password and Multi-Factor Authentication sections for My Profile —
  * originally its own `/profile/security` page (My Security Settings, S2),
@@ -61,7 +59,7 @@ export function SecurityOverview() {
             Last Changed
           </p>
           <p className="font-mono text-[12.5px] text-foreground">
-            {securitySupplement.passwordLastChanged}
+            {user?.lastPasswordChangedAt ? user.lastPasswordChangedAt.slice(0, 10) : "—"}
           </p>
         </div>
         <div>

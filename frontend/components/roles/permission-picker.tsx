@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, Loader2 } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
@@ -12,8 +12,12 @@ import {
 import { SearchInput } from "@/components/ui/search-input"
 import { cn } from "@/lib/utils"
 
-import { countSelectedLeafPermissions, getLeafPermissionIds } from "./permission-utils"
-import type { PermissionGroup, PermissionItem } from "./types"
+import {
+  countSelectedLeafPermissions,
+  filterPermissionGroups,
+  getLeafPermissionIds,
+} from "./permission-utils"
+import type { PermissionGroup } from "./types"
 
 interface PermissionPickerProps {
   groups: PermissionGroup[]
@@ -24,6 +28,15 @@ interface PermissionPickerProps {
   onSetGroup: (ids: string[], checked: boolean) => void
   /** Read-only mode (e.g. a system role) — hides every Select all/Clear control and disables the checkboxes. */
   disabled?: boolean
+  /**
+   * Deep-link target, e.g. from Role Details' "Permission Summary" badges
+   * (`?module=<moduleCode>` on Role Permission Configuration) — that
+   * module starts expanded (overriding the normal collapsed-by-default
+   * browse state, same override `isSearching` already gets) and is
+   * scrolled into view once the catalog has loaded. `RoleForm`'s quick
+   * picker never passes this.
+   */
+  initialOpenModuleCode?: string
 }
 
 /**
@@ -49,45 +62,31 @@ export function PermissionPicker({
   onToggle,
   onSetGroup,
   disabled = false,
+  initialOpenModuleCode,
 }: PermissionPickerProps) {
   const [query, setQuery] = useState("")
-  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
+  const [openModules, setOpenModules] = useState<Record<string, boolean>>(() =>
+    initialOpenModuleCode ? { [initialOpenModuleCode]: true } : {}
+  )
   const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
+
+  // Scrolls the deep-linked module into view once its content actually
+  // exists to scroll to (the catalog is still loading otherwise). Doesn't
+  // re-run on every render — only when the target itself changes (a new
+  // link) or loading finishes.
+  useEffect(() => {
+    if (!initialOpenModuleCode || loading) return
+    document
+      .getElementById(`permission-module-${initialOpenModuleCode}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [initialOpenModuleCode, loading])
 
   const isSearching = query.trim().length > 0
 
-  const filteredGroups = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return groups
-    return groups
-      .map((group) => {
-        const moduleMatches = group.module.toLowerCase().includes(q)
-        const permissions = group.permissions
-          .map((permission): PermissionItem | null => {
-            if (permission.permissions && permission.permissions.length > 0) {
-              // Parent action: keep every child if the action/module itself
-              // matched, otherwise keep only the matching children.
-              const children =
-                moduleMatches || permission.label.toLowerCase().includes(q)
-                  ? permission.permissions
-                  : permission.permissions.filter((child) =>
-                      child.label.toLowerCase().includes(q)
-                    )
-              return children.length > 0
-                ? { ...permission, permissions: children }
-                : null
-            }
-            return moduleMatches || permission.label.toLowerCase().includes(q)
-              ? permission
-              : null
-          })
-          .filter(
-            (permission): permission is PermissionItem => permission !== null
-          )
-        return { ...group, permissions }
-      })
-      .filter((group) => group.permissions.length > 0)
-  }, [query, groups])
+  const filteredGroups = useMemo(
+    () => filterPermissionGroups(groups, query),
+    [query, groups]
+  )
 
   function isModuleOpen(moduleCode: string) {
     return isSearching || openModules[moduleCode] === true
@@ -158,6 +157,7 @@ export function PermissionPicker({
               return (
                 <Collapsible
                   key={group.moduleCode}
+                  id={`permission-module-${group.moduleCode}`}
                   open={isOpen}
                   onOpenChange={(open) =>
                     setOpenModules((prev) => ({

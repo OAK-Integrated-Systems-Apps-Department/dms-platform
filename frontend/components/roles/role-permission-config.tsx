@@ -16,6 +16,8 @@ interface RolePermissionConfigProps {
   role: RoleRecord
   /** Resolves with an error message on failure (shown inline, panel stays open), or null on success. */
   onSave: (permissions: string[]) => Promise<string | null>
+  /** Deep-link target from Role Details' "Permission Summary" badges — see `PermissionPicker`'s own doc comment. */
+  initialOpenModuleCode?: string
 }
 
 /**
@@ -39,6 +41,7 @@ interface RolePermissionConfigProps {
 export function RolePermissionConfig({
   role,
   onSave,
+  initialOpenModuleCode,
 }: RolePermissionConfigProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role.system)
@@ -131,6 +134,7 @@ export function RolePermissionConfig({
         onToggle={togglePermission}
         onSetGroup={setGroupPermissions}
         disabled={isSystemRole}
+        initialOpenModuleCode={initialOpenModuleCode}
       />
 
       <hr className="my-6 border-dashed border-border" />

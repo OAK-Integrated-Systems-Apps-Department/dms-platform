@@ -129,16 +129,35 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
         <div className="mb-6 flex flex-wrap gap-2">
           {permissionSummary
             .filter((group) => group.count > 0)
-            .map((group) => (
-              <Badge
-                key={group.module}
-                variant="outline"
-                className="rounded-md py-1"
-              >
-                {group.moduleCode} — {group.module} — {group.count}{" "}
-                {group.count === 1 ? "permission" : "permissions"}
-              </Badge>
-            ))}
+            .map((group) => {
+              const label = (
+                <>
+                  {group.moduleCode} — {group.module} — {group.count}{" "}
+                  {group.count === 1 ? "permission" : "permissions"}
+                </>
+              )
+              // Only when the caller can actually reach Role Permission
+              // Configuration — same gate as "View full configuration →"
+              // below, so a badge is never clickable toward a page this
+              // person can't open.
+              return canManagePermissions ? (
+                <Link
+                  key={group.module}
+                  href={`/admin/roles/${role.id}/permissions?module=${group.moduleCode}`}
+                >
+                  <Badge
+                    variant="outline"
+                    className="rounded-md py-1 transition-colors hover:border-primary hover:text-primary"
+                  >
+                    {label}
+                  </Badge>
+                </Link>
+              ) : (
+                <Badge key={group.module} variant="outline" className="rounded-md py-1">
+                  {label}
+                </Badge>
+              )
+            })}
           {permissionSummary.every((group) => group.count === 0) && (
             <p className="text-[13px] text-muted-foreground">
               No permissions granted yet.

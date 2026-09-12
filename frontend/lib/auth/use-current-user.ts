@@ -16,6 +16,8 @@ export interface CurrentUser {
   mfaEnabled: boolean
   status: string
   createdAt: string
+  /** ISO timestamp of this user's last password change via our own /update-password or /reset-password flow, or null if they've never changed it under this tracking. Doesn't see a change made directly through Keycloak's own hosted Account Console. */
+  lastPasswordChangedAt: string | null
   /**
    * The caller's own resolved permission codes (role assignments'
    * grants, flattened/deduplicated server-side — see
