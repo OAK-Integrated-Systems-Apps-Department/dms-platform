@@ -33,7 +33,7 @@ function formatSize(bytes: number): string {
  * a new one the same way once you've built it.
  */
 export default function Page() {
-  const { data: user } = useCurrentUser()
+  const { data: user, isLoading: isUserLoading } = useCurrentUser()
   const [documents, setDocuments] = useState<RecentDocument[]>(recentDocuments)
 
   function handleUpload(files: FileList) {
@@ -65,8 +65,9 @@ export default function Page() {
   return (
     <DashboardShell initialActiveLabel="Dashboard">
       <WelcomeHeader
-        firstName={user?.displayName.split(" ")[0] ?? "there"}
+        firstName={user?.displayName.split(" ")[0] ?? ""}
         dateLabel="Tuesday, August 18, 2026"
+        isLoadingName={isUserLoading}
         onUpload={handleUpload}
         onCreateFolder={handleCreateFolder}
       />

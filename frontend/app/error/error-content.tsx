@@ -4,6 +4,8 @@
 import { useSearchParams } from "next/navigation"
 import { AlertTriangle, Layers } from "lucide-react"
 
+import { APP_NAME } from "@/lib/app-config"
+
 const DEFAULT_MESSAGE =
   "Something went wrong on our end. Please try again, and if it keeps happening, contact your workspace administrator."
 
@@ -19,24 +21,24 @@ export function ErrorContent() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-xl border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
         <div className="mb-[30px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT
           </div>
         </div>
 
-        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[#E4C3B6] bg-[var(--rust-tint)]">
+        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--rust)_40%,transparent)] bg-[var(--rust-tint)]">
           <AlertTriangle size={26} className="text-[var(--rust)]" />
         </div>
 

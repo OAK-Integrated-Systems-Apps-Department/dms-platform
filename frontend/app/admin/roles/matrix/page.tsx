@@ -4,8 +4,10 @@ import Link from "next/link"
 import { ChevronLeft } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PermissionMatrix } from "@/components/roles/permission-matrix"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 
 /**
@@ -43,7 +45,16 @@ export default function PermissionMatrixPage() {
           area.
         </p>
       </div>
-      <PermissionMatrix />
+      {/* PermissionMatrix reads roles (GET /api/v1/roles, changed to the
+          granular codes below) AND the permission catalog (GET
+          /api/v1/permissions, still PermissionController - unchanged,
+          still role.view/role.manage - see usePermissionCatalog's own
+          gate). This route guard only covers the roles half; a caller
+          who fails the catalog's own internal gate still sees an empty
+          matrix rather than a 403 here. */}
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE]}>
+        <PermissionMatrix />
+      </PermissionGate>
     </DashboardShell>
   )
 }

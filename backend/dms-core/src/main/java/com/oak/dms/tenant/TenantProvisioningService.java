@@ -100,7 +100,8 @@ public class TenantProvisioningService {
             log.info("Provisioned tenant {} ({}) with first admin {} ({})",
                     tenantId, tenant.getDomain(), savedAdmin.getUserId(), savedAdmin.getEmail());
 
-            return new TenantProvisioningResponse(tenantMapper.toResponse(tenant), userMapper.toResponse(savedAdmin));
+            return new TenantProvisioningResponse(tenantMapper.toResponse(tenant),
+                    userMapper.toResponse(savedAdmin, tenant.getTenantName()));
         } catch (RuntimeException e) {
             // The Keycloak user (and possibly the TENANT_ADMIN grant) from
             // above is not covered by this method's DB transaction, so it

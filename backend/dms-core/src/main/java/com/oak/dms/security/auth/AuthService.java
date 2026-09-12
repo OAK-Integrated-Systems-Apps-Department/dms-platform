@@ -4,6 +4,7 @@ import com.oak.dms.common.exception.InvalidCredentialsException;
 import com.oak.dms.common.exception.SessionExpiredException;
 import com.oak.dms.security.auth.dto.KeycloakTokenResponse;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
+import com.oak.dms.user.UserRepository;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,7 +15,9 @@ import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Business logic behind {@link AuthController}. Two Keycloak surfaces are
@@ -33,6 +36,7 @@ public class AuthService {
     private final AuthCookieService cookieService;
     private final Keycloak keycloakAdminClient;
     private final KeycloakAdminProperties adminProperties;
+    private final UserRepository userRepository;
 
     /**
      * Whether {@code username} needs an OTP code to sign in. Returns false
@@ -79,6 +83,33 @@ public class AuthService {
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
         cookieService.writeSessionCookies(response, tokens, rememberMe);
         log.info("Successful login for user '{}'", username);
+        recordLastLogin(username);
+    }
+
+    /**
+     * Best-effort: resolves {@code username} back to its local {@link com.oak.dms.user.User}
+     * row (same Admin API username/email search {@link #isMfaRequired} already
+     * uses) and stamps {@code last_login_at}. Deliberately never allowed to
+     * fail the login itself - a lookup hiccup here shouldn't turn an
+     * already-successful Keycloak authentication into a 500 for the person
+     * signing in. Only called from {@link #login}, not {@link #refresh} -
+     * silently renewing an existing session isn't a new login.
+     */
+    private void recordLastLogin(String username) {
+        try {
+            List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
+                    .users().search(username, true);
+            if (matches.isEmpty()) {
+                return;
+            }
+            UUID keycloakId = UUID.fromString(matches.get(0).getId());
+            userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(user -> {
+                user.setLastLoginAt(OffsetDateTime.now());
+                userRepository.save(user);
+            });
+        } catch (Exception e) {
+            log.warn("Could not record last login for user '{}': {}", username, e.getMessage());
+        }
     }
 
     /**

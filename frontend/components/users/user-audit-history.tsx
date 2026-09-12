@@ -188,7 +188,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
   }
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
@@ -219,7 +219,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 )
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {EVENT_TYPE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -243,7 +243,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 )
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {ACTOR_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -268,7 +268,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 )
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {DATE_RANGE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -291,7 +291,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 handleFilterChange(() => setCustomFrom(event.target.value))
               }
               aria-label="From date"
-              className="h-[38px] w-[150px] rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+              className="h-[38px] w-[150px] rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
             />
             <span className="text-[12.5px] text-muted-foreground">to</span>
             <input
@@ -301,7 +301,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 handleFilterChange(() => setCustomTo(event.target.value))
               }
               aria-label="To date"
-              className="h-[38px] w-[150px] rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+              className="h-[38px] w-[150px] rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
             />
           </>
         )}
@@ -316,7 +316,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
                 )
               )
             }
-            className="h-[38px] w-full appearance-none rounded-[10px] border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+            className="h-[38px] w-full appearance-none rounded-md border border-border bg-muted px-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -336,14 +336,14 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
           value={keyword}
           onChange={(value) => handleFilterChange(() => setKeyword(value))}
           placeholder="Search activity…"
-          inputClassName="rounded-[10px] text-[13px] font-medium placeholder:font-normal placeholder:text-muted-foreground"
+          inputClassName="rounded-md text-[13px] font-medium placeholder:font-normal placeholder:text-muted-foreground"
         />
 
         {filtersActive && (
           <button
             type="button"
             onClick={clearFilters}
-            className="flex h-[38px] items-center gap-1 rounded-[10px] px-2.5 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
+            className="flex h-[38px] items-center gap-1 rounded-md px-2.5 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
           >
             <X size={13} />
             Clear filters
@@ -401,7 +401,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
               type="button"
               onClick={() => setPage(n)}
               className={
-                "flex size-7 items-center justify-center rounded-[10px] border text-[12.5px] " +
+                "flex size-7 items-center justify-center rounded-md border text-[12.5px] " +
                 (n === currentPage
                   ? "bg-primary-tint border-primary font-semibold text-primary"
                   : "border-border bg-card text-muted-foreground")
@@ -414,7 +414,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
-            className="ml-1 rounded-[10px] px-2 py-1 text-[12.5px] font-semibold text-primary disabled:cursor-not-allowed disabled:text-muted-foreground"
+            className="ml-1 rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary disabled:cursor-not-allowed disabled:text-muted-foreground"
           >
             Next ›
           </button>

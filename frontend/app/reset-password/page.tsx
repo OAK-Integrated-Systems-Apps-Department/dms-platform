@@ -5,35 +5,25 @@ import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Layers } from "lucide-react"
 import { toast } from "sonner"
 
-import { API_BASE_URL } from "@/lib/api-config"
-
-async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
-  await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ usernameOrEmail }),
-  })
-  // Deliberately not reading the response body for content. Previously
-  // the Next.js proxy enforced "always looks like success" regardless of
-  // dms-core's real response; without that layer, this enumeration
-  // protection now depends entirely on your Java backend returning the
-  // same generic response whether or not the account exists — worth
-  // double-checking on that side. The request always "succeeds" from the
-  // browser's point of view here either way; only the copy below is
-  // shown, regardless of whether an account actually matched.
-}
+import { APP_NAME } from "@/lib/app-config"
+import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 
 /**
- * Public page (see PUBLIC_PATHS in middleware.ts) — the person here is by
+ * Public page (see PUBLIC_PATHS in proxy.ts) — the person here is by
  * definition not signed in yet. Linked from the "Forgot password?" link on
  * app/login/page.tsx.
  *
  * There's no separate "reset password" form with new-password fields here
- * on purpose: this only submits the username/email to
- * dms-core's /api/v1/auth/forgot-password. Keycloak's own emailed link is what actually
- * lets the person set a new password (executeActionsEmail(["UPDATE_PASSWORD"])
- * on the backend), the same mechanism used for the admin-invite flow in
- * app/register/page.tsx.
+ * on purpose: this only submits the username/email to dms-core's
+ * `POST /api/v1/auth/forgot-password` (see `PasswordResetService.requestReset`).
+ * That issues a single-use token and emails a link to our own
+ * `/update-password?token=...` page, entirely on dms-core's domain -
+ * deliberately not Keycloak's hosted `executeActionsEmail(["UPDATE_PASSWORD"])`
+ * required-action page, which this flow exists to avoid. New-user invites
+ * (`components/users/user-invite-form.tsx` → `POST /api/v1/users` →
+ * `PasswordResetService.issueForNewUser`) land on that same
+ * `/update-password` page via the same token mechanism, distinguished
+ * only by `PasswordResetToken.kind` once the link is opened.
  */
 export default function ResetPasswordPage() {
   const [usernameOrEmail, setUsernameOrEmail] = useState("")
@@ -56,17 +46,17 @@ export default function ResetPasswordPage() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-[18px] border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-xl border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
         <div className="mb-7 flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT
@@ -113,14 +103,14 @@ export default function ResetPasswordPage() {
                   autoComplete="username"
                   value={usernameOrEmail}
                   onChange={(e) => setUsernameOrEmail(e.target.value)}
-                  className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={mutation.isPending || !usernameOrEmail.trim()}
-                className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {mutation.isPending ? "Sending…" : "Submit"}
               </button>

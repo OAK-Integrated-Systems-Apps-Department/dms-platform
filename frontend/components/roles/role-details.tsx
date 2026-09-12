@@ -19,6 +19,12 @@ import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RoleDetailsProps {
   role: RoleRecord
+  /** Whether the signed-in user may edit this role — requires `asm.manage-roles-permissions.update-role` (see `usePermissions`). Someone with only `.view-role` can reach this read-only page at all, but gets none of the three buttons below. */
+  canEdit: boolean
+  /** Whether the signed-in user may delete this role — requires `asm.manage-roles-permissions.delete-role`. */
+  canDelete: boolean
+  /** Whether the signed-in user may reach Role Permission Configuration for this role — requires `asm.manage-roles-permissions.assign-permissions` (that page grants/revokes permissions, a separate action from editing the role's own name/status). */
+  canManagePermissions: boolean
 }
 
 type AssignedUserSortKey = "name" | "username" | "email" | "status"
@@ -32,21 +38,15 @@ type AssignedUserSortKey = "name" | "username" | "email" | "status"
  * it's destructive rather than an edit, so it lives here as its own
  * confirm-and-act flow rather than folding into Edit Role.
  *
- * FIXED KNOWN GAP: Assigned Users used to read `stores/users-store.ts`, a
- * pure in-memory mock store seeded from `components/users/data.ts` and
- * never connected to the backend — so this table always showed the same
- * hardcoded mock users regardless of who was actually assigned. It now
- * reads `useUsers()` (`lib/users/use-users.ts`), the same real,
- * backend-backed data source the User List and View User screens use,
- * matching on `user.roles.includes(role.name)` exactly as before — that
- * part of the logic wasn't wrong, only what it was reading from was.
- * There's no dedicated "users by role" backend endpoint yet, so this
- * pays the same cost `useUsers()` already pays elsewhere (fetching every
- * user in the tenant plus each one's role list); fine at tenant-roster
- * scale, would need a real `GET /api/v1/roles/{roleId}/users` endpoint to
- * scale further.
+ * Assigned Users reads `useUsers()` (`lib/users/use-users.ts`), the same
+ * real, backend-backed data source the User List and View User screens
+ * use, matching on `user.roles.includes(role.name)`. There's no dedicated
+ * "users by role" backend endpoint yet, so this pays the same cost
+ * `useUsers()` already pays elsewhere (fetching every user in the tenant
+ * plus each one's role list); fine at tenant-roster scale, would need a
+ * real `GET /api/v1/roles/{roleId}/users` endpoint to scale further.
  */
-export function RoleDetails({ role }: RoleDetailsProps) {
+export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: RoleDetailsProps) {
   const router = useRouter()
   const deleteRole = useRolesStore((state) => state.deleteRole)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -84,19 +84,19 @@ export function RoleDetails({ role }: RoleDetailsProps) {
     .sort((a, b) => a.module.localeCompare(b.module))
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <h2 className="font-heading text-[20px] font-semibold">{role.name}</h2>
         <Badge
           variant={role.status === "Active" ? "default" : "muted"}
-          className="gap-1.5 rounded-[10px]"
+          className="gap-1.5 rounded-md"
         >
           <span className="size-[5px] rounded-full bg-current" />
           {role.status}
         </Badge>
         {role.system && (
-          <Badge variant="gold" className="rounded-[10px]">
+          <Badge variant="gold" className="rounded-md">
             <ShieldCheck size={12} />
             System role
           </Badge>
@@ -129,16 +129,35 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         <div className="mb-6 flex flex-wrap gap-2">
           {permissionSummary
             .filter((group) => group.count > 0)
-            .map((group) => (
-              <Badge
-                key={group.module}
-                variant="outline"
-                className="rounded-[10px] py-1"
-              >
-                {group.moduleCode} — {group.module} — {group.count}{" "}
-                {group.count === 1 ? "permission" : "permissions"}
-              </Badge>
-            ))}
+            .map((group) => {
+              const label = (
+                <>
+                  {group.moduleCode} — {group.module} — {group.count}{" "}
+                  {group.count === 1 ? "permission" : "permissions"}
+                </>
+              )
+              // Only when the caller can actually reach Role Permission
+              // Configuration — same gate as "View full configuration →"
+              // below, so a badge is never clickable toward a page this
+              // person can't open.
+              return canManagePermissions ? (
+                <Link
+                  key={group.module}
+                  href={`/admin/roles/${role.id}/permissions?module=${group.moduleCode}`}
+                >
+                  <Badge
+                    variant="outline"
+                    className="rounded-md py-1 transition-colors hover:border-primary hover:text-primary"
+                  >
+                    {label}
+                  </Badge>
+                </Link>
+              ) : (
+                <Badge key={group.module} variant="outline" className="rounded-md py-1">
+                  {label}
+                </Badge>
+              )
+            })}
           {permissionSummary.every((group) => group.count === 0) && (
             <p className="text-[13px] text-muted-foreground">
               No permissions granted yet.
@@ -147,13 +166,18 @@ export function RoleDetails({ role }: RoleDetailsProps) {
         </div>
       )}
       <p className="mb-6 text-[12px] text-muted-foreground">
-        {role.permissions.length} total permissions granted.{" "}
-        <Link
-          href={`/admin/roles/${role.id}/permissions`}
-          className="font-semibold text-primary hover:underline"
-        >
-          View full configuration →
-        </Link>
+        {role.permissions.length} total permissions granted.
+        {canManagePermissions && (
+          <>
+            {" "}
+            <Link
+              href={`/admin/roles/${role.id}/permissions`}
+              className="font-semibold text-primary hover:underline"
+            >
+              View full configuration →
+            </Link>
+          </>
+        )}
       </p>
 
       <hr className="my-6 border-dashed border-border" />
@@ -171,17 +195,17 @@ export function RoleDetails({ role }: RoleDetailsProps) {
       </div>
 
       {usersLoading ? (
-        <div className="flex items-center gap-2 rounded-[10px] border border-border py-8 text-[13px] text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-md border border-border py-8 text-[13px] text-muted-foreground">
           <Loader2 size={14} className="mx-auto animate-spin" />
           <span className="mx-auto">Loading assigned users…</span>
         </div>
       ) : usersError ? (
-        <div className="flex items-center justify-center gap-2 rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] py-6 text-[13px] text-[var(--rust)]">
+        <div className="flex items-center justify-center gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] py-6 text-[13px] text-[var(--rust)]">
           <AlertTriangle size={14} />
           Could not load assigned users.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[10px] border border-border">
+        <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-border bg-muted">
@@ -244,7 +268,7 @@ export function RoleDetails({ role }: RoleDetailsProps) {
                   <td className="px-3.5 py-3">
                     <Badge
                       variant={user.status === "Active" ? "default" : "muted"}
-                      className="gap-1.5 rounded-[10px]"
+                      className="gap-1.5 rounded-md"
                     >
                       <span className="size-[5px] rounded-full bg-current" />
                       {user.status}
@@ -265,42 +289,48 @@ export function RoleDetails({ role }: RoleDetailsProps) {
           <span className="text-[12px] text-muted-foreground">
             System roles can&apos;t be edited or deleted.
           </span>
-        ) : (
+        ) : canEdit || canDelete ? (
           <>
+            {canDelete && (
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
-              className="flex items-center gap-1.5 rounded-[10px] border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
+              className="flex items-center gap-1.5 rounded-md border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
             >
               <Trash2 size={14} />
               Delete Role
             </button>
+            )}
+            {canEdit && (
             <Link
               href={`/admin/roles/${role.id}/edit`}
-              className="flex items-center gap-1.5 rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
             >
               <Pencil size={14} />
               Edit Role
             </Link>
+            )}
           </>
-        )}
+        ) : null}
       </div>
 
-      <RoleDeleteDialog
-        role={role}
-        open={showDeleteDialog}
-        onOpenChange={setShowDeleteDialog}
-        onConfirm={async () => {
-          const { error } = await deleteRole(role.id)
-          if (!error) {
-            toast.success(`${role.name} deleted.`)
-            router.push("/admin/roles")
-          } else {
-            toast.error(error)
-          }
-          return error
-        }}
-      />
+      {canDelete && (
+        <RoleDeleteDialog
+          role={role}
+          open={showDeleteDialog}
+          onOpenChange={setShowDeleteDialog}
+          onConfirm={async () => {
+            const { error } = await deleteRole(role.id)
+            if (!error) {
+              toast.success(`${role.name} deleted.`)
+              router.push("/admin/roles")
+            } else {
+              toast.error(error)
+            }
+            return error
+          }}
+        />
+      )}
     </div>
   )
 }

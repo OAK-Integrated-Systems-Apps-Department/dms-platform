@@ -4,8 +4,12 @@ import { notFound } from "next/navigation"
 import { useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -14,6 +18,7 @@ export default function ViewUserPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error, toggleStatus, sendPasswordReset } =
     useUser(params.userId)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? user.name : "View User")
 
@@ -45,11 +50,11 @@ export default function ViewUserPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
-        ) : isError ? (
-          <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <LoadingState message="Loading user…" />
+        ) : (
+        <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
+        {isError ? (
+          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
               ? error.message
               : "Could not load this user."}
@@ -59,7 +64,12 @@ export default function ViewUserPage() {
           user={user}
             onToggleStatus={toggleStatus}
             onResetPassword={sendPasswordReset}
+            canResetPassword={hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)}
+            canActivateDeactivate={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)}
+            canEdit={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
         />
+        )}
+        </PermissionGate>
         )}
     </DashboardShell>
   )

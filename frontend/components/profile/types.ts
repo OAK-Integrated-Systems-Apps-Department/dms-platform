@@ -15,16 +15,3 @@ export interface ProfileSupplement {
   roles: string[]
   lastLogin: string
 }
-
-/**
- * Password status shown on My Security Settings — `/me` has no
- * password-last-changed field, so this stays mocked; `mfaEnabled` DOES
- * come from `/me` now (see `CurrentUser`) and is no longer part of this
- * type. Real source for this remaining field would be Keycloak's Account
- * REST API — the actions themselves (changing password, managing MFA
- * methods) aren't DMS-built forms at all; they deep-link into Keycloak's
- * own Account Console. See `KEYCLOAK_ACCOUNT_URL` in `lib/api-config.ts`.
- */
-export interface SecuritySupplement {
-  passwordLastChanged: string
-}

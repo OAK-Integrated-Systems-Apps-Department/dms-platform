@@ -1,0 +1,21 @@
+-- Backs the View User screen's "Last Password Change" field, which
+-- previously had no data source at all - dms-core never tracked this.
+-- Written by PasswordResetService#resetPassword, the single place a real
+-- (non-temporary) password change actually completes, covering both the
+-- self-service (/reset-password) and admin-triggered reset flows, which
+-- both funnel through that same method once the person actually submits
+-- a new password.
+--
+-- Nullable, no backfill, same reasoning as V17__add_last_login_at_to_users:
+-- an existing user who hasn't changed their password again since this
+-- migration ran has genuinely never had a change recorded under this
+-- tracking - NULL is the correct value for them, not a fabricated
+-- timestamp.
+--
+-- Known gap (documented, not closed by this column): a password changed
+-- directly through Keycloak's own hosted Account Console - still linked
+-- from the frontend's "Manage MFA methods" action - is invisible to
+-- dms-core and will never update this column, exactly like last_login_at
+-- already doesn't see anything Keycloak-side.
+ALTER TABLE users
+    ADD COLUMN last_password_changed_at TIMESTAMPTZ;

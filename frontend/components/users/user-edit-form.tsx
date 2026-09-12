@@ -11,6 +11,8 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
 import { RoleMultiSelect } from "./role-multi-select"
@@ -27,25 +29,18 @@ interface UserEditFormProps {
  * credential) are Keycloak-managed and this screen only exposes what DMS
  * is permitted to write.
  *
- * KNOWN GAP: `PUT /api/v1/users/{userId}` only accepts `firstName`,
- * `lastName`, `mfaEnabled`, and `status` (see UpdateUserRequest.java / the
- * endpoint's Swagger page) — there's no field for email at all. Email
- * stays on the form because the mockup calls for it, but it's not sent to
- * the backend; it looks to be Keycloak-managed like username, just not
- * yet marked read-only in this design.
- *
- * The "additional profile attributes" field from the mockup has been
- * removed — it was never wired to a backend field, so it wasn't actually
- * used.
+ * `PUT /api/v1/users/{userId}` only accepts `firstName`, `lastName`,
+ * `mfaEnabled`, and `status` (see UpdateUserRequest.java) — there's no
+ * field for email at all. Email stays on the form because the mockup
+ * calls for it, but it's not sent to the backend; it's Keycloak-managed
+ * like username, just not yet marked read-only in this design.
  *
  * `mfaEnabled`/`status` are passed through unmodified from a freshly
  * fetched copy of the user (not the `user` prop, which may be a moment
  * stale) — this form has no controls for either, so it must never
  * silently flip one while saving name changes.
  *
- * FIXED KNOWN GAP: roles previously had no editing surface on this screen
- * at all — `user.roles` (from `useUser`/`toUserRecord`) was display-only.
- * `roles` is now a real form field, submitted via `syncUserRoles`
+ * `roles` is a real form field, submitted via `syncUserRoles`
  * (`lib/users/api.ts`), which diffs the selection against the user's
  * actual current assignments and issues the necessary
  * `POST`/`DELETE /api/v1/users/{userId}/roles` calls — each of which the
@@ -58,11 +53,24 @@ export function UserEditForm({ user }: UserEditFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const roles = useRolesStore((state) => state.roles)
+  const rolesLoading = useRolesStore((state) => state.loading)
+  const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  const { hasAnyPermission } = usePermissions()
+  const canViewRoles = hasAnyPermission(
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
+  )
   useEffect(() => {
-    if (roles.length === 0) fetchRoles()
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — otua.manage-users.* alone (what actually gates
+    // reaching this form) doesn't imply it, so skip the call entirely for
+    // a caller without either, rather than 403 and, since nothing here
+    // marks that permanent otherwise, keep re-firing it on every remount
+    // for the rest of the session.
+    if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canViewRoles])
   // Only active roles can be newly assigned (see the backend guard in
   // UserRoleServiceImpl#assignRole) — filtering here means the picker
   // simply doesn't offer an inactive one for a *new* selection. If this
@@ -128,10 +136,10 @@ export function UserEditForm({ user }: UserEditFormProps) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]"
+      className="rounded-lg border border-border bg-card p-[30px] pb-[26px]"
     >
       {submitError && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+        <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
           <AlertTriangle
             size={16}
             className="mt-px shrink-0 text-[var(--rust)]"
@@ -183,7 +191,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-strong)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
             <Lock size={10} />
-            Read-only — Keycloak-managed identity field
+            Read-only
           </span>
         </Label>
         <Input
@@ -196,13 +204,25 @@ export function UserEditForm({ user }: UserEditFormProps) {
 
       <div className="mb-5">
         <Label>Roles</Label>
-        <Controller
-          name="roles"
-          control={control}
-          render={({ field }) => (
-            <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
-          )}
-        />
+        {canViewRoles ? (
+          <Controller
+            name="roles"
+            control={control}
+            render={({ field }) => (
+              <RoleMultiSelect
+                options={ROLE_OPTIONS}
+                selected={field.value}
+                onChange={field.onChange}
+                loading={rolesLoading && roles.length === 0}
+              />
+            )}
+          />
+        ) : (
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+            You don&apos;t have permission to view the role catalog, so roles
+            can&apos;t be changed here.
+          </p>
+        )}
         {errors.roles && (
           <p className="mt-1.5 text-[12px] text-[var(--rust)]">
             {errors.roles.message}
@@ -216,14 +236,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
         <button
           type="button"
           onClick={() => router.push(`/admin/users/${user.id}`)}
-          className="rounded-[9px] border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[9px] border border-[#123527] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving…" : "Save changes"}
         </button>

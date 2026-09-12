@@ -1,4 +1,4 @@
-import type { ProfileSupplement, SecuritySupplement } from "./types"
+import type { ProfileSupplement } from "./types"
 
 /**
  * Placeholder for the fields Keycloak's Account REST API would return
@@ -8,9 +8,4 @@ import type { ProfileSupplement, SecuritySupplement } from "./types"
 export const profileSupplement: ProfileSupplement = {
   roles: ["Compliance Officer"],
   lastLogin: "2026-08-27 09:14",
-}
-
-/** Placeholder for My Security Settings — see `SecuritySupplement`. */
-export const securitySupplement: SecuritySupplement = {
-  passwordLastChanged: "2026-06-02",
 }

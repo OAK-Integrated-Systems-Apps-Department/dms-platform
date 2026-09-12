@@ -11,7 +11,9 @@ import { toast } from "sonner"
 
 import { OtpInput } from "@/components/auth/otp-input"
 import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
+import { APP_NAME } from "@/lib/app-config"
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
 interface LoginResponse {
   ok: boolean
@@ -20,46 +22,63 @@ interface LoginResponse {
 }
 
 /**
+ * Allowed to fail silently and just assume MFA isn't required - a
+ * transient Admin API hiccup should degrade to "ask for the password and
+ * let the real login attempt be the source of truth," not block the
+ * sign-in page outright (mirrors the backend's own
+ * `AuthService#isMfaRequired`, which treats any lookup failure the same
+ * way).
+ */
+async function checkMfaRequired(username: string): Promise<boolean> {
+  try {
+    const body = await apiFetchJson<{ mfaRequired: boolean }>(
+      `${API_BASE_URL}/api/v1/auth/mfa-required?username=${encodeURIComponent(username)}`
+    )
+    return body.mfaRequired
+  } catch {
+    return false
+  }
+}
+
+/**
  * Two calls to dms-core, not one — see the component doc comment below
  * for why the MFA check has to happen before the real login attempt
  * rather than being inferred from its result.
  *
- * The /auth/login call is wrapped in its own try/catch (unlike the
- * /mfa-required check above, which is allowed to fail silently and just
- * assume MFA isn't required): if the backend is unreachable here, that's
- * the actual sign-in attempt failing, and the user needs to see that —
- * not have it disappear into a rejected mutation with no onError handler.
+ * Deliberately catches its own error and resolves normally (`{ ok: false,
+ * error }`) rather than letting a rejected fetch propagate to React
+ * Query, same as `checkMfaRequired` above — this is what keeps a
+ * wrong-password attempt (`InvalidCredentialsException`, 401) from ever
+ * reaching the global session-expiry handler in
+ * `components/providers/providers.tsx`, which treats *any* 401 it
+ * observes as an expired session. See `isSessionExpired`'s own doc
+ * comment for why that's safe: this function is the only thing standing
+ * between the two, so don't remove this try/catch.
  */
 async function login(username: string, password: string, rememberMe: boolean, totp?: string): Promise<LoginResponse> {
   if (!totp) {
-    const mfaCheck = await fetch(
-      `${API_BASE_URL}/api/v1/auth/mfa-required?username=${encodeURIComponent(username)}`,
-      { credentials: "include" }
-    )
-      .then((r) => (r.ok ? r.json() : { mfaRequired: false }))
-      .catch(() => ({ mfaRequired: false }))
-    if (mfaCheck.mfaRequired) {
+    const mfaRequired = await checkMfaRequired(username)
+    if (mfaRequired) {
       return { ok: false, mfaRequired: true }
     }
   }
 
-  let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // credentials: "include" so the session cookie(s) your Java backend
-    // sets on a successful login come back on every request after this.
-    credentials: "include",
-    body: JSON.stringify({ username, password, totp, rememberMe }),
-  })
-  } catch {
-    return { ok: false, error: "Could not reach the server. Check that the backend is running and try again." }
-  }
-
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    return { ok: false, error: body.message ?? "Invalid username or password." }
+    // apiFetch, not apiFetchJson: dms-core's /auth/login responds 200 with
+    // an empty body (ResponseEntity<Void>) on success, and response.json()
+    // on an empty body throws "Unexpected end of JSON input" - this call
+    // only needs apiFetch's status-code error handling, not a parsed body.
+    await apiFetch(
+      `${API_BASE_URL}/api/v1/auth/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, totp, rememberMe }),
+      },
+      "Invalid username or password."
+    )
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Invalid username or password." }
   }
   return { ok: true }
 }
@@ -155,17 +174,17 @@ export function LoginPageContent() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, rgba(31,77,58,0.035) 39px)",
+            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[460px] rounded-[18px] border border-border bg-card p-9 pb-[34px] shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[460px] rounded-xl border border-border bg-card p-9 pb-[34px] shadow-[var(--ledger-shadow)]">
         <div className="mb-[26px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_rgba(31,77,58,0.28)]">
+          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT
@@ -180,7 +199,7 @@ export function LoginPageContent() {
         </h1>
 
         {errorMessage && (
-          <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+          <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
             <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
             {errorMessage}
           </div>
@@ -197,7 +216,7 @@ export function LoginPageContent() {
               placeholder="username"
               autoComplete="username"
               {...register("username")}
-              className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+              className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
             />
             {credentialErrors.username && (
               <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.username.message}</p>
@@ -215,7 +234,7 @@ export function LoginPageContent() {
               placeholder="••••••••••"
               autoComplete="current-password"
               {...register("password")}
-                className="w-full rounded-[9px] border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
             />
               <button
                 type="button"
@@ -251,7 +270,7 @@ export function LoginPageContent() {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {mutation.isPending ? "Signing in…" : "Sign in"}
           </button>
@@ -274,7 +293,7 @@ export function LoginPageContent() {
             </p>
 
             {errorMessage && (
-              <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-left text-[13px] leading-[1.4] text-[#7A3623]">
+              <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-left text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
                 <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
                 {errorMessage}
               </div>
@@ -286,7 +305,7 @@ export function LoginPageContent() {
               <button
                 type="submit"
                 disabled={mutation.isPending || code.length < 6}
-                className="w-full rounded-[10px] border border-[#123527] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[#123527] disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {mutation.isPending ? "Verifying…" : "Submit"}
               </button>

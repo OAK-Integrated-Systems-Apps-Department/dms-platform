@@ -89,6 +89,16 @@ keycloak:
     read-timeout-ms: ${KEYCLOAK_AUTH_READ_TIMEOUT_MS:5000}
 
 app:
+  branding:
+    # Single source of truth for the product's customer-facing display
+    # name - see BrandingProperties. Every place that used to hardcode
+    # "Oak DMS" as a literal string (PasswordResetService's emails,
+    # OpenApiConfig's title) reads this instead now, so a rebrand is ever
+    # only a one-line config change. Deliberately separate from the
+    # frontend's own lib/app-config.ts APP_NAME constant - the two run in
+    # different processes/languages and have no shared config source, so
+    # keep them in sync by hand if the brand name changes.
+    product-name: ${PRODUCT_NAME:Ledger}
   cors:
     # Comma-separated exact origins - see SecurityConfig for why this can
     # never be a wildcard now that CORS allows credentials.

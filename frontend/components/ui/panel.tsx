@@ -14,7 +14,7 @@ interface PanelProps {
  */
 export function Panel({ title, action, children }: PanelProps) {
   return (
-    <div className="rounded-[14px] border border-border bg-card px-5 py-[18px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-5 py-[18px] shadow-[var(--ledger-shadow)]">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-heading text-[16.5px] font-semibold">{title}</h2>
         {action && (

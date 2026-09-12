@@ -7,6 +7,9 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -22,6 +25,7 @@ export default function UserAccessSummaryPage() {
   const { data: user, isPending, isError, error, toggleStatus } = useUser(
     params.userId
   )
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Access Summary` : "User Access Summary")
 
@@ -43,13 +47,7 @@ export default function UserAccessSummaryPage() {
             { label: "Access Summary" },
           ]}
         />
-        <Link
-          href="/admin/users"
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to User List
-        </Link>
+       
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             User Access Summary
@@ -61,15 +59,17 @@ export default function UserAccessSummaryPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : isError ? (
-          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error ? error.message : "Could not load this user."}
           </div>
         ) : (
-          <UserAccessSummary user={user} onToggleStatus={toggleStatus} />
+          <UserAccessSummary
+            user={user}
+            onToggleStatus={toggleStatus}
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)}
+          />
         )}
     </DashboardShell>
   )

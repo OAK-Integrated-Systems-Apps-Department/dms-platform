@@ -1,14 +1,17 @@
 "use client"
 
 import { notFound, useParams, useRouter } from "next/navigation"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
+import { LoadingState } from "@/components/ui/loading-state"
 import type { RoleFormValues } from "@/components/roles/schema"
 import { useRole } from "@/components/roles/use-role"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -73,14 +76,15 @@ export default function EditRolePage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-[14px] border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          <Loader2 size={16} className="animate-spin" />
-          Loading role…
-        </div>
+        <LoadingState message="Loading role…" />
       ) : role ? (
-        <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
+        // This form calls both updateRole (update-role) and
+        // syncRolePermissions (assign-permissions) - gate on either.
+        <PermissionGate permission={[PermissionCodes.ASM_ROLES_UPDATE_ROLE, PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS]}>
+          <RoleForm mode="edit" role={role} onSubmit={handleSubmit} />
+        </PermissionGate>
       ) : (
-        <div className="flex flex-col items-center gap-2 rounded-[14px] border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />
           Couldn&apos;t load this role.
         </div>

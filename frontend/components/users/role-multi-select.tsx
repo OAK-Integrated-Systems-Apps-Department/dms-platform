@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, ChevronDown, Search, X } from "lucide-react"
+import { Check, ChevronDown, Loader2, Search, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -9,6 +9,15 @@ interface RoleMultiSelectProps {
   options: string[]
   selected: string[]
   onChange: (roles: string[]) => void
+  /**
+   * True while `options` is still loading (the tenant role list hasn't
+   * been fetched yet). Shows the trigger disabled with a small inline
+   * spinner in place of the normal placeholder/chips, rather than the
+   * shared full-card `LoadingState` — this is a ~44px form control, not a
+   * content area, so swapping in a `py-16` card here would blow out the
+   * surrounding form's layout far more than the missing options do.
+   */
+  loading?: boolean
 }
 
 /**
@@ -28,7 +37,7 @@ interface RoleMultiSelectProps {
  * resets whenever the panel closes so re-opening always starts from the
  * full list.
  */
-export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelectProps) {
+export function RoleMultiSelect({ options, selected, onChange, loading }: RoleMultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const containerRef = useRef<HTMLDivElement>(null)
@@ -52,6 +61,15 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
     }
   }, [open])
 
+  if (loading) {
+    return (
+      <div className="flex min-h-11 w-full items-center gap-2 rounded-btn border border-[var(--border-strong)] bg-muted py-2 pr-9 pl-2.5 text-[13.5px] text-[var(--ink-faint)]">
+        <Loader2 size={13} className="animate-spin" />
+        Loading roles…
+      </div>
+    )
+  }
+
   function toggleRole(role: string) {
     onChange(selected.includes(role) ? selected.filter((r) => r !== role) : [...selected, role])
   }
@@ -70,7 +88,7 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
       <div
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-[9px] border bg-muted py-2 pr-9 pl-2.5",
+          "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-btn border bg-muted py-2 pr-9 pl-2.5",
           "cursor-pointer transition-colors",
           open ? "border-primary bg-card ring-3 ring-primary/15" : "border-[var(--border-strong)]"
         )}
@@ -97,7 +115,7 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
 
       {open && (
         <div
-          className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-[10px] border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
+          className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative mb-1.5">
@@ -111,7 +129,7 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search roles…"
-              className="w-full rounded-[7px] border border-[var(--border-strong)] bg-muted py-2 pr-2.5 pl-8 text-[13px] text-foreground placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:outline-none"
+              className="w-full rounded-sm border border-[var(--border-strong)] bg-muted py-2 pr-2.5 pl-8 text-[13px] text-foreground placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:outline-none"
             />
           </div>
 
@@ -125,7 +143,7 @@ export function RoleMultiSelect({ options, selected, onChange }: RoleMultiSelect
               <div
                 key={role}
                 onClick={() => toggleRole(role)}
-                className="flex cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
               >
                 <span
                   className={cn(

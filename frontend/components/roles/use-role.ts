@@ -9,7 +9,19 @@ import type { RoleRecord } from "./types"
 interface UseRoleResult {
   role: RoleRecord | undefined
   loading: boolean
+  /** True only for a genuine 404 — the role doesn't exist / isn't accessible. */
   notFound: boolean
+  /**
+   * Non-null when the fetch failed for a reason *other* than "this role
+   * doesn't exist" — most notably a network failure (backend unreachable).
+   * Distinguishing this from `notFound` is the whole point: a caller
+   * should never call Next's `notFound()` for this case, since the role
+   * may well exist — its status is just unknown right now. Render the
+   * shared `BackendUnavailable` component instead.
+   */
+  error: string | null
+  /** Re-runs the fetch — wire to `BackendUnavailable`'s `onRetry`. */
+  retry: () => void
 }
 
 /**
@@ -41,6 +53,9 @@ export function useRole(roleId: string): UseRoleResult {
   const fetchRole = useRolesStore((state) => state.fetchRole)
   const [loading, setLoading] = useState(!role)
   const [notFound, setNotFound] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Bumped by `retry()` to re-run the effect below without changing roleId.
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -50,20 +65,27 @@ export function useRole(roleId: string): UseRoleResult {
     // blanking the page.
     if (!role) setLoading(true)
     setNotFound(false)
+    setError(null)
 
     fetchRole(roleId).then((result) => {
       if (cancelled) return
       setLoading(false)
-      if (!result) setNotFound(true)
+      setNotFound(result.notFound)
+      setError(result.error)
     })
 
     return () => {
       cancelled = true
     }
     // Deliberately excludes `role`/`fetchRole` — this should only re-run
-    // when navigating to a different role id, not on every store update.
+    // when navigating to a different role id (or retry() is called), not
+    // on every store update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleId])
+  }, [roleId, retryToken])
 
-  return { role, loading, notFound }
+  function retry() {
+    setRetryToken((token) => token + 1)
+  }
+
+  return { role, loading, notFound, error, retry }
 }

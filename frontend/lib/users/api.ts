@@ -1,4 +1,6 @@
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { formatDateTime } from "@/lib/utils"
 
 import type { UserRecord } from "@/components/users/types"
 
@@ -6,6 +8,8 @@ import type { UserRecord } from "@/components/users/types"
 export interface UserResponseDto {
   userId: string
   tenantId: string
+  /** Human-readable tenant name, resolved server-side — null only if the tenant row is somehow missing/deleted. */
+  tenantName: string | null
   keycloakId: string
   email: string
   firstName: string
@@ -17,6 +21,16 @@ export interface UserResponseDto {
   verifiedAt: string | null
   createdAt: string
   updatedAt: string | null
+  /** ISO timestamp of this user's last successful login, or null if they've never logged in. */
+  lastLoginAt: string | null
+  /**
+   * ISO timestamp of this user's last password change via our own
+   * /update-password or /reset-password flow, or null if they've never
+   * changed it under this tracking. Doesn't see a password changed
+   * directly through Keycloak's own hosted Account Console — same class
+   * of gap as `lastLoginAt` not seeing anything Keycloak-side.
+   */
+  lastPasswordChangedAt: string | null
 }
 
 /** Mirrors backend/dms-core's UserRoleResponse DTO (only the fields the UI uses). */
@@ -35,37 +49,18 @@ export interface UserPageResponseDto {
   last: boolean
 }
 
-export async function parseErrorMessage(
-  response: Response,
-  fallback: string
-): Promise<string> {
-  const body = await response.json().catch(() => null)
-  return body?.message ?? fallback
-}
-
 export async function fetchUser(userId: string): Promise<UserResponseDto> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    credentials: "include",
-  })
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load this user."))
-  }
-  return response.json()
+  return apiFetchJson(`${API_BASE_URL}/api/v1/users/${userId}`, undefined, "Could not load this user.")
 }
 
 export async function fetchUserRoles(
   userId: string
 ): Promise<UserRoleResponseDto[]> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/roles`,
-    { credentials: "include" }
+    undefined,
+    "Could not load this user's roles."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not load this user's roles.")
-    )
-  }
-  return response.json()
 }
 
 /**
@@ -74,16 +69,27 @@ export async function fetchUserRoles(
  * these are fetched and surfaced separately from `fetchUserRoles`.
  */
 export async function fetchUserPlatformRoles(userId: string): Promise<string[]> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/platform-roles`,
-    { credentials: "include" }
+    undefined,
+    "Could not load this user's platform roles."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not load this user's platform roles.")
-    )
-  }
-  return response.json()
+}
+
+/**
+ * The signed-in caller's own platform roles, via `GET /api/v1/users/me/platform-roles`.
+ * Unlike `fetchUserPlatformRoles` above (which looks up some *other* user
+ * and deliberately excludes PLATFORM_ADMIN — see that endpoint's backend
+ * doc comment), this is self-referential and includes PLATFORM_ADMIN, so
+ * it's what `useIsPlatformAdmin` calls to decide whether to show
+ * platform-admin-only screens like Permission Catalog management.
+ */
+export async function fetchMyPlatformRoles(): Promise<string[]> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me/platform-roles`,
+    undefined,
+    "Could not load your platform roles."
+  )
 }
 
 /**
@@ -96,26 +102,19 @@ export async function fetchUsersPage(
   page: number,
   size: number
 ): Promise<UserPageResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users?page=${page}&size=${size}`,
-    { credentials: "include" }
+    undefined,
+    "Could not load users."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load users."))
-  }
-  return response.json()
 }
 
 export async function deactivateUser(userId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    method: "DELETE",
-    credentials: "include",
-  })
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not deactivate this user.")
-    )
-  }
+  await apiFetch(
+    `${API_BASE_URL}/api/v1/users/${userId}`,
+    { method: "DELETE" },
+    "Could not deactivate this user."
+  )
 }
 
 /**
@@ -128,18 +127,11 @@ export async function deactivateUser(userId: string): Promise<void> {
  * `UsersTable` already does client-side.
  */
 export async function deleteUser(userId: string): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/permanent`,
-    {
-      method: "DELETE",
-      credentials: "include",
-    }
+    { method: "DELETE" },
+    "Could not delete this user."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not delete this user.")
-    )
-  }
 }
 
 /**
@@ -150,16 +142,11 @@ export async function deleteUser(userId: string): Promise<void> {
  * caller to get stale or resend.
  */
 export async function reactivateUser(userId: string): Promise<UserResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/reactivate`,
-    { method: "POST", credentials: "include" }
+    { method: "POST" },
+    "Could not reactivate this user."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not reactivate this user.")
-    )
-  }
-  return response.json()
 }
 
 // /**
@@ -216,30 +203,46 @@ export async function updateUserProfile(
     status: UserResponseDto["status"]
   }
 ): Promise<UserResponseDto> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  })
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not save changes.")
-    )
-  }
-  return response.json()
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/${userId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    "Could not save changes."
+  )
+}
+
+/**
+ * Self-service equivalent of `updateUserProfile`, via `PUT /api/v1/users/me`
+ * — only `firstName`/`lastName`, matching `UpdateOwnProfileRequest` on the
+ * backend. Used by My Profile's inline edit; unlike the admin Edit User
+ * form, there's no `mfaEnabled`/`status`/roles to pass through here at all,
+ * since this endpoint doesn't accept them (a caller can't use it to change
+ * their own tenant, role, or account status).
+ */
+export async function updateCurrentUserProfile(patch: {
+  firstName: string
+  lastName: string
+}): Promise<UserResponseDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    "Could not save changes."
+  )
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/reset-password`,
-    { method: "POST", credentials: "include" }
+    { method: "POST" },
+    "Could not send the password reset."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not send the password reset.")
-    )
-  }
 }
 
 /**
@@ -256,19 +259,15 @@ export async function assignUserRole(
   userId: string,
   roleId: string
 ): Promise<UserRoleResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/roles`,
     {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roleId, scopeType: "tenant" }),
-    }
+    },
+    "Could not assign this role."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not assign this role."))
-  }
-  return response.json()
 }
 
 /** Revokes a role assignment via `DELETE /api/v1/users/{userId}/roles/{userRoleId}` — also mirrored to Keycloak for tenant-wide assignments, same as `assignUserRole`. */
@@ -276,13 +275,11 @@ export async function revokeUserRole(
   userId: string,
   userRoleId: string
 ): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/roles/${userRoleId}`,
-    { method: "DELETE", credentials: "include" }
+    { method: "DELETE" },
+    "Could not remove this role."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not remove this role."))
-  }
 }
 
 /**
@@ -354,12 +351,24 @@ export async function syncUserRoles(
  * `UserDetailView` / `UsersTable` don't need to change to consume live
  * data.
  *
- * A handful of `UserRecord` fields have no backing endpoint yet — MFA
- * method/enrollment detail, sessions, last login, and activity/audit
- * history all live in Keycloak or an audit service that dms-core doesn't
- * expose through UserController today (see stores/users-store.ts's own
- * placeholder comments for the same gap). Those fall back to empty/"—"
- * here rather than being invented client-side.
+ * A handful of `UserRecord` fields still have no backing endpoint —  MFA
+ * method/enrollment detail, sessions, and activity/audit history all live
+ * in Keycloak or an audit service that dms-core doesn't expose through
+ * UserController today (see stores/users-store.ts's own placeholder
+ * comments for the same gap). Those fall back to empty/"—" here rather
+ * than being invented client-side. `lastLogin`, `tenant`, and
+ * `lastPasswordChange` are no longer among them — see
+ * `UserResponseDto.lastLoginAt` (backed by `users.last_login_at`, written
+ * by `AuthService#login` on every successful direct-grant login),
+ * `UserResponseDto.tenantName` (resolved server-side from `Tenant`), and
+ * `UserResponseDto.lastPasswordChangedAt` (backed by
+ * `users.last_password_changed_at`, written by
+ * `PasswordResetService#resetPassword` — the single place a real password
+ * change actually completes, covering both the self-service and
+ * admin-triggered reset flows). `lastPasswordChange` can't see a change
+ * made directly through Keycloak's own hosted Account Console, which
+ * stays a known gap, same as `lastLogin` not seeing anything
+ * Keycloak-side.
  */
 export function toUserRecord(
   user: UserResponseDto,
@@ -377,19 +386,28 @@ export function toUserRecord(
     // next to itself in the header.
     username: user.email.split("@")[0],
     email: user.email,
-    // No tenant-name lookup exists yet; showing the id is better than
-    // hiding the field entirely.
-    tenant: user.tenantId,
+    // Falls back to the raw id only in the (shouldn't-happen) case the
+    // backend couldn't resolve a name for it — see UserResponseDto.tenantName.
+    tenant: user.tenantName ?? user.tenantId,
     roles: roles.map((role) => role.roleName),
     platformRoles,
     status,
     verified: user.verified,
-    lastLogin: "—",
+    // Date + time (not just the day, unlike createdOn below) — matches
+    // the app's existing timestamp convention (see formatDateTime's own
+    // doc comment). A user who has never logged in has lastLoginAt:
+    // null, which falls back to "—" rather than a fabricated date.
+    lastLogin: user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "—",
     firstName: user.firstName,
     lastName: user.lastName,
     createdOn: user.createdAt.slice(0, 10),
     mfaStatus: user.mfaEnabled ? "Enabled" : "Not enrolled",
-    lastPasswordChange: "—",
+    // Date-only, matching createdOn above (and the mock data this
+    // replaces) rather than lastLogin's date+time — a user who has never
+    // changed their password under this tracking (including one still on
+    // their initial invite-provisioned temporary password) has
+    // lastPasswordChangedAt: null, which falls back to "—".
+    lastPasswordChange: user.lastPasswordChangedAt ? user.lastPasswordChangedAt.slice(0, 10) : "—",
     activeSessions: 0,
     recentActivity: [],
     mfaEnrolled: user.mfaEnabled,

@@ -2,6 +2,7 @@ package com.oak.dms.user;
 
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
+import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
@@ -9,9 +10,12 @@ import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.tenant.Tenant;
+import com.oak.dms.tenant.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -23,6 +27,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * See {@link UserService}. Every method after provisioning enforces tenant
@@ -45,6 +50,8 @@ public class UserServiceImpl implements UserService {
     private final KeycloakUserService keycloakUserService;
     private final PasswordResetService passwordResetService;
     private final OutboxEventPublisher outboxEventPublisher;
+    private final AuthorizationService authorizationService;
+    private final TenantRepository tenantRepository;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email,
@@ -65,7 +72,7 @@ public class UserServiceImpl implements UserService {
 
         User saved = userRepository.save(user);
         log.info("Self-provisioned user {} for tenant {}", saved.getUserId(), tenantId);
-        return userMapper.toResponse(saved);
+        return userMapper.toResponse(saved, resolveTenantName(tenantId));
     }
 
     @Override
@@ -109,27 +116,61 @@ public class UserServiceImpl implements UserService {
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, saved.getUserId(), "user.created",
                 Map.of("userId", saved.getUserId(), "tenantId", tenantId, "email", saved.getEmail()));
 
-        return userMapper.toResponse(saved);
+        return userMapper.toResponse(saved, resolveTenantName(tenantId));
     }
 
     @Override
     @Transactional(readOnly = true)
     public UserResponse getUser(UUID userId) {
         User user = findAnyOwnedByCallerTenant(userId);
-        return userMapper.toResponse(user);
+        return userMapper.toResponse(user, resolveTenantName(user.getTenantId()));
     }
 
     @Override
     @Transactional(readOnly = true)
     public UserResponse getCurrentUser() {
-        return getUser(TenantContext.getUserId());
+        // Doesn't delegate to getUser(TenantContext.getUserId()) - this
+        // needs the manual mapper overload that also resolves and attaches
+        // the caller's own effective permission set (see UserResponse's
+        // and UserMapper's own doc comments for why that's "me"-only).
+        User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
+        return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
+                authorizationService.myEffectivePermissionCodes());
+    }
+
+    @Override
+    public UserResponse updateCurrentUser(UpdateOwnProfileRequest request) {
+        User user = findOwnedByCallerTenant(TenantContext.getUserId());
+
+        user.setFirstName(request.firstName());
+        user.setLastName(request.lastName());
+        user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
+        user.setUpdatedBy(user.getUserId());
+        user.setUpdatedAt(OffsetDateTime.now());
+
+        User saved = userRepository.save(user);
+        log.info("User {} updated their own profile", saved.getUserId());
+        return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
+                authorizationService.myEffectivePermissionCodes());
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<UserResponse> listUsers(Pageable pageable) {
-        return userRepository.findAllByTenant(TenantContext.getTenantId(), pageable)
-                .map(userMapper::toResponse);
+        Page<User> page = userRepository.findAllByTenant(TenantContext.getTenantId(), pageable);
+
+        // Batched rather than resolved per row - every user on this page
+        // belongs to the caller's own tenant today (findAllByTenant is
+        // already scoped to it), so this is a single distinct id in
+        // practice, but resolving it this way rather than per-row means
+        // this doesn't quietly become an N+1 if listUsers is ever widened
+        // to a cross-tenant view (e.g. for PLATFORM_ADMIN).
+        Map<UUID, String> tenantNamesById = tenantRepository
+                .findAllById(page.getContent().stream().map(User::getTenantId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(Tenant::getTenantId, Tenant::getTenantName));
+
+        return page.map(user -> userMapper.toResponse(user, tenantNamesById.get(user.getTenantId())));
     }
 
     @Override
@@ -159,6 +200,16 @@ public class UserServiceImpl implements UserService {
         user.setLastName(request.lastName());
         user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
         user.setMfaEnabled(request.mfaEnabled());
+
+        // Same blanket rule as deactivateUser - this Edit User status
+        // dropdown is a second route to the exact same outcome (disabled
+        // status + Keycloak account disabled), and would otherwise bypass
+        // that check entirely.
+        if (request.status() == UpdateUserRequest.Status.disabled
+                && keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+            throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
+        }
+
         user.setStatus(User.UserStatus.valueOf(request.status().name()));
         user.setUpdatedBy(TenantContext.getUserId());
         user.setUpdatedAt(OffsetDateTime.now());
@@ -171,12 +222,24 @@ public class UserServiceImpl implements UserService {
 
         User saved = userRepository.save(user);
         log.info("Updated user {}", saved.getUserId());
-        return userMapper.toResponse(saved);
+        return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
     }
 
     @Override
     public void deactivateUser(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
+
+        // Blanket rule, same as the tenant admin account already being
+        // undeletable (see purgeUser's own frontend-side guard in
+        // UsersTable) - not a "last admin" headcount, which would need
+        // real counting infrastructure that doesn't exist for a Keycloak
+        // realm role like TENANT_ADMIN (no repository column, no bulk
+        // membership lookup) and would be racy to check safely anyway
+        // (two admins deactivating two different admins at once could
+        // each pass an "are there others" check before either commits).
+        if (keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+            throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
+        }
 
         user.setDeleted(true);
         user.setDeletedAt(OffsetDateTime.now());
@@ -234,7 +297,7 @@ public class UserServiceImpl implements UserService {
         keycloakUserService.enableUser(user.getKeycloakId());
 
         log.info("Reactivated user {}", userId);
-        return userMapper.toResponse(saved);
+        return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
     }
 
     @Override
@@ -253,6 +316,18 @@ public class UserServiceImpl implements UserService {
         // currently deactivated, matching getUser's own choice of lookup.
         User user = findAnyOwnedByCallerTenant(userId);
         return keycloakUserService.getPlatformRealmRoles(user.getKeycloakId());
+    }
+
+    /**
+     * Resolves a single user's tenant name for {@link UserMapper#toResponse(User, String)} -
+     * {@code null} only if the tenant row is somehow missing/deleted, which
+     * shouldn't happen for a user's own tenant in practice. {@link #listUsers}
+     * batches this across a page instead of calling this per row.
+     */
+    private String resolveTenantName(UUID tenantId) {
+        return tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
+                .map(Tenant::getTenantName)
+                .orElse(null);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

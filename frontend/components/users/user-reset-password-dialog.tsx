@@ -46,7 +46,7 @@ export function UserResetPasswordDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[480px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-primary/10 text-primary">
             <KeyRound size={20} />
           </span>
           <AlertDialogTitle>Reset password for this user?</AlertDialogTitle>
@@ -58,12 +58,12 @@ export function UserResetPasswordDialog({
             password. DMS does not set or view the password directly.
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
               onClick={onConfirm}
-              className="rounded-[10px] border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+              className="rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
             >
               Send Reset
             </AlertDialogClose>

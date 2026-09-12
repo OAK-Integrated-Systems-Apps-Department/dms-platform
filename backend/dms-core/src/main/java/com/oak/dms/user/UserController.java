@@ -1,8 +1,10 @@
 package com.oak.dms.user;
 
 import com.oak.dms.common.exception.ApiException;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
+import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.user.dto.UserResponse;
@@ -29,9 +31,10 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final AuthorizationService authorizationService;
 
     @PostMapping("/me/provision")
-    @Operation(summary = "Self-provision the local Oak DMS profile for the calling Keycloak principal")
+    @Operation(summary = "Self-provision the calling Keycloak principal's local user profile")
     public ResponseEntity<UserResponse> provisionCurrentUser(JwtAuthenticationToken auth,
                                                              @Valid @RequestBody ProvisionUserRequest request) {
         Jwt jwt = auth.getToken();
@@ -49,8 +52,31 @@ public class UserController {
         return userService.getCurrentUser();
     }
 
+    @PutMapping("/me")
+    @Operation(summary = "Update the calling user's own first/last name",
+            description = "Deliberately narrower than PUT /{userId} (the admin-facing equivalent): only "
+                    + "firstName/lastName are accepted, so a caller can never use this to change their own "
+                    + "tenant, role assignments, MFA flag, or status - see UpdateOwnProfileRequest.")
+    public UserResponse updateCurrentUser(@Valid @RequestBody UpdateOwnProfileRequest request) {
+        return userService.updateCurrentUser(request);
+    }
+
+    @GetMapping("/me/platform-roles")
+    @Operation(summary = "List every fixed platform role (PLATFORM_ADMIN, TENANT_ADMIN, MEMBER) the caller holds",
+            description = "Unlike GET /{userId}/platform-roles below - which tenant-admin screens use to "
+                    + "inspect some *other* user and deliberately excludes PLATFORM_ADMIN, see "
+                    + "KeycloakUserService#PLATFORM_ROLE_NAMES for why - this is always the caller asking "
+                    + "about themselves, so PLATFORM_ADMIN is included here. Read directly off the "
+                    + "authorities already derived from the caller's own validated JWT for this request "
+                    + "(see AuthorizationService#myPlatformRoles), not a Keycloak admin lookup. This is what "
+                    + "the frontend calls to decide whether to show platform-admin-only screens, such as "
+                    + "Permission Catalog create/edit/delete.")
+    public List<String> getMyPlatformRoles() {
+        return authorizationService.myPlatformRoles();
+    }
+
     @PostMapping
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_CREATE)")
     @Operation(summary = "Invite a new user into the caller's tenant")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponse response = userService.createUser(request);
@@ -58,14 +84,14 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "Get a user by id, within the caller's tenant")
     public UserResponse getUser(@PathVariable UUID userId) {
         return userService.getUser(userId);
     }
 
     @GetMapping("/{userId}/platform-roles")
-    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "List the fixed platform roles (TENANT_ADMIN, MEMBER) this user holds",
             description = "These are Keycloak-only realm roles, never rows in the roles/user_roles "
                     + "tables - see GET /{userId}/roles (UserRoleController) for tenant-defined DMS "
@@ -78,21 +104,21 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission('user.view') or @authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "List users in the caller's tenant")
     public PageResponse<UserResponse> listUsers(Pageable pageable) {
         return PageResponse.from(userService.listUsers(pageable));
     }
 
     @PutMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "Update a user's profile/status")
     public UserResponse updateUser(@PathVariable UUID userId, @Valid @RequestBody UpdateUserRequest request) {
         return userService.updateUser(userId, request);
     }
 
     @PostMapping("/{userId}/reset-password")
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD)")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "Send a password reset email to a user in the caller's tenant. Sets a fresh "
             + "temporary password server-side and emails the user a link to choose their own - no "
@@ -102,7 +128,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a user")
     public void deactivateUser(@PathVariable UUID userId) {
@@ -110,7 +136,7 @@ public class UserController {
     }
 
     @PostMapping("/{userId}/reactivate")
-    @PreAuthorize("@authz.hasPermission('user.manage')")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
     @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
             description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
                     + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")
@@ -118,14 +144,31 @@ public class UserController {
         return userService.reactivateUser(userId);
     }
 
+    /**
+     * Deliberately gated on {@code @authz.isTenantAdmin()} rather than a
+     * granular {@code @authz.hasPermission(...)} check like every other
+     * endpoint in this controller - true before the Stage 1 granular sweep
+     * and still true after it, not an oversight. A hard delete has no
+     * undo (unlike deactivateUser, reversible via reactivateUser), and
+     * the fine-grained permission catalog is itself something any tenant
+     * admin can grant to an arbitrary custom role via Role Permission
+     * Configuration - so gating this on a permission code (even a
+     * dedicated one; the catalog's own {@code otua.manage-users.delete}
+     * exists but is intentionally never checked anywhere) would let a
+     * tenant admin hand irreversible, cross-system account removal to any
+     * role they define. Restricting it to the fixed TENANT_ADMIN Keycloak
+     * realm role instead keeps that one destructive action outside the
+     * same self-service permission system it would otherwise have to
+     * trust. Do not "fix" this by wiring it to a permission code.
+     */
     @DeleteMapping("/{userId}/permanent")
     @PreAuthorize("@authz.isTenantAdmin()")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Permanently delete a user",
             description = "A genuine hard delete: removes the local profile row and the corresponding "
                     + "Keycloak account outright, unlike deactivateUser (soft-delete, reversible via "
-                    + "reactivateUser). There is no undo. Restricted to the tenant admin, unlike every "
-                    + "other endpoint here, which only requires the user.manage permission.")
+                    + "reactivateUser). There is no undo. Restricted to the tenant admin - deliberately "
+                    + "not gated by any permission code, unlike every other endpoint here.")
     public void purgeUser(@PathVariable UUID userId) {
         userService.purgeUser(userId);
     }

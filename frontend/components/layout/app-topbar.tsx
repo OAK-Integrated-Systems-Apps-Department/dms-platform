@@ -20,6 +20,7 @@ import { SearchInput } from "@/components/ui/search-input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetch } from "@/lib/api-fetch"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 
@@ -85,11 +86,11 @@ export function AppTopbar() {
   }, [])
 
   async function handleLogout() {
+    // Best-effort: always navigate to /login regardless of outcome, same
+    // as before - a logout call failing (already logged out, network
+    // hiccup, whatever) shouldn't trap the person on the current page.
     try {
-      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      })
+      await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST" })
     } catch {}
     router.push("/login")
     router.refresh()
@@ -187,7 +188,7 @@ export function AppTopbar() {
             setNotifOpen(false)
             setPinOpen(false)
           }}
-          className="flex items-center gap-2 rounded-[10px] border border-border py-[5px] pr-2.5 pl-[5px]"
+          className="flex items-center gap-2 rounded-md border border-border py-[5px] pr-2.5 pl-[5px]"
           style={{
             background: accountOpen ? "var(--primary-tint)" : "var(--card)",
           }}

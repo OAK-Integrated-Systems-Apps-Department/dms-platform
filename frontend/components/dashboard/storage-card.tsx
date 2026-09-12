@@ -8,7 +8,7 @@ interface StorageCardProps {
 
 export function StorageCard({ usedGb, totalGb, usedPercent }: StorageCardProps) {
   return (
-    <div className="rounded-[14px] border border-border bg-card px-[18px] py-4 shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[18px] py-4 shadow-[var(--ledger-shadow)]">
       <div className="mb-3.5 flex items-center justify-between">
         <div
           className="flex size-8 items-center justify-center rounded-lg"

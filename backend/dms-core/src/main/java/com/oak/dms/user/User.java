@@ -103,6 +103,33 @@ public class User {
     @Column(name = "verified_at")
     private OffsetDateTime verifiedAt;
 
+    /**
+     * When this user last successfully signed in via {@code AuthService#login}
+     * (the direct password/OTP grant) - null for a user who has never
+     * logged in yet, including one who was just invited and hasn't
+     * completed setup. Deliberately not touched by {@code AuthService#refresh}
+     * (silently renewing an existing session isn't a new login) or by
+     * anything Keycloak-side - this is dms-core's own record, written
+     * once per successful direct-grant login.
+     */
+    @Column(name = "last_login_at")
+    private OffsetDateTime lastLoginAt;
+
+    /**
+     * When this user's password was last actually changed via dms-core's
+     * own flows - {@code PasswordResetService#resetPassword}, reached by
+     * both the self-service ({@code /reset-password}) and admin-triggered
+     * reset flows, which both funnel through that same method. Null for a
+     * user whose password has never been changed under this tracking
+     * (including one still on their initial invite-provisioned temporary
+     * password - see {@code KeycloakUserService#setTemporaryPassword},
+     * which deliberately does NOT stamp this). Like {@link #lastLoginAt},
+     * this can't see a password changed directly through Keycloak's own
+     * hosted Account Console, which stays a known gap.
+     */
+    @Column(name = "last_password_changed_at")
+    private OffsetDateTime lastPasswordChangedAt;
+
     public enum UserStatus {
         active, locked, disabled
     }

@@ -12,7 +12,7 @@ import { ErrorContent } from "./error-content"
  * the login form itself (app/login/page.tsx) precisely so this page never
  * has to hint at account-specific detail.
  *
- * Public (see PUBLIC_PATHS in middleware.ts) — a person can land here with
+ * Public (see PUBLIC_PATHS in proxy.ts) — a person can land here with
  * no session, e.g. from a stale emailed link.
  */
 export default function ErrorPage() {

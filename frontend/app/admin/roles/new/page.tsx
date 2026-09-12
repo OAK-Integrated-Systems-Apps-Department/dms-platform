@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RoleForm } from "@/components/roles/role-form"
 import type { RoleFormValues } from "@/components/roles/schema"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useRolesStore } from "@/stores/roles-store"
 
@@ -47,7 +49,13 @@ export default function AddRolePage() {
           to the current tenant only.
         </p>
       </div>
-      <RoleForm mode="create" onSubmit={handleSubmit} />
+      {/* addRole (stores/roles-store.ts) calls both POST /api/v1/roles
+          (create-role) and, for any permissions pre-selected in the quick
+          picker, syncRolePermissions (assign-permissions) - gate on
+          either. */}
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_CREATE_ROLE, PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS]}>
+        <RoleForm mode="create" onSubmit={handleSubmit} />
+      </PermissionGate>
     </DashboardShell>
   )
 }

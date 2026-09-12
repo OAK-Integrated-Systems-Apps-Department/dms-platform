@@ -110,7 +110,7 @@ export function UserStatusDialog({
         <AlertDialogPopup className="sm:max-w-2xl">
           <span
             className={cn(
-              "mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px]",
+              "mx-auto mb-4 flex size-11 items-center justify-center rounded-md",
               variant.iconClassName
             )}
           >
@@ -121,13 +121,13 @@ export function UserStatusDialog({
             {variant.description(user)}
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-[10px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
               onClick={onConfirm}
               className={cn(
-                "rounded-[10px] border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
+                "rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
                 variant.confirmClassName
               )}
             >

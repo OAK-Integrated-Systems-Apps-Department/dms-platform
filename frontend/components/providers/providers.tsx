@@ -1,12 +1,16 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
+import { isNetworkError, isSessionExpired } from "@/lib/api-error"
+import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
 
 /**
  * All client-only providers for the app, in one place. Split out of
@@ -16,6 +20,26 @@ import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-pro
  * sidebar render with the correct open/collapsed state on the very first
  * paint instead of a client-only cookie read causing a hydration
  * mismatch (see components/ui/sidebar.tsx for the consuming side).
+ *
+ * This is also the single global interception point for an expired
+ * session: every authenticated fetch in the app goes through
+ * `apiFetch`/`apiFetchJson` (lib/api-fetch.ts) via a `useQuery`/
+ * `useMutation` call, so a `QueryCache`/`MutationCache`-level `onError`
+ * here sees every single one of them, without each of the ~30 call sites
+ * needing its own 401 handling. See `isSessionExpired`'s own doc comment
+ * for why this can safely treat any 401 it observes as "the session
+ * expired" (as opposed to, say, a wrong password on the login form).
+ *
+ * The same `onError` also toasts once per burst for a connection-level
+ * failure (`isNetworkError` — backend down, network error, connection
+ * refused; see its doc comment in lib/api-error.ts). Unlike the session
+ * case this never redirects: a dropped connection is usually transient and
+ * the user is still looking at a page that may well work again on retry,
+ * so pages that want more than a toast (a full-content-area replacement)
+ * render `components/ui/backend-unavailable.tsx` themselves off their own
+ * query's `isError`/`error` — this handler's job is just to make sure a
+ * network failure is never completely silent anywhere in the app, even on
+ * a page that doesn't check `isError` at all.
  */
 export function Providers({
   initialSidebarOpen,
@@ -24,7 +48,58 @@ export function Providers({
   initialSidebarOpen: boolean
   children: ReactNode
 }) {
-  const [queryClient] = useState(() => new QueryClient())
+  const router = useRouter()
+  const [queryClient] = useState(() => {
+    // Dedupes near-simultaneous 401s from concurrent requests failing
+    // together the moment a session lapses (a dashboard can easily have
+    // several queries in flight at once) - reset shortly after rather
+    // than left permanently `true`, so a later, genuinely new expiry
+    // (after signing back in) isn't silently suppressed for the rest of
+    // the tab's lifetime.
+    let sessionExpiredHandled = false
+    // Same dedupe reasoning as sessionExpiredHandled above, on its own
+    // flag/timer: a page with several queries in flight can fail together
+    // in one connection drop, and should still only produce one toast.
+    let networkErrorHandled = false
+    let client: QueryClient
+
+    function handleGlobalError(error: unknown) {
+      if (isSessionExpired(error)) {
+        if (sessionExpiredHandled) return
+        sessionExpiredHandled = true
+        setTimeout(() => {
+          sessionExpiredHandled = false
+        }, 5000)
+
+        // Every cached query result (current user, permissions, lists,
+        // everything) is now stale/unreachable — clear it rather than risk
+        // briefly showing authenticated data that no longer applies.
+        client.clear()
+        toast.error("Your session has expired.")
+        router.push("/session-expired")
+        return
+      }
+
+      if (isNetworkError(error)) {
+        if (networkErrorHandled) return
+        networkErrorHandled = true
+        setTimeout(() => {
+          networkErrorHandled = false
+        }, 5000)
+
+        // No redirect and no client.clear() here, deliberately — this is
+        // very likely transient, and the user's already-loaded data/page
+        // is still probably fine. Just make sure it's never silent.
+        toast.error(NETWORK_ERROR_MESSAGE)
+      }
+    }
+
+    client = new QueryClient({
+      queryCache: new QueryCache({ onError: handleGlobalError }),
+      mutationCache: new MutationCache({ onError: handleGlobalError }),
+    })
+    return client
+  })
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -7,6 +7,9 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -27,6 +30,7 @@ import { useUser } from "@/lib/users/use-user"
 export default function UserMfaManagementPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error } = useUser(params.userId)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} MFA` : "User MFA")
 
@@ -56,13 +60,7 @@ export default function UserMfaManagementPage() {
             { label: "MFA" },
           ]}
         />
-        <Link
-          href={user ? `/admin/users/${user.id}` : "/admin/users"}
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to View User
-        </Link>
+        
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             User MFA Management
@@ -74,11 +72,9 @@ export default function UserMfaManagementPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : isError ? (
-          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error ? error.message : "Could not load this user."}
           </div>
         ) : (
@@ -86,6 +82,10 @@ export default function UserMfaManagementPage() {
             user={user}
             onRequireSetup={handleRequireSetup}
             onResetCredentials={handleResetCredentials}
+            // No dedicated granular code for MFA admin actions in the
+            // catalog - OTUA_USERS_UPDATE is the closest "manage this
+            // account" equivalent to the old user.manage.
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
     </DashboardShell>

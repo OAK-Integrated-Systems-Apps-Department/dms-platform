@@ -94,7 +94,7 @@ export function RoleFilterSelect({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-[38px] w-full items-center justify-between rounded-[9px] border bg-muted px-3 text-left text-[13.5px] text-foreground transition-colors",
+          "flex h-[38px] w-full items-center justify-between rounded-btn border bg-muted px-3 text-left text-[13.5px] text-foreground transition-colors",
           open
             ? "border-primary bg-card ring-3 ring-primary/15"
             : "border-border"
@@ -109,7 +109,7 @@ export function RoleFilterSelect({
 
       {open && (
         <div
-          className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-[10px] border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
+          className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative mb-1.5">
@@ -123,7 +123,7 @@ export function RoleFilterSelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search roles…"
-              className="w-full rounded-[7px] border border-[var(--border-strong)] bg-muted py-2 pr-2.5 pl-8 text-[13px] text-foreground placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:outline-none"
+              className="w-full rounded-sm border border-[var(--border-strong)] bg-muted py-2 pr-2.5 pl-8 text-[13px] text-foreground placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:outline-none"
             />
           </div>
 
@@ -131,7 +131,7 @@ export function RoleFilterSelect({
             {showAllRolesOption && (
               <div
                 onClick={clearAll}
-                className="flex cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
               >
                 <span
                   className={cn(
@@ -160,7 +160,7 @@ export function RoleFilterSelect({
                   <div
                     key={role}
                     onClick={() => toggleRole(role)}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
                   >
                     <span
                       className={cn(

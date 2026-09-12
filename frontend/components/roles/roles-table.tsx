@@ -22,10 +22,22 @@ interface RolesTableProps {
   onToggleStatus: (id: string) => void
   /** Resolves with an error message on failure, or null on success — passed straight through to `RoleDeleteDialog`. */
   onDeleteRole: (id: string) => Promise<string | null>
+  /**
+   * Whether the signed-in user may edit or activate/deactivate roles —
+   * both go through `PUT /api/v1/roles/{id}`, so both require
+   * `asm.manage-roles-permissions.update-role` (see `usePermissions`).
+   * Someone with only `.view-role` can reach this list at all, but gets
+   * none of these controls: View stays available either way since it
+   * needs no separate gate (reaching this table at all already required
+   * `.view-role` or `.update-role`).
+   */
+  canUpdate: boolean
+  /** Whether the signed-in user may delete roles — requires `asm.manage-roles-permissions.delete-role`. */
+  canDelete: boolean
 }
 
 /** Role Name / Description / Status / Assigned Users / Actions — per the R1 wireframe. */
-export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTableProps) {
+export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, canDelete }: RolesTableProps) {
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     RoleRecord,
     SortKey
@@ -39,7 +51,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
   const [pendingDeleteRole, setPendingDeleteRole] = useState<RoleRecord | null>(null)
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[var(--ledger-shadow)]">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse">
           <thead>
@@ -104,7 +116,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                 <td className="px-3.5 py-3">
                   <Badge
                     variant={role.status === "Active" ? "default" : "muted"}
-                    className="gap-1.5 rounded-[10px]"
+                    className="gap-1.5 rounded-md"
                   >
                     <span className="size-[5px] rounded-full bg-current" />
                     {role.status}
@@ -122,7 +134,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                             {...props}
                             href={`/admin/roles/${role.id}`}
                             aria-label={`View ${displayName}`}
-                            className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                            className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
                           >
                             <Eye size={15} />
                           </Link>
@@ -138,6 +150,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                       </span>
                     ) : (
                       <>
+                        {canUpdate && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -145,7 +158,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                                 {...props}
                                 href={`/admin/roles/${role.id}/edit`}
                                 aria-label={`Edit ${displayName}`}
-                                className="flex size-7 items-center justify-center rounded-[7px] text-primary transition-colors hover:bg-muted"
+                                className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
                               >
                                 <Pencil size={15} />
                               </Link>
@@ -153,7 +166,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                           />
                           <TooltipContent>{getTooltip("roles.actions.edit")}</TooltipContent>
                         </Tooltip>
+                        )}
 
+                        {canUpdate && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -167,7 +182,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                                     : `Activate ${displayName}`
                                 }
                                 className={cn(
-                                  "flex size-7 items-center justify-center rounded-[7px] transition-colors",
+                                  "flex size-7 items-center justify-center rounded-sm transition-colors",
                                   role.status === "Active"
                                     ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]"
                                     : "text-primary hover:bg-muted"
@@ -187,7 +202,9 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                               : getTooltip("roles.actions.activate")}
                           </TooltipContent>
                         </Tooltip>
+                        )}
 
+                        {canDelete && (
                         <Tooltip>
                           <TooltipTrigger
                             render={(props) => (
@@ -196,7 +213,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                                 type="button"
                                 onClick={() => setPendingDeleteRole(role)}
                                 aria-label={`Delete ${displayName}`}
-                                className="flex size-7 items-center justify-center rounded-[7px] text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
+                                className="flex size-7 items-center justify-center rounded-sm text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
                               >
                                 <Trash2 size={15} />
                               </button>
@@ -204,6 +221,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole }: RolesTablePr
                           />
                           <TooltipContent>{getTooltip("roles.actions.delete")}</TooltipContent>
                         </Tooltip>
+                        )}
                       </>
                     )}
                   </div>

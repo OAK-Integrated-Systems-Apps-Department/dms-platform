@@ -7,6 +7,7 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAuditHistory } from "@/components/users/user-audit-history"
+import { LoadingState } from "@/components/ui/loading-state"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -46,13 +47,7 @@ export default function UserAuditHistoryPage() {
             { label: "Activity" },
           ]}
         />
-        <Link
-          href={user ? `/admin/users/${user.id}` : "/admin/users"}
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to View User
-        </Link>
+
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             User Activity / Audit History
@@ -64,11 +59,9 @@ export default function UserAuditHistoryPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : isError ? (
-          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error ? error.message : "Could not load this user."}
           </div>
         ) : (

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetchJson } from "@/lib/api-fetch"
 
 /** Mirrors backend/dms-core's TenantResponse DTO (only the fields the UI uses). */
 export interface TenantResponseDto {
@@ -18,12 +19,5 @@ export interface TenantResponseDto {
  * My Profile without needing admin rights.
  */
 export async function fetchTenant(tenantId: string): Promise<TenantResponseDto> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/tenants/${tenantId}`, {
-    credentials: "include",
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => null)
-    throw new Error(body?.message ?? "Could not load tenant details.")
-  }
-  return response.json()
+  return apiFetchJson(`${API_BASE_URL}/api/v1/tenants/${tenantId}`, undefined, "Could not load tenant details.")
 }

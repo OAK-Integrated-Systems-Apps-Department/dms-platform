@@ -3,12 +3,18 @@
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { ProfileOverview } from "@/components/profile/profile-overview"
+import { SecurityOverview } from "@/components/profile/security-overview"
 
 /**
  * My Profile (S1) — end-user account overview. Top-level route
  * (`/profile`, not under `/admin`), matching the wireframe's Self-Service
  * group and reached from the account menu in the top bar rather than the
  * sidebar nav.
+ *
+ * Password and Multi-Factor Authentication (formerly the standalone My
+ * Security Settings screen at `/profile/security`, S2) are rendered here
+ * too, directly below the profile card — that route has been removed;
+ * see `SecurityOverview`'s own doc comment.
  */
 export default function ProfilePage() {
   return (
@@ -25,7 +31,10 @@ export default function ProfilePage() {
             Your account information, role, and tenant.
           </p>
         </div>
-        <ProfileOverview />
+        <div className="flex flex-col gap-5">
+          <ProfileOverview />
+          <SecurityOverview />
+        </div>
     </DashboardShell>
   )
 }

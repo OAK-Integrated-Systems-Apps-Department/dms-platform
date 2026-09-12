@@ -11,6 +11,8 @@ import {
   Workflow,
 } from "lucide-react"
 
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+
 import type { NavSection } from "./types"
 
 /**
@@ -32,9 +34,13 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users", icon: Users, href: "/admin/users" },
-      { label: "Roles", icon: Shield, href: "/admin/roles" },
-      { label: "Permissions", icon: KeyRound, href: "/admin/permissions" },
+      { label: "Users", icon: Users, href: "/admin/users", permission: [PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE] },
+      { label: "Roles", icon: Shield, href: "/admin/roles", permission: [PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE] },
+      // Permissions catalog is served by PermissionController, which was NOT
+      // part of the granular sweep (see UserController/UserRoleController/
+      // RoleController/RolePermissionController) - it still checks the
+      // legacy codes, so this nav item must too.
+      { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: [PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE] },
       { label: "Audit Log", icon: ScrollText },
     ],
   },

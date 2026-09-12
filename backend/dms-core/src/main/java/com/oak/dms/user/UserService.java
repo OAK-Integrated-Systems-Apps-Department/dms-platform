@@ -2,6 +2,7 @@ package com.oak.dms.user;
 
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
+import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,14 @@ public interface UserService {
     UserResponse getUser(UUID userId);
 
     UserResponse getCurrentUser();
+
+    /**
+     * A user updating their own first/last name - see
+     * {@link UpdateOwnProfileRequest}'s doc comment for why this takes a
+     * narrower request type than {@link #updateUser}, which is the
+     * admin-facing equivalent for editing some *other* user.
+     */
+    UserResponse updateCurrentUser(UpdateOwnProfileRequest request);
 
     Page<UserResponse> listUsers(Pageable pageable);
 

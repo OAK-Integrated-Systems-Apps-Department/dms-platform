@@ -2,26 +2,22 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ChevronDown, Loader2, RotateCcw, ShieldCheck } from "lucide-react"
+import { AlertTriangle, RotateCcw, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import { SearchInput } from "@/components/ui/search-input"
 import { cn } from "@/lib/utils"
 
 import { getLeafPermissionIds } from "./permission-utils"
-import type { PermissionItem, RoleRecord } from "./types"
+import { PermissionPicker } from "./permission-picker"
+import type { RoleRecord } from "./types"
 import { usePermissionCatalog } from "./use-permission-catalog"
 
 interface RolePermissionConfigProps {
   role: RoleRecord
   /** Resolves with an error message on failure (shown inline, panel stays open), or null on success. */
   onSave: (permissions: string[]) => Promise<string | null>
+  /** Deep-link target from Role Details' "Permission Summary" badges — see `PermissionPicker`'s own doc comment. */
+  initialOpenModuleCode?: string
 }
 
 /**
@@ -31,83 +27,35 @@ interface RolePermissionConfigProps {
  * permissions for a fast path) so this can be reached on its own, per the
  * wireframe's "CONFIGURE PERMISSIONS →" flow from Add/Edit Role.
  *
+ * The actual picker (search, expand/collapse, module/action checkbox tree)
+ * is `PermissionPicker`, shared with `RoleForm` so the two screens don't
+ * maintain divergent implementations of the same UI — this component only
+ * owns what's specific to it: the role identity strip, the system-role/
+ * error banners, and the Reset/Cancel/Save actions.
+ *
  * Reads the live catalog via `usePermissionCatalog` (backed by
- * `V10__seed_fine_grained_permissions.sql`) instead of the hardcoded
- * `components/roles/data.ts` this used to import, and `onSave` now
- * actually reaches the database — see `useRolesStore`'s
- * `syncRolePermissions`, which the parent page wires this up to.
+ * `V10__seed_fine_grained_permissions.sql`), and `onSave` now actually
+ * reaches the database — see `useRolesStore`'s `syncRolePermissions`,
+ * which the parent page wires this up to.
  */
 export function RolePermissionConfig({
   role,
   onSave,
+  initialOpenModuleCode,
 }: RolePermissionConfigProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role.system)
   const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
 
   const [permissions, setPermissions] = useState<string[]>(role.permissions)
-  const [query, setQuery] = useState("")
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  // Collapsible at both the module level and the action level (e.g. "Manage
-  // Users" nested under OTUA). Both start collapsed on load — 32 modules x
-  // ~92 actions is too much to show expanded by default — and open either
-  // on user click or automatically while a search query is narrowing things
-  // down, via `isModuleOpen`/`isActionOpen` below rather than this state
-  // directly.
-  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
-  const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
 
   const isDirty = useMemo(() => {
     if (permissions.length !== role.permissions.length) return true
     const original = new Set(role.permissions)
     return permissions.some((id) => !original.has(id))
   }, [permissions, role.permissions])
-
-  const isSearching = query.trim().length > 0
-
-  const filteredGroups = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return permissionGroups
-    return permissionGroups
-      .map((group) => {
-        const moduleMatches = group.module.toLowerCase().includes(q)
-        const permissions = group.permissions
-          .map((permission): PermissionItem | null => {
-            if (permission.permissions && permission.permissions.length > 0) {
-              // Parent action: keep every child if the action/module itself
-              // matched, otherwise keep only the matching children.
-              const children =
-                moduleMatches || permission.label.toLowerCase().includes(q)
-                  ? permission.permissions
-                  : permission.permissions.filter((child) =>
-                      child.label.toLowerCase().includes(q)
-                    )
-              return children.length > 0
-                ? { ...permission, permissions: children }
-                : null
-            }
-            return moduleMatches || permission.label.toLowerCase().includes(q)
-              ? permission
-              : null
-          })
-          .filter(
-            (permission): permission is PermissionItem => permission !== null
-          )
-        return { ...group, permissions }
-      })
-      .filter((group) => group.permissions.length > 0)
-  }, [query, permissionGroups])
-
-  // While searching, auto-expand every module/action left in the filtered
-  // results so matches are actually visible — collapsed-by-default only
-  // applies to the unfiltered, browse state.
-  function isModuleOpen(moduleCode: string) {
-    return isSearching || openModules[moduleCode] === true
-  }
-  function isActionOpen(actionId: string) {
-    return isSearching || openActions[actionId] === true
-  }
 
   function togglePermission(id: string, checked: boolean) {
     if (isSystemRole) return
@@ -143,7 +91,7 @@ export function RolePermissionConfig({
   }
 
   return (
-    <div className="rounded-[14px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Role identity strip */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -165,217 +113,29 @@ export function RolePermissionConfig({
         </span>
       </div>
 
-      <div className="mb-5 flex items-center gap-3">
-        <div className="flex items-center rounded-lg border border-border p-0.5">
-        <button
-          type="button"
-          onClick={() =>
-            setOpenModules(
-              Object.fromEntries(
-                permissionGroups.map((g) => [g.moduleCode, true])
-              )
-            )
-          }
-            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          Expand all
-        </button>
-          <div className="h-4 w-px bg-border" />
-        <button
-          type="button"
-          onClick={() => {
-            setOpenModules({})
-            setOpenActions({})
-          }}
-            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          Collapse all
-        </button>
-      </div>
-      </div>
-
       {isSystemRole && (
-        <div className="mb-6 rounded-[9px] border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[#7a5b00]">
+        <div className="mb-6 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           This is a system role. Its permissions are managed by the platform and
           can&apos;t be edited here.
         </div>
       )}
 
       {submitError && (
-        <div className="mb-6 flex items-start gap-2 rounded-[9px] border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-6 flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{submitError}</span>
         </div>
       )}
 
-      {/* Search */}
-      <SearchInput
-        className="mb-5"
-          value={query}
-        onChange={setQuery}
-          placeholder="Search permissions…"
-        />
-
-      {/* Permission groups */}
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-        {catalogLoading ? (
-          <div className="col-span-full flex items-center gap-2 rounded-[10px] border border-dashed border-border px-3.5 py-6 text-[13px] text-muted-foreground">
-            <Loader2 size={15} className="animate-spin" />
-            Loading the permission catalog…
-          </div>
-        ) : (
-          <>
-            {filteredGroups.length === 0 && (
-              <p className="col-span-full rounded-[10px] border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
-                No permissions match &quot;{query}&quot;.
-              </p>
-            )}
-
-        {filteredGroups.map((group) => {
-          const groupIds = getLeafPermissionIds(group.permissions)
-          const selectedCount = groupIds.filter((id) =>
-            permissions.includes(id)
-          ).length
-          const allSelected =
-            selectedCount === groupIds.length && groupIds.length > 0
-          const isOpen = isModuleOpen(group.moduleCode)
-
-          return (
-            <Collapsible
-              key={group.moduleCode}
-              open={isOpen}
-              onOpenChange={(open) =>
-                setOpenModules((prev) => ({
-                  ...prev,
-                  [group.moduleCode]: open,
-                }))
-              }
-              className={cn(
-                "overflow-hidden rounded-[10px] border border-border",
-                isOpen && "sm:col-span-2 lg:col-span-3"
-              )}
-            >
-              <div className="flex items-center justify-between gap-3 bg-muted px-3.5 py-2">
-                <CollapsibleTrigger className="flex flex-1 items-center gap-2 text-left text-[11px] font-semibold tracking-[0.05em] text-muted-foreground uppercase">
-                  <ChevronDown
-                    size={14}
-                    className={cn(
-                      "shrink-0 transition-transform",
-                      !isOpen && "-rotate-90"
-                    )}
-                  />
-                  {group.module}
-                  <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
-                    {group.moduleCode} · {selectedCount}/{groupIds.length}
-                  </span>
-                </CollapsibleTrigger>
-                {!isSystemRole && (
-                  <button
-                    type="button"
-                    onClick={() => setGroupPermissions(groupIds, !allSelected)}
-                    className="shrink-0 text-[11.5px] font-semibold text-primary hover:underline"
-                  >
-                    {allSelected ? "Clear all" : "Select all"}
-                  </button>
-                )}
-              </div>
-              <CollapsibleContent className="divide-y divide-border px-3.5">
-                {group.permissions.map((permission) => {
-                  const children = permission.permissions
-                  if (!children || children.length === 0) {
-                    return (
-                      <Checkbox
-                        key={permission.id}
-                        id={permission.id}
-                        label={permission.label}
-                        disabled={isSystemRole}
-                        checked={permissions.includes(permission.id)}
-                        onCheckedChange={(checked) =>
-                          togglePermission(permission.id, checked)
-                        }
-                      />
-                    )
-                  }
-
-                  // Action with fine-grained permissions nested under it
-                  // (e.g. "Manage Users") — its own id isn't grantable, so
-                  // show it as a collapsible sub-heading with a select-all
-                  // for its children instead of a checkbox of its own.
-                  // Collapsed by default, same as the module it lives in.
-                  const childIds = children.map((child) => child.id)
-                  const childSelectedCount = childIds.filter((id) =>
-                    permissions.includes(id)
-                  ).length
-                  const allChildrenSelected =
-                    childSelectedCount === childIds.length &&
-                    childIds.length > 0
-                  const isActionOpenNow = isActionOpen(permission.id)
-
-                  return (
-                    <Collapsible
-                      key={permission.id}
-                      open={isActionOpenNow}
-                      onOpenChange={(open) =>
-                        setOpenActions((prev) => ({
-                          ...prev,
-                          [permission.id]: open,
-                        }))
-                      }
-                      className="py-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2 py-1.5">
-                        <CollapsibleTrigger className="flex flex-1 items-center gap-1.5 text-left text-[13px] font-semibold text-foreground">
-                          <ChevronDown
-                            size={12}
-                            className={cn(
-                              "shrink-0 text-muted-foreground transition-transform",
-                              !isActionOpenNow && "-rotate-90"
-                            )}
-                          />
-                          {permission.label}
-                          <span className="font-mono text-[10.5px] font-normal text-[var(--ink-faint)]">
-                            ({childSelectedCount}/{childIds.length})
-                          </span>
-                        </CollapsibleTrigger>
-                        {!isSystemRole && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setGroupPermissions(
-                                childIds,
-                                !allChildrenSelected
-                              )
-                            }
-                            className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
-                          >
-                            {allChildrenSelected ? "Clear all" : "Select all"}
-                          </button>
-                        )}
-                      </div>
-                      <CollapsibleContent className="divide-y divide-border border-t border-dashed border-border pl-4">
-                        {children.map((child) => (
-                          <Checkbox
-                            key={child.id}
-                            id={child.id}
-                            label={child.label}
-                            disabled={isSystemRole}
-                            checked={permissions.includes(child.id)}
-                            onCheckedChange={(checked) =>
-                              togglePermission(child.id, checked)
-                            }
-                          />
-                        ))}
-                      </CollapsibleContent>
-                    </Collapsible>
-                  )
-                })}
-              </CollapsibleContent>
-            </Collapsible>
-          )
-        })}
-          </>
-        )}
-      </div>
+      <PermissionPicker
+        groups={permissionGroups}
+        loading={catalogLoading}
+        selected={permissions}
+        onToggle={togglePermission}
+        onSetGroup={setGroupPermissions}
+        disabled={isSystemRole}
+        initialOpenModuleCode={initialOpenModuleCode}
+      />
 
       <hr className="my-6 border-dashed border-border" />
 
@@ -394,7 +154,7 @@ export function RolePermissionConfig({
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded-[9px] border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+            className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
           >
             Cancel
           </button>
@@ -403,7 +163,7 @@ export function RolePermissionConfig({
             onClick={handleSave}
             disabled={isSystemRole || !isDirty || saving}
             className={cn(
-              "rounded-[9px] border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+              "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
               "disabled:cursor-not-allowed disabled:opacity-60"
             )}
           >

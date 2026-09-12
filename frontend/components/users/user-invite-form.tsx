@@ -10,7 +10,11 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { API_BASE_URL } from "@/lib/api-config"
+import { ApiError } from "@/lib/api-error"
+import { apiFetchJson } from "@/lib/api-fetch"
 import { assignUserRole } from "@/lib/users/api"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
 import { RoleMultiSelect } from "./role-multi-select"
@@ -24,24 +28,20 @@ import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
  * (see app/update-password/page.tsx). Nothing here is reachable without
  * an existing admin session.
  *
- * Role options come from the real tenant role list (`useRolesStore`), not
- * the hardcoded `components/roles/data.ts` catalog this used to read from.
+ * Role options come from the real tenant role list (`useRolesStore`).
  *
- * FIXED KNOWN GAP: `CreateUserRequest` only accepts
- * {email, firstName, lastName} — it has no `roles` field, and never did,
- * so a role selected here used to be silently dropped: sent in the POST
- * body, accepted by nothing. Role assignment is a genuinely separate API
+ * `CreateUserRequest` only accepts {email, firstName, lastName} — it has
+ * no `roles` field. Role assignment is a genuinely separate API
  * (`POST /api/v1/users/{userId}/roles`, see `UserRoleController`) that
  * needs a `userId`, which doesn't exist until the user itself is created —
- * so this now creates the user first, then assigns each selected role as
- * a second step once a real `userId` is available. Each assignment is
+ * so this creates the user first, then assigns each selected role as a
+ * second step once a real `userId` is available. Each assignment is
  * tenant-scoped and mirrored into Keycloak as a realm role by the backend
  * (see `UserRoleServiceImpl.assignRole`), not just written to the local
  * database.
  *
- * `username` remains unsent — `CreateUserRequest` still has no field for
- * it, and there's no separate endpoint for it the way there now is for
- * roles.
+ * `username` remains unsent — `CreateUserRequest` has no field for it,
+ * and there's no separate endpoint for it the way there is for roles.
  */
 export function UserInviteForm() {
   const router = useRouter()
@@ -49,11 +49,24 @@ export function UserInviteForm() {
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null)
 
   const roles = useRolesStore((state) => state.roles)
+  const rolesLoading = useRolesStore((state) => state.loading)
+  const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  const { hasAnyPermission } = usePermissions()
+  const canViewRoles = hasAnyPermission(
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
+  )
   useEffect(() => {
-    if (roles.length === 0) fetchRoles()
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — otua.manage-users.* alone (what actually gates
+    // reaching this form) doesn't imply it, so skip the call entirely for
+    // a caller without either, rather than 403 and, since nothing here
+    // marks that permanent otherwise, keep re-firing it on every remount
+    // for the rest of the session.
+    if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canViewRoles])
   // Only active roles can be newly assigned (see the backend guard in
   // UserRoleServiceImpl#assignRole) — filtering here means the picker
   // simply doesn't offer an inactive one, rather than letting someone
@@ -73,39 +86,32 @@ export function UserInviteForm() {
 
   async function onSubmit(values: UserInviteFormValues) {
     setSubmitError(null)
-    let response: Response
+    let created: { userId: string }
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          email: values.email,
-          firstName: values.firstName,
-          lastName: values.lastName,
-        }),
-      })
-    } catch {
-      // fetch() throws when the request never reached a server at all —
-      // e.g. the backend isn't running yet. Distinct from a 4xx/5xx
-      // below, which means the backend WAS reached and responded.
-      const message = "Could not reach the server. Check that the backend is running and try again."
-      setSubmitError(message)
-      toast.error(message)
-      return
-    }
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
+      created = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/users`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: values.email,
+            firstName: values.firstName,
+            lastName: values.lastName,
+          }),
+        },
+        "Could not create the user."
+      )
+    } catch (err) {
       const message =
-        response.status === 403
+        err instanceof ApiError && err.status === 403
           ? "You don't have permission to invite users."
-          : (body?.message ?? "Could not create the user.")
+          : err instanceof Error
+            ? err.message
+            : "Could not create the user."
       setSubmitError(message)
       toast.error(message)
       return
     }
-
-    const created: { userId: string } = await response.json()
 
     if (values.roles.length > 0) {
       const roleIdByName = new Map(roles.map((r) => [r.name, r.id]))
@@ -143,7 +149,7 @@ export function UserInviteForm() {
 
   if (invitedEmail) {
     return (
-      <div className="rounded-[14px] border border-primary/30 bg-primary-tint p-6 text-center">
+      <div className="rounded-lg border border-primary/30 bg-primary-tint p-6 text-center">
         <CheckCircle2 size={26} className="mx-auto mb-3 text-primary" />
         <p className="mb-4 text-[13.5px] leading-[1.6] text-foreground">
           User created. An email has been sent to <span className="font-semibold">{invitedEmail}</span> to
@@ -153,14 +159,14 @@ export function UserInviteForm() {
           <button
             type="button"
             onClick={() => setInvitedEmail(null)}
-            className="rounded-[9px] border border-[var(--border-strong)] px-4 py-2 text-[13px] font-semibold text-foreground"
+            className="rounded-btn border border-[var(--border-strong)] px-4 py-2 text-[13px] font-semibold text-foreground"
           >
             Add another user
           </button>
           <button
             type="button"
             onClick={() => router.push("/admin/users")}
-            className="rounded-[9px] border border-primary bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground"
+            className="rounded-btn border border-primary bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground"
           >
             Back to user list
           </button>
@@ -170,10 +176,10 @@ export function UserInviteForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="rounded-[14px] border border-border bg-card p-[30px] pb-[26px]">
+    <form onSubmit={handleSubmit(onSubmit)} className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
 
       {submitError && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-[10px] border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[#7A3623]">
+        <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
           <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
           {submitError}
         </div>
@@ -219,13 +225,26 @@ export function UserInviteForm() {
 
       <div className="mb-5">
         <Label>Initial role(s)</Label>
-        <Controller
-          name="roles"
-          control={control}
-          render={({ field }) => (
-            <RoleMultiSelect options={ROLE_OPTIONS} selected={field.value} onChange={field.onChange} />
-          )}
-        />
+        {canViewRoles ? (
+          <Controller
+            name="roles"
+            control={control}
+            render={({ field }) => (
+              <RoleMultiSelect
+                options={ROLE_OPTIONS}
+                selected={field.value}
+                onChange={field.onChange}
+                loading={rolesLoading && roles.length === 0}
+              />
+            )}
+          />
+        ) : (
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+            You don&apos;t have permission to view the role catalog, so roles
+            can&apos;t be assigned here. The user can still be invited without
+            one.
+          </p>
+        )}
         {errors.roles && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.roles.message}</p>}
       </div>
 
@@ -235,14 +254,14 @@ export function UserInviteForm() {
         <button
           type="button"
           onClick={() => router.push("/admin/users")}
-          className="rounded-[9px] border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[9px] border border-[#123527] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Creating…" : "Create user"}
         </button>

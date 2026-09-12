@@ -19,8 +19,14 @@ export interface PermissionRecord {
   actionId: string
   /** Denormalized from the related action, so the table can show "MODULE / ACTION" without a second lookup. */
   actionCode: string
+  /** Human-readable label for `actionCode` (e.g. "Manage Roles & Permissions"), for display in place of the raw code. Falls back to a humanized version of `actionCode` if the backend ever returns one blank — see `humanizeCode`. */
+  actionName: string
   moduleId: string
   moduleCode: string
+  /** Human-readable label for `moduleCode` (e.g. "Access and Security Management"), for display in place of the raw code. Falls back to a humanized version of `moduleCode` if the backend ever returns one blank — see `humanizeCode`. */
+  moduleName: string
+  /** True for a permission kept only for backward compatibility (currently just the 4 original coarse codes: user.view/user.manage/role.view/role.manage) — no longer checked by the backend and hidden from the Role builder's grant picker (see `usePermissionCatalog`), but still shown wherever a role already holds it. */
+  deprecated: boolean
 }
 
 /** A verb available under a module (mirrors `PermissionActionResponse.java`). */

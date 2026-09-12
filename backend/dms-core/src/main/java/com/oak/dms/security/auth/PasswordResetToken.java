@@ -2,6 +2,8 @@ package com.oak.dms.security.auth;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -59,11 +61,31 @@ public class PasswordResetToken {
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
+    /**
+     * Which of {@link PasswordResetService}'s issuance paths created this
+     * token - {@code NEW_USER} for a brand-new invited account setting a
+     * password for the first time, {@code PASSWORD_RESET} for both the
+     * self-service "forgot password" flow and an admin-triggered reset
+     * (end users experience those two identically, so they share one
+     * value). Read by {@code GET /api/v1/auth/reset-password/validate} so
+     * {@code /update-password} can show "welcome, set your password" vs
+     * "reset your password" copy without ever exposing which internal
+     * code path issued the token beyond that one distinction.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false)
+    private TokenKind kind;
+
     public boolean isExpired(OffsetDateTime now) {
         return now.isAfter(expiresAt);
     }
 
     public boolean isUsed() {
         return usedAt != null;
+    }
+
+    public enum TokenKind {
+        NEW_USER,
+        PASSWORD_RESET
     }
 }

@@ -1,8 +1,11 @@
 import { create } from "zustand"
 
+import { toBackendRoleName } from "@/components/roles/role-utils"
 import type { RoleFormValues } from "@/components/roles/schema"
 import type { RoleRecord, RoleStatus } from "@/components/roles/types"
 import { API_BASE_URL } from "@/lib/api-config"
+import { ApiError, friendlyMessage } from "@/lib/api-error"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 import { usePermissionsStore } from "@/stores/permissions-store"
 
 /** Shape returned by `RoleResponse.java`. */
@@ -83,18 +86,6 @@ function fromBackend(role: BackendRoleResponse, existing?: RoleRecord): RoleReco
   }
 }
 
-/** Distinguishes "server responded with an error" from "never reached the server" — see the same pattern in UserEditForm/UserInviteForm. */
-async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
-  if (response.status === 403) {
-    return "You don't have permission to do that."
-  }
-  const body = await response.json().catch(() => null)
-  return body?.message ?? fallback
-}
-
-const NETWORK_ERROR =
-  "Could not reach the server. Check that the backend is running and try again."
-
 interface RolesState {
   roles: RoleRecord[]
   /** roleId -> that role's current permission grants, incl. `rolePermissionId` for revocation. Populated by `fetchRolePermissions`. */
@@ -108,10 +99,20 @@ interface RolesState {
    * GET /api/v1/roles/{roleId} — resolves a single role, for direct links
    * / refreshes into Role Details, Edit Role, or Permission Configuration
    * that land before `fetchRoles` has ever populated the store. Also
-   * fetches that role's real granted permissions. Returns the resolved
-   * role, or `null` if it doesn't exist / isn't accessible.
+   * fetches that role's real granted permissions.
+   *
+   * `notFound`/`error` are mutually exclusive on failure — distinguishing
+   * them is the whole point: a real 404 means the role genuinely doesn't
+   * exist (the caller should render Next's not-found page), while any
+   * other failure (a network error most notably) means the role's status
+   * is simply unknown right now, which the caller should show as
+   * "couldn't load" / "backend unavailable", never as not-found. See
+   * `useRole` (components/roles/use-role.ts), the sole caller, for how
+   * this propagates to Role Details / Edit Role / Permission Configuration.
    */
-  fetchRole: (id: string) => Promise<RoleRecord | null>
+  fetchRole: (
+    id: string
+  ) => Promise<{ role: RoleRecord | null; notFound: boolean; error: string | null }>
   /**
    * GET /api/v1/roles/{roleId}/permissions — resolves a role's currently
    * granted permission codes, and patches both `roles` (the `permissions`
@@ -170,29 +171,18 @@ export const useRolesStore = create<RolesState>((set, get) => ({
 
   fetchRoles: async () => {
     set({ loading: true, error: null })
-    let response: Response
+    let body: { content: BackendRoleResponse[] }
     try {
       // No pagination endpoint params exposed by the Role List UI yet —
       // it paginates client-side over the full set (see
       // app/admin/roles/page.tsx's TablePagination) — so this asks for a
       // page large enough to cover realistic tenants in one call.
-      response = await fetch(`${API_BASE_URL}/api/v1/roles?size=200`, {
-        credentials: "include",
-      })
-    } catch {
-      set({ loading: false, error: NETWORK_ERROR })
+      body = await apiFetchJson(`${API_BASE_URL}/api/v1/roles?size=200`, undefined, "Could not load roles.")
+    } catch (err) {
+      set({ loading: false, error: friendlyMessage(err) })
       return
     }
 
-    if (!response.ok) {
-      set({
-        loading: false,
-        error: await parseErrorMessage(response, "Could not load roles."),
-      })
-      return
-    }
-
-    const body: { content: BackendRoleResponse[] } = await response.json()
     set((state) => {
       const existingById = new Map(state.roles.map((role) => [role.id, role]))
       return {
@@ -204,24 +194,18 @@ export const useRolesStore = create<RolesState>((set, get) => ({
   },
 
   fetchRole: async (id) => {
-    let response: Response
+    let body: BackendRoleResponse
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles/${id}`, {
-        credentials: "include",
-      })
-    } catch {
-      set({ error: NETWORK_ERROR })
-      return null
-    }
-
-    if (!response.ok) {
-      if (response.status !== 404) {
-        set({ error: await parseErrorMessage(response, "Could not load this role.") })
+      body = await apiFetchJson(`${API_BASE_URL}/api/v1/roles/${id}`, undefined, "Could not load this role.")
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return { role: null, notFound: true, error: null }
       }
-      return null
+      const message = friendlyMessage(err)
+      set({ error: message })
+      return { role: null, notFound: false, error: message }
     }
 
-    const body: BackendRoleResponse = await response.json()
     const existing = get().roles.find((role) => role.id === id)
     const resolved = fromBackend(body, existing)
 
@@ -238,27 +222,22 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     // failed.
     const { error: permError } = await get().fetchRolePermissions(id)
     if (permError) set({ error: permError })
-    return get().roles.find((role) => role.id === id) ?? resolved
+    const finalRole = get().roles.find((role) => role.id === id) ?? resolved
+    return { role: finalRole, notFound: false, error: null }
   },
 
   fetchRolePermissions: async (roleId) => {
-    let response: Response
+    let body: BackendRolePermissionResponse[]
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles/${roleId}/permissions`, {
-        credentials: "include",
-      })
-    } catch {
-      return { codes: [], error: NETWORK_ERROR }
+      body = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/roles/${roleId}/permissions`,
+        undefined,
+        "Could not load this role's granted permissions."
+      )
+    } catch (err) {
+      return { codes: [], error: friendlyMessage(err) }
     }
 
-    if (!response.ok) {
-      return {
-        codes: [],
-        error: await parseErrorMessage(response, "Could not load this role's granted permissions."),
-      }
-    }
-
-    const body: BackendRolePermissionResponse[] = await response.json()
     const grants = body.map(fromBackendGrant)
     const codes = grants.map((g) => g.permissionCode)
 
@@ -273,30 +252,25 @@ export const useRolesStore = create<RolesState>((set, get) => ({
   },
 
   addRole: async (values) => {
-    let response: Response
+    let body: BackendRoleResponse
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          roleName: values.name,
-          description: values.description || undefined,
-          status: toBackendStatus(values.status),
-        }),
-      })
-    } catch {
-      return { role: null, error: NETWORK_ERROR }
+      body = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/roles`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roleName: toBackendRoleName(values.name),
+            description: values.description || undefined,
+            status: toBackendStatus(values.status),
+          }),
+        },
+        "Could not create the role."
+      )
+    } catch (err) {
+      return { role: null, error: friendlyMessage(err) }
     }
 
-    if (!response.ok) {
-      return {
-        role: null,
-        error: await parseErrorMessage(response, "Could not create the role."),
-      }
-    }
-
-    const body: BackendRoleResponse = await response.json()
     const role = fromBackend(body)
     set((state) => ({ roles: [role, ...state.roles] }))
 
@@ -318,30 +292,25 @@ export const useRolesStore = create<RolesState>((set, get) => ({
   },
 
   updateRole: async (id, values) => {
-    let response: Response
+    let body: BackendRoleResponse
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          roleName: values.name,
-          description: values.description || undefined,
-          status: toBackendStatus(values.status),
-        }),
-      })
-    } catch {
-      return { role: null, error: NETWORK_ERROR }
+      body = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/roles/${id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roleName: toBackendRoleName(values.name),
+            description: values.description || undefined,
+            status: toBackendStatus(values.status),
+          }),
+        },
+        "Could not save changes."
+      )
+    } catch (err) {
+      return { role: null, error: friendlyMessage(err) }
     }
 
-    if (!response.ok) {
-      return {
-        role: null,
-        error: await parseErrorMessage(response, "Could not save changes."),
-      }
-    }
-
-    const body: BackendRoleResponse = await response.json()
     let updated: RoleRecord = fromBackend(body)
     set((state) => ({
       roles: state.roles.map((role) => {
@@ -386,25 +355,23 @@ export const useRolesStore = create<RolesState>((set, get) => ({
       if (!permissionId) {
         throw new Error(`"${code}" isn't in the current permission catalog.`)
       }
-      const response = await fetch(`${API_BASE_URL}/api/v1/roles/${roleId}/permissions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ permissionId }),
-      })
-      if (!response.ok) {
-        throw new Error(await parseErrorMessage(response, `Could not grant "${code}".`))
-      }
+      await apiFetch(
+        `${API_BASE_URL}/api/v1/roles/${roleId}/permissions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ permissionId }),
+        },
+        `Could not grant "${code}".`
+      )
     })
 
     const revokeResults = toRevoke.map(async (grant) => {
-      const response = await fetch(
+      await apiFetch(
         `${API_BASE_URL}/api/v1/roles/${roleId}/permissions/${grant.rolePermissionId}`,
-        { method: "DELETE", credentials: "include" }
+        { method: "DELETE" },
+        `Could not revoke "${grant.permissionCode}".`
       )
-      if (!response.ok) {
-        throw new Error(await parseErrorMessage(response, `Could not revoke "${grant.permissionCode}".`))
-      }
     })
 
     const results = await Promise.allSettled([...grantResults, ...revokeResults])
@@ -432,24 +399,22 @@ export const useRolesStore = create<RolesState>((set, get) => ({
 
     const nextStatus: RoleStatus = role.status === "Active" ? "Inactive" : "Active"
 
-    let response: Response
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          roleName: role.name,
-          description: role.description || undefined,
-          status: toBackendStatus(nextStatus),
-        }),
-      })
-    } catch {
-      return { error: NETWORK_ERROR }
-    }
-
-    if (!response.ok) {
-      return { error: await parseErrorMessage(response, "Could not update the role's status.") }
+      await apiFetch(
+        `${API_BASE_URL}/api/v1/roles/${id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roleName: role.name,
+            description: role.description || undefined,
+            status: toBackendStatus(nextStatus),
+          }),
+        },
+        "Could not update the role's status."
+      )
+    } catch (err) {
+      return { error: friendlyMessage(err) }
     }
 
     set((state) => ({
@@ -459,18 +424,10 @@ export const useRolesStore = create<RolesState>((set, get) => ({
   },
 
   deleteRole: async (id) => {
-    let response: Response
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/roles/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      })
-    } catch {
-      return { error: NETWORK_ERROR }
-    }
-
-    if (!response.ok) {
-      return { error: await parseErrorMessage(response, "Could not delete the role.") }
+      await apiFetch(`${API_BASE_URL}/api/v1/roles/${id}`, { method: "DELETE" }, "Could not delete the role.")
+    } catch (err) {
+      return { error: friendlyMessage(err) }
     }
 
     set((state) => ({ roles: state.roles.filter((role) => role.id !== id) }))

@@ -97,7 +97,8 @@ public class AuthController {
             @RequestParam @NotBlank @Size(max = 512) String token,
             HttpServletRequest request) {
         rateLimiter.checkAndRecord(request);
-        return noStore(new ValidateResetTokenResponse(passwordResetService.isTokenValid(token)));
+        var kind = passwordResetService.validateToken(token);
+        return noStore(new ValidateResetTokenResponse(kind.isPresent(), kind.orElse(null)));
     }
 
     @PostMapping("/reset-password")

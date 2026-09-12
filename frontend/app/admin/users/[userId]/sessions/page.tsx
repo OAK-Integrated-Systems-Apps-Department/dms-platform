@@ -7,6 +7,9 @@ import { ChevronLeft } from "lucide-react"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 import { useUsersStore } from "@/stores/users-store"
@@ -31,6 +34,7 @@ export default function UserSessionsPage() {
   const { data: user, isPending, isError, error } = useUser(params.userId)
   const revokeSession = useUsersStore((state) => state.revokeSession)
   const revokeAllSessions = useUsersStore((state) => state.revokeAllSessions)
+  const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Sessions` : "User Sessions")
 
@@ -52,13 +56,6 @@ export default function UserSessionsPage() {
             { label: "Sessions" },
           ]}
         />
-        <Link
-          href={user ? `/admin/users/${user.id}` : "/admin/users"}
-          className="mb-3.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-          Back to View User
-        </Link>
         <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             User Sessions
@@ -70,11 +67,9 @@ export default function UserSessionsPage() {
           </p>
         </div>
         {isPending ? (
-          <div className="rounded-[10px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-            Loading user…
-          </div>
+          <LoadingState message="Loading user…" />
         ) : isError ? (
-          <div className="rounded-[10px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+          <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error ? error.message : "Could not load this user."}
           </div>
         ) : (
@@ -82,6 +77,9 @@ export default function UserSessionsPage() {
             user={user}
             onRevokeSession={(sessionId) => revokeSession(user.id, sessionId)}
             onRevokeAllSessions={() => revokeAllSessions(user.id)}
+            // No dedicated granular code for session revocation - closest
+            // "manage this account" equivalent to the old user.manage.
+            canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
     </DashboardShell>

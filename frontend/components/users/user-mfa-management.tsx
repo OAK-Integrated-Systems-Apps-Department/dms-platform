@@ -16,6 +16,15 @@ interface UserMfaManagementProps {
   user: UserRecord
   onRequireSetup: () => void
   onResetCredentials: () => void
+  /**
+   * Whether the signed-in user may run these administrative actions —
+   * requires `otua.manage-users.update` (see `usePermissions`; there's no
+   * dedicated granular code for MFA admin actions, so this uses the
+   * closest "manage this account" equivalent to the old `user.manage`).
+   * The component's status section stays visible either way; only the
+   * action buttons are gated.
+   */
+  canManage: boolean
 }
 
 function MfaKvItem({
@@ -26,7 +35,7 @@ function MfaKvItem({
   value: React.ReactNode
 }) {
   return (
-    <div className="rounded-[10px] border border-border bg-muted px-4 py-3">
+    <div className="rounded-md border border-border bg-muted px-4 py-3">
       <div className="mb-1 text-[10.5px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
         {label}
       </div>
@@ -44,7 +53,7 @@ function MfaKvItem({
  *
  * Read-only status + action buttons, same split as `UserAccessSummary`
  * (A1): a status/info card up top, actions below, both wrapped in a single
- * `rounded-[10px]` card. Both actions route through `UserMfaActionDialog`
+ * `rounded-md` card. Both actions route through `UserMfaActionDialog`
  * (U8's confirmation step) rather than firing instantly — resetting
  * credentials removes a real login factor and requiring setup forces a
  * re-enrollment flow, so neither should be a one-click accident, same
@@ -58,11 +67,12 @@ export function UserMfaManagement({
   user,
   onRequireSetup,
   onResetCredentials,
+  canManage,
 }: UserMfaManagementProps) {
   const [pendingAction, setPendingAction] = useState<UserMfaAction | null>(null)
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
@@ -91,7 +101,7 @@ export function UserMfaManagement({
           </h3>
           <Badge
             variant={user.mfaEnrolled ? "default" : "muted"}
-            className="gap-1.5 rounded-[10px]"
+            className="gap-1.5 rounded-md"
           >
             <span className="size-[5px] rounded-full bg-current" />
             {user.mfaEnrolled ? "Enrolled" : "Not Enrolled"}
@@ -111,7 +121,7 @@ export function UserMfaManagement({
             value={
               <Badge
                 variant={user.mfaRequiredByPolicy ? "gold" : "outline"}
-                className="rounded-[10px]"
+                className="rounded-md"
               >
                 {user.mfaRequiredByPolicy
                   ? "Required for this role"
@@ -123,6 +133,7 @@ export function UserMfaManagement({
       </div>
 
       {/* Administrative actions */}
+      {canManage && (
       <div>
         <h3 className="mb-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
           Administrative Actions
@@ -131,7 +142,7 @@ export function UserMfaManagement({
           <button
             type="button"
             onClick={() => setPendingAction("require-setup")}
-            className="flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+            className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
           >
             <ShieldAlert size={14} />
             Require MFA Setup
@@ -140,7 +151,7 @@ export function UserMfaManagement({
             type="button"
             onClick={() => setPendingAction("reset-credentials")}
             disabled={!user.mfaEnrolled}
-            className="flex items-center gap-1.5 rounded-[10px] border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border-strong)] disabled:hover:bg-card disabled:hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border-strong)] disabled:hover:bg-card disabled:hover:text-foreground"
           >
             <ShieldOff size={14} />
             Reset MFA Credentials
@@ -151,6 +162,7 @@ export function UserMfaManagement({
           are typically restricted to users managing administrator accounts.
         </p>
       </div>
+      )}
 
       {pendingAction && (
         <UserMfaActionDialog

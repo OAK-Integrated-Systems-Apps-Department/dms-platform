@@ -3,8 +3,11 @@
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserEditForm } from "@/components/users/user-edit-form"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -41,15 +44,18 @@ export default function EditUserPage() {
         </p>
       </div>
       {isPending ? (
-        <div className="rounded-[14px] border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
-          Loading user…
-        </div>
+        <LoadingState message="Loading user…" />
       ) : isError ? (
-        <div className="rounded-[14px] border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
+        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
           {error instanceof Error ? error.message : "Could not load this user."}
         </div>
       ) : (
-      <UserEditForm user={user} />
+        // This form calls both PUT /api/v1/users/{userId} (update) and, if
+        // roles changed, POST/DELETE /api/v1/users/{userId}/roles
+        // (assign-role) - gate on either.
+        <PermissionGate permission={[PermissionCodes.OTUA_USERS_UPDATE, PermissionCodes.OTUA_USERS_ASSIGN_ROLE]}>
+          <UserEditForm user={user} />
+        </PermissionGate>
       )}
     </DashboardShell>
   )

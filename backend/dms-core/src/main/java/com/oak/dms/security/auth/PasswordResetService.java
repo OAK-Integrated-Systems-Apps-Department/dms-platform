@@ -1,5 +1,6 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
@@ -71,6 +72,7 @@ public class PasswordResetService {
     private final KeycloakAdminProperties keycloakAdminProperties;
     private final PasswordResetTokenRepository tokenRepository;
     private final JavaMailSender mailSender;
+    private final BrandingProperties branding;
 
     @Value("${app.frontend-base-url}")
     private String frontendBaseUrl;
@@ -144,10 +146,15 @@ public class PasswordResetService {
         issueTokenAndSendEmail(user, null, EmailKind.NEW_USER);
     }
 
-    /** Read-only check used by the frontend to show "link invalid/expired" before rendering the form. */
+    /**
+     * Used by the frontend to show "link invalid/expired" before
+     * rendering the form and, when valid, which of the two
+     * {@code /update-password} interfaces to show - see
+     * {@link PasswordResetToken.TokenKind}.
+     */
     @Transactional(readOnly = true)
-    public boolean isTokenValid(String rawToken) {
-        return findValidToken(rawToken).isPresent();
+    public Optional<PasswordResetToken.TokenKind> validateToken(String rawToken) {
+        return findValidToken(rawToken).map(PasswordResetToken::getKind);
     }
 
     /**
@@ -176,11 +183,30 @@ public class PasswordResetService {
             throw e;
         }
 
+        recordPasswordChanged(user);
+
         token.setUsedAt(OffsetDateTime.now());
         tokenRepository.save(token);
         invalidateOutstandingTokens(user.getUserId());
 
         log.info("Password reset completed via self-service flow for user {}", user.getUserId());
+    }
+
+    /**
+     * Best-effort, mirroring {@code AuthService#recordLastLogin}'s own
+     * reasoning: the Keycloak credential write in {@link #resetPassword}
+     * has already succeeded by the time this is called, so a failure
+     * persisting this timestamp locally shouldn't be reported back as a
+     * failed password reset - the person's password really did change
+     * either way.
+     */
+    private void recordPasswordChanged(User user) {
+        try {
+            user.setLastPasswordChangedAt(OffsetDateTime.now());
+            userRepository.save(user);
+        } catch (Exception e) {
+            log.warn("Could not record last password change for user {}: {}", user.getUserId(), e.getMessage());
+        }
     }
 
     private Optional<PasswordResetToken> findValidToken(String rawToken) {
@@ -216,6 +242,7 @@ public class PasswordResetService {
                 .tokenHash(hash(rawToken))
                 .expiresAt(OffsetDateTime.now().plusMinutes(tokenTtlMinutes))
                 .requestedIp(requestedIp)
+                .kind(toTokenKind(kind))
                 .build();
 
         invalidateOutstandingTokens(user.getUserId());
@@ -242,12 +269,29 @@ public class PasswordResetService {
      * Which of the three flows in this class triggered the email - only
      * changes the subject/body copy below. All three land the person on
      * the exact same {@code /update-password?token=...} page and go
-     * through the exact same token issuance/redemption code.
+     * through the exact same token issuance/redemption code. Persisted on
+     * the token as the coarser {@link PasswordResetToken.TokenKind} (see
+     * {@link #toTokenKind}) so {@code /update-password} can tell
+     * "welcome, set your password" apart from "reset your password" once
+     * the link is actually clicked - unlike this enum, which never
+     * survives past the email send.
      */
     private enum EmailKind {
         SELF_SERVICE,
         ADMIN_RESET,
         NEW_USER
+    }
+
+    /**
+     * {@code SELF_SERVICE} and {@code ADMIN_RESET} both collapse to
+     * {@code PASSWORD_RESET} - end users experience the two identically,
+     * so {@code /update-password} only needs to distinguish "setting a
+     * password for the first time" from "everything else".
+     */
+    private static PasswordResetToken.TokenKind toTokenKind(EmailKind kind) {
+        return kind == EmailKind.NEW_USER
+                ? PasswordResetToken.TokenKind.NEW_USER
+                : PasswordResetToken.TokenKind.PASSWORD_RESET;
     }
 
     private void sendEmail(User user, String rawToken, EmailKind kind) {
@@ -257,25 +301,27 @@ public class PasswordResetService {
         message.setFrom(mailFrom);
         message.setTo(user.getEmail());
 
+        String productName = branding.getProductName();
+
         if (kind == EmailKind.NEW_USER) {
-            message.setSubject("Welcome to Oak DMS - set your password");
+            message.setSubject("Welcome to " + productName + " - set your password");
             message.setText(
                     "Hi " + user.getFirstName() + ",\n\n"
-                            + "An Oak DMS account has been created for you. Click the link below to choose a "
+                            + "An " + productName + " account has been created for you. Click the link below to choose a "
                             + "password and finish setting up your account:\n\n"
                             + link + "\n\n"
                             + "This link expires in " + tokenTtlMinutes + " minutes. "
                             + "If you weren't expecting this, you can safely ignore this email.\n\n"
-                            + "- Oak DMS");
+                            + "- " + productName);
         } else {
-            message.setSubject("Reset your Oak DMS password");
+            message.setSubject("Reset your " + productName + " password");
             message.setText(
                     "Hi " + user.getFirstName() + ",\n\n"
-                            + "We received a request to reset your Oak DMS password. Click the link below to choose a new one:\n\n"
+                            + "We received a request to reset your " + productName + " password. Click the link below to choose a new one:\n\n"
                             + link + "\n\n"
                             + "This link expires in " + tokenTtlMinutes + " minutes. "
                             + "If you didn't request this, you can safely ignore this email.\n\n"
-                            + "- Oak DMS");
+                            + "- " + productName);
         }
 
         mailSender.send(message);
