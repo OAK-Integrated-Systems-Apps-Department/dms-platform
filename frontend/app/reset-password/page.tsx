@@ -24,7 +24,7 @@ async function requestPasswordReset(usernameOrEmail: string): Promise<void> {
 }
 
 /**
- * Public page (see PUBLIC_PATHS in middleware.ts) — the person here is by
+ * Public page (see PUBLIC_PATHS in proxy.ts) — the person here is by
  * definition not signed in yet. Linked from the "Forgot password?" link on
  * app/login/page.tsx.
  *

@@ -10,6 +10,8 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { API_BASE_URL } from "@/lib/api-config"
+import { ApiError } from "@/lib/api-error"
+import { apiFetchJson } from "@/lib/api-fetch"
 import { assignUserRole } from "@/lib/users/api"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
@@ -83,39 +85,32 @@ export function UserInviteForm() {
 
   async function onSubmit(values: UserInviteFormValues) {
     setSubmitError(null)
-    let response: Response
+    let created: { userId: string }
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          email: values.email,
-          firstName: values.firstName,
-          lastName: values.lastName,
-        }),
-      })
-    } catch {
-      // fetch() throws when the request never reached a server at all —
-      // e.g. the backend isn't running yet. Distinct from a 4xx/5xx
-      // below, which means the backend WAS reached and responded.
-      const message = "Could not reach the server. Check that the backend is running and try again."
-      setSubmitError(message)
-      toast.error(message)
-      return
-    }
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
+      created = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/users`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: values.email,
+            firstName: values.firstName,
+            lastName: values.lastName,
+          }),
+        },
+        "Could not create the user."
+      )
+    } catch (err) {
       const message =
-        response.status === 403
+        err instanceof ApiError && err.status === 403
           ? "You don't have permission to invite users."
-          : (body?.message ?? "Could not create the user.")
+          : err instanceof Error
+            ? err.message
+            : "Could not create the user."
       setSubmitError(message)
       toast.error(message)
       return
     }
-
-    const created: { userId: string } = await response.json()
 
     if (values.roles.length > 0) {
       const roleIdByName = new Map(roles.map((r) => [r.name, r.id]))

@@ -8,7 +8,7 @@ import { Clock, Layers } from "lucide-react"
  * underlying authentication session has expired — distinct from the
  * generic /error page (that one's for unrecoverable/unexpected failures;
  * this one has a specific, actionable cause and a specific fix). Public
- * (see PUBLIC_PATHS in middleware.ts) since there's no session at this
+ * (see PUBLIC_PATHS in proxy.ts) since there's no session at this
  * point by definition.
  */
 export default function LoginTimeoutPage() {

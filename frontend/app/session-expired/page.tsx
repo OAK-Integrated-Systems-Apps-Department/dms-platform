@@ -15,8 +15,13 @@ import { Layers, ShieldOff } from "lucide-react"
  * app-topbar.tsx, etc.) once that wiring exists — not implemented yet,
  * same "frontend only for now" scope as the rest of these screens.
  *
- * Public (see PUBLIC_PATHS in middleware.ts) since the whole point is
+ * Public (see PUBLIC_PATHS in proxy.ts) since the whole point is
  * there's no valid session by the time someone lands here.
+ *
+ * As of `components/providers/providers.tsx`'s global `QueryCache`/
+ * `MutationCache` `onError`, the "not implemented yet" note above no
+ * longer applies — a 401 from any authenticated call now redirects here
+ * automatically (toast + this page), not just a manually-typed URL.
  */
 export default function SessionExpiredPage() {
   const router = useRouter()

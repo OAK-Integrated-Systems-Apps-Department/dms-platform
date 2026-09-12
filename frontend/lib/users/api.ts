@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 import { formatDateTime } from "@/lib/utils"
 
 import type { UserRecord } from "@/components/users/types"
@@ -38,37 +39,18 @@ export interface UserPageResponseDto {
   last: boolean
 }
 
-export async function parseErrorMessage(
-  response: Response,
-  fallback: string
-): Promise<string> {
-  const body = await response.json().catch(() => null)
-  return body?.message ?? fallback
-}
-
 export async function fetchUser(userId: string): Promise<UserResponseDto> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    credentials: "include",
-  })
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load this user."))
-  }
-  return response.json()
+  return apiFetchJson(`${API_BASE_URL}/api/v1/users/${userId}`, undefined, "Could not load this user.")
 }
 
 export async function fetchUserRoles(
   userId: string
 ): Promise<UserRoleResponseDto[]> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/roles`,
-    { credentials: "include" }
+    undefined,
+    "Could not load this user's roles."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not load this user's roles.")
-    )
-  }
-  return response.json()
 }
 
 /**
@@ -77,16 +59,11 @@ export async function fetchUserRoles(
  * these are fetched and surfaced separately from `fetchUserRoles`.
  */
 export async function fetchUserPlatformRoles(userId: string): Promise<string[]> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/platform-roles`,
-    { credentials: "include" }
+    undefined,
+    "Could not load this user's platform roles."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not load this user's platform roles.")
-    )
-  }
-  return response.json()
 }
 
 /**
@@ -98,15 +75,11 @@ export async function fetchUserPlatformRoles(userId: string): Promise<string[]> 
  * platform-admin-only screens like Permission Catalog management.
  */
 export async function fetchMyPlatformRoles(): Promise<string[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/me/platform-roles`, {
-    credentials: "include",
-  })
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not load your platform roles.")
-    )
-  }
-  return response.json()
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me/platform-roles`,
+    undefined,
+    "Could not load your platform roles."
+  )
 }
 
 /**
@@ -119,26 +92,19 @@ export async function fetchUsersPage(
   page: number,
   size: number
 ): Promise<UserPageResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users?page=${page}&size=${size}`,
-    { credentials: "include" }
+    undefined,
+    "Could not load users."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load users."))
-  }
-  return response.json()
 }
 
 export async function deactivateUser(userId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    method: "DELETE",
-    credentials: "include",
-  })
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not deactivate this user.")
-    )
-  }
+  await apiFetch(
+    `${API_BASE_URL}/api/v1/users/${userId}`,
+    { method: "DELETE" },
+    "Could not deactivate this user."
+  )
 }
 
 /**
@@ -151,18 +117,11 @@ export async function deactivateUser(userId: string): Promise<void> {
  * `UsersTable` already does client-side.
  */
 export async function deleteUser(userId: string): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/permanent`,
-    {
-      method: "DELETE",
-      credentials: "include",
-    }
+    { method: "DELETE" },
+    "Could not delete this user."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not delete this user.")
-    )
-  }
 }
 
 /**
@@ -173,16 +132,11 @@ export async function deleteUser(userId: string): Promise<void> {
  * caller to get stale or resend.
  */
 export async function reactivateUser(userId: string): Promise<UserResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/reactivate`,
-    { method: "POST", credentials: "include" }
+    { method: "POST" },
+    "Could not reactivate this user."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not reactivate this user.")
-    )
-  }
-  return response.json()
 }
 
 // /**
@@ -239,30 +193,23 @@ export async function updateUserProfile(
     status: UserResponseDto["status"]
   }
 ): Promise<UserResponseDto> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  })
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not save changes.")
-    )
-  }
-  return response.json()
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/${userId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    "Could not save changes."
+  )
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/reset-password`,
-    { method: "POST", credentials: "include" }
+    { method: "POST" },
+    "Could not send the password reset."
   )
-  if (!response.ok) {
-    throw new Error(
-      await parseErrorMessage(response, "Could not send the password reset.")
-    )
-  }
 }
 
 /**
@@ -279,19 +226,15 @@ export async function assignUserRole(
   userId: string,
   roleId: string
 ): Promise<UserRoleResponseDto> {
-  const response = await fetch(
+  return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/roles`,
     {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roleId, scopeType: "tenant" }),
-    }
+    },
+    "Could not assign this role."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not assign this role."))
-  }
-  return response.json()
 }
 
 /** Revokes a role assignment via `DELETE /api/v1/users/{userId}/roles/{userRoleId}` — also mirrored to Keycloak for tenant-wide assignments, same as `assignUserRole`. */
@@ -299,13 +242,11 @@ export async function revokeUserRole(
   userId: string,
   userRoleId: string
 ): Promise<void> {
-  const response = await fetch(
+  await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}/roles/${userRoleId}`,
-    { method: "DELETE", credentials: "include" }
+    { method: "DELETE" },
+    "Could not remove this role."
   )
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not remove this role."))
-  }
 }
 
 /**

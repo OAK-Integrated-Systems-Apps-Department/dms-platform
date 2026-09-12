@@ -7,6 +7,8 @@ import type {
   PermissionRecord,
 } from "@/components/permissions/types"
 import { API_BASE_URL } from "@/lib/api-config"
+import { apiFetchJson } from "@/lib/api-fetch"
+import { ApiError, friendlyMessage } from "@/lib/api-error"
 
 /** Shape returned by `PermissionResponse.java`. */
 interface BackendPermissionResponse {
@@ -85,18 +87,6 @@ function fromBackendModule(m: BackendPermissionModuleResponse): PermissionModule
   }
 }
 
-/** Distinguishes "server responded with an error" from "never reached the server" — same pattern used across the app's other stores/forms. */
-async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
-  if (response.status === 403) {
-    return "You don't have permission to do that."
-  }
-  const body = await response.json().catch(() => null)
-  return body?.message ?? fallback
-}
-
-const NETWORK_ERROR =
-  "Could not reach the server. Check that the backend is running and try again."
-
 interface PermissionsState {
   permissions: PermissionRecord[]
   modules: PermissionModuleRecord[]
@@ -134,28 +124,21 @@ export const usePermissionsStore = create<PermissionsState>((set) => ({
 
   fetchPermissions: async () => {
     set({ loading: true, error: null })
-    let response: Response
+    let body: { content: BackendPermissionResponse[] }
     try {
       // No pagination UI on Permission List yet — same tradeoff as the
       // Role List screen (see stores/roles-store.ts): ask for a page
       // large enough to cover the whole catalog in one call.
-      response = await fetch(`${API_BASE_URL}/api/v1/permissions?size=500`, {
-        credentials: "include",
-      })
-    } catch {
-      set({ loading: false, error: NETWORK_ERROR })
+      body = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/permissions?size=500`,
+        undefined,
+        "Could not load the permission catalog."
+      )
+    } catch (err) {
+      set({ loading: false, error: friendlyMessage(err) })
       return
     }
 
-    if (!response.ok) {
-      set({
-        loading: false,
-        error: await parseErrorMessage(response, "Could not load the permission catalog."),
-      })
-      return
-    }
-
-    const body: { content: BackendPermissionResponse[] } = await response.json()
     set({
       loading: false,
       error: null,
@@ -164,24 +147,20 @@ export const usePermissionsStore = create<PermissionsState>((set) => ({
   },
 
   fetchPermission: async (id) => {
-    let response: Response
+    let body: BackendPermissionResponse
     try {
-      response = await fetch(`${API_BASE_URL}/api/v1/permissions/${id}`, {
-        credentials: "include",
-      })
-    } catch {
-      set({ error: NETWORK_ERROR })
-      return null
-    }
-
-    if (!response.ok) {
-      if (response.status !== 404) {
-        set({ error: await parseErrorMessage(response, "Could not load this permission.") })
+      body = await apiFetchJson(
+        `${API_BASE_URL}/api/v1/permissions/${id}`,
+        undefined,
+        "Could not load this permission."
+      )
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) {
+        set({ error: friendlyMessage(err) })
       }
       return null
     }
 
-    const body: BackendPermissionResponse = await response.json()
     const resolved = fromBackendPermission(body)
 
     set((state) => {
@@ -196,35 +175,30 @@ export const usePermissionsStore = create<PermissionsState>((set) => ({
   },
 
   fetchCatalog: async () => {
-    let modulesResponse: Response
-    let actionsResponse: Response
+    let modulesBody: { content: BackendPermissionModuleResponse[] }
+    let actionsBody: { content: BackendPermissionActionResponse[] }
     try {
-      ;[modulesResponse, actionsResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/v1/permission-modules?size=200`, {
-          credentials: "include",
-        }),
+      ;[modulesBody, actionsBody] = await Promise.all([
+        apiFetchJson<{ content: BackendPermissionModuleResponse[] }>(
+          `${API_BASE_URL}/api/v1/permission-modules?size=200`,
+          undefined,
+          "Could not load modules and actions."
+        ),
         // Every action across every module — fine at this catalog's scale
         // (dozens, not thousands) and lets the Action select filter
         // client-side instantly on module change rather than re-fetching
         // via the `/by-module/{moduleId}` endpoint on every keystroke of
         // "which module did I pick".
-        fetch(`${API_BASE_URL}/api/v1/permission-actions?size=1000`, {
-          credentials: "include",
-        }),
+        apiFetchJson<{ content: BackendPermissionActionResponse[] }>(
+          `${API_BASE_URL}/api/v1/permission-actions?size=1000`,
+          undefined,
+          "Could not load modules and actions."
+        ),
       ])
-    } catch {
-      set({ error: NETWORK_ERROR })
+    } catch (err) {
+      set({ error: friendlyMessage(err) })
       return
     }
-
-    if (!modulesResponse.ok || !actionsResponse.ok) {
-      const failed = modulesResponse.ok ? actionsResponse : modulesResponse
-      set({ error: await parseErrorMessage(failed, "Could not load modules and actions.") })
-      return
-    }
-
-    const modulesBody: { content: BackendPermissionModuleResponse[] } = await modulesResponse.json()
-    const actionsBody: { content: BackendPermissionActionResponse[] } = await actionsResponse.json()
 
     set({
       modules: modulesBody.content
