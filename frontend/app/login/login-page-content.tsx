@@ -11,6 +11,7 @@ import { toast } from "sonner"
 
 import { OtpInput } from "@/components/auth/otp-input"
 import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
+import { APP_NAME } from "@/lib/app-config"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
@@ -183,7 +184,7 @@ export function LoginPageContent() {
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT

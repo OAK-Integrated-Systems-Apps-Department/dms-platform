@@ -34,7 +34,7 @@ public class UserController {
     private final AuthorizationService authorizationService;
 
     @PostMapping("/me/provision")
-    @Operation(summary = "Self-provision the local Oak DMS profile for the calling Keycloak principal")
+    @Operation(summary = "Self-provision the calling Keycloak principal's local user profile")
     public ResponseEntity<UserResponse> provisionCurrentUser(JwtAuthenticationToken auth,
                                                              @Valid @RequestBody ProvisionUserRequest request) {
         Jwt jwt = auth.getToken();

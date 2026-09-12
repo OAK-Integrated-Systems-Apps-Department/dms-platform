@@ -1,5 +1,6 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
@@ -71,6 +72,7 @@ public class PasswordResetService {
     private final KeycloakAdminProperties keycloakAdminProperties;
     private final PasswordResetTokenRepository tokenRepository;
     private final JavaMailSender mailSender;
+    private final BrandingProperties branding;
 
     @Value("${app.frontend-base-url}")
     private String frontendBaseUrl;
@@ -280,25 +282,27 @@ public class PasswordResetService {
         message.setFrom(mailFrom);
         message.setTo(user.getEmail());
 
+        String productName = branding.getProductName();
+
         if (kind == EmailKind.NEW_USER) {
-            message.setSubject("Welcome to Oak DMS - set your password");
+            message.setSubject("Welcome to " + productName + " - set your password");
             message.setText(
                     "Hi " + user.getFirstName() + ",\n\n"
-                            + "An Oak DMS account has been created for you. Click the link below to choose a "
+                            + "An " + productName + " account has been created for you. Click the link below to choose a "
                             + "password and finish setting up your account:\n\n"
                             + link + "\n\n"
                             + "This link expires in " + tokenTtlMinutes + " minutes. "
                             + "If you weren't expecting this, you can safely ignore this email.\n\n"
-                            + "- Oak DMS");
+                            + "- " + productName);
         } else {
-            message.setSubject("Reset your Oak DMS password");
+            message.setSubject("Reset your " + productName + " password");
             message.setText(
                     "Hi " + user.getFirstName() + ",\n\n"
-                            + "We received a request to reset your Oak DMS password. Click the link below to choose a new one:\n\n"
+                            + "We received a request to reset your " + productName + " password. Click the link below to choose a new one:\n\n"
                             + link + "\n\n"
                             + "This link expires in " + tokenTtlMinutes + " minutes. "
                             + "If you didn't request this, you can safely ignore this email.\n\n"
-                            + "- Oak DMS");
+                            + "- " + productName);
         }
 
         mailSender.send(message);

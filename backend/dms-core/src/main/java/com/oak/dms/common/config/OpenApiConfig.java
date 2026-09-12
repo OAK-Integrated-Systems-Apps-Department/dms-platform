@@ -17,11 +17,17 @@ public class OpenApiConfig {
 
     private static final String BEARER_SCHEME = "bearerAuth";
 
+    private final BrandingProperties branding;
+
+    public OpenApiConfig(BrandingProperties branding) {
+        this.branding = branding;
+    }
+
     @Bean
     public OpenAPI identityServiceOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Oak DMS - Identity Service")
+                        .title(branding.getProductName() + " - Identity Service")
                         .description("Tenants, users, roles and permissions. Authentication delegated to Keycloak.")
                         .version("1.0.0"))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))

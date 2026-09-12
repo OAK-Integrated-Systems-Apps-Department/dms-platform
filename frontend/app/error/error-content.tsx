@@ -4,6 +4,8 @@
 import { useSearchParams } from "next/navigation"
 import { AlertTriangle, Layers } from "lucide-react"
 
+import { APP_NAME } from "@/lib/app-config"
+
 const DEFAULT_MESSAGE =
   "Something went wrong on our end. Please try again, and if it keeps happening, contact your workspace administrator."
 
@@ -29,7 +31,7 @@ export function ErrorContent() {
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT

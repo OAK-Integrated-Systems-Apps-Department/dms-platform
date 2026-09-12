@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Layers } from "lucide-react"
 import { toast } from "sonner"
 
+import { APP_NAME } from "@/lib/app-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 
 /**
@@ -55,7 +56,7 @@ export default function ResetPasswordPage() {
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT

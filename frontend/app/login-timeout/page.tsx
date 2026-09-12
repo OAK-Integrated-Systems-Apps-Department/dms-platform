@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation"
 import { Clock, Layers } from "lucide-react"
 
+import { APP_NAME } from "@/lib/app-config"
+
 /**
  * Shown when a login attempt has been sitting too long and Keycloak's
  * underlying authentication session has expired — distinct from the
@@ -34,7 +36,7 @@ export default function LoginTimeoutPage() {
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT

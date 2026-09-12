@@ -7,6 +7,7 @@ import { CheckCircle2, Eye, EyeOff, Layers, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import { API_BASE_URL } from "@/lib/api-config"
+import { APP_NAME } from "@/lib/app-config"
 import { cn } from "@/lib/utils"
 
 type TokenStatus = "checking" | "valid" | "invalid"
@@ -134,7 +135,7 @@ export function UpdatePasswordPageContent() {
             <Layers size={22} color="var(--primary-foreground)" />
           </div>
           <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            Ledger
+            {APP_NAME}
           </div>
           <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
             DOCUMENT VAULT
@@ -201,7 +202,7 @@ export function UpdatePasswordPageContent() {
                 isNewUser ? "text-[15px] leading-[1.35] sm:text-[18px]" : "text-[22px]"
               )}
             >
-              {isNewUser ? "Welcome to Ledger — set your password to get started" : "Choose a new password"}
+              {isNewUser ? `Welcome to ${APP_NAME} — set your password to get started` : "Choose a new password"}
             </h1>
             <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
               {isNewUser
