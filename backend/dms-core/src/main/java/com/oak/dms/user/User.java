@@ -103,6 +103,18 @@ public class User {
     @Column(name = "verified_at")
     private OffsetDateTime verifiedAt;
 
+    /**
+     * When this user last successfully signed in via {@code AuthService#login}
+     * (the direct password/OTP grant) - null for a user who has never
+     * logged in yet, including one who was just invited and hasn't
+     * completed setup. Deliberately not touched by {@code AuthService#refresh}
+     * (silently renewing an existing session isn't a new login) or by
+     * anything Keycloak-side - this is dms-core's own record, written
+     * once per successful direct-grant login.
+     */
+    @Column(name = "last_login_at")
+    private OffsetDateTime lastLoginAt;
+
     public enum UserStatus {
         active, locked, disabled
     }

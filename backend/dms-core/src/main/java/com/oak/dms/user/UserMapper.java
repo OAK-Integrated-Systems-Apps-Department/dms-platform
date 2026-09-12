@@ -26,6 +26,7 @@ public interface UserMapper {
         UserResponse base = toResponse(user);
         return new UserResponse(base.userId(), base.tenantId(), base.keycloakId(), base.email(),
                 base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(), base.status(),
-                base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(), permissions);
+                base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(), base.lastLoginAt(),
+                permissions);
     }
 }

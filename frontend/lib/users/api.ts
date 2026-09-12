@@ -17,6 +17,8 @@ export interface UserResponseDto {
   verifiedAt: string | null
   createdAt: string
   updatedAt: string | null
+  /** ISO timestamp of this user's last successful login, or null if they've never logged in. */
+  lastLoginAt: string | null
 }
 
 /** Mirrors backend/dms-core's UserRoleResponse DTO (only the fields the UI uses). */
@@ -374,12 +376,14 @@ export async function syncUserRoles(
  * `UserDetailView` / `UsersTable` don't need to change to consume live
  * data.
  *
- * A handful of `UserRecord` fields have no backing endpoint yet — MFA
- * method/enrollment detail, sessions, last login, and activity/audit
- * history all live in Keycloak or an audit service that dms-core doesn't
- * expose through UserController today (see stores/users-store.ts's own
- * placeholder comments for the same gap). Those fall back to empty/"—"
- * here rather than being invented client-side.
+ * A handful of `UserRecord` fields still have no backing endpoint —  MFA
+ * method/enrollment detail, sessions, and activity/audit history all live
+ * in Keycloak or an audit service that dms-core doesn't expose through
+ * UserController today (see stores/users-store.ts's own placeholder
+ * comments for the same gap). Those fall back to empty/"—" here rather
+ * than being invented client-side. `lastLogin` is no longer one of them —
+ * see `UserResponseDto.lastLoginAt` (backed by `users.last_login_at`,
+ * written by `AuthService#login` on every successful direct-grant login).
  */
 export function toUserRecord(
   user: UserResponseDto,
@@ -404,7 +408,10 @@ export function toUserRecord(
     platformRoles,
     status,
     verified: user.verified,
-    lastLogin: "—",
+    // Same "YYYY-MM-DD" slice as createdOn below — a user who has never
+    // logged in has lastLoginAt: null, which falls back to "—" rather
+    // than a fabricated date.
+    lastLogin: user.lastLoginAt ? user.lastLoginAt.slice(0, 10) : "—",
     firstName: user.firstName,
     lastName: user.lastName,
     createdOn: user.createdAt.slice(0, 10),

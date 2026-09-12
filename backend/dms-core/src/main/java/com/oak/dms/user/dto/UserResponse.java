@@ -33,6 +33,7 @@ public record UserResponse(
         OffsetDateTime verifiedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
+        OffsetDateTime lastLoginAt,
         List<String> permissions
 ) {
 }
