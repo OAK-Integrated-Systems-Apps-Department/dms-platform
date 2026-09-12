@@ -99,10 +99,20 @@ interface RolesState {
    * GET /api/v1/roles/{roleId} — resolves a single role, for direct links
    * / refreshes into Role Details, Edit Role, or Permission Configuration
    * that land before `fetchRoles` has ever populated the store. Also
-   * fetches that role's real granted permissions. Returns the resolved
-   * role, or `null` if it doesn't exist / isn't accessible.
+   * fetches that role's real granted permissions.
+   *
+   * `notFound`/`error` are mutually exclusive on failure — distinguishing
+   * them is the whole point: a real 404 means the role genuinely doesn't
+   * exist (the caller should render Next's not-found page), while any
+   * other failure (a network error most notably) means the role's status
+   * is simply unknown right now, which the caller should show as
+   * "couldn't load" / "backend unavailable", never as not-found. See
+   * `useRole` (components/roles/use-role.ts), the sole caller, for how
+   * this propagates to Role Details / Edit Role / Permission Configuration.
    */
-  fetchRole: (id: string) => Promise<RoleRecord | null>
+  fetchRole: (
+    id: string
+  ) => Promise<{ role: RoleRecord | null; notFound: boolean; error: string | null }>
   /**
    * GET /api/v1/roles/{roleId}/permissions — resolves a role's currently
    * granted permission codes, and patches both `roles` (the `permissions`
@@ -188,10 +198,12 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     try {
       body = await apiFetchJson(`${API_BASE_URL}/api/v1/roles/${id}`, undefined, "Could not load this role.")
     } catch (err) {
-      if (!(err instanceof ApiError && err.status === 404)) {
-        set({ error: friendlyMessage(err) })
+      if (err instanceof ApiError && err.status === 404) {
+        return { role: null, notFound: true, error: null }
       }
-      return null
+      const message = friendlyMessage(err)
+      set({ error: message })
+      return { role: null, notFound: false, error: message }
     }
 
     const existing = get().roles.find((role) => role.id === id)
@@ -210,7 +222,8 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     // failed.
     const { error: permError } = await get().fetchRolePermissions(id)
     if (permError) set({ error: permError })
-    return get().roles.find((role) => role.id === id) ?? resolved
+    const finalRole = get().roles.find((role) => role.id === id) ?? resolved
+    return { role: finalRole, notFound: false, error: null }
   },
 
   fetchRolePermissions: async (roleId) => {

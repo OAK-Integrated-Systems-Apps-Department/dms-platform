@@ -48,6 +48,21 @@ export function isSessionExpired(error: unknown): boolean {
 }
 
 /**
+ * Whether `error` represents a connection-level failure — the request
+ * never reached the server at all (backend down, network error, connection
+ * refused), as opposed to the server responding with a real HTTP status.
+ * `apiFetch` (lib/api-fetch.ts) is the only place that produces this —
+ * every `fetch()` throw there becomes `ApiError(0, NETWORK_ERROR_MESSAGE)`.
+ * Distinct from `isSessionExpired`: this is the other narrow, single-purpose
+ * check the global `QueryCache`/`MutationCache` `onError` in
+ * `components/providers/providers.tsx` uses, so a dropped connection isn't
+ * mistaken for an expired session (or vice versa).
+ */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0
+}
+
+/**
  * A friendly message for `error`, special-casing 403 the same way
  * `stores/roles-store.ts` and `stores/permissions-store.ts` each used to
  * (as two separate, near-identical `parseErrorMessage` helpers) - kept

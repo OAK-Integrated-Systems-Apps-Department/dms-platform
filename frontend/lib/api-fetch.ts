@@ -1,6 +1,7 @@
 import { ApiError } from "@/lib/api-error"
 
-const NETWORK_ERROR_MESSAGE =
+/** Exported so callers (e.g. the shared "backend unavailable" UI) can reuse the exact copy instead of re-typing it, or compare against a caught error's `.message`. */
+export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check that the backend is running and try again."
 
 /**
