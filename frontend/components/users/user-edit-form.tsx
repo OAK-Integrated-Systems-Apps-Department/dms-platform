@@ -191,7 +191,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-strong)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
             <Lock size={10} />
-            Read-only — Keycloak-managed identity field
+            Read-only
           </span>
         </Label>
         <Input
