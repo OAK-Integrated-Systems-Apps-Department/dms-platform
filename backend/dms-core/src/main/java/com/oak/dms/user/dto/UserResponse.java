@@ -34,6 +34,7 @@ public record UserResponse(
         String tenantName,
         UUID keycloakId,
         String email,
+        String username,
         String firstName,
         String lastName,
         String displayName,

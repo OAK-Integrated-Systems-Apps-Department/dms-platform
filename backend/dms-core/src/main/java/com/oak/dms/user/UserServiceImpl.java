@@ -7,6 +7,7 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
+import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.outbox.OutboxEventPublisher;
@@ -19,6 +20,7 @@ import com.oak.dms.tenant.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +56,7 @@ public class UserServiceImpl implements UserService {
     private final TenantRepository tenantRepository;
 
     @Override
-    public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email,
+    public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
                                               ProvisionUserRequest request) {
         userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(existing -> {
             throw new DuplicateResourceException("User already provisioned: " + keycloakId);
@@ -64,6 +66,7 @@ public class UserServiceImpl implements UserService {
                 .tenantId(tenantId)
                 .keycloakId(keycloakId)
                 .email(email)
+                .username(username)
                 .firstName(request.firstName())
                 .lastName(request.lastName())
                 .displayName(User.displayName(request.firstName(), request.lastName()))
@@ -82,14 +85,40 @@ public class UserServiceImpl implements UserService {
         if (userRepository.existsByTenantIdAndEmailAndDeletedFalse(tenantId, request.email())) {
             throw new DuplicateResourceException("A user already exists with email " + request.email());
         }
+        if (userRepository.existsByTenantIdAndUsernameAndDeletedFalse(tenantId, request.username())) {
+            throw new DuplicateResourceException("A user already exists with username " + request.username());
+        }
 
-        UUID keycloakId = keycloakUserService.createUser(request.email(), request.firstName(), request.lastName(),
-                tenantId);
+        // Keycloak enforces both email and username uniqueness realm-wide
+        // (see KeycloakUserAlreadyExistsException's own doc comment) -
+        // every tenant shares one realm here, so an email or username
+        // already registered to some OTHER tenant collides here too,
+        // distinctly from the tenant-scoped checks above. Left as its own
+        // KeycloakUserAlreadyExistsException (409, code
+        // KEYCLOAK_USER_ALREADY_EXISTS, message naming both), a
+        // distinguishable shape here would let any caller with
+        // otua.manage-users.create in ANY tenant fingerprint whether a
+        // given email/username belongs to a user in some OTHER tenant, by
+        // comparing it against the identical-looking but genuinely
+        // different generic 409s above - the one cross-tenant probe this
+        // system doesn't otherwise allow (every other resource collapses
+        // a cross-tenant hit to an indistinguishable 404). Rethrown as a
+        // generic, tenant-scoped-sounding conflict so both cases are
+        // indistinguishable to the caller.
+        UUID keycloakId;
+        try {
+            keycloakId = keycloakUserService.createUser(request.username(), request.email(), request.firstName(),
+                    request.lastName(), tenantId);
+        } catch (KeycloakUserAlreadyExistsException e) {
+            throw new DuplicateResourceException(
+                    "A user already exists with email " + request.email() + " or username " + request.username());
+        }
 
         User user = User.builder()
                 .tenantId(tenantId)
                 .keycloakId(keycloakId)
                 .email(request.email())
+                .username(request.username())
                 .firstName(request.firstName())
                 .lastName(request.lastName())
                 .displayName(User.displayName(request.firstName(), request.lastName()))
@@ -170,7 +199,27 @@ public class UserServiceImpl implements UserService {
                 .stream()
                 .collect(Collectors.toMap(Tenant::getTenantId, Tenant::getTenantName));
 
-        return page.map(user -> userMapper.toResponse(user, tenantNamesById.get(user.getTenantId())));
+        // The tenant admin's own row is invisible to everyone except
+        // another full-access caller - see requireVisibleToCaller's doc
+        // comment for why. Filtered here rather than relying on the
+        // frontend to hide it, since a delegate could otherwise still see
+        // (and, before this, act on - see purgeUser/updateUser/etc.) it
+        // by paging through the raw list.
+        //
+        // Total/last are computed from the page's real totalElements, not
+        // the filtered content size, so pagination arithmetic
+        // (PageResponse.from's totalPages/last) stays correct even though
+        // this page's content may now be a little shorter than its size -
+        // the alternative (recomputing total from filtered counts) can't
+        // be done correctly per-page without knowing how many were
+        // filtered on every OTHER page too.
+        boolean fullAccess = authorizationService.isTenantAdmin();
+        List<UserResponse> content = page.getContent().stream()
+                .filter(user -> fullAccess || !isTenantAdminAccount(user))
+                .map(user -> userMapper.toResponse(user, tenantNamesById.get(user.getTenantId())))
+                .toList();
+
+        return new PageImpl<>(content, pageable, page.getTotalElements());
     }
 
     @Override
@@ -205,8 +254,7 @@ public class UserServiceImpl implements UserService {
         // dropdown is a second route to the exact same outcome (disabled
         // status + Keycloak account disabled), and would otherwise bypass
         // that check entirely.
-        if (request.status() == UpdateUserRequest.Status.disabled
-                && keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+        if (request.status() == UpdateUserRequest.Status.disabled && isTenantAdminAccount(user)) {
             throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
         }
 
@@ -230,14 +278,14 @@ public class UserServiceImpl implements UserService {
         User user = findOwnedByCallerTenant(userId);
 
         // Blanket rule, same as the tenant admin account already being
-        // undeletable (see purgeUser's own frontend-side guard in
-        // UsersTable) - not a "last admin" headcount, which would need
-        // real counting infrastructure that doesn't exist for a Keycloak
-        // realm role like TENANT_ADMIN (no repository column, no bulk
-        // membership lookup) and would be racy to check safely anyway
-        // (two admins deactivating two different admins at once could
-        // each pass an "are there others" check before either commits).
-        if (keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN")) {
+        // unpurgeable (see purgeUser below) - not a "last admin"
+        // headcount, which would need real counting infrastructure that
+        // doesn't exist for a Keycloak realm role like TENANT_ADMIN (no
+        // repository column, no bulk membership lookup) and would be
+        // racy to check safely anyway (two admins deactivating two
+        // different admins at once could each pass an "are there others"
+        // check before either commits).
+        if (isTenantAdminAccount(user)) {
             throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
         }
 
@@ -259,6 +307,18 @@ public class UserServiceImpl implements UserService {
         // merely-deactivated ("Inactive") user already is, and deleting an
         // inactive user from the list is exactly what this is for.
         User user = findPurgeableOwnedByCallerTenant(userId);
+
+        // Blanket rule, same as deactivateUser's own - a permanent,
+        // irreversible delete is a strictly more destructive version of
+        // deactivate, which is already unconditionally blocked against
+        // the tenant admin account (not just for non-full-access
+        // callers - findPurgeableOwnedByCallerTenant's requireVisibleToCaller
+        // already 404s those). No caller, including another tenant admin,
+        // purges the tenant admin account through this app.
+        if (isTenantAdminAccount(user)) {
+            throw new InvalidUserStateException("The tenant admin account can't be permanently deleted.");
+        }
+
         UUID keycloakId = user.getKeycloakId();
 
         // A real DELETE FROM users, not another flavor of the soft-delete
@@ -330,6 +390,53 @@ public class UserServiceImpl implements UserService {
                 .orElse(null);
     }
 
+    /**
+     * True if `user` holds the TENANT_ADMIN platform role. Resolved fresh
+     * per call (no local cache/column for it - see the class-level doc
+     * comments this mirrors on {@link #deactivateUser} and elsewhere), so
+     * a caller that needs both the visibility check and the actual value
+     * (e.g. {@link #getPlatformRoles}) ends up calling Keycloak twice.
+     * Accepted: this only runs on single-user admin actions, never in a
+     * hot path, and keeping the check centralized in one place is worth
+     * more than saving one Keycloak round-trip on those.
+     */
+    private boolean isTenantAdminAccount(User user) {
+        return keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN");
+    }
+
+    /**
+     * The tenant admin's own account must not be visible to - or
+     * therefore actionable by - any caller who isn't a full-access
+     * caller themselves (TENANT_ADMIN or PLATFORM_ADMIN, see
+     * {@link AuthorizationService#isTenantAdmin()}). Without this, every
+     * granular otua.manage-users.* permission this app can delegate to a
+     * custom role (view, update, reset-password, activate/deactivate,
+     * delete, assign-role) would also reach the tenant admin's own
+     * record - reset-password and delete are the sharpest versions of
+     * this, since either would hand a delegate a path to the tenant
+     * admin's own credentials or account outright, turning a narrow
+     * delegation into full tenant takeover.
+     * <p>
+     * Throws 404, not 403 - same reasoning as {@link TenantMismatchException}
+     * across a tenant boundary: a delegate must not even be able to
+     * confirm the record exists. Centralized here (called from every
+     * finder below) rather than repeated at each call site, so a future
+     * method built on one of these finders inherits the guard
+     * automatically instead of needing to remember it.
+     * <p>
+     * Deliberately does NOT block a full-access caller - two tenant
+     * admins (or a platform admin) can still see and manage each other.
+     * {@link #deactivateUser} and {@link #purgeUser} each additionally
+     * refuse their specific action against a tenant admin unconditionally
+     * (even for a full-access caller) - that's a separate, stricter rule
+     * layered on top of this visibility check, not a replacement for it.
+     */
+    private void requireVisibleToCaller(User user, UUID userId) {
+        if (!authorizationService.isTenantAdmin() && isTenantAdminAccount(user)) {
+            throw new ResourceNotFoundException("User", userId);
+        }
+    }
+
     private User findOwnedByCallerTenant(UUID userId) {
         User user = userRepository.findById(userId)
                 .filter(u -> !u.isDeleted())
@@ -337,6 +444,7 @@ public class UserServiceImpl implements UserService {
         if (!user.getTenantId().equals(TenantContext.getTenantId())) {
             throw new TenantMismatchException("User", userId);
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 
@@ -355,6 +463,7 @@ public class UserServiceImpl implements UserService {
         if (!user.getTenantId().equals(TenantContext.getTenantId())) {
             throw new TenantMismatchException("User", userId);
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 
@@ -376,6 +485,7 @@ public class UserServiceImpl implements UserService {
         if (!user.isDeleted()) {
             throw new InvalidUserStateException("User " + userId + " is not deactivated");
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 
@@ -392,6 +502,7 @@ public class UserServiceImpl implements UserService {
         if (!user.getTenantId().equals(TenantContext.getTenantId())) {
             throw new TenantMismatchException("User", userId);
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 }

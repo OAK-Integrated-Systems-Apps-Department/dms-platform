@@ -19,7 +19,8 @@ import java.util.UUID;
 public interface UserService {
 
     /** Self-provisioning: called by an already-authenticated Keycloak principal. */
-    UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, ProvisionUserRequest request);
+    UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
+                                       ProvisionUserRequest request);
 
     /** Tenant-admin invites a brand-new user; creates both the Keycloak account and the local profile. */
     UserResponse createUser(CreateUserRequest request);
@@ -60,8 +61,9 @@ public interface UserService {
      * the row visible with a "Reactivate" action (see
      * {@link UserRepository#findAllByTenant}'s own doc comment). There is
      * no corresponding "un-delete" the way {@link #reactivateUser} undoes
-     * a deactivation — once purged, the user is gone for good. Restricted
-     * to the tenant admin — see {@code UserController#purgeUser}'s
+     * a deactivation — once purged, the user is gone for good. Available
+     * to the tenant admin unconditionally, and delegable via
+     * {@code otua.manage-users.delete} — see {@code UserController#purgeUser}'s
      * {@code @PreAuthorize}.
      */
     void purgeUser(UUID userId);

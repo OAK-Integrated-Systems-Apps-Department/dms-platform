@@ -42,16 +42,30 @@ interface UseRoleResult {
  * — Role Details would show "No permissions granted yet." regardless of
  * what was actually granted in the database.
  *
- * Now this always re-fetches on mount / roleId change, using the
- * already-cached copy (if any) only to avoid a loading-spinner flash —
- * `role` still renders immediately from whatever's cached, and swaps to
- * the real, complete data as soon as the fetch resolves (zustand
- * re-renders the component automatically once the store updates).
+ * Now this always re-fetches on mount / roleId change. A second bug in
+ * that same fix (also since corrected — see `loading`'s own comment
+ * below) let `loading` go straight to `false` whenever a cached copy
+ * existed, so callers rendered against that stale, permission-less copy
+ * instead of waiting for the fetch above to resolve. `loading` is now the
+ * single source of truth for "is `role` current enough to build a form
+ * from" — every consumer should gate on it rather than on `role` being
+ * non-null.
  */
 export function useRole(roleId: string): UseRoleResult {
   const role = useRolesStore((state) => state.roles.find((r) => r.id === roleId))
   const fetchRole = useRolesStore((state) => state.fetchRole)
-  const [loading, setLoading] = useState(!role)
+  // Always starts true and is cleared only once fetchRole (which also
+  // resolves this role's real permissions) has completed for the CURRENT
+  // mount — never inferred from whether a role object already exists in
+  // the store. A role visited via Role List is cached there already, but
+  // list-fetched rows never carry permissions (fetchRoles() intentionally
+  // omits them — see fromBackend's doc comment). Treating "role object
+  // exists" as "fully loaded" let RoleForm/RolePermissionConfig seed their
+  // editable permission state from that stale, permission-less copy
+  // before this fetch ever resolved — silently discarding every real
+  // grant the next time someone saved. See role-form.tsx /
+  // role-permission-config.tsx for the consuming side of this fix.
+  const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Bumped by `retry()` to re-run the effect below without changing roleId.
@@ -59,11 +73,7 @@ export function useRole(roleId: string): UseRoleResult {
 
   useEffect(() => {
     let cancelled = false
-    // Only show the spinner when there's nothing to render meanwhile —
-    // if a cached (possibly partial) copy exists, keep it on screen
-    // while this fetch refreshes it in the background instead of
-    // blanking the page.
-    if (!role) setLoading(true)
+    setLoading(true)
     setNotFound(false)
     setError(null)
 

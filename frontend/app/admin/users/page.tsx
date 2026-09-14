@@ -49,13 +49,40 @@ export default function UserListPage() {
   const canCreateUser = hasPermission(PermissionCodes.OTUA_USERS_CREATE)
   const canEditUser = hasPermission(PermissionCodes.OTUA_USERS_UPDATE)
   const canResetPassword = hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)
-  const canActivateDeactivate = hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)
+  const canActivate = hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE)
+  const canDeactivate = hasPermission(PermissionCodes.OTUA_USERS_DEACTIVATE)
+  const canDeleteUser = isTenantAdmin || hasPermission(PermissionCodes.OTUA_USERS_DELETE)
+  const canAssignRole = hasPermission(PermissionCodes.OTUA_USERS_ASSIGN_ROLE)
   // GET /api/v1/roles (RoleController) - view-role or update-role, not the
   // legacy role.view/role.manage this used to check.
   const canViewRoles = hasAnyPermission(
     PermissionCodes.ASM_ROLES_VIEW_ROLE,
     PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
+  // GET /api/v1/users (the table) now also accepts reset-password/
+  // activate/deactivate/delete/assign-role, not just view/update — every
+  // one of those is a row-level action on this exact table (assign-role
+  // via the Edit User form's role picker, the rest via a dialog) with no
+  // other way to pick a target user, so the permission would otherwise be
+  // granted but unusable (see UserController#getUser's own comment on the
+  // backend). otua.manage-users.create is deliberately excluded here: it's
+  // list-independent (inviting someone has nothing to do with browsing
+  // existing users), so it still gets the narrower "straight to Add
+  // User" path below instead.
+  const canBrowseList =
+    hasPermission(PermissionCodes.OTUA_USERS_VIEW) ||
+    canEditUser ||
+    canResetPassword ||
+    canActivate ||
+    canDeactivate ||
+    canDeleteUser ||
+    canAssignRole
+  const soloCapabilities = [
+    canResetPassword && "reset passwords",
+    canActivate && "activate accounts",
+    canDeactivate && "deactivate accounts",
+    canDeleteUser && "delete accounts",
+  ].filter((label): label is string => Boolean(label))
 
   // Live tenant role list from the DB (same store the Roles list and
   // RoleMultiSelect use) rather than the hardcoded components/roles/data.ts
@@ -143,7 +170,20 @@ export default function UserListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
+      <PermissionGate
+        permission={[
+          PermissionCodes.OTUA_USERS_VIEW,
+          PermissionCodes.OTUA_USERS_UPDATE,
+          PermissionCodes.OTUA_USERS_CREATE,
+          PermissionCodes.OTUA_USERS_RESET_PASSWORD,
+          PermissionCodes.OTUA_USERS_ACTIVATE,
+          PermissionCodes.OTUA_USERS_DEACTIVATE,
+          PermissionCodes.OTUA_USERS_DELETE,
+          PermissionCodes.OTUA_USERS_ASSIGN_ROLE,
+        ]}
+      >
+      {canBrowseList ? (
+      <>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"
@@ -208,9 +248,11 @@ export default function UserListPage() {
         onResetPassword={sendPasswordReset}
         onDelete={deleteUser}
         canEdit={canEditUser}
+        canAssignRole={canAssignRole}
         canResetPassword={canResetPassword}
-        canActivateDeactivate={canActivateDeactivate}
-        canDelete={isTenantAdmin}
+        canActivate={canActivate}
+        canDeactivate={canDeactivate}
+        canDelete={canDeleteUser}
         onView={handleView}
         onEdit={handleEdit}
       />
@@ -223,6 +265,41 @@ export default function UserListPage() {
             onPageSizeChange={handlePageSizeChange}
           />
         </>
+      )}
+      </>
+      ) : (
+        // Reachable only for a caller with just otua.manage-users.create
+        // (their own direct path below) and/or reset-password/activate/
+        // deactivate/delete — every one of those is a per-user action
+        // with no way to choose that user without list access, so it's
+        // named here rather than offered as a dead end. assign-role is
+        // deliberately not one of the reasons this branch renders: it's
+        // now folded into canBrowseList above (see that comment), so an
+        // assign-role holder always gets the full table instead.
+        <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] shadow-[var(--ledger-shadow)]">
+          {canCreateUser && (
+            <div className={soloCapabilities.length > 0 ? "mb-5 border-b border-border pb-5" : undefined}>
+              <p className="mb-3 text-muted-foreground">
+                You can add new users, but you don&apos;t have permission to browse the existing user list.
+              </p>
+              <Link
+                href="/admin/users/new"
+                className="inline-flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+              >
+                <Plus size={16} />
+                Add user
+              </Link>
+            </div>
+          )}
+          {soloCapabilities.length > 0 && (
+            <p className="text-muted-foreground">
+              You can {soloCapabilities.join(", ")} for an existing user, but you need{" "}
+              <span className="font-semibold text-foreground">View Users</span> or{" "}
+              <span className="font-semibold text-foreground">Edit User</span> access to browse
+              and select one. Contact your administrator.
+            </p>
+          )}
+        </div>
       )}
       </PermissionGate>
     </DashboardShell>

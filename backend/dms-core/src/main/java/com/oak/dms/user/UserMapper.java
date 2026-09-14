@@ -35,8 +35,8 @@ public interface UserMapper {
     default UserResponse toResponse(User user, String tenantName, List<String> permissions) {
         UserResponse base = toResponse(user);
         return new UserResponse(base.userId(), base.tenantId(), tenantName, base.keycloakId(), base.email(),
-                base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(), base.status(),
-                base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(), base.lastLoginAt(),
-                base.lastPasswordChangedAt(), permissions);
+                base.username(), base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(),
+                base.status(), base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(),
+                base.lastLoginAt(), base.lastPasswordChangedAt(), permissions);
     }
 }

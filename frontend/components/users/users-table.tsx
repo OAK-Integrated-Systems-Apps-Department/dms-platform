@@ -26,23 +26,40 @@ interface UsersTableProps {
   /** Whether the signed-in user may edit another account's profile — requires `otua.manage-users.update` (see `usePermissions`). Hidden entirely rather than shown disabled, so a view-only user never sees a button that would just 403 on click. */
   canEdit: boolean
 
+  /**
+   * Whether the signed-in user may change another account's role
+   * assignments — requires `otua.manage-users.assign-role`. The Edit
+   * icon below opens the same Edit User form either way; `UserEditForm`
+   * itself only submits the fields the caller actually holds permission
+   * for (see that component's own doc comment), so a caller with only
+   * this permission and not `canEdit` still reaches a usable form rather
+   * than a dead end or a partial-403 on save.
+   */
+  canAssignRole: boolean
+
   /** Whether the signed-in user may reset another account's password — requires `otua.manage-users.reset-password`. */
   canResetPassword: boolean
 
   /**
-   * Whether the signed-in user may activate/deactivate another account —
-   * requires `otua.manage-users.activate-deactivate`. Someone with only
-   * `otua.manage-users.view` can reach this page and list at all, but gets
-   * none of these three controls. View itself has no separate gate here
-   * since reaching this table at all already required
-   * `otua.manage-users.view` or `.update`.
+   * Whether the signed-in user may reactivate a currently-inactive
+   * account — requires `otua.manage-users.activate`. Independent of
+   * `canDeactivate`: a role can hold one without the other (see
+   * `PermissionCodes.OTUA_USERS_ACTIVATE`'s own doc comment for why
+   * these were split from one combined permission).
    */
-  canActivateDeactivate: boolean
+  canActivate: boolean
 
   /**
-   * Whether the signed-in user may delete other accounts at all — only
-   * the tenant admin can (see `lib/auth/use-is-tenant-admin.ts`). The
-   * Delete column is left out entirely for everyone else, rather than
+   * Whether the signed-in user may deactivate a currently-active account —
+   * requires `otua.manage-users.deactivate`.
+   */
+  canDeactivate: boolean
+
+  /**
+   * Whether the signed-in user may delete other accounts at all — either
+   * the tenant admin (see `lib/auth/use-is-tenant-admin.ts`, which always
+   * can, unconditionally) or anyone granted `otua.manage-users.delete`.
+   * The Delete column is left out entirely for everyone else, rather than
    * shown disabled, since it isn't a capability they can ever use.
    */
   canDelete: boolean
@@ -78,8 +95,10 @@ export function UsersTable({
   onView,
   onEdit,
   canEdit,
+  canAssignRole,
   canResetPassword,
-  canActivateDeactivate,
+  canActivate,
+  canDeactivate,
   canDelete,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
@@ -231,7 +250,7 @@ export function UsersTable({
                       <TooltipContent>{getTooltip("users.actions.view")}</TooltipContent>
                     </Tooltip>
 
-                    {canEdit && (
+                    {(canEdit || canAssignRole) && (
                       <Tooltip>
                         <TooltipTrigger
                           render={(props) => (
@@ -285,7 +304,7 @@ export function UsersTable({
                       )
                     })()}
 
-                    {canActivateDeactivate &&
+                    {(user.status === "Active" ? canDeactivate : canActivate) &&
                       (() => {
                         // Blanket rule, same as Delete just below — a
                         // tenant admin account can't be deactivated

@@ -44,15 +44,23 @@ public class KeycloakUserService {
      * for a required update on first login, and stamps the tenant_id
      * attribute that the realm's protocol mapper projects into the
      * "tenant_id" access token claim.
+     * <p>
+     * {@code username} becomes the Keycloak account's actual username (the
+     * real login id, distinct from {@code email} - see
+     * {@link com.oak.dms.user.User#getUsername()}'s own doc comment), not
+     * a copy of the email. {@code loginWithEmailAllowed: true} in the realm
+     * config (see {@code infra/local/keycloak/oak-dms-realm.json}) means
+     * the direct-grant login endpoint still accepts either one, so this
+     * doesn't affect signing in with an email address.
      *
      * @return the Keycloak-assigned subject id (user id) to store as
      *         users.keycloak_id in our own database.
      */
-    public UUID createUser(String email, String firstName, String lastName, UUID tenantId) {
+    public UUID createUser(String username, String email, String firstName, String lastName, UUID tenantId) {
         UsersResource usersResource = realm().users();
 
         UserRepresentation representation = new UserRepresentation();
-        representation.setUsername(email);
+        representation.setUsername(username);
         representation.setEmail(email);
         representation.setEnabled(true);
         representation.setEmailVerified(false);
@@ -62,7 +70,7 @@ public class KeycloakUserService {
 
         try (Response response = usersResource.create(representation)) {
             if (response.getStatus() == 409) {
-                throw new KeycloakUserAlreadyExistsException(email);
+                throw new KeycloakUserAlreadyExistsException(email, username);
             }
             if (response.getStatus() != 201) {
                 throw new KeycloakIntegrationException(

@@ -41,14 +41,14 @@ public class PermissionModuleController {
     }
 
     @GetMapping("/{moduleId}")
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "Get a permission module by id")
     public PermissionModuleResponse getModule(@PathVariable UUID moduleId) {
         return permissionModuleService.getModule(moduleId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "List the platform's permission modules")
     public PageResponse<PermissionModuleResponse> listModules(Pageable pageable) {
         return PageResponse.from(permissionModuleService.listModules(pageable));

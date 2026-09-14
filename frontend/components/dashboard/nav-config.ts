@@ -34,7 +34,24 @@ export const navSections: NavSection[] = [
   {
     label: "Governance",
     items: [
-      { label: "Users", icon: Users, href: "/admin/users", permission: [PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE] },
+      // Any single otua.manage-users.* capability gets you into the Users
+      // section — not just view/update. Someone who can only create users,
+      // or only reset passwords, or only activate/deactivate, still needs
+      // a way in; the User List page itself (app/admin/users/page.tsx)
+      // decides what to actually show once they're there (the full table
+      // needs view or update — see that page's own canBrowseList).
+      {
+        label: "Users", icon: Users, href: "/admin/users", permission: [
+          PermissionCodes.OTUA_USERS_VIEW,
+          PermissionCodes.OTUA_USERS_UPDATE,
+          PermissionCodes.OTUA_USERS_CREATE,
+          PermissionCodes.OTUA_USERS_RESET_PASSWORD,
+          PermissionCodes.OTUA_USERS_ACTIVATE,
+          PermissionCodes.OTUA_USERS_DEACTIVATE,
+          PermissionCodes.OTUA_USERS_DELETE,
+          PermissionCodes.OTUA_USERS_ASSIGN_ROLE,
+        ]
+      },
       { label: "Roles", icon: Shield, href: "/admin/roles", permission: [PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE] },
       // Permissions catalog is served by PermissionController, which was NOT
       // part of the granular sweep (see UserController/UserRoleController/

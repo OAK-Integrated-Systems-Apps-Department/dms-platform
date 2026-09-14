@@ -18,7 +18,15 @@ export const PermissionCodes = {
   OTUA_USERS_UPDATE: "otua.manage-users.update",
   OTUA_USERS_VIEW: "otua.manage-users.view",
   OTUA_USERS_RESET_PASSWORD: "otua.manage-users.reset-password",
-  OTUA_USERS_ACTIVATE_DEACTIVATE: "otua.manage-users.activate-deactivate",
+  // Split from a single otua.manage-users.activate-deactivate code so
+  // either direction can be granted independently — see
+  // V20__split_activate_deactivate_permission.sql.
+  OTUA_USERS_ACTIVATE: "otua.manage-users.activate",
+  OTUA_USERS_DEACTIVATE: "otua.manage-users.deactivate",
+  // Now wired to UserController#purgeUser (additive to the tenant-admin
+  // bypass, never a replacement for it) — previously cataloged but never
+  // checked anywhere.
+  OTUA_USERS_DELETE: "otua.manage-users.delete",
   OTUA_USERS_ASSIGN_ROLE: "otua.manage-users.assign-role",
 
   // Roles (ASM - Access and Security Management)

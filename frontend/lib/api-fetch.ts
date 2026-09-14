@@ -37,7 +37,7 @@ export async function apiFetch(
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(response.status, body?.message ?? fallbackMessage)
+    throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code)
   }
   return response
 }

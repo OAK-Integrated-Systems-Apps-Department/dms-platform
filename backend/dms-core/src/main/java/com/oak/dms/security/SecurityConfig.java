@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -84,6 +85,33 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // Mirrors each endpoint's own @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+                        // - deliberately duplicated, not a replacement. Spring resolves and
+                        // @Valid-validates a @RequestBody before invoking the (AOP-proxied)
+                        // controller method, which means @PreAuthorize alone lets a caller
+                        // with no business on these endpoints at all see field-level
+                        // validation errors (400, naming real request fields) before ever
+                        // being told no. Filter-chain authorization runs earlier, in the
+                        // security filter itself, before DispatcherServlet routes to the
+                        // controller or reads the body at all - so a caller without
+                        // PLATFORM_ADMIN gets a clean 403 here first, every time. Limited to
+                        // the writes (and the tenant list) that are PLATFORM_ADMIN-only
+                        // unconditionally; GET /api/v1/tenants/{id} and PUT .../{id} are
+                        // deliberately excluded - both also allow the caller's own tenant
+                        // admin via @tenantSecurity.isSameTenant(#tenantId), a per-request
+                        // check this layer can't express.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tenants").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/tenants", "/api/v1/tenants/provision").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/tenants/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permissions").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-modules").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(cookieBearerTokenResolver)

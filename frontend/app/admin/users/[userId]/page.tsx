@@ -52,7 +52,17 @@ export default function ViewUserPage() {
         {isPending ? (
           <LoadingState message="Loading user…" />
         ) : (
-        <PermissionGate permission={[PermissionCodes.OTUA_USERS_VIEW, PermissionCodes.OTUA_USERS_UPDATE]}>
+        <PermissionGate
+          permission={[
+            PermissionCodes.OTUA_USERS_VIEW,
+            PermissionCodes.OTUA_USERS_UPDATE,
+            PermissionCodes.OTUA_USERS_RESET_PASSWORD,
+            PermissionCodes.OTUA_USERS_ACTIVATE,
+            PermissionCodes.OTUA_USERS_DEACTIVATE,
+            PermissionCodes.OTUA_USERS_DELETE,
+            PermissionCodes.OTUA_USERS_ASSIGN_ROLE,
+          ]}
+        >
         {isError ? (
           <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
             {error instanceof Error
@@ -65,8 +75,10 @@ export default function ViewUserPage() {
             onToggleStatus={toggleStatus}
             onResetPassword={sendPasswordReset}
             canResetPassword={hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)}
-            canActivateDeactivate={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE_DEACTIVATE)}
+            canActivate={hasPermission(PermissionCodes.OTUA_USERS_ACTIVATE)}
+            canDeactivate={hasPermission(PermissionCodes.OTUA_USERS_DEACTIVATE)}
             canEdit={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
+            canAssignRole={hasPermission(PermissionCodes.OTUA_USERS_ASSIGN_ROLE)}
         />
         )}
         </PermissionGate>
