@@ -42,21 +42,21 @@ public class PermissionActionController {
     }
 
     @GetMapping("/{actionId}")
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "Get a permission action by id")
     public PermissionActionResponse getAction(@PathVariable UUID actionId) {
         return permissionActionService.getAction(actionId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "List the platform's permission actions")
     public PageResponse<PermissionActionResponse> listActions(Pageable pageable) {
         return PageResponse.from(permissionActionService.listActions(pageable));
     }
 
     @GetMapping("/by-module/{moduleId}")
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "List all actions under a single permission module")
     public List<PermissionActionResponse> listActionsForModule(@PathVariable UUID moduleId) {
         return permissionActionService.listActionsForModule(moduleId);

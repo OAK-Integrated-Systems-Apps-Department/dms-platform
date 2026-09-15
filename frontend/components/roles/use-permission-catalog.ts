@@ -56,19 +56,30 @@ interface UsePermissionCatalogResult {
  * no permissions yet) are omitted rather than shown as empty groups —
  * there's nothing to grant under them.
  *
- * Gated on `role.view`/`role.manage` (see `usePermissions`) — the
- * backend's `GET /api/v1/permissions` and `GET /api/v1/permission-actions`
- * require one of those, so calling them for a caller who holds neither
- * just produces a 403 no screen using this hook could ever recover from.
- * Without this, every mount of any of the four screens above re-fired
- * both requests (per the "always re-fetch on mount" fix above) for as
- * long as that caller kept navigating between them, each one landing
- * back on the same 403 — this stops it at the source instead of letting
- * it happen and reacting to the failure.
+ * Gated on `role.view`/`role.manage`/`assign-permissions` (see
+ * `usePermissions`) — the backend's `GET /api/v1/permissions` and
+ * `GET /api/v1/permission-actions` require one of those, so calling them
+ * for a caller who holds none just produces a 403 no screen using this
+ * hook could ever recover from. Without this, every mount of any of the
+ * four screens above re-fired both requests (per the "always re-fetch on
+ * mount" fix above) for as long as that caller kept navigating between
+ * them, each one landing back on the same 403 — this stops it at the
+ * source instead of letting it happen and reacting to the failure.
+ * <p>
+ * `ASM_ROLES_ASSIGN_PERMISSIONS` is included alongside the two legacy
+ * codes so a role granted only the granular "Manage Permissions"
+ * capability can actually see what there is to grant — before this, a
+ * role with full `asm.manage-roles-permissions.*` access (including
+ * assign-permissions) still couldn't browse the catalog, since these two
+ * backend reads were never migrated off the pre-granular coarse codes.
  */
 export function usePermissionCatalog(): UsePermissionCatalogResult {
   const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions()
-  const canView = hasAnyPermission(PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE)
+  const canView = hasAnyPermission(
+    PermissionCodes.LEGACY_ROLE_VIEW,
+    PermissionCodes.LEGACY_ROLE_MANAGE,
+    PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS
+  )
 
   const permissions = usePermissionsStore((state) => state.permissions)
   const modules = usePermissionsStore((state) => state.modules)

@@ -46,6 +46,15 @@ interface UserEditFormProps {
  * `POST`/`DELETE /api/v1/users/{userId}/roles` calls — each of which the
  * backend mirrors into Keycloak as a realm role for tenant-wide
  * assignments (see `UserRoleServiceImpl`), not just the local database.
+ *
+ * This form is reachable by two different single-permission callers who
+ * each hold only half of what it does: `otua.manage-users.update` (name/
+ * email fields, no role picker) or `otua.manage-users.assign-role` (role
+ * picker only, per `canEditProfile` below) — see `UserDetailView`/
+ * `UsersTable`'s own doc comments on why the Edit icon/link is shown for
+ * either. `onSubmit` only calls `updateUserProfile` (`PUT /users/{id}`,
+ * gated on `.update`) when `canEditProfile` is true, so an assign-role-
+ * only caller's save never 403s on a field they were never shown.
  */
 export function UserEditForm({ user }: UserEditFormProps) {
   const router = useRouter()
@@ -56,18 +65,25 @@ export function UserEditForm({ user }: UserEditFormProps) {
   const rolesLoading = useRolesStore((state) => state.loading)
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
-  const { hasAnyPermission } = usePermissions()
+  const { hasPermission, hasAnyPermission } = usePermissions()
+  const canEditProfile = hasPermission(PermissionCodes.OTUA_USERS_UPDATE)
+  // GET /api/v1/roles also accepts otua.manage-users.assign-role on the
+  // backend now (see RoleController#listRoles's own comment) — without
+  // it, an assign-role-only caller would reach this form and find the
+  // picker permanently replaced by the "can't view the role catalog"
+  // message below, unable to ever do the one thing their permission is
+  // for. asm.manage-roles-permissions.view-role/.update-role still work
+  // the same as before for everyone else.
   const canViewRoles = hasAnyPermission(
     PermissionCodes.ASM_ROLES_VIEW_ROLE,
-    PermissionCodes.ASM_ROLES_UPDATE_ROLE
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE,
+    PermissionCodes.OTUA_USERS_ASSIGN_ROLE
   )
   useEffect(() => {
-    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
-    // .update-role — otua.manage-users.* alone (what actually gates
-    // reaching this form) doesn't imply it, so skip the call entirely for
-    // a caller without either, rather than 403 and, since nothing here
-    // marks that permanent otherwise, keep re-firing it on every remount
-    // for the rest of the session.
+    // Skip the call entirely for a caller with none of the three
+    // permissions above, rather than 403 and, since nothing here marks
+    // that permanent otherwise, keep re-firing it on every remount for
+    // the rest of the session.
     if (canViewRoles && roles.length === 0 && !rolesError) fetchRoles()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewRoles])
@@ -98,22 +114,30 @@ export function UserEditForm({ user }: UserEditFormProps) {
   async function onSubmit(values: UserEditFormValues) {
     setSubmitError(null)
 
-    try {
-      const current = await fetchUser(user.id)
-      await updateUserProfile(user.id, {
-        firstName: values.firstName,
-        lastName: values.lastName,
-        // Not edited on this form — carried over as-is from the current
-        // record so saving a name change can't accidentally toggle MFA
-        // or flip a locked/disabled account back to active.
-        mfaEnabled: current.mfaEnabled,
-        status: current.status,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save changes."
-      setSubmitError(message)
-      toast.error(message)
-      return
+    // An assign-role-only caller (canEditProfile false) never gets a shot
+    // at the name/email fields below — they stay fixed at the values this
+    // form was loaded with, per userEditFormSchema's defaultValues — so
+    // skip the profile PUT entirely rather than resubmit unchanged data
+    // through an endpoint this caller doesn't hold otua.manage-users.update
+    // for, which would 403 before the role sync below ever ran.
+    if (canEditProfile) {
+      try {
+        const current = await fetchUser(user.id)
+        await updateUserProfile(user.id, {
+          firstName: values.firstName,
+          lastName: values.lastName,
+          // Not edited on this form — carried over as-is from the current
+          // record so saving a name change can't accidentally toggle MFA
+          // or flip a locked/disabled account back to active.
+          mfaEnabled: current.mfaEnabled,
+          status: current.status,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not save changes."
+        setSubmitError(message)
+        toast.error(message)
+        return
+      }
     }
 
     const { error: roleError } = await syncUserRoles(user.id, values.roles, roles)
@@ -148,10 +172,24 @@ export function UserEditForm({ user }: UserEditFormProps) {
         </div>
       )}
 
+      {!canEditProfile && (
+        <p className="mb-5 rounded-md border border-[var(--border-strong)] bg-muted px-[13px] py-[11px] text-[12.5px] text-muted-foreground">
+          You have permission to change this user&apos;s roles, but not their profile
+          details below — those fields are read-only for you.
+        </p>
+      )}
+
       <div className="mb-5 grid grid-cols-2 gap-[18px]">
         <div>
           <Label htmlFor="firstName">First name</Label>
-          <Input id="firstName" autoComplete="off" {...register("firstName")} />
+          <Input
+            id="firstName"
+            autoComplete="off"
+            readOnly={!canEditProfile}
+            disabled={!canEditProfile}
+            className={!canEditProfile ? "cursor-not-allowed border-dashed" : undefined}
+            {...register("firstName")}
+          />
           {errors.firstName && (
             <p className="mt-1.5 text-[12px] text-[var(--rust)]">
               {errors.firstName.message}
@@ -160,7 +198,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
         </div>
         <div>
           <Label htmlFor="lastName">Last name</Label>
-          <Input id="lastName" autoComplete="off" {...register("lastName")} />
+          <Input
+            id="lastName"
+            autoComplete="off"
+            readOnly={!canEditProfile}
+            disabled={!canEditProfile}
+            className={!canEditProfile ? "cursor-not-allowed border-dashed" : undefined}
+            {...register("lastName")}
+          />
           {errors.lastName && (
             <p className="mt-1.5 text-[12px] text-[var(--rust)]">
               {errors.lastName.message}
@@ -175,6 +220,9 @@ export function UserEditForm({ user }: UserEditFormProps) {
           id="email"
           type="email"
           autoComplete="off"
+          readOnly={!canEditProfile}
+          disabled={!canEditProfile}
+          className={!canEditProfile ? "cursor-not-allowed border-dashed" : undefined}
           {...register("email")}
         />
         {errors.email && (

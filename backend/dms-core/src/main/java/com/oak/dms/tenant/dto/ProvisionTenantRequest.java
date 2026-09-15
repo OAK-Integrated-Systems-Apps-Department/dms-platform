@@ -36,6 +36,13 @@ public record ProvisionTenantRequest(
         @Size(max = 320)
         String adminEmail,
 
+        /** See {@link com.oak.dms.user.dto.CreateUserRequest#username()}'s own doc comment. */
+        @NotBlank
+        @Size(min = 3, max = 100)
+        @Pattern(regexp = "^[a-zA-Z0-9._-]+$",
+                message = "adminUsername may only contain letters, numbers, dots, hyphens, and underscores")
+        String adminUsername,
+
         @NotBlank
         @Size(max = 255)
         String adminFirstName,

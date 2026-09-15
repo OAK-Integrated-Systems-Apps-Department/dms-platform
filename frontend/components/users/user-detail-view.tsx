@@ -17,8 +17,10 @@ interface UserDetailViewProps {
   onResetPassword: () => void
   /** Whether the signed-in user may reset this user's password — requires `otua.manage-users.reset-password` (see `usePermissions`). */
   canResetPassword: boolean
-  /** Whether the signed-in user may activate/deactivate this account — requires `otua.manage-users.activate-deactivate`. */
-  canActivateDeactivate: boolean
+  /** Whether the signed-in user may reactivate this account, if inactive — requires `otua.manage-users.activate`. */
+  canActivate: boolean
+  /** Whether the signed-in user may deactivate this account, if active — requires `otua.manage-users.deactivate`. */
+  canDeactivate: boolean
   /**
    * Whether the signed-in user may edit this user's profile (the bottom
    * "Edit" link) — requires `otua.manage-users.update`. Someone with only
@@ -26,6 +28,14 @@ interface UserDetailViewProps {
    * gets none of these three controls.
    */
   canEdit: boolean
+  /**
+   * Whether the signed-in user may change this user's role assignments —
+   * requires `otua.manage-users.assign-role`. ORed with `canEdit` for the
+   * "Edit" link below: it opens the same form either way, and
+   * `UserEditForm` only submits the fields the caller actually holds
+   * permission for.
+   */
+  canAssignRole: boolean
 }
 
 function initials(name: string): string {
@@ -90,8 +100,10 @@ export function UserDetailView({
   onToggleStatus,
   onResetPassword,
   canResetPassword,
-  canActivateDeactivate,
+  canActivate,
+  canDeactivate,
   canEdit,
+  canAssignRole,
 }: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
@@ -155,7 +167,7 @@ export function UserDetailView({
             </TooltipContent>
           </Tooltip>
           )}
-          {canActivateDeactivate && (() => {
+          {(user.status === "Active" ? canDeactivate : canActivate) && (() => {
             // Blanket rule, same as users-table.tsx's row action and
             // Delete — see UserServiceImpl#deactivateUser's doc comment
             // on the backend for why this isn't a "last admin" headcount.
@@ -313,7 +325,7 @@ export function UserDetailView({
             View Audit History →
           </Link>
         </div>
-        {canEdit && (
+        {(canEdit || canAssignRole) && (
           <Link
             href={`/admin/users/${user.id}/edit`}
             className="rounded-btn border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"

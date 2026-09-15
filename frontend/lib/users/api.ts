@@ -12,6 +12,8 @@ export interface UserResponseDto {
   tenantName: string | null
   keycloakId: string
   email: string
+  /** The account's real login id, distinct from `email` — see `CreateUserRequest.username()`'s own doc comment on the backend. */
+  username: string
   firstName: string
   lastName: string
   displayName: string
@@ -381,10 +383,7 @@ export function toUserRecord(
   return {
     id: user.userId,
     name: user.displayName,
-    // dms-core has no separate username field — derive a display-only one
-    // from the email's local part rather than repeating the full email
-    // next to itself in the header.
-    username: user.email.split("@")[0],
+    username: user.username,
     email: user.email,
     // Falls back to the raw id only in the (shouldn't-happen) case the
     // backend couldn't resolve a name for it — see UserResponseDto.tenantName.

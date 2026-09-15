@@ -77,10 +77,19 @@ public class GlobalExceptionHandler {
                                 request.getRequestURI(),
                                 ex.getMessage());
 
+                // Carries a `code` (see ErrorResponse/ApiException's own doc comments)
+                // distinct from a real expired/invalid session, both of which
+                // otherwise arrive as indistinguishable 401s - the frontend's
+                // global session-expiry handler (isSessionExpired in
+                // lib/api-error.ts) matches on this code to avoid treating "this
+                // account has no tenant context yet" as "your session expired",
+                // which would incorrectly log the caller out and clear their
+                // whole client cache instead of just surfacing the message below.
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                                 .body(ErrorResponse.of(
                                                 HttpStatus.UNAUTHORIZED.value(),
                                                 "Unauthorized",
+                                                "TENANT_CONTEXT_MISSING",
                                                 "Your account is authenticated, but provisioning is not yet complete. "
                                                                 + "Please complete the provisioning process before accessing this resource.",
                                                 request.getRequestURI()));

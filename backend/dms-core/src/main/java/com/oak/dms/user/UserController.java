@@ -41,8 +41,13 @@ public class UserController {
         UUID keycloakId = requireUuidClaim(jwt, jwt.getSubject(), "sub");
         UUID tenantId = requireUuidClaim(jwt, jwt.getClaimAsString("tenant_id"), "tenant_id");
         String email = requireClaim(jwt, jwt.getClaimAsString("email"), "email");
+        // The account's real Keycloak username, standard OIDC claim Keycloak
+        // always includes - never re-derived from the email here, unlike
+        // the client-side placeholder this replaced (see User#getUsername's
+        // own doc comment).
+        String username = requireClaim(jwt, jwt.getClaimAsString("preferred_username"), "preferred_username");
 
-        UserResponse response = userService.provisionCurrentUser(keycloakId, tenantId, email, request);
+        UserResponse response = userService.provisionCurrentUser(keycloakId, tenantId, email, username, request);
         return ResponseEntity.created(URI.create("/api/v1/users/" + response.userId())).body(response);
     }
 
@@ -84,14 +89,24 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
+    // Also readable by anyone who can act on an individual user without
+    // being able to edit their profile outright (reset-password/activate/
+    // deactivate/delete/assign-role) - otherwise that permission is
+    // unusable through the UI, since every one of those actions is a
+    // row-level dialog (or, for assign-role, the Edit User form's role
+    // picker) on this exact data and there's no other way to pick which
+    // user to act on. Deliberately excludes otua.manage-users.create -
+    // list-independent, since inviting a new user has nothing to do with
+    // browsing existing ones.
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "Get a user by id, within the caller's tenant")
     public UserResponse getUser(@PathVariable UUID userId) {
         return userService.getUser(userId);
     }
 
     @GetMapping("/{userId}/platform-roles")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
+    // Same read-widening as getUser() above, same reason - see its comment.
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List the fixed platform roles (TENANT_ADMIN, MEMBER) this user holds",
             description = "These are Keycloak-only realm roles, never rows in the roles/user_roles "
                     + "tables - see GET /{userId}/roles (UserRoleController) for tenant-defined DMS "
@@ -104,7 +119,8 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
+    // Same read-widening as getUser() above, same reason - see its comment.
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List users in the caller's tenant")
     public PageResponse<UserResponse> listUsers(Pageable pageable) {
         return PageResponse.from(userService.listUsers(pageable));
@@ -128,7 +144,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a user")
     public void deactivateUser(@PathVariable UUID userId) {
@@ -136,7 +152,7 @@ public class UserController {
     }
 
     @PostMapping("/{userId}/reactivate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE_DEACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE)")
     @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
             description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
                     + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")
@@ -145,30 +161,33 @@ public class UserController {
     }
 
     /**
-     * Deliberately gated on {@code @authz.isTenantAdmin()} rather than a
-     * granular {@code @authz.hasPermission(...)} check like every other
-     * endpoint in this controller - true before the Stage 1 granular sweep
-     * and still true after it, not an oversight. A hard delete has no
-     * undo (unlike deactivateUser, reversible via reactivateUser), and
-     * the fine-grained permission catalog is itself something any tenant
-     * admin can grant to an arbitrary custom role via Role Permission
-     * Configuration - so gating this on a permission code (even a
-     * dedicated one; the catalog's own {@code otua.manage-users.delete}
-     * exists but is intentionally never checked anywhere) would let a
-     * tenant admin hand irreversible, cross-system account removal to any
-     * role they define. Restricting it to the fixed TENANT_ADMIN Keycloak
-     * realm role instead keeps that one destructive action outside the
-     * same self-service permission system it would otherwise have to
-     * trust. Do not "fix" this by wiring it to a permission code.
+     * Used to be gated on {@code @authz.isTenantAdmin()} alone, deliberately
+     * excluded from the granular permission system - a hard delete has no
+     * undo (unlike deactivateUser, reversible via reactivateUser), and the
+     * permission catalog is itself something a tenant admin can hand to any
+     * custom role via Role Permission Configuration, so wiring this to a
+     * permission code means trusting that same self-service system with
+     * irreversible, cross-system account removal.
+     * <p>
+     * Now additionally gated on {@code otua.manage-users.delete}, by
+     * deliberate choice: this action is meant to be delegable, the same way
+     * every other user-management capability here already is. The
+     * tenant-admin bypass is kept, not replaced - {@code isTenantAdmin()} is
+     * ORed in alongside the permission check, so revoking
+     * {@code otua.manage-users.delete} from every role can never lock the
+     * tenant admin out of its own irreversible-action safety net. Whoever
+     * grants this permission to a custom role is knowingly delegating
+     * permanent, unrecoverable account deletion - same trust model as any
+     * other {@code otua.manage-users.*} grant, no longer a special case.
      */
     @DeleteMapping("/{userId}/permanent")
-    @PreAuthorize("@authz.isTenantAdmin()")
+    @PreAuthorize("@authz.isTenantAdmin() or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Permanently delete a user",
             description = "A genuine hard delete: removes the local profile row and the corresponding "
                     + "Keycloak account outright, unlike deactivateUser (soft-delete, reversible via "
-                    + "reactivateUser). There is no undo. Restricted to the tenant admin - deliberately "
-                    + "not gated by any permission code, unlike every other endpoint here.")
+                    + "reactivateUser). There is no undo. Available to the tenant admin unconditionally, "
+                    + "and to any role granted otua.manage-users.delete.")
     public void purgeUser(@PathVariable UUID userId) {
         userService.purgeUser(userId);
     }

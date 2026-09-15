@@ -14,6 +14,7 @@ import com.oak.dms.security.rbac.UserRoleMapper;
 import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.user.UserRepository;
 import com.oak.dms.security.rbac.UserRoleRepository;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.UserRoleService;
 import jakarta.validation.ValidationException;
@@ -43,6 +44,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     private final RoleRepository roleRepository;
     private final UserRoleMapper userRoleMapper;
     private final KeycloakUserService keycloakUserService;
+    private final AuthorizationService authorizationService;
 
     @Override
     public UserRoleResponse assignRole(UUID userId, AssignRoleRequest request) {
@@ -134,6 +136,31 @@ public class UserRoleServiceImpl implements UserRoleService {
         log.info("Revoked role assignment {} from user {}", userRoleId, userId);
     }
 
+    /**
+     * True if `user` holds the TENANT_ADMIN platform role - see
+     * {@code UserServiceImpl#isTenantAdminAccount}'s doc comment (this is
+     * the same check, duplicated here rather than shared since the two
+     * classes don't otherwise depend on each other).
+     */
+    private boolean isTenantAdminAccount(User user) {
+        return keycloakUserService.getPlatformRealmRoles(user.getKeycloakId()).contains("TENANT_ADMIN");
+    }
+
+    /**
+     * The tenant admin's own account is invisible to (and its role
+     * assignments therefore unreadable/unchangeable by) any caller who
+     * isn't a full-access caller themselves - see
+     * {@code UserServiceImpl#requireVisibleToCaller}'s doc comment for
+     * the full reasoning. Otherwise a delegate holding only
+     * otua.manage-users.assign-role could read or rewrite the tenant
+     * admin's own tenant-scoped role assignments.
+     */
+    private void requireVisibleToCaller(User user, UUID userId) {
+        if (!authorizationService.isTenantAdmin() && isTenantAdminAccount(user)) {
+            throw new ResourceNotFoundException("User", userId);
+        }
+    }
+
     private User requireOwnedUser(UUID userId, UUID tenantId) {
         User user = userRepository.findById(userId)
                 .filter(u -> !u.isDeleted())
@@ -141,6 +168,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         if (!user.getTenantId().equals(tenantId)) {
             throw new TenantMismatchException("User", userId);
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 
@@ -170,6 +198,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         if (!user.getTenantId().equals(tenantId)) {
             throw new TenantMismatchException("User", userId);
         }
+        requireVisibleToCaller(user, userId);
         return user;
     }
 }

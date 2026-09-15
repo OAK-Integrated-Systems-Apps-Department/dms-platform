@@ -73,8 +73,8 @@ public class TenantProvisioningService {
         // throws, nothing else has happened yet: the tenant insert
         // above rolls back automatically with the rest of this
         // transaction, so no manual cleanup is needed.
-        UUID keycloakId = keycloakUserService.createUser(request.adminEmail(), request.adminFirstName(),
-                request.adminLastName(), tenantId);
+        UUID keycloakId = keycloakUserService.createUser(request.adminUsername(), request.adminEmail(),
+                request.adminFirstName(), request.adminLastName(), tenantId);
 
         try {
             keycloakUserService.assignPlatformRealmRole(keycloakId, TENANT_ADMIN_ROLE);
@@ -83,6 +83,7 @@ public class TenantProvisioningService {
                     .tenantId(tenantId)
                     .keycloakId(keycloakId)
                     .email(request.adminEmail())
+                    .username(request.adminUsername())
                     .firstName(request.adminFirstName())
                     .lastName(request.adminLastName())
                     .displayName(User.displayName(request.adminFirstName(), request.adminLastName()))

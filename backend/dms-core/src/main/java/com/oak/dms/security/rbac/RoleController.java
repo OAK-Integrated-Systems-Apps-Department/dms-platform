@@ -46,8 +46,17 @@ public class RoleController {
         return roleService.getRole(roleId);
     }
 
+    // Also readable by otua.manage-users.assign-role: the Edit User form's
+    // role picker (RoleMultiSelect) is populated straight from this list,
+    // and an assign-role-only caller has no other way to see what roles
+    // even exist to pick from - same "action permission needs implicit
+    // read access" reasoning as UserController#getUser's own widening, just
+    // one level down (the role catalog rather than the user list).
+    // Deliberately not extended to getRole/updateRole/deleteRole below -
+    // this is read-only list access to support picking a role by name, not
+    // a grant to inspect or change one.
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_VIEW_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_UPDATE_ROLE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_VIEW_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_UPDATE_ROLE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List roles in the caller's tenant")
     public PageResponse<RoleResponse> listRoles(Pageable pageable) {
         return PageResponse.from(roleService.listRoles(pageable));

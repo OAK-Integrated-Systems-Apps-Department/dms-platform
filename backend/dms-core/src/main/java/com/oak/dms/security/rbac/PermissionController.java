@@ -52,14 +52,14 @@ public class PermissionController {
     }
 
     @GetMapping("/{permissionId}")
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "Get a permission by id")
     public PermissionResponse getPermission(@PathVariable UUID permissionId) {
         return permissionService.getPermission(permissionId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage')")
+    @PreAuthorize("@authz.hasPermission('role.view') or @authz.hasPermission('role.manage') or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ASM_ROLES_ASSIGN_PERMISSIONS)")
     @Operation(summary = "List the platform's permission catalog")
     public PageResponse<PermissionResponse> listPermissions(Pageable pageable) {
         return PageResponse.from(permissionService.listPermissions(pageable));

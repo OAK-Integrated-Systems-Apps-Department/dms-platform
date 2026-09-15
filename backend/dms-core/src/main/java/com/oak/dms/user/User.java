@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(name = "uq_users_tenant_email", columnNames = {"tenant_id", "email"})
+        @UniqueConstraint(name = "uq_users_tenant_email", columnNames = {"tenant_id", "email"}),
+        @UniqueConstraint(name = "uq_users_tenant_username", columnNames = {"tenant_id", "username"})
 })
 /**
  * A person's Oak DMS profile, scoped to exactly one tenant.
@@ -46,6 +47,18 @@ public class User {
 
     @Column(name = "email", nullable = false)
     private String email;
+
+    /**
+     * The account's real login id, distinct from {@link #email} - set once
+     * at creation (see {@code UserServiceImpl#createUser}) and mirrored
+     * verbatim as the Keycloak account's own username (see
+     * {@code KeycloakUserService#createUser}), never derived from the
+     * email locally. Immutable after creation: there's no update path for
+     * it, matching the Edit User form's own read-only treatment of this
+     * field.
+     */
+    @Column(name = "username", nullable = false)
+    private String username;
 
     @Column(name = "first_name", nullable = false)
     private String firstName;

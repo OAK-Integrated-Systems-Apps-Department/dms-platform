@@ -15,11 +15,14 @@
  */
 export class ApiError extends Error {
   readonly status: number
+  /** The backend's optional machine-readable `code` (see ErrorResponse/ApiException on the backend), e.g. "TENANT_CONTEXT_MISSING" - undefined when the response body didn't carry one. */
+  readonly code?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.name = "ApiError"
     this.status = status
+    this.code = code
   }
 }
 
@@ -44,7 +47,18 @@ export class ApiError extends Error {
  * the login page instead of showing an inline error.
  */
 export function isSessionExpired(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 401
+  return (
+    error instanceof ApiError &&
+    error.status === 401 &&
+    // A 401 for an authenticated caller who simply has no tenant context yet
+    // (see TenantContextFilter/GlobalExceptionHandler on the backend - a
+    // platform-admin-only login, or a brand-new signup whose self-provisioning
+    // hasn't run yet) is not an expired session and must not be treated as
+    // one: that would incorrectly clear the whole query cache and bounce the
+    // caller to /session-expired instead of letting the caller's own
+    // isError/error UI show the real "provisioning incomplete" message.
+    error.code !== "TENANT_CONTEXT_MISSING"
+  )
 }
 
 /**

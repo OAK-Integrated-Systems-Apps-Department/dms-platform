@@ -20,10 +20,17 @@ package com.oak.dms.security.rbac;
  * @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_CREATE)")
  * }</pre>
  * Not every permission in the catalog has a constant here - only the ones
- * actually referenced by an {@code @PreAuthorize} check. {@code UserController#purgeUser}
- * is deliberately excluded from this catalog altogether (gated on
- * {@code @authz.isTenantAdmin()} instead) - see that method's own doc
- * comment for why.
+ * actually referenced by an {@code @PreAuthorize} check.
+ * <p>
+ * {@code OTUA_USERS_ACTIVATE}/{@code OTUA_USERS_DEACTIVATE} replace a
+ * single {@code otua.manage-users.activate-deactivate} code that used to
+ * gate both directions together - split so a role can be granted one
+ * without the other (e.g. an offboarding-only role that can deactivate
+ * but never reactivate). See {@code V20__split_activate_deactivate_and_wire_delete_user.sql}.
+ * {@code OTUA_USERS_DELETE} now also gates {@code UserController#purgeUser},
+ * in addition to (not instead of) the tenant-admin bypass every check
+ * here already gets via {@code AuthorizationService#hasFullAccess} - see
+ * that method's own doc comment for the tradeoff this accepts.
  */
 public final class PermissionCodes {
 
@@ -35,7 +42,9 @@ public final class PermissionCodes {
     public static final String OTUA_USERS_UPDATE = "otua.manage-users.update";
     public static final String OTUA_USERS_VIEW = "otua.manage-users.view";
     public static final String OTUA_USERS_RESET_PASSWORD = "otua.manage-users.reset-password";
-    public static final String OTUA_USERS_ACTIVATE_DEACTIVATE = "otua.manage-users.activate-deactivate";
+    public static final String OTUA_USERS_ACTIVATE = "otua.manage-users.activate";
+    public static final String OTUA_USERS_DEACTIVATE = "otua.manage-users.deactivate";
+    public static final String OTUA_USERS_DELETE = "otua.manage-users.delete";
     public static final String OTUA_USERS_ASSIGN_ROLE = "otua.manage-users.assign-role";
 
     // Roles - ASM (Access and Security Management) / Manage Roles & Permissions

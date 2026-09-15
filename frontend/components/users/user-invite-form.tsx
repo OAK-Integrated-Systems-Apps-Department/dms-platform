@@ -40,8 +40,13 @@ import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
  * (see `UserRoleServiceImpl.assignRole`), not just written to the local
  * database.
  *
- * `username` remains unsent — `CreateUserRequest` has no field for it,
- * and there's no separate endpoint for it the way there is for roles.
+ * `username` is sent as the account's real login id, distinct from
+ * `email` — see `CreateUserRequest.username()`'s own doc comment on the
+ * backend. It becomes the actual Keycloak username (not a copy of the
+ * email the way it used to be created), and is stored on the local
+ * `users` row too, so every screen that displays it afterward
+ * (`toUserRecord` in `lib/users/api.ts`) reads the real value instead of
+ * deriving a placeholder from the email's local part.
  */
 export function UserInviteForm() {
   const router = useRouter()
@@ -95,6 +100,7 @@ export function UserInviteForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: values.email,
+            username: values.username,
             firstName: values.firstName,
             lastName: values.lastName,
           }),

@@ -9,8 +9,8 @@ export const userInviteFormSchema = z.object({
   username: z
     .string()
     .trim()
-    .min(2, "Username must be at least 2 characters")
-    .max(60, "Keep it under 60 characters")
+    .min(3, "Username must be at least 3 characters")
+    .max(100, "Keep it under 100 characters")
     .regex(/^[a-z0-9._-]+$/i, "Use only letters, numbers, dots, dashes, and underscores"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
   roles: z.array(z.string()).min(1, "Select at least one role"),

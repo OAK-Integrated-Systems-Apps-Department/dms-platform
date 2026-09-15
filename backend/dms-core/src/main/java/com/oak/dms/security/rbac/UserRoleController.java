@@ -41,8 +41,14 @@ public class UserRoleController {
         ).body(response);
     }
 
+    // Same read-widening as UserController#getUser, same reason: this is
+    // also called per-row while rendering the User List table, which
+    // reset-password/activate/deactivate/delete/assign-role-only callers
+    // need to reach too - see that method's comment. assign-role needs
+    // this one specifically to see a user's *current* assignments before
+    // the Edit User form's role picker can offer anything to add/remove.
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List a user's role assignments")
     public List<UserRoleResponse> listRoles(@PathVariable UUID userId) {
         return userRoleService.listRolesForUser(userId);
