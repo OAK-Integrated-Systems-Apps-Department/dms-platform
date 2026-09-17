@@ -1,6 +1,7 @@
 package com.oak.dms.metadata;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -23,17 +23,22 @@ import java.util.stream.Collectors;
  * See {@link MetadataValidationService}.
  * <p>
  * MDTM-NFR-002 (validation completes without noticeable delay) is met with a
- * simple in-memory {@link ConcurrentHashMap} cache keyed by
- * {@code (tenantId, documentTypeId, version)} rather than Spring's cache
- * abstraction - this backend has no {@code spring-boot-starter-cache}/
- * {@code @EnableCaching} configured anywhere, and one wasn't worth adding for
- * this alone. Caching per specific version is safe indefinitely: once a
- * version is published, its {@code document_type_fields} rows are either the
- * current active set or archived - never edited in place (see
- * {@code DocumentTypeFieldServiceImpl#replaceMapping}) - so a cached
- * version's resolved schema can never go stale. Only the *current* version
- * number changes over time, and that's a cheap uncached column read on every
- * call, not the expensive part.
+ * {@link SchemaCacheService} (Redis-backed) cache-aside lookup keyed by
+ * {@code (tenantId, documentTypeId, version)}.
+ * <p>
+ * Only {@code document_type_fields} rows are immutable once a version is
+ * published (see {@code DocumentTypeFieldServiceImpl#replaceMapping} -
+ * archive-and-reinsert, never edited in place). The {@link MetadataField},
+ * {@link MetadataFieldOption} and {@link MetadataFieldValidation} rows also
+ * captured into each cached {@link ResolvedField} are NOT immutable: editing
+ * a dropdown option, a validation rule, or a field's own attributes changes
+ * the resolved schema without bumping {@code schemaVersion}. Correctness
+ * therefore depends on every write path that can change one of those rows
+ * calling {@link SchemaCacheService#evictTenant(UUID)} - see the call sites
+ * in {@code MetadataFieldOptionServiceImpl}, {@code MetadataFieldValidationServiceImpl},
+ * {@code MetadataFieldServiceImpl}, and {@code DocumentTypeFieldServiceImpl#replaceMapping}.
+ * The cache's TTL is only a backstop for a missed or failed eviction, not
+ * the primary invalidation mechanism.
  */
 @Service
 @RequiredArgsConstructor
@@ -44,16 +49,21 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldOptionRepository metadataFieldOptionRepository;
     private final MetadataFieldValidationRepository metadataFieldValidationRepository;
-
-    private final Map<CacheKey, List<ResolvedField>> schemaCache = new ConcurrentHashMap<>();
+    private final SchemaCacheService schemaCacheService;
 
     @Override
     @Transactional(readOnly = true)
     public List<ValidationError> validate(UUID documentTypeId, Integer schemaVersion, Map<String, Object> fieldValuesByKey) {
         UUID tenantId = TenantContext.getTenantId();
         int version = schemaVersion != null ? schemaVersion : currentVersion(documentTypeId, tenantId);
-        CacheKey key = new CacheKey(tenantId, documentTypeId, version);
-        List<ResolvedField> fields = schemaCache.computeIfAbsent(key, k -> resolveSchema(documentTypeId, tenantId, version));
+
+        @SuppressWarnings("unchecked")
+        List<ResolvedField> fields = (List<ResolvedField>) schemaCacheService.get(tenantId, documentTypeId, version)
+                .orElseGet(() -> {
+                    List<ResolvedField> resolved = resolveSchema(documentTypeId, tenantId, version);
+                    schemaCacheService.put(tenantId, documentTypeId, version, resolved);
+                    return resolved;
+                });
 
         List<ValidationError> errors = new ArrayList<>();
         for (ResolvedField field : fields) {
@@ -82,7 +92,7 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
             }
 
             if (present) {
-                for (MetadataFieldValidation rule : field.rules()) {
+                for (CachedRule rule : field.rules()) {
                     ValidationError error = evaluateRule(field, rule, value);
                     if (error != null) {
                         errors.add(error);
@@ -117,52 +127,57 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
             if (field == null) {
                 continue;
             }
-            List<MetadataFieldOption> activeOptions = MetadataField.OPTION_BACKED_DATA_TYPES.contains(field.getDataType())
-                    ? metadataFieldOptionRepository.findAllActiveByFieldOrdered(field.getFieldId(), tenantId)
+            List<CachedOption> activeOptions = MetadataField.OPTION_BACKED_DATA_TYPES.contains(field.getDataType())
+                    ? metadataFieldOptionRepository.findAllActiveByFieldOrdered(field.getFieldId(), tenantId).stream()
+                        .map(o -> new CachedOption(o.getOptionId(), o.getOptionValue(), o.getOptionLabel(), o.getDisplayOrder()))
+                        .toList()
                     : List.of();
+            List<CachedRule> rules = rulesByField.getOrDefault(field.getFieldId(), List.of()).stream()
+                    .map(r -> new CachedRule(r.getValidationId(), r.getRuleType(), r.getRuleValue(), r.getErrorMessage(), r.getSeverity()))
+                    .toList();
             resolved.add(new ResolvedField(field.getFieldKey(), field.getLabel(), field.getDataType(),
-                    m.isMandatory(), m.isHidden(), activeOptions, rulesByField.getOrDefault(field.getFieldId(), List.of())));
+                    m.isMandatory(), m.isHidden(), activeOptions, rules));
         }
         return resolved;
     }
 
-    private ValidationError evaluateRule(ResolvedField field, MetadataFieldValidation rule, Object value) {
+    private ValidationError evaluateRule(ResolvedField field, CachedRule rule, Object value) {
         String text = String.valueOf(value);
-        String severity = rule.getSeverity().name();
+        String severity = rule.severity().name();
         try {
-            switch (rule.getRuleType()) {
+            switch (rule.ruleType()) {
                 case min_length -> {
-                    int min = Integer.parseInt(rule.getRuleValue());
+                    int min = Integer.parseInt(rule.ruleValue());
                     if (text.length() < min) {
                         return error(field, rule, "MIN_LENGTH", severity, "be at least " + min + " characters");
                     }
                 }
                 case max_length -> {
-                    int max = Integer.parseInt(rule.getRuleValue());
+                    int max = Integer.parseInt(rule.ruleValue());
                     if (text.length() > max) {
                         return error(field, rule, "MAX_LENGTH", severity, "be at most " + max + " characters");
                     }
                 }
                 case min_value -> {
-                    double min = Double.parseDouble(rule.getRuleValue());
+                    double min = Double.parseDouble(rule.ruleValue());
                     if (Double.parseDouble(text) < min) {
                         return error(field, rule, "MIN_VALUE", severity, "be at least " + min);
                     }
                 }
                 case max_value -> {
-                    double max = Double.parseDouble(rule.getRuleValue());
+                    double max = Double.parseDouble(rule.ruleValue());
                     if (Double.parseDouble(text) > max) {
                         return error(field, rule, "MAX_VALUE", severity, "be at most " + max);
                     }
                 }
                 case regex -> {
-                    if (!Pattern.matches(rule.getRuleValue(), text)) {
+                    if (!Pattern.matches(rule.ruleValue(), text)) {
                         return error(field, rule, "REGEX", severity, "match the required format");
                     }
                 }
-                case date_format -> DateTimeFormatter.ofPattern(rule.getRuleValue()).parse(text);
+                case date_format -> DateTimeFormatter.ofPattern(rule.ruleValue()).parse(text);
                 case date_range -> {
-                    String[] parts = rule.getRuleValue().split("/", 2);
+                    String[] parts = rule.ruleValue().split("/", 2);
                     LocalDate min = LocalDate.parse(parts[0]);
                     LocalDate max = LocalDate.parse(parts[1]);
                     LocalDate actual = LocalDate.parse(text);
@@ -171,10 +186,10 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                     }
                 }
                 case allowed_values -> {
-                    Set<String> allowed = Arrays.stream(rule.getRuleValue().split(",")).map(String::trim)
+                    Set<String> allowed = Arrays.stream(rule.ruleValue().split(",")).map(String::trim)
                             .collect(Collectors.toSet());
                     if (!allowed.contains(text)) {
-                        return error(field, rule, "ALLOWED_VALUES", severity, "be one of: " + rule.getRuleValue());
+                        return error(field, rule, "ALLOWED_VALUES", severity, "be one of: " + rule.ruleValue());
                     }
                 }
             }
@@ -182,23 +197,35 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
             // Malformed input relative to the rule (e.g. non-numeric text
             // against min_value, an unparsable date) - a validation failure
             // in its own right, not a server error.
-            return error(field, rule, rule.getRuleType().name().toUpperCase(), severity, "be valid");
+            return error(field, rule, rule.ruleType().name().toUpperCase(), severity, "be valid");
         }
         return null;
     }
 
-    private ValidationError error(ResolvedField field, MetadataFieldValidation rule, String code, String severity,
+    private ValidationError error(ResolvedField field, CachedRule rule, String code, String severity,
                                    String requirement) {
-        String message = rule.getErrorMessage() != null
-                ? rule.getErrorMessage()
+        String message = rule.errorMessage() != null
+                ? rule.errorMessage()
                 : "Field '" + field.label() + "' must " + requirement + ".";
         return new ValidationError(field.fieldKey(), code, message, severity);
     }
 
-    private record CacheKey(UUID tenantId, UUID documentTypeId, int version) {
+    /**
+     * Plain, cache-safe projection of {@link MetadataFieldOption} - not the
+     * entity itself, which failed to serialize through the schema cache's
+     * Jackson mapper by default ({@code OffsetDateTime} fields like
+     * {@code createdAt} need the JSR-310 module, and an entity carries
+     * columns this cache has no use for anyway).
+     */
+    private record CachedOption(UUID optionId, String optionValue, String optionLabel, int displayOrder) {
+    }
+
+    /** Plain, cache-safe projection of {@link MetadataFieldValidation} - see {@link CachedOption}. */
+    private record CachedRule(UUID validationId, MetadataFieldValidation.RuleType ruleType, String ruleValue,
+                               String errorMessage, MetadataFieldValidation.Severity severity) {
     }
 
     private record ResolvedField(String fieldKey, String label, String dataType, boolean mandatory, boolean hidden,
-                                  List<MetadataFieldOption> activeOptions, List<MetadataFieldValidation> rules) {
+                                  List<CachedOption> activeOptions, List<CachedRule> rules) {
     }
 }

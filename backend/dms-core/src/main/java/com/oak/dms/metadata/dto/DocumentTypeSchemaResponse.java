@@ -23,7 +23,6 @@ public record DocumentTypeSchemaResponse(
             String helpText,
             String dataType,
             boolean mandatory,
-            boolean readonly,
             boolean hidden,
             int displayOrder,
             String fieldGroup,

@@ -9,7 +9,6 @@ public record DocumentTypeResponse(
         String typeCode,
         String typeName,
         String description,
-        String icon,
         int displayOrder,
         int currentSchemaVersion,
         UUID defaultRetentionPolicyId,

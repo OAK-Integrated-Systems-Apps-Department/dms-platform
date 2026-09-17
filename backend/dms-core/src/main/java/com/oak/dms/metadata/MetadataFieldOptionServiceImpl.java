@@ -1,6 +1,7 @@
 package com.oak.dms.metadata;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.CreateMetadataFieldOptionRequest;
 import com.oak.dms.metadata.dto.MetadataFieldOptionResponse;
 import com.oak.dms.metadata.dto.UpdateMetadataFieldOptionRequest;
@@ -30,6 +31,7 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
     private final MetadataFieldOptionRepository optionRepository;
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldOptionMapper optionMapper;
+    private final SchemaCacheService schemaCacheService;
 
     @Override
     public MetadataFieldOptionResponse createOption(UUID fieldId, CreateMetadataFieldOptionRequest request) {
@@ -42,12 +44,20 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
                 .parentOptionId(request.parentOptionId())
                 .optionValue(request.optionValue())
                 .optionLabel(request.optionLabel())
-                .displayOrder(request.displayOrder())
                 .status(MetadataFieldOption.OptionStatus.active)
                 .createdBy(TenantContext.getUserId())
                 .build();
 
+        List<MetadataFieldOption> siblings = optionRepository.findAllByFieldOrdered(fieldId, tenantId);
+        List<MetadataFieldOption> touchedSiblings = DisplayOrderNormalizer.renumber(
+                siblings, option, request.displayOrder(),
+                MetadataFieldOption::getDisplayOrder, MetadataFieldOption::setDisplayOrder);
+
         MetadataFieldOption saved = optionRepository.save(option);
+        if (!touchedSiblings.isEmpty()) {
+            optionRepository.saveAll(touchedSiblings);
+        }
+        schemaCacheService.evictTenant(tenantId);
         log.info("Created metadata field option {} for field {}", saved.getOptionId(), fieldId);
         return optionMapper.toResponse(saved);
     }
@@ -71,12 +81,22 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         option.setOptionValue(request.optionValue());
         option.setOptionLabel(request.optionLabel());
         option.setParentOptionId(request.parentOptionId());
-        option.setDisplayOrder(request.displayOrder());
         option.setStatus(MetadataFieldOption.OptionStatus.valueOf(request.status().name()));
         option.setUpdatedBy(TenantContext.getUserId());
         option.setUpdatedAt(OffsetDateTime.now());
 
+        List<MetadataFieldOption> siblings = optionRepository.findAllByFieldOrdered(fieldId, tenantId).stream()
+                .filter(o -> !o.getOptionId().equals(optionId))
+                .toList();
+        List<MetadataFieldOption> touchedSiblings = DisplayOrderNormalizer.renumber(
+                siblings, option, request.displayOrder(),
+                MetadataFieldOption::getDisplayOrder, MetadataFieldOption::setDisplayOrder);
+
         MetadataFieldOption saved = optionRepository.save(option);
+        if (!touchedSiblings.isEmpty()) {
+            optionRepository.saveAll(touchedSiblings);
+        }
+        schemaCacheService.evictTenant(tenantId);
         log.info("Updated metadata field option {}", saved.getOptionId());
         return optionMapper.toResponse(saved);
     }
@@ -92,6 +112,7 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         option.setUpdatedBy(TenantContext.getUserId());
         option.setUpdatedAt(OffsetDateTime.now());
         optionRepository.save(option);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field option {}", optionId);
     }
 

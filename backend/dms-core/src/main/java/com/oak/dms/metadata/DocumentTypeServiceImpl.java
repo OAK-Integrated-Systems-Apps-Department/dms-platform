@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -38,8 +39,6 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
                 .typeCode(request.typeCode())
                 .typeName(request.typeName())
                 .description(request.description())
-                .icon(request.icon())
-                .displayOrder(request.displayOrder())
                 .currentSchemaVersion(1)
                 .requiresWatermark(request.requiresWatermark())
                 .coeditingEnabled(request.coeditingEnabled())
@@ -47,7 +46,15 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
                 .createdBy(TenantContext.getUserId())
                 .build();
 
+        List<DocumentType> siblings = documentTypeRepository.findAllByTenantOrderedByDisplayOrder(tenantId);
+        List<DocumentType> touchedSiblings = DisplayOrderNormalizer.renumber(
+                siblings, documentType, request.displayOrder(),
+                DocumentType::getDisplayOrder, DocumentType::setDisplayOrder);
+
         DocumentType saved = documentTypeRepository.save(documentType);
+        if (!touchedSiblings.isEmpty()) {
+            documentTypeRepository.saveAll(touchedSiblings);
+        }
         log.info("Created document type {} ({}) in tenant {}", saved.getDocumentTypeId(), saved.getTypeCode(), tenantId);
         return documentTypeMapper.toResponse(saved);
     }
@@ -68,17 +75,26 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
     @Override
     public DocumentTypeResponse updateDocumentType(UUID documentTypeId, UpdateDocumentTypeRequest request) {
         DocumentType documentType = findOwnedByCallerTenant(documentTypeId);
+        UUID tenantId = TenantContext.getTenantId();
 
         documentType.setTypeName(request.typeName());
         documentType.setDescription(request.description());
-        documentType.setIcon(request.icon());
-        documentType.setDisplayOrder(request.displayOrder());
         documentType.setRequiresWatermark(request.requiresWatermark());
         documentType.setCoeditingEnabled(request.coeditingEnabled());
         documentType.setUpdatedBy(TenantContext.getUserId());
         documentType.setUpdatedAt(OffsetDateTime.now());
 
+        List<DocumentType> siblings = documentTypeRepository.findAllByTenantOrderedByDisplayOrder(tenantId).stream()
+                .filter(t -> !t.getDocumentTypeId().equals(documentTypeId))
+                .toList();
+        List<DocumentType> touchedSiblings = DisplayOrderNormalizer.renumber(
+                siblings, documentType, request.displayOrder(),
+                DocumentType::getDisplayOrder, DocumentType::setDisplayOrder);
+
         DocumentType saved = documentTypeRepository.save(documentType);
+        if (!touchedSiblings.isEmpty()) {
+            documentTypeRepository.saveAll(touchedSiblings);
+        }
         log.info("Updated document type {}", saved.getDocumentTypeId());
         return documentTypeMapper.toResponse(saved);
     }

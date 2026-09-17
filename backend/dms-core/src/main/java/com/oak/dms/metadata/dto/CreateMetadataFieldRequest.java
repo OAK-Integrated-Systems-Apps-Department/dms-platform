@@ -35,7 +35,6 @@ public record CreateMetadataFieldRequest(
 
         boolean systemField,
         boolean searchable,
-        boolean indexed,
         boolean ocrExtractable
 ) {
 }

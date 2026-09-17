@@ -54,6 +54,15 @@ public class MetadataFieldOption {
     @Builder.Default
     private int displayOrder = 0;
 
+    /**
+     * Read-only mirror of the generated column backing
+     * {@code uq_mfo_field_order} (V26) - collapses to null for soft-deleted
+     * rows so they never collide with a live row's display_order. Never set
+     * by application code.
+     */
+    @Column(name = "display_order_uniq_key", insertable = false, updatable = false)
+    private Integer displayOrderUniqKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default

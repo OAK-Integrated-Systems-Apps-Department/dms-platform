@@ -1,6 +1,8 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.common.exception.DuplicateDisplayOrderException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.DocumentTypeFieldMappingItem;
 import com.oak.dms.metadata.dto.DocumentTypeFieldResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
@@ -14,10 +16,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * See {@link DocumentTypeFieldService}. {@link #replaceMapping} is the only
@@ -36,6 +40,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
     private final MetadataFieldOptionRepository metadataFieldOptionRepository;
     private final MetadataFieldValidationRepository metadataFieldValidationRepository;
     private final DocumentTypeFieldMapper documentTypeFieldMapper;
+    private final SchemaCacheService schemaCacheService;
 
     @Override
     @Transactional(readOnly = true)
@@ -75,38 +80,54 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
                 .collect(Collectors.toMap(DocumentTypeField::getFieldId, m -> m));
 
         List<UUID> requestedFieldIds = request.fields().stream().map(DocumentTypeFieldMappingItem::fieldId).toList();
+
+        List<Integer> requestedOrders = request.fields().stream()
+                .map(DocumentTypeFieldMappingItem::displayOrder).toList();
+        if (requestedOrders.size() != requestedOrders.stream().distinct().count()) {
+            throw new DuplicateDisplayOrderException("Duplicate displayOrder values in the field mapping request");
+        }
+
         Map<UUID, MetadataField> fieldsById = metadataFieldRepository
                 .findAllByFieldIdInAndTenantIdAndDeletedFalse(requestedFieldIds, tenantId).stream()
                 .collect(Collectors.toMap(MetadataField::getFieldId, f -> f));
 
-        List<DocumentTypeField> newMapping = request.fields().stream().map(item -> {
-            MetadataField field = fieldsById.get(item.fieldId());
-            if (field == null) {
-                throw new ResourceNotFoundException("MetadataField", item.fieldId());
-            }
-            DocumentTypeField previous = oldMappingByField.get(item.fieldId());
-            boolean wasMandatoryBefore = previous != null && previous.isMandatory();
-            // MDTM workflow step 7 / alternate flow 3: a field that becomes
-            // newly mandatory on this publish is flagged so legacy documents
-            // can be flagged for optional backfill rather than rejected.
-            boolean requiresBackfill = item.mandatory() && !wasMandatoryBefore;
+        // Sort by the client's submitted displayOrder, then re-stamp as a
+        // canonical (index+1)*10 sequence so the stored values are always
+        // gap-free regardless of what the client sent - duplicates were
+        // already rejected above, so this sort defines a total order.
+        List<DocumentTypeFieldMappingItem> orderedItems = request.fields().stream()
+                .sorted(Comparator.comparingInt(DocumentTypeFieldMappingItem::displayOrder))
+                .toList();
 
-            return DocumentTypeField.builder()
-                    .tenantId(tenantId)
-                    .documentTypeId(documentTypeId)
-                    .fieldId(item.fieldId())
-                    .schemaVersion(newVersion)
-                    .status(DocumentTypeField.MappingStatus.active)
-                    .mandatory(item.mandatory())
-                    .readonly(item.readonly())
-                    .hidden(item.hidden())
-                    .requiresBackfill(requiresBackfill)
-                    .displayOrder(item.displayOrder())
-                    .fieldGroup(item.fieldGroup())
-                    .defaultValueOverride(item.defaultValueOverride())
-                    .createdBy(TenantContext.getUserId())
-                    .build();
-        }).toList();
+        List<DocumentTypeField> newMapping = IntStream.range(0, orderedItems.size())
+                .mapToObj(index -> {
+                    DocumentTypeFieldMappingItem item = orderedItems.get(index);
+                    MetadataField field = fieldsById.get(item.fieldId());
+                    if (field == null) {
+                        throw new ResourceNotFoundException("MetadataField", item.fieldId());
+                    }
+                    DocumentTypeField previous = oldMappingByField.get(item.fieldId());
+                    boolean wasMandatoryBefore = previous != null && previous.isMandatory();
+                    // MDTM workflow step 7 / alternate flow 3: a field that becomes
+                    // newly mandatory on this publish is flagged so legacy documents
+                    // can be flagged for optional backfill rather than rejected.
+                    boolean requiresBackfill = item.mandatory() && !wasMandatoryBefore;
+
+                    return DocumentTypeField.builder()
+                            .tenantId(tenantId)
+                            .documentTypeId(documentTypeId)
+                            .fieldId(item.fieldId())
+                            .schemaVersion(newVersion)
+                            .status(DocumentTypeField.MappingStatus.active)
+                            .mandatory(item.mandatory())
+                            .hidden(item.hidden())
+                            .requiresBackfill(requiresBackfill)
+                            .displayOrder((index + 1) * 10)
+                            .fieldGroup(item.fieldGroup())
+                            .defaultValueOverride(item.defaultValueOverride())
+                            .createdBy(TenantContext.getUserId())
+                            .build();
+                }).toList();
 
         OffsetDateTime now = OffsetDateTime.now();
         oldMapping.forEach(m -> {
@@ -122,6 +143,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
         documentType.setUpdatedBy(TenantContext.getUserId());
         documentType.setUpdatedAt(now);
         documentTypeRepository.save(documentType);
+        schemaCacheService.evictTenant(tenantId);
 
         log.info("Published schema version {} for document type {} ({} fields)",
                 newVersion, documentTypeId, savedNewMapping.size());
@@ -172,7 +194,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
 
         return new DocumentTypeSchemaResponse.SchemaField(
                 field.getFieldId(), field.getFieldKey(), field.getLabel(), field.getHelpText(), field.getDataType(),
-                mapping.isMandatory(), mapping.isReadonly(), mapping.isHidden(), mapping.getDisplayOrder(),
+                mapping.isMandatory(), mapping.isHidden(), mapping.getDisplayOrder(),
                 mapping.getFieldGroup(), effectiveDefault, options, validations);
     }
 

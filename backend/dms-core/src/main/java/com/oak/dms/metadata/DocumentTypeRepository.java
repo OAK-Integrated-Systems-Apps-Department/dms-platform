@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +20,14 @@ public interface DocumentTypeRepository extends JpaRepository<DocumentType, UUID
 
     @Query("select t from DocumentType t where t.tenantId = :tenantId and t.deleted = false")
     Page<DocumentType> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /**
+     * Unpaged, ordered sibling list used to re-stamp display_order across
+     * the whole tenant when a document type is created or moved - see
+     * {@link DisplayOrderNormalizer}.
+     */
+    @Query("select t from DocumentType t where t.tenantId = :tenantId and t.deleted = false order by t.displayOrder asc")
+    List<DocumentType> findAllByTenantOrderedByDisplayOrder(@Param("tenantId") UUID tenantId);
 
     /**
      * Row-locked lookup used by the field-mapping publish flow

@@ -1,6 +1,7 @@
 package com.oak.dms.metadata;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.CreateMetadataFieldValidationRequest;
 import com.oak.dms.metadata.dto.MetadataFieldValidationResponse;
 import com.oak.dms.metadata.dto.UpdateMetadataFieldValidationRequest;
@@ -23,6 +24,7 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
     private final MetadataFieldValidationRepository validationRepository;
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldValidationMapper validationMapper;
+    private final SchemaCacheService schemaCacheService;
 
     @Override
     public MetadataFieldValidationResponse createValidation(UUID fieldId, CreateMetadataFieldValidationRequest request) {
@@ -40,6 +42,7 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
                 .build();
 
         MetadataFieldValidation saved = validationRepository.save(validation);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Created metadata field validation {} for field {}", saved.getValidationId(), fieldId);
         return validationMapper.toResponse(saved);
     }
@@ -70,6 +73,7 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         validation.setUpdatedAt(OffsetDateTime.now());
 
         MetadataFieldValidation saved = validationRepository.save(validation);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Updated metadata field validation {}", saved.getValidationId());
         return validationMapper.toResponse(saved);
     }
@@ -85,6 +89,7 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         validation.setUpdatedBy(TenantContext.getUserId());
         validation.setUpdatedAt(OffsetDateTime.now());
         validationRepository.save(validation);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field validation {}", validationId);
     }
 

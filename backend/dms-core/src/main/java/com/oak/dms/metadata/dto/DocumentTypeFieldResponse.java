@@ -12,7 +12,6 @@ public record DocumentTypeFieldResponse(
         int schemaVersion,
         String status,
         boolean mandatory,
-        boolean readonly,
         boolean hidden,
         boolean requiresBackfill,
         int displayOrder,

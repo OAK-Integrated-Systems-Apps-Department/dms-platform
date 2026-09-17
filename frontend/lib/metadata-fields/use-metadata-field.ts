@@ -122,6 +122,7 @@ export function useMetadataField(fieldId: string) {
       }
     },
     addOption: (payload: CreateMetadataFieldOptionPayload) => addOptionMutation.mutate(payload),
+    addOptionPending: addOptionMutation.isPending,
     updateOption: (optionId: string, payload: UpdateMetadataFieldOptionPayload) =>
       updateOptionMutation.mutate({ optionId, payload }),
     removeOption: (optionId: string) => removeOptionMutation.mutate(optionId),

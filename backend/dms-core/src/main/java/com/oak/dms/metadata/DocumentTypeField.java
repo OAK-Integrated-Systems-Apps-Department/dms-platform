@@ -63,10 +63,6 @@ public class DocumentTypeField {
     @Builder.Default
     private boolean mandatory = false;
 
-    @Column(name = "is_readonly", nullable = false)
-    @Builder.Default
-    private boolean readonly = false;
-
     @Column(name = "is_hidden", nullable = false)
     @Builder.Default
     private boolean hidden = false;
@@ -83,6 +79,15 @@ public class DocumentTypeField {
     @Column(name = "display_order", nullable = false)
     @Builder.Default
     private int displayOrder = 0;
+
+    /**
+     * Read-only mirror of the generated column backing
+     * {@code uq_dtf_type_version_order} (V26) - collapses to null for
+     * soft-deleted rows so they never collide with a live row's
+     * display_order. Never set by application code.
+     */
+    @Column(name = "display_order_uniq_key", insertable = false, updatable = false)
+    private Integer displayOrderUniqKey;
 
     @Column(name = "field_group")
     private String fieldGroup;

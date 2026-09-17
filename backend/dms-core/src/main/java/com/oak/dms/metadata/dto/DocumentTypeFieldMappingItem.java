@@ -17,7 +17,6 @@ public record DocumentTypeFieldMappingItem(
         UUID fieldId,
 
         boolean mandatory,
-        boolean readonly,
         boolean hidden,
         int displayOrder,
 

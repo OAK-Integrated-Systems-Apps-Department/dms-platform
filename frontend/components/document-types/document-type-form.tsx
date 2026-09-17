@@ -30,7 +30,7 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
 
   const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<CreateDocumentTypeFormValues>({
     resolver: zodResolver(createDocumentTypeSchema),
-    defaultValues: { typeCode: "", typeName: "", description: "", icon: "", displayOrder: 0, requiresWatermark: false, coeditingEnabled: false },
+    defaultValues: { typeCode: "", typeName: "", description: "", displayOrder: 0, requiresWatermark: false, coeditingEnabled: false },
   })
 
   async function handleFormSubmit(values: CreateDocumentTypeFormValues) {
@@ -69,11 +69,6 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
       <div className="mb-5">
         <Label htmlFor="type-description">Description <span className="text-[var(--ink-faint)] normal-case">(optional)</span></Label>
         <Textarea id="type-description" {...register("description")} />
-      </div>
-
-      <div className="mb-6">
-        <Label htmlFor="type-icon">Icon <span className="text-[var(--ink-faint)] normal-case">(optional, e.g. file-signature)</span></Label>
-        <Input id="type-icon" {...register("icon")} />
       </div>
 
       <hr className="my-6 border-dashed border-border" />
@@ -146,11 +141,6 @@ export function UpdateDocumentTypeForm({ defaultValues, onSubmit }: EditFormProp
       <div className="mb-5">
         <Label htmlFor="type-description">Description <span className="text-[var(--ink-faint)] normal-case">(optional)</span></Label>
         <Textarea id="type-description" {...register("description")} />
-      </div>
-
-      <div className="mb-6">
-        <Label htmlFor="type-icon">Icon <span className="text-[var(--ink-faint)] normal-case">(optional)</span></Label>
-        <Input id="type-icon" {...register("icon")} />
       </div>
 
       <hr className="my-6 border-dashed border-border" />

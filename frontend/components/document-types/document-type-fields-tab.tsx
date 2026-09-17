@@ -15,7 +15,6 @@ interface Row {
   fieldKey: string
   label: string
   mandatory: boolean
-  readonly: boolean
   hidden: boolean
   displayOrder: number
   fieldGroup: string
@@ -39,7 +38,6 @@ function toRows(fields: DocumentTypeFieldResponseDto[]): Row[] {
       fieldKey: f.fieldKey,
       label: f.label,
       mandatory: f.mandatory,
-      readonly: f.readonly,
       hidden: f.hidden,
       displayOrder: f.displayOrder,
       fieldGroup: f.fieldGroup ?? "",
@@ -50,9 +48,9 @@ function toRows(fields: DocumentTypeFieldResponseDto[]): Row[] {
 
 /**
  * Document Type detail page's "Fields" tab (A6) — editing this one type's
- * mapping: mandatory toggle, read-only/hidden toggles, default override,
- * and up/down reordering (no drag-and-drop library exists in this
- * frontend — see the approved plan's call-out on that constraint).
+ * mapping: mandatory/hidden toggles, default override, and up/down
+ * reordering (no drag-and-drop library exists in this frontend — see the
+ * approved plan's call-out on that constraint).
  * "Publish" sends the whole row set to `PUT /document-types/{id}/fields`,
  * which the backend turns into a new schema version.
  */
@@ -106,7 +104,6 @@ export function DocumentTypeFieldsTab({ currentFields, availableFields, onPublis
         fieldKey: field.fieldKey,
         label: field.label,
         mandatory: false,
-        readonly: false,
         hidden: false,
         displayOrder: (prev.at(-1)?.displayOrder ?? 0) + 10,
         fieldGroup: "",
@@ -164,13 +161,6 @@ export function DocumentTypeFieldsTab({ currentFields, availableFields, onPublis
                 checked={row.mandatory}
                 disabled={!canUpdate}
                 onCheckedChange={(checked) => updateRow(row.fieldId, { mandatory: checked })}
-              />
-              <Checkbox
-                id={`readonly-${row.fieldId}`}
-                label="Read-only"
-                checked={row.readonly}
-                disabled={!canUpdate}
-                onCheckedChange={(checked) => updateRow(row.fieldId, { readonly: checked })}
               />
               <Checkbox
                 id={`hidden-${row.fieldId}`}

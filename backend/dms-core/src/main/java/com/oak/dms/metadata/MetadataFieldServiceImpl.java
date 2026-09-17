@@ -3,6 +3,7 @@ package com.oak.dms.metadata;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidMetadataFieldStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.CreateMetadataFieldRequest;
 import com.oak.dms.metadata.dto.MetadataFieldResponse;
 import com.oak.dms.metadata.dto.UpdateMetadataFieldRequest;
@@ -35,6 +36,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
     private final MetadataFieldRepository metadataFieldRepository;
     private final DocumentTypeFieldRepository documentTypeFieldRepository;
     private final MetadataFieldMapper metadataFieldMapper;
+    private final SchemaCacheService schemaCacheService;
 
     @Override
     public MetadataFieldResponse createField(CreateMetadataFieldRequest request) {
@@ -53,7 +55,6 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                 .defaultValue(request.defaultValue())
                 .systemField(request.systemField())
                 .searchable(request.searchable())
-                .indexed(request.indexed())
                 .ocrExtractable(request.ocrExtractable())
                 .status(MetadataField.FieldStatus.active)
                 .createdBy(TenantContext.getUserId())
@@ -92,12 +93,12 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         field.setHelpText(request.helpText());
         field.setDefaultValue(request.defaultValue());
         field.setSearchable(request.searchable());
-        field.setIndexed(request.indexed());
         field.setOcrExtractable(request.ocrExtractable());
         field.setUpdatedBy(TenantContext.getUserId());
         field.setUpdatedAt(OffsetDateTime.now());
 
         MetadataField saved = metadataFieldRepository.save(field);
+        schemaCacheService.evictTenant(TenantContext.getTenantId());
         log.info("Updated metadata field {}", saved.getFieldId());
         return metadataFieldMapper.toResponse(saved);
     }
@@ -136,6 +137,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         }
 
         metadataFieldRepository.delete(field);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field {}", fieldId);
     }
 
@@ -153,6 +155,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         field.setUpdatedBy(TenantContext.getUserId());
         field.setUpdatedAt(OffsetDateTime.now());
         MetadataField saved = metadataFieldRepository.save(field);
+        schemaCacheService.evictTenant(TenantContext.getTenantId());
         log.info("Set metadata field {} status to {}", fieldId, status);
         return metadataFieldMapper.toResponse(saved);
     }

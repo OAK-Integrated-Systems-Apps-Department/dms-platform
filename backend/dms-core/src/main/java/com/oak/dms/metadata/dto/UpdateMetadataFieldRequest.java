@@ -25,7 +25,6 @@ public record UpdateMetadataFieldRequest(
         String defaultValue,
 
         boolean searchable,
-        boolean indexed,
         boolean ocrExtractable
 ) {
 }

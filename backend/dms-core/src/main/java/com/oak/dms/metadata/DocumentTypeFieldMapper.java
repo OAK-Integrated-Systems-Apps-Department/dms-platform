@@ -25,7 +25,6 @@ public interface DocumentTypeFieldMapper {
                 mapping.getSchemaVersion(),
                 mapping.getStatus().name(),
                 mapping.isMandatory(),
-                mapping.isReadonly(),
                 mapping.isHidden(),
                 mapping.isRequiresBackfill(),
                 mapping.getDisplayOrder(),

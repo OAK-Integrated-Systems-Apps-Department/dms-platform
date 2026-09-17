@@ -12,7 +12,6 @@ export interface MetadataFieldResponseDto {
   defaultValue: string | null
   systemField: boolean
   searchable: boolean
-  indexed: boolean
   ocrExtractable: boolean
   status: "active" | "inactive" | "deprecated"
   createdAt: string
@@ -37,7 +36,6 @@ export interface CreateMetadataFieldPayload {
   defaultValue?: string
   systemField: boolean
   searchable: boolean
-  indexed: boolean
   ocrExtractable: boolean
 }
 
@@ -46,7 +44,6 @@ export interface UpdateMetadataFieldPayload {
   helpText?: string
   defaultValue?: string
   searchable: boolean
-  indexed: boolean
   ocrExtractable: boolean
 }
 

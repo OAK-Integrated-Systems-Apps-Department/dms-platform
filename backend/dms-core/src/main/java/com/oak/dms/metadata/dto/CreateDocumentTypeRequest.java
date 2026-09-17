@@ -18,9 +18,6 @@ public record CreateDocumentTypeRequest(
         @Size(max = 500)
         String description,
 
-        @Size(max = 50)
-        String icon,
-
         int displayOrder,
         boolean requiresWatermark,
         boolean coeditingEnabled

@@ -57,7 +57,6 @@ export default function EditDocumentTypePage() {
             defaultValues={{
               typeName: documentType.typeName,
               description: documentType.description ?? "",
-              icon: documentType.icon ?? "",
               displayOrder: documentType.displayOrder,
               requiresWatermark: documentType.requiresWatermark,
               coeditingEnabled: documentType.coeditingEnabled,

@@ -50,12 +50,18 @@ public class DocumentType {
     @Column(name = "description")
     private String description;
 
-    @Column(name = "icon")
-    private String icon;
-
     @Column(name = "display_order", nullable = false)
     @Builder.Default
     private int displayOrder = 0;
+
+    /**
+     * Read-only mirror of the generated column backing
+     * {@code uq_dt_tenant_order} (V26) - collapses to null for soft-deleted
+     * rows so they never collide with a live row's display_order. Never set
+     * by application code.
+     */
+    @Column(name = "display_order_uniq_key", insertable = false, updatable = false)
+    private Integer displayOrderUniqKey;
 
     @Column(name = "current_schema_version", nullable = false)
     @Builder.Default

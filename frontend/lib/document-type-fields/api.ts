@@ -11,7 +11,6 @@ export interface DocumentTypeFieldResponseDto {
   schemaVersion: number
   status: "active" | "archived"
   mandatory: boolean
-  readonly: boolean
   hidden: boolean
   requiresBackfill: boolean
   displayOrder: number
@@ -23,7 +22,6 @@ export interface DocumentTypeFieldResponseDto {
 export interface DocumentTypeFieldMappingItemPayload {
   fieldId: string
   mandatory: boolean
-  readonly: boolean
   hidden: boolean
   displayOrder: number
   fieldGroup?: string | null
@@ -43,7 +41,6 @@ export interface DocumentTypeSchemaResponseDto {
     helpText: string | null
     dataType: string
     mandatory: boolean
-    readonly: boolean
     hidden: boolean
     displayOrder: number
     fieldGroup: string | null

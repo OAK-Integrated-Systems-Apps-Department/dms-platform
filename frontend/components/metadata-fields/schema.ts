@@ -16,7 +16,6 @@ export const createMetadataFieldSchema = z.object({
   defaultValue: z.string().trim().max(500).optional().or(z.literal("")),
   systemField: z.boolean(),
   searchable: z.boolean(),
-  indexed: z.boolean(),
   ocrExtractable: z.boolean(),
 })
 export type CreateMetadataFieldFormValues = z.infer<typeof createMetadataFieldSchema>
@@ -27,7 +26,6 @@ export const updateMetadataFieldSchema = z.object({
   helpText: z.string().trim().max(500, "Keep help text under 500 characters").optional().or(z.literal("")),
   defaultValue: z.string().trim().max(500).optional().or(z.literal("")),
   searchable: z.boolean(),
-  indexed: z.boolean(),
   ocrExtractable: z.boolean(),
 })
 export type UpdateMetadataFieldFormValues = z.infer<typeof updateMetadataFieldSchema>

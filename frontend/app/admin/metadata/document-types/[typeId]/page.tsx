@@ -95,7 +95,6 @@ export default function DocumentTypeDetailPage() {
             <div className="grid max-w-[680px] grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
               <DetailRow label="Type Code" value={documentType.typeCode} mono />
               <DetailRow label="Display Order" value={String(documentType.displayOrder)} />
-              <DetailRow label="Icon" value={documentType.icon || "—"} />
               <DetailRow label="Requires Watermark" value={documentType.requiresWatermark ? "Yes" : "No"} />
               <DetailRow label="Co-editing Enabled" value={documentType.coeditingEnabled ? "Yes" : "No"} />
               <DetailRow label="Schema Version" value={`v${documentType.currentSchemaVersion}`} />
@@ -110,7 +109,6 @@ export default function DocumentTypeDetailPage() {
                   rows.map((row, index) => ({
                     fieldId: row.fieldId,
                     mandatory: row.mandatory,
-                    readonly: row.readonly,
                     hidden: row.hidden,
                     displayOrder: (index + 1) * 10,
                     fieldGroup: row.fieldGroup || null,

@@ -25,7 +25,6 @@ export default function AddDocumentTypePage() {
         typeCode: values.typeCode,
         typeName: values.typeName,
         description: values.description || undefined,
-        icon: values.icon || undefined,
         displayOrder: values.displayOrder,
         requiresWatermark: values.requiresWatermark,
         coeditingEnabled: values.coeditingEnabled,

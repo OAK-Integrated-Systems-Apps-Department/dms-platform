@@ -21,7 +21,7 @@ export default function EditMetadataFieldPage() {
   const {
     field, loading, notFound: fieldNotFound,
     options, validations,
-    updateField, addOption, updateOption, removeOption, addValidation, updateValidation, removeValidation,
+    updateField, addOption, addOptionPending, updateOption, removeOption, addValidation, updateValidation, removeValidation,
   } = useMetadataField(params.fieldId)
 
   usePageTitle(field ? `Edit ${field.label}` : "Edit Metadata Field")
@@ -60,7 +60,6 @@ export default function EditMetadataFieldPage() {
                 helpText: field.helpText ?? "",
                 defaultValue: field.defaultValue ?? "",
                 searchable: field.searchable,
-                indexed: field.indexed,
                 ocrExtractable: field.ocrExtractable,
               }}
               onSubmit={updateField}
@@ -69,7 +68,14 @@ export default function EditMetadataFieldPage() {
             {isOptionBacked && (
               <section className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
                 <h2 className="mb-4 font-heading text-[16px] font-semibold">Options</h2>
-                <FieldOptionEditor fieldId={field.fieldId} options={options} onAdd={addOption} onUpdate={updateOption} onRemove={removeOption} />
+                <FieldOptionEditor
+                  fieldId={field.fieldId}
+                  options={options}
+                  onAdd={addOption}
+                  onUpdate={updateOption}
+                  onRemove={removeOption}
+                  adding={addOptionPending}
+                />
               </section>
             )}
 

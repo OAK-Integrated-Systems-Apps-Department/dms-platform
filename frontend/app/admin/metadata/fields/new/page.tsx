@@ -29,7 +29,6 @@ export default function AddMetadataFieldPage() {
         defaultValue: values.defaultValue || undefined,
         systemField: values.systemField,
         searchable: values.searchable,
-        indexed: values.indexed,
         ocrExtractable: values.ocrExtractable,
       })
       queryClient.invalidateQueries({ queryKey: ["metadata-fields"] })

@@ -131,7 +131,13 @@ export function DocumentTypeFieldMatrix({ canUpdate }: { canUpdate: boolean }) {
         mapping.delete(fieldId)
       } else {
         const existing = mapping.get(fieldId)
-        mapping.set(fieldId, { mandatory: next === "mandatory", displayOrder: existing?.displayOrder ?? (mapping.size + 1) * 10 })
+        // Placeholder only — handleSave() re-stamps every row's
+        // displayOrder as a gap-free (index+1)*10 sequence right before
+        // sending, so a collision here (e.g. after a field was removed and
+        // re-added, leaving gaps this count-based value could land on)
+        // never reaches the API.
+        const maxExisting = Math.max(0, ...[...mapping.values()].map((v) => v.displayOrder))
+        mapping.set(fieldId, { mandatory: next === "mandatory", displayOrder: existing?.displayOrder ?? maxExisting + 10 })
       }
       return { ...prev, [typeId]: mapping }
     })
@@ -142,13 +148,18 @@ export function DocumentTypeFieldMatrix({ canUpdate }: { canUpdate: boolean }) {
     const results = await Promise.allSettled(
       changedTypeIds.map((typeId) => {
         const mapping = local[typeId]
-        const payload: DocumentTypeFieldMappingItemPayload[] = [...mapping.entries()].map(([fieldId, entry]) => ({
-          fieldId,
-          mandatory: entry.mandatory,
-          readonly: false,
-          hidden: false,
-          displayOrder: entry.displayOrder,
-        }))
+        // Full recompute from scratch, sorted by the current (possibly
+        // gappy) displayOrder — the same safe pattern document-type-fields-tab.tsx
+        // uses on publish — so this never sends a duplicate displayOrder
+        // regardless of how toggleCell arrived at its placeholder values.
+        const payload: DocumentTypeFieldMappingItemPayload[] = [...mapping.entries()]
+          .sort(([, a], [, b]) => a.displayOrder - b.displayOrder)
+          .map(([fieldId, entry], index) => ({
+            fieldId,
+            mandatory: entry.mandatory,
+            hidden: false,
+            displayOrder: (index + 1) * 10,
+          }))
         return replaceDocumentTypeFields(typeId, payload)
       })
     )

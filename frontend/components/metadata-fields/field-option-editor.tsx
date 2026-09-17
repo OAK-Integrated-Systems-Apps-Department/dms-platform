@@ -18,6 +18,8 @@ interface FieldOptionEditorProps {
     payload: { optionValue: string; optionLabel: string; parentOptionId: string | null; displayOrder: number; status: "active" | "inactive" }
   ) => void
   onRemove: (optionId: string) => void
+  /** True while an add-option mutation is in flight — disables the Add button so a rapid double-click can't fire two creates that compute the same displayOrder from the same stale list. */
+  adding: boolean
 }
 
 /**
@@ -27,7 +29,7 @@ interface FieldOptionEditorProps {
  * other options). A field with zero active options here is exactly what
  * triggers MDTM alternate flow 1 at validation time.
  */
-export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove }: FieldOptionEditorProps) {
+export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove, adding }: FieldOptionEditorProps) {
   const sorted = [...options].sort((a, b) => a.displayOrder - b.displayOrder)
 
   const [newValue, setNewValue] = useState("")
@@ -35,7 +37,7 @@ export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove }: FieldO
   const [newParent, setNewParent] = useState("")
 
   function handleAdd() {
-    if (!newValue.trim() || !newLabel.trim()) return
+    if (!newValue.trim() || !newLabel.trim() || adding) return
     onAdd({
       optionValue: newValue.trim(),
       optionLabel: newLabel.trim(),
@@ -92,7 +94,8 @@ export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove }: FieldO
         <button
           type="button"
           onClick={handleAdd}
-          className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground"
+          disabled={adding}
+          className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus size={14} />
           Add Option

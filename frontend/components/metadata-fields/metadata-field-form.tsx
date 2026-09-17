@@ -20,9 +20,8 @@ import {
 } from "./schema"
 import { DATA_TYPES, DATA_TYPE_LABELS } from "./types"
 
-const FLAG_FIELDS: { name: "searchable" | "indexed" | "ocrExtractable"; label: string; hint: string }[] = [
+const FLAG_FIELDS: { name: "searchable" | "ocrExtractable"; label: string; hint: string }[] = [
   { name: "searchable", label: "Searchable", hint: "Included in full-text/metadata search results" },
-  { name: "indexed", label: "Indexed", hint: "Backed by a DB index for fast filtering" },
   { name: "ocrExtractable", label: "OCR Extractable", hint: "Can be auto-populated from OCR text" },
 ]
 
@@ -50,7 +49,6 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
       defaultValue: "",
       systemField: false,
       searchable: true,
-      indexed: false,
       ocrExtractable: false,
     },
   })

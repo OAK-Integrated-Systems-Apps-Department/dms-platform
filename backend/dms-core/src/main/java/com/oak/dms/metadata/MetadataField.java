@@ -79,10 +79,6 @@ public class MetadataField {
     @Builder.Default
     private boolean searchable = true;
 
-    @Column(name = "is_indexed", nullable = false)
-    @Builder.Default
-    private boolean indexed = false;
-
     @Column(name = "is_ocr_extractable", nullable = false)
     @Builder.Default
     private boolean ocrExtractable = false;

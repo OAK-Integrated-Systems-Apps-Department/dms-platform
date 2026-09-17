@@ -8,7 +8,6 @@ export interface DocumentTypeResponseDto {
   typeCode: string
   typeName: string
   description: string | null
-  icon: string | null
   displayOrder: number
   currentSchemaVersion: number
   defaultRetentionPolicyId: string | null
@@ -33,7 +32,6 @@ export interface CreateDocumentTypePayload {
   typeCode: string
   typeName: string
   description?: string
-  icon?: string
   displayOrder: number
   requiresWatermark: boolean
   coeditingEnabled: boolean
@@ -42,7 +40,6 @@ export interface CreateDocumentTypePayload {
 export interface UpdateDocumentTypePayload {
   typeName: string
   description?: string
-  icon?: string
   displayOrder: number
   requiresWatermark: boolean
   coeditingEnabled: boolean

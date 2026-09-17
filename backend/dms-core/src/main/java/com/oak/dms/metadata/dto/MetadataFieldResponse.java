@@ -13,7 +13,6 @@ public record MetadataFieldResponse(
         String defaultValue,
         boolean systemField,
         boolean searchable,
-        boolean indexed,
         boolean ocrExtractable,
         String status,
         OffsetDateTime createdAt,
