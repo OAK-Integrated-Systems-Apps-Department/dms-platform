@@ -1,9 +1,13 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.audit.AuditAuthMethod;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.InvalidCredentialsException;
 import com.oak.dms.common.exception.SessionExpiredException;
 import com.oak.dms.security.auth.dto.KeycloakTokenResponse;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
+import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,6 +41,7 @@ public class AuthService {
     private final Keycloak keycloakAdminClient;
     private final KeycloakAdminProperties adminProperties;
     private final UserRepository userRepository;
+    private final AuditService auditService;
 
     /**
      * Whether {@code username} needs an OTP code to sign in. Returns false
@@ -77,38 +82,77 @@ public class AuthService {
     public void login(String username, String password, String totp, boolean rememberMe,
                        HttpServletResponse response) {
         KeycloakAuthClient.GrantResult result = keycloakAuthClient.passwordGrant(username, password, totp);
-        if (result instanceof KeycloakAuthClient.GrantResult.Failure) {
+        if (result instanceof KeycloakAuthClient.GrantResult.Failure failure) {
+            // No actor/tenant is resolved here on purpose: a failed grant
+            // must never be used to confirm whether `username` belongs to
+            // a real account (see this method's own doc comment) - the
+            // resourceName snapshot below is for internal investigation
+            // only, never returned to the caller. actor_id/tenant_id both
+            // fall through to AuditService's SYSTEM/null defaults.
+            auditService.event("LOGIN_FAILURE")
+                    .objectType("USER")
+                    .resourceName(username)
+                    .outcome(AuditOutcome.FAILURE)
+                    .failureReason(failure.keycloakError())
+                    .log();
             throw new InvalidCredentialsException();
         }
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
         cookieService.writeSessionCookies(response, tokens, rememberMe);
         log.info("Successful login for user '{}'", username);
-        recordLastLogin(username);
+        User user = recordLastLogin(username);
+
+        // TenantContext isn't bound yet at this point in the request (the
+        // session cookies were only just written above) - actor/tenant
+        // must be passed explicitly rather than relying on AuditService's
+        // TenantContext-based defaults.
+        auditService.event("LOGIN_SUCCESS")
+                .tenantId(user != null ? user.getTenantId() : null)
+                .actor(user != null ? user.getUserId() : null, user != null ? user.getDisplayName() : username)
+                .objectType("USER")
+                // No objectId: a login event has no single associated
+                // object distinct from the actor itself (see the
+                // object_id note in docs/audit_events_schema_spec.md -
+                // "Null for events with no single object (e.g. login)").
+                .resourceName(username)
+                .outcome(AuditOutcome.SUCCESS)
+                // Reflects the factor Keycloak actually verified: a totp
+                // value only reaches this point (a successful grant) if
+                // Keycloak accepted it, never merely because one was
+                // submitted alongside a wrong/unnecessary code.
+                .authMethod(totp != null && !totp.isBlank() ? AuditAuthMethod.MFA : AuditAuthMethod.PASSWORD)
+                .log();
     }
 
     /**
-     * Best-effort: resolves {@code username} back to its local {@link com.oak.dms.user.User}
+     * Best-effort: resolves {@code username} back to its local {@link User}
      * row (same Admin API username/email search {@link #isMfaRequired} already
      * uses) and stamps {@code last_login_at}. Deliberately never allowed to
      * fail the login itself - a lookup hiccup here shouldn't turn an
      * already-successful Keycloak authentication into a 500 for the person
      * signing in. Only called from {@link #login}, not {@link #refresh} -
      * silently renewing an existing session isn't a new login.
+     *
+     * Returns the resolved (and now-updated) row, or null if it couldn't be
+     * resolved - {@link #login} uses this same result to populate the
+     * LOGIN_SUCCESS audit event's actor/tenant, rather than doing a second
+     * lookup.
      */
-    private void recordLastLogin(String username) {
+    private User recordLastLogin(String username) {
         try {
             List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
                     .users().search(username, true);
             if (matches.isEmpty()) {
-                return;
+                return null;
             }
             UUID keycloakId = UUID.fromString(matches.get(0).getId());
-            userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(user -> {
+            return userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).map(user -> {
                 user.setLastLoginAt(OffsetDateTime.now());
-                userRepository.save(user);
-            });
+                return userRepository.save(user);
+            }).orElse(null);
         } catch (Exception e) {
             log.warn("Could not record last login for user '{}': {}", username, e.getMessage());
+            return null;
         }
     }
 
@@ -120,6 +164,12 @@ public class AuthService {
      * the browser only sends a persistent refresh cookie back at all if
      * the original login was rememberMe=true, so mirroring "was a refresh
      * cookie present" is equivalent without needing separate state.
+     *
+     * Deliberately not audited: same reasoning as {@link #recordLastLogin}
+     * not being called from here - silently renewing an already-valid
+     * session isn't a security-relevant event on its own, and it would
+     * dominate the audit trail with noise (every access-token expiry, for
+     * every signed-in user, on a timer) with no actionable signal behind it.
      */
     public void refresh(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = readCookie(request, AuthCookieService.REFRESH_TOKEN_COOKIE);
@@ -142,6 +192,16 @@ public class AuthService {
             keycloakAuthClient.revokeRefreshToken(refreshToken);
         }
         cookieService.clearSessionCookies(response);
+
+        // TenantContext may or may not be bound here, depending on whether
+        // the caller's access token was still valid at logout time -
+        // AuditService's own TenantContext-unbound fallback (SYSTEM actor,
+        // null tenant) handles the case where it isn't, so no explicit
+        // actor/tenant override is needed either way.
+        auditService.event("LOGOUT")
+                .objectType("USER")
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private String readCookie(HttpServletRequest request, String name) {

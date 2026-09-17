@@ -121,6 +121,14 @@ app:
   password-reset:
     token-ttl-minutes: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:30}
     mail-from: ${PASSWORD_RESET_MAIL_FROM:no-reply@oakdms.local}
+  audit:
+    correlation:
+      # Signs the X-Correlation-Id continuation token (see
+      # AuditCorrelationTokenCodec) so a caller can only continue a
+      # correlation this server itself issued to it, never an arbitrary
+      # value of its own choosing. MUST be overridden with a real secret
+      # in any real deployment - the default here is for local dev only.
+      secret: ${AUDIT_CORRELATION_SECRET:changeme-audit-correlation-secret-local-dev-only}
 
 dms:
   outbox:

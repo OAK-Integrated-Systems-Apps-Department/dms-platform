@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { usePageTitle } from "@/lib/use-page-title"
 import { SearchInput } from "@/components/ui/search-input"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { LoadingState } from "@/components/ui/loading-state"
 import { RoleFilterSelect } from "@/components/users/role-filter-select"
@@ -201,27 +202,21 @@ export default function UserListPage() {
           />
         )}
 
-        <div className="relative w-[150px]">
-          <select
-            value={statusFilter}
-            onChange={(event) =>
-              handleFilterChange(() =>
-                setStatusFilter(
-                  event.target.value as "all" | "Active" | "Inactive"
-                )
-              )
-            }
-            className="h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
-          >
-            <option value="all">All statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
-          />
-        </div>
+        <SearchableSelect
+          className="w-[150px]"
+          allLabel="All statuses"
+          searchable={false}
+          selected={statusFilter === "all" ? "" : statusFilter}
+          onChange={(value) =>
+            handleFilterChange(() =>
+              setStatusFilter((value || "all") as "all" | "Active" | "Inactive")
+            )
+          }
+          options={[
+            { value: "Active", label: "Active" },
+            { value: "Inactive", label: "Inactive" },
+          ]}
+        />
 
         {canCreateUser && (
           <Link

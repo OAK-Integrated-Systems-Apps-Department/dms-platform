@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { UserCheck, UserX, type LucideIcon } from "lucide-react"
 
 import {
@@ -10,15 +11,25 @@ import {
   AlertDialogPortal,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 import type { UserRecord } from "./types"
+
+/** Matches AuditReasonSanitizer.MAX_LENGTH on the backend — kept in sync manually since there's no shared constant across the boundary. */
+const REASON_MAX_LENGTH = 1000
 
 interface UserStatusDialogProps {
   user: UserRecord
   open: boolean
   onOpenChange: (open: boolean) => void
-  onConfirm: () => void
+  /**
+   * `reason` is only ever passed when deactivating - the backend requires
+   * a non-blank one for USER_DEACTIVATED (see AuditActionCatalog) but has
+   * no such requirement for reactivating.
+   */
+  onConfirm: (reason?: string) => void
 }
 
 /**
@@ -104,6 +115,21 @@ export function UserStatusDialog({
   const variant = STATUS_DIALOG_CONFIG[isDeactivating ? "deactivate" : "activate"]
   const Icon = variant.icon
 
+  const [reason, setReason] = useState("")
+  // Clears whenever the dialog opens, not just on unmount - it's kept
+  // mounted (see the caller's `pendingUser`/`open` handling) so a stale
+  // reason from a previous Deactivate wouldn't otherwise be cleared before
+  // the next one opens.
+  useEffect(() => {
+    if (open) setReason("")
+  }, [open])
+
+  const trimmedReason = reason.trim()
+  // Only the deactivate direction requires a reason (see
+  // AuditActionCatalog's USER_DEACTIVATED entry) - reactivating has no
+  // such requirement.
+  const reasonMissing = isDeactivating && trimmedReason.length === 0
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
@@ -120,14 +146,31 @@ export function UserStatusDialog({
           <AlertDialogDescription>
             {variant.description(user)}
           </AlertDialogDescription>
+
+          {isDeactivating && (
+            <div className="mb-5 text-left">
+              <Label htmlFor="deactivate-reason">Reason for deactivation</Label>
+              <Textarea
+                id="deactivate-reason"
+                rows={3}
+                maxLength={REASON_MAX_LENGTH}
+                placeholder="e.g. Employee left the company, policy violation, suspicious activity…"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          )}
+
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
-              onClick={onConfirm}
+              onClick={() => onConfirm(isDeactivating ? trimmedReason : undefined)}
+              disabled={reasonMissing}
               className={cn(
                 "rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
+                "disabled:cursor-not-allowed disabled:opacity-50",
                 variant.confirmClassName
               )}
             >

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { AlertTriangle, Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
+import { Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { OtpInput } from "@/components/auth/otp-input"
@@ -163,11 +163,6 @@ export function LoginPageContent() {
     mutation.reset()
   }
 
-  // On the OTP step, mfaRequired is always true again (Keycloak still
-  // needs a code), so the only real failure there is a wrong/expired
-  // code — mutation.data.error covers both steps' generic message.
-  const errorMessage = mutation.data?.ok === false && !mutation.data.mfaRequired ? mutation.data.error : null
-
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
       <div
@@ -197,13 +192,6 @@ export function LoginPageContent() {
         <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
           Sign in to your account
         </h1>
-
-        {errorMessage && (
-          <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
-            <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-            {errorMessage}
-          </div>
-        )}
 
             <form onSubmit={handleSubmit(handleCredentialsSubmit)} noValidate>
           <div className="mb-[17px]">
@@ -291,13 +279,6 @@ export function LoginPageContent() {
             <p className="mb-[26px] text-[13.5px] leading-[1.5] text-muted-foreground">
               Enter the code from your authenticator app
             </p>
-
-            {errorMessage && (
-              <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-left text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
-                <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-                {errorMessage}
-              </div>
-            )}
 
             <form onSubmit={handleOtpSubmit}>
               <OtpInput value={code} onChange={setCode} disabled={mutation.isPending} />

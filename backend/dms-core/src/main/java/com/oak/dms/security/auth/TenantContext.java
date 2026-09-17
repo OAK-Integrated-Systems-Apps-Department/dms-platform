@@ -13,13 +13,24 @@ public final class TenantContext {
 
     private static final ThreadLocal<UUID> CURRENT_TENANT = new ThreadLocal<>();
     private static final ThreadLocal<UUID> CURRENT_USER = new ThreadLocal<>();
+    private static final ThreadLocal<String> CURRENT_USER_DISPLAY_NAME = new ThreadLocal<>();
 
     private TenantContext() {
     }
 
     public static void set(UUID tenantId, UUID userId) {
+        set(tenantId, userId, null);
+    }
+
+    /**
+     * displayName is a snapshot for the current request only (e.g. for
+     * AuditService's actor_display_name) - it is never itself the source
+     * of truth for a user's name.
+     */
+    public static void set(UUID tenantId, UUID userId, String displayName) {
         CURRENT_TENANT.set(tenantId);
         CURRENT_USER.set(userId);
+        CURRENT_USER_DISPLAY_NAME.set(displayName);
     }
 
     public static UUID getTenantId() {
@@ -38,8 +49,14 @@ public final class TenantContext {
         return userId;
     }
 
+    /** Null if unset, or if the current user simply has no display name recorded - never throws. */
+    public static String getDisplayNameOrNull() {
+        return CURRENT_USER_DISPLAY_NAME.get();
+    }
+
     public static void clear() {
         CURRENT_TENANT.remove();
         CURRENT_USER.remove();
+        CURRENT_USER_DISPLAY_NAME.remove();
     }
 }

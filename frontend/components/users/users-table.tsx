@@ -17,7 +17,7 @@ import type { UserRecord } from "./types"
 
 interface UsersTableProps {
   users: UserRecord[]
-  onToggleStatus: (id: string) => void
+  onToggleStatus: (id: string, reason?: string) => void
   onResetPassword: (id: string) => void
   onDelete: (id: string) => void
   onView: (user: UserRecord) => void
@@ -412,8 +412,8 @@ export function UsersTable({
           onOpenChange={(open) => {
             if (!open) setPendingUser(null)
           }}
-          onConfirm={() => {
-            onToggleStatus(pendingUser.id)
+          onConfirm={(reason) => {
+            onToggleStatus(pendingUser.id, reason)
             setPendingUser(null)
           }}
         />

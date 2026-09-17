@@ -39,7 +39,6 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
   const router = useRouter()
   const modules = usePermissionsStore((state) => state.modules)
   const actions = usePermissionsStore((state) => state.actions)
-  const catalogLoaded = usePermissionsStore((state) => state.catalogLoaded)
   const fetchCatalog = usePermissionsStore((state) => state.fetchCatalog)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -52,7 +51,9 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
   const isSharedPermission = mode === "edit" && Boolean(permission?.shared)
 
   useEffect(() => {
-    if (!catalogLoaded) fetchCatalog()
+    // Same "not loaded yet" check as use-permission-catalog.ts - this
+    // store has no dedicated loaded flag, just the arrays themselves.
+    if (modules.length === 0) fetchCatalog()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -86,7 +87,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
     if (error) setSubmitError(error)
   }
 
-  const catalogLoading = !catalogLoaded && modules.length === 0
+  const catalogLoading = modules.length === 0
 
   return (
     <form

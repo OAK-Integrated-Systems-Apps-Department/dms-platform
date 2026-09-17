@@ -111,10 +111,20 @@ export async function fetchUsersPage(
   )
 }
 
-export async function deactivateUser(userId: string): Promise<void> {
+/**
+ * `reason` is mandatory server-side (UserController#deactivateUser requires
+ * a non-blank `DeactivateUserRequest.reason` — see AuditActionCatalog's
+ * USER_DEACTIVATED entry) and is recorded on the resulting audit event, not
+ * stored on the user profile itself.
+ */
+export async function deactivateUser(userId: string, reason: string): Promise<void> {
   await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}`,
-    { method: "DELETE" },
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
     "Could not deactivate this user."
   )
 }

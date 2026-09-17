@@ -39,4 +39,11 @@ export const PermissionCodes = {
   // Legacy - Permission Catalog screens only (PermissionController), see doc comment above.
   LEGACY_ROLE_VIEW: "role.view",
   LEGACY_ROLE_MANAGE: "role.manage",
+
+  // Audit Events (ABDR - Comprehensive Audit Management)
+  ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
+  // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a
+  // stricter capability than viewing it on-screen, gated by its own
+  // seeded permission code.
+  ABDR_EXPORT_AUDIT_REPORTS: "abdr.export-audit-reports",
 } as const

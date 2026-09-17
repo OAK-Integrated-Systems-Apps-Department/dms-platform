@@ -11,12 +11,15 @@ import com.oak.dms.security.rbac.RolePermissionRepository;
 import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.RolePermissionService;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -38,6 +41,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final RolePermissionMapper rolePermissionMapper;
+    private final AuditService auditService;
 
     @Override
     public RolePermissionResponse grantPermission(UUID roleId, GrantPermissionRequest request) {
@@ -67,6 +71,19 @@ public class RolePermissionServiceImpl implements RolePermissionService {
 
         RolePermission saved = rolePermissionRepository.save(grant);
         log.info("Granted permission {} to role {}", permission.getPermissionCode(), roleId);
+
+        auditService.event("ROLE_PERMISSION_ASSIGNED")
+                .objectType("ROLE_PERMISSION")
+                .objectId(saved.getRolePermissionId())
+                .resourceName(permission.getPermissionCode())
+                .permissionCode(permission.getPermissionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "roleId", roleId,
+                        "permissionCode", permission.getPermissionCode(),
+                        "resourceScope", request.resourceScope() == null ? "" : request.resourceScope()))
+                .log();
+
         return rolePermissionMapper.toResponse(saved, permission.getPermissionCode());
     }
 
@@ -94,8 +111,24 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             throw new ResourceNotFoundException("RolePermission", rolePermissionId);
         }
 
+        String permissionCode = permissionRepository.findById(grant.getPermissionId())
+                .map(Permission::getPermissionCode)
+                .orElse(null);
+
         rolePermissionRepository.delete(grant);
         log.info("Revoked permission grant {} from role {}", rolePermissionId, roleId);
+
+        auditService.event("ROLE_PERMISSION_REVOKED")
+                .objectType("ROLE_PERMISSION")
+                .objectId(rolePermissionId)
+                .resourceName(permissionCode)
+                .permissionCode(permissionCode)
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of(
+                        "roleId", roleId,
+                        "permissionCode", permissionCode == null ? "" : permissionCode,
+                        "resourceScope", grant.getResourceScope() == null ? "" : grant.getResourceScope()))
+                .log();
     }
 
     private Role requireOwnedRole(UUID roleId) {

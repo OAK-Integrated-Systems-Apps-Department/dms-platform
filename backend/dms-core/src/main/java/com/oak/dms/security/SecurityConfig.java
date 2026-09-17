@@ -1,5 +1,6 @@
 package com.oak.dms.security;
 
+import com.oak.dms.audit.AuditRequestContextFilter;
 import com.oak.dms.security.auth.CookieBearerTokenResolver;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
@@ -41,6 +42,7 @@ public class SecurityConfig {
 
     private final JwtAuthConverter jwtAuthConverter;
     private final TenantContextFilter tenantContextFilter;
+    private final AuditRequestContextFilter auditRequestContextFilter;
     private final CookieBearerTokenResolver cookieBearerTokenResolver;
 
     /**
@@ -112,11 +114,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole("PLATFORM_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/audit-events", "/api/v1/platform/audit-events/*")
+                        .hasRole("PLATFORM_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(cookieBearerTokenResolver)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))
-                .addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class);
+                .addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(auditRequestContextFilter, TenantContextFilter.class);
 
         return http.build();
     }
@@ -127,6 +132,12 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // A custom response header is invisible to frontend JS on a
+        // cross-origin request unless explicitly exposed - see
+        // AuditRequestContextFilter, which sets this on every
+        // authenticated response so the frontend can thread a related
+        // sequence's correlation_id into a subsequent call.
+        configuration.setExposedHeaders(List.of("X-Correlation-Id"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

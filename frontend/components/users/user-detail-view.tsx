@@ -13,7 +13,7 @@ import type { UserRecord } from "./types"
 
 interface UserDetailViewProps {
   user: UserRecord
-  onToggleStatus: () => void
+  onToggleStatus: (reason?: string) => void
   onResetPassword: () => void
   /** Whether the signed-in user may reset this user's password — requires `otua.manage-users.reset-password` (see `usePermissions`). */
   canResetPassword: boolean
@@ -339,8 +339,8 @@ export function UserDetailView({
         user={user}
         open={statusDialogOpen}
         onOpenChange={setStatusDialogOpen}
-        onConfirm={() => {
-          onToggleStatus()
+        onConfirm={(reason) => {
+          onToggleStatus(reason)
           setStatusDialogOpen(false)
         }}
       />

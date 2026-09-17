@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, ChevronDown, Search } from "lucide-react"
+import { Check, ChevronDown, Search, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -101,10 +101,22 @@ export function RoleFilterSelect({
         )}
       >
         <span className="truncate">{triggerLabel}</span>
-        <ChevronDown
-          size={14}
-          className="pointer-events-none ml-2 shrink-0 text-[var(--ink-faint)]"
-        />
+        <span className="ml-2 flex shrink-0 items-center gap-1">
+          {selected.length > 0 && (
+            <span
+              role="button"
+              aria-label="Clear all roles"
+              onClick={(e) => {
+                e.stopPropagation()
+                onChange([])
+              }}
+              className="flex size-4 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
+            >
+              <X size={12} />
+            </span>
+          )}
+          <ChevronDown size={14} className="pointer-events-none text-[var(--ink-faint)]" />
+        </span>
       </button>
 
       {open && (

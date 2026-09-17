@@ -53,4 +53,12 @@ public final class PermissionCodes {
     public static final String ASM_ROLES_DELETE_ROLE = "asm.manage-roles-permissions.delete-role";
     public static final String ASM_ROLES_VIEW_ROLE = "asm.manage-roles-permissions.view-role";
     public static final String ASM_ROLES_ASSIGN_PERMISSIONS = "asm.manage-roles-permissions.assign-permissions";
+
+    // Audit - ABDR (Comprehensive Audit Management) / View Audit History
+    public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
+    // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail
+    // (a bulk copy leaving the system) is a stricter capability than
+    // viewing it on-screen, and the seeded catalog (V10) already reserves a
+    // separate code for it rather than folding it into "view".
+    public static final String ABDR_EXPORT_AUDIT_REPORTS = "abdr.export-audit-reports";
 }

@@ -1,5 +1,33 @@
 import { ApiError } from "@/lib/api-error"
 
+/**
+ * Backend-issued, signed continuation token (see
+ * AuditRequestContextFilter/AuditCorrelationTokenCodec) that groups a
+ * related SEQUENCE of requests under one audit correlation_id - e.g.
+ * roles-store.ts's addRole (create role, then assign its initial
+ * permissions). Never a value this app makes up itself: always read from a
+ * prior response via `correlationTokenFrom` and threaded into the next
+ * related call via `withCorrelation`. Omitting it (the default for every
+ * unrelated call) just means that request starts its own correlation,
+ * which is always correct - this is purely an opt-in grouping hint, never
+ * required for a request to succeed.
+ */
+const CORRELATION_HEADER = "X-Correlation-Id"
+
+/** Reads the correlation continuation token off a response, if the backend issued one (it does for every authenticated request - see AuditRequestContextFilter). */
+export function correlationTokenFrom(response: Response): string | null {
+  return response.headers.get(CORRELATION_HEADER)
+}
+
+/** Merges a correlation continuation token into a fetch `init`, if one is supplied - returns `init` unchanged when `token` is null/undefined. */
+export function withCorrelation(init: RequestInit, token?: string | null): RequestInit {
+  if (!token) return init
+  return {
+    ...init,
+    headers: { ...(init.headers as Record<string, string> | undefined), [CORRELATION_HEADER]: token },
+  }
+}
+
 /** Exported so callers (e.g. the shared "backend unavailable" UI) can reuse the exact copy instead of re-typing it, or compare against a caught error's `.message`. */
 export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check that the backend is running and try again."
