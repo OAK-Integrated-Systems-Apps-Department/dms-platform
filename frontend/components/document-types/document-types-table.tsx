@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Eye, Pencil, UserCheck, UserX } from "lucide-react"
+import { Eye, Pencil, ToggleLeft, ToggleRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -96,7 +96,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                               type.status === "active" ? "text-[var(--rust)] hover:bg-[var(--rust-tint)]" : "text-primary hover:bg-muted"
                             )}
                           >
-                            {type.status === "active" ? <UserX size={15} /> : <UserCheck size={15} />}
+                            {type.status === "active" ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                           </button>
                         )} />
                         <TooltipContent>{type.status === "active" ? "Deactivate" : "Activate"}</TooltipContent>

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ArchiveX, Pencil, ShieldCheck, UserCheck, UserX } from "lucide-react"
+import { ArchiveX, Pencil, ShieldCheck, ToggleLeft, ToggleRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -126,7 +126,7 @@ export function MetadataFieldsTable({
                                       : "text-primary hover:bg-muted"
                                   )}
                                 >
-                                  {field.status === "active" ? <UserX size={15} /> : <UserCheck size={15} />}
+                                  {field.status === "active" ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                                 </button>
                               )}
                             />
