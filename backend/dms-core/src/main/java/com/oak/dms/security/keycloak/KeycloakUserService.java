@@ -69,10 +69,10 @@ public class KeycloakUserService {
         representation.setAttributes(Map.of("tenant_id", List.of(tenantId.toString())));
 
         try (Response response = usersResource.create(representation)) {
-            if (response.getStatus() == 409) {
+            if (response.getStatus() == Response.Status.CONFLICT.getStatusCode()) {
                 throw new KeycloakUserAlreadyExistsException(email, username);
             }
-            if (response.getStatus() != 201) {
+            if (response.getStatus() != Response.Status.CREATED.getStatusCode()) {
                 throw new KeycloakIntegrationException(
                         "Failed to create user, status=" + response.getStatus());
             }
@@ -182,7 +182,7 @@ public class KeycloakUserService {
             representation.setDescription(description);
             realm().roles().create(representation);
         } catch (WebApplicationException e) {
-            if (e.getResponse() != null && e.getResponse().getStatus() == 409) {
+            if (e.getResponse() != null && e.getResponse().getStatus() == Response.Status.CONFLICT.getStatusCode()) {
                 throw new DuplicateResourceException(
                         "Role name '" + roleName + "' is not available. Please choose another name.");
             }
@@ -201,7 +201,7 @@ public class KeycloakUserService {
             representation.setName(newRealmRoleName);
             realm().roles().get(oldRealmRoleName).update(representation);
         } catch (WebApplicationException e) {
-            if (e.getResponse() != null && e.getResponse().getStatus() == 409) {
+            if (e.getResponse() != null && e.getResponse().getStatus() == Response.Status.CONFLICT.getStatusCode()) {
                 throw new DuplicateResourceException(
                         "Role name '" + newRoleName + "' is not available. Please choose another name.");
             }

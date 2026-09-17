@@ -1,6 +1,5 @@
 "use client"
 
-import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 
@@ -10,6 +9,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
+import { OUTCOME_BADGE_VARIANT, SEVERITY_BADGE_VARIANT } from "@/lib/audit-events/audit-badges"
 import { useAuditEvent } from "@/lib/audit-events/use-audit-events"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { formatDateTime } from "@/lib/utils"
@@ -73,7 +73,7 @@ function AuditEventDetail({ event }: { event: AuditEventDetailResponseDto }) {
           <Field
             label="Outcome"
             value={
-              <Badge variant={event.outcome === "SUCCESS" ? "default" : "rust"} className="gap-1.5 rounded-md">
+              <Badge variant={OUTCOME_BADGE_VARIANT[event.outcome]} className="gap-1.5 rounded-md">
                 <span className="size-[5px] rounded-full bg-current" />
                 {event.outcome}
               </Badge>
@@ -83,7 +83,7 @@ function AuditEventDetail({ event }: { event: AuditEventDetailResponseDto }) {
             <Field
               label="Severity"
               value={
-                <Badge variant={event.severity === "HIGH" ? "rust" : event.severity === "MEDIUM" ? "gold" : "muted"}>
+                <Badge variant={SEVERITY_BADGE_VARIANT[event.severity]}>
                   {event.severity}
                 </Badge>
               }

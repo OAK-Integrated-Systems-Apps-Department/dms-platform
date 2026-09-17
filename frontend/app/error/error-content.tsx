@@ -4,7 +4,7 @@
 import { useSearchParams } from "next/navigation"
 import { AlertTriangle, Layers } from "lucide-react"
 
-import { APP_NAME } from "@/lib/app-config"
+import { APP_NAME, ROUTES } from "@/lib/app-config"
 
 const DEFAULT_MESSAGE =
   "Something went wrong on our end. Please try again, and if it keeps happening, contact your workspace administrator."
@@ -48,7 +48,7 @@ export function ErrorContent() {
         <p className="mb-[26px] text-[13.5px] leading-[1.65] text-muted-foreground">{message}</p>
 
         <a
-          href="/login"
+          href={ROUTES.LOGIN}
           className="inline-flex w-full items-center justify-center gap-[5px] border-t border-dashed border-border pt-1.5 text-[13px] font-semibold text-primary hover:underline"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">

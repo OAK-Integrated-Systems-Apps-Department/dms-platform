@@ -2,7 +2,6 @@ package com.oak.dms.security.rbac;
 
 import com.oak.dms.security.rbac.dto.GrantPermissionRequest;
 import com.oak.dms.security.rbac.dto.RolePermissionResponse;
-import com.oak.dms.security.rbac.RolePermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

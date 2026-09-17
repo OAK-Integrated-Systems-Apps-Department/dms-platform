@@ -56,10 +56,21 @@ public final class AuditEventBuilder {
     }
 
     /**
-     * Marks this event as having no single owning tenant (e.g. tenant
-     * creation/deactivation) - forces tenant_id to null even if
-     * TenantContext is bound, since defaulting to the acting admin's own
-     * tenant would be wrong for an event that isn't about that tenant.
+     * Marks this event as having no single owning tenant - forces
+     * tenant_id to null even if TenantContext is bound, since defaulting
+     * to the acting admin's own tenant would be wrong for an event that
+     * isn't about that tenant. Used by {@code TenantServiceImpl}/
+     * {@code TenantProvisioningService}'s tenant-lifecycle events
+     * (TENANT_CREATED/PROVISIONED/UPDATED/DEACTIVATED) - a PLATFORM_ADMIN
+     * creating or changing a tenant isn't acting "as" any one tenant, so
+     * there's no correct non-null value to default to. Every other action
+     * wired up so far - roles, permissions, users, auth, the outbox relay -
+     * genuinely belongs to one tenant or falls back to the SYSTEM actor
+     * with tenant_id left unset, so this stays specific to platform-level
+     * resources rather than becoming a general-purpose escape hatch.
+     * {@link PlatformAuditEventController} already depends on
+     * platform-level rows (tenant_id IS NULL) being a real, queryable
+     * case.
      */
     public AuditEventBuilder platformLevel() {
         this.platformLevel = true;

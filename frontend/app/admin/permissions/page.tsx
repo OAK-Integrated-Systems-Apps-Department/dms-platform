@@ -11,6 +11,7 @@ import { SearchInput } from "@/components/ui/search-input"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { CheckboxFilter } from "@/components/ui/checkbox-filter"
 import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { usePermissionsStore } from "@/stores/permissions-store"
@@ -36,7 +37,7 @@ export default function PermissionListPage() {
   const fetchError = usePermissionsStore((state) => state.error)
   const fetchPermissions = usePermissionsStore((state) => state.fetchPermissions)
   const { hasAnyPermission } = usePermissions()
-  const canView = hasAnyPermission("role.view", "role.manage")
+  const canView = hasAnyPermission(PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE)
 
   const [query, setQuery] = useState("")
   // Empty array = "all selected" / no filter applied
@@ -191,7 +192,7 @@ export default function PermissionListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={["role.view", "role.manage"]}>
+      <PermissionGate permission={[PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE]}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchInput
           className="min-w-[220px] flex-1"

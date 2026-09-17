@@ -13,6 +13,7 @@ import {
   auditActionOptionsForModules,
   auditModuleOptions,
 } from "@/lib/audit-events/audit-action-catalog"
+import { OUTCOME_LABELS, SEVERITY_LABELS } from "@/lib/audit-events/audit-badges"
 import type { AuditEventResponseDto } from "@/lib/audit-events/api"
 import { cn, formatDateTime } from "@/lib/utils"
 
@@ -51,11 +52,23 @@ export const EMPTY_AUDIT_LOG_FILTERS: AuditLogFilterState = {
   correlationId: "",
 }
 
-/** Object types audited today - see the ROLE/ROLE_PERMISSION/PERMISSION/USER/AUDIT_EVENT objectType() calls across RoleServiceImpl/RolePermissionServiceImpl/PermissionServiceImpl/UserServiceImpl/AuthService/AuditEventServiceImpl on the backend. */
-const OBJECT_TYPE_OPTIONS = ["ROLE", "ROLE_PERMISSION", "PERMISSION", "USER", "AUDIT_EVENT"]
+/** Mirrors backend/dms-core's AuditObjectTypes.java - every objectType() call across RoleServiceImpl/RolePermissionServiceImpl/PermissionServiceImpl/PermissionActionServiceImpl/PermissionModuleServiceImpl/UserServiceImpl/AuthService/PasswordResetService/UserRoleServiceImpl/AuditEventServiceImpl/OutboxRelay/TenantServiceImpl/TenantProvisioningService goes through that one shared constants class, so this list only needs to be kept in sync with it, not with every individual call site. */
+const OBJECT_TYPE_OPTIONS = [
+  "ROLE",
+  "ROLE_PERMISSION",
+  "PERMISSION",
+  "PERMISSION_ACTION",
+  "PERMISSION_MODULE",
+  "USER",
+  "AUDIT_EVENT",
+  "OUTBOX_EVENT",
+  "TENANT",
+  "ENDPOINT",
+]
 
-const OUTCOME_LABELS: Record<string, string> = { SUCCESS: "Success", FAILURE: "Failure", DENIED: "Denied" }
-const SEVERITY_LABELS: Record<string, string> = { LOW: "Low", MEDIUM: "Medium", HIGH: "High" }
+/** Derived from the shared audit-badges.ts label maps, not re-typed here, so the Outcome/Severity dropdown options can't drift from the chip labels built from those same maps below. */
+const OUTCOME_OPTIONS = Object.entries(OUTCOME_LABELS).map(([value, label]) => ({ value, label }))
+const SEVERITY_OPTIONS = Object.entries(SEVERITY_LABELS).map(([value, label]) => ({ value, label }))
 
 /** Drops any selected actions that no longer belong to ANY of `modules` - a module deselected (via the panel or a chip) can't leave a now out-of-scope action behind. */
 function validActionsForModules(modules: string[], actions: string[]): string[] {
@@ -345,11 +358,7 @@ export function AuditLogFilters({
                     searchable={false}
                     selected={draft.outcome}
                     onChange={(outcome) => updateDraft({ outcome: outcome as AuditLogFilterState["outcome"] })}
-                    options={[
-                      { value: "SUCCESS", label: "Success" },
-                      { value: "FAILURE", label: "Failure" },
-                      { value: "DENIED", label: "Denied" },
-                    ]}
+                    options={OUTCOME_OPTIONS}
                   />
                 </Field>
 
@@ -359,11 +368,7 @@ export function AuditLogFilters({
                     searchable={false}
                     selected={draft.severity}
                     onChange={(severity) => updateDraft({ severity: severity as AuditLogFilterState["severity"] })}
-                    options={[
-                      { value: "LOW", label: "Low" },
-                      { value: "MEDIUM", label: "Medium" },
-                      { value: "HIGH", label: "High" },
-                    ]}
+                    options={SEVERITY_OPTIONS}
                   />
                 </Field>
 

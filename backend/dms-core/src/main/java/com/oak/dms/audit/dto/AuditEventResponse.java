@@ -15,9 +15,9 @@ import java.util.UUID;
  *
  * Deliberately excludes previousValue/newValue (the full before/after JSON
  * snapshots) and userAgent - large/verbose fields that don't belong in a
- * paginated table response. A future {@code GET /api/v1/audit-events/{id}}
- * detail endpoint is the natural place for those, once the frontend needs a
- * per-record drill-down view.
+ * paginated table response. {@link AuditEventDetailResponse} (returned by
+ * {@code GET /api/v1/audit-events/{id}}) carries those instead, for the
+ * frontend's per-record drill-down view.
  */
 public record AuditEventResponse(
         UUID id,

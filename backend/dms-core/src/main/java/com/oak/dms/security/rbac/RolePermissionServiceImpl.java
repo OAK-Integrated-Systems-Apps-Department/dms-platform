@@ -2,15 +2,11 @@ package com.oak.dms.security.rbac;
 
 import com.oak.dms.security.rbac.dto.GrantPermissionRequest;
 import com.oak.dms.security.rbac.dto.RolePermissionResponse;
-import com.oak.dms.security.rbac.Role;
-import com.oak.dms.security.rbac.RolePermission;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.security.rbac.RolePermissionMapper;
-import com.oak.dms.security.rbac.RolePermissionRepository;
-import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.security.rbac.RolePermissionService;
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import lombok.RequiredArgsConstructor;
@@ -72,8 +68,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         RolePermission saved = rolePermissionRepository.save(grant);
         log.info("Granted permission {} to role {}", permission.getPermissionCode(), roleId);
 
-        auditService.event("ROLE_PERMISSION_ASSIGNED")
-                .objectType("ROLE_PERMISSION")
+        auditService.event(AuditActionCatalog.ROLE_PERMISSION_ASSIGNED)
+                .objectType(AuditObjectTypes.ROLE_PERMISSION)
                 .objectId(saved.getRolePermissionId())
                 .resourceName(permission.getPermissionCode())
                 .permissionCode(permission.getPermissionCode())
@@ -118,8 +114,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         rolePermissionRepository.delete(grant);
         log.info("Revoked permission grant {} from role {}", rolePermissionId, roleId);
 
-        auditService.event("ROLE_PERMISSION_REVOKED")
-                .objectType("ROLE_PERMISSION")
+        auditService.event(AuditActionCatalog.ROLE_PERMISSION_REVOKED)
+                .objectType(AuditObjectTypes.ROLE_PERMISSION)
                 .objectId(rolePermissionId)
                 .resourceName(permissionCode)
                 .permissionCode(permissionCode)

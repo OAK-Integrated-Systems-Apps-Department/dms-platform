@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -77,17 +78,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
     }
 
-    private java.util.Optional<UUID> resolveKeycloakId(Jwt jwt) {
+    private Optional<UUID> resolveKeycloakId(Jwt jwt) {
         String subject = jwt.getSubject();
         if (subject == null || subject.isBlank()) {
             log.warn("JWT on {} has no usable 'sub' claim - proceeding without tenant context", jwt.getId());
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         try {
-            return java.util.Optional.of(UUID.fromString(subject));
+            return Optional.of(UUID.fromString(subject));
         } catch (IllegalArgumentException e) {
             log.warn("JWT 'sub' claim '{}' is not a valid UUID - proceeding without tenant context", subject);
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 }

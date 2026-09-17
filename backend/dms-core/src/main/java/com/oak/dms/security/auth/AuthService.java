@@ -1,6 +1,8 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.audit.AuditActionCatalog;
 import com.oak.dms.audit.AuditAuthMethod;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.InvalidCredentialsException;
@@ -89,8 +91,8 @@ public class AuthService {
             // resourceName snapshot below is for internal investigation
             // only, never returned to the caller. actor_id/tenant_id both
             // fall through to AuditService's SYSTEM/null defaults.
-            auditService.event("LOGIN_FAILURE")
-                    .objectType("USER")
+            auditService.event(AuditActionCatalog.LOGIN_FAILURE)
+                    .objectType(AuditObjectTypes.USER)
                     .resourceName(username)
                     .outcome(AuditOutcome.FAILURE)
                     .failureReason(failure.keycloakError())
@@ -106,10 +108,10 @@ public class AuthService {
         // session cookies were only just written above) - actor/tenant
         // must be passed explicitly rather than relying on AuditService's
         // TenantContext-based defaults.
-        auditService.event("LOGIN_SUCCESS")
+        auditService.event(AuditActionCatalog.LOGIN_SUCCESS)
                 .tenantId(user != null ? user.getTenantId() : null)
                 .actor(user != null ? user.getUserId() : null, user != null ? user.getDisplayName() : username)
-                .objectType("USER")
+                .objectType(AuditObjectTypes.USER)
                 // No objectId: a login event has no single associated
                 // object distinct from the actor itself (see the
                 // object_id note in docs/audit_events_schema_spec.md -
@@ -198,8 +200,8 @@ public class AuthService {
         // AuditService's own TenantContext-unbound fallback (SYSTEM actor,
         // null tenant) handles the case where it isn't, so no explicit
         // actor/tenant override is needed either way.
-        auditService.event("LOGOUT")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.LOGOUT)
+                .objectType(AuditObjectTypes.USER)
                 .outcome(AuditOutcome.SUCCESS)
                 .log();
     }

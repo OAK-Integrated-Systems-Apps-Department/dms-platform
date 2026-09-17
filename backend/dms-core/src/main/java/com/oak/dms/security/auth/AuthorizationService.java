@@ -70,7 +70,7 @@ public class AuthorizationService {
         }
         for (GrantedAuthority authority : authentication.getAuthorities()) {
             String name = authority.getAuthority();
-            if ("ROLE_TENANT_ADMIN".equals(name) || "ROLE_PLATFORM_ADMIN".equals(name)) {
+            if ((ROLE_PREFIX + TENANT_ADMIN).equals(name) || (ROLE_PREFIX + PLATFORM_ADMIN).equals(name)) {
                 return true;
             }
         }
@@ -121,13 +121,16 @@ public class AuthorizationService {
         }
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .filter(name -> name.startsWith("ROLE_"))
-                .map(name -> name.substring("ROLE_".length()))
+                .filter(name -> name.startsWith(ROLE_PREFIX))
+                .map(name -> name.substring(ROLE_PREFIX.length()))
                 .filter(PLATFORM_ROLE_NAMES::contains)
                 .collect(Collectors.toList());
     }
 
-    private static final Set<String> PLATFORM_ROLE_NAMES = Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "MEMBER");
+    private static final String ROLE_PREFIX = "ROLE_";
+    private static final String PLATFORM_ADMIN = "PLATFORM_ADMIN";
+    private static final String TENANT_ADMIN = "TENANT_ADMIN";
+    private static final Set<String> PLATFORM_ROLE_NAMES = Set.of(PLATFORM_ADMIN, TENANT_ADMIN, "MEMBER");
 
     /**
      * The caller's own resolved permission set - what {@link #hasPermission}

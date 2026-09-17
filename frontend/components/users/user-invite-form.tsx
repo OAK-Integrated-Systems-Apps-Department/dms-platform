@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
-import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react"
+import { AlertTriangle, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
@@ -217,16 +217,16 @@ export function UserInviteForm() {
           )}
         </div>
         <div>
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          placeholder="jane.perera@yourcompany.com"
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="jane.perera@yourcompany.com"
             autoComplete="off"
-          {...register("email")}
-        />
-        {errors.email && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.email.message}</p>}
-      </div>
+            {...register("email")}
+          />
+          {errors.email && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.email.message}</p>}
+        </div>
       </div>
 
       <div className="mb-5">

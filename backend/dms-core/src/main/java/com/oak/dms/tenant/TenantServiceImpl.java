@@ -1,14 +1,14 @@
 package com.oak.dms.tenant;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.tenant.dto.CreateTenantRequest;
 import com.oak.dms.tenant.dto.UpdateTenantRequest;
 import com.oak.dms.tenant.dto.TenantResponse;
-import com.oak.dms.tenant.Tenant;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.tenant.TenantMapper;
-import com.oak.dms.tenant.TenantRepository;
-import com.oak.dms.tenant.TenantService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -32,6 +33,7 @@ public class TenantServiceImpl implements TenantService {
 
     private final TenantRepository tenantRepository;
     private final TenantMapper tenantMapper;
+    private final AuditService auditService;
 
     @Override
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -48,6 +50,24 @@ public class TenantServiceImpl implements TenantService {
 
         Tenant saved = tenantRepository.save(tenant);
         log.info("Created tenant {} ({})", saved.getTenantId(), saved.getDomain());
+
+        // platformLevel() - this event isn't about the caller's own tenant
+        // (PLATFORM_ADMIN has none in the tenant-scoped sense), and
+        // defaulting tenant_id to whatever TenantContext happened to
+        // resolve would misattribute it. See AuditEventBuilder#platformLevel.
+        auditService.event(AuditActionCatalog.TENANT_CREATED)
+                .platformLevel()
+                .objectType(AuditObjectTypes.TENANT)
+                .objectId(saved.getTenantId())
+                .resourceName(saved.getTenantName())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "tenantName", saved.getTenantName(),
+                        "domain", saved.getDomain(),
+                        "subscriptionTier", saved.getSubscriptionTier(),
+                        "status", saved.getStatus()))
+                .log();
+
         return tenantMapper.toResponse(saved);
     }
 
@@ -69,6 +89,10 @@ public class TenantServiceImpl implements TenantService {
     public TenantResponse updateTenant(UUID tenantId, UpdateTenantRequest request) {
         Tenant tenant = tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
+        Map<String, Object> previousValue = Map.of(
+                "tenantName", tenant.getTenantName(),
+                "subscriptionTier", tenant.getSubscriptionTier(),
+                "status", tenant.getStatus());
 
         tenant.setTenantName(request.tenantName());
         tenant.setSubscriptionTier(request.subscriptionTier());
@@ -77,6 +101,20 @@ public class TenantServiceImpl implements TenantService {
 
         Tenant saved = tenantRepository.save(tenant);
         log.info("Updated tenant {}", saved.getTenantId());
+
+        auditService.event(AuditActionCatalog.TENANT_UPDATED)
+                .platformLevel()
+                .objectType(AuditObjectTypes.TENANT)
+                .objectId(saved.getTenantId())
+                .resourceName(saved.getTenantName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "tenantName", saved.getTenantName(),
+                        "subscriptionTier", saved.getSubscriptionTier(),
+                        "status", saved.getStatus()))
+                .log();
+
         return tenantMapper.toResponse(saved);
     }
 
@@ -84,11 +122,20 @@ public class TenantServiceImpl implements TenantService {
     public void deactivateTenant(UUID tenantId) {
         Tenant tenant = tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
+        String tenantName = tenant.getTenantName();
 
         tenant.setDeleted(true);
         tenant.setDeletedAt(OffsetDateTime.now());
         tenant.setStatus(Tenant.TenantStatus.archived);
         tenantRepository.save(tenant);
         log.info("Deactivated tenant {}", tenantId);
+
+        auditService.event(AuditActionCatalog.TENANT_DEACTIVATED)
+                .platformLevel()
+                .objectType(AuditObjectTypes.TENANT)
+                .objectId(tenantId)
+                .resourceName(tenantName)
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 }

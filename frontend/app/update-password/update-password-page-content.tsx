@@ -7,7 +7,7 @@ import { CheckCircle2, Eye, EyeOff, Layers, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import { API_BASE_URL } from "@/lib/api-config"
-import { APP_NAME } from "@/lib/app-config"
+import { APP_NAME, ROUTES } from "@/lib/app-config"
 import { cn } from "@/lib/utils"
 
 type TokenStatus = "checking" | "valid" | "invalid"
@@ -157,8 +157,8 @@ export function UpdatePasswordPageContent() {
             <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
               This password reset link is no longer valid. Request a new one to continue.
             </p>
-            
-              <a href="/reset-password"
+            <a
+              href="/reset-password"
               className="mt-4 flex w-full items-center justify-center rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
             >
               Request a new link
@@ -177,8 +177,8 @@ export function UpdatePasswordPageContent() {
             <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
               Your password has been changed. You can now sign in with your new password.
             </p>
-            
-              <a href="/login"
+            <a
+              href={ROUTES.LOGIN}
               className="mt-4 flex w-full items-center justify-center rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
             >
               Go to login
@@ -282,8 +282,8 @@ export function UpdatePasswordPageContent() {
           </>
         )}
 
-        
-         <a href="/login"
+        <a
+          href={ROUTES.LOGIN}
           className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">

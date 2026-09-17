@@ -1,5 +1,7 @@
 package com.oak.dms.security.rbac;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
@@ -92,8 +94,8 @@ public class PermissionServiceImpl implements PermissionService {
         Permission saved = permissionRepository.save(permission);
         log.info("Created permission {} ({}) for tenant {}", saved.getPermissionId(), saved.getPermissionCode(), tenantId);
 
-        auditService.event("PERMISSION_CREATED")
-                .objectType("PERMISSION")
+        auditService.event(AuditActionCatalog.PERMISSION_CREATED)
+                .objectType(AuditObjectTypes.PERMISSION)
                 .objectId(saved.getPermissionId())
                 .resourceName(saved.getPermissionCode())
                 .permissionCode(saved.getPermissionCode())
@@ -140,8 +142,8 @@ public class PermissionServiceImpl implements PermissionService {
         Permission saved = permissionRepository.save(permission);
         log.info("Updated permission {}", saved.getPermissionId());
 
-        auditService.event("PERMISSION_UPDATED")
-                .objectType("PERMISSION")
+        auditService.event(AuditActionCatalog.PERMISSION_UPDATED)
+                .objectType(AuditObjectTypes.PERMISSION)
                 .objectId(saved.getPermissionId())
                 .resourceName(saved.getPermissionCode())
                 .permissionCode(saved.getPermissionCode())
@@ -171,7 +173,7 @@ public class PermissionServiceImpl implements PermissionService {
         // listing a permission code that no longer resolves to anything
         // visible in the catalog.
         if (rolePermissionRepository.existsByPermissionId(permissionId)) {
-            throw new DuplicateResourceException(
+            throw new InvalidPermissionStateException(
                     "Cannot delete permission " + permission.getPermissionCode()
                             + " while it is still granted to one or more roles");
         }
@@ -183,8 +185,8 @@ public class PermissionServiceImpl implements PermissionService {
         permissionRepository.save(permission);
         log.info("Deleted permission {}", permissionId);
 
-        auditService.event("PERMISSION_DELETED")
-                .objectType("PERMISSION")
+        auditService.event(AuditActionCatalog.PERMISSION_DELETED)
+                .objectType(AuditObjectTypes.PERMISSION)
                 .objectId(permissionId)
                 .resourceName(permission.getPermissionCode())
                 .permissionCode(permission.getPermissionCode())

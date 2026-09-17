@@ -1,11 +1,15 @@
 import { z } from "zod/v4"
+
+/** Shared by both schemas below for firstName/lastName — same limit `profile/schema.ts`'s `profileEditFormSchema` mirrors for the same two fields. */
+const NAME_MAX_LENGTH = 60
+
 /**
  * Validation for the Add User form, per dms-add-user.html. Still no
  * password field — see the doc comment on UserInviteForm for why.
  */
 export const userInviteFormSchema = z.object({
-  firstName: z.string().trim().min(1, "First name is required").max(60, "Keep it under 60 characters"),
-  lastName: z.string().trim().min(1, "Last name is required").max(60, "Keep it under 60 characters"),
+  firstName: z.string().trim().min(1, "First name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
+  lastName: z.string().trim().min(1, "Last name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
   username: z
     .string()
     .trim()
@@ -28,8 +32,8 @@ export type UserInviteFormValues = z.infer<typeof userInviteFormSchema>
  * screen had no way to change a user's roles after creation at all.
  */
 export const userEditFormSchema = z.object({
-  firstName: z.string().trim().min(1, "First name is required").max(60, "Keep it under 60 characters"),
-  lastName: z.string().trim().min(1, "Last name is required").max(60, "Keep it under 60 characters"),
+  firstName: z.string().trim().min(1, "First name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
+  lastName: z.string().trim().min(1, "Last name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
   roles: z.array(z.string()),
 })

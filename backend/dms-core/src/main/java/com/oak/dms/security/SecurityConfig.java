@@ -44,6 +44,7 @@ public class SecurityConfig {
     private final TenantContextFilter tenantContextFilter;
     private final AuditRequestContextFilter auditRequestContextFilter;
     private final CookieBearerTokenResolver cookieBearerTokenResolver;
+    private final AuditingAccessDeniedHandler auditingAccessDeniedHandler;
 
     /**
      * Comma-separated allow-list, e.g. "https://dms.example.com,https://admin.dms.example.com".
@@ -56,6 +57,8 @@ public class SecurityConfig {
      */
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
+
+    private static final String PLATFORM_ADMIN_ROLE = "PLATFORM_ADMIN";
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health/**",
@@ -102,21 +105,22 @@ public class SecurityConfig {
                         // deliberately excluded - both also allow the caller's own tenant
                         // admin via @tenantSecurity.isSameTenant(#tenantId), a per-request
                         // check this layer can't express.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/tenants").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/tenants", "/api/v1/tenants/provision").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/tenants/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permissions").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-modules").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tenants").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/tenants", "/api/v1/tenants/provision").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/tenants/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permissions").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permissions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permissions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-modules").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-modules/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-modules/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole(PLATFORM_ADMIN_ROLE)
                         .requestMatchers(HttpMethod.GET, "/api/v1/platform/audit-events", "/api/v1/platform/audit-events/*")
-                        .hasRole("PLATFORM_ADMIN")
+                        .hasRole(PLATFORM_ADMIN_ROLE)
                         .anyRequest().authenticated())
+                .exceptionHandling(ex -> ex.accessDeniedHandler(auditingAccessDeniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(cookieBearerTokenResolver)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))

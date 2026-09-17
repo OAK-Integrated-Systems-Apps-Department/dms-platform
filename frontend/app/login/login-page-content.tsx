@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
-import { OtpInput } from "@/components/auth/otp-input"
+import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
 import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
 import { APP_NAME } from "@/lib/app-config"
 import { API_BASE_URL } from "@/lib/api-config"
@@ -109,8 +109,6 @@ export function LoginPageContent() {
   // Stripped out entirely in production builds — see the check below.
   const devOtpBypass = process.env.NODE_ENV !== "production" && searchParams.get("step") === "otp"
   const [step, setStep] = useState<"credentials" | "otp">(devOtpBypass ? "otp" : "credentials")
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
   const [code, setCode] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -188,85 +186,84 @@ export function LoginPageContent() {
 
         {step === "credentials" ? (
           <>
-        
-        <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-          Sign in to your account
-        </h1>
+            <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+              Sign in to your account
+            </h1>
 
             <form onSubmit={handleSubmit(handleCredentialsSubmit)} noValidate>
-          <div className="mb-[17px]">
-            <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
-              Username or email
-            </label>
-            <input
-              id="username"
-              type="text"
-              placeholder="username"
-              autoComplete="username"
-              {...register("username")}
-              className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-            />
-            {credentialErrors.username && (
-              <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.username.message}</p>
-            )}
-          </div>
+              <div className="mb-[17px]">
+                <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+                  Username or email
+                </label>
+                <input
+                  id="username"
+                  type="text"
+                  placeholder="username"
+                  autoComplete="username"
+                  {...register("username")}
+                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                />
+                {credentialErrors.username && (
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.username.message}</p>
+                )}
+              </div>
 
-          <div className="mb-[17px]">
-            <label htmlFor="password" className="mb-[7px] block text-[13px] font-semibold text-foreground">
-              Password
-            </label>
-            <div className="relative">
-            <input
-              id="password"
-                type={showPassword ? "text" : "password"}
-              placeholder="••••••••••"
-              autoComplete="current-password"
-              {...register("password")}
-                className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-            />
+              <div className="mb-[17px]">
+                <label htmlFor="password" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••••"
+                    autoComplete="current-password"
+                    {...register("password")}
+                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {credentialErrors.password && (
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.password.message}</p>
+                )}
+              </div>
+
+              <div className="mb-[22px] flex items-center justify-between">
+                <label className="flex items-center gap-[7px] text-[13px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="size-3.5 accent-primary"
+                  />
+                  Remember me
+                </label>
+                <a href="/reset-password" className="text-[13px] font-semibold text-primary hover:underline">
+                  Forgot password?
+                </a>
+              </div>
+
               <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                tabIndex={-1}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
+                type="submit"
+                disabled={mutation.isPending}
+                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {mutation.isPending ? "Signing in…" : "Sign in"}
               </button>
+            </form>
+
+            <div className="mt-[26px] text-center text-xs text-[var(--ink-faint)]">
+              Need access? Contact your workspace administrator.
             </div>
-            {credentialErrors.password && (
-              <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.password.message}</p>
-            )}
-          </div>
-
-          <div className="mb-[22px] flex items-center justify-between">
-            <label className="flex items-center gap-[7px] text-[13px] text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="size-3.5 accent-primary"
-              />
-              Remember me
-            </label>
-            <a href="/reset-password" className="text-[13px] font-semibold text-primary hover:underline">
-              Forgot password?
-            </a>
-          </div>
-
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {mutation.isPending ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-
-        <div className="mt-[26px] text-center text-xs text-[var(--ink-faint)]">
-          Need access? Contact your workspace administrator.
-        </div>
           </>
         ) : (
           <div className="text-center">
@@ -285,7 +282,7 @@ export function LoginPageContent() {
 
               <button
                 type="submit"
-                disabled={mutation.isPending || code.length < 6}
+                disabled={mutation.isPending || code.length < OTP_LENGTH}
                 className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {mutation.isPending ? "Verifying…" : "Submit"}
@@ -299,7 +296,6 @@ export function LoginPageContent() {
             >
               Back to sign in
             </button>
-
           </div>
         )}
       </div>

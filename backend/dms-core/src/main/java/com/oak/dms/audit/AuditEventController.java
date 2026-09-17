@@ -44,6 +44,15 @@ import java.util.UUID;
 @Tag(name = "Audit Events", description = "Search the caller's own tenant's immutable audit trail")
 public class AuditEventController {
 
+    /**
+     * Shared with {@link PlatformAuditEventController#search} so both
+     * audit-search endpoints default to the same page size/sort - kept
+     * here as the one place that decides it, rather than the same literal
+     * "25"/"occurredAt" being retyped at each {@code @PageableDefault}.
+     */
+    static final int DEFAULT_PAGE_SIZE = 25;
+    static final String DEFAULT_SORT_FIELD = "occurredAt";
+
     private final AuditEventService auditEventService;
 
     @GetMapping
@@ -63,7 +72,7 @@ public class AuditEventController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime occurredFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime occurredTo,
             @RequestParam(required = false) UUID correlationId,
-            @PageableDefault(size = 25, sort = "occurredAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = DEFAULT_PAGE_SIZE, sort = DEFAULT_SORT_FIELD, direction = Sort.Direction.DESC) Pageable pageable) {
         AuditEventSearchCriteria criteria = new AuditEventSearchCriteria(
                 module, action, actorId, objectType, objectId, outcome, severity, occurredFrom, occurredTo, correlationId);
         return PageResponse.from(auditEventService.search(criteria, pageable));

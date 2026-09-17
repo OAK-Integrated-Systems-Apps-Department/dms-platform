@@ -1,5 +1,9 @@
 package com.oak.dms.tenant;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
@@ -13,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -48,6 +53,7 @@ public class TenantProvisioningService {
     private final UserMapper userMapper;
     private final KeycloakUserService keycloakUserService;
     private final PasswordResetService passwordResetService;
+    private final AuditService auditService;
 
     @Transactional
     public TenantProvisioningResponse provisionTenant(ProvisionTenantRequest request) {
@@ -100,6 +106,27 @@ public class TenantProvisioningService {
 
             log.info("Provisioned tenant {} ({}) with first admin {} ({})",
                     tenantId, tenant.getDomain(), savedAdmin.getUserId(), savedAdmin.getEmail());
+
+            // platformLevel() - same reasoning as TenantServiceImpl's own
+            // tenant-lifecycle events: this isn't about the caller's own
+            // tenant. objectType is TENANT (not USER), even though a user
+            // is created too, since the tenant is the primary resource
+            // this endpoint exists to create - the new admin's own
+            // USER_CREATED-shaped detail is already captured in newValue.
+            auditService.event(AuditActionCatalog.TENANT_PROVISIONED)
+                    .platformLevel()
+                    .objectType(AuditObjectTypes.TENANT)
+                    .objectId(tenantId)
+                    .resourceName(tenant.getTenantName())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .newValue(Map.of(
+                            "tenantName", tenant.getTenantName(),
+                            "domain", tenant.getDomain(),
+                            "subscriptionTier", tenant.getSubscriptionTier(),
+                            "adminUserId", savedAdmin.getUserId(),
+                            "adminUsername", savedAdmin.getUsername(),
+                            "adminEmail", savedAdmin.getEmail()))
+                    .log();
 
             return new TenantProvisioningResponse(tenantMapper.toResponse(tenant),
                     userMapper.toResponse(savedAdmin, tenant.getTenantName()));

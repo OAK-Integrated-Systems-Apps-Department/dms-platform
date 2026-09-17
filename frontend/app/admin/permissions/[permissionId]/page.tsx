@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { LoadingState } from "@/components/ui/loading-state"
 import { usePermission } from "@/components/permissions/use-permission"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 
 /**
  * View Permission — read-only retrieval of a single permission's details.
@@ -52,7 +53,7 @@ export default function PermissionDetailsPage() {
         {loading ? (
           <LoadingState message="Loading permission…" />
         ) : (
-        <PermissionGate permission={["role.view", "role.manage"]}>
+        <PermissionGate permission={[PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE]}>
         {permission ? (
           <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
             <h2 className="mb-6 font-heading text-[20px] font-semibold">

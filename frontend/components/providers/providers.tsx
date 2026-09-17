@@ -41,6 +41,11 @@ import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
  * network failure is never completely silent anywhere in the app, even on
  * a page that doesn't check `isError` at all.
  */
+// How long an "already handled" dedupe flag (sessionExpiredHandled /
+// networkErrorHandled below) stays set before a fresh burst of failures is
+// allowed to toast again.
+const ERROR_DEDUPE_WINDOW_MS = 5000
+
 export function Providers({
   initialSidebarOpen,
   children,
@@ -69,7 +74,7 @@ export function Providers({
         sessionExpiredHandled = true
         setTimeout(() => {
           sessionExpiredHandled = false
-        }, 5000)
+        }, ERROR_DEDUPE_WINDOW_MS)
 
         // Every cached query result (current user, permissions, lists,
         // everything) is now stale/unreachable — clear it rather than risk
@@ -85,7 +90,7 @@ export function Providers({
         networkErrorHandled = true
         setTimeout(() => {
           networkErrorHandled = false
-        }, 5000)
+        }, ERROR_DEDUPE_WINDOW_MS)
 
         // No redirect and no client.clear() here, deliberately — this is
         // very likely transient, and the user's already-loaded data/page

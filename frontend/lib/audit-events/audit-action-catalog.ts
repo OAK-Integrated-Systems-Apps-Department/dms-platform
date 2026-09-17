@@ -35,16 +35,30 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
   { action: "USER_CREATED", module: "OTUA", label: "User created" },
   { action: "USER_UPDATED", module: "OTUA", label: "User updated" },
   { action: "USER_ROLE_ASSIGNED", module: "OTUA", label: "Role assigned to user" },
+  { action: "USER_ROLE_REVOKED", module: "OTUA", label: "Role revoked from user" },
   { action: "USER_DEACTIVATED", module: "OTUA", label: "User deactivated" },
   { action: "USER_REACTIVATED", module: "OTUA", label: "User reactivated" },
   { action: "USER_DELETED", module: "OTUA", label: "User deleted" },
+  { action: "PERMISSION_ACTION_CREATED", module: "ASM", label: "Permission action created" },
+  { action: "PERMISSION_ACTION_UPDATED", module: "ASM", label: "Permission action updated" },
+  { action: "PERMISSION_ACTION_DELETED", module: "ASM", label: "Permission action deleted" },
+  { action: "PERMISSION_MODULE_CREATED", module: "ASM", label: "Permission module created" },
+  { action: "PERMISSION_MODULE_UPDATED", module: "ASM", label: "Permission module updated" },
+  { action: "PERMISSION_MODULE_DELETED", module: "ASM", label: "Permission module deleted" },
+  { action: "TENANT_CREATED", module: "OTUA", label: "Tenant created" },
+  { action: "TENANT_PROVISIONED", module: "OTUA", label: "Tenant provisioned" },
+  { action: "TENANT_UPDATED", module: "OTUA", label: "Tenant updated" },
+  { action: "TENANT_DEACTIVATED", module: "OTUA", label: "Tenant deactivated" },
+  { action: "ACCESS_DENIED", module: "ASM", label: "Access denied" },
   { action: "AUDIT_LOG_EXPORTED", module: "ABDR", label: "Audit log exported" },
+  { action: "OUTBOX_EVENT_PUBLISH_FAILED", module: "SHAD", label: "Outbox event publish failed" },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
   ASM: "Access and Security Management",
   OTUA: "Organization, Tenant and User Administration",
   ABDR: "Comprehensive Audit Management",
+  SHAD: "System Health and Administration Dashboard",
 }
 
 export function auditModuleOptions(): string[] {

@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
+import { OUTCOME_BADGE_VARIANT, SEVERITY_BADGE_VARIANT } from "@/lib/audit-events/audit-badges"
 import { formatDateTime } from "@/lib/utils"
 
 import type { AuditEventResponseDto } from "@/lib/audit-events/api"
@@ -16,18 +17,6 @@ interface AuditLogTableProps {
   sortField: AuditLogSortField
   sortDirection: "asc" | "desc"
   onSortChange: (field: AuditLogSortField) => void
-}
-
-const OUTCOME_VARIANT: Record<AuditEventResponseDto["outcome"], "default" | "rust"> = {
-  SUCCESS: "default",
-  FAILURE: "rust",
-  DENIED: "rust",
-}
-
-const SEVERITY_VARIANT: Record<NonNullable<AuditEventResponseDto["severity"]>, "muted" | "gold" | "rust"> = {
-  LOW: "muted",
-  MEDIUM: "gold",
-  HIGH: "rust",
 }
 
 /**
@@ -118,13 +107,13 @@ export function AuditLogTable({ rows, onView, sortField, sortDirection, onSortCh
                   {row.actorDisplayName ?? (row.actorType === "SYSTEM" ? "System" : "—")}
                 </td>
                 <td className="px-3 py-3">
-                  <Badge variant={OUTCOME_VARIANT[row.outcome]} className="gap-1.5 rounded-md">
+                  <Badge variant={OUTCOME_BADGE_VARIANT[row.outcome]} className="gap-1.5 rounded-md">
                     <span className="size-[5px] rounded-full bg-current" />
                     {row.outcome}
                   </Badge>
                 </td>
                 <td className="px-3 py-3">
-                  {row.severity && <Badge variant={SEVERITY_VARIANT[row.severity]}>{row.severity}</Badge>}
+                  {row.severity && <Badge variant={SEVERITY_BADGE_VARIANT[row.severity]}>{row.severity}</Badge>}
                 </td>
                 <td className="px-3 py-3 text-right">
                   <ChevronRight size={15} className="inline text-muted-foreground" />

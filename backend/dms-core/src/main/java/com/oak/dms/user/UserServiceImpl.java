@@ -10,6 +10,8 @@ import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import com.oak.dms.outbox.OutboxEventPublisher;
@@ -83,10 +85,10 @@ public class UserServiceImpl implements UserService {
         // to resolve until the save() above) - actor is the new user
         // themselves, acting on their own behalf, so passed explicitly
         // rather than relying on AuditService's TenantContext defaults.
-        auditService.event("USER_CREATED")
+        auditService.event(AuditActionCatalog.USER_CREATED)
                 .tenantId(tenantId)
                 .actor(saved.getUserId(), saved.getDisplayName())
-                .objectType("USER")
+                .objectType(AuditObjectTypes.USER)
                 .objectId(saved.getUserId())
                 .resourceName(saved.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -163,8 +165,8 @@ public class UserServiceImpl implements UserService {
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, saved.getUserId(), "user.created",
                 Map.of("userId", saved.getUserId(), "tenantId", tenantId, "email", saved.getEmail()));
 
-        auditService.event("USER_CREATED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_CREATED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(saved.getUserId())
                 .resourceName(saved.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -208,8 +210,8 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(user);
         log.info("User {} updated their own profile", saved.getUserId());
 
-        auditService.event("USER_UPDATED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_UPDATED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(saved.getUserId())
                 .resourceName(saved.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -314,8 +316,8 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(user);
         log.info("Updated user {}", saved.getUserId());
 
-        auditService.event("USER_UPDATED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_UPDATED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(saved.getUserId())
                 .resourceName(saved.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -358,8 +360,8 @@ public class UserServiceImpl implements UserService {
         keycloakUserService.disableUser(user.getKeycloakId());
         log.info("Deactivated user {}", userId);
 
-        auditService.event("USER_DEACTIVATED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_DEACTIVATED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(user.getUserId())
                 .resourceName(user.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -413,8 +415,8 @@ public class UserServiceImpl implements UserService {
         // FK to begin with (it's polymorphic across object_type), so this
         // row simply outlives the user it describes, same as any other
         // audit record for a deleted resource.
-        auditService.event("USER_DELETED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_DELETED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(userId)
                 .resourceName(displayName)
                 .outcome(AuditOutcome.SUCCESS)
@@ -444,8 +446,8 @@ public class UserServiceImpl implements UserService {
 
         log.info("Reactivated user {}", userId);
 
-        auditService.event("USER_REACTIVATED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.USER_REACTIVATED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(saved.getUserId())
                 .resourceName(saved.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -460,8 +462,8 @@ public class UserServiceImpl implements UserService {
         passwordResetService.issueForAdminReset(user);
         log.info("Sent password reset email for user {}", userId);
 
-        auditService.event("PASSWORD_RESET_REQUESTED")
-                .objectType("USER")
+        auditService.event(AuditActionCatalog.PASSWORD_RESET_REQUESTED)
+                .objectType(AuditObjectTypes.USER)
                 .objectId(user.getUserId())
                 .resourceName(user.getDisplayName())
                 .outcome(AuditOutcome.SUCCESS)

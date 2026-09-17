@@ -96,8 +96,8 @@ public class AuditEventServiceImpl implements AuditEventService {
 
         String csv = toCsv(rows);
 
-        auditService.event("AUDIT_LOG_EXPORTED")
-                .objectType("AUDIT_EVENT")
+        auditService.event(AuditActionCatalog.AUDIT_LOG_EXPORTED)
+                .objectType(AuditObjectTypes.AUDIT_EVENT)
                 .outcome(AuditOutcome.SUCCESS)
                 .newValue(Map.of("rowCount", rows.size()))
                 .log();

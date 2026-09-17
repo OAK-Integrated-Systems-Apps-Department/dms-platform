@@ -1,7 +1,6 @@
 package com.oak.dms.security.rbac;
 
 import com.oak.dms.security.rbac.dto.RolePermissionResponse;
-import com.oak.dms.security.rbac.RolePermission;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

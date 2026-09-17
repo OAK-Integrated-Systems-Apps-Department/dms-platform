@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { Layers, ShieldOff } from "lucide-react"
 
-import { APP_NAME } from "@/lib/app-config"
+import { APP_NAME, ROUTES } from "@/lib/app-config"
 
 /**
  * Distinct from /login-timeout: that one is "your attempt to log in took
@@ -29,7 +29,7 @@ export default function SessionExpiredPage() {
   const router = useRouter()
 
   function handleSignInAgain() {
-    router.push("/login")
+    router.push(ROUTES.LOGIN)
   }
 
   return (

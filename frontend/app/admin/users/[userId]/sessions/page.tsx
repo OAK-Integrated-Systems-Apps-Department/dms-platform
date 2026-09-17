@@ -1,8 +1,6 @@
 "use client"
 
-import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
-import { ChevronLeft } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"

@@ -146,7 +146,7 @@ export function UsersTable({
               />
               <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 Role(s)
-                </th>
+              </th>
               <SortableTh
                 label="Status"
                 active={sortKey === "status"}
@@ -271,38 +271,38 @@ export function UsersTable({
 
                     {canResetPassword &&
                       (() => {
-                      const canResetThisUser = user.status === "Active"
-                      return (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <button
-                              {...props}
-                              type="button"
-                                onClick={() =>
-                                  canResetThisUser && setPendingResetUser(user)
-                                }
-                                disabled={!canResetThisUser}
-                              aria-label={`Reset password for ${user.name}`}
-                                className={cn(
-                                  "flex size-7 items-center justify-center rounded-sm transition-colors",
-                                  canResetThisUser
-                                    ? "text-primary hover:bg-muted"
-                                    : "cursor-not-allowed text-muted-foreground opacity-50"
-                                )}
-                            >
-                              <KeyRound size={15} />
-                            </button>
-                          )}
-                        />
-                        <TooltipContent>
-                            {canResetThisUser
-                              ? getTooltip("users.actions.resetPassword")
-                              : getTooltip("users.pending.resetPasswordDisabled")}
-                        </TooltipContent>
-                      </Tooltip>
-                      )
-                    })()}
+                        const canResetThisUser = user.status === "Active"
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() =>
+                                    canResetThisUser && setPendingResetUser(user)
+                                  }
+                                  disabled={!canResetThisUser}
+                                  aria-label={`Reset password for ${user.name}`}
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-sm transition-colors",
+                                    canResetThisUser
+                                      ? "text-primary hover:bg-muted"
+                                      : "cursor-not-allowed text-muted-foreground opacity-50"
+                                  )}
+                                >
+                                  <KeyRound size={15} />
+                                </button>
+                              )}
+                            />
+                            <TooltipContent>
+                              {canResetThisUser
+                                ? getTooltip("users.actions.resetPassword")
+                                : getTooltip("users.pending.resetPasswordDisabled")}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
 
                     {(user.status === "Active" ? canDeactivate : canActivate) &&
                       (() => {

@@ -1,5 +1,7 @@
 package com.oak.dms.outbox;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import com.oak.dms.messaging.RabbitMqConfig;
@@ -91,10 +93,10 @@ public class OutboxRelay {
     }
 
     private void auditPermanentFailure(OutboxEvent event, Exception cause) {
-        auditService.event("OUTBOX_EVENT_PUBLISH_FAILED")
+        auditService.event(AuditActionCatalog.OUTBOX_EVENT_PUBLISH_FAILED)
                 .systemActor()
                 .tenantId(event.getTenantId())
-                .objectType("OUTBOX_EVENT")
+                .objectType(AuditObjectTypes.OUTBOX_EVENT)
                 .objectId(event.getOutboxEventId())
                 .resourceName(event.getEventType())
                 .outcome(AuditOutcome.FAILURE)

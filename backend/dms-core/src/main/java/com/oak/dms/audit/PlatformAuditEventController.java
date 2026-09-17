@@ -51,9 +51,9 @@ public class PlatformAuditEventController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "Search the audit trail across every tenant",
             description = "Same filters as GET /api/v1/audit-events, plus tenantId. Leave tenantId unset to "
-                    + "see every tenant plus platform-level events (tenant creation/deactivation and similar, "
-                    + "which have no owning tenant and are invisible through the tenant-scoped endpoint); "
-                    + "supply it to narrow to one tenant.")
+                    + "see every tenant plus any platform-level events (ones with no single owning tenant, "
+                    + "invisible through the tenant-scoped endpoint - see AuditEventBuilder#platformLevel for "
+                    + "which actions can produce one); supply it to narrow to one tenant.")
     public PageResponse<AuditEventResponse> search(
             @RequestParam(required = false) UUID tenantId,
             @RequestParam(required = false) List<String> module,
@@ -66,7 +66,8 @@ public class PlatformAuditEventController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime occurredFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime occurredTo,
             @RequestParam(required = false) UUID correlationId,
-            @PageableDefault(size = 25, sort = "occurredAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = AuditEventController.DEFAULT_PAGE_SIZE, sort = AuditEventController.DEFAULT_SORT_FIELD,
+                    direction = Sort.Direction.DESC) Pageable pageable) {
         AuditEventSearchCriteria criteria = new AuditEventSearchCriteria(
                 module, action, actorId, objectType, objectId, outcome, severity, occurredFrom, occurredTo, correlationId);
         return PageResponse.from(auditEventService.searchAcrossTenants(tenantId, criteria, pageable));

@@ -169,7 +169,13 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(name = "client_type", updatable = false)
     private AuditClientType clientType;
 
-    /** Generated server-side only - AuditService never accepts this from client input. */
+    /**
+     * Always server-resolved, never a raw client-supplied value - a caller
+     * can only ever continue a correlation the server itself signed and
+     * issued to it (see {@link AuditCorrelationTokenCodec}), never invent
+     * an arbitrary one. Defaults to this row's own request_id when no
+     * continuation was presented or verified.
+     */
     @Column(name = "correlation_id", updatable = false)
     private UUID correlationId;
 

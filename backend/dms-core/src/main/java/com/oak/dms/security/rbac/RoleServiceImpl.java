@@ -3,15 +3,13 @@ package com.oak.dms.security.rbac;
 import com.oak.dms.security.rbac.dto.CreateRoleRequest;
 import com.oak.dms.security.rbac.dto.UpdateRoleRequest;
 import com.oak.dms.security.rbac.dto.RoleResponse;
-import com.oak.dms.security.rbac.Role;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidRoleStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.security.rbac.RoleMapper;
-import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.keycloak.KeycloakUserService;
-import com.oak.dms.security.rbac.RoleService;
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
 import com.oak.dms.audit.AuditOutcome;
 import com.oak.dms.audit.AuditService;
 import lombok.RequiredArgsConstructor;
@@ -82,8 +80,8 @@ public class RoleServiceImpl implements RoleService {
         Role saved = roleRepository.save(role);
         log.info("Created role {} ({}) in tenant {}", saved.getRoleId(), saved.getRoleName(), tenantId);
 
-        auditService.event("ROLE_CREATED")
-                .objectType("ROLE")
+        auditService.event(AuditActionCatalog.ROLE_CREATED)
+                .objectType(AuditObjectTypes.ROLE)
                 .objectId(saved.getRoleId())
                 .resourceName(saved.getRoleName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -157,8 +155,8 @@ public class RoleServiceImpl implements RoleService {
         Role saved = roleRepository.save(role);
         log.info("Updated role {}", saved.getRoleId());
 
-        auditService.event("ROLE_UPDATED")
-                .objectType("ROLE")
+        auditService.event(AuditActionCatalog.ROLE_UPDATED)
+                .objectType(AuditObjectTypes.ROLE)
                 .objectId(saved.getRoleId())
                 .resourceName(saved.getRoleName())
                 .outcome(AuditOutcome.SUCCESS)
@@ -200,8 +198,8 @@ public class RoleServiceImpl implements RoleService {
         roleRepository.save(role);
         log.info("Deleted role {}", roleId);
 
-        auditService.event("ROLE_DELETED")
-                .objectType("ROLE")
+        auditService.event(AuditActionCatalog.ROLE_DELETED)
+                .objectType(AuditObjectTypes.ROLE)
                 .objectId(roleId)
                 .resourceName(roleName)
                 .outcome(AuditOutcome.SUCCESS)
