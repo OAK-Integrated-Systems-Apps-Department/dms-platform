@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-error"
+import { API_BASE_URL } from "@/lib/api-config"
 
 /**
  * Backend-issued, signed continuation token (see
@@ -32,6 +33,68 @@ export function withCorrelation(init: RequestInit, token?: string | null): Reque
 export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check that the backend is running and try again."
 
+const REFRESH_URL = `${API_BASE_URL}/api/v1/auth/refresh`
+
+/**
+ * dms-core's own auth endpoints (see SecurityConfig's PUBLIC_ENDPOINTS) are
+ * excluded from the refresh-and-retry below - a 401 from one of these means
+ * something other than "my access token expired mid-session" (wrong
+ * credentials on /login, an already-invalid refresh token on /refresh
+ * itself), and refreshing/retrying wouldn't fix any of that. This is also
+ * what keeps a wrong-password /login attempt's 401 reaching
+ * login-page-content.tsx's own try/catch unchanged - see that file's
+ * `login()` doc comment for why that path must stay untouched.
+ */
+function isAuthEndpoint(input: string): boolean {
+  return input.includes("/api/v1/auth/")
+}
+
+/**
+ * Calls `fetch` with the one thing every dms-core call needs
+ * (`credentials: "include"`, to send the session cookie), translating a
+ * thrown network failure into the same `ApiError(0, ...)` shape `apiFetch`
+ * has always thrown - kept separate from `apiFetch` itself so the retry
+ * below can call it a second time without re-running the 401 handling.
+ */
+async function fetchWithCredentials(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, { ...init, credentials: "include" })
+  } catch {
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE)
+  }
+}
+
+/**
+ * Renews the session from the refresh-token cookie (`POST
+ * /api/v1/auth/refresh`) - the browser applies the response's rotated
+ * `Set-Cookie` headers automatically since both cookies are httpOnly, so
+ * there's nothing for this function to read or store itself. Resolves to
+ * whether the refresh succeeded; never throws (a network failure or a
+ * non-2xx both just mean "couldn't refresh").
+ *
+ * Memoized while in flight - `apiFetch` calls this on every 401 it sees, and
+ * a lapsed session commonly fails several concurrent requests at once (a
+ * dashboard with multiple queries in flight). Without this, each of those
+ * would race its own `/auth/refresh` call; with it, they all await the same
+ * promise, so exactly one refresh happens per lapse. Reset to `null` once
+ * the call settles (success or failure), so the next lapse - later, after
+ * signing back in - starts a fresh refresh rather than reusing a stale
+ * result.
+ */
+let refreshPromise: Promise<boolean> | null = null
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(REFRESH_URL, { method: "POST", credentials: "include" })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
 /**
  * Shared wrapper for every dms-core call that needs the caller's session
  * cookie - always sends `credentials: "include"`. Replaces the ~30
@@ -45,6 +108,21 @@ export const NETWORK_ERROR_MESSAGE =
  * survives all the way up to `components/providers/providers.tsx`'s
  * global `QueryCache`/`MutationCache` `onError`.
  *
+ * Also the single place a lapsed-but-refreshable session is silently
+ * recovered: dms-core's access-token cookie is deliberately short-lived
+ * (see AuthCookieService's doc comment), so an actively-used session will
+ * routinely hit a 401 here well before the user does anything that looks
+ * like "logging back in." On a 401 from anything other than one of
+ * dms-core's own auth endpoints, this attempts exactly one
+ * refresh-and-retry (`refreshSession` above) before falling through to the
+ * normal error handling below - so a genuinely expired refresh token (or a
+ * refresh endpoint that itself 401s/403s/errors) still throws the original
+ * 401 and reaches the existing `isSessionExpired` → clear-cache →
+ * `/session-expired` flow in `providers.tsx`, unchanged. The retried
+ * request's own response (success or failure) is never re-checked for
+ * refresh-worthiness, which is what keeps this to at most one refresh
+ * attempt per call - no retry loop is possible.
+ *
  * `fallbackMessage` is used only when the response body has no JSON
  * `message` field (or isn't JSON at all) - matches every call site's
  * previous `body?.message ?? fallback` convention.
@@ -57,12 +135,12 @@ export async function apiFetch(
   init: RequestInit = {},
   fallbackMessage = "Something went wrong. Please try again."
 ): Promise<Response> {
-  let response: Response
-  try {
-    response = await fetch(input, { ...init, credentials: "include" })
-  } catch {
-    throw new ApiError(0, NETWORK_ERROR_MESSAGE)
+  let response = await fetchWithCredentials(input, init)
+
+  if (response.status === 401 && !isAuthEndpoint(input) && (await refreshSession())) {
+    response = await fetchWithCredentials(input, init)
   }
+
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code)
