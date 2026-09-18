@@ -43,6 +43,27 @@ export const PermissionCodes = {
   LEGACY_ROLE_VIEW: "role.view",
   LEGACY_ROLE_MANAGE: "role.manage",
 
+  // Metadata & Document-Type Management - MDTM (module 2.7). Extends the
+  // MDTM resource names already seeded on the backend (manage-content-types
+  // for document types, manage-metadata-schema for metadata fields) rather
+  // than the module's own "document types"/"metadata fields" wording - see
+  // PermissionCodes.java's matching doc comment.
+  MDTM_CONTENT_TYPES_CREATE: "mdtm.manage-content-types.create",
+  MDTM_CONTENT_TYPES_UPDATE: "mdtm.manage-content-types.update",
+  MDTM_CONTENT_TYPES_DELETE: "mdtm.manage-content-types.delete",
+  MDTM_CONTENT_TYPES_VIEW: "mdtm.manage-content-types.view",
+  MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE: "mdtm.manage-content-types.activate-deactivate",
+
+  MDTM_METADATA_SCHEMA_CREATE_FIELD: "mdtm.manage-metadata-schema.create-field",
+  MDTM_METADATA_SCHEMA_UPDATE_FIELD: "mdtm.manage-metadata-schema.update-field",
+  MDTM_METADATA_SCHEMA_DELETE_FIELD: "mdtm.manage-metadata-schema.delete-field",
+  MDTM_METADATA_SCHEMA_VIEW_FIELD: "mdtm.manage-metadata-schema.view-field",
+  MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD: "mdtm.manage-metadata-schema.activate-deactivate-field",
+  MDTM_METADATA_SCHEMA_DEPRECATE_FIELD: "mdtm.manage-metadata-schema.deprecate-field",
+  MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES: "mdtm.manage-metadata-schema.set-validation-rules",
+
+  MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
+  MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a

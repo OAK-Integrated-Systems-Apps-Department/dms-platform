@@ -56,6 +56,33 @@ public final class PermissionCodes {
     public static final String ASM_ROLES_VIEW_ROLE = "asm.manage-roles-permissions.view-role";
     public static final String ASM_ROLES_ASSIGN_PERMISSIONS = "asm.manage-roles-permissions.assign-permissions";
 
+    // Metadata & Document-Type Management - MDTM (module 2.7)
+    //
+    // Extends the MDTM module/action rows already seeded by V6/V10 rather
+    // than introducing new resource names: document types are
+    // "manage-content-types" and metadata fields are "manage-metadata-schema"
+    // in the DB catalog, even though the module 2.7 requirement doc talks
+    // about "document types" and "metadata fields" - see V24 for the
+    // additional view/activate-deactivate/deprecate-field/type-field-mapping
+    // action rows this module needed that V10 never seeded (it only ever
+    // seeded create/update/delete-shaped actions).
+    public static final String MDTM_CONTENT_TYPES_CREATE = "mdtm.manage-content-types.create";
+    public static final String MDTM_CONTENT_TYPES_UPDATE = "mdtm.manage-content-types.update";
+    public static final String MDTM_CONTENT_TYPES_DELETE = "mdtm.manage-content-types.delete";
+    public static final String MDTM_CONTENT_TYPES_VIEW = "mdtm.manage-content-types.view";
+    public static final String MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE = "mdtm.manage-content-types.activate-deactivate";
+
+    public static final String MDTM_METADATA_SCHEMA_CREATE_FIELD = "mdtm.manage-metadata-schema.create-field";
+    public static final String MDTM_METADATA_SCHEMA_UPDATE_FIELD = "mdtm.manage-metadata-schema.update-field";
+    public static final String MDTM_METADATA_SCHEMA_DELETE_FIELD = "mdtm.manage-metadata-schema.delete-field";
+    public static final String MDTM_METADATA_SCHEMA_VIEW_FIELD = "mdtm.manage-metadata-schema.view-field";
+    public static final String MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD = "mdtm.manage-metadata-schema.activate-deactivate-field";
+    public static final String MDTM_METADATA_SCHEMA_DEPRECATE_FIELD = "mdtm.manage-metadata-schema.deprecate-field";
+    public static final String MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES = "mdtm.manage-metadata-schema.set-validation-rules";
+
+    public static final String MDTM_TYPE_FIELD_MAPPING_VIEW = "mdtm.manage-type-field-mapping.view";
+    public static final String MDTM_TYPE_FIELD_MAPPING_UPDATE = "mdtm.manage-type-field-mapping.update";
+
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
     // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail

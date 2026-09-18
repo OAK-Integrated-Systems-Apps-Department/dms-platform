@@ -34,3 +34,8 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# This project uses Bun (bun.lock). A stray `npm i` produces
+# package-lock.json, which drifts from bun.lock and resolves a different
+# dependency tree. Never commit it.
+package-lock.json

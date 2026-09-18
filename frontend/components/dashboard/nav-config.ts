@@ -1,8 +1,11 @@
 import {
   BarChart3,
+  FileStack,
   FileText,
+  Grid3x3,
   KeyRound,
   LayoutDashboard,
+  ListChecks,
   Pin,
   ScrollText,
   Search,
@@ -59,6 +62,36 @@ export const navSections: NavSection[] = [
       // legacy codes, so this nav item must too.
       { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: [PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE] },
       { label: "Audit Log", icon: ScrollText, href: "/admin/audit-log", permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY },
+    ],
+  },
+  {
+    label: "Metadata",
+    items: [
+      {
+        label: "Metadata Fields", icon: ListChecks, href: "/admin/metadata/fields", permission: [
+          PermissionCodes.MDTM_METADATA_SCHEMA_VIEW_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_CREATE_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_UPDATE_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_DELETE_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_DEPRECATE_FIELD,
+          PermissionCodes.MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES,
+        ]
+      },
+      {
+        label: "Document Types", icon: FileStack, href: "/admin/metadata/document-types", permission: [
+          PermissionCodes.MDTM_CONTENT_TYPES_VIEW,
+          PermissionCodes.MDTM_CONTENT_TYPES_CREATE,
+          PermissionCodes.MDTM_CONTENT_TYPES_UPDATE,
+          PermissionCodes.MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE,
+        ]
+      },
+      {
+        label: "Type Field Mapping", icon: Grid3x3, href: "/admin/metadata/mapping", permission: [
+          PermissionCodes.MDTM_TYPE_FIELD_MAPPING_VIEW,
+          PermissionCodes.MDTM_TYPE_FIELD_MAPPING_UPDATE,
+        ]
+      },
     ],
   },
 ]
