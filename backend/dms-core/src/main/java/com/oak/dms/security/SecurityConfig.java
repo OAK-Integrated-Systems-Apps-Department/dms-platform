@@ -2,6 +2,7 @@ package com.oak.dms.security;
 
 import com.oak.dms.audit.AuditRequestContextFilter;
 import com.oak.dms.security.auth.CookieBearerTokenResolver;
+import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class SecurityConfig {
 
     private final JwtAuthConverter jwtAuthConverter;
     private final TenantContextFilter tenantContextFilter;
+    private final ImpersonationContextFilter impersonationContextFilter;
     private final AuditRequestContextFilter auditRequestContextFilter;
     private final CookieBearerTokenResolver cookieBearerTokenResolver;
     private final AuditingAccessDeniedHandler auditingAccessDeniedHandler;
@@ -125,7 +127,8 @@ public class SecurityConfig {
                         .bearerTokenResolver(cookieBearerTokenResolver)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))
                 .addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class)
-                .addFilterAfter(auditRequestContextFilter, TenantContextFilter.class);
+                .addFilterAfter(impersonationContextFilter, TenantContextFilter.class)
+                .addFilterAfter(auditRequestContextFilter, ImpersonationContextFilter.class);
 
         return http.build();
     }

@@ -28,6 +28,16 @@ export interface CurrentUser {
    * directly.
    */
   permissions: string[]
+  /**
+   * Whether the current session is operating under an "Act as User"
+   * impersonation grant - server-computed from the trusted session context
+   * (see backend UserResponse's own doc comment), never something the
+   * frontend can set or infer on its own. `ImpersonationBanner` is the
+   * only reader of this and `impersonatorDisplayName`.
+   */
+  impersonating: boolean
+  /** The real admin's display name while impersonating; null otherwise. */
+  impersonatorDisplayName: string | null
 }
 
 function initialsOf(displayName: string): string {

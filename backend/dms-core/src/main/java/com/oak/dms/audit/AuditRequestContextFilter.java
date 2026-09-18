@@ -132,11 +132,17 @@ public class AuditRequestContextFilter extends OncePerRequestFilter {
 
     /**
      * Keycloak's access token carries the session as either "sid" (the
-     * standard OIDC claim) or "session_state" (Keycloak's older/additional
-     * claim), depending on realm/client settings - checked in that order.
-     * Absent entirely for a request with no JWT (e.g. a public endpoint).
+     * standard OIDC claim, added automatically by Keycloak to every token
+     * bound to a session - no client/realm mapper needed) or "session_state"
+     * (Keycloak's older/additional claim), depending on realm/client
+     * settings - checked in that order. Absent entirely for a request with
+     * no JWT (e.g. a public endpoint).
+     * <p>
+     * Returned verbatim as a string, never parsed as a UUID: Keycloak
+     * generates these as arbitrary opaque strings (e.g.
+     * {@code "NhFcDsECmgpa7Nk0VILq29SY"}), never actual UUIDs.
      */
-    private UUID resolveSessionId() {
+    private String resolveSessionId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
             return null;
@@ -145,14 +151,6 @@ public class AuditRequestContextFilter extends OncePerRequestFilter {
         if (sid == null) {
             sid = jwt.getClaimAsString("session_state");
         }
-        if (sid == null) {
-            return null;
-        }
-        try {
-            return UUID.fromString(sid);
-        } catch (IllegalArgumentException e) {
-            log.warn("JWT session claim '{}' is not a valid UUID - leaving audit session_id null", sid);
-            return null;
-        }
+        return sid;
     }
 }

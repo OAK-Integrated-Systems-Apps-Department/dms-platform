@@ -92,14 +92,19 @@ public class AuditEvent implements Persistable<UUID> {
     private String actorDisplayName;
 
     /**
-     * Only populated when the platform's impersonation / "act on behalf
-     * of" capability exists and is in use for this event. That capability
-     * does not exist in this codebase yet, so this is always null today -
-     * see AuditService, which never sets it from a manually-supplied
-     * value at the call site.
+     * The real admin's id, only populated for an event generated during an
+     * active "Act as User" impersonation session (see ImpersonationService/
+     * ImpersonationContextFilter) - null for every ordinary event. Sourced
+     * exclusively from AuditService reading TenantContext's own
+     * impersonator field, never from a manually-supplied value at a call
+     * site (AuditEventBuilder has no setter for this on purpose).
      */
     @Column(name = "impersonated_by", updatable = false)
     private UUID impersonatedBy;
+
+    /** Point-in-time snapshot of the real admin's display name, same reasoning as {@link #actorDisplayName} - a raw id alone isn't enough to read the record without a live join back to a users row that may since have been renamed or deleted. Null exactly when {@link #impersonatedBy} is null. */
+    @Column(name = "impersonated_by_display_name", updatable = false)
+    private String impersonatedByDisplayName;
 
     @Column(name = "action", updatable = false, nullable = false)
     private String action;
@@ -141,8 +146,17 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(name = "reason", updatable = false)
     private String reason;
 
+    /**
+     * Keycloak's own opaque session identifier (the JWT's {@code sid}/
+     * {@code session_state} claim) - stored verbatim as a string, not a
+     * UUID: Keycloak generates these as arbitrary opaque strings (e.g.
+     * {@code "NhFcDsECmgpa7Nk0VILq29SY"}), never actual UUIDs, so a UUID
+     * column here made this field silently null on every single row - see
+     * AuditRequestContextFilter#resolveSessionId, which used to
+     * UUID.fromString() this value and swallow the resulting exception.
+     */
     @Column(name = "session_id", updatable = false)
-    private UUID sessionId;
+    private String sessionId;
 
     /** The factor actually verified and succeeded - never merely submitted. */
     @Enumerated(EnumType.STRING)

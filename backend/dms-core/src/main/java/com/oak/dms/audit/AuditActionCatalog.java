@@ -75,6 +75,8 @@ public final class AuditActionCatalog {
     public static final String TENANT_UPDATED = "TENANT_UPDATED";
     public static final String TENANT_DEACTIVATED = "TENANT_DEACTIVATED";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
+    public static final String IMPERSONATION_STARTED = "IMPERSONATION_STARTED";
+    public static final String IMPERSONATION_ENDED = "IMPERSONATION_ENDED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -99,6 +101,12 @@ public final class AuditActionCatalog {
             // for why silent session renewal is deliberately not audited.
             Map.entry(PASSWORD_RESET_REQUESTED, new AuditActionSpec("ASM", AuditSeverity.LOW, false)),
             Map.entry(PASSWORD_RESET_COMPLETED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
+            // Impersonation (ImpersonationService) - module ASM: starting a
+            // session under someone else's identity is at least as
+            // sensitive as a role deletion (HIGH); ending one is routine
+            // and expected, so MEDIUM matches USER_REACTIVATED's tier.
+            Map.entry(IMPERSONATION_STARTED, new AuditActionSpec("ASM", AuditSeverity.HIGH, false)),
+            Map.entry(IMPERSONATION_ENDED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
 
             // Users (UserController) - module OTUA
             Map.entry(USER_CREATED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),

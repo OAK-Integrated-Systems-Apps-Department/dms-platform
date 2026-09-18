@@ -18,6 +18,8 @@ import { UsersTable } from "@/components/users/users-table"
 import type { UserRecord } from "@/components/users/types"
 import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { useImpersonation } from "@/lib/auth/use-impersonation"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useUsers } from "@/lib/users/use-users"
 import { useRolesStore } from "@/stores/roles-store"
@@ -47,6 +49,8 @@ export default function UserListPage() {
   } = useUsers()
   const { isTenantAdmin } = useIsTenantAdmin()
   const { hasPermission, hasAnyPermission } = usePermissions()
+  const { data: currentUser } = useCurrentUser()
+  const { startImpersonation } = useImpersonation()
   const canCreateUser = hasPermission(PermissionCodes.OTUA_USERS_CREATE)
   const canEditUser = hasPermission(PermissionCodes.OTUA_USERS_UPDATE)
   const canResetPassword = hasPermission(PermissionCodes.OTUA_USERS_RESET_PASSWORD)
@@ -54,6 +58,7 @@ export default function UserListPage() {
   const canDeactivate = hasPermission(PermissionCodes.OTUA_USERS_DEACTIVATE)
   const canDeleteUser = isTenantAdmin || hasPermission(PermissionCodes.OTUA_USERS_DELETE)
   const canAssignRole = hasPermission(PermissionCodes.OTUA_USERS_ASSIGN_ROLE)
+  const canImpersonate = hasPermission(PermissionCodes.OTUA_USERS_IMPERSONATE)
   // GET /api/v1/roles (RoleController) - view-role or update-role, not the
   // legacy role.view/role.manage this used to check.
   const canViewRoles = hasAnyPermission(
@@ -77,9 +82,11 @@ export default function UserListPage() {
     canActivate ||
     canDeactivate ||
     canDeleteUser ||
-    canAssignRole
+    canAssignRole ||
+    canImpersonate
   const soloCapabilities = [
     canResetPassword && "reset passwords",
+    canImpersonate && "act as other users",
     canActivate && "activate accounts",
     canDeactivate && "deactivate accounts",
     canDeleteUser && "delete accounts",
@@ -154,6 +161,9 @@ export default function UserListPage() {
   function handleEdit(user: UserRecord) {
     router.push(`/admin/users/${user.id}/edit`)
   }
+  function handleImpersonate(userId: string) {
+    startImpersonation(userId)
+  }
 
   return (
     <DashboardShell initialActiveLabel="Users & Roles">
@@ -181,6 +191,7 @@ export default function UserListPage() {
           PermissionCodes.OTUA_USERS_DEACTIVATE,
           PermissionCodes.OTUA_USERS_DELETE,
           PermissionCodes.OTUA_USERS_ASSIGN_ROLE,
+          PermissionCodes.OTUA_USERS_IMPERSONATE,
         ]}
       >
       {canBrowseList ? (
@@ -248,8 +259,11 @@ export default function UserListPage() {
         canActivate={canActivate}
         canDeactivate={canDeactivate}
         canDelete={canDeleteUser}
+        canImpersonate={canImpersonate}
+        currentUserId={currentUser?.userId}
         onView={handleView}
         onEdit={handleEdit}
+        onImpersonate={handleImpersonate}
       />
 
           <TablePagination

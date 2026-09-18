@@ -66,7 +66,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
                 resolveKeycloakId(jwt).ifPresent(keycloakId ->
                         userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(user -> {
-                            TenantContext.set(user.getTenantId(), user.getUserId(), user.getDisplayName());
+                            TenantContext.set(user.getTenantId(), user.getUserId(), user.getDisplayName(),
+                                    user.getKeycloakId());
                             if (!user.isVerified()) {
                                 userService.markVerified(user.getUserId());
                             }

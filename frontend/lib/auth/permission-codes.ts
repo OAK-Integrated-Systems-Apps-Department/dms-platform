@@ -28,6 +28,9 @@ export const PermissionCodes = {
   // checked anywhere.
   OTUA_USERS_DELETE: "otua.manage-users.delete",
   OTUA_USERS_ASSIGN_ROLE: "otua.manage-users.assign-role",
+  // Gates the User List's "Act as User" action - see ImpersonationController
+  // on the backend.
+  OTUA_USERS_IMPERSONATE: "otua.manage-users.impersonate",
 
   // Roles (ASM - Access and Security Management)
   ASM_ROLES_CREATE_ROLE: "asm.manage-roles-permissions.create-role",

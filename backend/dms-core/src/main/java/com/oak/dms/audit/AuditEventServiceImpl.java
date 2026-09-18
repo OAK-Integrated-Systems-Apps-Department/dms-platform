@@ -167,7 +167,7 @@ public class AuditEventServiceImpl implements AuditEventService {
         AuditEventResponse summary = auditEventMapper.toResponse(event);
         return new AuditEventDetailResponse(
                 summary.id(), summary.tenantId(), summary.actorId(), summary.actorType(), summary.actorDisplayName(),
-                summary.impersonatedBy(), summary.action(), summary.module(), summary.objectType(), summary.objectId(),
+                summary.impersonatedBy(), summary.impersonatedByDisplayName(), summary.action(), summary.module(), summary.objectType(), summary.objectId(),
                 summary.resourceName(), summary.objectVersion(), summary.outcome(), summary.failureReason(),
                 summary.occurredAt(), toGenericValue(event.getPreviousValue()), toGenericValue(event.getNewValue()),
                 summary.reason(), summary.sessionId(), summary.authMethod(), summary.permissionCode(),

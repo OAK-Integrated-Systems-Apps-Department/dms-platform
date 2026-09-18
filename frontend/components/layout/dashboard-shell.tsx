@@ -7,6 +7,7 @@ import { useSidebarCookie } from "@/components/providers/sidebar-cookie-provider
 
 import { AppSidebar } from "./app-sidebar"
 import { AppTopbar } from "./app-topbar"
+import { ImpersonationBanner } from "./impersonation-banner"
 
 interface DashboardShellProps {
   children: ReactNode
@@ -68,6 +69,7 @@ export function DashboardShell({
         components/users/users-table.tsx already does.
       */}
       <SidebarInset className="min-w-0">
+        <ImpersonationBanner />
         <AppTopbar />
         <div className="min-w-0 flex-1 px-[30px] pt-[26px] pb-[50px]">
           {children}

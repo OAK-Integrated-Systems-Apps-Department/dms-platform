@@ -11,6 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
 import { isNetworkError, isSessionExpired } from "@/lib/api-error"
 import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
+import { useProactiveSessionRefresh } from "@/lib/auth/use-proactive-session-refresh"
 
 /**
  * All client-only providers for the app, in one place. Split out of
@@ -40,6 +41,11 @@ import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
  * query's `isError`/`error` — this handler's job is just to make sure a
  * network failure is never completely silent anywhere in the app, even on
  * a page that doesn't check `isError` at all.
+ *
+ * Also mounts `useProactiveSessionRefresh` (lib/auth/use-proactive-session-
+ * refresh.ts), the other half of session handling: it renews the session
+ * ahead of the 401s this component reacts to above, while the user is
+ * actually active, so most users never hit that reactive path at all.
  */
 // How long an "already handled" dedupe flag (sessionExpiredHandled /
 // networkErrorHandled below) stays set before a fresh burst of failures is
@@ -54,6 +60,7 @@ export function Providers({
   children: ReactNode
 }) {
   const router = useRouter()
+  useProactiveSessionRefresh()
   const [queryClient] = useState(() => {
     // Dedupes near-simultaneous 401s from concurrent requests failing
     // together the moment a session lapses (a dashboard can easily have

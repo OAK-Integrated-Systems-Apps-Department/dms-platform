@@ -46,6 +46,8 @@ public final class PermissionCodes {
     public static final String OTUA_USERS_DEACTIVATE = "otua.manage-users.deactivate";
     public static final String OTUA_USERS_DELETE = "otua.manage-users.delete";
     public static final String OTUA_USERS_ASSIGN_ROLE = "otua.manage-users.assign-role";
+    /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
+    public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
     // Roles - ASM (Access and Security Management) / Manage Roles & Permissions
     public static final String ASM_ROLES_CREATE_ROLE = "asm.manage-roles-permissions.create-role";

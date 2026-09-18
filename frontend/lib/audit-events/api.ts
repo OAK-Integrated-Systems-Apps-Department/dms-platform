@@ -9,6 +9,7 @@ export interface AuditEventResponseDto {
   actorType: "USER" | "SYSTEM" | "API_KEY"
   actorDisplayName: string | null
   impersonatedBy: string | null
+  impersonatedByDisplayName: string | null
   action: string
   module: string
   objectType: string

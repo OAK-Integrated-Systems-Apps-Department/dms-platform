@@ -129,6 +129,18 @@ app:
       # value of its own choosing. MUST be overridden with a real secret
       # in any real deployment - the default here is for local dev only.
       secret: ${AUDIT_CORRELATION_SECRET:changeme-audit-correlation-secret-local-dev-only}
+  impersonation:
+    # Signs the dms_impersonation cookie (see ImpersonationTokenCodec) - a
+    # separate secret from app.audit.correlation.secret on purpose, so a
+    # leak or rotation of one can never affect the other. MUST be
+    # overridden with a real secret in any real deployment.
+    secret: ${IMPERSONATION_SECRET:changeme-impersonation-secret-local-dev-only}
+    # How long an "Act as User" grant stays valid before the admin must
+    # start a fresh one - independent of, and deliberately shorter than,
+    # the access-token/session lifetimes it sits alongside. Ending early
+    # via "Return to Admin" (POST /api/v1/impersonation/stop) is always
+    # available regardless of this window.
+    session-minutes: ${IMPERSONATION_SESSION_MINUTES:30}
 
 dms:
   outbox:

@@ -33,10 +33,10 @@ public final class AuditRequestContext {
     private final String ipAddress;
     private final String userAgent;
     private final AuditClientType clientType;
-    private final UUID sessionId;
+    private final String sessionId;
 
     private AuditRequestContext(UUID requestId, UUID correlationId, String ipAddress, String userAgent,
-                                 AuditClientType clientType, UUID sessionId) {
+                                 AuditClientType clientType, String sessionId) {
         this.requestId = requestId;
         this.correlationId = correlationId;
         this.ipAddress = ipAddress;
@@ -46,7 +46,7 @@ public final class AuditRequestContext {
     }
 
     static void bind(UUID requestId, UUID correlationId, String ipAddress, String userAgent,
-                      AuditClientType clientType, UUID sessionId) {
+                      AuditClientType clientType, String sessionId) {
         CURRENT.set(new AuditRequestContext(requestId, correlationId, ipAddress, userAgent, clientType, sessionId));
     }
 
@@ -78,7 +78,7 @@ public final class AuditRequestContext {
         return clientType;
     }
 
-    public UUID getSessionId() {
+    public String getSessionId() {
         return sessionId;
     }
 }

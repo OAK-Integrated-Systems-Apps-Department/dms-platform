@@ -32,11 +32,14 @@ import java.util.UUID;
  * commit together, or neither does) for free, via normal transaction
  * propagation.
  *
- * impersonated_by is always left null: this system has no impersonation
- * / "act on behalf of" capability yet. When one is added, populate it
- * here, from that capability's own session/token context - never as a
- * value passed in by a call site (see AuditEventBuilder, which has no
- * setter for it on purpose).
+ * impersonated_by/impersonated_by_display_name come from
+ * {@link TenantContext#getImpersonatorIdOrNull()}/{@link TenantContext#getImpersonatorDisplayNameOrNull()}
+ * - null for every ordinary request, and the real admin's id/display name
+ * for the duration of a request made under an active "Act as User" session
+ * (see {@code ImpersonationContextFilter}, the only thing that ever sets
+ * either) - never a value passed in by a call site (see AuditEventBuilder,
+ * which has no setter for either on purpose, so a caller can't forge or
+ * override this).
  */
 @Slf4j
 @Service
@@ -85,7 +88,8 @@ public class AuditService {
                 .actorId(actor.id())
                 .actorType(actor.type())
                 .actorDisplayName(actor.displayName())
-                .impersonatedBy(null)
+                .impersonatedBy(TenantContext.getImpersonatorIdOrNull())
+                .impersonatedByDisplayName(TenantContext.getImpersonatorDisplayNameOrNull())
                 .action(builder.action())
                 .module(spec.module())
                 .objectType(builder.objectType())

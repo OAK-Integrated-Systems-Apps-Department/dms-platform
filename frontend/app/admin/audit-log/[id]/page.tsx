@@ -106,7 +106,10 @@ function AuditEventDetail({ event }: { event: AuditEventDetailResponseDto }) {
           <Field label="Actor" value={event.actorDisplayName ?? "—"} />
           <Field label="Actor Type" value={event.actorType} />
           {event.actorId && <Field label="Actor ID" value={event.actorId} mono />}
-          <Field label="Impersonated By" value={event.impersonatedBy ?? "—"} mono />
+          <Field label="Impersonated By" value={event.impersonatedByDisplayName ?? "—"} />
+          {event.impersonatedBy && (
+            <Field label="Impersonated By (ID)" value={event.impersonatedBy} mono />
+          )}
           {event.authMethod && <Field label="Auth Method" value={event.authMethod} />}
           <Field label="Session ID" value={event.sessionId ?? "—"} mono />
           {event.ipAddress && <Field label="IP Address" value={event.ipAddress} mono />}

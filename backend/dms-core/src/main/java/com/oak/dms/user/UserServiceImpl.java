@@ -192,7 +192,7 @@ public class UserServiceImpl implements UserService {
         // and UserMapper's own doc comments for why that's "me"-only).
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
-                authorizationService.myEffectivePermissionCodes());
+                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
@@ -220,7 +220,7 @@ public class UserServiceImpl implements UserService {
                 .log();
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
-                authorizationService.myEffectivePermissionCodes());
+                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
@@ -538,6 +538,24 @@ public class UserServiceImpl implements UserService {
         if (!authorizationService.isTenantAdmin() && isTenantAdminAccount(user)) {
             throw new ResourceNotFoundException("User", userId);
         }
+    }
+
+    /**
+     * The real admin's display name if the current request is running under
+     * an active impersonation session, else null - see
+     * {@link UserResponse}'s own doc comment for why this, not a raw id, is
+     * what the frontend's impersonation banner needs. A missing/deleted
+     * admin row (shouldn't happen - the admin's own session is what's
+     * currently making this request) falls back to null rather than
+     * throwing, so a data inconsistency here never breaks an otherwise
+     * unrelated "get my profile" call.
+     */
+    private String resolveImpersonatorDisplayNameOrNull() {
+        UUID impersonatorId = TenantContext.getImpersonatorIdOrNull();
+        if (impersonatorId == null) {
+            return null;
+        }
+        return userRepository.findById(impersonatorId).map(User::getDisplayName).orElse(null);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

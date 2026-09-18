@@ -50,15 +50,30 @@ function isAuthEndpoint(input: string): boolean {
 }
 
 /**
- * Calls `fetch` with the one thing every dms-core call needs
- * (`credentials: "include"`, to send the session cookie), translating a
- * thrown network failure into the same `ApiError(0, ...)` shape `apiFetch`
- * has always thrown - kept separate from `apiFetch` itself so the retry
- * below can call it a second time without re-running the 401 handling.
+ * dms-core's AuditRequestContextFilter reads this to populate an audit
+ * event's `client_type` column - defaulting to WEB itself when the header
+ * is absent, which every call from this app always was. Set once, here,
+ * rather than at each of the ~30 call sites - the same reasoning as
+ * `credentials: "include"` below.
+ */
+const CLIENT_TYPE_HEADER = "X-Client-Type"
+const CLIENT_TYPE = "WEB"
+
+/**
+ * Calls `fetch` with the two things every dms-core call needs
+ * (`credentials: "include"`, to send the session cookie, and the client
+ * type header above), translating a thrown network failure into the same
+ * `ApiError(0, ...)` shape `apiFetch` has always thrown - kept separate
+ * from `apiFetch` itself so the retry below can call it a second time
+ * without re-running the 401 handling.
  */
 async function fetchWithCredentials(input: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, { ...init, credentials: "include" })
+    return await fetch(input, {
+      ...init,
+      credentials: "include",
+      headers: { ...(init.headers as Record<string, string> | undefined), [CLIENT_TYPE_HEADER]: CLIENT_TYPE },
+    })
   } catch {
     throw new ApiError(0, NETWORK_ERROR_MESSAGE)
   }
@@ -80,12 +95,22 @@ async function fetchWithCredentials(input: string, init: RequestInit): Promise<R
  * the call settles (success or failure), so the next lapse - later, after
  * signing back in - starts a fresh refresh rather than reusing a stale
  * result.
+ *
+ * Exported so `useProactiveSessionRefresh` (lib/auth/use-proactive-session-
+ * refresh.ts) can call the exact same function on a timer, ahead of any
+ * 401 - sharing this one in-flight guard means a proactive refresh and a
+ * reactive one from apiFetch can never race each other into two concurrent
+ * `/auth/refresh` calls either.
  */
 let refreshPromise: Promise<boolean> | null = null
 
-function refreshSession(): Promise<boolean> {
+export function refreshSession(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = fetch(REFRESH_URL, { method: "POST", credentials: "include" })
+    refreshPromise = fetch(REFRESH_URL, {
+      method: "POST",
+      credentials: "include",
+      headers: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE },
+    })
       .then((response) => response.ok)
       .catch(() => false)
       .finally(() => {

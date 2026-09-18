@@ -25,7 +25,7 @@ list and types for the `audit_events` table migration.
 | previous_value      | jsonb        | Yes      | Prior state; sensitive fields redacted before write |
 | new_value           | jsonb        | Yes      | New state; sensitive fields redacted before write |
 | reason              | text         | Yes      | User-supplied justification; length-limited and sanitized |
-| session_id          | uuid         | Yes      | From the existing session/auth token           |
+| session_id          | varchar(255) | Yes      | Keycloak's own opaque session id (JWT `sid`/`session_state` claim) - not a UUID |
 | auth_method         | varchar      | Yes      | PASSWORD / MFA / SSO - only on auth events, based on the factor actually verified |
 | permission_code     | varchar      | Yes      | Plain string snapshot, NOT a live FK to permissions.permission_code (must survive the permission being later edited or deleted) |
 | data_classification | varchar      | Yes      | Snapshot of the object's sensitivity classification at event time |
