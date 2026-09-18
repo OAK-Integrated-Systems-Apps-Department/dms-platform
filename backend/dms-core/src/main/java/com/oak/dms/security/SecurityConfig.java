@@ -1,6 +1,8 @@
 package com.oak.dms.security;
 
+import com.oak.dms.audit.AuditRequestContextFilter;
 import com.oak.dms.security.auth.CookieBearerTokenResolver;
+import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +43,10 @@ public class SecurityConfig {
 
     private final JwtAuthConverter jwtAuthConverter;
     private final TenantContextFilter tenantContextFilter;
+    private final ImpersonationContextFilter impersonationContextFilter;
+    private final AuditRequestContextFilter auditRequestContextFilter;
     private final CookieBearerTokenResolver cookieBearerTokenResolver;
+    private final AuditingAccessDeniedHandler auditingAccessDeniedHandler;
 
     /**
      * Comma-separated allow-list, e.g. "https://dms.example.com,https://admin.dms.example.com".
@@ -54,6 +59,8 @@ public class SecurityConfig {
      */
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
+
+    private static final String PLATFORM_ADMIN_ROLE = "PLATFORM_ADMIN";
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health/**",
@@ -100,23 +107,28 @@ public class SecurityConfig {
                         // deliberately excluded - both also allow the caller's own tenant
                         // admin via @tenantSecurity.isSameTenant(#tenantId), a per-request
                         // check this layer can't express.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/tenants").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/tenants", "/api/v1/tenants/provision").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/tenants/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permissions").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permissions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-modules").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-modules/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tenants").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/tenants", "/api/v1/tenants/provision").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/tenants/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permissions").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permissions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permissions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-modules").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-modules/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-modules/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/permission-actions").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/permission-actions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/permission-actions/*").hasRole(PLATFORM_ADMIN_ROLE)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/audit-events", "/api/v1/platform/audit-events/*")
+                        .hasRole(PLATFORM_ADMIN_ROLE)
                         .anyRequest().authenticated())
+                .exceptionHandling(ex -> ex.accessDeniedHandler(auditingAccessDeniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(cookieBearerTokenResolver)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))
-                .addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class);
+                .addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(impersonationContextFilter, TenantContextFilter.class)
+                .addFilterAfter(auditRequestContextFilter, ImpersonationContextFilter.class);
 
         return http.build();
     }
@@ -127,6 +139,12 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // A custom response header is invisible to frontend JS on a
+        // cross-origin request unless explicitly exposed - see
+        // AuditRequestContextFilter, which sets this on every
+        // authenticated response so the frontend can thread a related
+        // sequence's correlation_id into a subsequent call.
+        configuration.setExposedHeaders(List.of("X-Correlation-Id"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

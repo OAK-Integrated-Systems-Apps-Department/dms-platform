@@ -4,7 +4,6 @@ import com.oak.dms.security.rbac.dto.CreateRoleRequest;
 import com.oak.dms.security.rbac.dto.UpdateRoleRequest;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.security.rbac.dto.RoleResponse;
-import com.oak.dms.security.rbac.RoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

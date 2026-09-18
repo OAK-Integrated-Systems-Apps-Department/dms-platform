@@ -1,8 +1,7 @@
 "use client"
 
-import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
-import { AlertTriangle, ChevronLeft } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"

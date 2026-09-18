@@ -1,5 +1,9 @@
 package com.oak.dms.security.rbac;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.security.auth.TenantContext;
@@ -15,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -36,6 +41,7 @@ public class PermissionActionServiceImpl implements PermissionActionService {
     private final PermissionModuleRepository permissionModuleRepository;
     private final PermissionRepository permissionRepository;
     private final PermissionActionMapper permissionActionMapper;
+    private final AuditService auditService;
 
     @Override
     public PermissionActionResponse createAction(CreatePermissionActionRequest request) {
@@ -57,6 +63,19 @@ public class PermissionActionServiceImpl implements PermissionActionService {
 
         PermissionAction saved = permissionActionRepository.save(action);
         log.info("Created permission action {} ({}.{})", saved.getActionId(), module.getModuleCode(), saved.getActionCode());
+
+        auditService.event(AuditActionCatalog.PERMISSION_ACTION_CREATED)
+                .objectType(AuditObjectTypes.PERMISSION_ACTION)
+                .objectId(saved.getActionId())
+                .resourceName(module.getModuleCode() + "." + saved.getActionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "moduleCode", module.getModuleCode(),
+                        "actionCode", saved.getActionCode(),
+                        "actionName", saved.getActionName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription()))
+                .log();
+
         return permissionActionMapper.toResponse(saved, module.getModuleCode());
     }
 
@@ -84,6 +103,9 @@ public class PermissionActionServiceImpl implements PermissionActionService {
     @Override
     public PermissionActionResponse updateAction(UUID actionId, UpdatePermissionActionRequest request) {
         PermissionAction action = findActive(actionId);
+        Map<String, Object> previousValue = Map.of(
+                "actionName", action.getActionName(),
+                "description", action.getDescription() == null ? "" : action.getDescription());
 
         action.setActionName(request.actionName());
         action.setDescription(request.description());
@@ -92,6 +114,18 @@ public class PermissionActionServiceImpl implements PermissionActionService {
 
         PermissionAction saved = permissionActionRepository.save(action);
         log.info("Updated permission action {}", saved.getActionId());
+
+        auditService.event(AuditActionCatalog.PERMISSION_ACTION_UPDATED)
+                .objectType(AuditObjectTypes.PERMISSION_ACTION)
+                .objectId(saved.getActionId())
+                .resourceName(saved.getActionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "actionName", saved.getActionName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription()))
+                .log();
+
         return toEnrichedResponse(saved, null);
     }
 
@@ -110,6 +144,13 @@ public class PermissionActionServiceImpl implements PermissionActionService {
         action.setUpdatedAt(OffsetDateTime.now());
         permissionActionRepository.save(action);
         log.info("Deleted permission action {}", actionId);
+
+        auditService.event(AuditActionCatalog.PERMISSION_ACTION_DELETED)
+                .objectType(AuditObjectTypes.PERMISSION_ACTION)
+                .objectId(actionId)
+                .resourceName(action.getActionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private PermissionAction findActive(UUID actionId) {

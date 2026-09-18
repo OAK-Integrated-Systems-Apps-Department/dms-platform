@@ -42,12 +42,14 @@ export function useUser(userId: string) {
   const queryClient = useQueryClient()
 
   const toggleStatusMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason?: string) => {
       const current = await fetchUser(userId)
       if (current.status === "active") {
         // A real soft-delete (DELETE /api/v1/users/{id}), not a
         // status-field PUT — see deactivateUser in lib/users/api.ts.
-        await deactivateUser(userId)
+        // reason is mandatory server-side for this direction only —
+        // UserStatusDialog only collects/passes one when deactivating.
+        await deactivateUser(userId, reason ?? "")
         return "deactivated" as const
       }
       // Reachable now: getUser (above) no longer excludes deactivated
@@ -96,7 +98,7 @@ export function useUser(userId: string) {
 
   return {
     ...query,
-    toggleStatus: () => toggleStatusMutation.mutate(),
+    toggleStatus: (reason?: string) => toggleStatusMutation.mutate(reason),
     sendPasswordReset: () => sendPasswordResetMutation.mutate(),
     // reactivate: () => reactivateMutation.mutate(),
   }

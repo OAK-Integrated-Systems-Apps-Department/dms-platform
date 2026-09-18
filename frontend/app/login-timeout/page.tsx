@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { Clock, Layers } from "lucide-react"
 
-import { APP_NAME } from "@/lib/app-config"
+import { APP_NAME, ROUTES } from "@/lib/app-config"
 
 /**
  * Shown when a login attempt has been sitting too long and Keycloak's
@@ -17,7 +17,7 @@ export default function LoginTimeoutPage() {
   const router = useRouter()
 
   function handleRestart() {
-    router.push("/login")
+    router.push(ROUTES.LOGIN)
   }
 
   return (

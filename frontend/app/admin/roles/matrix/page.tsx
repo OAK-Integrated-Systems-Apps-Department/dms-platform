@@ -1,8 +1,5 @@
 "use client"
 
-import Link from "next/link"
-import { ChevronLeft } from "lucide-react"
-
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"

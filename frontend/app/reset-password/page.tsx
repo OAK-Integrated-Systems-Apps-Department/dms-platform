@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query"
 import { CheckCircle2, Layers } from "lucide-react"
 import { toast } from "sonner"
 
-import { APP_NAME } from "@/lib/app-config"
+import { APP_NAME, ROUTES } from "@/lib/app-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 
 /**
@@ -119,7 +119,7 @@ export default function ResetPasswordPage() {
         )}
 
         <a
-          href="/login"
+          href={ROUTES.LOGIN}
           className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">

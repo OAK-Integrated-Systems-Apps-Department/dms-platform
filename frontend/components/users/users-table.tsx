@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Eye, KeyRound, Pencil, Trash2, UserCheck, UserX } from "lucide-react"
+import { Eye, KeyRound, Pencil, Trash2, UserCheck, UserCog, UserX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { SortableTh } from "@/components/ui/sortable-th"
@@ -11,17 +11,20 @@ import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import { UserDeleteDialog } from "./user-delete-dialog"
+import { UserImpersonateDialog } from "./user-impersonate-dialog"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
 import { UserStatusDialog } from "./user-status-dialog"
 import type { UserRecord } from "./types"
 
 interface UsersTableProps {
   users: UserRecord[]
-  onToggleStatus: (id: string) => void
+  onToggleStatus: (id: string, reason?: string) => void
   onResetPassword: (id: string) => void
   onDelete: (id: string) => void
   onView: (user: UserRecord) => void
   onEdit: (user: UserRecord) => void
+  /** Starts an "Act as User" session for this row - requires `otua.manage-users.impersonate` (`canImpersonate`). */
+  onImpersonate: (id: string) => void
 
   /** Whether the signed-in user may edit another account's profile — requires `otua.manage-users.update` (see `usePermissions`). Hidden entirely rather than shown disabled, so a view-only user never sees a button that would just 403 on click. */
   canEdit: boolean
@@ -63,6 +66,18 @@ interface UsersTableProps {
    * shown disabled, since it isn't a capability they can ever use.
    */
   canDelete: boolean
+
+  /**
+   * Whether the signed-in user may impersonate another account —
+   * requires `otua.manage-users.impersonate`. Hidden for the caller's own
+   * row (impersonating yourself is a no-op the backend rejects anyway) and
+   * disabled for an inactive account, matching Reset Password's own
+   * active-only rule.
+   */
+  canImpersonate: boolean
+
+  /** The signed-in user's own id, to exclude their row from the Act as User action. */
+  currentUserId: string | undefined
 }
 
 type SortKey = "name" | "username" | "email" | "status" | "lastLogin"
@@ -94,12 +109,15 @@ export function UsersTable({
   onDelete,
   onView,
   onEdit,
+  onImpersonate,
   canEdit,
   canAssignRole,
   canResetPassword,
   canActivate,
   canDeactivate,
   canDelete,
+  canImpersonate,
+  currentUserId,
 }: UsersTableProps) {
   const [pendingUser, setPendingUser] = useState<UserRecord | null>(null)
   const [pendingResetUser, setPendingResetUser] = useState<UserRecord | null>(
@@ -108,6 +126,8 @@ export function UsersTable({
   const [pendingDeleteUser, setPendingDeleteUser] = useState<UserRecord | null>(
     null
   )
+  const [pendingImpersonateUser, setPendingImpersonateUser] =
+    useState<UserRecord | null>(null)
 
   const { sorted, sortKey, direction, toggleSort } = useSortableTable<
     UserRecord,
@@ -146,7 +166,7 @@ export function UsersTable({
               />
               <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 Role(s)
-                </th>
+              </th>
               <SortableTh
                 label="Status"
                 active={sortKey === "status"}
@@ -271,38 +291,38 @@ export function UsersTable({
 
                     {canResetPassword &&
                       (() => {
-                      const canResetThisUser = user.status === "Active"
-                      return (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={(props) => (
-                            <button
-                              {...props}
-                              type="button"
-                                onClick={() =>
-                                  canResetThisUser && setPendingResetUser(user)
-                                }
-                                disabled={!canResetThisUser}
-                              aria-label={`Reset password for ${user.name}`}
-                                className={cn(
-                                  "flex size-7 items-center justify-center rounded-sm transition-colors",
-                                  canResetThisUser
-                                    ? "text-primary hover:bg-muted"
-                                    : "cursor-not-allowed text-muted-foreground opacity-50"
-                                )}
-                            >
-                              <KeyRound size={15} />
-                            </button>
-                          )}
-                        />
-                        <TooltipContent>
-                            {canResetThisUser
-                              ? getTooltip("users.actions.resetPassword")
-                              : getTooltip("users.pending.resetPasswordDisabled")}
-                        </TooltipContent>
-                      </Tooltip>
-                      )
-                    })()}
+                        const canResetThisUser = user.status === "Active"
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() =>
+                                    canResetThisUser && setPendingResetUser(user)
+                                  }
+                                  disabled={!canResetThisUser}
+                                  aria-label={`Reset password for ${user.name}`}
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-sm transition-colors",
+                                    canResetThisUser
+                                      ? "text-primary hover:bg-muted"
+                                      : "cursor-not-allowed text-muted-foreground opacity-50"
+                                  )}
+                                >
+                                  <KeyRound size={15} />
+                                </button>
+                              )}
+                            />
+                            <TooltipContent>
+                              {canResetThisUser
+                                ? getTooltip("users.actions.resetPassword")
+                                : getTooltip("users.pending.resetPasswordDisabled")}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
 
                     {(user.status === "Active" ? canDeactivate : canActivate) &&
                       (() => {
@@ -361,6 +381,43 @@ export function UsersTable({
                         )
                       })()}
 
+                    {canImpersonate &&
+                      user.id !== currentUserId &&
+                      (() => {
+                        const canImpersonateThisUser = user.status === "Active"
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() =>
+                                    canImpersonateThisUser &&
+                                    setPendingImpersonateUser(user)
+                                  }
+                                  disabled={!canImpersonateThisUser}
+                                  aria-label={`Act as ${user.name}`}
+                                  className={cn(
+                                    "flex size-7 items-center justify-center rounded-sm transition-colors",
+                                    canImpersonateThisUser
+                                      ? "text-primary hover:bg-muted"
+                                      : "cursor-not-allowed text-muted-foreground opacity-50"
+                                  )}
+                                >
+                                  <UserCog size={15} />
+                                </button>
+                              )}
+                            />
+                            <TooltipContent>
+                              {canImpersonateThisUser
+                                ? getTooltip("users.actions.impersonate")
+                                : getTooltip("users.pending.impersonateDisabled")}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
+
                     {canDelete &&
                       (() => {
                         const isTenantAdmin =
@@ -412,8 +469,8 @@ export function UsersTable({
           onOpenChange={(open) => {
             if (!open) setPendingUser(null)
           }}
-          onConfirm={() => {
-            onToggleStatus(pendingUser.id)
+          onConfirm={(reason) => {
+            onToggleStatus(pendingUser.id, reason)
             setPendingUser(null)
           }}
         />
@@ -443,6 +500,20 @@ export function UsersTable({
           onConfirm={() => {
             onDelete(pendingDeleteUser.id)
             setPendingDeleteUser(null)
+          }}
+        />
+      )}
+
+      {pendingImpersonateUser && (
+        <UserImpersonateDialog
+          user={pendingImpersonateUser}
+          open={pendingImpersonateUser !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingImpersonateUser(null)
+          }}
+          onConfirm={() => {
+            onImpersonate(pendingImpersonateUser.id)
+            setPendingImpersonateUser(null)
           }}
         />
       )}

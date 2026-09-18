@@ -21,6 +21,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch } from "@/lib/api-fetch"
+import { ROUTES } from "@/lib/app-config"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 
@@ -92,7 +93,7 @@ export function AppTopbar() {
     try {
       await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST" })
     } catch {}
-    router.push("/login")
+    router.push(ROUTES.LOGIN)
     router.refresh()
   }
 
@@ -104,8 +105,8 @@ export function AppTopbar() {
         className="min-w-0 max-w-[460px] flex-1"
         value={searchQuery}
         onChange={setSearchQuery}
-          placeholder="Search documents, folders, people…"
-        />
+        placeholder="Search documents, folders, people…"
+      />
 
       <div className="flex-1" />
 

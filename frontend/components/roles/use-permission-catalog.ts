@@ -72,14 +72,28 @@ interface UsePermissionCatalogResult {
  * role with full `asm.manage-roles-permissions.*` access (including
  * assign-permissions) still couldn't browse the catalog, since these two
  * backend reads were never migrated off the pre-granular coarse codes.
+ *
+ * `gatePermissions` defaults to that same three-code set for the four
+ * screens above, but Access Summary passes its own gate instead
+ * (`ASM_ROLES_VIEW_ROLE`/`ASM_ROLES_UPDATE_ROLE` — see
+ * `access-summary.tsx`'s `canViewRoles`) since that screen's whole
+ * "can this caller see roles/permissions at all" question is already
+ * answered by that pair, not by the legacy/assign-permissions set built
+ * for these four *editing* screens. Reusing the caller's own gate here
+ * (rather than this hook's default) keeps the catalog fetch and the
+ * effective-permissions fetch tied to one source of truth, so the two
+ * numbers Access Summary shows side by side can never end up gated on
+ * different permissions and disagree about whether either is ready yet.
  */
-export function usePermissionCatalog(): UsePermissionCatalogResult {
-  const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions()
-  const canView = hasAnyPermission(
+export function usePermissionCatalog(
+  gatePermissions: string[] = [
     PermissionCodes.LEGACY_ROLE_VIEW,
     PermissionCodes.LEGACY_ROLE_MANAGE,
-    PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS
-  )
+    PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS,
+  ]
+): UsePermissionCatalogResult {
+  const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions()
+  const canView = hasAnyPermission(...gatePermissions)
 
   const permissions = usePermissionsStore((state) => state.permissions)
   const modules = usePermissionsStore((state) => state.modules)

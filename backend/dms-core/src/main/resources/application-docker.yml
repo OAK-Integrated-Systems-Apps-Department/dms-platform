@@ -4,6 +4,10 @@ spring:
   rabbitmq:
     host: rabbitmq
 
+  data:
+    redis:
+      host: redis
+
   mail:
     host: mailpit
     port: 1025

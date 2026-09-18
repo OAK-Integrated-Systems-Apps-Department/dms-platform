@@ -1,6 +1,5 @@
 package com.oak.dms.security.rbac;
 
-import com.oak.dms.security.rbac.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

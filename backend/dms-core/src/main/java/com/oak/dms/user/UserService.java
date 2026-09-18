@@ -51,7 +51,13 @@ public interface UserService {
 
     UserResponse updateUser(UUID userId, UpdateUserRequest request);
 
-    void deactivateUser(UUID userId);
+    /**
+     * @param reason Why the account is being deactivated - mandatory (see
+     *               AuditActionCatalog's USER_DEACTIVATED entry): sanitized
+     *               and recorded on the resulting audit event, never stored
+     *               anywhere on the user row itself.
+     */
+    void deactivateUser(UUID userId, String reason);
 
     /**
      * Permanently removes a user from the tenant — a genuine hard delete

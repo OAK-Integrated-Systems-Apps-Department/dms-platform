@@ -3,6 +3,7 @@ package com.oak.dms.user;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.user.dto.CreateUserRequest;
+import com.oak.dms.user.dto.DeactivateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
 import com.oak.dms.user.dto.UpdateOwnProfileRequest;
 import com.oak.dms.user.dto.UpdateUserRequest;
@@ -146,9 +147,11 @@ public class UserController {
     @DeleteMapping("/{userId}")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Deactivate (soft-delete) a user")
-    public void deactivateUser(@PathVariable UUID userId) {
-        userService.deactivateUser(userId);
+    @Operation(summary = "Deactivate (soft-delete) a user",
+            description = "Requires a non-blank reason - one of the audit event catalogue's high-impact "
+                    + "actions that must carry a justification (see AuditActionCatalog's USER_DEACTIVATED entry).")
+    public void deactivateUser(@PathVariable UUID userId, @Valid @RequestBody DeactivateUserRequest request) {
+        userService.deactivateUser(userId, request.reason());
     }
 
     @PostMapping("/{userId}/reactivate")
