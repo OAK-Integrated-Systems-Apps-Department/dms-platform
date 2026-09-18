@@ -10,8 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,7 +69,7 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
 
         List<ValidationError> errors = new ArrayList<>();
         for (ResolvedField field : fields) {
-            if (field.hidden()) {
+            if (field.hidden() || field.status() != MetadataField.FieldStatus.active) {
                 continue;
             }
 
@@ -92,6 +94,12 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
             }
 
             if (present) {
+                if (MetadataField.OPTION_BACKED_DATA_TYPES.contains(field.dataType()) && !field.activeOptions().isEmpty()) {
+                    ValidationError optionError = checkOptionMembership(field, value);
+                    if (optionError != null) {
+                        errors.add(optionError);
+                    }
+                }
                 for (CachedRule rule : field.rules()) {
                     ValidationError error = evaluateRule(field, rule, value);
                     if (error != null) {
@@ -112,6 +120,9 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
     private List<ResolvedField> resolveSchema(UUID documentTypeId, UUID tenantId, int version) {
         List<DocumentTypeField> mapping = documentTypeFieldRepository.findByDocumentTypeAndVersion(documentTypeId, tenantId, version);
         List<UUID> fieldIds = mapping.stream().map(DocumentTypeField::getFieldId).distinct().toList();
+        if (fieldIds.isEmpty()) {
+            return List.of();
+        }
 
         Map<UUID, MetadataField> fieldsById = metadataFieldRepository
                 .findAllByFieldIdInAndTenantIdAndDeletedFalse(fieldIds, tenantId).stream()
@@ -121,6 +132,12 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                 .findAllByFieldIn(fieldIds, tenantId).stream()
                 .collect(Collectors.groupingBy(MetadataFieldValidation::getFieldId));
 
+        Map<UUID, List<CachedOption>> optionsByField = metadataFieldOptionRepository
+                .findAllActiveByFieldsOrdered(fieldIds, tenantId).stream()
+                .collect(Collectors.groupingBy(MetadataFieldOption::getFieldId,
+                        Collectors.mapping(o -> new CachedOption(o.getOptionId(), o.getOptionValue(), o.getOptionLabel(), o.getDisplayOrder()),
+                                Collectors.toList())));
+
         List<ResolvedField> resolved = new ArrayList<>();
         for (DocumentTypeField m : mapping) {
             MetadataField field = fieldsById.get(m.getFieldId());
@@ -128,20 +145,45 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                 continue;
             }
             List<CachedOption> activeOptions = MetadataField.OPTION_BACKED_DATA_TYPES.contains(field.getDataType())
-                    ? metadataFieldOptionRepository.findAllActiveByFieldOrdered(field.getFieldId(), tenantId).stream()
-                        .map(o -> new CachedOption(o.getOptionId(), o.getOptionValue(), o.getOptionLabel(), o.getDisplayOrder()))
-                        .toList()
+                    ? optionsByField.getOrDefault(field.getFieldId(), List.of())
                     : List.of();
             List<CachedRule> rules = rulesByField.getOrDefault(field.getFieldId(), List.of()).stream()
                     .map(r -> new CachedRule(r.getValidationId(), r.getRuleType(), r.getRuleValue(), r.getErrorMessage(), r.getSeverity()))
                     .toList();
             resolved.add(new ResolvedField(field.getFieldKey(), field.getLabel(), field.getDataType(),
-                    m.isMandatory(), m.isHidden(), activeOptions, rules));
+                    m.isMandatory(), m.isHidden(), field.getStatus(), activeOptions, rules));
         }
         return resolved;
     }
 
+    private List<Object> elementsOf(Object value) {
+        return value instanceof Collection<?> collection ? List.copyOf(collection) : List.of(value);
+    }
+
     private ValidationError evaluateRule(ResolvedField field, CachedRule rule, Object value) {
+        for (Object element : elementsOf(value)) {
+            ValidationError error = evaluateSingleValue(field, rule, element);
+            if (error != null) {
+                return error;
+            }
+        }
+        return null;
+    }
+
+    private ValidationError checkOptionMembership(ResolvedField field, Object value) {
+        Set<String> activeValues = field.activeOptions().stream()
+                .map(CachedOption::optionValue)
+                .collect(Collectors.toSet());
+        for (Object element : elementsOf(value)) {
+            if (!activeValues.contains(String.valueOf(element))) {
+                return new ValidationError(field.fieldKey(), "VALUE_NOT_IN_OPTIONS",
+                        "Field '" + field.label() + "' must be one of its active options.", "error");
+            }
+        }
+        return null;
+    }
+
+    private ValidationError evaluateSingleValue(ResolvedField field, CachedRule rule, Object value) {
         String text = String.valueOf(value);
         String severity = rule.severity().name();
         try {
@@ -175,7 +217,13 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                         return error(field, rule, "REGEX", severity, "match the required format");
                     }
                 }
-                case date_format -> DateTimeFormatter.ofPattern(rule.ruleValue()).parse(text);
+                case date_format -> {
+                    try {
+                        DateTimeFormatter.ofPattern(rule.ruleValue()).parse(text);
+                    } catch (DateTimeParseException e) {
+                        return error(field, rule, "DATE_FORMAT", severity, "match the format '" + rule.ruleValue() + "'");
+                    }
+                }
                 case date_range -> {
                     String[] parts = rule.ruleValue().split("/", 2);
                     LocalDate min = LocalDate.parse(parts[0]);
@@ -226,6 +274,6 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
     }
 
     private record ResolvedField(String fieldKey, String label, String dataType, boolean mandatory, boolean hidden,
-                                  List<CachedOption> activeOptions, List<CachedRule> rules) {
+                                  MetadataField.FieldStatus status, List<CachedOption> activeOptions, List<CachedRule> rules) {
     }
 }

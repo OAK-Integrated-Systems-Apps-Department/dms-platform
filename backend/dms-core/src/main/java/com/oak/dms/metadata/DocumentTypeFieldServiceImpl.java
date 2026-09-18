@@ -1,5 +1,6 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.common.exception.DeprecatedFieldMappingException;
 import com.oak.dms.common.exception.DuplicateDisplayOrderException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.cache.SchemaCacheService;
@@ -90,6 +91,16 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
         Map<UUID, MetadataField> fieldsById = metadataFieldRepository
                 .findAllByFieldIdInAndTenantIdAndDeletedFalse(requestedFieldIds, tenantId).stream()
                 .collect(Collectors.toMap(MetadataField::getFieldId, f -> f));
+
+        List<String> deprecatedFieldKeys = fieldsById.values().stream()
+                .filter(f -> f.getStatus() == MetadataField.FieldStatus.deprecated)
+                .map(MetadataField::getFieldKey)
+                .sorted()
+                .toList();
+        if (!deprecatedFieldKeys.isEmpty()) {
+            throw new DeprecatedFieldMappingException(
+                    "Cannot map deprecated field(s): " + String.join(", ", deprecatedFieldKeys));
+        }
 
         // Sort by the client's submitted displayOrder, then re-stamp as a
         // canonical (index+1)*10 sequence so the stored values are always
@@ -194,7 +205,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
 
         return new DocumentTypeSchemaResponse.SchemaField(
                 field.getFieldId(), field.getFieldKey(), field.getLabel(), field.getHelpText(), field.getDataType(),
-                mapping.isMandatory(), mapping.isHidden(), mapping.getDisplayOrder(),
+                field.getStatus().name(), mapping.isMandatory(), mapping.isHidden(), mapping.getDisplayOrder(),
                 mapping.getFieldGroup(), effectiveDefault, options, validations);
     }
 

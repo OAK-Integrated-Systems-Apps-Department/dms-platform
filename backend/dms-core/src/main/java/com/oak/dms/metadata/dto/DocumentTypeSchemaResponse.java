@@ -22,6 +22,7 @@ public record DocumentTypeSchemaResponse(
             String label,
             String helpText,
             String dataType,
+            String status,
             boolean mandatory,
             boolean hidden,
             int displayOrder,

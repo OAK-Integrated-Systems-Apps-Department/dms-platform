@@ -33,6 +33,20 @@ public interface MetadataFieldOptionRepository extends JpaRepository<MetadataFie
     }
 
     @Query("""
+            select o from MetadataFieldOption o
+            where o.fieldId in :fieldIds and o.tenantId = :tenantId and o.deleted = false
+              and o.status = :status
+            order by o.fieldId, o.displayOrder asc
+            """)
+    List<MetadataFieldOption> findAllByFieldInAndStatusOrdered(@Param("fieldIds") List<UUID> fieldIds,
+                                                                @Param("tenantId") UUID tenantId,
+                                                                @Param("status") MetadataFieldOption.OptionStatus status);
+
+    default List<MetadataFieldOption> findAllActiveByFieldsOrdered(List<UUID> fieldIds, UUID tenantId) {
+        return findAllByFieldInAndStatusOrdered(fieldIds, tenantId, MetadataFieldOption.OptionStatus.active);
+    }
+
+    @Query("""
             select count(o) > 0 from MetadataFieldOption o
             where o.fieldId = :fieldId and o.tenantId = :tenantId
               and o.status = :status and o.deleted = false
