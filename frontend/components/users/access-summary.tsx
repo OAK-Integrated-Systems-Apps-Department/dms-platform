@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import Link from "next/link"
 import { Check, ChevronDown, Loader2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -12,12 +11,10 @@ import {
 } from "@/components/ui/collapsible"
 import { LoadingState } from "@/components/ui/loading-state"
 import { SearchInput } from "@/components/ui/search-input"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { getTooltip } from "@/lib/tooltips"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { permissionGroups } from "@/components/roles/data"
+import { usePermissionCatalog } from "@/components/roles/use-permission-catalog"
 import {
   filterPermissionGroups,
   getLeafPermissionIds,
@@ -30,7 +27,7 @@ import type { UserRecord } from "./types"
 
 interface UserAccessSummaryProps {
   user: UserRecord
-  onToggleStatus: () => void
+  onToggleStatus: (reason?: string) => void
   /** Whether the signed-in user may activate/deactivate this account — requires `otua.manage-users.activate-deactivate` (see `usePermissions`). */
   canManage: boolean
 }
@@ -174,6 +171,18 @@ export function UserAccessSummary({
     PermissionCodes.ASM_ROLES_VIEW_ROLE,
     PermissionCodes.ASM_ROLES_UPDATE_ROLE
   )
+  // Same two codes as `canViewRoles` above, not this hook's own default
+  // gate (built for the four permission-*editing* screens) — see the
+  // hook's own doc comment for why: this screen's roles/effective-
+  // permissions fetch is already gated on this exact pair, so gating the
+  // catalog fetch on anything else could let one of the two loading
+  // states resolve (and its count render) before the other, or after a
+  // caller who can see roles but not the legacy/assign-permissions set.
+  const { groups: permissionGroups, loading: catalogLoading } =
+    usePermissionCatalog([
+      PermissionCodes.ASM_ROLES_VIEW_ROLE,
+      PermissionCodes.ASM_ROLES_UPDATE_ROLE,
+    ])
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   // 32 modules is too many to show fully expanded by default; open only
   // modules where this user actually has a granted permission.
@@ -197,6 +206,15 @@ export function UserAccessSummary({
   // parent) — collapsed-by-default / granted-first only applies to the
   // unfiltered browse state.
   const isSearching = query.trim().length > 0
+  // Gates every numeric/rendered count below, not just `grantsLoading` on
+  // its own — the catalog (denominator) and the roles/effective-
+  // permissions fetch (numerator) are two independent requests, gated on
+  // the same permissions but resolving at different times. Waiting on
+  // both together is what keeps this screen from ever showing a
+  // numerator computed from one and a denominator from the other, e.g.
+  // effective permissions already loaded while the catalog is still on
+  // its first fetch.
+  const isLoading = grantsLoading || catalogLoading
 
   // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
   // .update-role — otua.manage-users.* alone (what actually gates
@@ -263,7 +281,7 @@ export function UserAccessSummary({
       })
       .filter((g) => g.grantedCount > 0)
       .sort((a, b) => a.group.module.localeCompare(b.group.module))
-  }, [effectivePermissions])
+  }, [permissionGroups, effectivePermissions])
 
   // Runs after the click handler below has already set `expanded` (and
   // cleared `query`, so the target module can't be hidden by a stale
@@ -289,7 +307,7 @@ export function UserAccessSummary({
   // ahead of an ungranted one.
   const filteredGroups = useMemo(
     () => filterPermissionGroups(permissionGroups, query),
-    [query]
+    [permissionGroups, query]
   )
 
   // Granted-first (auto-expanded), ungranted-last (collapsed) — the
@@ -392,13 +410,13 @@ export function UserAccessSummary({
           single role's Role Permission Configuration page to link to. */}
       <h3 className="mb-2.5 flex items-center justify-between text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
         <span>Permission Summary</span>
-        {!grantsLoading && (
+        {!isLoading && (
           <span className="font-mono text-[10.5px] font-normal tracking-normal text-[var(--ink-faint)] normal-case">
             {grantedModules.length} of {permissionGroups.length} modules
           </span>
         )}
       </h3>
-      {grantsLoading ? (
+      {isLoading ? (
         <div className="mb-6 flex items-center gap-2 text-[13px] text-muted-foreground">
           <Loader2 size={14} className="animate-spin" />
           Loading permission catalog…
@@ -436,7 +454,7 @@ export function UserAccessSummary({
           Effective Permissions (merged across roles)
         </h3>
         <span className="text-[12px] text-muted-foreground">
-          {grantsLoading
+          {isLoading
             ? "Loading…"
             : `${effectivePermissions.size} of ${permissionGroups.reduce(
                 (n, g) => n + getLeafPermissionIds(g.permissions).length,
@@ -445,7 +463,7 @@ export function UserAccessSummary({
         </span>
       </div>
 
-      {grantsLoading ? (
+      {isLoading ? (
         <LoadingState message="Loading effective permissions…" />
       ) : (
         <>
@@ -522,7 +540,7 @@ export function UserAccessSummary({
         user={user}
         open={statusDialogOpen}
         onOpenChange={setStatusDialogOpen}
-        onConfirm={() => onToggleStatus()}
+        onConfirm={(reason) => onToggleStatus(reason)}
       />
     </div>
   )

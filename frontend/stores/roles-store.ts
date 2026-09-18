@@ -5,7 +5,7 @@ import type { RoleFormValues } from "@/components/roles/schema"
 import type { RoleRecord, RoleStatus } from "@/components/roles/types"
 import { API_BASE_URL } from "@/lib/api-config"
 import { ApiError, friendlyMessage } from "@/lib/api-error"
-import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { apiFetch, apiFetchJson, correlationTokenFrom, withCorrelation } from "@/lib/api-fetch"
 import { usePermissionsStore } from "@/stores/permissions-store"
 
 /** Shape returned by `RoleResponse.java`. */
@@ -141,10 +141,17 @@ interface RolesState {
    * `RoleRecord.permissions` never reflects a desired-but-not-actually-
    * applied set. Returns a single combined error message if any of the
    * grant/revoke calls failed, or null if everything applied cleanly.
+   *
+   * `correlationToken` is optional - pass one (from `correlationTokenFrom`
+   * on a prior response) when this call is part of a larger related
+   * sequence, e.g. `addRole` continuing the correlation its own
+   * create-role call started, so every grant/revoke below groups under
+   * that same audit correlation_id instead of each starting its own.
    */
   syncRolePermissions: (
     roleId: string,
-    desiredCodes: string[]
+    desiredCodes: string[],
+    correlationToken?: string | null
   ) => Promise<{ error: string | null }>
   /** PUT /api/v1/roles/{id}, resending the role's current name/description with status flipped. */
   toggleStatus: (id: string) => Promise<{ error: string | null }>
@@ -252,9 +259,9 @@ export const useRolesStore = create<RolesState>((set, get) => ({
   },
 
   addRole: async (values) => {
-    let body: BackendRoleResponse
+    let response: Response
     try {
-      body = await apiFetchJson(
+      response = await apiFetch(
         `${API_BASE_URL}/api/v1/roles`,
         {
           method: "POST",
@@ -270,6 +277,12 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     } catch (err) {
       return { role: null, error: friendlyMessage(err) }
     }
+    const body: BackendRoleResponse = await response.json()
+    // Carries this create-role call's own audit correlation_id forward
+    // into the assign-permission calls below, so the whole "Add Role"
+    // action groups under one correlation_id instead of each request
+    // starting its own - see AuditRequestContextFilter.
+    const correlationToken = correlationTokenFrom(response)
 
     const role = fromBackend(body)
     set((state) => ({ roles: [role, ...state.roles] }))
@@ -279,7 +292,7 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     // this point) — so anything selected on the Add Role form is applied
     // as a second step, once the role itself exists.
     if (values.permissions.length > 0) {
-      const { error: permError } = await get().syncRolePermissions(body.roleId, values.permissions)
+      const { error: permError } = await get().syncRolePermissions(body.roleId, values.permissions, correlationToken)
       if (permError) {
         return {
           role: get().roles.find((r) => r.id === body.roleId) ?? role,
@@ -325,7 +338,7 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     return { role: updated, error: null }
   },
 
-  syncRolePermissions: async (roleId, desiredCodes) => {
+  syncRolePermissions: async (roleId, desiredCodes, correlationToken) => {
     // Re-fetch current grants fresh rather than trusting whatever's
     // cached in `roleGrants` — a stale local diff could under- or
     // over-apply changes another tab/session already made.
@@ -357,11 +370,14 @@ export const useRolesStore = create<RolesState>((set, get) => ({
       }
       await apiFetch(
         `${API_BASE_URL}/api/v1/roles/${roleId}/permissions`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ permissionId }),
-        },
+        withCorrelation(
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ permissionId }),
+          },
+          correlationToken
+        ),
         `Could not grant "${code}".`
       )
     })
@@ -369,7 +385,7 @@ export const useRolesStore = create<RolesState>((set, get) => ({
     const revokeResults = toRevoke.map(async (grant) => {
       await apiFetch(
         `${API_BASE_URL}/api/v1/roles/${roleId}/permissions/${grant.rolePermissionId}`,
-        { method: "DELETE" },
+        withCorrelation({ method: "DELETE" }, correlationToken),
         `Could not revoke "${grant.permissionCode}".`
       )
     })

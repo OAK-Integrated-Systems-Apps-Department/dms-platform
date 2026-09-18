@@ -82,14 +82,16 @@ export function useUsers() {
   const queryClient = useQueryClient()
 
   const toggleStatusMutation = useMutation({
-    mutationFn: async (userId: string) => {
+    mutationFn: async ({ userId, reason }: { userId: string; reason?: string }) => {
       const current = await fetchUser(userId)
       if (current.status === "active") {
         // A real soft-delete (DELETE /api/v1/users/{id}): removes the row
         // from every OTHER lookup (auth, duplicate-email checks) but not
         // from this list or the View User page — see deactivateUser in
         // lib/users/api.ts and UserServiceImpl#listUsers/#getUser.
-        await deactivateUser(userId)
+        // reason is mandatory server-side for this direction only —
+        // UserStatusDialog only collects/passes one when deactivating.
+        await deactivateUser(userId, reason ?? "")
         return "deactivated" as const
       }
       // Reachable now: listUsers (above) no longer excludes deactivated
@@ -163,7 +165,8 @@ export function useUsers() {
   return {
     ...query,
     users: query.data ?? [],
-    toggleStatus: (userId: string) => toggleStatusMutation.mutate(userId),
+    toggleStatus: (userId: string, reason?: string) =>
+      toggleStatusMutation.mutate({ userId, reason }),
     deleteUser: (userId: string) => deleteUserMutation.mutate(userId),
     sendPasswordReset: (userId: string) =>
       sendPasswordResetMutation.mutate(userId),

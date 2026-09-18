@@ -27,6 +27,14 @@ import java.util.UUID;
  * for every row of a paginated user list would mean N extra queries per
  * page. The frontend's {@code usePermissions()} hook is the only reader
  * of this field.
+ * <p>
+ * {@code impersonating}/{@code impersonatorDisplayName} are the same
+ * {@code GET /api/v1/users/me}-only story as {@code permissions} above -
+ * {@code null}/{@code false} everywhere else. Sourced from
+ * {@link com.oak.dms.security.auth.TenantContext#getImpersonatorIdOrNull()},
+ * never client-supplied: this is what the frontend's impersonation banner
+ * and "Return to Admin" action key off, so it must be exactly as trustworthy
+ * as {@code impersonated_by} on an audit event.
  */
 public record UserResponse(
         UUID userId,
@@ -47,6 +55,8 @@ public record UserResponse(
         OffsetDateTime lastLoginAt,
         /** See {@link com.oak.dms.user.User#getLastPasswordChangedAt()}'s doc comment. */
         OffsetDateTime lastPasswordChangedAt,
-        List<String> permissions
+        List<String> permissions,
+        boolean impersonating,
+        String impersonatorDisplayName
 ) {
 }

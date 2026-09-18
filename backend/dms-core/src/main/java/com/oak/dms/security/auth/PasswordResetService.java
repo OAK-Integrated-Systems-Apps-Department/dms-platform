@@ -1,5 +1,9 @@
 package com.oak.dms.security.auth;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;
@@ -19,11 +23,13 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -73,6 +79,7 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository tokenRepository;
     private final JavaMailSender mailSender;
     private final BrandingProperties branding;
+    private final AuditService auditService;
 
     @Value("${app.frontend-base-url}")
     private String frontendBaseUrl;
@@ -109,7 +116,28 @@ public class PasswordResetService {
                 return;
             }
 
-            issueTokenAndSendEmail(dmsUser.get(), clientIp(request), EmailKind.SELF_SERVICE);
+            User user = dmsUser.get();
+            issueTokenAndSendEmail(user, clientIp(request), EmailKind.SELF_SERVICE);
+
+            // No TenantContext bound here - same reasoning as
+            // #resetPassword's own PASSWORD_RESET_COMPLETED call below:
+            // this endpoint is public, so tenant/actor come explicitly
+            // from the now-resolved user rather than context defaults.
+            // The two "no match" branches above return before this point
+            // and are deliberately never audited - logging an event tied
+            // to an unresolved/nonexistent account would be either
+            // impossible (no tenant/actor to attach it to) or itself a
+            // way to leak account existence via the audit trail, which is
+            // exactly what this method's own doc comment says every
+            // branch here must avoid.
+            auditService.event(AuditActionCatalog.PASSWORD_RESET_REQUESTED)
+                    .tenantId(user.getTenantId())
+                    .actor(user.getUserId(), user.getDisplayName())
+                    .objectType(AuditObjectTypes.USER)
+                    .objectId(user.getUserId())
+                    .resourceName(user.getUsername())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .log();
         } catch (Exception e) {
             // Never let a lookup/send failure distinguish this response
             // from the success path, or surface as a 500 that would do
@@ -188,6 +216,20 @@ public class PasswordResetService {
         token.setUsedAt(OffsetDateTime.now());
         tokenRepository.save(token);
         invalidateOutstandingTokens(user.getUserId());
+
+        // No TenantContext bound here - this endpoint is public (the
+        // person redeeming the token isn't authenticated yet), same
+        // reasoning as AuthService#login's LOGIN_SUCCESS event - so
+        // tenant/actor are passed explicitly from the now-resolved user
+        // rather than relying on AuditService's context-based defaults.
+        auditService.event(AuditActionCatalog.PASSWORD_RESET_COMPLETED)
+                .tenantId(user.getTenantId())
+                .actor(user.getUserId(), user.getDisplayName())
+                .objectType(AuditObjectTypes.USER)
+                .objectId(user.getUserId())
+                .resourceName(user.getUsername())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
 
         log.info("Password reset completed via self-service flow for user {}", user.getUserId());
     }
@@ -336,8 +378,8 @@ public class PasswordResetService {
     private static String hash(String rawToken) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest(rawToken.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(hashed);
+            byte[] hashed = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hashed);
         } catch (NoSuchAlgorithmException e) {
             // SHA-256 is guaranteed available on every standard JVM.
             throw new IllegalStateException(e);

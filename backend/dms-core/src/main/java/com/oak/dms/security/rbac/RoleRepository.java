@@ -1,6 +1,5 @@
 package com.oak.dms.security.rbac;
 
-import com.oak.dms.security.rbac.Role;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

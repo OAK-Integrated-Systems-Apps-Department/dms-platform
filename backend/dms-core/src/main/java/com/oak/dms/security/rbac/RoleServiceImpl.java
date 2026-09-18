@@ -3,15 +3,15 @@ package com.oak.dms.security.rbac;
 import com.oak.dms.security.rbac.dto.CreateRoleRequest;
 import com.oak.dms.security.rbac.dto.UpdateRoleRequest;
 import com.oak.dms.security.rbac.dto.RoleResponse;
-import com.oak.dms.security.rbac.Role;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidRoleStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.security.rbac.RoleMapper;
-import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.keycloak.KeycloakUserService;
-import com.oak.dms.security.rbac.RoleService;
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -40,6 +41,7 @@ public class RoleServiceImpl implements RoleService {
     private final RoleMapper roleMapper;
     private final KeycloakUserService keycloakUserService;
     private final UserRoleRepository userRoleRepository;
+    private final AuditService auditService;
 
     @Override
     public RoleResponse createRole(CreateRoleRequest request) {
@@ -77,6 +79,18 @@ public class RoleServiceImpl implements RoleService {
 
         Role saved = roleRepository.save(role);
         log.info("Created role {} ({}) in tenant {}", saved.getRoleId(), saved.getRoleName(), tenantId);
+
+        auditService.event(AuditActionCatalog.ROLE_CREATED)
+                .objectType(AuditObjectTypes.ROLE)
+                .objectId(saved.getRoleId())
+                .resourceName(saved.getRoleName())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "roleName", saved.getRoleName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "status", saved.getStatus()))
+                .log();
+
         return roleMapper.toResponse(saved);
     }
 
@@ -97,6 +111,10 @@ public class RoleServiceImpl implements RoleService {
     @Override
     public RoleResponse updateRole(UUID roleId, UpdateRoleRequest request) {
         Role role = findOwnedByCallerTenant(roleId);
+        Map<String, Object> previousValue = Map.of(
+                "roleName", role.getRoleName(),
+                "description", role.getDescription() == null ? "" : role.getDescription(),
+                "status", role.getStatus());
 
         // Deactivating a role while it's still assigned to a user would be
         // easy to mistake for actually cutting off that user's access -
@@ -136,6 +154,19 @@ public class RoleServiceImpl implements RoleService {
 
         Role saved = roleRepository.save(role);
         log.info("Updated role {}", saved.getRoleId());
+
+        auditService.event(AuditActionCatalog.ROLE_UPDATED)
+                .objectType(AuditObjectTypes.ROLE)
+                .objectId(saved.getRoleId())
+                .resourceName(saved.getRoleName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "roleName", saved.getRoleName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "status", saved.getStatus()))
+                .log();
+
         return roleMapper.toResponse(saved);
     }
 
@@ -158,12 +189,21 @@ public class RoleServiceImpl implements RoleService {
                             + "Remove it from every user first.");
         }
 
+        String roleName = role.getRoleName();
+
         role.setDeleted(true);
         role.setDeletedAt(OffsetDateTime.now());
         role.setUpdatedBy(TenantContext.getUserId());
         role.setUpdatedAt(OffsetDateTime.now());
         roleRepository.save(role);
         log.info("Deleted role {}", roleId);
+
+        auditService.event(AuditActionCatalog.ROLE_DELETED)
+                .objectType(AuditObjectTypes.ROLE)
+                .objectId(roleId)
+                .resourceName(roleName)
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private Role findOwnedByCallerTenant(UUID roleId) {

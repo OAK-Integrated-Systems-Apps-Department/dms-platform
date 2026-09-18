@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 
 import "./globals.css"
 import { Providers } from "@/components/providers/providers"
+import { SIDEBAR_COOKIE_NAME } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -25,7 +26,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const cookieStore = await cookies()
-  const sidebarOpen = cookieStore.get("sidebar_state")?.value !== "false" // defaults to expanded
+  const sidebarOpen = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value !== "false" // defaults to expanded
 
   return (
     <html

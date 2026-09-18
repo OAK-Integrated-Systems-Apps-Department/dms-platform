@@ -15,11 +15,13 @@ import java.util.UUID;
  * admin's own screens filters to "shared (tenant_id IS NULL) OR owned by
  * this caller's tenant" - never another tenant's custom permissions, not
  * even a 403, since even revealing one exists would leak that tenant's
- * data. {@link #findByPermissionIdAndDeletedFalse} is the one exception,
- * used only by {@link RolePermissionServiceImpl#grantPermission} and
- * {@link RolePermissionRepository#findEffectivePermissionCodes}, both of
- * which do their own tenant check afterward rather than baking it into
- * the query itself (see those call sites).
+ * data. {@link RolePermissionServiceImpl#grantPermission} and
+ * {@link RolePermissionRepository#findEffectivePermissionCodes} enforce
+ * that same visibility rule themselves - the former via
+ * {@link #findVisibleToTenant}, the latter via its own JPQL join straight
+ * against {@link Permission} - rather than relying on
+ * {@link #findByPermissionIdAndDeletedFalse} below, which ignores tenant
+ * scoping entirely and currently has no caller within this module.
  */
 public interface PermissionRepository extends JpaRepository<Permission, UUID> {
 

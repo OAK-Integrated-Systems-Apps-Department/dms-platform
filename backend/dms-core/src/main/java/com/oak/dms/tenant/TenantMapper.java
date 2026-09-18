@@ -1,7 +1,6 @@
 package com.oak.dms.tenant;
 
 import com.oak.dms.tenant.dto.TenantResponse;
-import com.oak.dms.tenant.Tenant;
 import org.mapstruct.Mapper;
 
 /**

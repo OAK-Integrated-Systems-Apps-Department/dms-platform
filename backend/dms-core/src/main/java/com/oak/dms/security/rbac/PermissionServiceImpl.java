@@ -1,5 +1,9 @@
 package com.oak.dms.security.rbac;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidPermissionStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -50,6 +55,7 @@ public class PermissionServiceImpl implements PermissionService {
     private final PermissionModuleRepository permissionModuleRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionMapper permissionMapper;
+    private final AuditService auditService;
 
     @Override
     public PermissionResponse createPermission(CreatePermissionRequest request) {
@@ -87,6 +93,20 @@ public class PermissionServiceImpl implements PermissionService {
 
         Permission saved = permissionRepository.save(permission);
         log.info("Created permission {} ({}) for tenant {}", saved.getPermissionId(), saved.getPermissionCode(), tenantId);
+
+        auditService.event(AuditActionCatalog.PERMISSION_CREATED)
+                .objectType(AuditObjectTypes.PERMISSION)
+                .objectId(saved.getPermissionId())
+                .resourceName(saved.getPermissionCode())
+                .permissionCode(saved.getPermissionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "permissionCode", saved.getPermissionCode(),
+                        "name", saved.getName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "actionId", saved.getActionId()))
+                .log();
+
         return toEnrichedResponse(saved, action);
     }
 
@@ -108,6 +128,11 @@ public class PermissionServiceImpl implements PermissionService {
         Permission permission = requireOwnedByCallerTenant(permissionId);
         PermissionAction action = requireActiveAction(request.actionId());
 
+        Map<String, Object> previousValue = Map.of(
+                "name", permission.getName(),
+                "description", permission.getDescription() == null ? "" : permission.getDescription(),
+                "actionId", permission.getActionId());
+
         permission.setName(request.name());
         permission.setDescription(request.description());
         permission.setActionId(action.getActionId());
@@ -116,6 +141,20 @@ public class PermissionServiceImpl implements PermissionService {
 
         Permission saved = permissionRepository.save(permission);
         log.info("Updated permission {}", saved.getPermissionId());
+
+        auditService.event(AuditActionCatalog.PERMISSION_UPDATED)
+                .objectType(AuditObjectTypes.PERMISSION)
+                .objectId(saved.getPermissionId())
+                .resourceName(saved.getPermissionCode())
+                .permissionCode(saved.getPermissionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "name", saved.getName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "actionId", saved.getActionId()))
+                .log();
+
         return toEnrichedResponse(saved, action);
     }
 
@@ -134,7 +173,7 @@ public class PermissionServiceImpl implements PermissionService {
         // listing a permission code that no longer resolves to anything
         // visible in the catalog.
         if (rolePermissionRepository.existsByPermissionId(permissionId)) {
-            throw new DuplicateResourceException(
+            throw new InvalidPermissionStateException(
                     "Cannot delete permission " + permission.getPermissionCode()
                             + " while it is still granted to one or more roles");
         }
@@ -145,6 +184,14 @@ public class PermissionServiceImpl implements PermissionService {
         permission.setUpdatedAt(OffsetDateTime.now());
         permissionRepository.save(permission);
         log.info("Deleted permission {}", permissionId);
+
+        auditService.event(AuditActionCatalog.PERMISSION_DELETED)
+                .objectType(AuditObjectTypes.PERMISSION)
+                .objectId(permissionId)
+                .resourceName(permission.getPermissionCode())
+                .permissionCode(permission.getPermissionCode())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     /** Visible to the caller (shared, or owned by their tenant) - used by reads, which are allowed to return shared permissions. */

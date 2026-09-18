@@ -27,6 +27,8 @@ public class AuthCookieService {
 
     public static final String ACCESS_TOKEN_COOKIE = "dms_access_token";
     public static final String REFRESH_TOKEN_COOKIE = "dms_refresh_token";
+    /** Carries the signed {@link ImpersonationTokenCodec} grant - see {@link ImpersonationContextFilter}. Independent of the two cookies above: a token refresh never touches this one, and this one never touches the real session's own expiry. */
+    public static final String IMPERSONATION_COOKIE = "dms_impersonation";
 
     private final AuthCookieProperties properties;
 
@@ -54,6 +56,18 @@ public class AuthCookieService {
     public void clearSessionCookies(HttpServletResponse response) {
         addCookie(response, ACCESS_TOKEN_COOKIE, "", 0);
         addCookie(response, REFRESH_TOKEN_COOKIE, "", 0);
+        // A logout must always end an active impersonation session too -
+        // there is no scenario where staying "logged out but still
+        // impersonating" makes sense. Harmless no-op if none was active.
+        clearImpersonationCookie(response);
+    }
+
+    public void writeImpersonationCookie(HttpServletResponse response, String token, long maxAgeSeconds) {
+        addCookie(response, IMPERSONATION_COOKIE, token, maxAgeSeconds);
+    }
+
+    public void clearImpersonationCookie(HttpServletResponse response) {
+        addCookie(response, IMPERSONATION_COOKIE, "", 0);
     }
 
     private void addCookie(HttpServletResponse response, String name, String value, long maxAgeSeconds) {

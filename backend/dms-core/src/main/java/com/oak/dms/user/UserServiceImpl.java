@@ -10,6 +10,10 @@ import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
@@ -54,6 +58,7 @@ public class UserServiceImpl implements UserService {
     private final OutboxEventPublisher outboxEventPublisher;
     private final AuthorizationService authorizationService;
     private final TenantRepository tenantRepository;
+    private final AuditService auditService;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
@@ -75,6 +80,21 @@ public class UserServiceImpl implements UserService {
 
         User saved = userRepository.save(user);
         log.info("Self-provisioned user {} for tenant {}", saved.getUserId(), tenantId);
+
+        // TenantContext isn't bound yet (no local user row existed for it
+        // to resolve until the save() above) - actor is the new user
+        // themselves, acting on their own behalf, so passed explicitly
+        // rather than relying on AuditService's TenantContext defaults.
+        auditService.event(AuditActionCatalog.USER_CREATED)
+                .tenantId(tenantId)
+                .actor(saved.getUserId(), saved.getDisplayName())
+                .objectType(AuditObjectTypes.USER)
+                .objectId(saved.getUserId())
+                .resourceName(saved.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of("email", saved.getEmail(), "username", saved.getUsername()))
+                .log();
+
         return userMapper.toResponse(saved, resolveTenantName(tenantId));
     }
 
@@ -145,6 +165,14 @@ public class UserServiceImpl implements UserService {
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, saved.getUserId(), "user.created",
                 Map.of("userId", saved.getUserId(), "tenantId", tenantId, "email", saved.getEmail()));
 
+        auditService.event(AuditActionCatalog.USER_CREATED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(saved.getUserId())
+                .resourceName(saved.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of("email", saved.getEmail(), "username", saved.getUsername()))
+                .log();
+
         return userMapper.toResponse(saved, resolveTenantName(tenantId));
     }
 
@@ -164,12 +192,14 @@ public class UserServiceImpl implements UserService {
         // and UserMapper's own doc comments for why that's "me"-only).
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
-                authorizationService.myEffectivePermissionCodes());
+                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
     public UserResponse updateCurrentUser(UpdateOwnProfileRequest request) {
         User user = findOwnedByCallerTenant(TenantContext.getUserId());
+        Map<String, Object> previousValue = Map.of(
+                "firstName", user.getFirstName(), "lastName", user.getLastName() == null ? "" : user.getLastName());
 
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
@@ -179,8 +209,18 @@ public class UserServiceImpl implements UserService {
 
         User saved = userRepository.save(user);
         log.info("User {} updated their own profile", saved.getUserId());
+
+        auditService.event(AuditActionCatalog.USER_UPDATED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(saved.getUserId())
+                .resourceName(saved.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of("firstName", saved.getFirstName(), "lastName", saved.getLastName() == null ? "" : saved.getLastName()))
+                .log();
+
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
-                authorizationService.myEffectivePermissionCodes());
+                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
@@ -244,6 +284,11 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse updateUser(UUID userId, UpdateUserRequest request) {
         User user = findOwnedByCallerTenant(userId);
+        Map<String, Object> previousValue = Map.of(
+                "firstName", user.getFirstName(),
+                "lastName", user.getLastName() == null ? "" : user.getLastName(),
+                "mfaEnabled", user.isMfaEnabled(),
+                "status", user.getStatus());
 
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
@@ -270,11 +315,25 @@ public class UserServiceImpl implements UserService {
 
         User saved = userRepository.save(user);
         log.info("Updated user {}", saved.getUserId());
+
+        auditService.event(AuditActionCatalog.USER_UPDATED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(saved.getUserId())
+                .resourceName(saved.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "firstName", saved.getFirstName(),
+                        "lastName", saved.getLastName() == null ? "" : saved.getLastName(),
+                        "mfaEnabled", saved.isMfaEnabled(),
+                        "status", saved.getStatus()))
+                .log();
+
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
     }
 
     @Override
-    public void deactivateUser(UUID userId) {
+    public void deactivateUser(UUID userId, String reason) {
         User user = findOwnedByCallerTenant(userId);
 
         // Blanket rule, same as the tenant admin account already being
@@ -289,6 +348,8 @@ public class UserServiceImpl implements UserService {
             throw new InvalidUserStateException("The tenant admin account can't be deactivated.");
         }
 
+        User.UserStatus previousStatus = user.getStatus();
+
         user.setDeleted(true);
         user.setDeletedAt(OffsetDateTime.now());
         user.setStatus(User.UserStatus.disabled);
@@ -298,6 +359,16 @@ public class UserServiceImpl implements UserService {
 
         keycloakUserService.disableUser(user.getKeycloakId());
         log.info("Deactivated user {}", userId);
+
+        auditService.event(AuditActionCatalog.USER_DEACTIVATED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(user.getUserId())
+                .resourceName(user.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of("status", previousStatus))
+                .newValue(Map.of("status", user.getStatus()))
+                .reason(reason)
+                .log();
     }
 
     @Override
@@ -320,6 +391,8 @@ public class UserServiceImpl implements UserService {
         }
 
         UUID keycloakId = user.getKeycloakId();
+        String displayName = user.getDisplayName();
+        String email = user.getEmail();
 
         // A real DELETE FROM users, not another flavor of the soft-delete
         // deactivateUser already does - see V13__allow_hard_delete_of_users
@@ -334,6 +407,21 @@ public class UserServiceImpl implements UserService {
         // local row gone while the account still exists there.
         keycloakUserService.deleteUser(keycloakId);
         log.info("Permanently deleted user {}", userId);
+
+        // objectId still points at a row that no longer exists in users -
+        // deliberate, and safe: audit_events.actor_id/impersonated_by are
+        // the only user-referencing columns without a live FK (see
+        // V23__create_audit_events.sql), object_id has never been a live
+        // FK to begin with (it's polymorphic across object_type), so this
+        // row simply outlives the user it describes, same as any other
+        // audit record for a deleted resource.
+        auditService.event(AuditActionCatalog.USER_DELETED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(userId)
+                .resourceName(displayName)
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of("email", email))
+                .log();
     }
 
     @Override
@@ -357,6 +445,14 @@ public class UserServiceImpl implements UserService {
         keycloakUserService.enableUser(user.getKeycloakId());
 
         log.info("Reactivated user {}", userId);
+
+        auditService.event(AuditActionCatalog.USER_REACTIVATED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(saved.getUserId())
+                .resourceName(saved.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
+
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
     }
 
@@ -365,6 +461,13 @@ public class UserServiceImpl implements UserService {
         User user = findOwnedByCallerTenant(userId);
         passwordResetService.issueForAdminReset(user);
         log.info("Sent password reset email for user {}", userId);
+
+        auditService.event(AuditActionCatalog.PASSWORD_RESET_REQUESTED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(user.getUserId())
+                .resourceName(user.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     @Override
@@ -435,6 +538,24 @@ public class UserServiceImpl implements UserService {
         if (!authorizationService.isTenantAdmin() && isTenantAdminAccount(user)) {
             throw new ResourceNotFoundException("User", userId);
         }
+    }
+
+    /**
+     * The real admin's display name if the current request is running under
+     * an active impersonation session, else null - see
+     * {@link UserResponse}'s own doc comment for why this, not a raw id, is
+     * what the frontend's impersonation banner needs. A missing/deleted
+     * admin row (shouldn't happen - the admin's own session is what's
+     * currently making this request) falls back to null rather than
+     * throwing, so a data inconsistency here never breaks an otherwise
+     * unrelated "get my profile" call.
+     */
+    private String resolveImpersonatorDisplayNameOrNull() {
+        UUID impersonatorId = TenantContext.getImpersonatorIdOrNull();
+        if (impersonatorId == null) {
+            return null;
+        }
+        return userRepository.findById(impersonatorId).map(User::getDisplayName).orElse(null);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

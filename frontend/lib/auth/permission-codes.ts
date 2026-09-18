@@ -28,6 +28,9 @@ export const PermissionCodes = {
   // checked anywhere.
   OTUA_USERS_DELETE: "otua.manage-users.delete",
   OTUA_USERS_ASSIGN_ROLE: "otua.manage-users.assign-role",
+  // Gates the User List's "Act as User" action - see ImpersonationController
+  // on the backend.
+  OTUA_USERS_IMPERSONATE: "otua.manage-users.impersonate",
 
   // Roles (ASM - Access and Security Management)
   ASM_ROLES_CREATE_ROLE: "asm.manage-roles-permissions.create-role",
@@ -61,4 +64,10 @@ export const PermissionCodes = {
 
   MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
   MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
+  // Audit Events (ABDR - Comprehensive Audit Management)
+  ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
+  // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a
+  // stricter capability than viewing it on-screen, gated by its own
+  // seeded permission code.
+  ABDR_EXPORT_AUDIT_REPORTS: "abdr.export-audit-reports",
 } as const

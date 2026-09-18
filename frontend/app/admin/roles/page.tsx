@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, ChevronDown, Grid3x3, Plus } from "lucide-react"
+import { AlertTriangle, Grid3x3, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -10,6 +10,7 @@ import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { RolesTable } from "@/components/roles/roles-table"
 import { SearchInput } from "@/components/ui/search-input"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { LoadingState } from "@/components/ui/loading-state"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -186,25 +187,19 @@ export default function RoleListPage() {
             placeholder="Search roles…"
           />
         
-        <div className="relative w-[150px]">
-          <select
-            value={statusFilter}
-            onChange={(event) =>
-              handleStatusFilterChange(
-                event.target.value as "all" | "Active" | "Inactive"
-              )
-            }
-            className="h-[38px] w-full appearance-none rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
-          >
-            <option value="all">All statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
-          />
-        </div>
+        <SearchableSelect
+          className="w-[150px]"
+          allLabel="All statuses"
+          searchable={false}
+          selected={statusFilter === "all" ? "" : statusFilter}
+          onChange={(value) =>
+            handleStatusFilterChange((value || "all") as "all" | "Active" | "Inactive")
+          }
+          options={[
+            { value: "Active", label: "Active" },
+            { value: "Inactive", label: "Inactive" },
+          ]}
+        />
 
         <Link
           href="/admin/roles/matrix"

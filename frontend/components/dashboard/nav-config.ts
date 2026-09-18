@@ -61,7 +61,7 @@ export const navSections: NavSection[] = [
       // RoleController/RolePermissionController) - it still checks the
       // legacy codes, so this nav item must too.
       { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: [PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE] },
-      { label: "Audit Log", icon: ScrollText },
+      { label: "Audit Log", icon: ScrollText, href: "/admin/audit-log", permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY },
     ],
   },
   {

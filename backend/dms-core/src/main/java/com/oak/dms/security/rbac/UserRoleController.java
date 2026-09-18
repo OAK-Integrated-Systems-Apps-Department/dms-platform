@@ -2,7 +2,6 @@ package com.oak.dms.security.rbac;
 
 import com.oak.dms.security.rbac.dto.AssignRoleRequest;
 import com.oak.dms.security.rbac.dto.UserRoleResponse;
-import com.oak.dms.security.rbac.UserRoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

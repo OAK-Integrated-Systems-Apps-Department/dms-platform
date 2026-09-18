@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Uniform error body returned by {@link com.oak.dms.common.exception.GlobalExceptionHandler}

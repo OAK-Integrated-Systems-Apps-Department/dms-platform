@@ -152,8 +152,6 @@ export function PermissionMatrix() {
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
   const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
 
-
-
   // Which roles are hidden from the matrix's columns. Absence of a key
   // means visible — that way newly-added roles show up by default instead
   // of silently being excluded.

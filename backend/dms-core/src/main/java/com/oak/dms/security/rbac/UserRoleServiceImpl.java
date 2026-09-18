@@ -1,22 +1,20 @@
 package com.oak.dms.security.rbac;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.security.rbac.dto.AssignRoleRequest;
 import com.oak.dms.security.rbac.dto.UserRoleResponse;
-import com.oak.dms.security.rbac.Role;
 import com.oak.dms.user.User;
-import com.oak.dms.security.rbac.UserRole;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidRoleStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
-import com.oak.dms.security.rbac.UserRoleMapper;
-import com.oak.dms.security.rbac.RoleRepository;
 import com.oak.dms.user.UserRepository;
-import com.oak.dms.security.rbac.UserRoleRepository;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.security.rbac.UserRoleService;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -45,6 +44,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     private final UserRoleMapper userRoleMapper;
     private final KeycloakUserService keycloakUserService;
     private final AuthorizationService authorizationService;
+    private final AuditService auditService;
 
     @Override
     public UserRoleResponse assignRole(UUID userId, AssignRoleRequest request) {
@@ -94,6 +94,21 @@ public class UserRoleServiceImpl implements UserRoleService {
             keycloakUserService.assignRealmRole(tenantId, user.getKeycloakId(), role.getRoleName());
         }
 
+        // objectType/objectId are the affected USER, not a new "USER_ROLE"
+        // object type - same convention USER_UPDATED/USER_DEACTIVATED use,
+        // so this doesn't need its own object-type wiring through the
+        // frontend's OBJECT_TYPE_OPTIONS just to be filterable.
+        auditService.event(AuditActionCatalog.USER_ROLE_ASSIGNED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(user.getUserId())
+                .resourceName(user.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "roleName", role.getRoleName(),
+                        "scopeType", scopeType.name(),
+                        "scopeId", scopeId == null ? "" : scopeId.toString()))
+                .log();
+
         log.info("Assigned role {} to user {} (scope={}/{})", role.getRoleId(), userId, scopeType, scopeId);
         return userRoleMapper.toResponse(saved, role.getRoleName());
     }
@@ -125,13 +140,31 @@ public class UserRoleServiceImpl implements UserRoleService {
             throw new ResourceNotFoundException("UserRole", userRoleId);
         }
 
+        // Resolved before delete so the role name is still available for
+        // both the Keycloak removal below and the audit entry, the same
+        // way assignRole already has it on hand from its own lookup.
+        String roleName = roleRepository.findById(assignment.getRoleId())
+                .map(Role::getRoleName)
+                .orElse("UNKNOWN");
+
         userRoleRepository.delete(assignment);
 
         if (assignment.getScopeType() == UserRole.ScopeType.tenant) {
-            roleRepository.findById(assignment.getRoleId())
-                    .ifPresent(role -> keycloakUserService.removeRealmRole(
-                            tenantId, user.getKeycloakId(), role.getRoleName()));
+            keycloakUserService.removeRealmRole(tenantId, user.getKeycloakId(), roleName);
         }
+
+        // Same objectType convention as assignRole's own audit call above -
+        // see that call's comment.
+        auditService.event(AuditActionCatalog.USER_ROLE_REVOKED)
+                .objectType(AuditObjectTypes.USER)
+                .objectId(user.getUserId())
+                .resourceName(user.getDisplayName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of(
+                        "roleName", roleName,
+                        "scopeType", assignment.getScopeType().name(),
+                        "scopeId", assignment.getScopeId() == null ? "" : assignment.getScopeId().toString()))
+                .log();
 
         log.info("Revoked role assignment {} from user {}", userRoleId, userId);
     }

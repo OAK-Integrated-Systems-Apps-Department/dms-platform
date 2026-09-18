@@ -15,9 +15,11 @@ users:
     activate: Activate
     deactivate: Deactivate
     delete: Delete
+    impersonate: Act as this user
   pending:
     resetPasswordDisabled: This user hasn't set up their account yet
     deactivateDisabled: This user hasn't set up their account yet
+    impersonateDisabled: This user isn't active
   tenantAdmin:
     deleteDisabled: The tenant admin account can't be deleted
     deactivateDisabled: The tenant admin account can't be deactivated
