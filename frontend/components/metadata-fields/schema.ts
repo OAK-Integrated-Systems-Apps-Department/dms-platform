@@ -14,7 +14,6 @@ export const createMetadataFieldSchema = z.object({
   helpText: z.string().trim().max(500, "Keep help text under 500 characters").optional().or(z.literal("")),
   dataType: z.enum(DATA_TYPES),
   defaultValue: z.string().trim().max(500).optional().or(z.literal("")),
-  systemField: z.boolean(),
   searchable: z.boolean(),
   ocrExtractable: z.boolean(),
 })

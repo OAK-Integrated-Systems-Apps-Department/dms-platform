@@ -47,7 +47,6 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
       helpText: "",
       dataType: "text",
       defaultValue: "",
-      systemField: false,
       searchable: true,
       ocrExtractable: false,
     },
@@ -129,17 +128,6 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
         <h2 className="font-heading text-[16px] font-semibold">Behavior</h2>
       </div>
       <div className="divide-y divide-dashed divide-border">
-        <Controller
-          name="systemField"
-          control={control}
-          render={({ field }) => (
-            <Checkbox
-              label="System Field — protected, used internally"
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
-          )}
-        />
         {FLAG_FIELDS.map(({ name, label, hint }) => (
           <Controller
             key={name}

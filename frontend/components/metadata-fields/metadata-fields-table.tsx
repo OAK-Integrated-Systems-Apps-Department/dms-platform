@@ -85,31 +85,38 @@ export function MetadataFieldsTable({
                 </td>
                 <td className="px-3.5 py-3">
                   <div className="flex items-center gap-1">
+                    {canUpdate && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <Link
+                              {...props}
+                              href={`/admin/metadata/fields/${field.fieldId}/edit`}
+                              aria-label={`Edit ${field.label}`}
+                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                            >
+                              <Pencil size={15} />
+                            </Link>
+                          )}
+                        />
+                        <TooltipContent>Edit field</TooltipContent>
+                      </Tooltip>
+                    )}
+
                     {field.systemField ? (
-                      <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                        <ShieldCheck size={13} />
-                        System field
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <span {...props} className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                              <ShieldCheck size={13} />
+                              System field
+                            </span>
+                          )}
+                        />
+                        <TooltipContent>System fields can&apos;t be deactivated or deprecated</TooltipContent>
+                      </Tooltip>
                     ) : (
                       <>
-                        {canUpdate && (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={(props) => (
-                                <Link
-                                  {...props}
-                                  href={`/admin/metadata/fields/${field.fieldId}/edit`}
-                                  aria-label={`Edit ${field.label}`}
-                                  className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
-                                >
-                                  <Pencil size={15} />
-                                </Link>
-                              )}
-                            />
-                            <TooltipContent>Edit field</TooltipContent>
-                          </Tooltip>
-                        )}
-
                         {canActivateDeactivate && field.status !== "deprecated" && (
                           <Tooltip>
                             <TooltipTrigger

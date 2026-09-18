@@ -27,7 +27,6 @@ export default function AddMetadataFieldPage() {
         helpText: values.helpText || undefined,
         dataType: values.dataType,
         defaultValue: values.defaultValue || undefined,
-        systemField: values.systemField,
         searchable: values.searchable,
         ocrExtractable: values.ocrExtractable,
       })

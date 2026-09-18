@@ -33,7 +33,6 @@ public record CreateMetadataFieldRequest(
         @Size(max = 500)
         String defaultValue,
 
-        boolean systemField,
         boolean searchable,
         boolean ocrExtractable
 ) {

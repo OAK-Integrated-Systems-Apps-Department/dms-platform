@@ -53,7 +53,6 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                 .helpText(request.helpText())
                 .dataType(request.dataType())
                 .defaultValue(request.defaultValue())
-                .systemField(request.systemField())
                 .searchable(request.searchable())
                 .ocrExtractable(request.ocrExtractable())
                 .status(MetadataField.FieldStatus.active)
@@ -123,6 +122,11 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         MetadataField field = findOwnedByCallerTenant(fieldId);
         UUID tenantId = TenantContext.getTenantId();
 
+        if (field.isSystemField()) {
+            throw new InvalidMetadataFieldStateException(
+                    "System field '" + field.getFieldKey() + "' cannot be removed.");
+        }
+
         // MDTM alternate flow 2: a field still in use can't be deleted -
         // deprecate it instead. document_metadata_values doesn't have a JPA
         // repository in this module (see the table's own migration
@@ -151,6 +155,12 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
 
     private MetadataFieldResponse setStatus(UUID fieldId, MetadataField.FieldStatus status) {
         MetadataField field = findOwnedByCallerTenant(fieldId);
+
+        if (field.isSystemField() && status != MetadataField.FieldStatus.active) {
+            throw new InvalidMetadataFieldStateException(
+                    "System field '" + field.getFieldKey() + "' cannot be deactivated or deprecated.");
+        }
+
         field.setStatus(status);
         field.setUpdatedBy(TenantContext.getUserId());
         field.setUpdatedAt(OffsetDateTime.now());

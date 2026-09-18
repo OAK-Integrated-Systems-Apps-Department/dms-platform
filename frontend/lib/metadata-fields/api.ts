@@ -34,7 +34,6 @@ export interface CreateMetadataFieldPayload {
   helpText?: string
   dataType: string
   defaultValue?: string
-  systemField: boolean
   searchable: boolean
   ocrExtractable: boolean
 }
