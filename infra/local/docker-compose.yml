@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Local development stack for dms-core. Production topology (Helm/RKE2/
 # Rancher, managed Postgres with Barman backups, Ceph/Rook object storage,
 # OpenBao secrets) lives under the other infra/ subdirectories - this
@@ -49,6 +47,21 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: oakdms-redis
+    <<: *secrets-env
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 5s
       timeout: 5s
       retries: 10
 
@@ -149,6 +162,8 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
       KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/oak-dms
@@ -168,6 +183,8 @@ services:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       keycloak-bootstrap:
         condition: service_completed_successfully
@@ -202,3 +219,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

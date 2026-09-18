@@ -80,6 +80,12 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- Cache: Redis-backed resolved-schema cache (see com.oak.dms.metadata.cache) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Security / Keycloak -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
