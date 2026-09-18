@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED
+
+SCHEMA_VERSION = 1
+
+
+def build_ocr_completed_payload(
+    *,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    ocr_output_id: uuid.UUID,
+    extracted_text_ref: str,
+    page_count: int,
+    flags: dict[str, bool],
+    correlation_id: uuid.UUID | None,
+) -> dict[str, Any]:
+    """Deliberately slim: the full pages/fields/text detail lives in the
+    single MinIO artifact at extracted_text_ref (see the "Output contract"
+    in README.md) -- the event just carries enough for a downstream
+    consumer (e.g. a future indexing step, OS-FR-006) to know something
+    happened and where to fetch the detail, not a copy of it.
+    """
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": ROUTING_KEY_OCR_COMPLETED,
+        "tenant_id": str(tenant_id),
+        "document_id": str(document_id),
+        "version_id": str(version_id),
+        "ocr_output_id": str(ocr_output_id),
+        "extracted_text_ref": extracted_text_ref,
+        "page_count": page_count,
+        "flags": flags,
+        "correlation_id": str(correlation_id) if correlation_id else None,
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def build_ocr_failed_payload(
+    *,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    error: str,
+    correlation_id: uuid.UUID | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": ROUTING_KEY_OCR_FAILED,
+        "tenant_id": str(tenant_id),
+        "document_id": str(document_id),
+        "version_id": str(version_id),
+        "error": error,
+        "correlation_id": str(correlation_id) if correlation_id else None,
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+    }

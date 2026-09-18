@@ -132,6 +132,15 @@
             <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
 
+        <!-- Object storage: reads/writes the same MinIO bucket ocr-worker
+             (backend/workers/ocr-worker) uses for source documents. No
+             other module in this codebase talked to MinIO before this. -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.5.17</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

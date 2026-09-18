@@ -1,0 +1,191 @@
+time="2026-09-18T12:02:57+05:30" level=warning msg="C:\\DMS\\dms-platform\\infra\\local\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Image local-dms-core Building 
+ Image local-ocr-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 975B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.14kB 0.0s done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 ...
+
+#4 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 2.1s
+
+#5 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#5 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#5 CACHED
+
+#6 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-alpine
+#6 ...
+
+#7 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#7 DONE 0.0s
+
+#8 [auth] library/maven:pull token for registry-1.docker.io
+#8 DONE 0.0s
+
+#9 [internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-21
+#9 DONE 2.8s
+
+#6 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-alpine
+#6 DONE 2.8s
+
+#10 [internal] load .dockerignore
+#10 transferring context: 88B 0.0s done
+#10 DONE 0.0s
+
+#11 [build 1/7] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74
+#11 resolve docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74 0.0s done
+#11 ...
+
+#12 [internal] load build context
+#12 transferring context: 589.33kB 0.1s done
+#12 DONE 0.1s
+
+#13 [runtime 1/4] FROM docker.io/library/eclipse-temurin:21-jre-alpine@sha256:1a29e1fe337eb28b5bec30f0ee8ed29f0ff80ab6f75dcf9313efe82911065a52
+#13 resolve docker.io/library/eclipse-temurin:21-jre-alpine@sha256:1a29e1fe337eb28b5bec30f0ee8ed29f0ff80ab6f75dcf9313efe82911065a52 0.0s done
+#13 DONE 0.2s
+
+#11 [build 1/7] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74
+#11 sha256:2140a5e2ab92e9319cf37b96918d47aa9964edb4c74a407f3db67f63ddee063f 0B / 156B 0.2s
+#11 sha256:a0f1cfdec651be06fea855c4d6f0911afe3dbdb6a2b08a3a024b441ec6505821 0B / 852B 0.2s
+#11 sha256:81a2178305662756b2f9551ff7bc0cfc8c7330562d85657f555656eaa81d75b5 0B / 9.36MB 0.2s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 0B / 22.55MB 0.2s
+#11 ...
+
+#14 [runtime 2/4] RUN addgroup -S oakdms && adduser -S oakdms -G oakdms
+#14 DONE 0.4s
+
+#15 [runtime 3/4] WORKDIR /app
+#15 DONE 0.1s
+
+#11 [build 1/7] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74
+#11 sha256:2140a5e2ab92e9319cf37b96918d47aa9964edb4c74a407f3db67f63ddee063f 156B / 156B 0.3s done
+#11 sha256:6e8eb09ed21bbbbbb43ce3d7b0ac0203000610157195e8ef99b38255c4d95b9a 0B / 2.46kB 0.2s
+#11 sha256:81a2178305662756b2f9551ff7bc0cfc8c7330562d85657f555656eaa81d75b5 1.05MB / 9.36MB 0.8s
+#11 sha256:81a2178305662756b2f9551ff7bc0cfc8c7330562d85657f555656eaa81d75b5 4.19MB / 9.36MB 0.9s
+#11 sha256:a0f1cfdec651be06fea855c4d6f0911afe3dbdb6a2b08a3a024b441ec6505821 852B / 852B 1.1s done
+#11 sha256:81a2178305662756b2f9551ff7bc0cfc8c7330562d85657f555656eaa81d75b5 9.36MB / 9.36MB 1.1s done
+#11 sha256:6e8eb09ed21bbbbbb43ce3d7b0ac0203000610157195e8ef99b38255c4d95b9a 2.46kB / 2.46kB 0.7s done
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 4.19MB / 22.55MB 1.4s
+#11 sha256:abd660e00db22b8762b7af25aa696f7ca0697f20d11bc1e4f1c2f43798c94941 0B / 157B 0.2s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 0B / 158.12MB 0.2s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 0B / 22.93MB 0.2s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 7.34MB / 22.55MB 1.5s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 10.49MB / 22.55MB 1.7s
+#11 sha256:abd660e00db22b8762b7af25aa696f7ca0697f20d11bc1e4f1c2f43798c94941 157B / 157B 0.4s done
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 0B / 29.76MB 0.2s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 15.73MB / 22.55MB 2.0s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 17.83MB / 22.55MB 2.1s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 19.92MB / 22.55MB 2.3s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 22.02MB / 22.55MB 2.6s
+#11 sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 22.55MB / 22.55MB 2.7s done
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 2.10MB / 22.93MB 1.8s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 8.39MB / 158.12MB 2.3s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 4.19MB / 22.93MB 2.4s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 6.29MB / 22.93MB 3.2s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 17.83MB / 158.12MB 3.8s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 2.10MB / 29.76MB 3.5s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 8.39MB / 22.93MB 3.9s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 10.49MB / 22.93MB 4.4s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 27.26MB / 158.12MB 4.7s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 12.58MB / 22.93MB 4.8s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 4.19MB / 29.76MB 4.8s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 14.68MB / 22.93MB 5.3s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 35.65MB / 158.12MB 5.4s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 16.78MB / 22.93MB 5.6s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 18.87MB / 22.93MB 6.0s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 44.04MB / 158.12MB 6.2s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 6.29MB / 29.76MB 5.9s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 20.97MB / 22.93MB 6.5s
+#11 sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 22.93MB / 22.93MB 7.0s done
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 52.43MB / 158.12MB 7.4s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 8.39MB / 29.76MB 7.4s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 61.87MB / 158.12MB 8.3s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 10.49MB / 29.76MB 8.1s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 70.25MB / 158.12MB 9.0s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 12.58MB / 29.76MB 9.0s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 78.64MB / 158.12MB 9.8s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 14.68MB / 29.76MB 9.6s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 88.79MB / 158.12MB 10.5s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 16.78MB / 29.76MB 10.2s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 18.87MB / 29.76MB 10.5s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 97.52MB / 158.12MB 11.0s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 20.97MB / 29.76MB 11.0s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 106.95MB / 158.12MB 11.6s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 23.07MB / 29.76MB 11.4s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 25.17MB / 29.76MB 11.7s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 115.34MB / 158.12MB 12.2s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 27.26MB / 29.76MB 12.2s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 123.73MB / 158.12MB 12.6s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 29.36MB / 29.76MB 12.6s
+#11 sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 29.76MB / 29.76MB 12.7s done
+#11 extracting sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 134.22MB / 158.12MB 13.4s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 143.65MB / 158.12MB 14.0s
+#11 extracting sha256:edd1ed89f0d443580bd42e5a10cd8736aba5a3438b2a0645c2ebb50119bb0eba 1.0s done
+#11 extracting sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 153.09MB / 158.12MB 14.6s
+#11 sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 158.12MB / 158.12MB 14.9s done
+#11 extracting sha256:1e47edd31b668bdc7aca8dd72052240fdbad5cef30ad4cd7a99c9724cc0072c4 0.7s done
+#11 extracting sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730
+#11 extracting sha256:91f9926a05878a138e7c8bd5ede16e50984e00292ad0749040a48016d0d42730 1.9s done
+#11 DONE 18.2s
+
+#11 [build 1/7] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74
+#11 extracting sha256:abd660e00db22b8762b7af25aa696f7ca0697f20d11bc1e4f1c2f43798c94941 0.0s done
+#11 extracting sha256:6e8eb09ed21bbbbbb43ce3d7b0ac0203000610157195e8ef99b38255c4d95b9a 0.0s done
+#11 extracting sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe
+#11 extracting sha256:e5d77f4fb216a5ab294430f233cbdbaa54b0e1645fe04d00b7356694cd517abe 1.6s done
+#11 DONE 19.8s
+
+#11 [build 1/7] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a7d74
+#11 extracting sha256:81a2178305662756b2f9551ff7bc0cfc8c7330562d85657f555656eaa81d75b5 0.1s done
+#11 extracting sha256:a0f1cfdec651be06fea855c4d6f0911afe3dbdb6a2b08a3a024b441ec6505821 0.0s done
+#11 extracting sha256:2140a5e2ab92e9319cf37b96918d47aa9964edb4c74a407f3db67f63ddee063f 0.0s done
+#11 DONE 19.9s
+
+#16 [build 2/7] WORKDIR /build
+#16 DONE 0.2s
+
+#17 [build 3/7] COPY pom.xml .
+#17 DONE 0.0s
+
+#18 [build 4/7] COPY dms-core/pom.xml dms-core/pom.xml
+#18 DONE 0.0s
+
+#19 [build 5/7] RUN mvn -q -B -pl dms-core -am dependency:go-offline
+#19 DONE 47.2s
+
+#20 [build 6/7] COPY dms-core/src dms-core/src
+#20 DONE 0.2s
+
+#21 [build 7/7] RUN mvn -q -B -pl dms-core -am clean package -DskipTests
+#21 DONE 10.6s
+
+#22 [runtime 4/4] COPY --from=build /build/dms-core/target/dms-core.jar app.jar
+#22 DONE 0.2s
+
+#23 exporting to image
+#23 exporting layers
+#23 exporting layers 2.7s done
+#23 exporting manifest sha256:2b962c18f27c60ef4b341644d1fd95a1756bd26a8c95d0998aab323c4a7a100e done
+#23 exporting config sha256:82a102c44c3165f221465fbafd6cbee031f3ad3791f7f17d3d59b730dff5fc48 done
+#23 exporting attestation manifest sha256:ddf28f1ae51f592c230241294d9f19c2a526a13fefbf666f535fa986d0055ae7 0.0s done
+#23 exporting manifest list sha256:497f82ac2ca4c86e9178fad1af27942900c75023fa9344196529f2b70a00b7d4 done
+#23 naming to docker.io/library/local-dms-core:latest done
+#23 unpacking to docker.io/library/local-dms-core:latest
+#23 unpacking to docker.io/library/local-dms-core:latest 0.5s done
+#23 DONE 3.3s
+
+#24 resolving provenance for metadata file
+#24 DONE 0.0s
+ Image local-dms-core Built 
+REAL_BUILD_EXIT_CODE=0

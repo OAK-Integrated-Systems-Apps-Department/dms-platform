@@ -162,6 +162,16 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: "1025"
       FRONTEND_BASE_URL: http://localhost:3000
+      # Document upload (com.oak.dms.document) writes here; ocr-worker
+      # reads the same bucket/key back -- see MinioProperties.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      # ocr-worker is internal-only (no published port) -- reachable from
+      # dms-core only via this docker-network service name. See
+      # OcrWorkerClient/OcrWorkerProperties.
+      OCR_WORKER_BASE_URL: http://ocr-worker:8090
+      OCR_WORKER_INTERNAL_TOKEN: ${OCR_WORKER_INTERNAL_TOKEN}
     ports:
       - "8080:8080"
     depends_on:
@@ -172,6 +182,86 @@ services:
       keycloak-bootstrap:
         condition: service_completed_successfully
       mailpit:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ocr-worker:
+        condition: service_healthy
+
+  # New to this compose file: nothing in the local stack used object
+  # storage before ocr-worker. storage_object_key values on
+  # document_versions are expected to resolve against this bucket once a
+  # real upload/scan pipeline exists; ocr-worker also writes its own output
+  # bucket here. Production topology (Ceph/Rook) is a separate concern --
+  # this is dev-only, same as postgres/rabbitmq above.
+  minio:
+    image: quay.io/minio/minio:latest # docker.io/minio/minio wasn't pullable in testing; quay.io is MinIO's other official mirror
+    container_name: oakdms-minio
+    <<: *secrets-env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ocr-worker:
+    build:
+      context: ../../backend/workers/ocr-worker
+      dockerfile: Dockerfile
+    container_name: oakdms-ocr-worker
+    # This process holds a Docling layout model + PaddleOCR det/rec models
+    # in memory (CPU inference) -- restart on an OOM kill rather than
+    # sitting exited, since a transient memory spike shouldn't take the
+    # service down permanently. Verified this was needed: it was OOM-killed
+    # (docker inspect's OOMKilled flag) during load testing.
+    restart: unless-stopped
+    # Own secrets file, not dms-core's: ocr-worker has no login of its own
+    # and needs none of dms-core's secrets directly (DB_URL/RABBITMQ_URL/
+    # MINIO_* below are composed from infra/local/.env's values, resolved
+    # by docker compose itself, not by this env_file) -- it only needs
+    # INTERNAL_SERVICE_TOKEN, the defense-in-depth check on every request.
+    env_file:
+      - ../secrets/ocr-worker.secrets.env
+    environment:
+      DB_URL: postgresql+psycopg://dms_core_user:${DMS_CORE_DB_PASSWORD}@postgres:5432/dms_core_db
+      RABBITMQ_URL: amqp://dms:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_SECURE: "false"
+    # No `ports:` -- internal-only. ocr-worker is reachable from other containers on this compose
+    # network at http://ocr-worker:8090 (Docker's own service-name DNS).
+    # See README's "Auth & service exposure": frontend -> dms-core
+    # (Keycloak-authenticated) -> ocr-worker (internal-only) is the only
+    # intended path; dms-core's own passthrough routes are out of scope for
+    # this service, so today the only caller on this network is whatever
+    # runs scripts/dev/smoke_test_ocr.py.
+    volumes:
+      # PaddleOCR/PaddleX download their model weights to ~/.paddlex on
+      # first use (tens of MB from huggingface.co) -- without this, every
+      # `docker compose up`/container recreation re-downloads them from
+      # scratch, which is slow and makes startup depend on that network
+      # call succeeding every single time. Verified by watching a full
+      # re-download happen after a plain container recreate.
+      - ocr_worker_models:/home/oakdms/.paddlex
+      # Same reasoning, for Docling's layout-analysis model (downloaded via
+      # huggingface_hub's default cache dir).
+      - ocr_worker_hf_cache:/home/oakdms/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   frontend:
@@ -202,3 +292,6 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
+  ocr_worker_models:
+  ocr_worker_hf_cache:
