@@ -1,5 +1,9 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.CreateMetadataFieldOptionRequest;
@@ -13,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -32,6 +37,7 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldOptionMapper optionMapper;
     private final SchemaCacheService schemaCacheService;
+    private final AuditService auditService;
 
     @Override
     public MetadataFieldOptionResponse createOption(UUID fieldId, CreateMetadataFieldOptionRequest request) {
@@ -59,6 +65,18 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         }
         schemaCacheService.evictTenant(tenantId);
         log.info("Created metadata field option {} for field {}", saved.getOptionId(), fieldId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_OPTION_CREATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_OPTION)
+                .objectId(saved.getOptionId())
+                .resourceName(saved.getOptionValue())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "fieldId", fieldId,
+                        "optionValue", saved.getOptionValue(),
+                        "optionLabel", saved.getOptionLabel()))
+                .log();
+
         return optionMapper.toResponse(saved);
     }
 
@@ -77,6 +95,11 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         UUID tenantId = TenantContext.getTenantId();
         requireField(fieldId, tenantId);
         MetadataFieldOption option = findOwnedByFieldAndTenant(optionId, fieldId, tenantId);
+
+        Map<String, Object> previousValue = Map.of(
+                "optionValue", option.getOptionValue(),
+                "optionLabel", option.getOptionLabel(),
+                "status", option.getStatus());
 
         option.setOptionValue(request.optionValue());
         option.setOptionLabel(request.optionLabel());
@@ -98,6 +121,19 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         }
         schemaCacheService.evictTenant(tenantId);
         log.info("Updated metadata field option {}", saved.getOptionId());
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_OPTION_UPDATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_OPTION)
+                .objectId(saved.getOptionId())
+                .resourceName(saved.getOptionValue())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "optionValue", saved.getOptionValue(),
+                        "optionLabel", saved.getOptionLabel(),
+                        "status", saved.getStatus()))
+                .log();
+
         return optionMapper.toResponse(saved);
     }
 
@@ -114,6 +150,13 @@ public class MetadataFieldOptionServiceImpl implements MetadataFieldOptionServic
         optionRepository.save(option);
         schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field option {}", optionId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_OPTION_DELETED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_OPTION)
+                .objectId(optionId)
+                .resourceName(option.getOptionValue())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private void requireField(UUID fieldId, UUID tenantId) {

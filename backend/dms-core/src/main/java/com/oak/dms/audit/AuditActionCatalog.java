@@ -16,6 +16,7 @@ import java.util.Map;
  *  - OTUA = Organization, Tenant and User Administration (user administration)
  *  - ABDR = Comprehensive Audit Management (the audit trail itself, e.g. exporting it)
  *  - SHAD = System Health and Administration Dashboard (platform infrastructure status, e.g. the outbox relay)
+ *  - MDTM = Metadata and Document-Type Management (document types, the metadata field catalog, and the field-mapping matrix that ties them together)
  *
  * reasonRequired would, per the spec's own example, be true for
  * destructive/access-revoking actions ("mandatory for legal hold /
@@ -77,6 +78,23 @@ public final class AuditActionCatalog {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String IMPERSONATION_STARTED = "IMPERSONATION_STARTED";
     public static final String IMPERSONATION_ENDED = "IMPERSONATION_ENDED";
+    public static final String DOCUMENT_TYPE_CREATED = "DOCUMENT_TYPE_CREATED";
+    public static final String DOCUMENT_TYPE_UPDATED = "DOCUMENT_TYPE_UPDATED";
+    public static final String DOCUMENT_TYPE_ACTIVATED = "DOCUMENT_TYPE_ACTIVATED";
+    public static final String DOCUMENT_TYPE_DEACTIVATED = "DOCUMENT_TYPE_DEACTIVATED";
+    public static final String DOCUMENT_TYPE_SCHEMA_PUBLISHED = "DOCUMENT_TYPE_SCHEMA_PUBLISHED";
+    public static final String METADATA_FIELD_CREATED = "METADATA_FIELD_CREATED";
+    public static final String METADATA_FIELD_UPDATED = "METADATA_FIELD_UPDATED";
+    public static final String METADATA_FIELD_ACTIVATED = "METADATA_FIELD_ACTIVATED";
+    public static final String METADATA_FIELD_DEACTIVATED = "METADATA_FIELD_DEACTIVATED";
+    public static final String METADATA_FIELD_DEPRECATED = "METADATA_FIELD_DEPRECATED";
+    public static final String METADATA_FIELD_DELETED = "METADATA_FIELD_DELETED";
+    public static final String METADATA_FIELD_OPTION_CREATED = "METADATA_FIELD_OPTION_CREATED";
+    public static final String METADATA_FIELD_OPTION_UPDATED = "METADATA_FIELD_OPTION_UPDATED";
+    public static final String METADATA_FIELD_OPTION_DELETED = "METADATA_FIELD_OPTION_DELETED";
+    public static final String METADATA_FIELD_VALIDATION_CREATED = "METADATA_FIELD_VALIDATION_CREATED";
+    public static final String METADATA_FIELD_VALIDATION_UPDATED = "METADATA_FIELD_VALIDATION_UPDATED";
+    public static final String METADATA_FIELD_VALIDATION_DELETED = "METADATA_FIELD_VALIDATION_DELETED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -171,7 +189,54 @@ public final class AuditActionCatalog {
             // successful publish and every merely-transient retry
             // deliberately are NOT audited (that would flood the trail with
             // routine, non-actionable noise).
-            Map.entry(OUTBOX_EVENT_PUBLISH_FAILED, new AuditActionSpec("SHAD", AuditSeverity.HIGH, false))
+            Map.entry(OUTBOX_EVENT_PUBLISH_FAILED, new AuditActionSpec("SHAD", AuditSeverity.HIGH, false)),
+
+            // Document types (DocumentTypeController) - module MDTM. Same
+            // severity convention as every other catalog-entity group above:
+            // create/update/activate are MEDIUM, delete-strength actions are
+            // HIGH. There's no DOCUMENT_TYPE_DELETED - DocumentTypeService
+            // has no delete endpoint, only activate/deactivate (see its own
+            // doc comment); deactivating blocks new documents of that type,
+            // which is why it's HIGH rather than MEDIUM like a plain update.
+            Map.entry(DOCUMENT_TYPE_CREATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_TYPE_UPDATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_TYPE_ACTIVATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_TYPE_DEACTIVATED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+
+            // Publishing a new field-mapping schema version for a document
+            // type (DocumentTypeFieldController) - module MDTM. HIGH: this
+            // is the single action that changes what fields exist, and
+            // which are mandatory/hidden, for every future document of that
+            // type - comparable in blast radius to TENANT_PROVISIONED.
+            Map.entry(DOCUMENT_TYPE_SCHEMA_PUBLISHED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+
+            // Metadata field catalog (MetadataFieldController) - module MDTM.
+            // Deprecate/delete are HIGH: both end a field's usability
+            // (deprecate blocks new mappings, delete removes it outright -
+            // see MetadataFieldServiceImpl's own doc comment on why these
+            // are two distinct actions rather than one).
+            Map.entry(METADATA_FIELD_CREATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_UPDATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_ACTIVATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_DEACTIVATED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+            Map.entry(METADATA_FIELD_DEPRECATED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+            Map.entry(METADATA_FIELD_DELETED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+
+            // Metadata field options (MetadataFieldOptionController) - module
+            // MDTM, one level below a field in the catalog hierarchy - same
+            // create/update/delete severity convention as Permissions/
+            // PermissionActions above.
+            Map.entry(METADATA_FIELD_OPTION_CREATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_OPTION_UPDATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_OPTION_DELETED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+
+            // Metadata field validation rules (MetadataFieldValidationController)
+            // - module MDTM. Deleting a rule loosens a data-integrity
+            // constraint for every future document of that type, same
+            // reasoning as ROLE_PERMISSION_REVOKED being HIGH.
+            Map.entry(METADATA_FIELD_VALIDATION_CREATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_VALIDATION_UPDATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
+            Map.entry(METADATA_FIELD_VALIDATION_DELETED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false))
     );
 
     private AuditActionCatalog() {

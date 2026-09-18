@@ -32,6 +32,8 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
   { action: "LOGOUT", module: "ASM", label: "Logout" },
   { action: "PASSWORD_RESET_REQUESTED", module: "ASM", label: "Password reset requested" },
   { action: "PASSWORD_RESET_COMPLETED", module: "ASM", label: "Password reset completed" },
+  { action: "IMPERSONATION_STARTED", module: "ASM", label: "Impersonation started" },
+  { action: "IMPERSONATION_ENDED", module: "ASM", label: "Impersonation ended" },
   { action: "USER_CREATED", module: "OTUA", label: "User created" },
   { action: "USER_UPDATED", module: "OTUA", label: "User updated" },
   { action: "USER_ROLE_ASSIGNED", module: "OTUA", label: "Role assigned to user" },
@@ -52,6 +54,23 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
   { action: "ACCESS_DENIED", module: "ASM", label: "Access denied" },
   { action: "AUDIT_LOG_EXPORTED", module: "ABDR", label: "Audit log exported" },
   { action: "OUTBOX_EVENT_PUBLISH_FAILED", module: "SHAD", label: "Outbox event publish failed" },
+  { action: "DOCUMENT_TYPE_CREATED", module: "MDTM", label: "Document type created" },
+  { action: "DOCUMENT_TYPE_UPDATED", module: "MDTM", label: "Document type updated" },
+  { action: "DOCUMENT_TYPE_ACTIVATED", module: "MDTM", label: "Document type activated" },
+  { action: "DOCUMENT_TYPE_DEACTIVATED", module: "MDTM", label: "Document type deactivated" },
+  { action: "DOCUMENT_TYPE_SCHEMA_PUBLISHED", module: "MDTM", label: "Document type schema published" },
+  { action: "METADATA_FIELD_CREATED", module: "MDTM", label: "Metadata field created" },
+  { action: "METADATA_FIELD_UPDATED", module: "MDTM", label: "Metadata field updated" },
+  { action: "METADATA_FIELD_ACTIVATED", module: "MDTM", label: "Metadata field activated" },
+  { action: "METADATA_FIELD_DEACTIVATED", module: "MDTM", label: "Metadata field deactivated" },
+  { action: "METADATA_FIELD_DEPRECATED", module: "MDTM", label: "Metadata field deprecated" },
+  { action: "METADATA_FIELD_DELETED", module: "MDTM", label: "Metadata field deleted" },
+  { action: "METADATA_FIELD_OPTION_CREATED", module: "MDTM", label: "Metadata field option created" },
+  { action: "METADATA_FIELD_OPTION_UPDATED", module: "MDTM", label: "Metadata field option updated" },
+  { action: "METADATA_FIELD_OPTION_DELETED", module: "MDTM", label: "Metadata field option deleted" },
+  { action: "METADATA_FIELD_VALIDATION_CREATED", module: "MDTM", label: "Metadata field validation rule created" },
+  { action: "METADATA_FIELD_VALIDATION_UPDATED", module: "MDTM", label: "Metadata field validation rule updated" },
+  { action: "METADATA_FIELD_VALIDATION_DELETED", module: "MDTM", label: "Metadata field validation rule deleted" },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
@@ -59,6 +78,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   OTUA: "Organization, Tenant and User Administration",
   ABDR: "Comprehensive Audit Management",
   SHAD: "System Health and Administration Dashboard",
+  MDTM: "Metadata and Document-Type Management",
 }
 
 export function auditModuleOptions(): string[] {

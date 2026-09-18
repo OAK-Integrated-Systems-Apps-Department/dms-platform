@@ -70,7 +70,12 @@ export function UpdatePasswordPageContent() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [validationError, setValidationError] = useState<string | null>(null)
+
+  // Live, not just checked on submit - so the button below can stay
+  // disabled until both actually pass, same as every other form.
+  const passwordTooShort = newPassword.length > 0 && newPassword.length < 8
+  const passwordsMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+  const canSubmit = newPassword.length >= 8 && newPassword === confirmPassword
 
   useEffect(() => {
     if (!token) {
@@ -106,16 +111,10 @@ export function UpdatePasswordPageContent() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    setValidationError(null)
-
-    if (newPassword.length < 8) {
-      setValidationError("Password must be at least 8 characters.")
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setValidationError("Passwords don't match.")
-      return
-    }
+    // The submit button is disabled until canSubmit is true, but a
+    // keyboard Enter in a text field can still fire this - guard the
+    // mutation itself rather than relying solely on the disabled attribute.
+    if (!canSubmit) return
     mutation.mutate()
   }
 
@@ -239,6 +238,9 @@ export function UpdatePasswordPageContent() {
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {passwordTooShort && (
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">Password must be at least 8 characters.</p>
+                )}
               </div>
 
               <div className="mb-[22px]">
@@ -257,17 +259,20 @@ export function UpdatePasswordPageContent() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                 />
+                {passwordsMismatch && (
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">Passwords don&apos;t match.</p>
+                )}
               </div>
 
-              {(validationError || mutation.isError) && (
+              {mutation.isError && (
                 <p className="mb-[17px] text-[12.5px] text-[var(--rust)]">
-                  {validationError ?? (mutation.error as Error)?.message}
+                  {(mutation.error as Error)?.message}
                 </p>
               )}
 
               <button
                 type="submit"
-                disabled={mutation.isPending || !newPassword || !confirmPassword}
+                disabled={mutation.isPending || !canSubmit}
                 className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isNewUser

@@ -28,9 +28,10 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
   const router = useRouter()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<CreateDocumentTypeFormValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isValid } } = useForm<CreateDocumentTypeFormValues>({
     resolver: zodResolver(createDocumentTypeSchema),
     defaultValues: { typeCode: "", typeName: "", description: "", displayOrder: 0, requiresWatermark: false, coeditingEnabled: false },
+    mode: "onChange",
   })
 
   async function handleFormSubmit(values: CreateDocumentTypeFormValues) {
@@ -88,7 +89,7 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
         <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
           Cancel
         </button>
-        <button type="submit" disabled={isSubmitting} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
+        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
           Create Document Type
         </button>
       </div>
@@ -106,9 +107,10 @@ export function UpdateDocumentTypeForm({ defaultValues, onSubmit }: EditFormProp
   const router = useRouter()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<UpdateDocumentTypeFormValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isValid } } = useForm<UpdateDocumentTypeFormValues>({
     resolver: zodResolver(updateDocumentTypeSchema),
     defaultValues,
+    mode: "onChange",
   })
 
   async function handleFormSubmit(values: UpdateDocumentTypeFormValues) {
@@ -160,7 +162,7 @@ export function UpdateDocumentTypeForm({ defaultValues, onSubmit }: EditFormProp
         <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
           Cancel
         </button>
-        <button type="submit" disabled={isSubmitting} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
+        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
           Save Changes
         </button>
       </div>

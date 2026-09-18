@@ -120,10 +120,11 @@ export function LoginPageContent() {
   const {
     register,
     handleSubmit,
-    formState: { errors: credentialErrors },
+    formState: { errors: credentialErrors, isValid: credentialsValid },
   } = useForm<LoginCredentialsValues>({
     resolver: zodResolver(loginCredentialsSchema),
     defaultValues: { username: "", password: "" },
+    mode: "onChange",
   })
 
   const mutation = useMutation({
@@ -254,7 +255,7 @@ export function LoginPageContent() {
 
               <button
                 type="submit"
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || !credentialsValid}
                 className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {mutation.isPending ? "Signing in…" : "Sign in"}

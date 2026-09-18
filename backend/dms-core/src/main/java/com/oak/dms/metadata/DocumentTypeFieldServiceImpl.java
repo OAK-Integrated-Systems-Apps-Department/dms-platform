@@ -1,5 +1,9 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DeprecatedFieldMappingException;
 import com.oak.dms.common.exception.DuplicateDisplayOrderException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
@@ -42,6 +46,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
     private final MetadataFieldValidationRepository metadataFieldValidationRepository;
     private final DocumentTypeFieldMapper documentTypeFieldMapper;
     private final SchemaCacheService schemaCacheService;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
@@ -158,6 +163,32 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
 
         log.info("Published schema version {} for document type {} ({} fields)",
                 newVersion, documentTypeId, savedNewMapping.size());
+
+        List<Map<String, Object>> newFieldSummaries = savedNewMapping.stream()
+                .map(m -> {
+                    MetadataField field = fieldsById.get(m.getFieldId());
+                    return Map.<String, Object>of(
+                            "fieldId", m.getFieldId(),
+                            "fieldKey", field != null ? field.getFieldKey() : "",
+                            "mandatory", m.isMandatory(),
+                            "hidden", m.isHidden(),
+                            "displayOrder", m.getDisplayOrder());
+                })
+                .toList();
+
+        auditService.event(AuditActionCatalog.DOCUMENT_TYPE_SCHEMA_PUBLISHED)
+                .objectType(AuditObjectTypes.DOCUMENT_TYPE_SCHEMA)
+                .objectId(documentTypeId)
+                .resourceName(documentType.getTypeCode())
+                .objectVersion(newVersion)
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of(
+                        "schemaVersion", oldVersion,
+                        "fieldIds", oldMapping.stream().map(DocumentTypeField::getFieldId).toList()))
+                .newValue(Map.of(
+                        "schemaVersion", newVersion,
+                        "fields", newFieldSummaries))
+                .log();
 
         return toResponses(savedNewMapping, tenantId);
     }

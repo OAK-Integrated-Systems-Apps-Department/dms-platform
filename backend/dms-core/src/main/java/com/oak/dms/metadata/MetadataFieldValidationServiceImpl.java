@@ -1,5 +1,9 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.CreateMetadataFieldValidationRequest;
@@ -13,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -25,6 +30,7 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldValidationMapper validationMapper;
     private final SchemaCacheService schemaCacheService;
+    private final AuditService auditService;
 
     @Override
     public MetadataFieldValidationResponse createValidation(UUID fieldId, CreateMetadataFieldValidationRequest request) {
@@ -44,6 +50,19 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         MetadataFieldValidation saved = validationRepository.save(validation);
         schemaCacheService.evictTenant(tenantId);
         log.info("Created metadata field validation {} for field {}", saved.getValidationId(), fieldId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_VALIDATION_CREATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_VALIDATION)
+                .objectId(saved.getValidationId())
+                .resourceName(saved.getRuleType().name())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "fieldId", fieldId,
+                        "ruleType", saved.getRuleType(),
+                        "ruleValue", saved.getRuleValue() == null ? "" : saved.getRuleValue(),
+                        "severity", saved.getSeverity()))
+                .log();
+
         return validationMapper.toResponse(saved);
     }
 
@@ -64,6 +83,11 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         requireField(fieldId, tenantId);
         MetadataFieldValidation validation = findOwnedByFieldAndTenant(validationId, fieldId, tenantId);
 
+        Map<String, Object> previousValue = Map.of(
+                "ruleValue", validation.getRuleValue() == null ? "" : validation.getRuleValue(),
+                "errorMessage", validation.getErrorMessage() == null ? "" : validation.getErrorMessage(),
+                "severity", validation.getSeverity());
+
         validation.setRuleValue(request.ruleValue());
         validation.setErrorMessage(request.errorMessage());
         if (request.severity() != null) {
@@ -75,6 +99,19 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         MetadataFieldValidation saved = validationRepository.save(validation);
         schemaCacheService.evictTenant(tenantId);
         log.info("Updated metadata field validation {}", saved.getValidationId());
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_VALIDATION_UPDATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_VALIDATION)
+                .objectId(saved.getValidationId())
+                .resourceName(saved.getRuleType().name())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "ruleValue", saved.getRuleValue() == null ? "" : saved.getRuleValue(),
+                        "errorMessage", saved.getErrorMessage() == null ? "" : saved.getErrorMessage(),
+                        "severity", saved.getSeverity()))
+                .log();
+
         return validationMapper.toResponse(saved);
     }
 
@@ -91,6 +128,13 @@ public class MetadataFieldValidationServiceImpl implements MetadataFieldValidati
         validationRepository.save(validation);
         schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field validation {}", validationId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_VALIDATION_DELETED)
+                .objectType(AuditObjectTypes.METADATA_FIELD_VALIDATION)
+                .objectId(validationId)
+                .resourceName(validation.getRuleType().name())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private void requireField(UUID fieldId, UUID tenantId) {

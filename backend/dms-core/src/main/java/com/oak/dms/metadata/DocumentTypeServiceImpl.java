@@ -1,5 +1,9 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.dto.CreateDocumentTypeRequest;
@@ -15,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -25,6 +30,7 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
 
     private final DocumentTypeRepository documentTypeRepository;
     private final DocumentTypeMapper documentTypeMapper;
+    private final AuditService auditService;
 
     @Override
     public DocumentTypeResponse createDocumentType(CreateDocumentTypeRequest request) {
@@ -56,6 +62,21 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
             documentTypeRepository.saveAll(touchedSiblings);
         }
         log.info("Created document type {} ({}) in tenant {}", saved.getDocumentTypeId(), saved.getTypeCode(), tenantId);
+
+        auditService.event(AuditActionCatalog.DOCUMENT_TYPE_CREATED)
+                .objectType(AuditObjectTypes.DOCUMENT_TYPE)
+                .objectId(saved.getDocumentTypeId())
+                .resourceName(saved.getTypeCode())
+                .objectVersion(saved.getCurrentSchemaVersion())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "typeCode", saved.getTypeCode(),
+                        "typeName", saved.getTypeName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "requiresWatermark", saved.isRequiresWatermark(),
+                        "coeditingEnabled", saved.isCoeditingEnabled()))
+                .log();
+
         return documentTypeMapper.toResponse(saved);
     }
 
@@ -77,6 +98,12 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
         DocumentType documentType = findOwnedByCallerTenant(documentTypeId);
         UUID tenantId = TenantContext.getTenantId();
 
+        Map<String, Object> previousValue = Map.of(
+                "typeName", documentType.getTypeName(),
+                "description", documentType.getDescription() == null ? "" : documentType.getDescription(),
+                "requiresWatermark", documentType.isRequiresWatermark(),
+                "coeditingEnabled", documentType.isCoeditingEnabled());
+
         documentType.setTypeName(request.typeName());
         documentType.setDescription(request.description());
         documentType.setRequiresWatermark(request.requiresWatermark());
@@ -96,26 +123,55 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
             documentTypeRepository.saveAll(touchedSiblings);
         }
         log.info("Updated document type {}", saved.getDocumentTypeId());
+
+        auditService.event(AuditActionCatalog.DOCUMENT_TYPE_UPDATED)
+                .objectType(AuditObjectTypes.DOCUMENT_TYPE)
+                .objectId(saved.getDocumentTypeId())
+                .resourceName(saved.getTypeCode())
+                .objectVersion(saved.getCurrentSchemaVersion())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "typeName", saved.getTypeName(),
+                        "description", saved.getDescription() == null ? "" : saved.getDescription(),
+                        "requiresWatermark", saved.isRequiresWatermark(),
+                        "coeditingEnabled", saved.isCoeditingEnabled()))
+                .log();
+
         return documentTypeMapper.toResponse(saved);
     }
 
     @Override
     public DocumentTypeResponse activateDocumentType(UUID documentTypeId) {
-        return setStatus(documentTypeId, DocumentType.DocumentTypeStatus.active);
+        return setStatus(documentTypeId, DocumentType.DocumentTypeStatus.active,
+                AuditActionCatalog.DOCUMENT_TYPE_ACTIVATED);
     }
 
     @Override
     public DocumentTypeResponse deactivateDocumentType(UUID documentTypeId) {
-        return setStatus(documentTypeId, DocumentType.DocumentTypeStatus.inactive);
+        return setStatus(documentTypeId, DocumentType.DocumentTypeStatus.inactive,
+                AuditActionCatalog.DOCUMENT_TYPE_DEACTIVATED);
     }
 
-    private DocumentTypeResponse setStatus(UUID documentTypeId, DocumentType.DocumentTypeStatus status) {
+    private DocumentTypeResponse setStatus(UUID documentTypeId, DocumentType.DocumentTypeStatus status, String auditAction) {
         DocumentType documentType = findOwnedByCallerTenant(documentTypeId);
+        DocumentType.DocumentTypeStatus previousStatus = documentType.getStatus();
         documentType.setStatus(status);
         documentType.setUpdatedBy(TenantContext.getUserId());
         documentType.setUpdatedAt(OffsetDateTime.now());
         DocumentType saved = documentTypeRepository.save(documentType);
         log.info("Set document type {} status to {}", documentTypeId, status);
+
+        auditService.event(auditAction)
+                .objectType(AuditObjectTypes.DOCUMENT_TYPE)
+                .objectId(saved.getDocumentTypeId())
+                .resourceName(saved.getTypeCode())
+                .objectVersion(saved.getCurrentSchemaVersion())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of("status", previousStatus))
+                .newValue(Map.of("status", status))
+                .log();
+
         return documentTypeMapper.toResponse(saved);
     }
 

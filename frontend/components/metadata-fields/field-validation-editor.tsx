@@ -100,7 +100,8 @@ export function FieldValidationEditor({ validations, onAdd, onUpdate, onRemove }
         <button
           type="button"
           onClick={handleAdd}
-          className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground"
+          disabled={!ruleValue.trim()}
+          className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus size={14} />
           Add Rule

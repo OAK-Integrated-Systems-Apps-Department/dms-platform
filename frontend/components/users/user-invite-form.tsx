@@ -83,10 +83,15 @@ export function UserInviteForm() {
     handleSubmit,
     control,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<UserInviteFormValues>({
     resolver: zodResolver(userInviteFormSchema),
     defaultValues: { firstName: "", lastName: "", username: "", email: "", roles: [] },
+    // Live feedback as the caller types past a field's length limit (or
+    // fixes any other validation error), rather than only surfacing it on
+    // submit - matters most here since firstName/lastName/username all
+    // have a length cap the caller has no other way to see coming.
+    mode: "onChange",
   })
 
   async function onSubmit(values: UserInviteFormValues) {
@@ -266,7 +271,7 @@ export function UserInviteForm() {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !isValid}
           className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Creating…" : "Create user"}

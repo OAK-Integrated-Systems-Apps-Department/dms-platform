@@ -7,7 +7,9 @@ package com.oak.dms.audit;
  * PermissionActionServiceImpl, PermissionModuleServiceImpl,
  * UserServiceImpl, AuthService, PasswordResetService, UserRoleServiceImpl,
  * AuditEventServiceImpl, OutboxRelay, TenantServiceImpl,
- * TenantProvisioningService, GlobalExceptionHandler) uses one of these
+ * TenantProvisioningService, GlobalExceptionHandler, DocumentTypeServiceImpl,
+ * DocumentTypeFieldServiceImpl, MetadataFieldServiceImpl,
+ * MetadataFieldOptionServiceImpl, MetadataFieldValidationServiceImpl) uses one of these
  * instead of typing the literal itself, so a typo can't silently create a
  * new, unfiltered object type, and so this class doubles as the
  * definitive list of every object type the audit trail actually produces
@@ -28,6 +30,11 @@ public final class AuditObjectTypes {
     public static final String AUDIT_EVENT = "AUDIT_EVENT";
     public static final String OUTBOX_EVENT = "OUTBOX_EVENT";
     public static final String TENANT = "TENANT";
+    public static final String DOCUMENT_TYPE = "DOCUMENT_TYPE";
+    public static final String DOCUMENT_TYPE_SCHEMA = "DOCUMENT_TYPE_SCHEMA";
+    public static final String METADATA_FIELD = "METADATA_FIELD";
+    public static final String METADATA_FIELD_OPTION = "METADATA_FIELD_OPTION";
+    public static final String METADATA_FIELD_VALIDATION = "METADATA_FIELD_VALIDATION";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

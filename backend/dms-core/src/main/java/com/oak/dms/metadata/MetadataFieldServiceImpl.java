@@ -1,5 +1,9 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.audit.AuditActionCatalog;
+import com.oak.dms.audit.AuditObjectTypes;
+import com.oak.dms.audit.AuditOutcome;
+import com.oak.dms.audit.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidMetadataFieldStateException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
@@ -16,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,6 +42,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
     private final DocumentTypeFieldRepository documentTypeFieldRepository;
     private final MetadataFieldMapper metadataFieldMapper;
     private final SchemaCacheService schemaCacheService;
+    private final AuditService auditService;
 
     @Override
     public MetadataFieldResponse createField(CreateMetadataFieldRequest request) {
@@ -61,6 +67,20 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
 
         MetadataField saved = metadataFieldRepository.save(field);
         log.info("Created metadata field {} ({}) in tenant {}", saved.getFieldId(), saved.getFieldKey(), tenantId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_CREATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD)
+                .objectId(saved.getFieldId())
+                .resourceName(saved.getFieldKey())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "fieldKey", saved.getFieldKey(),
+                        "label", saved.getLabel(),
+                        "dataType", saved.getDataType(),
+                        "searchable", saved.isSearchable(),
+                        "ocrExtractable", saved.isOcrExtractable()))
+                .log();
+
         return metadataFieldMapper.toResponse(saved);
     }
 
@@ -88,6 +108,13 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
     public MetadataFieldResponse updateField(UUID fieldId, UpdateMetadataFieldRequest request) {
         MetadataField field = findOwnedByCallerTenant(fieldId);
 
+        Map<String, Object> previousValue = Map.of(
+                "label", field.getLabel(),
+                "helpText", field.getHelpText() == null ? "" : field.getHelpText(),
+                "defaultValue", field.getDefaultValue() == null ? "" : field.getDefaultValue(),
+                "searchable", field.isSearchable(),
+                "ocrExtractable", field.isOcrExtractable());
+
         field.setLabel(request.label());
         field.setHelpText(request.helpText());
         field.setDefaultValue(request.defaultValue());
@@ -99,22 +126,37 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         MetadataField saved = metadataFieldRepository.save(field);
         schemaCacheService.evictTenant(TenantContext.getTenantId());
         log.info("Updated metadata field {}", saved.getFieldId());
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_UPDATED)
+                .objectType(AuditObjectTypes.METADATA_FIELD)
+                .objectId(saved.getFieldId())
+                .resourceName(saved.getFieldKey())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of(
+                        "label", saved.getLabel(),
+                        "helpText", saved.getHelpText() == null ? "" : saved.getHelpText(),
+                        "defaultValue", saved.getDefaultValue() == null ? "" : saved.getDefaultValue(),
+                        "searchable", saved.isSearchable(),
+                        "ocrExtractable", saved.isOcrExtractable()))
+                .log();
+
         return metadataFieldMapper.toResponse(saved);
     }
 
     @Override
     public MetadataFieldResponse activateField(UUID fieldId) {
-        return setStatus(fieldId, MetadataField.FieldStatus.active);
+        return setStatus(fieldId, MetadataField.FieldStatus.active, AuditActionCatalog.METADATA_FIELD_ACTIVATED);
     }
 
     @Override
     public MetadataFieldResponse deactivateField(UUID fieldId) {
-        return setStatus(fieldId, MetadataField.FieldStatus.inactive);
+        return setStatus(fieldId, MetadataField.FieldStatus.inactive, AuditActionCatalog.METADATA_FIELD_DEACTIVATED);
     }
 
     @Override
     public MetadataFieldResponse deprecateField(UUID fieldId) {
-        return setStatus(fieldId, MetadataField.FieldStatus.deprecated);
+        return setStatus(fieldId, MetadataField.FieldStatus.deprecated, AuditActionCatalog.METADATA_FIELD_DEPRECATED);
     }
 
     @Override
@@ -140,9 +182,18 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                             + "Deprecate it instead.");
         }
 
+        UUID deletedFieldId = field.getFieldId();
+        String fieldKey = field.getFieldKey();
         metadataFieldRepository.delete(field);
         schemaCacheService.evictTenant(tenantId);
         log.info("Deleted metadata field {}", fieldId);
+
+        auditService.event(AuditActionCatalog.METADATA_FIELD_DELETED)
+                .objectType(AuditObjectTypes.METADATA_FIELD)
+                .objectId(deletedFieldId)
+                .resourceName(fieldKey)
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
     }
 
     private boolean hasDocumentMetadataValues(UUID fieldId) {
@@ -153,7 +204,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         return false;
     }
 
-    private MetadataFieldResponse setStatus(UUID fieldId, MetadataField.FieldStatus status) {
+    private MetadataFieldResponse setStatus(UUID fieldId, MetadataField.FieldStatus status, String auditAction) {
         MetadataField field = findOwnedByCallerTenant(fieldId);
 
         if (field.isSystemField() && status != MetadataField.FieldStatus.active) {
@@ -161,12 +212,23 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                     "System field '" + field.getFieldKey() + "' cannot be deactivated or deprecated.");
         }
 
+        MetadataField.FieldStatus previousStatus = field.getStatus();
         field.setStatus(status);
         field.setUpdatedBy(TenantContext.getUserId());
         field.setUpdatedAt(OffsetDateTime.now());
         MetadataField saved = metadataFieldRepository.save(field);
         schemaCacheService.evictTenant(TenantContext.getTenantId());
         log.info("Set metadata field {} status to {}", fieldId, status);
+
+        auditService.event(auditAction)
+                .objectType(AuditObjectTypes.METADATA_FIELD)
+                .objectId(saved.getFieldId())
+                .resourceName(saved.getFieldKey())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(Map.of("status", previousStatus))
+                .newValue(Map.of("status", status))
+                .log();
+
         return metadataFieldMapper.toResponse(saved);
     }
 
