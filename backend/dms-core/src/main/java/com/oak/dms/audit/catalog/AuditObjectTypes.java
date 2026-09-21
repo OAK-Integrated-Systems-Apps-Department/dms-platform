@@ -15,6 +15,9 @@ package com.oak.dms.audit.catalog;
  * definitive list of every object type the audit trail actually produces
  * - the frontend's `OBJECT_TYPE_OPTIONS` (audit-log-filters.tsx) should
  * always match it.
+ *
+ * DocumentServiceImpl/StorageLocationServiceImpl are also call sites now
+ * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below).
  */
 public final class AuditObjectTypes {
 
@@ -35,6 +38,9 @@ public final class AuditObjectTypes {
     public static final String METADATA_FIELD = "METADATA_FIELD";
     public static final String METADATA_FIELD_OPTION = "METADATA_FIELD_OPTION";
     public static final String METADATA_FIELD_VALIDATION = "METADATA_FIELD_VALIDATION";
+    public static final String DOCUMENT = "DOCUMENT";
+    public static final String DOCUMENT_VERSION = "DOCUMENT_VERSION";
+    public static final String STORAGE_LOCATION = "STORAGE_LOCATION";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

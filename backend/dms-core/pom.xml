@@ -133,6 +133,18 @@
             <scope>compile</scope>
         </dependency>
 
+        <!--
+          Object storage: AWS SDK v2's S3 client, used by S3ObjectStorageAdapter.
+          Its endpointOverride()/forcePathStyle() support is what lets one adapter
+          talk to real AWS S3, MinIO, and the SeaweedFS S3 gateway - see
+          com.oak.dms.storage and docs/storage-architecture.md.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.55.1</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
