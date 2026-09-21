@@ -1,6 +1,6 @@
 package com.oak.dms.security.rbac.service.impl;
 
-import com.oak.dms.security.rbac.dto.PermissionActionMapper;
+import com.oak.dms.security.rbac.mapper.PermissionActionMapper;
 import com.oak.dms.security.rbac.entity.Permission;
 import com.oak.dms.security.rbac.entity.PermissionAction;
 import com.oak.dms.security.rbac.entity.PermissionModule;

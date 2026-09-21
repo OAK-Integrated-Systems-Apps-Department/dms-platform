@@ -3,7 +3,7 @@ package com.oak.dms.common.exception;
 import org.springframework.http.HttpStatus;
 
 /**
- * Thrown when an operation on a {@link com.oak.dms.metadata.MetadataField}
+ * Thrown when an operation on a {@link com.oak.dms.metadata.entity.MetadataField}
  * conflicts with its current state - most notably, deleting a field still
  * referenced by a {@code document_type_fields} or
  * {@code document_metadata_values} row (MDTM alternate flow 2: "Administrator

@@ -9,7 +9,7 @@ import java.util.UUID;
  * {@link com.oak.dms.security.rbac.entity.PermissionAction} and
  * {@link com.oak.dms.security.rbac.entity.PermissionModule} rows so a client can
  * render "MODULE / ACTION" (replacing the old free-text `category` field)
- * without a second round trip - see {@link com.oak.dms.security.rbac.dto.PermissionMapper}.
+ * without a second round trip - see {@link com.oak.dms.security.rbac.mapper.PermissionMapper}.
  * {@code actionName}/{@code moduleName} are the same rows' human-readable
  * labels (e.g. actionCode "MANAGE_ROLES_AND_PERMISSIONS" / actionName
  * "Manage Roles & Permissions"), denormalized the same way, so a client

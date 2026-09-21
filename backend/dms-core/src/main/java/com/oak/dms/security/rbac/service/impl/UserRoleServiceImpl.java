@@ -1,6 +1,6 @@
 package com.oak.dms.security.rbac.service.impl;
 
-import com.oak.dms.security.rbac.dto.UserRoleMapper;
+import com.oak.dms.security.rbac.mapper.UserRoleMapper;
 
 import com.oak.dms.security.rbac.entity.Role;
 import com.oak.dms.security.rbac.entity.UserRole;

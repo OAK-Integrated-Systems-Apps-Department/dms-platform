@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.dto.AuditEventDetailResponse;
-import com.oak.dms.audit.dto.AuditEventMapper;
+import com.oak.dms.audit.mapper.AuditEventMapper;
 import com.oak.dms.audit.dto.AuditEventResponse;
 import com.oak.dms.audit.dto.AuditEventSearchCriteria;
 import com.oak.dms.audit.entity.AuditEvent;
