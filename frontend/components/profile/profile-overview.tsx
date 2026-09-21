@@ -53,10 +53,11 @@ export function ProfileOverview() {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<ProfileEditFormValues>({
     resolver: zodResolver(profileEditFormSchema),
     defaultValues: { firstName: "", lastName: "" },
+    mode: "onChange",
   })
 
   // Keeps the form's defaults in sync once the real profile has loaded —
@@ -145,7 +146,7 @@ export function ProfileOverview() {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValid}
               className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSubmitting ? "Saving…" : "Save changes"}

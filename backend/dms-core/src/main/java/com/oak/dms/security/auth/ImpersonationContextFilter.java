@@ -1,6 +1,6 @@
 package com.oak.dms.security.auth;
 
-import com.oak.dms.security.rbac.PermissionCodes;
+import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import jakarta.servlet.FilterChain;

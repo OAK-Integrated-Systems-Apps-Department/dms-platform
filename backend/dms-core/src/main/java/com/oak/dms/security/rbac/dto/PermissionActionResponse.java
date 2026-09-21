@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Public API representation of a {@link com.oak.dms.security.rbac.PermissionAction}.
+ * Public API representation of a {@link com.oak.dms.security.rbac.entity.PermissionAction}.
  * Includes the parent module's code/name alongside moduleId so a client
  * can render "MODULE / ACTION" without a second round trip, matching how
  * {@link RolePermissionResponse} denormalizes permissionCode.

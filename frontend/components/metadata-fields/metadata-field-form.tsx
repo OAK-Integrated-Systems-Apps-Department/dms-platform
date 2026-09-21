@@ -38,7 +38,7 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<CreateMetadataFieldFormValues>({
     resolver: zodResolver(createMetadataFieldSchema),
     defaultValues: {
@@ -50,6 +50,7 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
       searchable: true,
       ocrExtractable: false,
     },
+    mode: "onChange",
   })
 
   async function handleFormSubmit(values: CreateMetadataFieldFormValues) {
@@ -152,7 +153,7 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !isValid}
           className={cn(
             "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"
@@ -179,10 +180,11 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<UpdateMetadataFieldFormValues>({
     resolver: zodResolver(updateMetadataFieldSchema),
     defaultValues,
+    mode: "onChange",
   })
 
   async function handleFormSubmit(values: UpdateMetadataFieldFormValues) {
@@ -253,7 +255,7 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !isValid}
           className={cn(
             "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"

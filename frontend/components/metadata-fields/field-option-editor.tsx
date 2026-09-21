@@ -94,7 +94,7 @@ export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove, adding }
         <button
           type="button"
           onClick={handleAdd}
-          disabled={adding}
+          disabled={adding || !newValue.trim() || !newLabel.trim()}
           className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus size={14} />

@@ -1,9 +1,9 @@
 package com.oak.dms.security.auth;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;

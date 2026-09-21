@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Request body for adding a new field to the tenant's metadata schema
  * registry. {@code dataType} is validated against
- * {@link com.oak.dms.metadata.MetadataField#DATA_TYPES} in the service
+ * {@link com.oak.dms.metadata.entity.MetadataField#DATA_TYPES} in the service
  * layer, not via a Java enum - see that field's own doc comment for why
  * ('boolean' is a reserved word).
  */

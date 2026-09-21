@@ -63,7 +63,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
     control,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<PermissionFormValues>({
     resolver: zodResolver(permissionFormSchema),
     defaultValues: {
@@ -73,6 +73,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
       moduleId: permission?.moduleId ?? "",
       actionId: permission?.actionId ?? "",
     },
+    mode: "onChange",
   })
 
   const selectedModuleId = watch("moduleId")
@@ -309,7 +310,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || catalogLoading || isSharedPermission}
+          disabled={isSubmitting || catalogLoading || isSharedPermission || !isValid}
           className="rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           {mode === "create" ? "Create Permission" : "Save Changes"}

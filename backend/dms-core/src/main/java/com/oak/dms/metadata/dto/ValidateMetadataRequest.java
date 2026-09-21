@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Body of {@code POST /document-types/{documentTypeId}/validate} - candidate
- * field values to run through {@link com.oak.dms.metadata.MetadataValidationService}
+ * field values to run through {@link com.oak.dms.metadata.service.MetadataValidationService}
  * without persisting anything.
  * <p>
  * {@code schemaVersion} is optional; when omitted, validation runs against

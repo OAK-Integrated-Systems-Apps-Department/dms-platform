@@ -17,7 +17,12 @@ export const userInviteFormSchema = z.object({
     .max(100, "Keep it under 100 characters")
     .regex(/^[a-z0-9._-]+$/i, "Use only letters, numbers, dots, dashes, and underscores"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
-  roles: z.array(z.string()).min(1, "Select at least one role"),
+  // No .min(1): a caller without role-view permission has no picker to
+  // select one at all (see UserInviteForm's own "can still be invited
+  // without one" copy for that case), and CreateUserRequest itself has no
+  // roles field either - role assignment is a fully separate, optional
+  // second step (assignUserRole, looped over below in onSubmit).
+  roles: z.array(z.string()),
 })
 
 export type UserInviteFormValues = z.infer<typeof userInviteFormSchema>

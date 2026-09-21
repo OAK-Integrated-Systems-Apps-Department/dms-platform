@@ -100,7 +100,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<UserEditFormValues>({
     resolver: zodResolver(userEditFormSchema),
     defaultValues: {
@@ -109,6 +109,9 @@ export function UserEditForm({ user }: UserEditFormProps) {
       email: user.email,
       roles: user.roles,
     },
+    // Live feedback as the caller types past a field's length limit,
+    // matching UserInviteForm - see that component's own comment.
+    mode: "onChange",
   })
 
   async function onSubmit(values: UserEditFormValues) {
@@ -290,7 +293,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !isValid}
           className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving…" : "Save changes"}

@@ -3,9 +3,9 @@ package com.oak.dms.security.auth;
 import com.oak.dms.common.exception.KeycloakIntegrationException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import lombok.extern.slf4j.Slf4j;
-import com.oak.dms.security.rbac.Permission;
-import com.oak.dms.security.rbac.PermissionRepository;
-import com.oak.dms.security.rbac.RolePermissionRepository;
+import com.oak.dms.security.rbac.entity.Permission;
+import com.oak.dms.security.rbac.repository.PermissionRepository;
+import com.oak.dms.security.rbac.repository.RolePermissionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
@@ -23,10 +23,10 @@ import java.util.stream.Collectors;
  * role_permissions / user_roles tables, complementing the coarse
  * ROLE_* checks derived straight from the Keycloak token.
  *
- * Usage in controllers - reference permission codes via {@link com.oak.dms.security.rbac.PermissionCodes}
+ * Usage in controllers - reference permission codes via {@link com.oak.dms.security.rbac.catalog.PermissionCodes}
  * rather than a raw string literal (Spring EL has no notion of a Java
  * import, so this needs a fully-qualified {@code T(...)} type reference):
- *   {@code @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")}
+ *   {@code @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE)")}
  */
 @Slf4j
 @Component("authz")

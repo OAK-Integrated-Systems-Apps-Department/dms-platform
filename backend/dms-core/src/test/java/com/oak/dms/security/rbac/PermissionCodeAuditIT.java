@@ -1,8 +1,8 @@
 package com.oak.dms.security.rbac;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditEvent;
-import com.oak.dms.audit.AuditEventRepository;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.repository.AuditEventRepository;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.dto.CreatePermissionRequest;
 import com.oak.dms.security.rbac.dto.CreateRoleRequest;
@@ -12,6 +12,16 @@ import com.oak.dms.security.rbac.dto.RolePermissionResponse;
 import com.oak.dms.security.rbac.dto.RoleResponse;
 import com.oak.dms.security.rbac.dto.UpdatePermissionRequest;
 import com.oak.dms.security.rbac.dto.UpdateRoleRequest;
+import com.oak.dms.security.rbac.entity.Permission;
+import com.oak.dms.security.rbac.entity.PermissionAction;
+import com.oak.dms.security.rbac.entity.PermissionModule;
+import com.oak.dms.security.rbac.entity.Role;
+import com.oak.dms.security.rbac.repository.PermissionActionRepository;
+import com.oak.dms.security.rbac.repository.PermissionModuleRepository;
+import com.oak.dms.security.rbac.repository.PermissionRepository;
+import com.oak.dms.security.rbac.service.PermissionService;
+import com.oak.dms.security.rbac.service.RolePermissionService;
+import com.oak.dms.security.rbac.service.RoleService;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import com.oak.dms.user.User;

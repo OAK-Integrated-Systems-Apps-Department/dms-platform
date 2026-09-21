@@ -4,12 +4,12 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Public API representation of a {@link com.oak.dms.security.rbac.Permission}.
+ * Public API representation of a {@link com.oak.dms.security.rbac.entity.Permission}.
  * actionCode/moduleId/moduleCode are denormalized from the related
- * {@link com.oak.dms.security.rbac.PermissionAction} and
- * {@link com.oak.dms.security.rbac.PermissionModule} rows so a client can
+ * {@link com.oak.dms.security.rbac.entity.PermissionAction} and
+ * {@link com.oak.dms.security.rbac.entity.PermissionModule} rows so a client can
  * render "MODULE / ACTION" (replacing the old free-text `category` field)
- * without a second round trip - see {@link com.oak.dms.security.rbac.PermissionMapper}.
+ * without a second round trip - see {@link com.oak.dms.security.rbac.mapper.PermissionMapper}.
  * {@code actionName}/{@code moduleName} are the same rows' human-readable
  * labels (e.g. actionCode "MANAGE_ROLES_AND_PERMISSIONS" / actionName
  * "Manage Roles & Permissions"), denormalized the same way, so a client
@@ -25,7 +25,7 @@ import java.util.UUID;
  * has no reliable way to know "my own tenant id" to compare against in
  * every context this response is used from. Only permissions where
  * {@code shared} is false can be edited or deleted - see
- * {@link com.oak.dms.security.rbac.PermissionServiceImpl#updatePermission}.
+ * {@link com.oak.dms.security.rbac.service.impl.PermissionServiceImpl#updatePermission}.
  * <p>
  * {@code deprecated} is true for a permission kept only for backward
  * compatibility (currently just the 4 original coarse codes) - clients

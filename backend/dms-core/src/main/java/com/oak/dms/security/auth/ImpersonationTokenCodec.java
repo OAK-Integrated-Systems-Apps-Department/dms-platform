@@ -18,7 +18,7 @@ import java.util.UUID;
  * Signs and verifies the opaque token carried in the {@code dms_impersonation}
  * cookie - the trusted grant that lets a request operate as a different
  * user's identity while recording who really made it. Same shape and
- * reasoning as {@link com.oak.dms.audit.AuditCorrelationTokenCodec}, kept as
+ * reasoning as {@link com.oak.dms.audit.filter.AuditCorrelationTokenCodec}, kept as
  * its own class (own secret, own payload) rather than reused: a leak or key
  * rotation on one must never affect the other, and their payloads/trust
  * requirements are unrelated.
