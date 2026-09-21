@@ -83,6 +83,11 @@ public final class PermissionCodes {
     public static final String MDTM_TYPE_FIELD_MAPPING_VIEW = "mdtm.manage-type-field-mapping.view";
     public static final String MDTM_TYPE_FIELD_MAPPING_UPDATE = "mdtm.manage-type-field-mapping.update";
 
+    // Documents - DOCM (Document Management) - see V33's seed migration.
+    public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
+    public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
+    public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
+
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
     // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail

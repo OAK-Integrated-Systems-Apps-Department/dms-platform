@@ -97,6 +97,10 @@ public final class AuditActionCatalog {
     public static final String METADATA_FIELD_VALIDATION_CREATED = "METADATA_FIELD_VALIDATION_CREATED";
     public static final String METADATA_FIELD_VALIDATION_UPDATED = "METADATA_FIELD_VALIDATION_UPDATED";
     public static final String METADATA_FIELD_VALIDATION_DELETED = "METADATA_FIELD_VALIDATION_DELETED";
+    public static final String DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED";
+    public static final String DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED";
+    public static final String DOCUMENT_DELETED = "DOCUMENT_DELETED";
+    public static final String STORAGE_LOCATION_CREATED = "STORAGE_LOCATION_CREATED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -238,7 +242,22 @@ public final class AuditActionCatalog {
             // reasoning as ROLE_PERMISSION_REVOKED being HIGH.
             Map.entry(METADATA_FIELD_VALIDATION_CREATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
             Map.entry(METADATA_FIELD_VALIDATION_UPDATED, new AuditActionSpec("MDTM", AuditSeverity.MEDIUM, false)),
-            Map.entry(METADATA_FIELD_VALIDATION_DELETED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false))
+            Map.entry(METADATA_FIELD_VALIDATION_DELETED, new AuditActionSpec("MDTM", AuditSeverity.HIGH, false)),
+
+            // Documents (DocumentController) - module DOCM. DOWNLOADED is
+            // LOW, not MEDIUM like a plain create - it's a routine, high-
+            // frequency read, same severity tier as LOGIN_SUCCESS, not a
+            // state-changing action.
+            Map.entry(DOCUMENT_UPLOADED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_DOWNLOADED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+
+            // Storage locations (StorageLocationController) - also module
+            // DOCM: registering a new object-storage backend for a tenant
+            // is tenant infrastructure, comparable in blast radius to
+            // TENANT_PROVISIONED, so HIGH rather than the MEDIUM a plain
+            // catalog-entity create would get.
+            Map.entry(STORAGE_LOCATION_CREATED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false))
     );
 
     private AuditActionCatalog() {

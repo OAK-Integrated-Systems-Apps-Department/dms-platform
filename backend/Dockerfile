@@ -18,6 +18,11 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 RUN addgroup -S oakdms && adduser -S oakdms -G oakdms
 WORKDIR /app
 COPY --from=build /build/dms-core/target/dms-core.jar app.jar
+# FILE_SYSTEM storage's default STORAGE_FILESYSTEM_BASE_PATH (see
+# application.yml / docs/storage-architecture.md) - created here, owned by
+# the non-root oakdms user, so a named volume mounted at /data in
+# docker-compose.yml inherits this ownership instead of root:root.
+RUN mkdir -p /data/dms/documents && chown -R oakdms:oakdms /data
 USER oakdms
 
 EXPOSE 8080

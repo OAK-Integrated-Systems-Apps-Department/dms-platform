@@ -153,6 +153,26 @@ dms:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
+  storage:
+    # Backs the single platform-default StorageLocation (tenant_id NULL)
+    # that StorageLocationBootstrap creates on startup if none exists yet -
+    # see com.oak.dms.storage and docs/storage-architecture.md. A tenant
+    # with its own StorageLocation row overrides this; this is only the
+    # zero-config fallback ("OAK provides storage for the client").
+    default-provider: ${STORAGE_PROVIDER:FILE_SYSTEM}
+    s3:
+      # Blank = real AWS S3's own default endpoint. Set this to a MinIO or
+      # SeaweedFS S3-gateway URL to point the same adapter at either instead.
+      endpoint: ${S3_ENDPOINT:}
+      region: ${S3_REGION:us-east-1}
+      bucket: ${S3_BUCKET:}
+      access-key: ${S3_ACCESS_KEY:}
+      secret-key: ${S3_SECRET_KEY:}
+      # MinIO/SeaweedFS typically need path-style bucket addressing; real
+      # AWS S3 does not (though it still accepts it).
+      path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+    filesystem:
+      base-path: ${STORAGE_FILESYSTEM_BASE_PATH:/data/dms/documents}
 
 management:
   endpoints:

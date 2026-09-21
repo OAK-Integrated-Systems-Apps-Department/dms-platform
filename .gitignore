@@ -1,5 +1,10 @@
 infra/local/.env
 .idea/
+
+# Root-level local dev env file (real values for running dms-core directly
+# on the host, e.g. via mvnw/IDE) - see .env.example for the same variable
+# names with no real secrets, safe to commit.
+/.env
 infra/secrets/*.env
 !infra/secrets/*.enc.env
 

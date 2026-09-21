@@ -148,12 +148,93 @@ services:
       keycloak:
         condition: service_started
 
+  # Optional, standalone S3-compatible backend for exercising
+  # S3ObjectStorageAdapter against a real server without AWS/MinIO - see
+  # docs/storage-architecture.md and SeaweedFsDocumentUploadIT. Not a
+  # dependency of dms-core (which defaults to STORAGE_PROVIDER=FILE_SYSTEM):
+  # register a StorageLocation pointing at this endpoint to use it, e.g.
+  #   provider=S3, endpoint=http://localhost:8333, bucket=dms-seaweedfs-test,
+  #   pathStyleAccess=true, credentialRef=<see .env.example>
+  # No SeaweedFS-specific code exists anywhere in the Java application -
+  # S3ObjectStorageAdapter talks to it exactly the way it talks to AWS S3
+  # or MinIO, via endpointOverride()/forcePathStyle() only.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: oakdms-seaweedfs
+    # Credentials never live in this committed file (see .env.example) -
+    # the S3 identity config SeaweedFS itself needs (-s3.config) is
+    # generated from env vars at container start, into a location inside
+    # the named volume below so it isn't lost between restarts.
+    #
+    # Deliberately env_file only, no environment: entry for these two
+    # variables: an environment: value takes precedence over env_file for
+    # the same key, so a "${SEAWEEDFS_S3_ACCESS_KEY:-changeme}"-style
+    # fallback here would silently WIN over the real value env_file loads
+    # from the root .env (Compose's own ${...} substitution for
+    # environment: never reads that file - only env_file does). Left
+    # unset in .env, this container simply starts with no working
+    # credential (S3 auth rejects everything) rather than a functioning
+    # "changeme" fallback baked into a committed file.
+    env_file:
+      - path: ../../.env
+        required: false
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cat > /data/s3_config.json <<CONFIG
+        {
+          "identities": [
+            {
+              "name": "dms-local",
+              "credentials": [
+                {"accessKey": "$$SEAWEEDFS_S3_ACCESS_KEY", "secretKey": "$$SEAWEEDFS_S3_SECRET_KEY"}
+              ],
+              "actions": ["Read", "Write", "List", "Tagging", "Admin"]
+            }
+          ]
+        }
+        CONFIG
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/data/s3_config.json
+    ports:
+      - "8333:8333" # S3 API - the only port this stack's other services need
+      - "8888:8888" # Filer HTTP API - browsable directory listing for manual local checks only
+    volumes:
+      # Persists both the actual object data and the generated s3_config.json
+      # across container restarts/recreates - see requirement 5/10 below.
+      - seaweedfs_data:/data
+    healthcheck:
+      # A plain TCP check, not an HTTP one: the S3 API legitimately answers
+      # unauthenticated requests with 403 once it's up, and both `wget
+      # --spider` and plain `wget` treat that as a failure (non-2xx),
+      # which would report "unhealthy" even while genuinely serving
+      # requests correctly. `nc -z` only proves something is listening -
+      # exactly what's needed here. 127.0.0.1, not localhost: this image's
+      # S3 API only binds IPv4, and this container resolves "localhost" to
+      # ::1 first, producing a false negative against the IPv6 loopback.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8333"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   dms-core:
     build:
       context: ../../backend
       dockerfile: Dockerfile
     container_name: oakdms-core
-    <<: *secrets-env
+    env_file:
+      - ../secrets/dms-core.secrets.env
+      # Root .env (repo root, gitignored - see .env.example) - loaded here
+      # IN ADDITION to the secrets file above, specifically so a locally
+      # registered StorageLocation's STORAGE_CRED_<ref>_ACCESS_KEY/
+      # _SECRET_KEY pair (see S3ObjectStorageAdapter#resolveCredentials)
+      # reaches this container too. Those variable names are dynamic (one
+      # pair per credentialRef), so unlike every other variable below they
+      # can't be listed as fixed keys in environment:. required: false so
+      # `docker compose up` still works if you haven't created a root .env.
+      - path: ../../.env
+        required: false
     environment:
       SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://postgres:5432/dms_core_db
@@ -179,8 +260,33 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: "1025"
       FRONTEND_BASE_URL: http://localhost:3000
+      # Object storage (com.oak.dms.storage) - see docs/storage-architecture.md.
+      # STORAGE_PROVIDER/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY/S3_REGION/
+      # S3_PATH_STYLE_ACCESS deliberately NOT listed here (same reasoning as
+      # the seaweedfs service's SEAWEEDFS_S3_* comment above): an
+      # environment: entry takes precedence over env_file for the same key,
+      # and Compose's own ${...} substitution for environment: values never
+      # reads the root .env - only env_file does. Left entirely to env_file
+      # (root .env) - if unset there, application.yml's own defaults apply.
+      #
+      # S3_ENDPOINT is the one exception, hardcoded here on purpose - same
+      # reasoning as DB_URL/RABBITMQ_HOST/REDIS_HOST above. The root .env's
+      # S3_ENDPOINT (http://localhost:8333) is correct for host-side tools
+      # (curl, SeaweedFsDocumentUploadIT) but wrong from inside this
+      # container, where "localhost" means this container, not the
+      # seaweedfs one. "seaweedfs" resolves via Compose's internal DNS.
+      S3_ENDPOINT: http://seaweedfs:8333
     ports:
       - "8080:8080"
+    volumes:
+      # FILE_SYSTEM storage's default STORAGE_FILESYSTEM_BASE_PATH
+      # (/data/dms/documents) - without this, that path only exists in the
+      # container's writable layer, which the Dockerfile now pre-creates
+      # and chowns to oakdms (see backend/Dockerfile) but which Docker
+      # still initializes fresh on every recreated container. A named
+      # volume here makes uploaded objects persist across `docker compose
+      # up`/restarts, same as postgres_data/redis_data/seaweedfs_data below.
+      - documents_data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,6 +297,8 @@ services:
       keycloak-bootstrap:
         condition: service_completed_successfully
       mailpit:
+        condition: service_healthy
+      seaweedfs:
         condition: service_healthy
 
   frontend:
@@ -222,3 +330,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  seaweedfs_data:
+  documents_data:
