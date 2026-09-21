@@ -1,4 +1,4 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.enums;
 
 /**
  * The factor that was actually verified and succeeded for an auth event -

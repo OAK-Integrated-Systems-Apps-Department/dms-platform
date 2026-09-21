@@ -1,7 +1,7 @@
 package com.oak.dms.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.oak.dms.audit.AccessDeniedAuditor;
+import com.oak.dms.audit.controller.AccessDeniedAuditor;
 import com.oak.dms.common.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

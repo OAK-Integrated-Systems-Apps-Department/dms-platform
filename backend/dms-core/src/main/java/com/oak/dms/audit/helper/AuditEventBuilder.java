@@ -1,4 +1,10 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.helper;
+
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditAuthMethod;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 
 import java.util.UUID;
 
@@ -44,7 +50,7 @@ public final class AuditEventBuilder {
     private String dataClassification;
     private Boolean legalHoldFlag;
 
-    AuditEventBuilder(AuditService auditService, String action) {
+    public AuditEventBuilder(AuditService auditService, String action) {
         this.auditService = auditService;
         this.action = action;
     }
@@ -171,79 +177,79 @@ public final class AuditEventBuilder {
         return auditService.persist(this);
     }
 
-    String action() {
+    public String action() {
         return action;
     }
 
-    UUID tenantId() {
+    public UUID tenantId() {
         return tenantId;
     }
 
-    boolean isPlatformLevel() {
+    public boolean isPlatformLevel() {
         return platformLevel;
     }
 
-    UUID actorId() {
+    public UUID actorId() {
         return actorId;
     }
 
-    AuditActorType actorType() {
+    public AuditActorType actorType() {
         return actorType;
     }
 
-    String actorDisplayName() {
+    public String actorDisplayName() {
         return actorDisplayName;
     }
 
-    String objectType() {
+    public String objectType() {
         return objectType;
     }
 
-    UUID objectId() {
+    public UUID objectId() {
         return objectId;
     }
 
-    String resourceName() {
+    public String resourceName() {
         return resourceName;
     }
 
-    Integer objectVersion() {
+    public Integer objectVersion() {
         return objectVersion;
     }
 
-    AuditOutcome outcome() {
+    public AuditOutcome outcome() {
         return outcome;
     }
 
-    String failureReason() {
+    public String failureReason() {
         return failureReason;
     }
 
-    Object previousValue() {
+    public Object previousValue() {
         return previousValue;
     }
 
-    Object newValue() {
+    public Object newValue() {
         return newValue;
     }
 
-    String reason() {
+    public String reason() {
         return reason;
     }
 
-    AuditAuthMethod authMethod() {
+    public AuditAuthMethod authMethod() {
         return authMethod;
     }
 
-    String permissionCode() {
+    public String permissionCode() {
         return permissionCode;
     }
 
-    String dataClassification() {
+    public String dataClassification() {
         return dataClassification;
     }
 
-    Boolean legalHoldFlag() {
+    public Boolean legalHoldFlag() {
         return legalHoldFlag;
     }
 }

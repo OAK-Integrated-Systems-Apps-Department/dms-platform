@@ -1,9 +1,9 @@
 package com.oak.dms.outbox;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.messaging.RabbitMqConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +39,7 @@ import java.util.Map;
  *    next tick; only the terminal "this will never be delivered, someone
  *    needs to look at this" state is genuinely audit-worthy.
  *
- * Uses {@link com.oak.dms.audit.AuditEventBuilder#systemActor()} (via {@code AuditService}) -
+ * Uses {@link com.oak.dms.audit.helper.AuditEventBuilder#systemActor()} (via {@code AuditService}) -
  * this is the actual, correct use case that method exists for: a
  * scheduled job with no HTTP request/authenticated user behind it, as
  * opposed to the SYSTEM-actor fallback {@code AuditService#resolveActor}

@@ -1,21 +1,21 @@
 package com.oak.dms.audit.dto;
 
-import com.oak.dms.audit.AuditActorType;
-import com.oak.dms.audit.AuditAuthMethod;
-import com.oak.dms.audit.AuditClientType;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditSeverity;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditAuthMethod;
+import com.oak.dms.audit.enums.AuditClientType;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Full public API representation of one {@link com.oak.dms.audit.AuditEvent}
+ * Full public API representation of one {@link com.oak.dms.audit.entity.AuditEvent}
  * row, for {@code GET /api/v1/audit-events/{id}} and
  * {@code GET /api/v1/platform/audit-events/{id}} - the same fields as
  * {@link AuditEventResponse} plus previousValue/newValue (already redacted
  * for sensitive fields at write time - see
- * {@code com.oak.dms.audit.AuditValueRedactor} - and returned here as real
+ * {@code com.oak.dms.audit.helper.AuditValueRedactor} - and returned here as real
  * embedded JSON, not a JSON-encoded string, since they were stored as
  * pre-serialized JSON strings) and userAgent, both excluded from the list
  * response as too large/verbose for a paginated table row.

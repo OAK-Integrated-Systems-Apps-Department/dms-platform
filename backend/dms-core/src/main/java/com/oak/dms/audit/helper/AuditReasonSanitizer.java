@@ -1,4 +1,4 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.helper;
 
 /**
  * The reason field's own capture rule (docs/audit_events_schema_spec.md):
@@ -6,7 +6,7 @@ package com.oak.dms.audit;
  * storage. Whether it's mandatory is decided per action by
  * {@link AuditActionCatalog}, not here.
  */
-final class AuditReasonSanitizer {
+public final class AuditReasonSanitizer {
 
     /** Generous enough for a real justification, short enough to never bloat a row or carry a payload. */
     static final int MAX_LENGTH = 1000;
@@ -14,7 +14,7 @@ final class AuditReasonSanitizer {
     private AuditReasonSanitizer() {
     }
 
-    static String sanitize(String rawReason) {
+    public static String sanitize(String rawReason) {
         if (rawReason == null) {
             return null;
         }

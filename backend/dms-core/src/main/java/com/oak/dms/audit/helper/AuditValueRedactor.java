@@ -1,4 +1,4 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.helper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

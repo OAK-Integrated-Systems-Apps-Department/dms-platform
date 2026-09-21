@@ -1,4 +1,4 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.catalog;
 
 /**
  * Canonical {@code object_type} string constants for audit events. Every

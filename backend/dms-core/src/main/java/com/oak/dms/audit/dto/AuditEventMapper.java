@@ -1,6 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.dto;
 
-import com.oak.dms.audit.dto.AuditEventResponse;
+import com.oak.dms.audit.entity.AuditEvent;
 import org.mapstruct.Mapper;
 
 /**

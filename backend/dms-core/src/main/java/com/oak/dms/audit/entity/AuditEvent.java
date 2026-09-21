@@ -1,5 +1,10 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.entity;
 
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditAuthMethod;
+import com.oak.dms.audit.enums.AuditClientType;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

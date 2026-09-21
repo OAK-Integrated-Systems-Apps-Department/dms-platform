@@ -1,16 +1,16 @@
 package com.oak.dms.audit.dto;
 
-import com.oak.dms.audit.AuditActorType;
-import com.oak.dms.audit.AuditAuthMethod;
-import com.oak.dms.audit.AuditClientType;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditSeverity;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditAuthMethod;
+import com.oak.dms.audit.enums.AuditClientType;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Public API representation of one {@link com.oak.dms.audit.AuditEvent} row
+ * Public API representation of one {@link com.oak.dms.audit.entity.AuditEvent} row
  * for the search/list view.
  *
  * Deliberately excludes previousValue/newValue (the full before/after JSON

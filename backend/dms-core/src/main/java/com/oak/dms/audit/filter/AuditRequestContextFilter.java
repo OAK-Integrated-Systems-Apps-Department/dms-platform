@@ -1,5 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.filter;
 
+import com.oak.dms.audit.enums.AuditClientType;
 import com.oak.dms.security.auth.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

@@ -1,4 +1,4 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.service;
 
 import com.oak.dms.audit.dto.AuditEventDetailResponse;
 import com.oak.dms.audit.dto.AuditEventResponse;

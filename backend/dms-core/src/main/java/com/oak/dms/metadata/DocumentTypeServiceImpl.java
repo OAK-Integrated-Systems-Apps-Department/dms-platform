@@ -1,9 +1,9 @@
 package com.oak.dms.metadata;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.dto.CreateDocumentTypeRequest;

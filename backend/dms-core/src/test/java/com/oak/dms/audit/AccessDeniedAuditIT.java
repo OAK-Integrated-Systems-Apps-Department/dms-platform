@@ -1,5 +1,11 @@
 package com.oak.dms.audit;
 
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
+import com.oak.dms.audit.repository.AuditEventRepository;
 import com.oak.dms.security.rbac.PermissionController;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantController;
@@ -27,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * End-to-end proof that a real denied request actually persists an
  * ACCESS_DENIED audit row, not just that the code compiles - and the
- * reason there are two audit call sites (see {@link com.oak.dms.audit.AccessDeniedAuditor})
+ * reason there are two audit call sites (see {@link com.oak.dms.audit.controller.AccessDeniedAuditor})
  * instead of one, discovered by an earlier version of this test: a
  * Spring Security denial can surface from two different layers, only one
  * of which a {@code @RestControllerAdvice} can ever see.

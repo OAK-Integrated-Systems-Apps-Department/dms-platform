@@ -1,5 +1,8 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.repository;
 
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.OffsetDateTime;
@@ -14,7 +17,7 @@ import java.util.UUID;
  * regardless of which filters the caller actually supplied, with no
  * null-handling burden on the caller.
  */
-final class AuditEventSpecifications {
+public final class AuditEventSpecifications {
 
     private AuditEventSpecifications() {
     }
@@ -25,48 +28,48 @@ final class AuditEventSpecifications {
      * used for a PLATFORM_ADMIN caller with no explicit tenantId filter.
      * Every other caller always passes their own, real tenant id here.
      */
-    static Specification<AuditEvent> tenantId(UUID tenantId) {
+    public static Specification<AuditEvent> tenantId(UUID tenantId) {
         return (root, query, cb) -> tenantId == null ? cb.conjunction() : cb.equal(root.get("tenantId"), tenantId);
     }
 
     /** Matches any one of `modules` (an OR within this field) - null/empty means no constraint. */
-    static Specification<AuditEvent> modules(List<String> modules) {
+    public static Specification<AuditEvent> modules(List<String> modules) {
         return (root, query, cb) -> (modules == null || modules.isEmpty()) ? cb.conjunction() : root.get("module").in(modules);
     }
 
     /** Matches any one of `actions` - null/empty means no constraint. */
-    static Specification<AuditEvent> actions(List<String> actions) {
+    public static Specification<AuditEvent> actions(List<String> actions) {
         return (root, query, cb) -> (actions == null || actions.isEmpty()) ? cb.conjunction() : root.get("action").in(actions);
     }
 
     /** Matches any one of `actorIds` - null/empty means no constraint. */
-    static Specification<AuditEvent> actorIds(List<UUID> actorIds) {
+    public static Specification<AuditEvent> actorIds(List<UUID> actorIds) {
         return (root, query, cb) -> (actorIds == null || actorIds.isEmpty()) ? cb.conjunction() : root.get("actorId").in(actorIds);
     }
 
     /** Matches any one of `objectTypes` - null/empty means no constraint. */
-    static Specification<AuditEvent> objectTypes(List<String> objectTypes) {
+    public static Specification<AuditEvent> objectTypes(List<String> objectTypes) {
         return (root, query, cb) -> (objectTypes == null || objectTypes.isEmpty()) ? cb.conjunction() : root.get("objectType").in(objectTypes);
     }
 
-    static Specification<AuditEvent> objectId(UUID objectId) {
+    public static Specification<AuditEvent> objectId(UUID objectId) {
         return (root, query, cb) -> objectId == null ? cb.conjunction() : cb.equal(root.get("objectId"), objectId);
     }
 
-    static Specification<AuditEvent> correlationId(UUID correlationId) {
+    public static Specification<AuditEvent> correlationId(UUID correlationId) {
         return (root, query, cb) -> correlationId == null ? cb.conjunction() : cb.equal(root.get("correlationId"), correlationId);
     }
 
-    static Specification<AuditEvent> outcome(AuditOutcome outcome) {
+    public static Specification<AuditEvent> outcome(AuditOutcome outcome) {
         return (root, query, cb) -> outcome == null ? cb.conjunction() : cb.equal(root.get("outcome"), outcome);
     }
 
-    static Specification<AuditEvent> severity(AuditSeverity severity) {
+    public static Specification<AuditEvent> severity(AuditSeverity severity) {
         return (root, query, cb) -> severity == null ? cb.conjunction() : cb.equal(root.get("severity"), severity);
     }
 
     /** Both bounds inclusive; either or both may be null (an open-ended range). */
-    static Specification<AuditEvent> occurredBetween(OffsetDateTime from, OffsetDateTime to) {
+    public static Specification<AuditEvent> occurredBetween(OffsetDateTime from, OffsetDateTime to) {
         return (root, query, cb) -> {
             if (from != null && to != null) {
                 return cb.between(root.get("occurredAt"), from, to);

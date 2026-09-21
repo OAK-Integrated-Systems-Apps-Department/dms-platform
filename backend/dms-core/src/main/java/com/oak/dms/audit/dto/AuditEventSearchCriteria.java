@@ -1,7 +1,7 @@
 package com.oak.dms.audit.dto;
 
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditSeverity;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
 
 import java.time.OffsetDateTime;
 import java.util.List;

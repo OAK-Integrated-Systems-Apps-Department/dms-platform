@@ -1,4 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.catalog;
+
+import com.oak.dms.audit.enums.AuditSeverity;
 
 import java.util.Map;
 

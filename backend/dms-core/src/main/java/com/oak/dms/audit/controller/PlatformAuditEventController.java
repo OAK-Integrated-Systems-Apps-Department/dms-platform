@@ -1,8 +1,11 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.controller;
 
 import com.oak.dms.audit.dto.AuditEventDetailResponse;
 import com.oak.dms.audit.dto.AuditEventResponse;
 import com.oak.dms.audit.dto.AuditEventSearchCriteria;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.enums.AuditSeverity;
+import com.oak.dms.audit.service.AuditEventService;
 import com.oak.dms.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

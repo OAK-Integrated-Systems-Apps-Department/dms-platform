@@ -21,7 +21,7 @@ public final class TenantContext {
      * already been rebound from the real admin's identity to the
      * impersonation target's - the one place in the whole request that
      * still knows who the real, authenticated caller was. {@code null} for
-     * every ordinary, non-impersonated request. {@link com.oak.dms.audit.AuditService}
+     * every ordinary, non-impersonated request. {@link com.oak.dms.audit.service.AuditService}
      * is the only reader: every audit event's {@code impersonated_by}/
      * {@code impersonated_by_display_name} columns come from here, never
      * from a call site (see {@code AuditEventBuilder}, which has no setter

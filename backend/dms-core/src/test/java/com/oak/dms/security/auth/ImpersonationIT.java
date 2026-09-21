@@ -1,8 +1,8 @@
 package com.oak.dms.security.auth;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditEvent;
-import com.oak.dms.audit.AuditEventRepository;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.repository.AuditEventRepository;
 import com.oak.dms.security.rbac.PermissionCodes;
 import com.oak.dms.security.rbac.Role;
 import com.oak.dms.security.rbac.RolePermission;

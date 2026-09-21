@@ -1,9 +1,18 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.dto.AuditEventDetailResponse;
+import com.oak.dms.audit.dto.AuditEventMapper;
 import com.oak.dms.audit.dto.AuditEventResponse;
 import com.oak.dms.audit.dto.AuditEventSearchCriteria;
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.repository.AuditEventRepository;
+import com.oak.dms.audit.repository.AuditEventSpecifications;
+import com.oak.dms.audit.service.AuditEventService;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.security.auth.TenantContext;

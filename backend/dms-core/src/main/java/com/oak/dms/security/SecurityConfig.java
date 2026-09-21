@@ -1,6 +1,6 @@
 package com.oak.dms.security;
 
-import com.oak.dms.audit.AuditRequestContextFilter;
+import com.oak.dms.audit.filter.AuditRequestContextFilter;
 import com.oak.dms.security.auth.CookieBearerTokenResolver;
 import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;

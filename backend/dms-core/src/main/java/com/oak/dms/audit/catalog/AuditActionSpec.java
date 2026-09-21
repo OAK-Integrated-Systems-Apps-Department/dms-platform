@@ -1,4 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.catalog;
+
+import com.oak.dms.audit.enums.AuditSeverity;
 
 /**
  * Everything about an audit action that must come from one central place

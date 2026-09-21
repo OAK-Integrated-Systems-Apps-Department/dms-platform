@@ -1,5 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.repository;
 
+import com.oak.dms.audit.entity.AuditEvent;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.Repository;

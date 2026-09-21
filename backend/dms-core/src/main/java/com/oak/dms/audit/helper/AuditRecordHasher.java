@@ -1,5 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.helper;
 
+import com.oak.dms.audit.entity.AuditEvent;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;

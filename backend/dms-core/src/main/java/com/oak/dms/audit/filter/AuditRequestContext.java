@@ -1,4 +1,6 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.filter;
+
+import com.oak.dms.audit.enums.AuditClientType;
 
 import java.util.UUID;
 
@@ -54,7 +56,7 @@ public final class AuditRequestContext {
         CURRENT.remove();
     }
 
-    static AuditRequestContext currentOrNull() {
+    public static AuditRequestContext currentOrNull() {
         return CURRENT.get();
     }
 

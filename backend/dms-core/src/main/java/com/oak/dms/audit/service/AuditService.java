@@ -1,5 +1,16 @@
-package com.oak.dms.audit;
+package com.oak.dms.audit.service;
 
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditActionSpec;
+import com.oak.dms.audit.entity.AuditEvent;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.filter.AuditRequestContext;
+import com.oak.dms.audit.helper.AuditEventBuilder;
+import com.oak.dms.audit.helper.AuditReasonSanitizer;
+import com.oak.dms.audit.helper.AuditRecordHasher;
+import com.oak.dms.audit.helper.AuditValueRedactor;
+import com.oak.dms.audit.helper.SystemActor;
+import com.oak.dms.audit.repository.AuditEventRepository;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -67,7 +78,7 @@ public class AuditService {
     }
 
     @Transactional
-    AuditEvent persist(AuditEventBuilder builder) {
+    public AuditEvent persist(AuditEventBuilder builder) {
         AuditActionSpec spec = AuditActionCatalog.require(builder.action());
 
         String sanitizedReason = AuditReasonSanitizer.sanitize(builder.reason());
