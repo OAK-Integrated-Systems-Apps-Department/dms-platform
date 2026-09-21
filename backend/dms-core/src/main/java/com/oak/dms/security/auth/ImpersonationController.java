@@ -39,7 +39,7 @@ public class ImpersonationController {
     private final ImpersonationService impersonationService;
 
     @PostMapping("/start")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_IMPERSONATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_IMPERSONATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Start impersonating a user in the caller's tenant",
             description = "The caller must hold otua.manage-users.impersonate. Rejected (409) if the caller is "

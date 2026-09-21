@@ -6,7 +6,7 @@ import com.oak.dms.audit.entity.AuditEvent;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.enums.AuditSeverity;
 import com.oak.dms.audit.repository.AuditEventRepository;
-import com.oak.dms.security.rbac.PermissionController;
+import com.oak.dms.security.rbac.controller.PermissionController;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantController;
 import com.oak.dms.tenant.TenantRepository;

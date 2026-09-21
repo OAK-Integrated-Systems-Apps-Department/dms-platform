@@ -82,7 +82,7 @@ public class UserController {
     }
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_CREATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_CREATE)")
     @Operation(summary = "Invite a new user into the caller's tenant")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponse response = userService.createUser(request);
@@ -99,7 +99,7 @@ public class UserController {
     // user to act on. Deliberately excludes otua.manage-users.create -
     // list-independent, since inviting a new user has nothing to do with
     // browsing existing ones.
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "Get a user by id, within the caller's tenant")
     public UserResponse getUser(@PathVariable UUID userId) {
         return userService.getUser(userId);
@@ -107,7 +107,7 @@ public class UserController {
 
     @GetMapping("/{userId}/platform-roles")
     // Same read-widening as getUser() above, same reason - see its comment.
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List the fixed platform roles (TENANT_ADMIN, MEMBER) this user holds",
             description = "These are Keycloak-only realm roles, never rows in the roles/user_roles "
                     + "tables - see GET /{userId}/roles (UserRoleController) for tenant-defined DMS "
@@ -121,21 +121,21 @@ public class UserController {
 
     @GetMapping
     // Same read-widening as getUser() above, same reason - see its comment.
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")
     @Operation(summary = "List users in the caller's tenant")
     public PageResponse<UserResponse> listUsers(Pageable pageable) {
         return PageResponse.from(userService.listUsers(pageable));
     }
 
     @PutMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE)")
     @Operation(summary = "Update a user's profile/status")
     public UserResponse updateUser(@PathVariable UUID userId, @Valid @RequestBody UpdateUserRequest request) {
         return userService.updateUser(userId, request);
     }
 
     @PostMapping("/{userId}/reset-password")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_RESET_PASSWORD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_RESET_PASSWORD)")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "Send a password reset email to a user in the caller's tenant. Sets a fresh "
             + "temporary password server-side and emails the user a link to choose their own - no "
@@ -145,7 +145,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DEACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DEACTIVATE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a user",
             description = "Requires a non-blank reason - one of the audit event catalogue's high-impact "
@@ -155,7 +155,7 @@ public class UserController {
     }
 
     @PostMapping("/{userId}/reactivate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_ACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ACTIVATE)")
     @Operation(summary = "Reactivate a previously deactivated (soft-deleted) user",
             description = "Undoes deactivateUser: clears the soft-delete, sets status back to active, and "
                     + "re-enables the Keycloak account. 409 if the user isn't currently deactivated.")
@@ -184,7 +184,7 @@ public class UserController {
      * other {@code otua.manage-users.*} grant, no longer a special case.
      */
     @DeleteMapping("/{userId}/permanent")
-    @PreAuthorize("@authz.isTenantAdmin() or @authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_DELETE)")
+    @PreAuthorize("@authz.isTenantAdmin() or @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DELETE)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Permanently delete a user",
             description = "A genuine hard delete: removes the local profile row and the corresponding "

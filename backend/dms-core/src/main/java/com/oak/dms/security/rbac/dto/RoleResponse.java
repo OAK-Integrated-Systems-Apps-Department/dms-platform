@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Public API representation of a {@link com.oak.dms.security.rbac.Role}.
+ * Public API representation of a {@link com.oak.dms.security.rbac.entity.Role}.
  *
  * {@code status} is {@code "active"} or {@code "inactive"} (mirrors
  * {@code UserResponse.status}'s lower-case convention). Note this DTO does

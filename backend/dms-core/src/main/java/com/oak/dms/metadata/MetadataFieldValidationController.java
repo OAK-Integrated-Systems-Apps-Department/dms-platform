@@ -25,7 +25,7 @@ public class MetadataFieldValidationController {
     private final MetadataFieldValidationService validationService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "Add a validation rule to a metadata field")
     public ResponseEntity<MetadataFieldValidationResponse> createValidation(@PathVariable UUID fieldId,
             @Valid @RequestBody CreateMetadataFieldValidationRequest request) {
@@ -35,14 +35,14 @@ public class MetadataFieldValidationController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "List a metadata field's validation rules")
     public List<MetadataFieldValidationResponse> listValidations(@PathVariable UUID fieldId) {
         return validationService.listValidations(fieldId);
     }
 
     @PutMapping("/{validationId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "Update a metadata field validation rule")
     public MetadataFieldValidationResponse updateValidation(@PathVariable UUID fieldId, @PathVariable UUID validationId,
             @Valid @RequestBody UpdateMetadataFieldValidationRequest request) {
@@ -50,7 +50,7 @@ public class MetadataFieldValidationController {
     }
 
     @DeleteMapping("/{validationId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete (soft-delete) a metadata field validation rule")
     public void deleteValidation(@PathVariable UUID fieldId, @PathVariable UUID validationId) {

@@ -59,7 +59,7 @@ public class AuditEventController {
     private final AuditEventService auditEventService;
 
     @GetMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ABDR_VIEW_AUDIT_HISTORY)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).ABDR_VIEW_AUDIT_HISTORY)")
     @Operation(summary = "Search the caller's tenant audit trail",
             description = "All filters are optional and combined with AND. occurredFrom/occurredTo bound "
                     + "occurred_at (both inclusive) and accept ISO-8601 date-times, e.g. "
@@ -82,7 +82,7 @@ public class AuditEventController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ABDR_VIEW_AUDIT_HISTORY)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).ABDR_VIEW_AUDIT_HISTORY)")
     @Operation(summary = "Get one audit event by id, within the caller's own tenant",
             description = "404s for an id belonging to another tenant or to no tenant at all (a "
                     + "platform-level event) - same tenant-boundary-never-leaks-existence handling as every "
@@ -93,7 +93,7 @@ public class AuditEventController {
     }
 
     @GetMapping(value = "/export", produces = "text/csv")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).ABDR_EXPORT_AUDIT_REPORTS)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).ABDR_EXPORT_AUDIT_REPORTS)")
     @Operation(summary = "Export the caller's tenant audit trail as CSV",
             description = "Same filters as GET /api/v1/audit-events (no page/size/sort - always newest-first, "
                     + "capped at 10,000 rows). Gated by a separate abdr.export-audit-reports permission, not "

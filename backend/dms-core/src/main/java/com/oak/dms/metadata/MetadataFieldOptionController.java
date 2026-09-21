@@ -32,7 +32,7 @@ public class MetadataFieldOptionController {
     private final MetadataFieldOptionService optionService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "Add an option to a dropdown/multi_select metadata field")
     public ResponseEntity<MetadataFieldOptionResponse> createOption(@PathVariable UUID fieldId,
             @Valid @RequestBody CreateMetadataFieldOptionRequest request) {
@@ -42,14 +42,14 @@ public class MetadataFieldOptionController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "List a metadata field's options, ordered by display_order")
     public List<MetadataFieldOptionResponse> listOptions(@PathVariable UUID fieldId) {
         return optionService.listOptions(fieldId);
     }
 
     @PutMapping("/{optionId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @Operation(summary = "Update a metadata field option")
     public MetadataFieldOptionResponse updateOption(@PathVariable UUID fieldId, @PathVariable UUID optionId,
             @Valid @RequestBody UpdateMetadataFieldOptionRequest request) {
@@ -57,7 +57,7 @@ public class MetadataFieldOptionController {
     }
 
     @DeleteMapping("/{optionId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete (soft-delete) a metadata field option")
     public void deleteOption(@PathVariable UUID fieldId, @PathVariable UUID optionId) {

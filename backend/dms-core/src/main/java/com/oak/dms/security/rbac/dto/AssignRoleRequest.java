@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /**
  * Request body for assigning a role to a user. scopeId is required unless
- * scopeType is TENANT; see {@link com.oak.dms.security.rbac.UserRole} for
+ * scopeType is TENANT; see {@link com.oak.dms.security.rbac.entity.UserRole} for
  * why it is not a foreign key.
  */
 public record AssignRoleRequest(

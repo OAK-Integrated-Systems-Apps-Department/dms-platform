@@ -5,6 +5,7 @@ import com.oak.dms.security.auth.CookieBearerTokenResolver;
 import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
+import com.oak.dms.security.rbac.controller.AuditingAccessDeniedHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
