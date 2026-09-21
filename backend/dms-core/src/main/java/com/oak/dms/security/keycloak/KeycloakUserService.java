@@ -162,7 +162,7 @@ public class KeycloakUserService {
      * The Keycloak-side name is the DMS role name verbatim (no tenant
      * prefix) so what an admin sees in the Keycloak console matches what's
      * in the DMS UI/DB exactly. This relies on
-     * {@code com.oak.dms.security.rbac.RoleServiceImpl} enforcing a
+     * {@code com.oak.dms.security.rbac.service.impl.RoleServiceImpl} enforcing a
      * realm-wide (cross-tenant) uniqueness check
      * ({@code RoleRepository#existsByRoleNameAndDeletedFalse}) before this
      * is ever called, since Keycloak realm roles are unique per realm and

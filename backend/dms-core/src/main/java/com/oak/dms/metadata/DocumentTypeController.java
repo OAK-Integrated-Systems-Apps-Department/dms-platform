@@ -28,7 +28,7 @@ public class DocumentTypeController {
     private final DocumentTypeService documentTypeService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_CREATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_CREATE)")
     @Operation(summary = "Create a document type in the caller's tenant")
     public ResponseEntity<DocumentTypeResponse> createDocumentType(@Valid @RequestBody CreateDocumentTypeRequest request) {
         DocumentTypeResponse response = documentTypeService.createDocumentType(request);
@@ -36,14 +36,14 @@ public class DocumentTypeController {
     }
 
     @GetMapping("/{documentTypeId}")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
     @Operation(summary = "Get a document type by id")
     public DocumentTypeResponse getDocumentType(@PathVariable UUID documentTypeId) {
         return documentTypeService.getDocumentType(documentTypeId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(summary = "List document types in the caller's tenant",
             description = "Also readable by mdtm.manage-type-field-mapping.* - the document-type column "
                     + "picker on the Mapping matrix screen is populated straight from this list.")
@@ -52,7 +52,7 @@ public class DocumentTypeController {
     }
 
     @PutMapping("/{documentTypeId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
     @Operation(summary = "Update a document type's descriptive/behavioral attributes")
     public DocumentTypeResponse updateDocumentType(@PathVariable UUID documentTypeId,
                                                     @Valid @RequestBody UpdateDocumentTypeRequest request) {
@@ -60,14 +60,14 @@ public class DocumentTypeController {
     }
 
     @PostMapping("/{documentTypeId}/activate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE)")
     @Operation(summary = "Activate a document type")
     public DocumentTypeResponse activateDocumentType(@PathVariable UUID documentTypeId) {
         return documentTypeService.activateDocumentType(documentTypeId);
     }
 
     @PostMapping("/{documentTypeId}/deactivate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE)")
     @Operation(summary = "Deactivate a document type")
     public DocumentTypeResponse deactivateDocumentType(@PathVariable UUID documentTypeId) {
         return documentTypeService.deactivateDocumentType(documentTypeId);

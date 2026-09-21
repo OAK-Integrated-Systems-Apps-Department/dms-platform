@@ -31,7 +31,7 @@ public class DocumentTypeFieldController {
     private final MetadataValidationService metadataValidationService;
 
     @GetMapping("/fields")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(summary = "Get a document type's field mapping",
             description = "Without ?version, returns the active mapping at the type's current schema "
                     + "version. With ?version=N, returns that historical (possibly archived) version instead.")
@@ -43,7 +43,7 @@ public class DocumentTypeFieldController {
     }
 
     @PutMapping("/fields")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(summary = "Replace a document type's field mapping, publishing a new schema version",
             description = "The given field list becomes schema_version = current + 1; the prior version's "
                     + "rows are archived, not deleted. A field newly marked mandatory on this publish gets "
@@ -54,7 +54,7 @@ public class DocumentTypeFieldController {
     }
 
     @GetMapping("/schema")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(summary = "Get the resolved form schema for a document type",
             description = "Fields, labels, types, mandatory flags, options, order, and validation rules in "
                     + "one payload (MDTM-FR-006) - for the upload form and for reuse by import, OCR, search "
@@ -64,7 +64,7 @@ public class DocumentTypeFieldController {
     }
 
     @PostMapping("/validate")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(
             summary = "Validate a set of candidate field values against a document type's schema",
             description = "Runs the supplied values through every mandatory-field check, "

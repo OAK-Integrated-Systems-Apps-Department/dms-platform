@@ -15,7 +15,7 @@ import java.util.UUID;
  * Retire the permission and create a new one instead if the code itself
  * needs to change. actionId (regrouping the permission under a different
  * module/action) IS editable, and must reference an existing, non-deleted
- * {@link com.oak.dms.security.rbac.PermissionAction}.
+ * {@link com.oak.dms.security.rbac.entity.PermissionAction}.
  */
 public record UpdatePermissionRequest(
 

@@ -29,7 +29,7 @@ public class MetadataFieldController {
     private final MetadataFieldService metadataFieldService;
 
     @PostMapping
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_CREATE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_CREATE_FIELD)")
     @Operation(summary = "Add a new field to the caller's tenant metadata schema")
     public ResponseEntity<MetadataFieldResponse> createField(@Valid @RequestBody CreateMetadataFieldRequest request) {
         MetadataFieldResponse response = metadataFieldService.createField(request);
@@ -37,14 +37,14 @@ public class MetadataFieldController {
     }
 
     @GetMapping("/{fieldId}")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD)")
     @Operation(summary = "Get a metadata field by id")
     public MetadataFieldResponse getField(@PathVariable UUID fieldId) {
         return metadataFieldService.getField(fieldId);
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_VIEW_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
     @Operation(summary = "List metadata fields in the caller's tenant",
             description = "Also readable by mdtm.manage-type-field-mapping.* - the field picker on the "
                     + "Document Type / Mapping screens is populated straight from this list.")
@@ -56,7 +56,7 @@ public class MetadataFieldController {
     }
 
     @PutMapping("/{fieldId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD)")
     @Operation(summary = "Update a metadata field's descriptive/behavioral attributes")
     public MetadataFieldResponse updateField(@PathVariable UUID fieldId,
                                               @Valid @RequestBody UpdateMetadataFieldRequest request) {
@@ -64,21 +64,21 @@ public class MetadataFieldController {
     }
 
     @PostMapping("/{fieldId}/activate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD)")
     @Operation(summary = "Activate a metadata field")
     public MetadataFieldResponse activateField(@PathVariable UUID fieldId) {
         return metadataFieldService.activateField(fieldId);
     }
 
     @PostMapping("/{fieldId}/deactivate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD)")
     @Operation(summary = "Deactivate a metadata field")
     public MetadataFieldResponse deactivateField(@PathVariable UUID fieldId) {
         return metadataFieldService.deactivateField(fieldId);
     }
 
     @PostMapping("/{fieldId}/deprecate")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_DEPRECATE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_DEPRECATE_FIELD)")
     @Operation(summary = "Deprecate a metadata field",
             description = "The offered alternative when deletion is blocked because the field is still in "
                     + "use (MDTM alternate flow 2) - a deprecated field stays usable on documents that "
@@ -88,7 +88,7 @@ public class MetadataFieldController {
     }
 
     @DeleteMapping("/{fieldId}")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_DELETE_FIELD)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_METADATA_SCHEMA_DELETE_FIELD)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete a metadata field",
             description = "409 if the field is still referenced by any document type mapping or document "

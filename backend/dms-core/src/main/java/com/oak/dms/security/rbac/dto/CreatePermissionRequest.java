@@ -9,8 +9,8 @@ import java.util.UUID;
 /**
  * Request body for adding a new permission to the platform-wide catalog.
  * actionId must reference an existing, non-deleted
- * {@link com.oak.dms.security.rbac.PermissionAction} - see
- * {@link com.oak.dms.security.rbac.PermissionServiceImpl#createPermission}.
+ * {@link com.oak.dms.security.rbac.entity.PermissionAction} - see
+ * {@link com.oak.dms.security.rbac.service.impl.PermissionServiceImpl#createPermission}.
  */
 public record CreatePermissionRequest(
 

@@ -1,6 +1,6 @@
 package com.oak.dms.common.exception;
 
-import com.oak.dms.audit.AccessDeniedAuditor;
+import com.oak.dms.audit.controller.AccessDeniedAuditor;
 import com.oak.dms.common.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
