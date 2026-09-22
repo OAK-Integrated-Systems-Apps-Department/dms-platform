@@ -44,13 +44,14 @@ public class StorageLocationBootstrap implements ApplicationRunner {
                 .provider(provider)
                 .status(StorageLocation.Status.active);
 
-        if (provider == StorageProvider.S3) {
-            location.endpoint(storageProperties.getS3().getEndpoint())
+        switch (provider) {
+            case S3 -> location.endpoint(storageProperties.getS3().getEndpoint())
                     .region(storageProperties.getS3().getRegion())
                     .bucket(storageProperties.getS3().getBucket())
                     .pathStyleAccess(storageProperties.getS3().isPathStyleAccess());
-        } else {
-            location.basePath(storageProperties.getFilesystem().getBasePath());
+            case AZURE_BLOB -> location.endpoint(storageProperties.getAzureBlob().getEndpoint())
+                    .bucket(storageProperties.getAzureBlob().getContainer());
+            case FILE_SYSTEM -> location.basePath(storageProperties.getFilesystem().getBasePath());
         }
 
         StorageLocation saved = storageLocationRepository.save(location.build());

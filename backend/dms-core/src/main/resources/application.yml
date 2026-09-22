@@ -173,6 +173,15 @@ dms:
       path-style-access: ${S3_PATH_STYLE_ACCESS:false}
     filesystem:
       base-path: ${STORAGE_FILESYSTEM_BASE_PATH:/data/dms/documents}
+    azure-blob:
+      # No AWS-style "blank = provider default" here - Azure has no single
+      # universal endpoint, so a blank value here means AzureBlobStorageAdapter
+      # has nothing to fall back to for a location that also leaves its own
+      # endpoint blank.
+      endpoint: ${AZURE_STORAGE_ENDPOINT:}
+      container: ${AZURE_STORAGE_CONTAINER:}
+      account-name: ${AZURE_STORAGE_ACCOUNT_NAME:}
+      account-key: ${AZURE_STORAGE_ACCOUNT_KEY:}
 
 management:
   endpoints:

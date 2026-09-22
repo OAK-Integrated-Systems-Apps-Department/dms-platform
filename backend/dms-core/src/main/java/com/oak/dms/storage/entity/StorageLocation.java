@@ -51,7 +51,13 @@ public class StorageLocation {
     @Column(name = "provider", nullable = false)
     private StorageProvider provider;
 
-    /** S3 only - blank/null means the provider's own default endpoint (real AWS S3). */
+    /**
+     * S3: blank/null means the provider's own default endpoint (real AWS S3).
+     * AZURE_BLOB: the Blob Service endpoint URL (e.g.
+     * {@code https://<account>.blob.core.windows.net}) - Azure has no single
+     * universal default, so a blank value here falls back to this
+     * deployment's {@code dms.storage.azure-blob.endpoint} default.
+     */
     @Column(name = "endpoint")
     private String endpoint;
 
@@ -59,7 +65,11 @@ public class StorageLocation {
     @Column(name = "region")
     private String region;
 
-    /** S3 only - the bucket this location's objects live in. */
+    /**
+     * S3: the bucket this location's objects live in. AZURE_BLOB: the blob
+     * container name (reused rather than adding a separate column, same
+     * connection-detail role either way).
+     */
     @Column(name = "bucket")
     private String bucket;
 
@@ -73,13 +83,16 @@ public class StorageLocation {
     private boolean pathStyleAccess = false;
 
     /**
-     * S3 only. NEVER a raw access/secret key - an indirection key
-     * {@link com.oak.dms.storage.adapter.S3ObjectStorageAdapter} resolves against environment variables
-     * at call time ({@code STORAGE_CRED_<ref>_ACCESS_KEY}/{@code _SECRET_KEY}).
-     * Null/blank falls back to this deployment's single {@code dms.storage.s3.*}
-     * configuration (see {@code StorageProperties}) - covers both the
-     * platform-default location and any tenant content with the deployment's
-     * one configured S3 backend.
+     * NEVER a raw credential - an indirection key each adapter resolves
+     * against environment variables at call time: S3's
+     * {@link com.oak.dms.storage.adapter.S3ObjectStorageAdapter} reads
+     * {@code STORAGE_CRED_<ref>_ACCESS_KEY}/{@code _SECRET_KEY}; AZURE_BLOB's
+     * {@link com.oak.dms.storage.adapter.AzureBlobStorageAdapter} reads
+     * {@code STORAGE_CRED_<ref>_ACCOUNT_NAME}/{@code _ACCOUNT_KEY}. Null/blank
+     * falls back to this deployment's single {@code dms.storage.s3.*}/
+     * {@code dms.storage.azure-blob.*} configuration (see
+     * {@code StorageProperties}) - covers both the platform-default location
+     * and any tenant content with the deployment's one configured backend.
      */
     @Column(name = "credential_ref")
     private String credentialRef;
