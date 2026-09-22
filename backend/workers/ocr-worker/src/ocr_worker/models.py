@@ -29,9 +29,13 @@ class Base(DeclarativeBase):
 class DocumentType(Base):
     __tablename__ = "document_types"
 
+    # docs/database/V11's own document_types shape (document_type_name) was
+    # superseded by dms-core's real Metadata & Document-Type Management
+    # module (type_code/type_name, plus other columns this service never
+    # reads) -- only the two columns actually used here are mapped.
     document_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
-    document_type_name: Mapped[str] = mapped_column(String(255))
+    type_name: Mapped[str] = mapped_column(String(150))
 
 
 class Document(Base):
@@ -102,6 +106,36 @@ class DocumentTypeOcrZone(Base):
     y0: Mapped[float] = mapped_column(Numeric(6, 5))
     x1: Mapped[float] = mapped_column(Numeric(6, 5))
     y1: Mapped[float] = mapped_column(Numeric(6, 5))
+
+
+class DocumentOcrFieldResult(Base):
+    """dms-core/.../V35__add_ocr_field_selection.sql. One row per
+    (document_id, field_key) -- the latest selectable-field extraction
+    attempt for that field, written directly by ocr-worker (same
+    direct-Postgres pattern as document_versions.ocr_status/ocr_outputs
+    above), read-only from dms-core's side. Deliberately separate from
+    document_metadata_values (dms-core's own editable-value table): this
+    row exists even for a `not_found` attempt that never became a stored
+    value, so the upload page can show "not found" instead of just blank.
+    """
+
+    __tablename__ = "document_ocr_field_results"
+
+    field_result_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.document_id"))
+    version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.version_id"))
+    field_key: Mapped[str] = mapped_column(String(100))
+    # A multi_select field's value (tags/keywords) is stored here as a
+    # JSON-encoded array string (e.g. '["policy","hr"]'), not a real list --
+    # the column is TEXT. dms-core's reader must json-decode it back for a
+    # multi_select field, same as it already treats a multi_select
+    # document_metadata_values row as several single-value rows internally.
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    status: Mapped[str] = mapped_column(String(20))  # "extracted" | "not_found" | "low_confidence"
+    source_page: Mapped[int | None] = mapped_column(nullable=True)
+    source_bbox: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
 
 class OutboxEvent(Base):

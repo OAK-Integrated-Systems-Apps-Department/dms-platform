@@ -73,6 +73,8 @@ class LayoutDocument(Protocol):
 
     def native_text_blocks_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None: ...
 
+    def native_text_lines_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None: ...
+
     def tables_for_page(self, page_no: int, dpi: int) -> list[TableBlock] | None: ...
 
 
@@ -159,6 +161,40 @@ class DoclingLayoutDocument:
                 x0, y0, x1, y1 = _bbox_to_pixels(prov.bbox, page_height_pt, scale)
                 blocks.append(NativeTextBlock(text=item.text, bbox=(x0, y0, x1, y1)))
         return blocks or None
+
+    def native_text_lines_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None:
+        """0-indexed page_no, matching PyMuPDF's own convention (unlike
+        native_text_blocks_for_page's 1-indexed Docling one) -- this reads
+        PyMuPDF's own text dict directly rather than going through Docling,
+        specifically for selectable-OCR-field spatial matching (see
+        extraction.py's _spatial_label_value). Docling's own
+        native_text_blocks_for_page groups multiple visual rows of a
+        borderless "form fields" region into ONE merged paragraph TextItem
+        -- verified live against a real invoice: a 4-row label/value header
+        ("Invoice Number: Invoice Date: PO Number: Currency: ...") came
+        back as a single TextItem spanning ~300px vertically, discarding
+        exactly the per-row/per-column positions spatial matching needs.
+        PyMuPDF's own "dict" extraction keeps each real visual line as its
+        own entry with its own bbox, which is what this returns instead.
+
+        Same coordinate space as render_page (PyMuPDF's own top-left-origin
+        page-point space, scaled by dpi/72) -- no BOTTOMLEFT/TOPLEFT
+        ambiguity to resolve here, unlike Docling's bboxes (_bbox_to_pixels).
+        """
+        page = self._doc.load_page(page_no)
+        zoom = dpi / 72.0
+        lines: list[NativeTextBlock] = []
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                text = "".join(span["text"] for span in line["spans"]).strip()
+                if not text:
+                    continue
+                x0, y0, x1, y1 = line["bbox"]
+                lines.append(NativeTextBlock(
+                    text=text,
+                    bbox=(round(x0 * zoom), round(y0 * zoom), round(x1 * zoom), round(y1 * zoom)),
+                ))
+        return lines or None
 
     def tables_for_page(self, page_no: int, dpi: int) -> list[TableBlock] | None:
         """1-indexed page_no. Returns None when Docling found no tables on

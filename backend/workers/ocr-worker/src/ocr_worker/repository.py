@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -8,7 +9,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED
-from .models import Document, DocumentType, DocumentTypeOcrZone, DocumentVersion, OcrOutput, OutboxEvent, ProcessingJob
+from .extraction import RequestedFieldResult
+from .models import (
+    Document,
+    DocumentOcrFieldResult,
+    DocumentType,
+    DocumentTypeOcrZone,
+    DocumentVersion,
+    OcrOutput,
+    OutboxEvent,
+    ProcessingJob,
+)
 from .zones import ZoneRegion
 
 
@@ -55,7 +66,7 @@ class OcrRepository:
             version=version,
             document=document,
             document_type_id=document_type.document_type_id,
-            document_type_name=document_type.document_type_name,
+            document_type_name=document_type.type_name,
         )
 
     def get_zone_regions(self, document_type_id: uuid.UUID) -> list[ZoneRegion]:
@@ -136,6 +147,55 @@ class OcrRepository:
         )
         self.session.flush()
         return ocr_output
+
+    def upsert_field_results(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        document_id: uuid.UUID,
+        version_id: uuid.UUID,
+        results: list[RequestedFieldResult],
+    ) -> None:
+        """One row per (document_id, field_key) -- a re-run replaces the
+        row for that field rather than accumulating history, matching
+        document_metadata_values' own "current state" shape (see V35's own
+        comment). Runs inside the same session/transaction as
+        ocr_outputs/processing_jobs/outbox_events (see session_scope) --
+        one atomic commit for the whole pipeline run.
+        """
+        now = datetime.now(timezone.utc)
+        for result in results:
+            value = json.dumps(result.value) if isinstance(result.value, list) else result.value
+            bbox = list(result.bbox) if result.bbox else None
+            existing = self.session.execute(
+                select(DocumentOcrFieldResult).where(
+                    DocumentOcrFieldResult.document_id == document_id,
+                    DocumentOcrFieldResult.field_key == result.field_key,
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                existing.version_id = version_id
+                existing.value = value
+                existing.confidence = result.confidence
+                existing.status = result.status
+                existing.source_page = result.page
+                existing.source_bbox = bbox
+                existing.updated_at = now
+            else:
+                self.session.add(
+                    DocumentOcrFieldResult(
+                        tenant_id=tenant_id,
+                        document_id=document_id,
+                        version_id=version_id,
+                        field_key=result.field_key,
+                        value=value,
+                        confidence=result.confidence,
+                        status=result.status,
+                        source_page=result.page,
+                        source_bbox=bbox,
+                    )
+                )
+        self.session.flush()
 
     def complete_failure(self, *, job: ProcessingJob, version: DocumentVersion, error: str, event_payload: dict) -> None:
         version.ocr_status = "failed"

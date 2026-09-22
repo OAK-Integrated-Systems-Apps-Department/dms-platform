@@ -29,9 +29,7 @@ export default function DocumentsPage() {
           Upload a scanned document or image and run OCR on it.
         </p>
       </div>
-      <div className="max-w-[680px]">
-        <DocumentUploadForm />
-      </div>
+      <DocumentUploadForm />
     </DashboardShell>
   )
 }

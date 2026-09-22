@@ -18,6 +18,8 @@ public interface DocumentTypeRepository extends JpaRepository<DocumentType, UUID
 
     boolean existsByTenantIdAndTypeCodeAndDeletedFalse(UUID tenantId, String typeCode);
 
+    Optional<DocumentType> findByTenantIdAndTypeCodeAndDeletedFalse(UUID tenantId, String typeCode);
+
     @Query("select t from DocumentType t where t.tenantId = :tenantId and t.deleted = false")
     Page<DocumentType> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
 

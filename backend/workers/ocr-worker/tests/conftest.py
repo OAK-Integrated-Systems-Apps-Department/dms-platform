@@ -23,7 +23,7 @@ def session_factory():
 @pytest.fixture()
 def seeded_version(session_factory):
     """A clean, OCR-eligible document_versions row (+ its document and
-    document_type) with document_type_name='invoice' and NO zone template
+    document_type) with type_name='invoice' and NO zone template
     seeded -- tests that want zones use `seed_zone` themselves so the
     "no template configured" (full-document) path is this fixture's
     default, matching most tests' needs.
@@ -34,7 +34,7 @@ def seeded_version(session_factory):
     version_id = uuid.uuid4()
 
     with session_factory() as session:
-        session.add(DocumentType(document_type_id=document_type_id, tenant_id=tenant_id, document_type_name="invoice"))
+        session.add(DocumentType(document_type_id=document_type_id, tenant_id=tenant_id, type_name="invoice"))
         session.add(Document(document_id=document_id, tenant_id=tenant_id, document_type_id=document_type_id, title="Sample Invoice"))
         session.add(
             DocumentVersion(

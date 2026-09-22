@@ -1,6 +1,7 @@
 package com.oak.dms.ocrworker;
 
 import com.oak.dms.common.exception.UpstreamServiceException;
+import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
@@ -11,6 +12,8 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,14 +35,43 @@ public class OcrWorkerClient {
     private final RestTemplate ocrWorkerRestTemplate;
     private final OcrWorkerProperties properties;
 
+    /**
+     * @param requestedFields which of the document type's schema fields
+     *                        ocr-worker should attempt to extract (see
+     *                        selectable-OCR-field-extraction, V35) --
+     *                        dms-core owns the field catalog, so each
+     *                        entry's {@code dataType}/{@code options} is
+     *                        sent alongside its {@code fieldKey} rather
+     *                        than making ocr-worker query for them itself.
+     *                        Sent as this request's JSON body, {@code
+     *                        {"requested_fields": [{"field_key":...,
+     *                        "data_type":..., "options":[...]}]}} --
+     *                        matching ocr-worker's {@code RequestedField}
+     *                        pydantic model (api.py) exactly; a plain list
+     *                        of field-key strings would fail that model's
+     *                        validation (it requires field_key/data_type
+     *                        per entry, not a bare string).
+     */
     @SuppressWarnings("unchecked")
-    public Map<String, Object> processVersion(UUID versionId) {
+    public Map<String, Object> processVersion(UUID versionId, List<DocumentTypeSchemaResponse.SchemaField> requestedFields) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-Internal-Token", properties.getInternalToken());
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        List<Map<String, Object>> requestedFieldSpecs = (requestedFields != null ? requestedFields : List.<DocumentTypeSchemaResponse.SchemaField>of())
+                .stream()
+                .map(field -> {
+                    Map<String, Object> spec = new LinkedHashMap<>();
+                    spec.put("field_key", field.fieldKey());
+                    spec.put("data_type", field.dataType());
+                    spec.put("options", field.options().stream().map(o -> o.optionValue()).toList());
+                    return spec;
+                })
+                .toList();
+        Map<String, Object> body = Map.of("requested_fields", requestedFieldSpecs);
         try {
             ResponseEntity<Map> response = ocrWorkerRestTemplate.postForEntity(
                     properties.getBaseUrl() + "/ocr/process/" + versionId,
-                    new HttpEntity<>(null, headers),
+                    new HttpEntity<>(body, headers),
                     Map.class);
             return (Map<String, Object>) response.getBody();
         } catch (HttpStatusCodeException e) {

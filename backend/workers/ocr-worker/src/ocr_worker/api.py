@@ -7,8 +7,21 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .config import Settings
+from .extraction import FieldSpec
 from .pipeline import OcrPipeline, UnsupportedMimeType
 from .repository import VersionNotEligible, VersionNotFound
+
+
+class RequestedField(BaseModel):
+    """One field the caller (dms-core) wants extracted, with the field
+    catalog metadata ocr-worker needs to interpret it -- dms-core owns
+    that catalog, so it sends data_type/options explicitly rather than
+    ocr-worker querying metadata_fields/metadata_field_options itself.
+    """
+
+    field_key: str
+    data_type: str
+    options: list[str] | None = None
 
 
 class ZoneRequest(BaseModel):
@@ -29,6 +42,13 @@ class RubberBandRequest(BaseModel):
 
 class ProcessRequest(BaseModel):
     correlation_id: uuid.UUID | None = None
+    # Selectable OCR field extraction: omitted (None) preserves the
+    # original "extract everything the zone template/generic regex fallback
+    # can find" behavior (scripts/dev/smoke_test_ocr.py and any other
+    # caller that hasn't adopted this yet); present (even []) restricts
+    # extraction to exactly these fields -- see extraction.py's
+    # extract_requested_fields.
+    requested_fields: list[RequestedField] | None = None
 
 
 def _failure_response(outcome) -> dict:
@@ -78,8 +98,13 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
         round-trip.
         """
         correlation_id = body.correlation_id if body else None
+        requested_fields = (
+            [FieldSpec(field_key=f.field_key, data_type=f.data_type, options=f.options) for f in body.requested_fields]
+            if body and body.requested_fields is not None
+            else None
+        )
         try:
-            outcome = pipeline.process_version(version_id, correlation_id=correlation_id)
+            outcome = pipeline.process_version(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
         except VersionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:

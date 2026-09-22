@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--minio-secret-key", default="minioadmin")
     parser.add_argument("--minio-secure", action="store_true")
     parser.add_argument("--minio-source-bucket", default="oakdms-documents")
-    parser.add_argument("--document-type", default="invoice", help="document_types.document_type_name; needs a matching document_type_ocr_zones row (docs/database/V11) to exercise zone OCR")
+    parser.add_argument("--document-type", default="invoice", help="document_types.type_name (type_code is this, uppercased); needs a matching document_type_ocr_zones row (docs/database/V11) to exercise zone OCR")
     parser.add_argument("--file", type=Path, default=None, help="Local file to upload as the source document; a synthetic sample invoice image is generated if omitted")
     parser.add_argument("--version-id", default=None, help="Reuse an existing document_versions row instead of bootstrapping a new fixture chain")
     parser.add_argument("--fixture-name", default="ocr-dev-fixture", help="Distinguishes independent fixture chains from repeated runs")
@@ -106,11 +106,11 @@ def bootstrap_fixture(conn: psycopg.Connection, *, fixture_name: str, document_t
         )
         cur.execute(
             """
-            INSERT INTO document_types (document_type_id, tenant_id, document_type_name, created_by)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO document_types (document_type_id, tenant_id, type_code, type_name, created_by)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (document_type_id) DO NOTHING
             """,
-            (document_type_id, tenant_id, document_type_name, user_id),
+            (document_type_id, tenant_id, document_type_name.upper(), document_type_name, user_id),
         )
 
         # documents.latest_version_id and document_versions.document_id are

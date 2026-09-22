@@ -23,6 +23,10 @@ dependencies = [
     # where that *isn't* true).
     "paddlepaddle>=3.0",
     "paddleocr>=2.9",
+    # Selectable OCR field extraction's "language" field: ISO 639-1 codes
+    # directly, pure-Python, no model download -- no existing dependency
+    # here does language detection at all.
+    "langdetect>=1.0.9",
 ]
 
 [project.optional-dependencies]

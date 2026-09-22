@@ -14,7 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * docs/database/V4 4.1, ported into a real migration at V23 (folder_id,
+ * docs/database/V4 4.1, ported into a real migration at V32 (folder_id,
  * document-relationship/tag fields from the fuller V4 spec omitted --
  * nothing in this integration needs them yet). documentTypeId/
  * ownerUserId/*VersionId are plain UUID columns, not JPA relationships --
@@ -23,7 +23,7 @@ import java.util.UUID;
  * <p>
  * latestVersionId is NOT NULL and currently a foreign key back into
  * {@link DocumentVersion}, which in turn has a NOT NULL foreign key back
- * to this table's documentId -- see V23's migration comment for why both
+ * to this table's documentId -- see V32's migration comment for why both
  * constraints are DEFERRABLE INITIALLY DEFERRED, which is what makes it
  * safe to persist a Document and its first DocumentVersion (client-
  * generated UUIDs) in either order within one @Transactional method.

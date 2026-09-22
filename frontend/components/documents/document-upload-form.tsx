@@ -1,105 +1,179 @@
 "use client"
 
-import { useState } from "react"
-import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
+import {
+  DocumentFieldsForm,
+  defaultRequestedFields,
+  hasMissingMandatoryField,
+  mandatoryRequestedFields,
+  reconcileRequestedFields,
+  visibleFieldsOf,
+  FieldChips,
+} from "@/components/documents/document-fields-form"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api-error"
-import { runOcr, uploadDocument, type DocumentVersionResponse, type OcrResult, type OcrTable } from "@/lib/documents/api"
+import { fetchDocumentTypeSchema } from "@/lib/document-type-fields/api"
+import { fetchAllDocumentTypes } from "@/lib/document-types/api"
+import {
+  fetchDocumentMetadata,
+  fetchOcrStatus,
+  rerunOcr,
+  saveDocumentMetadata,
+  uploadDocument,
+  type DocumentVersionResponse,
+  type MetadataValues,
+  type OcrStatusResponse,
+} from "@/lib/documents/api"
 
-/**
- * Renders one Docling-recognized table (ocr-worker README's "Output
- * contract" `pages[].tables[]`) as a real HTML grid -- honoring
- * row_span/col_span so a merged cell doesn't get duplicated, and a
- * skipped (spanned-over) grid position renders as an empty cell rather
- * than a gap. `column_header`/`row_header` cells render as <th>.
- */
-function OcrTableView({ table }: { table: OcrTable }) {
-  const grid: (OcrTable["cells"][number] | undefined)[][] = Array.from({ length: table.num_rows }, () =>
-    Array.from({ length: table.num_cols }, () => undefined)
-  )
-  const covered = Array.from({ length: table.num_rows }, () => Array<boolean>(table.num_cols).fill(false))
+type UploadPhase = "idle" | "uploading" | "processing" | "done" | "failed"
 
-  for (const cell of table.cells) {
-    if (cell.row >= table.num_rows || cell.col >= table.num_cols) continue
-    grid[cell.row][cell.col] = cell
-    for (let r = cell.row; r < Math.min(cell.row + cell.row_span, table.num_rows); r++) {
-      for (let c = cell.col; c < Math.min(cell.col + cell.col_span, table.num_cols); c++) {
-        if (r === cell.row && c === cell.col) continue
-        covered[r][c] = true
-      }
-    }
+function isTerminalStatus(status: OcrStatusResponse["status"] | undefined): boolean {
+  return status === "completed" || status === "failed"
+}
+
+function phaseLabel(phase: UploadPhase): string {
+  switch (phase) {
+    case "uploading":
+      return "Uploading…"
+    case "processing":
+      return "Processing OCR…"
+    case "done":
+      return "Done"
+    case "failed":
+      return "Failed"
+    default:
+      return ""
   }
-
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full border-collapse text-[12.5px]">
-        <tbody>
-          {grid.map((row, r) => (
-            <tr key={r}>
-              {row.map((cell, c) => {
-                if (covered[r][c]) return null
-                if (!cell) return <td key={c} className="border border-border px-2.5 py-1.5" />
-                const Tag = cell.column_header || cell.row_header ? "th" : "td"
-                return (
-                  <Tag
-                    key={c}
-                    rowSpan={cell.row_span > 1 ? cell.row_span : undefined}
-                    colSpan={cell.col_span > 1 ? cell.col_span : undefined}
-                    className={
-                      Tag === "th"
-                        ? "border border-border bg-muted px-2.5 py-1.5 text-left font-semibold text-foreground"
-                        : "border border-border px-2.5 py-1.5 text-left align-top text-foreground"
-                    }
-                  >
-                    {cell.text}
-                  </Tag>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
 }
 
 /**
- * Upload a file, then run OCR on it via ocr-worker, and show the real
- * result JSON -- the frontend half of the dms-core passthrough route
- * (com.oak.dms.document.DocumentController) that connects the Next.js app
- * to backend/workers/ocr-worker. See that service's README "Output
- * contract" for the exact shape of `ocrResult` below: `pages[]` (each with
- * `method: "native_text" | "paddleocr"`, real detected text/blocks),
- * `fields`, and `flags.low_confidence`/`requires_review`.
- *
- * Two separate calls, not one, mirroring the two backend endpoints: upload
- * first creates the document/version (and lands the file in MinIO);
- * "Run OCR" is a deliberately separate action so a user can upload now and
- * trigger (or re-trigger) OCR later, matching ocr-worker's own dev-trigger
- * endpoint being a distinct, repeatable operation.
+ * Upload a file, choose which fields OCR should try to extract (the chip
+ * picker in `FieldChips`), then poll the async OCR/field-extraction job
+ * (`fetchOcrStatus`) until it lands on `"completed"`/`"failed"` -- this
+ * replaced the old synchronous "Run OCR" button, which used to call
+ * `POST /documents/{versionId}/ocr` and block on the full ocr-worker JSON.
+ * That endpoint is now fire-and-forget (used here for both the initial
+ * post-upload run and any later per-field/all-selected re-run), and the
+ * frontend's job is only to reflect `document_versions.ocr_status` plus
+ * the per-field results dms-core exposes via `GET .../ocr-status`, not to
+ * render ocr-worker's raw page/table output anymore.
  */
 export function DocumentUploadForm() {
+  const queryClient = useQueryClient()
+  const documentTypesQuery = useQuery({ queryKey: ["document-types"], queryFn: fetchAllDocumentTypes, retry: false })
+  const activeDocumentTypes = (documentTypesQuery.data ?? []).filter((t) => t.status === "active")
+
   const [file, setFile] = useState<File | null>(null)
-  const [documentType, setDocumentType] = useState("general")
+  const [documentType, setDocumentType] = useState("")
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+  const [fieldValues, setFieldValues] = useState<MetadataValues>({})
   const [uploading, setUploading] = useState(false)
-  const [runningOcr, setRunningOcr] = useState(false)
+  const [savingFields, setSavingFields] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [ocrError, setOcrError] = useState<string | null>(null)
   const [version, setVersion] = useState<DocumentVersionResponse | null>(null)
-  const [ocrResult, setOcrResult] = useState<OcrResult | null>(null)
+
+  // Field keys the user has hand-edited since the last OCR result landed --
+  // never silently overwritten by a later poll tick or re-run result (only
+  // an explicit "Save fields" persists over them, matching the backend's
+  // own manual-override rule in DocumentMetadataServiceImpl#applyOcrFields).
+  const userTouchedFields = useRef<Set<string>>(new Set())
+  // Which terminal ocr-status result (documentId + status) has already been
+  // merged into fieldValues -- a poll tick re-delivering the same
+  // "completed" result must not re-run the merge (and re-clobber an
+  // in-progress edit) on every refetch.
+  const appliedResultKey = useRef<string | null>(null)
+
+  // Defaults to GENERAL once the real catalog loads (falling back to
+  // whichever active type comes first if GENERAL isn't configured for
+  // this tenant) -- only when the user hasn't already picked something.
+  useEffect(() => {
+    if (documentType || activeDocumentTypes.length === 0) return
+    const preferred = activeDocumentTypes.find((t) => t.typeCode === "GENERAL") ?? activeDocumentTypes[0]
+    setDocumentType(preferred.typeCode)
+  }, [activeDocumentTypes, documentType])
+
+  const selectedType = activeDocumentTypes.find((t) => t.typeCode === documentType)
+  const schemaQuery = useQuery({
+    queryKey: ["document-type-schema", selectedType?.documentTypeId],
+    queryFn: () => fetchDocumentTypeSchema(selectedType!.documentTypeId),
+    enabled: !!selectedType,
+    retry: false,
+  })
+
+  // Clears any leftover field values when the user switches document type
+  // before uploading -- once a version exists, the type is locked to
+  // whatever was actually uploaded, so this no longer applies. The file
+  // itself is untouched by a document-type change either way.
+  useEffect(() => {
+    if (!version) setFieldValues({})
+  }, [documentType, version])
+
+  // Resets the OCR field selection to the new type's defaults whenever its
+  // schema (re)loads, keeping any previously-selected key that's still
+  // valid on the new type -- see reconcileRequestedFields. Only applies
+  // pre-upload; once a version exists the selection is locked in with it.
+  useEffect(() => {
+    if (version) return
+    setSelectedFields((prev) => (prev.size === 0 ? defaultRequestedFields(schemaQuery.data) : reconcileRequestedFields(prev, schemaQuery.data)))
+  }, [schemaQuery.data, version])
+
+  const ocrStatusQuery = useQuery({
+    queryKey: ["ocr-status", version?.documentId],
+    queryFn: () => fetchOcrStatus(version!.documentId),
+    enabled: !!version,
+    refetchInterval: (query) => (isTerminalStatus(query.state.data?.status) ? false : 2000),
+  })
+
+  const phase: UploadPhase = uploading
+    ? "uploading"
+    : !version
+      ? "idle"
+      : ocrStatusQuery.data?.status === "completed"
+        ? "done"
+        : ocrStatusQuery.data?.status === "failed"
+          ? "failed"
+          : "processing"
+
+  // Merges the saved metadata state into the form exactly once per terminal
+  // OCR result, skipping any field the user has already hand-edited since.
+  useEffect(() => {
+    if (!version || !ocrStatusQuery.data || !isTerminalStatus(ocrStatusQuery.data.status)) return
+    const key = `${version.documentId}:${ocrStatusQuery.data.status}`
+    if (appliedResultKey.current === key) return
+    appliedResultKey.current = key
+
+    fetchDocumentMetadata(version.documentId)
+      .then((saved) => {
+        setFieldValues((prev) => {
+          const next = { ...prev }
+          for (const [fieldKey, value] of Object.entries(saved)) {
+            if (!userTouchedFields.current.has(fieldKey)) next[fieldKey] = value
+          }
+          return next
+        })
+      })
+      .catch(() => {
+        // Best-effort, same as the old post-OCR refetch: the OCR result
+        // itself already landed; the user can still see/edit whatever
+        // was already local.
+      })
+  }, [version, ocrStatusQuery.data])
 
   async function handleUpload() {
-    if (!file) return
+    if (!file || !documentType) return
     setUploadError(null)
     setUploading(true)
     try {
-      const response = await uploadDocument(file, documentType.trim() || "general")
+      const response = await uploadDocument(file, documentType, Array.from(selectedFields))
       setVersion(response)
-      setOcrResult(null)
-      toast.success("Document uploaded.")
+      appliedResultKey.current = null
+      userTouchedFields.current = new Set()
+      toast.success("Document uploaded. Running OCR…")
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not upload the document."
       setUploadError(message)
@@ -109,154 +183,201 @@ export function DocumentUploadForm() {
     }
   }
 
-  async function handleRunOcr() {
-    if (!version) return
-    setOcrError(null)
-    setRunningOcr(true)
+  async function handleRerun(fields: string[]) {
+    if (!version || fields.length === 0) return
     try {
-      const result = await runOcr(version.versionId)
-      setOcrResult(result)
-      toast.success("OCR complete.")
+      await rerunOcr(version.versionId, fields)
+      appliedResultKey.current = null
+      await queryClient.invalidateQueries({ queryKey: ["ocr-status", version.documentId] })
+      toast.success("Re-running OCR…")
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.status === 502
-          ? "ocr-worker could not process this document. See the server logs."
-          : err instanceof Error
-            ? err.message
-            : "Could not run OCR on this document."
-      setOcrError(message)
-      toast.error(message)
-    } finally {
-      setRunningOcr(false)
+      toast.error(err instanceof Error ? err.message : "Could not re-run OCR on this document.")
     }
   }
 
-  const flags = ocrResult?.flags
-  const tables = ocrResult?.pages.flatMap((page) => page.tables.map((table) => ({ page: page.page_number, table }))) ?? []
+  async function handleSaveFields() {
+    if (!version) return
+    setSavingFields(true)
+    try {
+      setFieldValues(await saveDocumentMetadata(version.documentId, fieldValues))
+      toast.success("Fields saved.")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save these field values.")
+    } finally {
+      setSavingFields(false)
+    }
+  }
+
+  function handleFieldChange(fieldKey: string, value: string | string[]) {
+    userTouchedFields.current.add(fieldKey)
+    setFieldValues((prev) => ({ ...prev, [fieldKey]: value }))
+  }
+
+  function handleToggleField(fieldKey: string) {
+    setSelectedFields((prev) => {
+      const next = new Set(prev)
+      if (next.has(fieldKey)) next.delete(fieldKey)
+      else next.add(fieldKey)
+      return next
+    })
+  }
+
+  const busy = uploading || phase === "processing"
+  const ocrResultsByFieldKey = ocrStatusQuery.data?.fields
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
-        {uploadError && (
-          <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
-            <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-            {uploadError}
-          </div>
-        )}
-
-        <div className="mb-5 grid grid-cols-2 gap-[18px]">
-          <div>
-            <Label htmlFor="file">File</Label>
-            <Input
-              id="file"
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.tiff"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-            <p className="mt-1.5 text-[12px] text-muted-foreground">PDF, PNG, JPEG, or TIFF.</p>
-          </div>
-          <div>
-            <Label htmlFor="documentType">Document type</Label>
-            <Input
-              id="documentType"
-              placeholder="invoice"
-              autoComplete="off"
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-            />
-            <p className="mt-1.5 text-[12px] text-muted-foreground">
-              Determines which zone/field template ocr-worker applies, if any.
-            </p>
-          </div>
-        </div>
-
-        <hr className="my-5 border-t border-dashed border-border" />
-
-        <div className="flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={!file || uploading}
-            onClick={handleUpload}
-            className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {uploading && <Loader2 size={14} className="animate-spin" />}
-            {uploading ? "Uploading…" : "Upload"}
-          </button>
-        </div>
-      </div>
-
-      {version && (
+      <div className="flex w-full flex-col gap-5">
         <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
-          <div className="mb-4 flex items-center gap-2.5">
-            <FileText size={18} className="text-primary" />
+          {uploadError && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+              <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
+              {uploadError}
+            </div>
+          )}
+
+          <div className="mb-5 grid grid-cols-2 gap-[18px]">
             <div>
-              <p className="text-[14px] font-semibold text-foreground">{version.originalFilename}</p>
-              <p className="text-[12px] text-muted-foreground">
-                {version.mimeType} · {version.sizeBytes.toLocaleString()} bytes · scan: {version.scanStatus}
+              <Label htmlFor="file">File</Label>
+              <Input
+                id="file"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="mt-1.5 text-[12px] text-muted-foreground">PDF, PNG, JPEG, or TIFF.</p>
+            </div>
+            <div>
+              <Label htmlFor="documentType">Document type</Label>
+              <select
+                id="documentType"
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
+                disabled={documentTypesQuery.isLoading || activeDocumentTypes.length === 0 || !!version}
+                className="h-10 w-full appearance-none rounded-btn border border-[var(--border-strong)] bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:opacity-70"
+              >
+                {documentTypesQuery.isLoading && <option value="">Loading…</option>}
+                {!documentTypesQuery.isLoading && activeDocumentTypes.length === 0 && (
+                  <option value="">No document types available</option>
+                )}
+                {activeDocumentTypes.map((t) => (
+                  <option key={t.documentTypeId} value={t.typeCode}>
+                    {t.typeName}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                {documentTypesQuery.isError
+                  ? "Could not load document types."
+                  : "Determines which zone/field template ocr-worker applies, if any."}
               </p>
             </div>
           </div>
 
-          {ocrError && (
-            <div className="mb-4 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
-              <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-              {ocrError}
-            </div>
+          {!version && (
+            <FieldChips
+              schema={schemaQuery.data}
+              loading={schemaQuery.isLoading}
+              selected={selectedFields}
+              onToggle={handleToggleField}
+              onSelectAll={() => setSelectedFields(new Set(visibleFieldsOf(schemaQuery.data).map((f) => f.fieldKey)))}
+              onClear={() => setSelectedFields(mandatoryRequestedFields(schemaQuery.data))}
+            />
           )}
 
-          <div className="flex justify-end">
+          <hr className="my-5 border-t border-dashed border-border" />
+
+          <div className="flex items-center justify-end gap-2.5">
+            {phase !== "idle" && (
+              <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground">
+                {(phase === "uploading" || phase === "processing") && <Loader2 size={14} className="animate-spin" />}
+                {phase === "done" && <CheckCircle2 size={14} className="text-primary" />}
+                {phase === "failed" && <XCircle size={14} className="text-[var(--rust)]" />}
+                {phaseLabel(phase)}
+              </span>
+            )}
             <button
               type="button"
-              disabled={runningOcr}
-              onClick={handleRunOcr}
-              className="flex items-center gap-2 rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={!file || !documentType || busy || !!version}
+              onClick={handleUpload}
+              className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {runningOcr && <Loader2 size={14} className="animate-spin" />}
-              {runningOcr ? "Running OCR…" : ocrResult ? "Run OCR again" : "Run OCR"}
+              {uploading && <Loader2 size={14} className="animate-spin" />}
+              {uploading ? "Uploading…" : "Upload"}
             </button>
           </div>
         </div>
-      )}
 
-      {ocrResult && (
-        <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
-          <div className="mb-4 flex items-center gap-2.5">
-            <CheckCircle2 size={18} className="text-primary" />
-            <p className="text-[14px] font-semibold text-foreground">OCR result</p>
-            {flags?.requires_review && (
-              <span className="rounded-full border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--rust-foreground)]">
-                Flagged for review
-              </span>
-            )}
-          </div>
-          <p className="mb-3 text-[13px] leading-[1.6] whitespace-pre-wrap text-foreground">
-            {String(ocrResult.text ?? "")}
-          </p>
-
-          {tables.length > 0 && (
-            <div className="mb-4 flex flex-col gap-3">
-              <p className="text-[12.5px] font-semibold text-foreground">
-                Detected {tables.length === 1 ? "table" : `tables (${tables.length})`}
-              </p>
-              {tables.map(({ page, table }, i) => (
-                <div key={i} className="flex flex-col gap-1">
-                  {tables.length > 1 && <p className="text-[11.5px] text-muted-foreground">Page {page}</p>}
-                  <OcrTableView table={table} />
-                </div>
-              ))}
+        {version && (
+          <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
+            <div className="mb-4 flex items-center gap-2.5">
+              <FileText size={18} className="text-primary" />
+              <div>
+                <p className="text-[14px] font-semibold text-foreground">{version.originalFilename}</p>
+                <p className="text-[12px] text-muted-foreground">
+                  {version.mimeType} · {version.sizeBytes.toLocaleString()} bytes · scan: {version.scanStatus}
+                </p>
+              </div>
             </div>
-          )}
 
-          <details className="text-[12.5px] text-muted-foreground">
-            <summary className="cursor-pointer select-none font-semibold text-foreground">
-              Full structured output
-            </summary>
-            <pre className="mt-2 max-h-[400px] overflow-auto rounded-md bg-muted p-3 text-[11.5px] leading-[1.5]">
-              {JSON.stringify(ocrResult, null, 2)}
-            </pre>
-          </details>
-        </div>
-      )}
+            {phase === "failed" && (
+              <div className="mb-4 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+                <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
+                OCR could not process this document. You can still fill in fields manually, or retry below.
+                <button
+                  type="button"
+                  onClick={() => handleRerun(Array.from(selectedFields))}
+                  className="ml-auto shrink-0 font-semibold underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {(schemaQuery.data?.fields.length ?? 0) > 0 && (
+              <div className="mb-4">
+                <div className="mb-2.5 flex items-center justify-between gap-3">
+                  <p className="text-[12.5px] font-semibold text-foreground">Fields</p>
+                  {(phase === "done" || phase === "failed") && (
+                    <button
+                      type="button"
+                      disabled={savingFields}
+                      onClick={() => handleRerun(Array.from(selectedFields))}
+                      className="flex items-center gap-1.5 text-[11.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw size={11} />
+                      Re-run OCR
+                    </button>
+                  )}
+                </div>
+                <DocumentFieldsForm
+                  schema={schemaQuery.data}
+                  loading={schemaQuery.isLoading}
+                  values={fieldValues}
+                  onChange={handleFieldChange}
+                  disabled={savingFields}
+                  ocrResults={ocrResultsByFieldKey}
+                  onRerunField={phase === "done" || phase === "failed" ? (fieldKey) => handleRerun([fieldKey]) : undefined}
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2.5">
+              {(schemaQuery.data?.fields.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  disabled={savingFields || hasMissingMandatoryField(schemaQuery.data, fieldValues)}
+                  onClick={handleSaveFields}
+                  className="flex items-center gap-2 rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {savingFields && <Loader2 size={14} className="animate-spin" />}
+                  {savingFields ? "Saving…" : "Save fields"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     ocr_languages: str = "en"
     ocr_render_dpi: int = 200
 
+    # Selectable-field extraction (My Documents upload page): a much lower
+    # bar than min_confidence_threshold above -- that one gates the whole
+    # document's `flags.low_confidence`/`requires_review`, this one only
+    # decides whether one individual requested field's own value is
+    # trustworthy enough to mark "extracted" vs. "low_confidence" (the
+    # value is returned either way, never dropped -- see extraction.py).
+    field_low_confidence_threshold: float = 0.6
+
     # -- API --
     api_host: str = "0.0.0.0"
     api_port: int = 8090

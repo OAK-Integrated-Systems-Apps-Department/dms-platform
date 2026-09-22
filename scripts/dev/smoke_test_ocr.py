@@ -94,9 +94,9 @@ def bootstrap_fixture(conn: psycopg.Connection, *, fixture_name: str, mime_type:
             (user_id, tenant_id, keycloak_id),
         )
         cur.execute(
-            "INSERT INTO document_types (document_type_id, tenant_id, document_type_name, created_by) "
-            "VALUES (%s, %s, %s, %s) ON CONFLICT (document_type_id) DO NOTHING",
-            (document_type_id, tenant_id, DOCUMENT_TYPE_NAME, user_id),
+            "INSERT INTO document_types (document_type_id, tenant_id, type_code, type_name, created_by) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (document_type_id) DO NOTHING",
+            (document_type_id, tenant_id, DOCUMENT_TYPE_NAME.upper(), DOCUMENT_TYPE_NAME, user_id),
         )
         # documents.latest_version_id and document_versions.document_id are
         # mutually NOT NULL foreign keys -- one statement (a CTE), not two

@@ -10,7 +10,16 @@ from .confidence import ConfidenceEvaluator
 from .config import Settings
 from .db import session_scope
 from .events import build_ocr_completed_payload, build_ocr_failed_payload
-from .extraction import ExtractedField, extract_structured_fields, field_for_zone_name, fields_to_dict
+from .extraction import (
+    ExtractedField,
+    FieldSpec,
+    LineBlock,
+    extract_requested_fields,
+    extract_structured_fields,
+    field_for_zone_name,
+    fields_to_dict,
+    requested_fields_to_output_dict,
+)
 from .layout import LayoutEngine, SUPPORTED_MIME_TYPES
 from .ocr_engine import OcrEngine
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
@@ -149,7 +158,20 @@ class OcrPipeline:
     # ------------------------------------------------------------------
     # Event-path / dev-trigger: full document
     # ------------------------------------------------------------------
-    def process_version(self, version_id: uuid.UUID, correlation_id: uuid.UUID | None = None) -> ProcessingOutcome:
+    def process_version(
+        self,
+        version_id: uuid.UUID,
+        correlation_id: uuid.UUID | None = None,
+        requested_fields: list[FieldSpec] | None = None,
+    ) -> ProcessingOutcome:
+        """`requested_fields`, when given (even as an empty list), restricts
+        extraction to exactly those fields (see extraction.py's
+        extract_requested_fields) -- selectable OCR field extraction for
+        the My Documents upload page. `None` (the default, and always what
+        the RabbitMQ consumer passes) preserves the original behavior: the
+        legacy zone-template + generic invoice-regex fallback over
+        everything, unchanged.
+        """
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
             ctx = repo.get_version_for_processing(version_id)  # raises VersionNotFound/VersionNotEligible
@@ -164,24 +186,73 @@ class OcrPipeline:
 
                 with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
                     if zone_regions:
-                        pages, fields = self._run_zone_ocr(layout_doc, zone_regions)
+                        pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions)
+                        zone_derived_fields = extracted_fields
+                        # No real per-line position data for a zone-cropped
+                        # run (each region's whole crop already IS the
+                        # value) -- any requested field NOT covered by a
+                        # zone falls back to flattened-text matching only.
+                        # Currently moot in practice: no document type in
+                        # this app has zone rows configured yet (see
+                        # document_type_ocr_zones' own "nothing writes to
+                        # it outside test fixtures" note).
+                        lines_by_page: dict[int, list[LineBlock]] = {}
                     else:
-                        pages, fields = self._run_full_document(layout_doc)
+                        # No zone/field template configured for this document
+                        # type -- extracted_fields here is the LEGACY generic
+                        # regex fallback (invoice_number/total_amount/...),
+                        # not a real zone match. It must never be fed to
+                        # extract_requested_fields as a "zone template hit"
+                        # (priority 1) -- that would let an unrelated regex
+                        # guess bypass the new dispatch's own, more
+                        # field-appropriate strategy for a requested field.
+                        pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc)
+                        zone_derived_fields = []
 
-                return self._finalize_success(repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, correlation_id=correlation_id)
+                field_results = None
+                if requested_fields is not None:
+                    full_text = "\n\n".join(p.text for p in pages)
+                    zone_fields_by_key = {f.field: f for f in zone_derived_fields}
+                    field_results = extract_requested_fields(
+                        specs=requested_fields,
+                        text=full_text,
+                        zone_fields=zone_fields_by_key,
+                        lines_by_page=lines_by_page,
+                        field_confidence_threshold=self._settings.field_low_confidence_threshold,
+                    )
+                    fields = requested_fields_to_output_dict(field_results)
+                else:
+                    fields = fields_to_dict(extracted_fields)
+
+                return self._finalize_success(
+                    repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, field_results=field_results, correlation_id=correlation_id
+                )
             except (VersionNotFound, VersionNotEligible):
                 raise
             except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
                 return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=exc, correlation_id=correlation_id)
 
-    def _run_full_document(self, layout_doc) -> tuple[list[PageResult], dict[str, dict]]:
+    def _run_full_document(
+        self, layout_doc
+    ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]]]:
         """OS-FR-001/002, per the native-text-vs-paddleocr decision logic:
         a page with a real native text layer (Docling extracts it
         directly from the PDF) is used as-is -- it is never re-OCR'd. A
         page with no text layer (scanned, photographed, or an image-only
         PDF page) is rasterized and run through PaddleOCR instead.
+
+        Also builds `lines_by_page` (1-indexed, real per-visual-line
+        text+bbox) for extract_requested_fields' spatial field matching --
+        native_text_lines_for_page (PyMuPDF's own line-level dict, NOT
+        Docling's paragraph-merged native_text_blocks_for_page: see that
+        method's own docstring for why) for a native-text page, or
+        PaddleOCR's own `result.words` for a rasterized one -- each of
+        ITS entries is already exactly one detected text LINE (per
+        ocr_engine.py's own comment on `rec_texts`/`rec_boxes`), so no
+        extra line-clustering is needed there either.
         """
         pages: list[PageResult] = []
+        lines_by_page: dict[int, list[LineBlock]] = {}
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
             native_blocks = layout_doc.native_text_blocks_for_page(page_number, self._settings.ocr_render_dpi)
@@ -190,18 +261,23 @@ class OcrPipeline:
                 tables = layout_doc.tables_for_page(page_number, self._settings.ocr_render_dpi) or []
                 text, blocks, table_dicts = _merge_native_text_and_tables(native_blocks, tables)
                 pages.append(PageResult(page_number=page_number, method="native_text", text=text, confidence=1.0, blocks=blocks, tables=table_dicts))
+                native_lines = layout_doc.native_text_lines_for_page(page_index, self._settings.ocr_render_dpi)
+                if native_lines:
+                    lines_by_page[page_number] = [(b.text, b.bbox) for b in native_lines]
             else:
                 page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
                 result = self._ocr_engine.recognize(page_image.image, lang=self._settings.ocr_languages)
                 blocks = [{"text": w.text, "bbox": list(w.bbox), "confidence": w.confidence} for w in result.words]
                 pages.append(PageResult(page_number=page_number, method="paddleocr", text=result.text, confidence=result.mean_confidence, blocks=blocks))
+                if result.words:
+                    lines_by_page[page_number] = [(w.text, w.bbox) for w in result.words]
 
         full_text = "\n\n".join(p.text for p in pages)
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
-        fields = fields_to_dict(extract_structured_fields(full_text, base_confidence=overall_confidence))
-        return pages, fields
+        extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
+        return pages, extracted_fields, lines_by_page
 
-    def _run_zone_ocr(self, layout_doc, regions: list[ZoneRegion]) -> tuple[list[PageResult], dict[str, dict]]:
+    def _run_zone_ocr(self, layout_doc, regions: list[ZoneRegion]) -> tuple[list[PageResult], list[ExtractedField]]:
         """OS-FR-003: always PaddleOCR on the cropped region, never a
         native-text lookup -- the decision logic's item 4 is explicit that
         zone/rubber-band OCR always runs PaddleOCR regardless of whether
@@ -232,7 +308,9 @@ class OcrPipeline:
             page_result.text = f"{page_result.text}\n[{region.name}] {result.text}".strip()
             page_result.blocks.extend(blocks)
 
-            extracted_fields.append(field_for_zone_name(region.field, result.text, result.mean_confidence, region.name, bbox=crop_box))
+            extracted_fields.append(
+                field_for_zone_name(region.field, result.text, result.mean_confidence, region.name, bbox=crop_box, page=page_number)
+            )
 
         # Recompute each page's confidence as the mean of its own blocks
         # (a page can accumulate zones from multiple regions).
@@ -241,7 +319,7 @@ class OcrPipeline:
             page_result.confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
         pages = sorted(pages_by_number.values(), key=lambda p: p.page_number)
-        return pages, fields_to_dict(extracted_fields)
+        return pages, extracted_fields
 
     # ------------------------------------------------------------------
     # On-demand synchronous flows (OS-FR-003 named zones, OS-FR-004 rubber-band)
@@ -265,9 +343,11 @@ class OcrPipeline:
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
                 with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
-                    pages, fields = self._run_zone_ocr(layout_doc, regions)
+                    pages, extracted_fields = self._run_zone_ocr(layout_doc, regions)
 
-                return self._finalize_success(repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, correlation_id=correlation_id)
+                return self._finalize_success(
+                    repo=repo, job=job, ctx=ctx, pages=pages, fields=fields_to_dict(extracted_fields), correlation_id=correlation_id
+                )
             except (VersionNotFound, VersionNotEligible):
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -323,7 +403,17 @@ class OcrPipeline:
     # commits ocr_outputs + document_versions.ocr_status +
     # processing_jobs + outbox_events in one transaction.
     # ------------------------------------------------------------------
-    def _finalize_success(self, *, repo: OcrRepository, job, ctx, pages: list[PageResult], fields: dict, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
+    def _finalize_success(
+        self,
+        *,
+        repo: OcrRepository,
+        job,
+        ctx,
+        pages: list[PageResult],
+        fields: dict,
+        correlation_id: uuid.UUID | None,
+        field_results: list | None = None,
+    ) -> ProcessingOutcome:
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         decision = self._confidence.evaluate(overall_confidence)
         flags = {"low_confidence": decision.flagged, "requires_review": decision.flagged}
@@ -356,6 +446,13 @@ class OcrPipeline:
             language=self._settings.ocr_languages,
             event_payload=payload,
         )
+        if field_results is not None:
+            repo.upsert_field_results(
+                tenant_id=ctx.version.tenant_id,
+                document_id=ctx.document.document_id,
+                version_id=ctx.version.version_id,
+                results=field_results,
+            )
         return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:

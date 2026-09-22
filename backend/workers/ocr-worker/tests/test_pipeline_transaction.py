@@ -33,6 +33,7 @@ class FakeLayoutDocument:
         width: int = 1000,
         height: int = 800,
         native_text_by_page: dict | None = None,
+        native_text_lines_by_page: dict | None = None,
         tables_by_page: dict | None = None,
         fail_render: bool = False,
     ):
@@ -40,6 +41,11 @@ class FakeLayoutDocument:
         self._width = width
         self._height = height
         self._native_text_by_page = native_text_by_page or {}
+        # 0-indexed (PyMuPDF convention), unlike native_text_by_page above --
+        # matches the real native_text_lines_for_page. Defaults to empty so
+        # existing tests (which never set this) exercise the "no line-level
+        # data available" fallback path, same as a real zone/rubber-band call.
+        self._native_text_lines_by_page = native_text_lines_by_page or {}
         self._tables_by_page = tables_by_page or {}
         self._fail_render = fail_render
 
@@ -53,6 +59,9 @@ class FakeLayoutDocument:
 
     def native_text_blocks_for_page(self, page_no: int, dpi: int):
         return self._native_text_by_page.get(page_no)
+
+    def native_text_lines_for_page(self, page_no: int, dpi: int):
+        return self._native_text_lines_by_page.get(page_no)
 
     def tables_for_page(self, page_no: int, dpi: int):
         return self._tables_by_page.get(page_no)

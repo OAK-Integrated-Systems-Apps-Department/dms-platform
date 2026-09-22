@@ -205,8 +205,8 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
 
         return new DocumentTypeSchemaResponse.SchemaField(
                 field.getFieldId(), field.getFieldKey(), field.getLabel(), field.getHelpText(), field.getDataType(),
-                field.getStatus().name(), mapping.isMandatory(), mapping.isHidden(), mapping.getDisplayOrder(),
-                mapping.getFieldGroup(), effectiveDefault, options, validations);
+                field.getStatus().name(), mapping.isMandatory(), mapping.isHidden(), field.isOcrExtractable(),
+                mapping.getDisplayOrder(), mapping.getFieldGroup(), effectiveDefault, options, validations);
     }
 
     private List<DocumentTypeFieldResponse> toResponses(List<DocumentTypeField> mapping, UUID tenantId) {

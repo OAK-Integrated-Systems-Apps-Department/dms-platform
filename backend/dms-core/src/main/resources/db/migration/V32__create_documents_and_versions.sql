@@ -1,9 +1,14 @@
 -- Documents & versions (docs/database/V4, subset) -- the minimal slice needed
--- to connect ocr-worker to the frontend: document_types, documents,
--- document_versions. folders/document_relationships/tags/metadata_fields
--- from the fuller V4 spec are intentionally omitted here -- nothing in this
--- integration needs them yet; add them in a later migration when the
--- broader document module is built out.
+-- to connect ocr-worker to the frontend: documents, document_versions.
+-- document_types is NOT created here -- it's owned by module 2.7
+-- (Metadata & Document-Type Management, V28/V30/V31), which landed after
+-- this migration was first written as a placeholder that also created its
+-- own document_types table. That placeholder table is gone; documents.
+-- document_type_id below references the real one instead.
+-- folders/document_relationships/tags/metadata_fields from the fuller V4
+-- spec are intentionally omitted here -- nothing in this integration needs
+-- them yet; add them in a later migration when the broader document
+-- module is built out.
 --
 -- documents.latest_version_id and document_versions.document_id are
 -- mutually NOT NULL foreign keys into each other (a document always has a
@@ -17,23 +22,6 @@
 -- COMMIT, by which point both rows exist. This is a deliberate, documented
 -- deviation from the V4 spec's constraint timing, not a change to the
 -- schema's logical shape.
-
-CREATE TABLE document_types (
-    document_type_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants (tenant_id),
-    document_type_name VARCHAR(255) NOT NULL,
-    schema_version INT NOT NULL DEFAULT 1,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_by UUID REFERENCES users (user_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by UUID REFERENCES users (user_id),
-    updated_at TIMESTAMPTZ,
-    is_deleted BOOLEAN NOT NULL DEFAULT false,
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT uq_document_types_tenant_name UNIQUE (tenant_id, document_type_name)
-);
-
-CREATE INDEX ix_document_types_tenant_id ON document_types (tenant_id);
 
 CREATE TABLE documents (
     document_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

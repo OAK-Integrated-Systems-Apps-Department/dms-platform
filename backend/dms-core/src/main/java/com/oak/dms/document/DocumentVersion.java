@@ -9,12 +9,14 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * docs/database/V4 4.2, ported into a real migration at V23. This is the
+ * docs/database/V4 4.2, ported into a real migration at V32. This is the
  * exact table ocr-worker's own SQLAlchemy model (DocumentVersion in
  * backend/workers/ocr-worker/src/ocr_worker/models.py) reads/writes:
  * scanStatus/ocrStatus/storageObjectKey/mimeType must stay in sync with
@@ -87,6 +89,20 @@ public class DocumentVersion {
     @Column(name = "ocr_status", nullable = false)
     @Builder.Default
     private String ocrStatus = "not_required";
+
+    /**
+     * JSON array of field_key strings ("selectable OCR field extraction" --
+     * see V35): which fields the caller asked OCR to attempt to extract for
+     * this version, set at upload and unioned-in on every re-run request.
+     * Stored as raw JSON text via {@code @JdbcTypeCode(SqlTypes.JSON)},
+     * same convention as {@code OutboxEvent.payload} -- this codebase has no
+     * JSON-column-to-List&lt;String&gt; converter, so callers serialize/
+     * deserialize via the injected {@code ObjectMapper} themselves.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "requested_fields", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private String requestedFields = "[]";
 
     @Column(name = "is_protected", nullable = false)
     @Builder.Default

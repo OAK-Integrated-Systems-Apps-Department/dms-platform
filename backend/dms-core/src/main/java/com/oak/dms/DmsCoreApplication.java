@@ -2,6 +2,7 @@ package com.oak.dms;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -12,9 +13,14 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * written stayed stuck in "pending" (confirmed against the dev database -
  * none had ever reached "published" or "failed"), so no domain event this
  * app has ever emitted had actually been relayed to RabbitMQ.
+ * <p>
+ * {@code @EnableAsync} backs {@code DocumentServiceImpl#triggerOcrAsync} --
+ * upload/re-run must return to the caller immediately with a "processing"
+ * status rather than blocking on real Docling/PaddleOCR inference.
  */
 @SpringBootApplication
 @EnableScheduling
+@EnableAsync
 public class DmsCoreApplication {
 
 	public static void main(String[] args) {
