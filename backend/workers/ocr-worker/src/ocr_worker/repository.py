@@ -137,12 +137,20 @@ class OcrRepository:
         active ocr job (a 'queued' row, or a 'processing' row whose lease
         has expired) to 'processing' with a fresh lease, incrementing
         attempts. Returns None if no matching row exists -- another
-        worker/a still-live lease already owns it, or (should never happen
-        after ensure_queued_job) no active row exists at all -- the caller
-        must ack-and-skip, not treat this as a failure. The same shape is
-        reused by the reaper's own requeue path (repository.py's
+        worker/a still-live lease already owns it, a requeued job's
+        backoff (`next_attempt_at`) hasn't elapsed yet, or (should never
+        happen after ensure_queued_job) no active row exists at all -- the
+        caller must ack-and-skip, not treat this as a failure. The same
+        shape is reused by the reaper's own requeue path (repository.py's
         `reap_requeue`), just against an already-expired lease instead of
         a fresh 'queued' row.
+
+        The `next_attempt_at` check exists because the outbox-relayed
+        `.requested` event `reap_requeue` emits (B.4) can be delivered to
+        a consumer well before its backoff window elapses -- without this,
+        a systematically-failing document would be reclaimed and retried
+        immediately instead of actually backing off, making the reaper's
+        own backoff meaningless.
         """
         now = datetime.now(timezone.utc)
         lease_expires_at = now + timedelta(seconds=lease_seconds)
@@ -154,6 +162,7 @@ class OcrRepository:
                 ProcessingJob.job_type == "ocr",
                 ProcessingJob.status.in_(["queued", "processing"]),
                 (ProcessingJob.status != "processing") | (ProcessingJob.lease_expires_at < now),
+                (ProcessingJob.next_attempt_at.is_(None)) | (ProcessingJob.next_attempt_at <= now),
             )
             .values(status="processing", attempts=ProcessingJob.attempts + 1, started_at=now, lease_expires_at=lease_expires_at)
             .returning(ProcessingJob)

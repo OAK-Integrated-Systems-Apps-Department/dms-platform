@@ -4,9 +4,34 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED
+from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED, ROUTING_KEY_OCR_REQUESTED
 
 SCHEMA_VERSION = 1
+
+
+def build_ocr_requested_payload(
+    *,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    correlation_id: uuid.UUID | None,
+) -> dict[str, Any]:
+    """No resolved field specs (Phase 1 plan Decision 1) -- ocr-worker
+    re-queries dms-core's schema catalog directly at claim time. Used both
+    by the real upload/rerun path (dms-core, not yet built) and by the
+    reaper's own requeue path (repository.py's `reap_requeue`) -- a
+    downstream consumer must handle a `.requested` event identically
+    regardless of which one produced it.
+    """
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": ROUTING_KEY_OCR_REQUESTED,
+        "tenant_id": str(tenant_id),
+        "document_id": str(document_id),
+        "version_id": str(version_id),
+        "correlation_id": str(correlation_id) if correlation_id else None,
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def build_ocr_completed_payload(

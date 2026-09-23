@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # -- Job leasing / reaper (see V36__ocr_job_leasing.sql) --
     ocr_lease_duration_s: int = 1800
     ocr_reaper_interval_s: int = 30
+    # Linear backoff: a job's Nth requeue waits N * this many seconds
+    # before it becomes claimable again (enforced by claim_job's
+    # next_attempt_at check) -- simple and deterministic given
+    # max_delivery_attempts is already small (=5), not worth a more
+    # elaborate exponential formula.
+    ocr_reaper_backoff_base_s: int = 30
 
     # -- MinIO / object storage --
     minio_endpoint: str = "localhost:9000"

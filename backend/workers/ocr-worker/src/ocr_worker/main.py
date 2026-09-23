@@ -12,6 +12,7 @@ from .config import Settings, get_settings
 from .consumer import ScanCompletedConsumer
 from .db import make_session_factory
 from .logging_config import configure_logging
+from .reaper import Reaper
 from .storage import ObjectStorage
 from .worker_pool import OcrProcessPool
 
@@ -31,6 +32,11 @@ def create_application() -> FastAPI:
     pool = OcrProcessPool(settings)
     consumer = ScanCompletedConsumer(settings, pool)
     consumer_state = {"connected": False}
+    # Own session_factory, not the lightweight one above -- kept separate
+    # so the reaper's own connection pool usage is visible/attributable on
+    # its own (it runs continuously for the process's whole lifetime, not
+    # just at startup/readyz-check time like the one above).
+    reaper = Reaper(settings, make_session_factory(settings))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -52,7 +58,10 @@ def create_application() -> FastAPI:
             # is briefly unavailable at boot -- /readyz reflects the outage
             # instead of the whole process refusing to start.
             logger.exception("Failed to start RabbitMQ consumer; API endpoints remain available")
+
+        await reaper.start()
         yield
+        await reaper.stop()
         await consumer.stop()
         pool.close()
 
