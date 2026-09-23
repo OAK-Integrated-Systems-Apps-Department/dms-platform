@@ -9,8 +9,8 @@ from sqlalchemy import text
 from .config import Settings
 from .errors import UnsupportedFormatError
 from .extraction import FieldSpec
-from .pipeline import OcrPipeline
 from .repository import VersionNotEligible, VersionNotFound
+from .worker_pool import OcrProcessPool
 
 
 class RequestedField(BaseModel):
@@ -56,7 +56,7 @@ def _failure_response(outcome) -> dict:
     return {"status": "failed", "document_version_id": str(outcome.version_id), "error": outcome.error}
 
 
-def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, settings: Settings) -> FastAPI:
+def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, settings: Settings) -> FastAPI:
     app = FastAPI(title="ocr-worker", description="Oak DMS OCR & Scanning microservice (internal-only)")
 
     def require_internal_token(x_internal_token: str | None = Header(default=None)) -> None:
@@ -86,6 +86,16 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
         if not rabbitmq_ready_check():
             raise HTTPException(status_code=503, detail="rabbitmq consumer not connected")
 
+        # Gated on every pool worker having actually finished constructing
+        # + warming up its own PaddleOCR/Docling models (worker_pool.py) --
+        # not just DB+RabbitMQ connectivity. Dockerfile's HEALTHCHECK points
+        # at this endpoint (not /healthz) specifically so docker-compose's
+        # service_healthy dependency, which dms-core waits on, isn't
+        # satisfied before models are actually loaded (verified live that
+        # /healthz always returns ok regardless of warm-up state).
+        if not pool.is_ready():
+            raise HTTPException(status_code=503, detail="ocr process pool still warming up")
+
         return {"status": "ready"}
 
     @app.post("/ocr/process/{version_id}", dependencies=[Depends(require_internal_token)])
@@ -104,32 +114,44 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
             if body and body.requested_fields is not None
             else None
         )
+        future = pool.schedule_process_version(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
         try:
-            outcome = pipeline.process_version(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
+            outcome = future.result()
         except VersionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            # See worker_pool.py's task_timeout_s: pebble already killed
+            # and replaced the specific pool worker; the claimed job row is
+            # left 'processing' for B.4's reaper (not yet implemented) to
+            # reclaim -- the caller gets a clear timeout now rather than
+            # hanging until its own client-side timeout.
+            raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {version_id}") from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
     @app.post("/ocr/zone", dependencies=[Depends(require_internal_token)])
     def ocr_zone(body: ZoneRequest):
+        future = pool.schedule_process_zone(body.version_id, body.zone_names, correlation_id=body.correlation_id)
         try:
-            outcome = pipeline.process_zone_request(body.version_id, body.zone_names, correlation_id=body.correlation_id)
+            outcome = future.result()
         except VersionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (ValueError, UnsupportedFormatError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {body.version_id}") from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
     @app.post("/ocr/rubber-band", dependencies=[Depends(require_internal_token)])
     def ocr_rubber_band(body: RubberBandRequest):
+        future = pool.schedule_process_rubber_band(
+            body.version_id, body.page, (body.x0, body.y0, body.x1, body.y1), correlation_id=body.correlation_id
+        )
         try:
-            outcome = pipeline.process_rubber_band_request(
-                body.version_id, body.page, (body.x0, body.y0, body.x1, body.y1), correlation_id=body.correlation_id
-            )
+            outcome = future.result()
         except VersionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:
@@ -137,6 +159,8 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
         except (ValueError, UnsupportedFormatError) as exc:
             # Covers the "ambiguous/degenerate rubber-band selection" alternate flow.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {body.version_id}") from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
     return app

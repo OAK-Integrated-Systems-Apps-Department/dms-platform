@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import aio_pika
 from aio_pika import ExchangeType
@@ -19,8 +18,8 @@ from .config import (
     ROUTING_KEY_SCAN_COMPLETED,
     Settings,
 )
-from .pipeline import OcrPipeline
 from .repository import VersionNotEligible, VersionNotFound
+from .worker_pool import OcrProcessPool
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +36,19 @@ class ScanCompletedConsumer:
     on an unscanned/infected version (section 2.2 precondition).
 
     Concurrency (OS-NFR-004): `prefetch_count` lets RabbitMQ have that many
-    unacked messages in flight, and each is handed to a bounded
-    ThreadPoolExecutor (PaddleOCR/Docling calls are blocking/CPU-bound) so
-    multiple documents process concurrently without one big file blocking
-    the others or blocking ingestion.
+    unacked messages in flight; each is dispatched into the shared
+    `OcrProcessPool` (docs/ocr/failure-analysis.md #2 -- real PaddleOCR/
+    Docling model instances, one per pool-worker PROCESS, not one shared
+    instance behind a thread pool, which measured a real 2.7x slowdown
+    under concurrency from GIL/native-library contention). `pool` is the
+    SAME instance the /ocr/* API endpoints dispatch through -- there must
+    only ever be one, or the same contention this replaces would just
+    reappear between the two dispatch paths.
     """
 
-    def __init__(self, settings: Settings, pipeline: OcrPipeline):
+    def __init__(self, settings: Settings, pool: OcrProcessPool):
         self._settings = settings
-        self._pipeline = pipeline
-        self._executor = ThreadPoolExecutor(max_workers=settings.worker_pool_size, thread_name_prefix="ocr-worker")
+        self._pool = pool
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
 
@@ -80,7 +82,8 @@ class ScanCompletedConsumer:
     async def stop(self) -> None:
         if self._connection is not None:
             await self._connection.close()
-        self._executor.shutdown(wait=False)
+        # The pool is shared with the API endpoints and owned by main.py's
+        # lifespan (constructed and closed there), not by this consumer.
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
         try:
@@ -107,13 +110,22 @@ class ScanCompletedConsumer:
         correlation_id = uuid.UUID(body["correlation_id"]) if body.get("correlation_id") else None
 
         loop = asyncio.get_running_loop()
+        future = self._pool.schedule_process_version(version_id, correlation_id)
         try:
-            outcome = await loop.run_in_executor(
-                self._executor, self._pipeline.process_version, version_id, correlation_id
-            )
+            outcome = await asyncio.wrap_future(future, loop=loop)
         except (VersionNotFound, VersionNotEligible) as exc:
             logger.warning("Ack-and-skip for version %s: %s", version_id, exc)
             await message.ack()
+            return
+        except TimeoutError:
+            # pebble already terminated and replaced the specific pool
+            # worker process (verified live) -- the claimed processing_jobs
+            # row is left 'processing' with a live lease. Nothing else in
+            # this phase reclaims it; B.4's reaper (not yet implemented)
+            # is what will requeue-or-dead-letter it once its lease
+            # expires, the same as any other crashed worker.
+            logger.error("Timed out processing version %s (task timeout=%.0fs)", version_id, self._pool.task_timeout_s())
+            await message.nack(requeue=False)
             return
         except Exception:
             # Unexpected failure *outside* the pipeline's own try/except (e.g.

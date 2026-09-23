@@ -72,3 +72,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "model: real PaddleOCR/Docling/subprocess-pool tests -- slow, needs the actual installed models/deps; excluded from the default run (pytest -m model to run them).",
+]
+addopts = "-m 'not model'"

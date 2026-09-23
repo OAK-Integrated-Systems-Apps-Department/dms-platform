@@ -511,6 +511,13 @@ class LayoutEngine:
     def __init__(self):
         self._docling_converter = None
 
+    def warm_up(self) -> None:
+        """Forces the lazy Docling `DocumentConverter` construction to
+        happen now -- see worker_pool.py's pool-worker initializer / this
+        class's own docstring on why a fresh one per request is unaffordable.
+        """
+        self._converter()
+
     def _converter(self):
         if self._docling_converter is None:
             from docling.datamodel.base_models import InputFormat

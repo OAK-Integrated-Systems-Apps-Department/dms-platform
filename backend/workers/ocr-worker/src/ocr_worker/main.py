@@ -11,34 +11,25 @@ from .api import create_app
 from .config import Settings, get_settings
 from .consumer import ScanCompletedConsumer
 from .db import make_session_factory
-from .layout import LayoutEngine
 from .logging_config import configure_logging
-from .ocr_engine import PaddleOcrEngine
-from .pipeline import OcrPipeline
 from .storage import ObjectStorage
+from .worker_pool import OcrProcessPool
 
 logger = logging.getLogger(__name__)
-
-
-def build_pipeline(settings: Settings) -> tuple[OcrPipeline, "sessionmaker", ObjectStorage]:
-    session_factory = make_session_factory(settings)
-    storage = ObjectStorage(settings)
-    pipeline = OcrPipeline(
-        settings=settings,
-        session_factory=session_factory,
-        storage=storage,
-        layout_engine=LayoutEngine(),
-        ocr_engine=PaddleOcrEngine(),
-    )
-    return pipeline, session_factory, storage
 
 
 def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
 
-    pipeline, session_factory, storage = build_pipeline(settings)
-    consumer = ScanCompletedConsumer(settings, pipeline)
+    # session_factory/storage here are lightweight, main-process-only uses
+    # (/readyz's DB ping, ensure_buckets at startup) -- real OCR processing
+    # never touches these; each pool worker builds its own full stack (see
+    # worker_pool.py's _pool_worker_init), never this one.
+    session_factory = make_session_factory(settings)
+    storage = ObjectStorage(settings)
+    pool = OcrProcessPool(settings)
+    consumer = ScanCompletedConsumer(settings, pool)
     consumer_state = {"connected": False}
 
     @asynccontextmanager
@@ -63,8 +54,9 @@ def create_application() -> FastAPI:
             logger.exception("Failed to start RabbitMQ consumer; API endpoints remain available")
         yield
         await consumer.stop()
+        pool.close()
 
-    app = create_app(pipeline, session_factory, lambda: consumer_state["connected"], settings)
+    app = create_app(pool, session_factory, lambda: consumer_state["connected"], settings)
     app.router.lifespan_context = lifespan
     return app
 

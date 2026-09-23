@@ -33,6 +33,15 @@ class PaddleOcrEngine:
     def __init__(self):
         self._engines_by_lang: dict[str, "Any"] = {}
 
+    def warm_up(self, lang: str = "en") -> None:
+        """Forces the lazy PaddleOCR model construction/weight-load to
+        happen now, not on this process's first real document -- see
+        worker_pool.py's pool-worker initializer, which calls this right
+        after setting the CPU thread-cap env vars so /readyz can gate on
+        every pool worker actually being warm.
+        """
+        self._engine_for(lang)
+
     def _engine_for(self, lang: str):
         if lang not in self._engines_by_lang:
             import os

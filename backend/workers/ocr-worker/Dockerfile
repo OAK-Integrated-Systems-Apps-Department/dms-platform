@@ -90,7 +90,15 @@ ENV PYTHONPATH=/app/src \
 USER oakdms
 EXPOSE 8090
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz').read()" || exit 1
+# /readyz (not /healthz) -- gated on every OCR process-pool worker having
+# actually finished constructing+warming up its own PaddleOCR/Docling
+# models (see api.py/worker_pool.py). /healthz always returns ok regardless
+# of warm-up state (verified live), which let docker-compose's
+# service_healthy dependency -- dms-core waits on it -- pass before models
+# were loaded. start-period raised from 40s: real model construction across
+# OCR_WORKER_PROCESSES spawned processes takes noticeably longer than the
+# single-process FastAPI-only startup this was originally tuned for.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/readyz').read()" || exit 1
 
 CMD ["python", "-m", "uvicorn", "ocr_worker.main:app", "--host", "0.0.0.0", "--port", "8090"]
