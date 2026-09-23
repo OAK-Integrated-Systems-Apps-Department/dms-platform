@@ -346,3 +346,103 @@ def test_zone_ocr_always_uses_paddleocr_even_with_native_text_available(session_
     assert len(ocr_engine.calls) == 1  # PaddleOCR WAS called despite native text existing
     assert outcome.output["fields"]["invoice_number"]["value"] == "INV-7788"
     assert outcome.output["pages"][0]["method"] == "paddleocr"
+
+
+# ----------------------------------------------------------------------
+# Phase 1 stability: claim/run/commit split (docs/ocr/failure-analysis.md
+# #1/#3 -- the previous single-transaction design held a DB transaction
+# open for the full inference duration, verified live at 545s for one
+# real 35-page document).
+# ----------------------------------------------------------------------
+def test_claim_is_idempotent_a_second_concurrent_claim_is_skipped_not_reprocessed(session_factory, seeded_version):
+    """Two claims on the same version while the first is still "processing"
+    (a live, unexpired lease) -- only one may proceed; the second must be a
+    clean skip, never a second full run.
+    """
+    from ocr_worker.repository import OcrRepository  # noqa: PLC0415 - test-local, matches file's existing style
+
+    with session_factory() as session:
+        repo = OcrRepository(session)
+        repo.ensure_queued_job(tenant_id=seeded_version["tenant_id"], version_id=seeded_version["version_id"], correlation_id=None)
+        first = repo.claim_job(version_id=seeded_version["version_id"], lease_seconds=1800)
+        session.commit()
+        assert first is not None
+        assert first.attempts == 1
+
+        second = repo.claim_job(version_id=seeded_version["version_id"], lease_seconds=1800)
+        session.commit()
+        assert second is None  # first claim's lease is still live -- must not also match
+
+    layout_doc = FakeLayoutDocument(page_count=1, native_text_by_page={})
+    pipeline, storage, ocr_engine = make_pipeline(session_factory, layout_doc=layout_doc, ocr_text="", ocr_confidence=0.99)
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    assert outcome.status == "skipped"
+    with session_factory() as session:
+        jobs = session.query(ProcessingJob).filter_by(reference_id=seeded_version["version_id"]).all()
+        assert len(jobs) == 1  # still the one job from the claim above, never a second row
+        assert jobs[0].attempts == 1  # process_version's own claim attempt never incremented it
+
+
+def test_claim_succeeds_once_a_previous_lease_has_expired(session_factory, seeded_version):
+    """A `processing` job whose lease already expired (e.g. the worker
+    that held it crashed) must be re-claimable -- this is what makes the
+    reaper's own requeue-then-reclaim loop work.
+    """
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+
+    from ocr_worker.repository import OcrRepository  # noqa: PLC0415
+
+    with session_factory() as session:
+        repo = OcrRepository(session)
+        repo.ensure_queued_job(tenant_id=seeded_version["tenant_id"], version_id=seeded_version["version_id"], correlation_id=None)
+        job = repo.claim_job(version_id=seeded_version["version_id"], lease_seconds=1800)
+        session.commit()
+        # Simulate a lease that already expired (a crashed worker's claim).
+        job.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        session.commit()
+
+        reclaimed = repo.claim_job(version_id=seeded_version["version_id"], lease_seconds=1800)
+        session.commit()
+        assert reclaimed is not None
+        assert reclaimed.job_id == job.job_id
+        assert reclaimed.attempts == 2  # second attempt
+
+
+def test_outbox_created_at_reflects_real_time_not_a_stale_transaction_snapshot(session_factory, seeded_version):
+    """Real bug found live (docs/ocr/failure-analysis.md #1/#3): with no
+    Python-side default, OutboxEvent.created_at fell through to the DB's
+    own DEFAULT now(), which Postgres freezes for a transaction's whole
+    lifetime -- a row inserted near the end of a long-held transaction got
+    a created_at matching the transaction's START. The model now sets it
+    explicitly via datetime.now(timezone.utc) in Python (models.py), same
+    as ProcessingJob.started_at/finished_at already do. This test proves
+    two rows inserted with a real time gap between them (even inside what
+    SQLite/this test treats as one session) get distinct, real timestamps
+    -- not proving the column merely has *a* value.
+    """
+    import time
+
+    from ocr_worker.models import OutboxEvent
+
+    with session_factory() as session:
+        first = OutboxEvent(
+            tenant_id=seeded_version["tenant_id"], aggregate_type="document_version",
+            aggregate_id=seeded_version["version_id"], event_type="document.version.ocr.completed", payload={},
+        )
+        session.add(first)
+        session.flush()
+        first_created_at = first.created_at
+
+        time.sleep(0.05)
+
+        second = OutboxEvent(
+            tenant_id=seeded_version["tenant_id"], aggregate_type="document_version",
+            aggregate_id=seeded_version["version_id"], event_type="document.version.ocr.completed", payload={},
+        )
+        session.add(second)
+        session.flush()
+        second_created_at = second.created_at
+
+    assert second_created_at > first_created_at

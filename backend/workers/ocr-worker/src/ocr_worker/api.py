@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .config import Settings
+from .errors import UnsupportedFormatError
 from .extraction import FieldSpec
-from .pipeline import OcrPipeline, UnsupportedMimeType
+from .pipeline import OcrPipeline
 from .repository import VersionNotEligible, VersionNotFound
 
 
@@ -119,7 +120,7 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (ValueError, UnsupportedMimeType) as exc:
+        except (ValueError, UnsupportedFormatError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
@@ -133,7 +134,7 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except VersionNotEligible as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (ValueError, UnsupportedMimeType) as exc:
+        except (ValueError, UnsupportedFormatError) as exc:
             # Covers the "ambiguous/degenerate rubber-band selection" alternate flow.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)

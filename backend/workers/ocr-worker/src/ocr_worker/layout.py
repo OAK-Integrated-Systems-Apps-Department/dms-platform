@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Protocol
 
+from .errors import CorruptFileError, EncryptedPdfError
+
 
 @dataclass
 class PageImage:
@@ -109,15 +111,58 @@ class DoclingLayoutDocument:
     def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter):
         import fitz  # PyMuPDF
 
-        self._suffix = Path(original_filename).suffix or _suffix_for_mime(mime_type)
+        # fitz/MuPDF (verified against the installed 1.28.2 build) cannot
+        # open WEBP or HEIC/HEIF directly -- a real FileDataError every
+        # time, confirmed live. Decode via Pillow first and re-encode as
+        # PNG, which both fitz and Docling read natively; everything below
+        # then treats the input uniformly regardless of original format.
+        if mime_type in _PIL_PRECONVERT_MIME_TYPES:
+            file_bytes = _decode_via_pil_to_png(file_bytes, mime_type)
+            self._suffix = ".png"
+        else:
+            self._suffix = Path(original_filename).suffix or _suffix_for_mime(mime_type)
+
         self._tmp = tempfile.NamedTemporaryFile(suffix=self._suffix, delete=False)
         self._tmp.write(file_bytes)
         self._tmp.flush()
 
-        # PyMuPDF opens PDF and single-page raster formats (PNG/JPEG/TIFF)
-        # through the same call, so render_page can treat every input
-        # uniformly as N pages regardless of source format.
-        self._doc = fitz.open(self._tmp.name)
+        # PyMuPDF opens PDF and single-page raster formats (PNG/JPEG/TIFF/
+        # BMP/GIF, verified live -- see _PIL_PRECONVERT_MIME_TYPES's own
+        # comment for the three that need PIL first) through the same
+        # call, so render_page can treat every input uniformly as N pages
+        # regardless of source format.
+        #
+        # fitz.TOOLS.mupdf_warnings() is reset first so the check right
+        # after open() reflects only THIS file's own open -- MuPDF's
+        # warning log is process-global, not per-call.
+        fitz.TOOLS.reset_mupdf_warnings()
+        try:
+            self._doc = fitz.open(self._tmp.name)
+        except Exception as exc:
+            # Real finding, live: three different corruption techniques
+            # (50% truncation, trailer-region byte-flipping, magic-header
+            # replacement) were all silently repaired/tolerated by
+            # MuPDF's own lenient parser -- only a much more severe
+            # truncation (no valid xref/trailer structure at all) ever
+            # raised an exception here. This is genuinely the "can't be
+            # opened at all" case CorruptFileError is reserved for; a
+            # file that opens but got repaired is `file_repaired` below,
+            # not this.
+            raise CorruptFileError(f"{original_filename}: {exc}") from exc
+
+        if self._doc.needs_pass:
+            # Never attempt to guess a password -- a definite, permanent
+            # failure for this pipeline, not a retryable one.
+            raise EncryptedPdfError(f"{original_filename} is password-protected")
+        if self._doc.page_count == 0:
+            raise CorruptFileError(f"{original_filename} has zero pages")
+
+        # True when MuPDF's own repair kicked in to open this file at all
+        # (e.g. the 50%-truncation case above) -- surfaced as
+        # flags.file_repaired/requires_review on an otherwise-successful
+        # result (pipeline.py's _finalize_success), never silently trusted
+        # like a genuinely intact file.
+        self.file_repaired = "repair" in fitz.TOOLS.mupdf_warnings().lower()
 
         # A plain raster image can never have a native text layer -- with
         # do_ocr=False (see LayoutEngine._converter's own comment),
@@ -396,6 +441,46 @@ _MAX_RENDER_DIMENSION_PX = 1600
 
 _DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+# New formats added this phase (docs/ocr/ocr-production-prompt.md section
+# 3.2, minus LibreOffice-dependent legacy formats -- see the Phase 1 plan's
+# Decision 3). BMP and GIF (first frame only -- verified live: fitz already
+# renders a multi-frame animated GIF as a single page) open directly via
+# fitz/MuPDF, same as the original PDF/TIFF/JPEG/PNG set.
+_BMP_MIME_TYPE = "image/bmp"
+_GIF_MIME_TYPE = "image/gif"
+_WEBP_MIME_TYPE = "image/webp"
+_HEIC_MIME_TYPE = "image/heic"
+_HEIF_MIME_TYPE = "image/heif"
+
+# Verified live against the installed fitz 1.28.2: WEBP and HEIC/HEIF both
+# raise a real FileDataError from fitz.open -- MuPDF doesn't decode either
+# format in this build. Both need the PIL-decode-then-PNG-re-encode
+# fallback (_decode_via_pil_to_png) instead of a direct fitz.open.
+_PIL_PRECONVERT_MIME_TYPES = {_WEBP_MIME_TYPE, _HEIC_MIME_TYPE, _HEIF_MIME_TYPE}
+
+
+def _decode_via_pil_to_png(file_bytes: bytes, mime_type: str) -> bytes:
+    """Decodes a format fitz/MuPDF can't open directly (see
+    _PIL_PRECONVERT_MIME_TYPES) via Pillow and re-encodes as PNG, which
+    both fitz and Docling read natively. `pillow-heif` registers itself as
+    a real PIL plugin for HEIC/HEIF -- once registered, a plain
+    `PIL.Image.open` handles all three formats in this set uniformly, no
+    format-specific decode call needed.
+    """
+    import io
+
+    from PIL import Image
+
+    if mime_type in (_HEIC_MIME_TYPE, _HEIF_MIME_TYPE):
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+
+    image = Image.open(io.BytesIO(file_bytes))
+    out = io.BytesIO()
+    image.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
 
 def _suffix_for_mime(mime_type: str) -> str:
     return {
@@ -403,6 +488,8 @@ def _suffix_for_mime(mime_type: str) -> str:
         "image/tiff": ".tiff",
         "image/jpeg": ".jpg",
         "image/png": ".png",
+        _BMP_MIME_TYPE: ".bmp",
+        _GIF_MIME_TYPE: ".gif",
         _DOCX_MIME_TYPE: ".docx",
     }.get(mime_type, ".bin")
 
@@ -461,4 +548,46 @@ class LayoutEngine:
         return DoclingLayoutDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
 
 
-SUPPORTED_MIME_TYPES = {"application/pdf", "image/tiff", "image/jpeg", "image/png", _DOCX_MIME_TYPE}
+# Real bug found live (docs/ocr/failure-analysis.md #4): the caller-
+# supplied Content-Type is trusted nowhere upstream either -- dms-core
+# stores the browser's own header verbatim, and a real HEIC upload through
+# the actual My Documents page showed Chrome itself sends
+# application/octet-stream, not image/heic (no registered browser MIME
+# type for .heic). Common aliases some other client (a mobile app, an
+# older camera) might send instead of the canonical type.
+_MIME_ALIASES = {
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png",
+    "image/tif": "image/tiff",
+    "image/x-tiff": "image/tiff",
+}
+
+
+def sniff_and_normalize_mime_type(file_bytes: bytes, declared_mime_type: str) -> str:
+    """Real magic-byte sniffing, verified live against every format this
+    module supports (PDF/PNG/JPEG/TIFF/BMP/GIF/HEIC and a real .docx --
+    `filetype` correctly identifies the latter as the specific Office Open
+    XML type, not a generic zip). Falls back to the alias-normalized
+    declared type only when sniffing can't identify the content at all.
+    """
+    import filetype
+
+    kind = filetype.guess(file_bytes)
+    if kind is not None:
+        return kind.mime
+    return _MIME_ALIASES.get(declared_mime_type, declared_mime_type)
+
+
+SUPPORTED_MIME_TYPES = {
+    "application/pdf",
+    "image/tiff",
+    "image/jpeg",
+    "image/png",
+    _BMP_MIME_TYPE,
+    _GIF_MIME_TYPE,
+    _WEBP_MIME_TYPE,
+    _HEIC_MIME_TYPE,
+    _HEIF_MIME_TYPE,
+    _DOCX_MIME_TYPE,
+}

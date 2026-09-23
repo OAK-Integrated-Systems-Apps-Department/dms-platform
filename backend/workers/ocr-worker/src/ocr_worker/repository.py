@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED
+from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED, ROUTING_KEY_OCR_REQUESTED
 from .extraction import RequestedFieldResult
 from .models import (
     Document,
@@ -98,20 +98,178 @@ class OcrRepository:
             for row in rows
         ]
 
-    def start_job(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None) -> ProcessingJob:
-        job = ProcessingJob(
-            tenant_id=tenant_id,
-            job_type="ocr",
-            reference_type="document_versions",
-            reference_id=version_id,
-            status="processing",
-            attempts=1,
-            started_at=datetime.now(timezone.utc),
-            correlation_id=correlation_id,
+    def ensure_queued_job(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None) -> None:
+        """Dev/smoke-test convenience only -- the real production path
+        (dms-core's upload/rerun) always inserts a queued row itself, in
+        the SAME transaction as the `document.version.ocr.requested`
+        outbox event (see DocumentServiceImpl.uploadDocument/prepareRerun).
+        A no-op if an active (queued/processing) row already exists for
+        this version -- relies on the same partial unique index
+        (V36__ocr_job_leasing.sql) `claim_job` itself depends on, so this
+        is always safe to call unconditionally before claiming, whether or
+        not a real caller already inserted the row.
+        """
+        existing = self.session.execute(
+            select(ProcessingJob.job_id).where(
+                ProcessingJob.reference_type == "document_versions",
+                ProcessingJob.reference_id == version_id,
+                ProcessingJob.job_type == "ocr",
+                ProcessingJob.status.in_(["queued", "processing"]),
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return
+        self.session.add(
+            ProcessingJob(
+                tenant_id=tenant_id,
+                job_type="ocr",
+                reference_type="document_versions",
+                reference_id=version_id,
+                status="queued",
+                attempts=0,
+                correlation_id=correlation_id,
+            )
         )
-        self.session.add(job)
         self.session.flush()
+
+    def claim_job(self, *, version_id: uuid.UUID, lease_seconds: int) -> ProcessingJob | None:
+        """Compare-and-swap claim: atomically transitions the version's one
+        active ocr job (a 'queued' row, or a 'processing' row whose lease
+        has expired) to 'processing' with a fresh lease, incrementing
+        attempts. Returns None if no matching row exists -- another
+        worker/a still-live lease already owns it, or (should never happen
+        after ensure_queued_job) no active row exists at all -- the caller
+        must ack-and-skip, not treat this as a failure. The same shape is
+        reused by the reaper's own requeue path (repository.py's
+        `reap_requeue`), just against an already-expired lease instead of
+        a fresh 'queued' row.
+        """
+        now = datetime.now(timezone.utc)
+        lease_expires_at = now + timedelta(seconds=lease_seconds)
+        stmt = (
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.reference_type == "document_versions",
+                ProcessingJob.reference_id == version_id,
+                ProcessingJob.job_type == "ocr",
+                ProcessingJob.status.in_(["queued", "processing"]),
+                (ProcessingJob.status != "processing") | (ProcessingJob.lease_expires_at < now),
+            )
+            .values(status="processing", attempts=ProcessingJob.attempts + 1, started_at=now, lease_expires_at=lease_expires_at)
+            .returning(ProcessingJob)
+            # Skip SQLAlchemy's in-memory session-sync re-evaluation of the
+            # WHERE clause against already-loaded ProcessingJob objects --
+            # not needed (RETURNING already gives us the authoritative
+            # updated row) and real bug found live: that re-evaluation is a
+            # Python-level comparison, which crashed on SQLite round-
+            # tripping lease_expires_at as a naive datetime against this
+            # method's own timezone-aware `now`.
+            .execution_options(synchronize_session=False)
+        )
+        job = self.session.execute(stmt).scalar_one_or_none()
+        self.session.flush()
+        if job is not None:
+            # With synchronize_session=False (see above), a job already
+            # loaded in this session's identity map (e.g. the reaper's own
+            # find_expired_leases result being reclaimed) is returned as
+            # that SAME stale Python object rather than one reflecting the
+            # just-written values -- refresh it explicitly so callers never
+            # see a pre-update `attempts`/`status`/`lease_expires_at`.
+            self.session.refresh(job)
         return job
+
+    def get_job(self, job_id: uuid.UUID) -> ProcessingJob:
+        job = self.session.get(ProcessingJob, job_id)
+        if job is None:
+            raise VersionNotFound(f"processing_jobs row {job_id}")
+        return job
+
+    def find_expired_leases(self, *, limit: int = 50) -> list[ProcessingJob]:
+        """Reaper scan (repository.py's own `ix_processing_jobs_lease_reaper`
+        index, V36) -- every 'processing' row whose lease has expired
+        without a matching completion. A crashed/hung worker never comes
+        back to move these out of 'processing' on its own.
+        """
+        now = datetime.now(timezone.utc)
+        rows = (
+            self.session.execute(
+                select(ProcessingJob)
+                .where(ProcessingJob.job_type == "ocr", ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)
+
+    def reap_requeue(self, *, job_id: uuid.UUID, backoff_seconds: int, tenant_id: uuid.UUID, version_id: uuid.UUID, event_payload: dict) -> bool:
+        """CAS: requeues one expired-lease job for retry, and -- in the
+        SAME transaction -- inserts a fresh `document.version.ocr.requested`
+        outbox event (never publishes to RabbitMQ directly; matches
+        ocr-worker's own existing, already-proven outbox-write pattern for
+        `.completed`/`.failed`). Guarded by the identical `status='processing'
+        AND lease_expires_at < now()` predicate `claim_job` uses, so this
+        is safe under multiple concurrent ocr-worker instances each running
+        their own reaper loop -- at most one wins per row, with no
+        additional locking primitive needed. Returns False if another
+        reaper (or a worker that came back just in time) already moved this
+        row, so the caller knows not to also emit the event.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(ProcessingJob)
+            .where(ProcessingJob.job_id == job_id, ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+            .values(status="queued", next_attempt_at=now + timedelta(seconds=backoff_seconds), lease_expires_at=None)
+            .execution_options(synchronize_session=False)
+        )
+        result = self.session.execute(stmt)
+        if result.rowcount != 1:
+            self.session.flush()
+            return False
+        self.session.add(
+            OutboxEvent(
+                tenant_id=tenant_id,
+                aggregate_type="document_version",
+                aggregate_id=version_id,
+                event_type=ROUTING_KEY_OCR_REQUESTED,
+                payload=event_payload,
+            )
+        )
+        self.session.flush()
+        return True
+
+    def reap_dead_letter(self, *, job_id: uuid.UUID, version: DocumentVersion, error: str, event_payload: dict) -> bool:
+        """CAS: moves one expired-lease job to 'dead_letter' after it has
+        exhausted max_delivery_attempts, sets document_versions.ocr_status
+        ='failed', and -- in the SAME transaction -- inserts a
+        `document.version.ocr.failed` outbox event. This is what actually
+        satisfies "zero stuck processing versions": nothing else would ever
+        move this version out of 'processing' if the worker that held the
+        lease crashed (e.g. an OOM kill) without ever coming back.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(ProcessingJob)
+            .where(ProcessingJob.job_id == job_id, ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+            .values(status="dead_letter", last_error=error[:4000], finished_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        result = self.session.execute(stmt)
+        if result.rowcount != 1:
+            self.session.flush()
+            return False
+        version.ocr_status = "failed"
+        self.session.add(
+            OutboxEvent(
+                tenant_id=version.tenant_id,
+                aggregate_type="document_version",
+                aggregate_id=version.version_id,
+                event_type=ROUTING_KEY_OCR_FAILED,
+                payload=event_payload,
+            )
+        )
+        self.session.flush()
+        return True
 
     def complete_success(
         self,

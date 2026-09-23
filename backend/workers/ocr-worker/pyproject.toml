@@ -27,6 +27,27 @@ dependencies = [
     # directly, pure-Python, no model download -- no existing dependency
     # here does language detection at all.
     "langdetect>=1.0.9",
+    # Phase 1 stability (docs/ocr/failure-analysis.md #4): real magic-byte
+    # MIME sniffing, replacing trust in the caller-supplied Content-Type.
+    # Was already present transitively (pulled in by another dependency)
+    # but never declared directly -- pinning it explicitly rather than
+    # relying on that accident.
+    "filetype>=1.2",
+    # New format support this phase (Decision 3): HEIC/HEIF has no
+    # registered MIME type in most browsers (verified live -- Chrome
+    # itself sends application/octet-stream for a real .heic upload) and
+    # fitz/MuPDF can't decode it directly either (verified live,
+    # FileDataError) -- pillow-heif registers itself as a real PIL plugin
+    # so a plain PIL.Image.open handles it (layout.py's
+    # _decode_via_pil_to_png).
+    "pillow-heif>=0.18",
+    # Phase 1 stability (B.2): a plain concurrent.futures.ProcessPoolExecutor
+    # cannot kill a hung task -- future.result(timeout=...) raises
+    # client-side but the underlying process keeps running forever,
+    # permanently wasting that worker slot (verified against the library's
+    # own documented behavior). pebble.ProcessPool genuinely terminates and
+    # auto-respawns the worker process on a real per-task timeout.
+    "pebble>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +56,10 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-mock>=3.14",
     "httpx>=0.27",
+    # Test-fixture construction only (encrypted/corrupt PDF test fixtures,
+    # docs/ocr/failure-analysis.md's own repro batch) -- never imported by
+    # production code.
+    "pypdf>=5.0",
 ]
 
 [build-system]

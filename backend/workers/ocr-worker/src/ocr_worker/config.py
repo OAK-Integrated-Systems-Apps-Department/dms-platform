@@ -6,11 +6,13 @@ DMS_EVENTS_EXCHANGE = "oak.dms.events"
 DMS_EVENTS_DLX = "oak.dms.events.dlx"
 
 ROUTING_KEY_SCAN_COMPLETED = "document.version.scan.completed"
+ROUTING_KEY_OCR_REQUESTED = "document.version.ocr.requested"
 ROUTING_KEY_OCR_COMPLETED = "document.version.ocr.completed"
 ROUTING_KEY_OCR_FAILED = "document.version.ocr.failed"
 ROUTING_KEY_OCR_DEAD_LETTER = "document.version.ocr.dead-letter"
 
 QUEUE_SCAN_COMPLETED = "ocr-worker.q.scan-completed"
+QUEUE_OCR_REQUESTED = "ocr-worker.q.ocr-requested"
 QUEUE_DEAD_LETTER = "ocr-worker.q.dead-letter"
 
 
@@ -30,6 +32,43 @@ class Settings(BaseSettings):
     prefetch_count: int = 4
     worker_pool_size: int = 4
     max_delivery_attempts: int = 5
+
+    # -- Process pool (Phase 1 stability -- see docs/ocr/failure-analysis.md
+    # #2: one shared PaddleOCR/Docling instance across FastAPI's threadpool
+    # AND the consumer's ThreadPoolExecutor caused real, measured contention
+    # under concurrency (2.7x slowdown at just 4 concurrent requests)) --
+    ocr_worker_processes: int = 2
+    # Bounds memory growth from any per-call native-library leak over the
+    # container's lifetime; each pool worker is recycled after this many
+    # documents.
+    ocr_worker_max_tasks_per_process: int = 50
+    # Real problem, real fix (see docs/ocr/failure-analysis.md #2/B.2 in the
+    # implementation plan): PaddleX defaults to PADDLE_PDX_CPU_NUM_THREADS=10
+    # per inference call if unset -- on a 4-core container, every concurrent
+    # OCR call already wants 10 threads for itself. threads_per_process =
+    # cpu_count // ocr_worker_processes is derived at startup (ocr_engine.py/
+    # main.py), not configured directly here.
+
+    # -- Per-document timeout, scaled by page count (see
+    # docs/ocr/failure-analysis.md #1: a real 35-page scanned PDF measured
+    # 15.6s/page; a single fixed timeout is wrong for both a 1-page and a
+    # 50-page document). Defaults include ~60% headroom over that measured
+    # rate for slower hardware/contention.
+    ocr_timeout_base_s: int = 60
+    ocr_timeout_per_page_s: int = 25
+
+    # Real measured rate (15.6s/page) makes the production-prompt spec's own
+    # OCR_MAX_PAGES=200 default ~52 minutes of one worker process monopolized
+    # by a single document -- with only ocr_worker_processes=2 by default,
+    # that's half the pool gone for the better part of an hour on one file.
+    # 50 pages is ~13 minutes worst-case and comfortably covers realistic
+    # single-document uploads; still operator-adjustable per deployment.
+    ocr_max_pages: int = 50
+    ocr_max_file_size_bytes: int = 100 * 1024 * 1024
+
+    # -- Job leasing / reaper (see V36__ocr_job_leasing.sql) --
+    ocr_lease_duration_s: int = 1800
+    ocr_reaper_interval_s: int = 30
 
     # -- MinIO / object storage --
     minio_endpoint: str = "localhost:9000"

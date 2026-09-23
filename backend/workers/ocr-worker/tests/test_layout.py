@@ -175,3 +175,158 @@ def test_docling_text_document_has_no_lines_or_tables_or_rasterization():
     assert doc.tables_for_page(1, dpi=200) is None
     with pytest.raises(NotImplementedError):
         doc.render_page(0, dpi=200)
+
+
+# --- Phase 1 stability: encrypted/corrupt PDF handling, FILE_REPAIRED
+# detection, new format support (docs/ocr/failure-analysis.md #4/#9) ---
+
+from ocr_worker.errors import CorruptFileError, EncryptedPdfError  # noqa: E402
+
+
+def _pdf_bytes_full(
+    width_pt: float = 612,
+    height_pt: float = 792,
+    # Long enough that a 50% truncation still leaves recoverable structure
+    # for MuPDF's repair to work with -- verified empirically: the same
+    # truncation on a much shorter ("Hello") document fails to open at all
+    # instead of repairing, since there's too little redundant structure
+    # left. A real invoice-sized PDF (docs/ocr/failure-analysis.md #9's
+    # live finding) behaves like this longer text, not the short one.
+    text: str = "Hello World, this is a test document with enough content to survive truncation and still be repairable by MuPDF's own internal parser logic.",
+) -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=width_pt, height=height_pt)
+    page.insert_text((50, 50), text)
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    return buf.getvalue()
+
+
+def test_password_protected_pdf_raises_encrypted_pdf_error():
+    pypdf = pytest.importorskip("pypdf")
+    reader = pypdf.PdfReader(io.BytesIO(_pdf_bytes_full()))
+    writer = pypdf.PdfWriter()
+    writer.append(reader)
+    writer.encrypt(user_password="test123", algorithm="AES-256")
+    out = io.BytesIO()
+    writer.write(out)
+
+    with pytest.raises(EncryptedPdfError):
+        DoclingLayoutDocument(out.getvalue(), "application/pdf", "secret.pdf", _FakeDoclingConverter())
+
+
+def test_severely_truncated_pdf_raises_corrupt_file_error():
+    # Real finding, live (docs/ocr/failure-analysis.md #9): only a fragment
+    # this small (no valid xref/trailer at all) actually fails to open --
+    # 50% truncation and even magic-header replacement were both silently
+    # repaired/tolerated by MuPDF's own lenient parser (see the
+    # file_repaired tests below).
+    tiny_fragment = _pdf_bytes_full()[:200]
+    with pytest.raises(CorruptFileError):
+        DoclingLayoutDocument(tiny_fragment, "application/pdf", "corrupt.pdf", _FakeDoclingConverter())
+
+
+def test_truncated_but_repairable_pdf_sets_file_repaired_flag():
+    # Real finding, live: a PDF truncated to 50% of its bytes still opens
+    # (MuPDF repairs it) and, in this case, still has enough content for
+    # Docling to convert successfully -- flags.file_repaired must be set
+    # so the result is reviewed rather than silently trusted, even though
+    # nothing actually raised.
+    half = _pdf_bytes_full()
+    half = half[: len(half) // 2]
+    doc = DoclingLayoutDocument(half, "application/pdf", "repaired.pdf", _FakeDoclingConverter())
+    assert doc.file_repaired is True
+
+
+def test_clean_pdf_never_sets_file_repaired_flag():
+    doc = DoclingLayoutDocument(_pdf_bytes_full(), "application/pdf", "clean.pdf", _FakeDoclingConverter())
+    assert doc.file_repaired is False
+
+
+def test_zero_page_pdf_raises_corrupt_file_error():
+    # fitz's own .save() refuses to write a zero-page PDF at all ("cannot
+    # save with zero pages") -- a minimal hand-crafted one (empty /Kids)
+    # is the only way to construct a real file exercising this guard.
+    raw = (
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+        b"trailer\n<< /Size 3 /Root 1 0 R >>\n"
+        b"%%EOF"
+    )
+
+    with pytest.raises(CorruptFileError):
+        DoclingLayoutDocument(raw, "application/pdf", "empty.pdf", _FakeDoclingConverter())
+
+
+def test_bmp_opens_directly_no_pil_preconversion_needed():
+    image = PIL_Image.new("RGB", (100, 100), color=(255, 255, 255))
+    buf = io.BytesIO()
+    image.save(buf, format="BMP")
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "image/bmp", "photo.bmp", _ExplodingDoclingConverter())
+    assert doc.page_count() == 1
+
+
+def test_gif_opens_directly_and_multiframe_collapses_to_one_page():
+    frames = [PIL_Image.new("RGB", (50, 50), color=c) for c in ("red", "blue", "green")]
+    buf = io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:])
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "image/gif", "anim.gif", _ExplodingDoclingConverter())
+    assert doc.page_count() == 1
+
+
+def test_webp_is_decoded_via_pil_preconversion():
+    # Verified live: fitz/MuPDF (installed 1.28.2) raises a real
+    # FileDataError trying to open a WEBP directly -- this must go through
+    # _decode_via_pil_to_png first, not straight to fitz.open.
+    image = PIL_Image.new("RGB", (100, 100), color=(255, 255, 255))
+    buf = io.BytesIO()
+    image.save(buf, format="WEBP")
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "image/webp", "photo.webp", _ExplodingDoclingConverter())
+    assert doc.page_count() == 1
+
+
+def test_heic_is_decoded_via_pil_preconversion():
+    pillow_heif = pytest.importorskip("pillow_heif")
+    image = PIL_Image.new("RGB", (100, 100), color=(255, 255, 255))
+    heif_file = pillow_heif.from_pillow(image)
+    buf = io.BytesIO()
+    heif_file.save(buf, format="HEIF")
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "image/heic", "photo.heic", _ExplodingDoclingConverter())
+    assert doc.page_count() == 1
+
+
+# --- sniff_and_normalize_mime_type (docs/ocr/failure-analysis.md #4) ---
+
+from ocr_worker.layout import sniff_and_normalize_mime_type  # noqa: E402
+
+
+def test_sniff_recovers_real_type_when_declared_type_is_generic_octet_stream():
+    # Real finding, live: a real HEIC upload through the actual My
+    # Documents page showed Chrome itself sends application/octet-stream,
+    # not image/heic (no registered browser MIME type for .heic).
+    pillow_heif = pytest.importorskip("pillow_heif")
+    image = PIL_Image.new("RGB", (100, 100), color=(255, 255, 255))
+    heif_file = pillow_heif.from_pillow(image)
+    buf = io.BytesIO()
+    heif_file.save(buf, format="HEIF")
+
+    result = sniff_and_normalize_mime_type(buf.getvalue(), "application/octet-stream")
+    assert result == "image/heic"
+
+
+def test_sniff_falls_back_to_alias_normalized_declared_type_when_unsniffable():
+    # Garbage bytes filetype can't identify at all -- must fall back to
+    # the (alias-normalized) declared type rather than raise or return None.
+    result = sniff_and_normalize_mime_type(b"not a real file", "image/jpg")
+    assert result == "image/jpeg"
+
+
+def test_sniff_identifies_real_pdf_bytes_correctly():
+    result = sniff_and_normalize_mime_type(_pdf_bytes_full(), "application/octet-stream")
+    assert result == "application/pdf"

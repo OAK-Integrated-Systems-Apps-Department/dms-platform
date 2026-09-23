@@ -9,9 +9,9 @@ SQLAlchemy never does `SELECT *` / `INSERT` of undeclared columns.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, JSON, Uuid
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, JSON, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # sqlalchemy.Uuid (dialect-agnostic, added in 2.0) rather than
@@ -71,9 +71,20 @@ class ProcessingJob(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued")
     attempts: Mapped[int] = mapped_column(default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # V36__ocr_job_leasing.sql -- see repository.py's claim_job/reaper
+    # queries. Explicit DateTime(timezone=True): real bug found live in
+    # this session's own tests -- without it, SQLite round-trips a naive
+    # datetime, and comparing that against a Python-side
+    # datetime.now(timezone.utc) in a bulk UPDATE's WHERE clause raises
+    # "can't compare offset-naive and offset-aware datetimes" during
+    # SQLAlchemy's session-sync evaluation. Postgres's TIMESTAMPTZ (the
+    # real migration's column type) is unaffected either way, but this
+    # keeps both dialects' round-trip behavior consistent and explicit.
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OcrOutput(Base):
@@ -146,6 +157,22 @@ class OutboxEvent(Base):
     aggregate_type: Mapped[str] = mapped_column(String(100))
     aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     event_type: Mapped[str] = mapped_column(String(150))
+    # Real bug found live (docs/ocr/failure-analysis.md #1/#3): with no
+    # Python-side default, this column fell through entirely to the DB's
+    # own `DEFAULT now()` -- and Postgres's now()/CURRENT_TIMESTAMP is
+    # frozen for a transaction's whole lifetime, so a row inserted near the
+    # end of a long-held transaction (e.g. the old single-transaction
+    # process_version, before the claim/run/commit split) got a created_at
+    # matching the transaction's START, not its own real insert time.
+    # Verified live: a 545s real job's outbox row showed created_at
+    # matching processing_jobs.started_at, off by over 9 minutes from when
+    # the row was actually written. The claim/run/commit split (pipeline.py)
+    # is the primary fix (the commit transaction is short), but this
+    # explicit application-level default removes the DB-transaction-
+    # semantics footgun permanently, matching the pattern
+    # ProcessingJob.started_at/finished_at already use (repository.py sets
+    # those with datetime.now(timezone.utc) in Python, not SQL now()).
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     payload: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(default=0)

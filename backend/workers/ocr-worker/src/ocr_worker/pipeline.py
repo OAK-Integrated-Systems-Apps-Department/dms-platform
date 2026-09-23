@@ -9,6 +9,13 @@ from sqlalchemy.orm import sessionmaker, Session
 from .confidence import ConfidenceEvaluator
 from .config import Settings
 from .db import session_scope
+from .errors import (
+    EngineError,
+    FileTooLargeError,
+    OcrEngineError,
+    TooManyPagesError,
+    UnsupportedFormatError,
+)
 from .events import build_ocr_completed_payload, build_ocr_failed_payload
 from .extraction import (
     ExtractedField,
@@ -20,17 +27,13 @@ from .extraction import (
     fields_to_dict,
     requested_fields_to_output_dict,
 )
-from .layout import LayoutEngine, SUPPORTED_MIME_TYPES
+from .layout import LayoutEngine, SUPPORTED_MIME_TYPES, sniff_and_normalize_mime_type
 from .ocr_engine import OcrEngine
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
 from .storage import ObjectStorage, ocr_output_key
 from .zones import ZoneRegion, validate_normalized_box
 
 logger = logging.getLogger(__name__)
-
-
-class UnsupportedMimeType(Exception):
-    pass
 
 
 def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict], list[dict]]:
@@ -126,7 +129,7 @@ class PageResult:
 
 @dataclass
 class ProcessingOutcome:
-    status: str  # "completed" | "failed"
+    status: str  # "completed" | "failed" | "skipped"
     version_id: uuid.UUID
     output: dict | None = None  # the exact JSON also stored at extracted_text_ref -- see "Output contract"
     error: str | None = None
@@ -171,66 +174,147 @@ class OcrPipeline:
         the RabbitMQ consumer passes) preserves the original behavior: the
         legacy zone-template + generic invoice-regex fallback over
         everything, unchanged.
+
+        Three short, separate transactions (Phase 1 stability -- see
+        docs/ocr/failure-analysis.md #1/#3: the previous single-transaction
+        design held a Postgres connection/transaction open for the FULL
+        inference duration -- verified live at 545s for one real 35-page
+        document -- racing dms-core's own much shorter HTTP timeout and,
+        as a direct consequence, freezing outbox_events.created_at at the
+        transaction's start since Postgres's now() is fixed for a
+        transaction's whole lifetime):
+
+        1. CLAIM -- a compare-and-swap UPDATE (OcrRepository.claim_job), no
+           inference. Returns "skipped" if another worker/a still-live
+           lease already owns this version's job.
+        2. RUN -- no open transaction at all. MinIO fetch, Docling
+           conversion, PaddleOCR inference (`_run_inference`).
+        3. COMMIT -- a fresh transaction (today's `_finalize_success`/
+           `_finalize_failure`), re-fetching the job/version rows since the
+           ones from phase 1 belong to a session that's already closed.
         """
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
             ctx = repo.get_version_for_processing(version_id)  # raises VersionNotFound/VersionNotEligible
-            job = repo.start_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            # Dev/smoke-test convenience (POST /ocr/process/{id} without a
+            # pre-existing queued row) -- a no-op for the real production
+            # path, where dms-core already inserted the row in the same
+            # transaction as the .requested outbox event.
+            repo.ensure_queued_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            job = repo.claim_job(version_id=version_id, lease_seconds=self._settings.ocr_lease_duration_s)
+            if job is None:
+                logger.info("Version %s: no claimable job (already owned by a live lease); ack-and-skip", version_id)
+                return ProcessingOutcome(status="skipped", version_id=version_id)
+            job_id = job.job_id
+            mime_type = ctx.version.mime_type
+            storage_object_key = ctx.version.storage_object_key
+            original_filename = ctx.version.original_filename
+            zone_regions = repo.get_zone_regions(ctx.document_type_id)
 
-            try:
-                if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
-                    raise UnsupportedMimeType(ctx.version.mime_type)
+        try:
+            pages, fields, field_results, file_repaired = self._run_inference(
+                mime_type=mime_type,
+                storage_object_key=storage_object_key,
+                original_filename=original_filename,
+                zone_regions=zone_regions,
+                requested_fields=requested_fields,
+            )
+            result: tuple | Exception = (pages, fields, field_results, file_repaired)
+        except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
+            result = exc
 
-                file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
-                zone_regions = repo.get_zone_regions(ctx.document_type_id)
+        with session_scope(self._session_factory) as session:
+            repo = OcrRepository(session)
+            job = repo.get_job(job_id)
+            ctx = repo.get_version_for_processing(version_id)
+            if isinstance(result, Exception):
+                return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=result, correlation_id=correlation_id)
+            pages, fields, field_results, file_repaired = result
+            return self._finalize_success(
+                repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, field_results=field_results,
+                correlation_id=correlation_id, file_repaired=file_repaired,
+            )
 
-                with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
-                    if zone_regions:
-                        pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions)
-                        zone_derived_fields = extracted_fields
-                        # No real per-line position data for a zone-cropped
-                        # run (each region's whole crop already IS the
-                        # value) -- any requested field NOT covered by a
-                        # zone falls back to flattened-text matching only.
-                        # Currently moot in practice: no document type in
-                        # this app has zone rows configured yet (see
-                        # document_type_ocr_zones' own "nothing writes to
-                        # it outside test fixtures" note).
-                        lines_by_page: dict[int, list[LineBlock]] = {}
-                    else:
-                        # No zone/field template configured for this document
-                        # type -- extracted_fields here is the LEGACY generic
-                        # regex fallback (invoice_number/total_amount/...),
-                        # not a real zone match. It must never be fed to
-                        # extract_requested_fields as a "zone template hit"
-                        # (priority 1) -- that would let an unrelated regex
-                        # guess bypass the new dispatch's own, more
-                        # field-appropriate strategy for a requested field.
-                        pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc)
-                        zone_derived_fields = []
+    def _run_inference(
+        self,
+        *,
+        mime_type: str,
+        storage_object_key: str,
+        original_filename: str,
+        zone_regions: list,
+        requested_fields: list[FieldSpec] | None,
+    ) -> tuple[list[PageResult], dict, list | None, bool]:
+        """Phase 2 of process_version -- no DB transaction open. Raises a
+        classified `errors.OcrEngineError` subclass on every recognized
+        failure (see errors.py); anything else propagates as-is (still
+        caught by process_version's own broad except and recorded via
+        `errors.EngineError` as a catch-all, never a raw, unclassified
+        `str(exc)` -- see docs/ocr/failure-analysis.md #9's live finding
+        that a real encrypted PDF and a real corrupt PDF both surfaced
+        opaque internal exception text with no error code at all).
+        """
+        file_bytes = self._storage.get_object_bytes(storage_object_key)
+        if len(file_bytes) > self._settings.ocr_max_file_size_bytes:
+            raise FileTooLargeError(
+                f"{len(file_bytes)} bytes exceeds ocr_max_file_size_bytes={self._settings.ocr_max_file_size_bytes}"
+            )
 
-                field_results = None
-                if requested_fields is not None:
-                    full_text = "\n\n".join(p.text for p in pages)
-                    zone_fields_by_key = {f.field: f for f in zone_derived_fields}
-                    field_results = extract_requested_fields(
-                        specs=requested_fields,
-                        text=full_text,
-                        zone_fields=zone_fields_by_key,
-                        lines_by_page=lines_by_page,
-                        field_confidence_threshold=self._settings.field_low_confidence_threshold,
-                    )
-                    fields = requested_fields_to_output_dict(field_results)
-                else:
-                    fields = fields_to_dict(extracted_fields)
+        # Real magic-byte sniffing, not the caller-supplied mime_type --
+        # see docs/ocr/failure-analysis.md #4: dms-core stores the
+        # browser's own Content-Type verbatim, and a real HEIC upload
+        # showed Chrome itself sends application/octet-stream, not
+        # image/heic. Sniffing the actual bytes recovers the real type
+        # regardless of what the declared one said.
+        mime_type = sniff_and_normalize_mime_type(file_bytes, mime_type)
+        if mime_type not in SUPPORTED_MIME_TYPES:
+            raise UnsupportedFormatError(mime_type)
 
-                return self._finalize_success(
-                    repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, field_results=field_results, correlation_id=correlation_id
+        with self._layout_engine.load(file_bytes, mime_type, original_filename) as layout_doc:
+            if layout_doc.page_count() > self._settings.ocr_max_pages:
+                raise TooManyPagesError(
+                    f"{layout_doc.page_count()} pages exceeds ocr_max_pages={self._settings.ocr_max_pages}"
                 )
-            except (VersionNotFound, VersionNotEligible):
-                raise
-            except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
-                return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=exc, correlation_id=correlation_id)
+
+            if zone_regions:
+                pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions)
+                zone_derived_fields = extracted_fields
+                # No real per-line position data for a zone-cropped run
+                # (each region's whole crop already IS the value) -- any
+                # requested field NOT covered by a zone falls back to
+                # flattened-text matching only. Currently moot in
+                # practice: no document type in this app has zone rows
+                # configured yet (see document_type_ocr_zones' own
+                # "nothing writes to it outside test fixtures" note).
+                lines_by_page: dict[int, list[LineBlock]] = {}
+            else:
+                # No zone/field template configured for this document
+                # type -- extracted_fields here is the LEGACY generic
+                # regex fallback (invoice_number/total_amount/...), not a
+                # real zone match. It must never be fed to
+                # extract_requested_fields as a "zone template hit"
+                # (priority 1) -- that would let an unrelated regex guess
+                # bypass the new dispatch's own, more field-appropriate
+                # strategy for a requested field.
+                pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc)
+                zone_derived_fields = []
+            file_repaired = getattr(layout_doc, "file_repaired", False)
+
+        field_results = None
+        if requested_fields is not None:
+            full_text = "\n\n".join(p.text for p in pages)
+            zone_fields_by_key = {f.field: f for f in zone_derived_fields}
+            field_results = extract_requested_fields(
+                specs=requested_fields,
+                text=full_text,
+                zone_fields=zone_fields_by_key,
+                lines_by_page=lines_by_page,
+                field_confidence_threshold=self._settings.field_low_confidence_threshold,
+            )
+            fields = requested_fields_to_output_dict(field_results)
+        else:
+            fields = fields_to_dict(extracted_fields)
+
+        return pages, fields, field_results, file_repaired
 
     def _run_full_document(
         self, layout_doc
@@ -328,7 +412,10 @@ class OcrPipeline:
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
             ctx = repo.get_version_for_processing(version_id)
-            job = repo.start_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            repo.ensure_queued_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            job = repo.claim_job(version_id=version_id, lease_seconds=self._settings.ocr_lease_duration_s)
+            if job is None:
+                raise ValueError(f"version {version_id} already has an OCR job in flight")
 
             try:
                 all_regions = repo.get_zone_regions(ctx.document_type_id)
@@ -339,7 +426,7 @@ class OcrPipeline:
                     raise ValueError(f"none of {zone_names} match the configured zones for {ctx.document_type_name!r}")
 
                 if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
-                    raise UnsupportedMimeType(ctx.version.mime_type)
+                    raise UnsupportedFormatError(ctx.version.mime_type)
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
                 with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
@@ -365,11 +452,14 @@ class OcrPipeline:
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
             ctx = repo.get_version_for_processing(version_id)
-            job = repo.start_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            repo.ensure_queued_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
+            job = repo.claim_job(version_id=version_id, lease_seconds=self._settings.ocr_lease_duration_s)
+            if job is None:
+                raise ValueError(f"version {version_id} already has an OCR job in flight")
 
             try:
                 if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
-                    raise UnsupportedMimeType(ctx.version.mime_type)
+                    raise UnsupportedFormatError(ctx.version.mime_type)
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
                 with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
@@ -413,10 +503,21 @@ class OcrPipeline:
         fields: dict,
         correlation_id: uuid.UUID | None,
         field_results: list | None = None,
+        file_repaired: bool = False,
     ) -> ProcessingOutcome:
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         decision = self._confidence.evaluate(overall_confidence)
-        flags = {"low_confidence": decision.flagged, "requires_review": decision.flagged}
+        # file_repaired (docs/ocr/failure-analysis.md #9's live finding:
+        # PyMuPDF silently repairs far more PDF corruption than expected,
+        # e.g. 50% truncation, and still produces a real completed result)
+        # forces requires_review even when confidence alone wouldn't --
+        # the extracted content may be genuinely correct, but it came from
+        # a file that wasn't intact, so a human should double-check it
+        # rather than it being silently trusted like any other completed
+        # result.
+        flags = {"low_confidence": decision.flagged, "requires_review": decision.flagged or file_repaired}
+        if file_repaired:
+            flags["file_repaired"] = True
 
         output_id = uuid.uuid4()
         object_key = ocr_output_key(ctx.version.tenant_id, ctx.version.version_id, output_id)
@@ -457,12 +558,21 @@ class OcrPipeline:
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
         logger.exception("OCR processing failed for version %s", ctx.version.version_id)
+        # Classified error code (errors.py) rather than a raw, unclassified
+        # str(exc) -- see docs/ocr/failure-analysis.md #9's live finding: a
+        # real encrypted PDF and a real corrupt PDF both surfaced opaque
+        # internal exception text (Docling's own parser error; PyMuPDF's
+        # own FileDataError) with no code a caller could act on. Anything
+        # not already one of the specific OcrEngineError subclasses is
+        # wrapped as the generic ENGINE_ERROR catch-all -- still classified,
+        # never raw.
+        error_message = exc.formatted() if isinstance(exc, OcrEngineError) else EngineError(str(exc)).formatted()
         payload = build_ocr_failed_payload(
             tenant_id=ctx.version.tenant_id,
             document_id=ctx.document.document_id,
             version_id=ctx.version.version_id,
-            error=str(exc),
+            error=error_message,
             correlation_id=correlation_id,
         )
-        repo.complete_failure(job=job, version=ctx.version, error=str(exc), event_payload=payload)
-        return ProcessingOutcome(status="failed", version_id=ctx.version.version_id, error=str(exc))
+        repo.complete_failure(job=job, version=ctx.version, error=error_message, event_payload=payload)
+        return ProcessingOutcome(status="failed", version_id=ctx.version.version_id, error=error_message)
