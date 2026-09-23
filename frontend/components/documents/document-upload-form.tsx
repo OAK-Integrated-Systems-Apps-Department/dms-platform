@@ -76,6 +76,12 @@ export function DocumentUploadForm() {
   const [savingFields, setSavingFields] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [version, setVersion] = useState<DocumentVersionResponse | null>(null)
+  // Bumped on every reset so the native <input type="file"> (whose
+  // displayed filename can't be cleared just by resetting file to null --
+  // the browser keeps showing it) remounts empty. Real bug found live: with
+  // no way back to a blank form after one upload finished, the only way to
+  // upload a second document was a full page reload.
+  const [uploadKey, setUploadKey] = useState(0)
 
   // Field keys the user has hand-edited since the last OCR result landed --
   // never silently overwritten by a later poll tick or re-run result (only
@@ -222,7 +228,20 @@ export function DocumentUploadForm() {
     })
   }
 
-  const busy = uploading || phase === "processing"
+  /** Back to a blank form so a second document can be uploaded without a
+   * page reload. The prior document's own OCR/status keeps running and
+   * stays saved server-side -- this only resets what's shown here. */
+  function handleReset() {
+    setFile(null)
+    setVersion(null)
+    setUploadError(null)
+    setFieldValues({})
+    setSelectedFields(new Set())
+    appliedResultKey.current = null
+    userTouchedFields.current = new Set()
+    setUploadKey((k) => k + 1)
+  }
+
   const ocrResultsByFieldKey = ocrStatusQuery.data?.fields
 
   return (
@@ -236,88 +255,110 @@ export function DocumentUploadForm() {
             </div>
           )}
 
-          <div className="mb-5 grid grid-cols-2 gap-[18px]">
-            <div>
-              <Label htmlFor="file">File</Label>
-              <Input
-                id="file"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.tiff"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-              <p className="mt-1.5 text-[12px] text-muted-foreground">PDF, PNG, JPEG, or TIFF.</p>
-            </div>
-            <div>
-              <Label htmlFor="documentType">Document type</Label>
-              <select
-                id="documentType"
-                value={documentType}
-                onChange={(e) => setDocumentType(e.target.value)}
-                disabled={documentTypesQuery.isLoading || activeDocumentTypes.length === 0 || !!version}
-                className="h-10 w-full appearance-none rounded-btn border border-[var(--border-strong)] bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:opacity-70"
-              >
-                {documentTypesQuery.isLoading && <option value="">Loading…</option>}
-                {!documentTypesQuery.isLoading && activeDocumentTypes.length === 0 && (
-                  <option value="">No document types available</option>
-                )}
-                {activeDocumentTypes.map((t) => (
-                  <option key={t.documentTypeId} value={t.typeCode}>
-                    {t.typeName}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1.5 text-[12px] text-muted-foreground">
-                {documentTypesQuery.isError
-                  ? "Could not load document types."
-                  : "Determines which zone/field template ocr-worker applies, if any."}
+          {version ? (
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-[13px] py-[11px]">
+              <p className="text-[13px] text-muted-foreground">
+                Reviewing <span className="font-semibold text-foreground">{version.originalFilename}</span> below.
               </p>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="shrink-0 rounded-btn border border-[var(--border-strong)] px-3 py-1.5 text-[12.5px] font-semibold text-foreground"
+              >
+                Upload another document
+              </button>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="mb-5 grid grid-cols-2 gap-[18px]">
+                <div>
+                  <Label htmlFor="file">File</Label>
+                  <Input
+                    key={uploadKey}
+                    id="file"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.tiff"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                  <p className="mt-1.5 text-[12px] text-muted-foreground">PDF, PNG, JPEG, or TIFF.</p>
+                </div>
+                <div>
+                  <Label htmlFor="documentType">Document type</Label>
+                  <select
+                    id="documentType"
+                    value={documentType}
+                    onChange={(e) => setDocumentType(e.target.value)}
+                    disabled={documentTypesQuery.isLoading || activeDocumentTypes.length === 0}
+                    className="h-10 w-full appearance-none rounded-btn border border-[var(--border-strong)] bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:opacity-70"
+                  >
+                    {documentTypesQuery.isLoading && <option value="">Loading…</option>}
+                    {!documentTypesQuery.isLoading && activeDocumentTypes.length === 0 && (
+                      <option value="">No document types available</option>
+                    )}
+                    {activeDocumentTypes.map((t) => (
+                      <option key={t.documentTypeId} value={t.typeCode}>
+                        {t.typeName}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[12px] text-muted-foreground">
+                    {documentTypesQuery.isError
+                      ? "Could not load document types."
+                      : "Determines which zone/field template ocr-worker applies, if any."}
+                  </p>
+                </div>
+              </div>
 
-          {!version && (
-            <FieldChips
-              schema={schemaQuery.data}
-              loading={schemaQuery.isLoading}
-              selected={selectedFields}
-              onToggle={handleToggleField}
-              onSelectAll={() => setSelectedFields(new Set(visibleFieldsOf(schemaQuery.data).map((f) => f.fieldKey)))}
-              onClear={() => setSelectedFields(mandatoryRequestedFields(schemaQuery.data))}
-            />
+              <FieldChips
+                schema={schemaQuery.data}
+                loading={schemaQuery.isLoading}
+                selected={selectedFields}
+                onToggle={handleToggleField}
+                onSelectAll={() => setSelectedFields(new Set(visibleFieldsOf(schemaQuery.data).map((f) => f.fieldKey)))}
+                onClear={() => setSelectedFields(mandatoryRequestedFields(schemaQuery.data))}
+              />
+            </>
           )}
 
-          <hr className="my-5 border-t border-dashed border-border" />
+          {!version && (
+            <>
+              <hr className="my-5 border-t border-dashed border-border" />
 
-          <div className="flex items-center justify-end gap-2.5">
-            {phase !== "idle" && (
-              <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground">
-                {(phase === "uploading" || phase === "processing") && <Loader2 size={14} className="animate-spin" />}
-                {phase === "done" && <CheckCircle2 size={14} className="text-primary" />}
-                {phase === "failed" && <XCircle size={14} className="text-[var(--rust)]" />}
-                {phaseLabel(phase)}
-              </span>
-            )}
-            <button
-              type="button"
-              disabled={!file || !documentType || busy || !!version}
-              onClick={handleUpload}
-              className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {uploading && <Loader2 size={14} className="animate-spin" />}
-              {uploading ? "Uploading…" : "Upload"}
-            </button>
-          </div>
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  disabled={!file || !documentType || uploading}
+                  onClick={handleUpload}
+                  className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {uploading && <Loader2 size={14} className="animate-spin" />}
+                  {uploading ? "Uploading…" : "Upload"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {version && (
           <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
-            <div className="mb-4 flex items-center gap-2.5">
-              <FileText size={18} className="text-primary" />
-              <div>
-                <p className="text-[14px] font-semibold text-foreground">{version.originalFilename}</p>
-                <p className="text-[12px] text-muted-foreground">
-                  {version.mimeType} · {version.sizeBytes.toLocaleString()} bytes · scan: {version.scanStatus}
-                </p>
+            <div className="mb-4 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <FileText size={18} className="text-primary" />
+                <div>
+                  <p className="text-[14px] font-semibold text-foreground">{version.originalFilename}</p>
+                  <p className="text-[12px] text-muted-foreground">
+                    {version.mimeType} · {version.sizeBytes.toLocaleString()} bytes · scan: {version.scanStatus}
+                  </p>
+                </div>
               </div>
+              {phase !== "idle" && (
+                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground">
+                  {(phase === "uploading" || phase === "processing") && <Loader2 size={14} className="animate-spin" />}
+                  {phase === "done" && <CheckCircle2 size={14} className="text-primary" />}
+                  {phase === "failed" && <XCircle size={14} className="text-[var(--rust)]" />}
+                  {phaseLabel(phase)}
+                </span>
+              )}
             </div>
 
             {phase === "failed" && (

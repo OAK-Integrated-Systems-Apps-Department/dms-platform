@@ -56,10 +56,24 @@ class PaddleOcrEngine:
             # pipeline stages on top of the 2.x det+cls+rec flow, disabled
             # here because layout.py already renders pages at a known
             # orientation via PyMuPDF -- nothing to unwarp/reorient.
+            # Real crash found live: with these left at PaddleX's own
+            # defaults (None -> batch every detected text line through the
+            # recognition/textline-orientation models in one single forward
+            # pass), a normal, moderately dense scanned photo produced
+            # dozens of detected lines batched at once, and CPU inference
+            # over that batch peaked at 6-7GB RSS (verified via `docker
+            # stats` polled every second through a real run) and OOM-killed
+            # the whole worker process mid-request -- taking down every
+            # other in-flight OCR job with it, not just this one. Capping
+            # the batch size bounds peak memory to whatever one small batch
+            # needs, trading a few extra sequential forward passes (a
+            # handful of seconds) for the worker never dying mid-request.
             self._engines_by_lang[lang] = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=True,
+                text_recognition_batch_size=8,
+                textline_orientation_batch_size=8,
                 lang=lang,
             )
         return self._engines_by_lang[lang]

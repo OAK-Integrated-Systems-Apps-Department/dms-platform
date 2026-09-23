@@ -44,14 +44,21 @@ _ID_RE = re.compile(r"\b([A-Z]{2,5}-?\d{4,12})\b")
 # dms-core's metadata layer only accepts ISO dates for a `date` field
 # (see DocumentMetadataServiceImpl#parseDate) -- without normalizing here,
 # every non-ISO invoice date silently fails to map and the field just
-# stays blank. Ambiguous numeric dates are read month-first (US
-# convention) before falling back to day-first.
+# stays blank. Ambiguous numeric dates are read day-first (real invoice
+# found live: a Sri Lankan pharmacy receipt's "03/01/2026" was read
+# month-first as March 1 instead of January 3rd -- confirmed wrong by the
+# receipt's own handwritten follow-up note, "Submitted to COC 08/01/2026",
+# which only makes sense a few days AFTER a January 3rd invoice date, not
+# before a March 1st one. Every real document seen in this system so far
+# is day-first (Sri Lanka); an unambiguous month-first date, e.g. "2026-
+# 03-01" ISO or "January 3 2026", still parses correctly regardless of
+# this default.
 _DATE_FORMATS = (
     "%Y-%m-%d",
-    "%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y",
-    "%m/%d/%y", "%m-%d-%y", "%m.%d.%y",
     "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
     "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
+    "%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y",
+    "%m/%d/%y", "%m-%d-%y", "%m.%d.%y",
     "%B %d %Y", "%b %d %Y",
     "%d %B %Y", "%d %b %Y",
     "%Y/%m/%d",
@@ -167,6 +174,31 @@ def fields_to_dict(fields: list[ExtractedField]) -> dict[str, dict]:
 
 _REFERENCE_NUMBER_RE = re.compile(r"\b([A-Z]{2,6}[-/][A-Z0-9]{2,4}[-/][A-Z0-9]{2,10}|[A-Z]{2,6}[-/][A-Z0-9]{3,12})\b")
 
+# Pattern-rule fallback for `currency`: real invoice found live with no
+# "Currency:" label anywhere on the page at all -- LKR only ever appeared
+# as a "(LKR)" column-header annotation and inline before amounts ("LKR
+# 4,100,000.00"), never as a labeled field. A fixed ISO 4217 whitelist
+# (not a generic "any 3 uppercase letters" pattern) avoids false-positives
+# on common invoice acronyms that are also 3 letters (VAT, PVT, LTD).
+_CURRENCY_CODES = (
+    "USD", "EUR", "GBP", "LKR", "INR", "AUD", "CAD", "JPY", "CNY", "SGD",
+    "AED", "SAR", "PKR", "BDT", "NPR", "ZAR", "NZD", "CHF", "HKD", "MYR",
+    "THB", "PHP", "IDR", "VND", "KRW", "EGP", "QAR", "KWD", "BHD", "OMR",
+)
+_CURRENCY_CODE_RE = re.compile(r"\b(" + "|".join(_CURRENCY_CODES) + r")\b")
+
+# Fallback for `vendor_supplier_name` when no "Vendor:"/"Supplier:" label
+# exists at all -- real invoice found live: the vendor was only ever
+# presented as a plain letterhead ("Oak Integrated Systems (Pvt) Ltd"
+# directly under the "TAX INVOICE" title, followed by its address and
+# contact line), with no label anywhere on the page to anchor a proximity
+# match to.
+_DOCUMENT_TITLE_LINES = {
+    "invoice", "tax invoice", "sales invoice", "commercial invoice",
+    "proforma invoice", "receipt", "payment receipt", "purchase order",
+    "credit note", "debit note", "quotation", "quote", "statement",
+}
+
 # Short, explicit label variants per field -- matches this module's own
 # "best-effort, not a general NLP extractor" ethos (see the module
 # docstring above), not a generic heuristic. A field with no entry here
@@ -175,7 +207,10 @@ _REFERENCE_NUMBER_RE = re.compile(r"\b([A-Z]{2,6}[-/][A-Z0-9]{2,4}[-/][A-Z0-9]{2
 _LABEL_ALIASES: dict[str, list[str]] = {
     "author": ["author", "prepared by", "written by", "authored by"],
     "department": ["department", "dept", "division", "business unit"],
-    "reference_number": ["reference number", "reference no", "ref no", "ref. no", "ref#", "ref #", "reference"],
+    "reference_number": [
+        "reference number", "reference no", "ref no", "ref. no", "ref#", "ref #",
+        "document ref", "document reference", "reference",
+    ],
     "classification_level": ["classification level", "classification", "sensitivity"],
     "retention_class": ["retention class", "retention schedule", "retention"],
     "effective_date": ["effective date", "effective from", "effective"],
@@ -199,7 +234,23 @@ _LABEL_ALIASES: dict[str, list[str]] = {
     "currency": ["currency"],
     "vendor_supplier_name": ["vendor / supplier", "vendor/supplier", "vendor", "supplier", "billed by", "seller"],
     "cost_centre": ["cost centre", "cost center"],
-    "amount": ["total amount", "total due", "grand total", "amount due", "net amount due", "amount"],
+    # "total" (bare) is deliberately LAST: a hospital/receipt-style
+    # document routinely labels its grand total as just "TOTAL", with no
+    # "Amount"/"Due" qualifier at all (verified live: a real channel
+    # receipt's "TOTAL : 4900.00" line) -- but tried only after every more
+    # specific alias above has already failed, since a document with
+    # several "Total ___" lines (Total Discount, Subtotal, Grand Total)
+    # should resolve via one of those first. "\btotal\b" does not match
+    # inside "Subtotal" (no word boundary between "Sub" and "total" -- it's
+    # one unbroken token), so that common false-positive is already safe.
+    # "net total" added after a real pharmacy receipt found live: its
+    # table had an "AMOUNT" *column header* (the per-line-item price),
+    # and since "amount" sat earlier in this list than the generic "total"
+    # fallback, it matched that column header first and grabbed the FIRST
+    # line item's amount instead of the real "NET TOTAL" a few rows below
+    # -- more specific total-labels must always be tried before "amount"
+    # itself, which is really a last-resort fallback, not a preference.
+    "amount": ["total amount", "total due", "grand total", "net total", "amount due", "net amount due", "amount", "total"],
 }
 
 # Extra clip-only stop labels: real header labels that commonly sit right
@@ -321,10 +372,63 @@ def _label_pattern(alias: str) -> re.Pattern[str]:
     A multi-word phrase (e.g. "total amount", "invoice number") is
     unlikely to occur by coincidence in flowing prose either way, so it
     keeps matching regardless of what follows it.
+
+    The label text itself is matched with OCR-confusable tolerance (see
+    _fuzzy_literal) rather than an exact literal -- real bug found live: a
+    thermal-printer pharmacy receipt's "INVOICE NO" came back from
+    PaddleOCR as "1NVO1CE NO" (both "I"s misread as "1"), which an exact
+    match could never recognize, silently losing invoice_number entirely
+    on an otherwise perfectly legible receipt.
     """
     require_marker = " " not in alias.strip()
     marker = r"\s*(?:[:\-]|$)" if require_marker else r"\s*[:\-]?"
-    return re.compile(rf"\b{re.escape(alias)}\b{marker}\s*(.*)$", re.IGNORECASE)
+    return re.compile(rf"\b{_fuzzy_literal(alias)}\b{marker}\s*(.*)$", re.IGNORECASE)
+
+
+# Character shapes real dot-matrix/thermal-receipt OCR most commonly
+# confuses for one another -- kept deliberately small (only genuinely
+# similar-looking pairs) to avoid loosening label matching into false
+# positives on unrelated text.
+_OCR_CONFUSABLE_CHARS: dict[str, str] = {
+    "i": "il1",
+    "l": "il1",
+    "o": "o0",
+    "s": "s5",
+    "b": "b8",
+    "z": "z2",
+}
+
+
+def _fuzzy_literal(alias: str) -> str:
+    """Builds a regex fragment matching `alias` with each OCR-confusable
+    character (see _OCR_CONFUSABLE_CHARS) replaced by a character class
+    covering every shape it's commonly misread as, instead of a plain
+    `re.escape`d literal.
+    """
+    parts = []
+    for ch in alias:
+        lower = ch.lower()
+        if ch == " ":
+            parts.append(r"\s+")
+        elif lower in _OCR_CONFUSABLE_CHARS:
+            parts.append(f"[{_OCR_CONFUSABLE_CHARS[lower]}]")
+        else:
+            parts.append(re.escape(ch))
+    return "".join(parts)
+
+
+def _strip_table_cell_markers(text: str) -> str:
+    """Docling's own .docx export renders a table row as markdown pipe
+    syntax (e.g. "| DOCUMENT REF              | ISMS-DOC-A08-28-1  |") --
+    when a label match's capture group lands mid-row, the next cell's "|"
+    delimiter (and the padding around it) comes along for free, since it
+    isn't whitespace _label_proximity_value's own .strip() would remove.
+    Real bug found live: a policy document's reference_number came back as
+    "| ISMS-DOC-A08-28-1  |" instead of the clean value.
+    """
+    stripped = re.sub(r"^\|\s*", "", text.strip())
+    stripped = re.sub(r"\s*\|$", "", stripped)
+    return stripped.strip()
 
 
 def _label_proximity_value(text: str, aliases: list[str]) -> str | None:
@@ -348,12 +452,13 @@ def _label_proximity_value(text: str, aliases: list[str]) -> str | None:
             match = pattern.search(line)
             if not match:
                 continue
-            value = match.group(1).strip()
+            value = _strip_table_cell_markers(match.group(1).strip())
             if value:
                 return _clip_at_next_label(value, aliases)
             for next_line in lines[i + 1 :]:
                 if next_line and _has_real_content(next_line):
-                    return _clip_at_next_label(_strip_leading_marker(next_line), aliases)
+                    cleaned = _strip_table_cell_markers(_strip_leading_marker(next_line))
+                    return _clip_at_next_label(cleaned, aliases)
             return None
     return None
 
@@ -402,6 +507,73 @@ def _has_real_content(text: str) -> bool:
     exactly as close to the label as a real one, but not one.
     """
     return any(ch.isalnum() for ch in text)
+
+
+def _currency_pattern_fallback(text: str) -> str | None:
+    """Last-resort pattern-rule match for `currency` when no "Currency:"
+    label exists anywhere on the page (see _CURRENCY_CODE_RE's own
+    comment) -- takes the first recognized ISO code found anywhere in the
+    flattened text, which is the same "first mention wins" behavior a
+    human skimming the page would use, and matches this module's existing
+    priority order (label match, then pattern rule, before giving up).
+    """
+    match = _CURRENCY_CODE_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _looks_like_contact_or_address_line(text: str) -> bool:
+    """True for a letterhead's address/phone/email/website line, so
+    _vendor_letterhead_fallback can skip past them to the actual company
+    name. Deliberately simple, pattern-based heuristics (no NLP): an
+    email or "www." (contact line), a "T:"/"Tel"/"Fax"/"E:"/"W:" prefix
+    (contact line), or 2+ commas (an address is the only line type on a
+    real letterhead that lists several comma-separated segments -- a
+    company name essentially never does).
+    """
+    lowered = text.strip().lower()
+    if "@" in text or "www." in lowered:
+        return True
+    if re.match(r"^(t|tel|fax|e|w|ph|phone)\s*[:.]", lowered):
+        return True
+    return text.count(",") >= 2
+
+
+def _vendor_letterhead_fallback(
+    lines_by_page: dict[int, list[LineBlock]] | None,
+) -> tuple[str, tuple[int, int, int, int]] | None:
+    """Last-resort fallback for `vendor_supplier_name` when no "Vendor:"/
+    "Supplier:"/"Seller:" label exists anywhere on the page -- real
+    invoice found live: the vendor was only ever presented as a plain
+    letterhead (company name directly under the "TAX INVOICE" title,
+    followed by its address and contact line), never behind a label a
+    proximity match could anchor to.
+
+    Walks page 1's lines in reading order, skipping the document-type
+    title itself and any address/contact lines, and returns the first
+    remaining line with real content (with its real bbox, so the review
+    UI can still highlight where the value came from). Stops (returns
+    None, not a guess) as soon as it reaches a line that's itself a known
+    field label -- that means the letterhead block has ended and we've
+    reached the invoice's label/value section, so anything after that
+    point is a different field's value, not the vendor's name.
+    """
+    if not lines_by_page:
+        return None
+    lines = lines_by_page.get(1)
+    if not lines:
+        return None
+    for raw_text, bbox in lines:
+        candidate = raw_text.strip()
+        if not candidate:
+            continue
+        if candidate.lower() in _DOCUMENT_TITLE_LINES:
+            continue
+        if _looks_like_a_label(candidate):
+            return None
+        if not _has_real_content(candidate) or _looks_like_contact_or_address_line(candidate):
+            continue
+        return candidate, bbox
+    return None
 
 
 def _strip_leading_marker(text: str) -> str:
@@ -623,7 +795,18 @@ def _extract_field_value(
     if data_type == "dropdown" and options:
         candidate, page, bbox = _find_value(text, lines_by_page, aliases)
         matched = _match_enum(candidate, options, field_key)
-        return (matched, 0.85, False, page, bbox) if matched else (None, None, False, None, None)
+        if matched:
+            return matched, 0.85, False, page, bbox
+        if field_key == "currency":
+            # Pattern-rule fallback: real invoice found live with no
+            # "Currency:" label anywhere on the page at all (see
+            # _currency_pattern_fallback's own comment). Still only ever
+            # returns one of the caller's own configured options --
+            # _match_enum never returns a value outside that list.
+            fallback_matched = _match_enum(_currency_pattern_fallback(text), options, field_key)
+            if fallback_matched:
+                return fallback_matched, 0.55, False, None, None
+        return None, None, False, None, None
 
     if data_type in ("date", "datetime"):
         raw_date, page, bbox = _extract_date_candidate(text, lines_by_page, aliases)
@@ -633,11 +816,22 @@ def _extract_field_value(
         return _normalize_date(raw_date), (0.9 if from_label else 0.65), False, page, bbox
 
     if field_key == "reference_number":
-        match = _REFERENCE_NUMBER_RE.search(text)
-        if match:
-            return match.group(1).strip(), 0.85, False, None, None
+        # Label match first, THEN the pattern-rule regex fallback -- matches
+        # this module's documented priority order (see
+        # extract_requested_fields's own docstring). Real bug found live:
+        # with the pattern rule tried FIRST and unconditionally, a policy
+        # document whose actual reference ("DOCUMENT REF: ISMS-DOC-A08-28-1")
+        # sat in a table further down the page lost to an unrelated, earlier
+        # "ISO/IEC" mention in the body text that happened to also look
+        # reference-number-shaped -- a bare whole-text regex scan has no way
+        # to prefer the value a real label points at over an incidental
+        # lookalike, so it must never run before the label match gets a
+        # chance.
         candidate, page, bbox = _find_value(text, lines_by_page, aliases)
-        return (candidate.strip(), 0.7, False, page, bbox) if candidate else (None, None, False, None, None)
+        if candidate:
+            return candidate.strip(), 0.85, False, page, bbox
+        match = _REFERENCE_NUMBER_RE.search(text)
+        return (match.group(1).strip(), 0.65, False, None, None) if match else (None, None, False, None, None)
 
     if data_type in ("long_text", "multi_select"):
         candidate, page, bbox = _find_value(text, lines_by_page, aliases)
@@ -654,6 +848,24 @@ def _extract_field_value(
         # label -- always low_confidence per spec, whatever the number below.
         value = _keywords_from_text(text) if data_type == "multi_select" else _summary_from_text(text)
         return (value, 0.5, True, None, None) if value else (None, None, False, None, None)
+
+    if field_key == "vendor_supplier_name":
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        if candidate:
+            return candidate.strip(), 0.8, False, page, bbox
+        # Letterhead fallback: real invoice found live with no "Vendor:"/
+        # "Supplier:" label anywhere on the page (see
+        # _vendor_letterhead_fallback's own comment) -- lower confidence
+        # than a real label match, since it's a position-based guess.
+        fallback = _vendor_letterhead_fallback(lines_by_page)
+        if fallback:
+            name, bbox = fallback
+            # forced low_confidence, like the free-text fallback above --
+            # this is a position-based guess, not a labeled match, and
+            # must always be flagged for human review regardless of the
+            # caller's confidence threshold.
+            return name, 0.6, True, 1, bbox
+        return None, None, False, None, None
 
     # Generic single-line text field (author, department, and anything else
     # with no more specific handling above).

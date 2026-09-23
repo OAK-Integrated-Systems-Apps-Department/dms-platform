@@ -86,9 +86,11 @@ def test_invoice_date_is_normalized_to_iso_regardless_of_printed_format():
     """Real bug: a real invoice's date rarely comes as ISO -- dms-core's
     metadata layer only accepts ISO dates for a `date` field (see
     DocumentMetadataServiceImpl#parseDate), so a raw '01/05/2026' or
-    'May 1, 2026' silently failed to map onto the Invoice Date field."""
+    'May 1, 2026' silently failed to map onto the Invoice Date field.
+    Ambiguous numeric dates are read day-first (see _DATE_FORMATS's own
+    comment), so '01/05/2026' is day=01, month=05 -- 1 May, not 5 January."""
     fields = extract_structured_fields("Invoice No: INV-1\nDate: 01/05/2026\nTotal Due: $10.00")
-    assert fields[[f.field for f in fields].index("invoice_date")].value == "2026-01-05"
+    assert fields[[f.field for f in fields].index("invoice_date")].value == "2026-05-01"
 
     fields = extract_structured_fields("Invoice No: INV-1\nDate: May 1, 2026\nTotal Due: $10.00")
     assert fields[[f.field for f in fields].index("invoice_date")].value == "2026-05-01"
@@ -105,7 +107,7 @@ def test_invoice_date_is_normalized_to_iso_regardless_of_printed_format():
 
 def test_date_field_normalizes_multiple_printed_formats_to_iso():
     cases = [
-        ("Effective Date: 01/05/2026", "2026-01-05"),
+        ("Effective Date: 01/05/2026", "2026-05-01"),  # day-first: day=01, month=05
         ("Effective Date: 05 January 2026", "2026-01-05"),
         ("Effective Date: 2026-01-05", "2026-01-05"),
         ("Effective Date: May 1, 2026", "2026-05-01"),
@@ -203,7 +205,34 @@ def test_reference_number_falls_back_to_label_proximity_when_no_pattern_matches(
     text = "Reference Number: see attached schedule A"
     results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={})
     assert results[0].value == "see attached schedule A"
-    assert results[0].status == "extracted"  # 0.7 confidence >= the 0.6 default field_confidence_threshold
+    assert results[0].status == "extracted"  # 0.85 confidence >= the 0.6 default field_confidence_threshold
+
+
+def test_reference_number_prefers_the_labeled_value_over_an_earlier_unrelated_pattern_match():
+    """Real bug found live: a policy document's actual reference
+    ("DOCUMENT REF: ISMS-DOC-A08-28-1") sat in a table further down the
+    page, but the pattern-rule regex ran first and unconditionally, so it
+    grabbed an earlier, unrelated "ISO/IEC 27001" mention in the body text
+    instead -- a lookalike match with no label backing it at all. The
+    label match must always get first refusal.
+    """
+    text = "The ISO/IEC 27001 standard is referenced here.\nDocument Ref: ISMS-DOC-A08-28-1"
+    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={})
+    assert results[0].value == "ISMS-DOC-A08-28-1"
+
+
+def test_label_proximity_strips_markdown_table_pipes_from_a_docx_export():
+    """Real bug found live: a policy .docx's export_to_text() (Docling's
+    own docx-to-text conversion) renders a table row as markdown pipe
+    syntax -- "| DOCUMENT REF              | ISMS-DOC-A08-28-1  |" -- and
+    the label match's capture group (everything after "DOCUMENT REF" on
+    that line) came back as "| ISMS-DOC-A08-28-1  |", the neighboring
+    cell's "|" delimiters and padding included, since none of that is
+    whitespace a plain .strip() would remove.
+    """
+    text = "Secure Coding Policy\n\n| DOCUMENT CLASSIFICATION   |                    |\n| DOCUMENT REF              | ISMS-DOC-A08-28-1  |\n| VERSION                   | 1                  |"
+    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={})
+    assert results[0].value == "ISMS-DOC-A08-28-1"
 
 
 def test_only_requested_fields_are_ever_returned():
@@ -552,3 +581,222 @@ def test_spatial_matching_strips_a_leading_colon_bundled_into_the_value_span():
         lines_by_page={1: [("Reference", (297, 53, 348, 73)), (" : REF-99", (365, 52, 475, 72))]},
     )
     assert results[0].value == "REF-99"
+
+
+def test_bare_total_is_recognized_when_no_more_specific_amount_label_exists():
+    """Real bug found live against an actual hospital channel receipt
+    (PaddleOCR lines, real bboxes): its grand total is labeled just
+    "TOTAL" -- no "Amount"/"Due"/"Grand" qualifier at all -- which none of
+    the more specific amount aliases match, so it fell through to
+    not_found even though the value is right there.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="TOTAL : 4900.00",
+        zone_fields={},
+        lines_by_page={1: [("TOTAL", (530, 1553, 657, 1592)), (": 4900.00", (894, 1556, 1099, 1600))]},
+    )
+    assert results[0].value == "4900.00"
+
+
+def test_bare_total_does_not_match_inside_subtotal():
+    """"\\btotal\\b" must not match the "total" inside "Subtotal" -- there
+    is no word boundary between "Sub" and "total" in that one unbroken
+    token, so a document whose only "total"-shaped label is "Subtotal"
+    (not the real grand total) must still come back not_found rather than
+    grabbing the wrong figure.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="Subtotal : 100.00",
+        zone_fields={},
+        lines_by_page={1: [("Subtotal", (297, 53, 348, 73)), (": 100.00", (365, 52, 475, 72))]},
+    )
+    assert results[0].status == "not_found"
+
+
+# Real per-line coordinates from an actual tax invoice with NO "Currency:"
+# or "Vendor:"/"Supplier:" label anywhere on the page at all -- the vendor
+# is presented only as a letterhead (company name directly under the "TAX
+# INVOICE" title, followed by its address and contact line), and currency
+# only ever appears as a "(LKR)" column-header annotation and inline
+# before amounts. Dumped from the real PDF via PyMuPDF (x0, y0, x1, y1).
+_REAL_INVOICE_3_LINES_PAGE_1: list[tuple[str, tuple[int, int, int, int]]] = [
+    ("TAX INVOICE", (231, 50, 359, 75)),
+    ("Oak Integrated Systems (Pvt) Ltd", (174, 77, 416, 95)),
+    ("Level 26, East Tower, World Trade Center, Echelon Square, Colombo 01, Sri Lanka", (91, 97, 501, 110)),
+    ("T: + 94 114 846 000| E: info@oakis.biz | W: www.oakis.biz", (149, 110, 443, 123)),
+    ("Customer:", (36, 134, 90, 147)),
+    ("Date", (329, 134, 353, 147)),
+    (":", (426, 134, 433, 147)),
+    ("15/12/2025", (498, 134, 557, 147)),
+    ("Sisili Hanaro Encare (PVT) Ltd", (36, 149, 187, 162)),
+    ("Invoice No", (329, 149, 383, 162)),
+    (":", (426, 149, 433, 162)),
+    ("IN/2025/01448", (482, 149, 557, 162)),
+]
+
+_REAL_INVOICE_3_TEXT = (
+    "TAX INVOICE\nOak Integrated Systems (Pvt) Ltd\n"
+    "Level 26, East Tower, World Trade Center, Echelon Square, Colombo 01, Sri Lanka\n"
+    "T: + 94 114 846 000| E: info@oakis.biz | W: www.oakis.biz\n"
+    "Customer:\nDate\n:\n15/12/2025\nSisili Hanaro Encare (PVT) Ltd\nInvoice No\n:\nIN/2025/01448\n"
+    "Unit Price\n(LKR)\nQty\nSub Total\n(LKR)\n"
+    "Total Value LKR 4,100,000.00\nAdvance 50% of total payment LKR 2,050,000.00\n"
+    "Grand Total\n2,479,475.00\n"
+    "LKR ACCOUNT\nUSD ACCOUNT\n0083002071\n0087095194\n"
+)
+
+
+def test_currency_pattern_fallback_finds_lkr_with_no_currency_label():
+    """Real invoice found live: no "Currency:" label anywhere on the page
+    at all, only "(LKR)" column-header annotations and "LKR 4,100,000.00"
+    inline before an amount. Pattern-rule fallback must still recover it.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", options=["LKR", "USD", "EUR"])],
+        text=_REAL_INVOICE_3_TEXT,
+        zone_fields={},
+    )
+    assert results[0].value == "LKR"
+    assert results[0].status == "low_confidence"  # pattern-rule guess, not a labeled match
+
+
+def test_currency_pattern_fallback_never_returns_a_value_outside_configured_options():
+    """LKR is genuinely present in the text, but this tenant's currency
+    dropdown only allows USD -- _match_enum must never invent a value
+    outside the caller's own configured options, fallback or not.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", options=["USD"])],
+        text=_REAL_INVOICE_3_TEXT,
+        zone_fields={},
+    )
+    assert results[0].status == "not_found"
+
+
+def test_vendor_letterhead_fallback_finds_company_name_skipping_title_and_address():
+    """Real invoice found live: the vendor name has no "Vendor:"/
+    "Supplier:" label at all -- just a letterhead (title, then company
+    name, then address, then contact line). The fallback must skip the
+    title and correctly land on the company name, not the address/email
+    lines that come after it.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("vendor_supplier_name", "text")],
+        text=_REAL_INVOICE_3_TEXT,
+        zone_fields={},
+        lines_by_page={1: _REAL_INVOICE_3_LINES_PAGE_1},
+    )
+    assert results[0].value == "Oak Integrated Systems (Pvt) Ltd"
+    assert results[0].status == "low_confidence"  # letterhead guess, not a labeled match
+    assert results[0].page == 1
+    assert results[0].bbox == (174, 77, 416, 95)
+
+
+def test_vendor_supplier_name_prefers_a_real_label_over_the_letterhead_fallback():
+    """When a real "Vendor:" label does exist, it must win over the
+    letterhead guess -- the fallback is a last resort, not a shortcut.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("vendor_supplier_name", "text")],
+        text="Some Letterhead Co\nVendor: Acme Supplies Ltd",
+        zone_fields={},
+        lines_by_page={1: [
+            ("Some Letterhead Co", (10, 10, 100, 20)),
+            ("Vendor:", (10, 30, 60, 40)),
+            ("Acme Supplies Ltd", (65, 30, 150, 40)),
+        ]},
+    )
+    assert results[0].value == "Acme Supplies Ltd"
+
+
+def test_vendor_letterhead_fallback_gives_up_once_it_reaches_a_label_with_no_candidate():
+    """If the letterhead block is nothing but address/contact lines before
+    the first real label, the fallback must return not_found rather than
+    guessing at whatever text comes after the label (a different field's
+    value, not the vendor's name).
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("vendor_supplier_name", "text")],
+        text="123 Some Street, Some City, Some Country\nT: 555-1234\nInvoice No: INV-1",
+        zone_fields={},
+        lines_by_page={1: [
+            ("123 Some Street, Some City, Some Country", (10, 10, 200, 20)),
+            ("T: 555-1234", (10, 25, 100, 35)),
+            ("Invoice No:", (10, 40, 80, 50)),
+            ("INV-1", (85, 40, 130, 50)),
+        ]},
+    )
+    assert results[0].status == "not_found"
+
+
+# Real per-line coordinates from an actual pharmacy receipt (thermal/dot-
+# matrix printer): PaddleOCR misread both "I"s in "INVOICE NO" as "1"
+# ("1NVO1CE NO:8077224"), and the table has an "AMOUNT" *column header*
+# (per-line-item price) with the real total sitting a few rows below,
+# labeled "NET TOTAL".
+_REAL_RECEIPT_LINES_PAGE_1: list[tuple[str, tuple[int, int, int, int]]] = [
+    ("1NVO1CE NO:8077224", (147, 469, 372, 495)),
+    ("DATE:03/01/2026", (592, 502, 758, 525)),
+    ("AMOUNT", (908, 719, 1048, 745)),
+    ("LOCERYL CREAM 30G", (147, 761, 449, 792)),
+    ("2,334.00", (908, 761, 1048, 792)),
+    ("NET TOTAL", (200, 964, 375, 989)),
+    ("15,979.90", (908, 964, 1063, 989)),
+]
+
+_REAL_RECEIPT_TEXT = (
+    "MEDIHELP HOSPITAL (PVT) LTD\nINVOICE\n1NVO1CE NO:8077224\nDATE:03/01/2026\n"
+    "PRODUCT\nPRICE\nQTY\nAMOUNT\nLOCERYL CREAM 30G\n3,334.00\n1\n2,334.00\n"
+    "NET TOTAL\n15,979.90\n"
+)
+
+
+def test_invoice_number_recovers_from_ocr_i_to_1_misread():
+    """Real bug found live: a thermal-printer receipt's "INVOICE NO" was
+    OCR'd as "1NVO1CE NO" (both "I"s misread as "1"), which an exact label
+    match could never recognize -- invoice_number came back completely
+    blank on an otherwise perfectly legible receipt.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("invoice_number", "text")],
+        text=_REAL_RECEIPT_TEXT,
+        zone_fields={},
+        lines_by_page={1: _REAL_RECEIPT_LINES_PAGE_1},
+    )
+    assert results[0].value == "8077224"
+
+
+def test_amount_prefers_net_total_over_an_amount_column_header():
+    """Real bug found live: the receipt's table has an "AMOUNT" column
+    header (the per-line-item price) sitting earlier in reading order
+    than the real "NET TOTAL" -- since "amount" the bare fallback used to
+    sit before "total" in the alias list, it matched that column header
+    first and grabbed the FIRST line item's own amount (2,334.00) instead
+    of the actual total (15,979.90).
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text=_REAL_RECEIPT_TEXT,
+        zone_fields={},
+        lines_by_page={1: _REAL_RECEIPT_LINES_PAGE_1},
+    )
+    assert results[0].value == "15,979.90"
+
+
+def test_invoice_date_reads_ambiguous_numeric_dates_day_first():
+    """Real bug found live: a Sri Lankan pharmacy receipt's "03/01/2026"
+    was read month-first as 2026-03-01 (March 1st) instead of the correct
+    2026-01-03 (January 3rd) -- confirmed wrong by the receipt's own
+    handwritten follow-up note, "Submitted to COC 08/01/2026", which only
+    makes sense a few days after a January 3rd invoice, not before a
+    March 1st one.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("invoice_date", "date")],
+        text=_REAL_RECEIPT_TEXT,
+        zone_fields={},
+        lines_by_page={1: _REAL_RECEIPT_LINES_PAGE_1},
+    )
+    assert results[0].value == "2026-01-03"

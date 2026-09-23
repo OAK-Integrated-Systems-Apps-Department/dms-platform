@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Protocol
 
 
@@ -118,18 +119,67 @@ class DoclingLayoutDocument:
         # uniformly as N pages regardless of source format.
         self._doc = fitz.open(self._tmp.name)
 
-        result = docling_converter.convert(self._tmp.name)
-        self._docling_document = result.document
+        # A plain raster image can never have a native text layer -- with
+        # do_ocr=False (see LayoutEngine._converter's own comment),
+        # Docling's own OCR is disabled, so an image-only input gives
+        # TableFormer no text to structure either (its own tables_for_page
+        # docstring already says as much). native_text_blocks_for_page/
+        # tables_for_page both return None as soon as
+        # self._docling_document.pages.get(page_no) is None -- always true
+        # for an image, since Docling never gets a chance to populate a
+        # page entry -- so skipping the conversion call entirely for a
+        # bare image is a no-op for every caller. Verified this matters:
+        # real crash found live, running Docling's layout (object-
+        # detection transformer) + table-structure models AND PaddleOCR's
+        # det/rec/textline models all in the same process for one photo
+        # upload peaked at 6-7GB RSS (`docker stats` polled every second
+        # through a real run) and OOM-killed the worker mid-request --
+        # skipping two whole models' worth of load+inference for a result
+        # nothing downstream ever reads removes that memory pressure
+        # outright rather than just trimming it.
+        if self._doc.is_pdf:
+            result = docling_converter.convert(self._tmp.name)
+            self._docling_document = result.document
+        else:
+            self._docling_document = SimpleNamespace(pages={})
 
     def page_count(self) -> int:
         return self._doc.page_count
 
     def render_page(self, page_no: int, dpi: int) -> PageImage:
-        """0-indexed page_no, matching PyMuPDF's own convention."""
+        """0-indexed page_no, matching PyMuPDF's own convention.
+
+        Caps the rendered pixel size regardless of dpi or source format.
+        For a real PDF page (sized in 72-dpi points, e.g. 612x792 for
+        Letter), dpi/72 upscaling is exactly what OCR needs and normal
+        documents stay well under the cap. But PyMuPDF opens a raster
+        image (JPEG/PNG/TIFF) as a one-page "document" whose point-size
+        already equals its native pixel size -- so the same dpi/72 zoom
+        upscales an already-full-resolution photo on top of itself.
+        Verified against a real crash: a completely ordinary ~2300x3000px
+        (6.8MP) phone photo got rendered out to 6350x8305 (~53MP) at the
+        default 200 DPI, which OOM-killed the worker process mid-PaddleOCR
+        (docker-compose.yml's ocr-worker restart-policy comment documents
+        an earlier instance of this same failure mode).
+
+        1600px was chosen empirically, not just to stay under PaddleX's own
+        4000px max_side_limit: even a correctly-capped ~3000x4000px input
+        (already well inside that limit) still OOM-killed the worker during
+        PaddleOCR's own CPU det/rec inference (verified live, with Docling
+        entirely out of the process by then -- see this class's __init__
+        for why a bare image skips Docling altogether). 1600px on the
+        longer side is still ~180 DPI-equivalent for a normal Letter/A4
+        page, comfortably legible for OCR, while cutting detection-stage
+        pixel count (and therefore peak memory) to roughly a quarter of
+        what 4000px would need.
+        """
         from PIL import Image
 
         page = self._doc.load_page(page_no)
         zoom = dpi / 72.0
+        longest_side_pt = max(page.rect.width, page.rect.height)
+        if longest_side_pt > 0:
+            zoom = min(zoom, _MAX_RENDER_DIMENSION_PX / longest_side_pt)
         pixmap = page.get_pixmap(matrix=_matrix(zoom))
         image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
         return PageImage(page_no=page_no, width_px=pixmap.width, height_px=pixmap.height, image=image)
@@ -248,6 +298,72 @@ class DoclingLayoutDocument:
         self.close()
 
 
+class DoclingTextDocument:
+    """Loads a document that already has real, structured text and needs
+    no OCR at all -- e.g. a native .docx -- via Docling's own docx reader.
+
+    Unlike DoclingLayoutDocument, there's no PyMuPDF page rasterization at
+    all (nothing to OCR -- fitz can't even open a .docx) and no fixed
+    page/pixel geometry (a Word document reflows; it doesn't paginate the
+    way a rendered PDF page does). So this always reports itself as
+    exactly one page, and never supports render_page or
+    native_text_lines_for_page/tables_for_page (no per-line bbox data
+    exists to give them) -- the pipeline only ever reaches those when
+    native_text_blocks_for_page returns None, which this class never
+    does, so a real .docx always takes the "native_text" path, never
+    PaddleOCR.
+
+    export_to_text() (rather than joining .texts item-by-item) is used
+    deliberately: verified against a real policy document that it renders
+    Docling's own table-structure recognition as readable pipe-delimited
+    rows (e.g. "DOCUMENT REF | ISMS-DOC-A08-28-1"), which the existing
+    flattened-text label-proximity matcher can match against directly --
+    exactly the fallback tier this was designed for (see
+    _label_proximity_value), with no bbox/spatial data needed.
+    """
+
+    def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter):
+        self._suffix = Path(original_filename).suffix or _suffix_for_mime(mime_type)
+        self._tmp = tempfile.NamedTemporaryFile(suffix=self._suffix, delete=False)
+        self._tmp.write(file_bytes)
+        self._tmp.flush()
+
+        result = docling_converter.convert(self._tmp.name)
+        self._text = result.document.export_to_text()
+
+    def page_count(self) -> int:
+        return 1
+
+    def render_page(self, page_no: int, dpi: int) -> PageImage:
+        raise NotImplementedError(
+            "DoclingTextDocument has no page rasterization -- native_text_blocks_for_page "
+            "always returns real text for a .docx, so the pipeline should never reach this."
+        )
+
+    def native_text_blocks_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None:
+        if page_no != 1 or not self._text.strip():
+            return None
+        # One block for the whole document rather than one per paragraph --
+        # bbox is a placeholder (0,0,0,0), never a real pixel position,
+        # since nothing here was ever rasterized.
+        return [NativeTextBlock(text=self._text, bbox=(0, 0, 0, 0))]
+
+    def native_text_lines_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None:
+        return None
+
+    def tables_for_page(self, page_no: int, dpi: int) -> list[TableBlock] | None:
+        return None
+
+    def close(self) -> None:
+        Path(self._tmp.name).unlink(missing_ok=True)
+
+    def __enter__(self) -> "DoclingTextDocument":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
 def _bbox_to_pixels(b, page_height_pt: float, scale: float) -> tuple[int, int, int, int]:
     """Docling bboxes come back in PDF-point units but NOT a single
     consistent origin -- verified against the real installed docling-core:
@@ -274,12 +390,20 @@ def _matrix(zoom: float):
     return fitz.Matrix(zoom, zoom)
 
 
+# See render_page's own docstring: matches PaddleX's internal max_side_limit.
+_MAX_RENDER_DIMENSION_PX = 1600
+
+
+_DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
 def _suffix_for_mime(mime_type: str) -> str:
     return {
         "application/pdf": ".pdf",
         "image/tiff": ".tiff",
         "image/jpeg": ".jpg",
         "image/png": ".png",
+        _DOCX_MIME_TYPE: ".docx",
     }.get(mime_type, ".bin")
 
 
@@ -331,8 +455,10 @@ class LayoutEngine:
             )
         return self._docling_converter
 
-    def load(self, file_bytes: bytes, mime_type: str, original_filename: str) -> DoclingLayoutDocument:
+    def load(self, file_bytes: bytes, mime_type: str, original_filename: str) -> DoclingLayoutDocument | DoclingTextDocument:
+        if mime_type == _DOCX_MIME_TYPE:
+            return DoclingTextDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
         return DoclingLayoutDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
 
 
-SUPPORTED_MIME_TYPES = {"application/pdf", "image/tiff", "image/jpeg", "image/png"}
+SUPPORTED_MIME_TYPES = {"application/pdf", "image/tiff", "image/jpeg", "image/png", _DOCX_MIME_TYPE}
