@@ -512,11 +512,36 @@ class LayoutEngine:
         self._docling_converter = None
 
     def warm_up(self) -> None:
-        """Forces the lazy Docling `DocumentConverter` construction to
-        happen now -- see worker_pool.py's pool-worker initializer / this
-        class's own docstring on why a fresh one per request is unaffordable.
+        """Forces the lazy Docling `DocumentConverter` construction AND a
+        real conversion to happen now, not on the first real document.
+
+        Verified live this matters: constructing `DocumentConverter()`
+        alone does NOT load Docling's own internal sub-models (the
+        object-detection transformer for layout, the table-structure
+        engine) -- those are lazily initialized inside `.convert()`
+        itself, on its first call. A pool worker that only called
+        `_converter()` still paid a real ~3-5s one-time cost (HuggingFace
+        cache lookups, "Loading weights", engine construction -- see the
+        real log lines under docling.models.inference_engines.*) on its
+        first actual request, which is exactly the cold-start cost this
+        warm-up step exists to eliminate. Converting a trivial in-memory
+        single-page PDF here forces that same lazy init to happen during
+        startup instead.
         """
-        self._converter()
+        import fitz  # PyMuPDF
+
+        converter = self._converter()
+        placeholder = fitz.open()
+        placeholder.new_page()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(placeholder.tobytes())
+            tmp.flush()
+            tmp_path = tmp.name
+        placeholder.close()
+        try:
+            converter.convert(tmp_path)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def _converter(self):
         if self._docling_converter is None:
