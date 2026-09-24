@@ -23,10 +23,13 @@ public interface DocumentService {
      *                        every mandatory field (see
      *                        DocumentServiceImpl#validateRequestedFields).
      *                        The new version's {@code ocr_status} is set to
-     *                        {@code "processing"} immediately; the caller is
-     *                        responsible for kicking off {@link #triggerOcrAsync}
-     *                        itself once this method's transaction has
-     *                        committed (see that method's own doc comment).
+     *                        {@code "pending"} and a {@code processing_jobs}
+     *                        row + {@code document.version.ocr.requested}
+     *                        outbox event are inserted in this SAME
+     *                        transaction (Phase 1 B.1) -- ocr-worker's own
+     *                        RabbitMQ consumer picks it up from there;
+     *                        nothing further needs to be called after this
+     *                        method returns.
      */
     DocumentVersionResponse uploadDocument(MultipartFile file, String documentTypeName, Map<String, Object> metadataValues,
                                             List<String> requestedFields);
@@ -36,32 +39,15 @@ public interface DocumentService {
      * re-run of a single optional field must be allowed without also
      * re-requesting every mandatory field), unions them into the version's
      * stored {@code requested_fields}, and flips {@code ocr_status} back to
-     * {@code "processing"}. Returns the resulting effective field list so
-     * the caller can pass it straight into {@link #triggerOcrAsync}.
-     * {@code fields} null/empty means "re-run everything already requested
-     * on this version".
+     * {@code "pending"}. In the same transaction, inserts a fresh
+     * {@code processing_jobs} row + {@code .requested} outbox event --
+     * unless a job for this version is already active (queued/processing),
+     * in which case this is a no-op on that front (see
+     * DocumentServiceImpl#prepareRerun's own comment on why inserting
+     * unconditionally isn't safe). {@code fields} null/empty means
+     * "re-run everything already requested on this version".
      */
     OcrRerunResponse prepareRerun(UUID versionId, List<String> fields);
-
-    /**
-     * Calls ocr-worker (see {@link com.oak.dms.ocrworker.OcrWorkerClient}) in
-     * the background and, on success, best-effort maps its {@code fields}
-     * onto this document's metadata (see
-     * {@link DocumentMetadataService#applyOcrFields}). MUST be called after
-     * whatever transaction created/updated this version has already
-     * committed -- e.g. from a controller, right after calling
-     * {@link #uploadDocument} or {@link #prepareRerun}, never from inside
-     * either of those transactional methods -- since this method dispatches
-     * to a different thread immediately, and that thread must see the
-     * committed row, not a half-written one.
-     * <p>
-     * {@code tenantId}/{@code userId} are passed explicitly (not read from
-     * {@link com.oak.dms.security.auth.TenantContext}) because that context
-     * is a plain per-request {@code ThreadLocal} that does not propagate
-     * onto the {@code @Async} executor's thread -- the caller must capture
-     * both on the original request thread before calling this.
-     */
-    void triggerOcrAsync(UUID versionId, List<String> requestedFields, UUID tenantId, UUID userId);
 
     /**
      * Collapses the document's current version's {@code ocr_status} into

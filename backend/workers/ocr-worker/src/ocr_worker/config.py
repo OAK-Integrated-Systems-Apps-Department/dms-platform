@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     # -- RabbitMQ --
     rabbitmq_url: str = "amqp://dms:changeme@localhost:5672/"
     prefetch_count: int = 4
-    worker_pool_size: int = 4
     max_delivery_attempts: int = 5
 
     # -- Process pool (Phase 1 stability -- see docs/ocr/failure-analysis.md

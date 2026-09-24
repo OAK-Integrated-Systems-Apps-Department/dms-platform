@@ -110,7 +110,7 @@ class Reaper:
         ).formatted()
         payload = build_ocr_failed_payload(
             tenant_id=version.tenant_id, document_id=document.document_id, version_id=version.version_id,
-            error=error, correlation_id=job.correlation_id,
+            error=error, correlation_id=job.correlation_id, attempt=job.attempts,
         )
         won = repo.reap_dead_letter(job_id=job.job_id, version=version, error=error, event_payload=payload)
         if won:

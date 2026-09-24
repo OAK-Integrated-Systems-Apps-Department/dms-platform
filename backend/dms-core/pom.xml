@@ -71,9 +71,12 @@
           Messaging: RabbitMQ is the DMS asynchronous processing backbone
           (Tech Stack Review), not just an audit/notification broker.
           dms-core publishes domain events via the outbox pattern
-          (com.oak.dms.outbox); the actual queue consumers live in the
-          separate worker deployables (backend/workers/*), not in this
-          module.
+          (com.oak.dms.outbox); most queue consumers live in the separate
+          worker deployables (backend/workers/*), not in this module.
+          One deliberate exception since Phase 1 B.1: com.oak.dms.ocrworker.
+          OcrEventsConsumer, since applying OCR results onto
+          document_metadata_values is a write path only dms-core owns
+          (see RabbitMqConfig's own class comment for the full reasoning).
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -145,6 +148,18 @@
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>8.5.17</version>
+        </dependency>
+
+        <!-- Magic-byte MIME detection at upload (Phase 1 B.5): real gap
+             found live, uploadDocument previously trusted MultipartFile#
+             getContentType() (a client-supplied header) outright. tika-core
+             only (not the full parser tree) since only detection is needed,
+             matching ocr-worker's own filetype-based sniff as a second,
+             independent layer (backend/workers/ocr-worker/pyproject.toml). -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
         </dependency>
 
         <dependency>

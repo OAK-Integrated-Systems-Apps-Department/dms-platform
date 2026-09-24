@@ -539,6 +539,7 @@ class OcrPipeline:
             page_count=len(pages),
             flags=flags,
             correlation_id=correlation_id,
+            attempt=job.attempts,
         )
         repo.complete_success(
             job=job,
@@ -573,6 +574,7 @@ class OcrPipeline:
             version_id=ctx.version.version_id,
             error=error_message,
             correlation_id=correlation_id,
+            attempt=job.attempts,
         )
         repo.complete_failure(job=job, version=ctx.version, error=error_message, event_payload=payload)
         return ProcessingOutcome(status="failed", version_id=ctx.version.version_id, error=error_message)

@@ -96,8 +96,20 @@ export interface OcrFieldResult {
 
 export interface OcrStatusResponse {
   id: string
-  status: "processing" | "completed" | "failed"
+  /**
+   * "queued" = the job is waiting for an ocr-worker to claim it;
+   * "processing" = one actually has. Both are non-terminal (keep polling).
+   */
+  status: "queued" | "processing" | "completed" | "failed"
   fields: Record<string, OcrFieldResult>
+  /**
+   * ocr-worker's classified failure code (UNSUPPORTED_FORMAT,
+   * ENCRYPTED_PDF, TIMEOUT, ...) -- null unless `status` is "failed".
+   * Callers use it to decide whether a retry could ever succeed.
+   */
+  errorCode: string | null
+  /** A short user-facing sentence for `errorCode`; null unless failed. */
+  friendlyError: string | null
 }
 
 /**

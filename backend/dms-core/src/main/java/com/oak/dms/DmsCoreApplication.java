@@ -2,7 +2,6 @@ package com.oak.dms;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -14,13 +13,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * none had ever reached "published" or "failed"), so no domain event this
  * app has ever emitted had actually been relayed to RabbitMQ.
  * <p>
- * {@code @EnableAsync} backs {@code DocumentServiceImpl#triggerOcrAsync} --
- * upload/re-run must return to the caller immediately with a "processing"
- * status rather than blocking on real Docling/PaddleOCR inference.
+ * {@code @EnableAsync} used to back {@code DocumentServiceImpl#triggerOcrAsync}
+ * -- removed in Phase 1 B.1 along with that method: upload/rerun now queue
+ * OCR via a transactional processing_jobs row + outbox event instead of a
+ * synchronous HTTP call fired from a background thread.
  */
 @SpringBootApplication
 @EnableScheduling
-@EnableAsync
 public class DmsCoreApplication {
 
 	public static void main(String[] args) {

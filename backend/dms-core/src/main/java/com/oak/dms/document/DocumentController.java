@@ -9,7 +9,6 @@ import com.oak.dms.document.dto.OcrRerunRequest;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
 import com.oak.dms.metadata.dto.ValidationError;
-import com.oak.dms.security.auth.TenantContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -31,21 +30,19 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Uploads a document (as its first version) and runs OCR on it via
- * ocr-worker's internal-only API. This is the dms-core passthrough route
- * backend/workers/ocr-worker/README.md flags as not existing yet --
- * frontend -&gt; dms-core (Keycloak-authenticated, this controller) -&gt;
- * ocr-worker (internal-only, {@link com.oak.dms.ocrworker.OcrWorkerClient}).
- * No @PreAuthorize beyond the blanket {@code anyRequest().authenticated()}
- * in SecurityConfig -- any authenticated user may upload/OCR within their
- * own tenant (enforced in {@link DocumentServiceImpl#uploadDocument}); there
- * is no finer-grained document permission model yet.
+ * Uploads a document (as its first version) and queues it for OCR.
+ * Phase 1 B.1: {@code upload}/{@code runOcr} no longer call ocr-worker
+ * directly -- {@link DocumentServiceImpl#uploadDocument}/{@code prepareRerun}
+ * insert a {@code processing_jobs} row + {@code document.version.ocr.requested}
+ * outbox event transactionally, and ocr-worker's own RabbitMQ consumer
+ * (backend/workers/ocr-worker/src/ocr_worker/consumer.py's
+ * {@code OcrRequestedConsumer}) picks it up from there. No @PreAuthorize
+ * beyond the blanket {@code anyRequest().authenticated()} in SecurityConfig
+ * -- any authenticated user may upload/OCR within their own tenant
+ * (enforced in {@link DocumentServiceImpl#uploadDocument}); there is no
+ * finer-grained document permission model yet.
  * <p>
- * OCR now always runs asynchronously (selectable-OCR-field-extraction):
- * {@code upload} and {@code runOcr} both call {@link DocumentService#triggerOcrAsync}
- * AFTER their own transactional call returns -- i.e. after that transaction
- * has already committed -- and the caller polls {@code getOcrStatus} for the
- * result instead of getting it back synchronously.
+ * The caller polls {@code getOcrStatus} for the result, same as before.
  */
 @RestController
 @RequestMapping("/api/v1/documents")
@@ -76,13 +73,6 @@ public class DocumentController {
 
         DocumentVersionResponse response = documentService.uploadDocument(file, documentType, metadataValues, requestedFields);
 
-        // Fired only now, after uploadDocument's own @Transactional method
-        // has returned (i.e. committed) -- see DocumentService#triggerOcrAsync's
-        // doc comment for why this can't be called from inside that method.
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-        documentService.triggerOcrAsync(response.versionId(), requestedFields, tenantId, userId);
-
         return ResponseEntity.created(URI.create("/api/v1/documents/" + response.versionId())).body(response);
     }
 
@@ -92,13 +82,7 @@ public class DocumentController {
     @PostMapping("/{versionId}/ocr")
     public OcrRerunResponse runOcr(@PathVariable UUID versionId, @RequestBody(required = false) OcrRerunRequest body) {
         List<String> fields = body != null ? body.fields() : null;
-        OcrRerunResponse response = documentService.prepareRerun(versionId, fields);
-
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-        documentService.triggerOcrAsync(response.versionId(), response.effectiveFields(), tenantId, userId);
-
-        return response;
+        return documentService.prepareRerun(versionId, fields);
     }
 
     @Operation(summary = "Poll a document's OCR status and per-field extraction results")

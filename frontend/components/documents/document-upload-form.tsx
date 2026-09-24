@@ -30,16 +30,20 @@ import {
   type OcrStatusResponse,
 } from "@/lib/documents/api"
 
-type UploadPhase = "idle" | "uploading" | "processing" | "done" | "failed"
+type UploadPhase = "idle" | "uploading" | "queued" | "processing" | "done" | "failed"
 
-function isTerminalStatus(status: OcrStatusResponse["status"] | undefined): boolean {
+export function isTerminalStatus(status: OcrStatusResponse["status"] | undefined): boolean {
+  // "queued" is deliberately NOT terminal -- polling must continue while
+  // the job waits for an ocr-worker to claim it.
   return status === "completed" || status === "failed"
 }
 
-function phaseLabel(phase: UploadPhase): string {
+export function phaseLabel(phase: UploadPhase): string {
   switch (phase) {
     case "uploading":
       return "Uploading…"
+    case "queued":
+      return "Queued…"
     case "processing":
       return "Processing OCR…"
     case "done":
@@ -49,6 +53,16 @@ function phaseLabel(phase: UploadPhase): string {
     default:
       return ""
   }
+}
+
+/**
+ * Retrying a permanently-unsupported format can never succeed, so the
+ * retry affordances are hidden for that one error code specifically (a
+ * real gap confirmed live: a HEIC upload showed the generic "…or retry
+ * below" message, inviting a retry that could never work).
+ */
+export function isRetryable(errorCode: string | null | undefined): boolean {
+  return errorCode !== "UNSUPPORTED_FORMAT"
 }
 
 /**
@@ -143,7 +157,12 @@ export function DocumentUploadForm() {
         ? "done"
         : ocrStatusQuery.data?.status === "failed"
           ? "failed"
-          : "processing"
+          : ocrStatusQuery.data?.status === "queued"
+            ? "queued"
+            : "processing"
+
+  const ocrErrorCode = ocrStatusQuery.data?.errorCode
+  const retryable = isRetryable(ocrErrorCode)
 
   // Merges the saved metadata state into the form exactly once per terminal
   // OCR result, skipping any field the user has already hand-edited since.
@@ -353,7 +372,7 @@ export function DocumentUploadForm() {
               </div>
               {phase !== "idle" && (
                 <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground">
-                  {(phase === "uploading" || phase === "processing") && <Loader2 size={14} className="animate-spin" />}
+                  {(phase === "uploading" || phase === "queued" || phase === "processing") && <Loader2 size={14} className="animate-spin" />}
                   {phase === "done" && <CheckCircle2 size={14} className="text-primary" />}
                   {phase === "failed" && <XCircle size={14} className="text-[var(--rust)]" />}
                   {phaseLabel(phase)}
@@ -364,14 +383,17 @@ export function DocumentUploadForm() {
             {phase === "failed" && (
               <div className="mb-4 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
                 <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
-                OCR could not process this document. You can still fill in fields manually, or retry below.
-                <button
-                  type="button"
-                  onClick={() => handleRerun(Array.from(selectedFields))}
-                  className="ml-auto shrink-0 font-semibold underline"
-                >
-                  Retry
-                </button>
+                {ocrStatusQuery.data?.friendlyError ?? "OCR could not process this document."}{" "}
+                {retryable ? "You can still fill in fields manually, or retry below." : "You can still fill in the fields manually."}
+                {retryable && (
+                  <button
+                    type="button"
+                    onClick={() => handleRerun(Array.from(selectedFields))}
+                    className="ml-auto shrink-0 font-semibold underline"
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
 
@@ -379,7 +401,7 @@ export function DocumentUploadForm() {
               <div className="mb-4">
                 <div className="mb-2.5 flex items-center justify-between gap-3">
                   <p className="text-[12.5px] font-semibold text-foreground">Fields</p>
-                  {(phase === "done" || phase === "failed") && (
+                  {(phase === "done" || (phase === "failed" && retryable)) && (
                     <button
                       type="button"
                       disabled={savingFields}
@@ -398,7 +420,7 @@ export function DocumentUploadForm() {
                   onChange={handleFieldChange}
                   disabled={savingFields}
                   ocrResults={ocrResultsByFieldKey}
-                  onRerunField={phase === "done" || phase === "failed" ? (fieldKey) => handleRerun([fieldKey]) : undefined}
+                  onRerunField={phase === "done" || (phase === "failed" && retryable) ? (fieldKey) => handleRerun([fieldKey]) : undefined}
                 />
               </div>
             )}

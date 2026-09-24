@@ -183,13 +183,6 @@ minio:
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   source-bucket: ${MINIO_SOURCE_BUCKET:oakdms-documents}
 
-# ocr-worker is internal-only (no published host port, no auth of its own)
-# -- see backend/workers/ocr-worker/README.md "Auth & service exposure".
-# internal-token must equal ocr-worker's own INTERNAL_SERVICE_TOKEN.
-ocr-worker:
-  base-url: ${OCR_WORKER_BASE_URL:http://localhost:8090}
-  internal-token: ${OCR_WORKER_INTERNAL_TOKEN:change-me-local-dev-internal-token}
-
 management:
   endpoints:
     web:
