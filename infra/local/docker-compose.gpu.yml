@@ -1,0 +1,19 @@
+# Optional NVIDIA GPU override for the local LLM server. Layer it on top of
+# the base file:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Kept separate because the device reservation below makes `docker compose
+# up` fail outright on a host without the NVIDIA container runtime, and the
+# base stack has to stay usable on CPU-only machines. A 7B model at Q4_K_M
+# (~4.7GB) plus an 8K context fits a 6GB card; Ollama offloads the remainder
+# to CPU automatically when it doesn't.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

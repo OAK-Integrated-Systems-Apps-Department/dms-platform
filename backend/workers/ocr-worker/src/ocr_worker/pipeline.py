@@ -24,6 +24,7 @@ from .layout import LayoutEngine, SUPPORTED_MIME_TYPES
 from .ocr_engine import OcrEngine
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
 from .storage import ObjectStorage, ocr_output_key
+from .structuring import StructuredExtractionRunner
 from .zones import ZoneRegion, validate_normalized_box
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,13 @@ def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict
     """
     positioned: list[tuple[int, int, list[dict], dict | None]] = []
     for b in native_blocks:
-        positioned.append((b.bbox[1], b.bbox[0], [{"text": b.text, "bbox": list(b.bbox), "confidence": 1.0}], None))
+        block = {"text": b.text, "bbox": list(b.bbox), "confidence": 1.0}
+        # Docling's structural role (title/section_header/page_header/...),
+        # additive to the output contract -- structuring/ uses it for
+        # headings and sections. Omitted when Docling gave none.
+        if getattr(b, "label", None):
+            block["label"] = b.label
+        positioned.append((b.bbox[1], b.bbox[0], [block], None))
 
     for t in tables:
         ordered_cells = sorted(t.cells, key=lambda c: (c.row, c.col))
@@ -112,9 +119,15 @@ class PageResult:
     confidence: float
     blocks: list[dict] = field(default_factory=list)
     tables: list[dict] = field(default_factory=list)
+    # native_text pages only: PyMuPDF's real per-visual-line text+bbox
+    # (layout.py's native_text_lines_for_page). Docling merges a borderless
+    # label/value region into one paragraph block, which loses exactly the
+    # row structure that relates a label to its value; structuring/ reads
+    # these lines instead of `blocks` when present. Omitted when empty.
+    lines: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        page = {
             "page_number": self.page_number,
             "method": self.method,
             "text": self.text,
@@ -122,6 +135,9 @@ class PageResult:
             "blocks": self.blocks,
             "tables": self.tables,
         }
+        if self.lines:
+            page["lines"] = self.lines
+        return page
 
 
 @dataclass
@@ -130,6 +146,7 @@ class ProcessingOutcome:
     version_id: uuid.UUID
     output: dict | None = None  # the exact JSON also stored at extracted_text_ref -- see "Output contract"
     error: str | None = None
+    extracted_text_ref: str | None = None  # MinIO key of `output`; set on success
 
 
 class OcrPipeline:
@@ -147,6 +164,7 @@ class OcrPipeline:
         storage: ObjectStorage,
         layout_engine: LayoutEngine,
         ocr_engine: OcrEngine,
+        structuring: StructuredExtractionRunner | None = None,
     ):
         self._settings = settings
         self._session_factory = session_factory
@@ -154,11 +172,42 @@ class OcrPipeline:
         self._layout_engine = layout_engine
         self._ocr_engine = ocr_engine
         self._confidence = ConfidenceEvaluator(settings.min_confidence_threshold)
+        self._structuring = structuring
+
+    @property
+    def structuring(self) -> StructuredExtractionRunner | None:
+        return self._structuring
 
     # ------------------------------------------------------------------
     # Event-path / dev-trigger: full document
     # ------------------------------------------------------------------
     def process_version(
+        self,
+        version_id: uuid.UUID,
+        correlation_id: uuid.UUID | None = None,
+        requested_fields: list[FieldSpec] | None = None,
+    ) -> ProcessingOutcome:
+        """Full-document OCR (see _process_version_ocr), then -- only once
+        that run's transaction has committed -- local-LLM structured
+        extraction (structuring/). Structuring never changes the OCR
+        outcome: its failures are recorded on its own result artifact, and
+        in the default async mode it doesn't add latency either. In sync
+        mode the result is also returned under `structured`.
+        """
+        outcome = self._process_version_ocr(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
+        if self._structuring is not None and outcome.status == "completed":
+            try:
+                structured = self._structuring.after_ocr(
+                    version_id=outcome.version_id, extracted_text_ref=outcome.extracted_text_ref, pages=outcome.output["pages"]
+                )
+            except Exception:  # noqa: BLE001 - OCR already committed; a structuring hand-off failure is logged, not raised
+                logger.exception("could not start structured extraction for version %s", outcome.version_id)
+                structured = None
+            if structured is not None:
+                outcome.output["structured"] = structured
+        return outcome
+
+    def _process_version_ocr(
         self,
         version_id: uuid.UUID,
         correlation_id: uuid.UUID | None = None,
@@ -264,6 +313,7 @@ class OcrPipeline:
                 native_lines = layout_doc.native_text_lines_for_page(page_index, self._settings.ocr_render_dpi)
                 if native_lines:
                     lines_by_page[page_number] = [(b.text, b.bbox) for b in native_lines]
+                    pages[-1].lines = [{"text": b.text, "bbox": list(b.bbox)} for b in native_lines]
             else:
                 page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
                 result = self._ocr_engine.recognize(page_image.image, lang=self._settings.ocr_languages)
@@ -453,7 +503,7 @@ class OcrPipeline:
                 version_id=ctx.version.version_id,
                 results=field_results,
             )
-        return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
+        return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json, extracted_text_ref=object_key)
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
         logger.exception("OCR processing failed for version %s", ctx.version.version_id)

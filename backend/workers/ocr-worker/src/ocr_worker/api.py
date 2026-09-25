@@ -3,13 +3,16 @@ from __future__ import annotations
 import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .config import Settings
 from .extraction import FieldSpec
+from .models import DocumentVersion
 from .pipeline import OcrPipeline, UnsupportedMimeType
 from .repository import VersionNotEligible, VersionNotFound
+from .structuring import NoOcrOutput, StructuredExtractionRunner
 
 
 class RequestedField(BaseModel):
@@ -55,7 +58,20 @@ def _failure_response(outcome) -> dict:
     return {"status": "failed", "document_version_id": str(outcome.version_id), "error": outcome.error}
 
 
-def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, settings: Settings) -> FastAPI:
+class StructuredRequest(BaseModel):
+    # False (default): queue it and return 202 with the `pending` result --
+    # a 7B model can take minutes. True: block and return the final result
+    # (dev/testing, or a caller with a long enough timeout).
+    wait: bool = False
+
+
+def create_app(
+    pipeline: OcrPipeline,
+    session_factory,
+    rabbitmq_ready_check,
+    settings: Settings,
+    structuring: StructuredExtractionRunner | None = None,
+) -> FastAPI:
     app = FastAPI(title="ocr-worker", description="Oak DMS OCR & Scanning microservice (internal-only)")
 
     def require_internal_token(x_internal_token: str | None = Header(default=None)) -> None:
@@ -137,5 +153,51 @@ def create_app(pipeline: OcrPipeline, session_factory, rabbitmq_ready_check, set
             # Covers the "ambiguous/degenerate rubber-band selection" alternate flow.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
+
+    # ------------------------------------------------------------------
+    # Structured JSON extraction (local LLM) -- README "Structured JSON
+    # extraction (local LLM)". Declared before /{version_id} so "health"
+    # isn't parsed as a version id.
+    # ------------------------------------------------------------------
+    def _require_structuring() -> StructuredExtractionRunner:
+        if structuring is None:
+            raise HTTPException(status_code=503, detail="structured extraction is not configured in this process")
+        return structuring
+
+    def _tenant_of(version_id: uuid.UUID) -> uuid.UUID:
+        with session_factory() as session:
+            version = session.get(DocumentVersion, version_id)
+            if version is None:
+                raise HTTPException(status_code=404, detail=f"document version {version_id} not found")
+            return version.tenant_id
+
+    @app.get("/ocr/structured/health", dependencies=[Depends(require_internal_token)])
+    def structured_health():
+        """Model server reachability + whether LLM_MODEL is actually pulled."""
+        return _require_structuring().health()
+
+    @app.get("/ocr/structured/{version_id}", dependencies=[Depends(require_internal_token)])
+    def get_structured(version_id: uuid.UUID):
+        """Newest structured result for a version: status pending | completed
+        | partial | failed | skipped, plus document_type/fields/tables/
+        sections, warnings and error details."""
+        runner = _require_structuring()
+        result = runner.latest(tenant_id=_tenant_of(version_id), version_id=version_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"no structured result for version {version_id}")
+        return result
+
+    @app.post("/ocr/structured/{version_id}", dependencies=[Depends(require_internal_token)])
+    def run_structured(version_id: uuid.UUID, body: StructuredRequest | None = None):
+        """Re-structures the version's newest OCR output (no OCR re-run)."""
+        runner = _require_structuring()
+        if not runner.enabled:
+            raise HTTPException(status_code=409, detail="structured extraction is disabled (LLM_EXTRACTION_MODE=off)")
+        wait = body.wait if body else False
+        try:
+            result = runner.rerun(tenant_id=_tenant_of(version_id), version_id=version_id, wait=wait)
+        except NoOcrOutput as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(result, status_code=200 if wait else 202)
 
     return app

@@ -1,13 +1,16 @@
 package com.oak.dms.ocrworker;
 
+import com.oak.dms.common.exception.StructuredExtractionUnavailableException;
 import com.oak.dms.common.exception.UpstreamServiceException;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
@@ -82,5 +85,79 @@ public class OcrWorkerClient {
             log.error("Could not reach ocr-worker at {}: {}", properties.getBaseUrl(), e.getMessage());
             throw new UpstreamServiceException("Could not reach ocr-worker: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * The newest structured (local-LLM) extraction result for a version --
+     * ocr-worker's GET /ocr/structured/{version_id}, see its README
+     * "Structured JSON extraction (local LLM)". Its {@code status} is
+     * pending/completed/partial/failed/skipped. Returns null when ocr-worker
+     * has none for this version (its 404): OCR hasn't finished, or
+     * structured extraction is switched off there.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getStructuredResult(UUID versionId) {
+        try {
+            ResponseEntity<Map> response = ocrWorkerRestTemplate.exchange(
+                    properties.getBaseUrl() + "/ocr/structured/" + versionId,
+                    HttpMethod.GET,
+                    new HttpEntity<>(internalHeaders()),
+                    Map.class);
+            return (Map<String, Object>) response.getBody();
+        } catch (HttpClientErrorException.NotFound e) {
+            return null;
+        } catch (HttpStatusCodeException e) {
+            log.error("ocr-worker rejected structured-result request for version {}: {}", versionId, e.getStatusCode());
+            throw new UpstreamServiceException("ocr-worker returned " + e.getStatusCode() + ": " + e.getResponseBodyAsString(), e);
+        } catch (ResourceAccessException e) {
+            log.error("Could not reach ocr-worker at {}: {}", properties.getBaseUrl(), e.getMessage());
+            throw new UpstreamServiceException("Could not reach ocr-worker: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Queues structured extraction again over the version's stored OCR
+     * output (no OCR re-run) -- ocr-worker's POST /ocr/structured/{version_id}
+     * with wait=false, which answers 202 with the {@code pending} result
+     * immediately; the caller polls {@link #getStructuredResult}.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestStructuredExtraction(UUID versionId) {
+        HttpHeaders headers = internalHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<Map> response = ocrWorkerRestTemplate.postForEntity(
+                    properties.getBaseUrl() + "/ocr/structured/" + versionId,
+                    new HttpEntity<>(Map.of("wait", false), headers),
+                    Map.class);
+            return (Map<String, Object>) response.getBody();
+        } catch (HttpClientErrorException.Conflict e) {
+            throw new StructuredExtractionUnavailableException(detailOf(e));
+        } catch (HttpStatusCodeException e) {
+            log.error("ocr-worker rejected structured-extraction request for version {}: {}", versionId, e.getStatusCode());
+            throw new UpstreamServiceException("ocr-worker returned " + e.getStatusCode() + ": " + e.getResponseBodyAsString(), e);
+        } catch (ResourceAccessException e) {
+            log.error("Could not reach ocr-worker at {}: {}", properties.getBaseUrl(), e.getMessage());
+            throw new UpstreamServiceException("Could not reach ocr-worker: " + e.getMessage(), e);
+        }
+    }
+
+    private HttpHeaders internalHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Token", properties.getInternalToken());
+        return headers;
+    }
+
+    /** FastAPI error bodies are {"detail": "..."}; fall back to the raw body. */
+    private static String detailOf(HttpStatusCodeException e) {
+        try {
+            Map<?, ?> body = e.getResponseBodyAs(Map.class);
+            if (body != null && body.get("detail") instanceof String detail) {
+                return detail;
+            }
+        } catch (RuntimeException ignored) {
+            // not JSON -- fall through to the raw body
+        }
+        return e.getResponseBodyAsString();
     }
 }

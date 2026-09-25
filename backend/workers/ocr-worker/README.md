@@ -144,6 +144,145 @@ deliberately slimmer than this -- see `docs/events/ocr-scanning-events.md`
 -- it carries `extracted_text_ref` and `flags` so a downstream consumer
 knows to go fetch the detail, not a copy of the whole JSON.
 
+## Structured JSON extraction (local LLM)
+
+After a full-document OCR run commits, ocr-worker turns the OCR output into
+structured JSON with a **local** 7B-class model. Label→value, table
+header→cell and heading→section relationships are kept, and invented
+values are replaced with `null`.
+
+```
+document -> upload validation -> Docling (native text, layout, labels, tables)
+         -> PaddleOCR (pages without a text layer)      [unchanged OCR pipeline]
+         -> OCR output JSON committed (ocr_outputs, MinIO, outbox)
+         -> normalized representation (structuring/document_model.py)
+         -> chunks sized to the model context (structuring/chunking.py)
+         -> local LLM, JSON-Schema-constrained decoding (structuring/llm_client.py)
+         -> JSON parse + schema validation, repair retry (structuring/schema.py)
+         -> grounding check: values must occur in the source (structuring/grounding.py)
+         -> merge chunks + final schema validation (structuring/service.py)
+         -> ocr/{tenant}/{version}/{ocr_output_id}.structured.json   (MinIO)
+         -> dms-core GET /api/v1/documents/{documentId}/structured-data
+```
+
+**What the model sees.** It never gets the flattened `text`. Each page is
+sent as visual rows in reading order with their pixel position
+(`L3 @167,356: Employee Name: | John Silva`). Blocks that sit side by side
+on one row become ` | `-separated parts. Docling labels mark titles, section
+headings, page headers/footers and list items (for OCR pages with no
+labels, an ALL-CAPS heuristic is used). Tables are real header + row/column
+grids: malformed grids are repaired and flagged, and a header row is
+inferred when TableFormer didn't mark one. Key/value hints are added where
+a label and its value are separate blocks (value below the label, or
+multi-column form rows), and lines with low OCR confidence are marked `?`.
+For native-text pages, PyMuPDF's per-line text (the new `pages[].lines`
+in the OCR output, additive) replaces Docling's paragraph blocks, which
+merge borderless label/value regions into a single paragraph. Page images
+are never sent.
+
+**Output** (validated against `StructuredResult` before it is stored or
+returned):
+
+```json
+{
+  "schema_version": 1,
+  "status": "completed",
+  "document_type": "employee_contract",
+  "fields": {"employee_name": "John Silva", "employee_id": "EMP-1023", "joining_date": "2026-09-01", "salary": "LKR 150,000"},
+  "tables": [{"name": "Salary Breakdown", "page": 1, "headers": ["Component", "Monthly Amount (LKR)"], "rows": [["Basic Salary", "120,000"]]}],
+  "sections": [{"heading": "Terms and Conditions", "content": "1. Probation period: ..."}],
+  "warnings": [{"code": "UNGROUNDED_VALUE", "message": "value not found in the document text; replaced with null", "path": "fields.manager"}],
+  "error": null,
+  "model": {"provider": "ollama", "name": "qwen2.5:7b-instruct"},
+  "stats": {"pages": 1, "chunks_processed": 1, "llm_calls": 1, "prompt_tokens": 1650, "completion_tokens": 310, "duration_ms": 41000}
+}
+```
+
+`status` is one of:
+
+- `pending`: queued.
+- `completed`.
+- `partial`: some chunks failed, or the document exceeded `LLM_MAX_CHUNKS`.
+- `failed`: see `error`.
+- `skipped`: there was nothing to structure.
+
+**Error handling.** Every failure has a stable `error.code` or
+`warnings[].code`:
+
+| code | when | behaviour |
+|---|---|---|
+| `UNSUPPORTED_FORMAT` / `CORRUPTED_DOCUMENT` / `ENCRYPTED_DOCUMENT` / `EMPTY_DOCUMENT` / `DOCUMENT_TOO_LARGE` | upload validation (`validation.py`), before Docling/PaddleOCR parse anything: real file signature vs. declared mime type, truncated/unreadable PDF, password, size/page limits | the **OCR** run fails with this prefix in `processing_jobs.last_error` |
+| `EMPTY_OCR_RESULT` | OCR found no text anywhere | `skipped`, the model is not called |
+| `MODEL_UNAVAILABLE` | model server unreachable, model not pulled, not enough memory to load it | `failed`, stops at the first chunk |
+| `LLM_TIMEOUT` | no reply within `LLM_TIMEOUT_SECONDS` | `failed`, stops at the first chunk |
+| `INVALID_JSON` / `SCHEMA_VALIDATION_FAILED` | reply isn't JSON / has the wrong shape | retried with a repair note (`LLM_MAX_RETRIES`) |
+| `INCOMPLETE_RESPONSE` / `CONTEXT_OVERFLOW` | reply cut off at `LLM_MAX_OUTPUT_TOKENS`, or the prompt filled the context | the chunk is split in half and retried, recursively |
+| `DOCUMENT_TOO_LARGE` (warning) | more chunks than `LLM_MAX_CHUNKS` | `partial`, first N chunks only |
+| `MALFORMED_TABLE` (warning) | grid repaired, or ragged rows from the model | kept, padded with null |
+| `UNGROUNDED_VALUE` (warning) | value not found in the chunk's text | nulled (`LLM_GROUNDING_POLICY=nullify`) |
+| `LLM_ENDPOINT_NOT_LOCAL` | `LLM_BASE_URL` is a public host | the model is never called |
+
+Structuring can never fail, roll back or delay OCR. It runs after the OCR
+transaction commits, on its own bounded thread pool, and its failures are
+recorded only on its own result.
+
+**Security.** Inference is local only. `LLM_BASE_URL` must be loopback, a
+private IP, or a single-label or internal (`.internal`, `.svc`, `.local`)
+host unless it is explicitly allow-listed. `HTTP(S)_PROXY` is ignored for
+model calls. Logs carry counts, durations and error codes only, never
+document text, prompts, model replies or extracted values; error and
+warning messages name JSON paths, not values. The `ollama` compose service
+has no published port.
+
+**Performance.** One model, loaded once and kept resident
+(`LLM_KEEP_ALIVE`), with one document at a time (`LLM_MAX_CONCURRENCY=1`).
+Large documents are processed in page-ordered chunks sized from
+`LLM_CONTEXT_TOKENS` (Ollama otherwise truncates prompts silently).
+Temperature is 0 with a fixed seed, so re-runs are reproducible.
+
+**APIs** (all require `X-Internal-Token`):
+
+- `GET /ocr/structured/{version_id}`: newest result; 404 if none.
+- `POST /ocr/structured/{version_id}` `{"wait": false}`: re-structures the
+  newest stored OCR output without re-running OCR. Returns 202 with the
+  `pending` result, or 200 with the final one when `wait: true`. Returns 409
+  when disabled or when there is no OCR output yet.
+- `GET /ocr/structured/health`: model server reachable and `LLM_MODEL`
+  pulled.
+- In `LLM_EXTRACTION_MODE=sync`, `POST /ocr/process/{id}` also returns the
+  result under `structured`.
+
+dms-core passthrough: `GET` / `POST /api/v1/documents/{documentId}/structured-data`
+(tenant-checked, latest version).
+
+**Model setup.** The default is `qwen2.5:7b-instruct` (Apache-2.0, ~4.7GB
+Q4_K_M). `docker compose up` starts `ollama` and pulls the model once
+(`ollama-model-init`). For an NVIDIA GPU:
+`docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
+To swap models, set `LLM_MODEL` (e.g. `llama3.1:8b`, `mistral:7b-instruct`);
+nothing else names the model. For llama.cpp's `llama-server`, vLLM or LM
+Studio instead of Ollama, set `LLM_PROVIDER=openai_compatible` and point
+`LLM_BASE_URL` at it.
+
+| env var | default | meaning |
+|---|---|---|
+| `LLM_EXTRACTION_MODE` | `off` (compose: `async`) | `off` / `async` (after OCR, background) / `sync` (dev: block and return it) |
+| `LLM_PROVIDER` | `ollama` | `ollama` or `openai_compatible` |
+| `LLM_BASE_URL` | `http://localhost:11434` | model server (compose: `http://ollama:11434`) |
+| `LLM_MODEL` | `qwen2.5:7b-instruct` | model name/tag |
+| `LLM_CONTEXT_TOKENS` / `LLM_MAX_OUTPUT_TOKENS` | `8192` / `2048` | context requested per call / reply budget |
+| `LLM_CHUNK_MAX_TOKENS` | `0` (derived) | cap on chunk input size |
+| `LLM_CHARS_PER_TOKEN` | `3.0` | conservative token estimate for chunking |
+| `LLM_MAX_CHUNKS` | `20` | beyond this, the result is `partial` |
+| `LLM_TIMEOUT_SECONDS` | `600` | per model call |
+| `LLM_MAX_RETRIES` | `1` | repair retries per chunk |
+| `LLM_GROUNDING_POLICY` | `nullify` | `nullify` / `flag` / `off` |
+| `LLM_KEEP_ALIVE` | `30m` | how long Ollama keeps the model loaded |
+| `LLM_MAX_CONCURRENCY` | `1` | documents structured at once |
+| `LLM_WARMUP_ON_STARTUP` | `false` | load the model at worker start |
+| `LLM_ALLOWED_HOSTS` / `LLM_ALLOW_NON_LOCAL` | empty / `false` | escape hatches for the locality guard |
+| `MAX_DOCUMENT_BYTES` / `MAX_DOCUMENT_PAGES` | `52428800` / `500` | upload validation limits |
+
 ## Zone / structured-field templates
 
 Stored in Postgres (`document_type_ocr_zones` --

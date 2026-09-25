@@ -16,6 +16,7 @@ from .logging_config import configure_logging
 from .ocr_engine import PaddleOcrEngine
 from .pipeline import OcrPipeline
 from .storage import ObjectStorage
+from .structuring import build_structuring_runner
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,9 @@ def build_pipeline(settings: Settings) -> tuple[OcrPipeline, "sessionmaker", Obj
         settings=settings,
         session_factory=session_factory,
         storage=storage,
-        layout_engine=LayoutEngine(),
+        layout_engine=LayoutEngine(max_document_bytes=settings.max_document_bytes, max_document_pages=settings.max_document_pages),
         ocr_engine=PaddleOcrEngine(),
+        structuring=build_structuring_runner(settings, storage),
     )
     return pipeline, session_factory, storage
 
@@ -61,10 +63,14 @@ def create_application() -> FastAPI:
             # is briefly unavailable at boot -- /readyz reflects the outage
             # instead of the whole process refusing to start.
             logger.exception("Failed to start RabbitMQ consumer; API endpoints remain available")
+
+        if settings.llm_warmup_on_startup:
+            pipeline.structuring.warmup_in_background()
         yield
         await consumer.stop()
+        pipeline.structuring.shutdown()
 
-    app = create_app(pipeline, session_factory, lambda: consumer_state["connected"], settings)
+    app = create_app(pipeline, session_factory, lambda: consumer_state["connected"], settings, structuring=pipeline.structuring)
     app.router.lifespan_context = lifespan
     return app
 

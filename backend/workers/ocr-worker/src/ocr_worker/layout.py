@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .validation import validate_document_bytes
+
 
 @dataclass
 class PageImage:
@@ -24,6 +26,11 @@ class NativeTextBlock:
 
     text: str
     bbox: tuple[int, int, int, int]
+    # Docling's DocItemLabel value ("title", "section_header", "text",
+    # "list_item", "page_header", "page_footer", "caption", ...) -- the
+    # document-structure role structuring/ uses for headings and sections.
+    # None for PyMuPDF line blocks, which have no such classification.
+    label: str | None = None
 
 
 @dataclass
@@ -159,7 +166,8 @@ class DoclingLayoutDocument:
                 if prov.page_no != page_no:
                     continue
                 x0, y0, x1, y1 = _bbox_to_pixels(prov.bbox, page_height_pt, scale)
-                blocks.append(NativeTextBlock(text=item.text, bbox=(x0, y0, x1, y1)))
+                label = getattr(getattr(item, "label", None), "value", None)
+                blocks.append(NativeTextBlock(text=item.text, bbox=(x0, y0, x1, y1), label=label))
         return blocks or None
 
     def native_text_lines_for_page(self, page_no: int, dpi: int) -> list[NativeTextBlock] | None:
@@ -297,8 +305,10 @@ class LayoutEngine:
     native-text detection for every document that follows.
     """
 
-    def __init__(self):
+    def __init__(self, max_document_bytes: int = 50 * 1024 * 1024, max_document_pages: int = 500):
         self._docling_converter = None
+        self._max_document_bytes = max_document_bytes
+        self._max_document_pages = max_document_pages
 
     def _converter(self):
         if self._docling_converter is None:
@@ -332,6 +342,12 @@ class LayoutEngine:
         return self._docling_converter
 
     def load(self, file_bytes: bytes, mime_type: str, original_filename: str) -> DoclingLayoutDocument:
+        # Raises validation.InvalidDocument (UNSUPPORTED_FORMAT/CORRUPTED_
+        # DOCUMENT/...) before Docling or PyMuPDF's rasterizer ever parse the
+        # file -- every OCR flow loads through here, so none can skip it.
+        validate_document_bytes(
+            file_bytes, mime_type, max_bytes=self._max_document_bytes, max_pages=self._max_document_pages
+        )
         return DoclingLayoutDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
 
 

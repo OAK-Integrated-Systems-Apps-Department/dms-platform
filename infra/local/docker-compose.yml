@@ -257,6 +257,17 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_SECURE: "false"
+      # Local-LLM structured JSON extraction (ocr-worker README "Structured
+      # JSON extraction (local LLM)"). Runs after OCR commits, never
+      # inline, so dms-core's 60s OCR read timeout is unaffected. The model
+      # server is the `ollama` service below -- inference never leaves this
+      # docker network. Set LLM_EXTRACTION_MODE=off to disable entirely.
+      LLM_EXTRACTION_MODE: ${LLM_EXTRACTION_MODE:-async}
+      LLM_PROVIDER: ollama
+      LLM_BASE_URL: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b-instruct}
+      LLM_CONTEXT_TOKENS: ${LLM_CONTEXT_TOKENS:-8192}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-600}
     # No `ports:` -- internal-only. ocr-worker is reachable from other containers on this compose
     # network at http://ocr-worker:8090 (Docker's own service-name DNS).
     # See README's "Auth & service exposure": frontend -> dms-core
@@ -281,6 +292,47 @@ services:
       rabbitmq:
         condition: service_healthy
       minio:
+        condition: service_healthy
+    # Deliberately NOT depending on `ollama`: OCR must keep working when
+    # the model server is down or the model isn't pulled yet -- structuring
+    # then records MODEL_UNAVAILABLE instead of blocking OCR startup.
+
+  # Local LLM inference server for ocr-worker's structured JSON extraction.
+  # No `ports:` -- documents are confidential, so the model server is only
+  # reachable on this compose network (http://ollama:11434), same boundary
+  # as ocr-worker itself. The model is loaded once and kept resident
+  # (OLLAMA_KEEP_ALIVE) instead of being reloaded per document; one loaded
+  # model and one request at a time, because the target hardware is a
+  # single small GPU / CPU. For NVIDIA GPU inference, layer
+  # docker-compose.gpu.yml on top of this file.
+  ollama:
+    image: ollama/ollama:0.34.4
+    container_name: oakdms-ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: pulls LLM_MODEL into the ollama_models volume on first
+  # `docker compose up` (~4.7GB for the default qwen2.5:7b-instruct Q4_K_M
+  # build) and exits; later runs are a fast no-op digest check.
+  ollama-model-init:
+    image: ollama/ollama:0.34.4
+    container_name: oakdms-ollama-model-init
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${LLM_MODEL:-qwen2.5:7b-instruct}"]
+    restart: "no"
+    depends_on:
+      ollama:
         condition: service_healthy
 
   frontend:
@@ -315,3 +367,4 @@ volumes:
   minio_data:
   ocr_worker_models:
   ocr_worker_hf_cache:
+  ollama_models:

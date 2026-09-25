@@ -62,11 +62,42 @@ class ObjectStorage:
         )
         return object_key
 
+    def get_ocr_output_json(self, object_key: str) -> dict[str, Any]:
+        response = self.client.get_object(self._settings.minio_ocr_output_bucket, object_key)
+        try:
+            return json.loads(response.read())
+        finally:
+            response.close()
+            response.release_conn()
+
+    def latest_ocr_output_key(self, tenant_id, version_id, *, structured: bool = False) -> str | None:
+        """Newest OCR output (or, with structured=True, newest structured
+        result) stored for one version, by upload time -- ocr_output_key's
+        layout groups every run of a version under one prefix."""
+        prefix = f"ocr/{tenant_id}/{version_id}/"
+        newest = None
+        for obj in self.client.list_objects(self._settings.minio_ocr_output_bucket, prefix=prefix, recursive=True):
+            name = obj.object_name
+            if not name.endswith(".json") or name.endswith(STRUCTURED_SUFFIX) != structured:
+                continue
+            if newest is None or obj.last_modified > newest.last_modified:
+                newest = obj
+        return newest.object_name if newest is not None else None
+
     def ensure_buckets(self) -> None:
         for bucket in (self._settings.minio_source_bucket, self._settings.minio_ocr_output_bucket):
             if not self.client.bucket_exists(bucket):
                 self.client.make_bucket(bucket)
 
 
+STRUCTURED_SUFFIX = ".structured.json"
+
+
 def ocr_output_key(tenant_id, version_id, ocr_output_id) -> str:
     return f"ocr/{tenant_id}/{version_id}/{ocr_output_id}.json"
+
+
+def structured_output_key(extracted_text_ref: str) -> str:
+    """The structured (LLM) result lives next to the OCR output it was built
+    from: ocr/{tenant}/{version}/{ocr_output_id}.structured.json."""
+    return extracted_text_ref.removesuffix(".json") + STRUCTURED_SUFFIX
