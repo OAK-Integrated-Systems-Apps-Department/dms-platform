@@ -13,7 +13,8 @@ import com.oak.dms.metadata.mapper.MetadataFieldMapper;
 import com.oak.dms.metadata.dto.MetadataFieldResponse;
 import com.oak.dms.metadata.dto.UpdateMetadataFieldRequest;
 import com.oak.dms.metadata.entity.MetadataField;
-import com.oak.dms.metadata.repository.DocumentTypeFieldRepository;
+import com.oak.dms.metadata.repository.DocumentMetadataRepository;
+import com.oak.dms.metadata.repository.DocumentTypeSchemaRepository;
 import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.metadata.service.MetadataFieldService;
 import com.oak.dms.security.auth.TenantContext;
@@ -33,8 +34,9 @@ import java.util.UUID;
  * usual soft-delete): a field with no references anywhere is simply removed,
  * matching MDTM alternate flow 2's framing of delete vs. deprecate as two
  * distinct actions rather than delete meaning "deprecate". A field still
- * referenced by any {@code document_type_fields} or
- * {@code document_metadata_values} row is blocked from deletion entirely -
+ * mapped by any {@code document_type_schemas} version (active or archived)
+ * or holding a value in any {@code document_metadata} row is blocked from
+ * deletion entirely -
  * deprecate is offered instead.
  */
 @Slf4j
@@ -44,7 +46,8 @@ import java.util.UUID;
 public class MetadataFieldServiceImpl implements MetadataFieldService {
 
     private final MetadataFieldRepository metadataFieldRepository;
-    private final DocumentTypeFieldRepository documentTypeFieldRepository;
+    private final DocumentTypeSchemaRepository documentTypeSchemaRepository;
+    private final DocumentMetadataRepository documentMetadataRepository;
     private final MetadataFieldMapper metadataFieldMapper;
     private final SchemaCacheService schemaCacheService;
     private final AuditService auditService;
@@ -175,12 +178,10 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         }
 
         // MDTM alternate flow 2: a field still in use can't be deleted -
-        // deprecate it instead. document_metadata_values doesn't have a JPA
-        // repository in this module (see the table's own migration
-        // comment), so that reference check is a direct count query here
-        // rather than going through a repository abstraction.
-        long mappedTypeCount = documentTypeFieldRepository.countDistinctDocumentTypesByField(fieldId, tenantId);
-        if (mappedTypeCount > 0 || hasDocumentMetadataValues(fieldId)) {
+        // deprecate it instead. Archived schema versions count too: they
+        // stay readable via ?version=N, so the field must keep existing.
+        long mappedTypeCount = documentTypeSchemaRepository.countDistinctDocumentTypesByField(fieldId, tenantId);
+        if (mappedTypeCount > 0 || hasDocumentMetadataValues(fieldId, tenantId)) {
             throw new InvalidMetadataFieldStateException(
                     "Cannot delete field '" + field.getFieldKey() + "' - it is referenced by "
                             + mappedTypeCount + " document type(s) and/or has existing document values. "
@@ -201,12 +202,11 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                 .log();
     }
 
-    private boolean hasDocumentMetadataValues(UUID fieldId) {
-        // document_metadata_values intentionally has no JPA entity/repository
-        // in this module (module 2.5 doesn't exist yet, and nothing here
-        // writes to it) - always empty until then, so deletion is only ever
-        // blocked by an actual document_type_fields reference in practice.
-        return false;
+    private boolean hasDocumentMetadataValues(UUID fieldId, UUID tenantId) {
+        // Nothing writes document_metadata yet (module 2.5 / A11 will), so
+        // in practice this is false until then and deletion is only blocked
+        // by a schema mapping - but it's a real check, not a placeholder.
+        return documentMetadataRepository.existsByTenantIdAndFieldKey(tenantId, fieldId.toString());
     }
 
     private MetadataFieldResponse setStatus(UUID fieldId, MetadataField.FieldStatus status, String auditAction) {

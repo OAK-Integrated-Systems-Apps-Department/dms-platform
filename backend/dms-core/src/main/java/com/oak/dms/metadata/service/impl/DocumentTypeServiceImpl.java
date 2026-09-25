@@ -11,7 +11,9 @@ import com.oak.dms.metadata.mapper.DocumentTypeMapper;
 import com.oak.dms.metadata.dto.DocumentTypeResponse;
 import com.oak.dms.metadata.dto.UpdateDocumentTypeRequest;
 import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.entity.DocumentTypeSchema;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.repository.DocumentTypeSchemaRepository;
 import com.oak.dms.metadata.service.DocumentTypeService;
 import com.oak.dms.metadata.helper.DisplayOrderNormalizer;
 import com.oak.dms.security.auth.TenantContext;
@@ -34,6 +36,7 @@ import java.util.UUID;
 public class DocumentTypeServiceImpl implements DocumentTypeService {
 
     private final DocumentTypeRepository documentTypeRepository;
+    private final DocumentTypeSchemaRepository documentTypeSchemaRepository;
     private final DocumentTypeMapper documentTypeMapper;
     private final AuditService auditService;
 
@@ -66,6 +69,20 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
         if (!touchedSiblings.isEmpty()) {
             documentTypeRepository.saveAll(touchedSiblings);
         }
+
+        // Every document type has a schema row at its current version, even
+        // before its first publish, so per-document metadata can always
+        // reference (document type, version). Flushed first: the row has no
+        // JPA association to DocumentType, so with order_inserts Hibernate
+        // doesn't know the document_types insert must come first for the FK.
+        documentTypeRepository.flush();
+        documentTypeSchemaRepository.save(DocumentTypeSchema.builder()
+                .tenantId(tenantId)
+                .documentTypeId(saved.getDocumentTypeId())
+                .schemaVersion(saved.getCurrentSchemaVersion())
+                .status(DocumentTypeSchema.SchemaStatus.active)
+                .publishedBy(TenantContext.getUserId())
+                .build());
         log.info("Created document type {} ({}) in tenant {}", saved.getDocumentTypeId(), saved.getTypeCode(), tenantId);
 
         auditService.event(AuditActionCatalog.DOCUMENT_TYPE_CREATED)

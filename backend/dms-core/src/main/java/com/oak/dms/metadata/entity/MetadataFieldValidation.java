@@ -19,7 +19,7 @@ import java.util.UUID;
 /**
  * A single validation rule attached to a {@link MetadataField} (MDTM-FR-004).
  * Deliberately has no "required" rule type - mandatory-ness always comes from
- * {@link DocumentTypeField#isMandatory()}, never from a rule here.
+ * {@link DocumentTypeSchema.FieldMapping#mandatory()}, never from a rule here.
  */
 @Entity
 @Table(name = "metadata_field_validations")
