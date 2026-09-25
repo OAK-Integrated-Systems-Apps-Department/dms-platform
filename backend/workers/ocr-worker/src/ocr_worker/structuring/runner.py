@@ -81,7 +81,18 @@ class StructuredExtractionRunner:
 
     def rerun(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, wait: bool) -> dict:
         """Structures the version's newest stored OCR output again (e.g. after
-        the model was pulled, or to try another LLM_MODEL). No OCR re-run."""
+        the model was pulled, or to try another LLM_MODEL). No OCR re-run.
+
+        FOLLOW-UP: "newest" is by MinIO upload time among every OCR output
+        under the version's prefix, and zone / rubber-band runs store their
+        (partial, cropped) output under the same prefix -- so a rubber-band
+        request made after the full-document run would be the one
+        re-structured. Not fixed here because no caller in this repo issues
+        zone/rubber-band requests yet (dms-core only calls /ocr/process). A
+        fix needs the run kind recorded -- e.g. a `kind` field in the OCR
+        output JSON or an ocr_outputs column -- and this lookup filtering
+        on it.
+        """
         ocr_key = self._storage.latest_ocr_output_key(tenant_id, version_id)
         if ocr_key is None:
             raise NoOcrOutput(f"no OCR output stored for version {version_id}; run OCR first")

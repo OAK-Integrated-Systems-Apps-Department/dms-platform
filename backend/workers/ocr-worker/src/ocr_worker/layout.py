@@ -132,7 +132,25 @@ class DoclingLayoutDocument:
         return self._doc.page_count
 
     def render_page(self, page_no: int, dpi: int) -> PageImage:
-        """0-indexed page_no, matching PyMuPDF's own convention."""
+        """0-indexed page_no, matching PyMuPDF's own convention.
+
+        FOLLOW-UP (found 2026-09-25 during the local-LLM structuring work,
+        deliberately not fixed there -- OCR rasterization is out of that
+        change's scope): for a raster input (PNG/JPEG/TIFF) PyMuPDF sizes
+        the "page" from the image's DPI metadata, defaulting to 96 DPI when
+        there is none, and this method then renders it at OCR_RENDER_DPI --
+        i.e. UPSAMPLES the scan before PaddleOCR. Evidence: a 1240x1755 px
+        scan without DPI metadata became a 930x1316 pt page and a 2583x3656
+        px (9.4 MP) render; the process was OOM-killed (exit 137,
+        OOMKilled=true) in the 7.6 GiB Docker VM with ~6 GiB free. The same
+        scan saved with 150 DPI metadata rendered at 1653x2339 and OCR'd
+        fine (39 s). Phone photos (~12 MP, usually 72 DPI metadata) would be
+        upsampled ~2.8x per side. A real fix: for raster inputs, hand
+        PaddleOCR the original pixels (or cap the render at the source
+        resolution / a max pixel count) instead of re-rendering at a fixed
+        DPI, while keeping bboxes in the same coordinate space the rest of
+        the output contract uses.
+        """
         from PIL import Image
 
         page = self._doc.load_page(page_no)
