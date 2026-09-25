@@ -1,4 +1,4 @@
-# Optional NVIDIA GPU override for the local LLM server. Layer it on top of
+# Optional NVIDIA GPU override for the local LLM (Qwen) service. Layer it on top of
 # the base file:
 #
 #     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
@@ -9,7 +9,7 @@
 # (~4.7GB) plus an 8K context fits a 6GB card; Ollama offloads the remainder
 # to CPU automatically when it doesn't.
 services:
-  ollama:
+  llm:
     deploy:
       resources:
         reservations:

@@ -231,8 +231,12 @@ private IP, or a single-label or internal (`.internal`, `.svc`, `.local`)
 host unless it is explicitly allow-listed. `HTTP(S)_PROXY` is ignored for
 model calls. Logs carry counts, durations and error codes only, never
 document text, prompts, model replies or extracted values; error and
-warning messages name JSON paths, not values. The `ollama` compose service
-has no published port.
+warning messages name JSON paths, not values. In compose, inference runs in
+the dedicated `llm` service: no published port, and its only network is
+`llm-internal` (`internal: true`, no gateway), shared with ocr-worker alone.
+So the inference server cannot send document text off the host even if
+misconfigured. The model download runs in a separate one-shot
+`llm-model-init` container, which never sees a document.
 
 **Performance.** One model, loaded once and kept resident
 (`LLM_KEEP_ALIVE`), with one document at a time (`LLM_MAX_CONCURRENCY=1`).
@@ -256,8 +260,12 @@ dms-core passthrough: `GET` / `POST /api/v1/documents/{documentId}/structured-da
 (tenant-checked, latest version).
 
 **Model setup.** The default is `qwen2.5:7b-instruct` (Apache-2.0, ~4.7GB
-Q4_K_M). `docker compose up` starts `ollama` and pulls the model once
-(`ollama-model-init`). For an NVIDIA GPU:
+Q4_K_M). `docker compose up` starts the `llm` service (Ollama; image
+`LLM_IMAGE`, default `ollama/ollama:0.34.4`), and `llm-model-init` pulls
+`LLM_MODEL` into the shared `ollama_models` volume once. ocr-worker calls
+it at `http://llm:11434`. On a CPU-only host, `LLM_IMAGE=alpine/ollama:0.34.2`
+runs the same Ollama server without the ~3.7GB of bundled GPU libraries.
+For an NVIDIA GPU (official image):
 `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
 To swap models, set `LLM_MODEL` (e.g. `llama3.1:8b`, `mistral:7b-instruct`);
 nothing else names the model. For llama.cpp's `llama-server`, vLLM or LM
@@ -268,7 +276,7 @@ Studio instead of Ollama, set `LLM_PROVIDER=openai_compatible` and point
 |---|---|---|
 | `LLM_EXTRACTION_MODE` | `off` (compose: `async`) | `off` / `async` (after OCR, background) / `sync` (dev: block and return it) |
 | `LLM_PROVIDER` | `ollama` | `ollama` or `openai_compatible` |
-| `LLM_BASE_URL` | `http://localhost:11434` | model server (compose: `http://ollama:11434`) |
+| `LLM_BASE_URL` | `http://localhost:11434` | model server (compose: `http://llm:11434`) |
 | `LLM_MODEL` | `qwen2.5:7b-instruct` | model name/tag |
 | `LLM_CONTEXT_TOKENS` / `LLM_MAX_OUTPUT_TOKENS` | `8192` / `2048` | context requested per call / reply budget |
 | `LLM_CHUNK_MAX_TOKENS` | `0` (derived) | cap on chunk input size |

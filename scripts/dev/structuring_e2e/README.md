@@ -29,11 +29,12 @@ docker run --rm -e E2E_NO_LLM=1 -v "$(pwd -W)/$W/src:/app/src:ro" -v "$(pwd -W)/
   --entrypoint python local-ocr-worker:latest /e2e/run_e2e.py /e2e/results /e2e/docs/*.pdf /e2e/docs/*.png
 ```
 
-**2a. With Ollama** (the compose default; `ollama-model-init` pulls the model):
+**2a. With the compose `llm` service** (Ollama; `llm-model-init` pulls the model). Phase 2 joins
+`local_llm-internal`, the same no-egress network ocr-worker uses to reach `llm`:
 
 ```bash
-docker compose -f infra/local/docker-compose.yml up -d ollama ollama-model-init   # add -f infra/local/docker-compose.gpu.yml for NVIDIA
-docker run --rm --network local_default -e LLM_BASE_URL=http://ollama:11434 \
+LLM_MODEL=qwen2.5:7b-instruct docker compose -f infra/local/docker-compose.yml up -d llm llm-model-init   # CPU-only host: add LLM_IMAGE=alpine/ollama:0.34.2; NVIDIA: add -f infra/local/docker-compose.gpu.yml
+docker run --rm --network local_llm-internal -e LLM_BASE_URL=http://llm:11434 -e LLM_MODEL=qwen2.5:7b-instruct \
   -v "$(pwd -W)/$W/src:/app/src:ro" -v "$(pwd -W)/$E:/e2e" --entrypoint python local-ocr-worker:latest \
   /e2e/structure_stored.py /e2e/results employee_contract_native employee_contract_scan invoice_scanned bank_statement_3pages_native blank_page
 ```
