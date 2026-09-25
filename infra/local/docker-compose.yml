@@ -238,6 +238,21 @@ services:
     # service down permanently. Verified this was needed: it was OOM-killed
     # (docker inspect's OOMKilled flag) during load testing.
     restart: unless-stopped
+    # Real measured number, not a guess: docker stats sampled every 3s over
+    # the full 50-upload Phase 1 run (368 samples, OCR_WORKER_PROCESSES=2)
+    # peaked at 6.89 GiB (p95 5.77 GiB, median 4.60 GiB) -- see
+    # docs/ocr/phase1-verification.md. 8704m == 8.5 GiB is that peak plus
+    # ~25% headroom. Before this the container had HostConfig.Memory=0,
+    # i.e. nothing bounded it at all, and it was OOM-killed by the HOST
+    # during earlier load testing (the `restart:` above exists because of
+    # that) -- a cgroup limit turns "the host runs out and the kernel picks
+    # a victim" into "this one container is killed and restarted".
+    #
+    # Raising OCR_WORKER_PROCESSES raises this proportionally: each pool
+    # worker holds its own Docling layout model + PaddleOCR det/rec models
+    # resident (see README's OCR_WORKER_PROCESSES note), so ~3.4 GiB per
+    # process plus a ~1.5 GiB shared/parent floor is the shape to budget by.
+    mem_limit: 8704m
     # Own secrets file, not dms-core's: ocr-worker has no login of its own
     # and needs none of dms-core's secrets directly (DB_URL/RABBITMQ_URL/
     # MINIO_* below are composed from infra/local/.env's values, resolved

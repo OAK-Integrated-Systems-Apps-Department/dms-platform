@@ -63,16 +63,41 @@ class Reaper:
                 pass
 
     def _reap_once(self) -> None:
-        """One tick: a single short transaction covering every currently-
-        expired lease (bounded by find_expired_leases' own limit=50
-        default) -- in practice only a handful of rows are ever expired at
-        once, so this stays well within the "short transaction" principle
-        B.3 established without needing one transaction per row.
+        """One tick, two sweeps, one short transaction (bounded by the
+        repository's own limit=50 defaults) -- in practice only a handful
+        of rows are ever eligible at once, so this stays well within the
+        "short transaction" principle B.3 established without needing one
+        transaction per row.
+
+        1. **Expired leases** -> requeue (with a backoff) or dead-letter.
+        2. **Requeued jobs whose backoff has now elapsed** -> emit their
+           `.requested` event.
+
+        Sweep 2 is not an optimization, it is what makes sweep 1 mean
+        anything. Requeue used to emit the event itself, immediately, and
+        the relay delivered it inside the backoff window every time --
+        `claim_job` then refused the claim, the consumer acked and
+        skipped, and the retry was silently dropped for good. See
+        `OcrRepository.reap_requeue`'s docstring for the live trace.
         """
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
-            expired = repo.find_expired_leases()
-            for job in expired:
+            for job in repo.find_expired_leases(leaseless_grace_seconds=self._settings.ocr_lease_duration_s):
+                if OcrRepository.is_leaseless(job):
+                    # Not a normal expiry. Every production writer of
+                    # `status='processing'` sets a lease in the same UPDATE
+                    # (claim_job), and V37 forbids the shape outright, so a
+                    # row here means either a pre-V37 leftover or a writer
+                    # nobody knows about. Either way it was invisible to
+                    # this scan before -- say so rather than reaping it
+                    # silently.
+                    logger.warning(
+                        "Reaper: job %s (version %s) is 'processing' with NO lease and is older than "
+                        "ocr_lease_duration_s=%ds (started_at=%s, created_at=%s) -- reaping it. Nothing should "
+                        "write this shape; see docs/ocr/phase1-closeout.md and V37's CHECK constraint.",
+                        job.job_id, job.reference_id, self._settings.ocr_lease_duration_s,
+                        job.started_at, job.created_at,
+                    )
                 version = session.get(DocumentVersion, job.reference_id)
                 if version is None:
                     # The version row itself is gone (should not happen in
@@ -88,20 +113,38 @@ class Reaper:
                 else:
                     self._dead_letter(repo, job=job, version=version, document=document)
 
+            for job in repo.find_due_retries():
+                version = session.get(DocumentVersion, job.reference_id)
+                if version is None:
+                    logger.error("Reaper: due-retry row %s references missing version %s", job.job_id, job.reference_id)
+                    continue
+                document = session.get(Document, version.document_id)
+                self._publish_due_retry(repo, job=job, version=version, document=document)
+
     def _requeue(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
         backoff_seconds = self._settings.ocr_reaper_backoff_base_s * job.attempts
+        won = repo.reap_requeue(
+            job_id=job.job_id, backoff_seconds=backoff_seconds,
+            leaseless_grace_seconds=self._settings.ocr_lease_duration_s,
+        )
+        if won:
+            logger.warning(
+                "Reaper requeued job %s (version %s): attempts=%d/%d, retrying in %ds",
+                job.job_id, version.version_id, job.attempts, self._settings.max_delivery_attempts, backoff_seconds,
+            )
+
+    def _publish_due_retry(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
         payload = build_ocr_requested_payload(
             tenant_id=version.tenant_id, document_id=document.document_id, version_id=version.version_id,
             correlation_id=job.correlation_id,
         )
-        won = repo.reap_requeue(
-            job_id=job.job_id, backoff_seconds=backoff_seconds, tenant_id=version.tenant_id,
-            version_id=version.version_id, event_payload=payload,
+        won = repo.publish_due_retry(
+            job_id=job.job_id, tenant_id=version.tenant_id, version_id=version.version_id, event_payload=payload,
         )
         if won:
             logger.warning(
-                "Reaper requeued job %s (version %s): attempts=%d/%d, backoff=%ds",
-                job.job_id, version.version_id, job.attempts, self._settings.max_delivery_attempts, backoff_seconds,
+                "Reaper re-requested job %s (version %s) now that its backoff has elapsed: attempt %d/%d",
+                job.job_id, version.version_id, job.attempts + 1, self._settings.max_delivery_attempts,
             )
 
     def _dead_letter(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
@@ -112,6 +155,9 @@ class Reaper:
             tenant_id=version.tenant_id, document_id=document.document_id, version_id=version.version_id,
             error=error, correlation_id=job.correlation_id, attempt=job.attempts,
         )
-        won = repo.reap_dead_letter(job_id=job.job_id, version=version, error=error, event_payload=payload)
+        won = repo.reap_dead_letter(
+            job_id=job.job_id, version=version, error=error, event_payload=payload,
+            leaseless_grace_seconds=self._settings.ocr_lease_duration_s,
+        )
         if won:
             logger.error("Reaper dead-lettered job %s (version %s): %s", job.job_id, version.version_id, error)

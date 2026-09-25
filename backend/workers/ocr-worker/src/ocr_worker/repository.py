@@ -1,26 +1,45 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED, ROUTING_KEY_OCR_REQUESTED
-from .extraction import RequestedFieldResult
+from .extraction import FieldSpec, RequestedFieldResult
 from .models import (
     Document,
     DocumentOcrFieldResult,
     DocumentType,
+    DocumentTypeField,
     DocumentTypeOcrZone,
     DocumentVersion,
+    MetadataField,
+    MetadataFieldOption,
     OcrOutput,
     OutboxEvent,
     ProcessingJob,
 )
 from .zones import ZoneRegion
+
+logger = logging.getLogger(__name__)
+
+# Field data types whose allowed values come from metadata_field_options --
+# mirrors dms-core's MetadataField.OPTION_BACKED_DATA_TYPES exactly.
+OPTION_BACKED_DATA_TYPES = frozenset({"dropdown", "multi_select"})
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite round-trips a TIMESTAMPTZ as a naive datetime (the same quirk
+    `claim_job` and models.py already work around); Postgres keeps it
+    aware. Only used by diagnostics, never by a claim predicate -- those
+    compare in SQL, where the dialect handles it.
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class VersionNotFound(Exception):
@@ -97,6 +116,104 @@ class OcrRepository:
             )
             for row in rows
         ]
+
+    def resolve_requested_field_specs(self, *, version: DocumentVersion, document_type_id: uuid.UUID) -> list[FieldSpec] | None:
+        """Turn `document_versions.requested_fields` (a jsonb array of
+        field_key strings, written by dms-core's uploadDocument/
+        prepareRerun) into the `FieldSpec`s extraction.py needs, by
+        resolving each key against the document type's CURRENT schema.
+
+        This is the half of docs/events/ocr-scanning-events.md's "Phase 1
+        Decision 1" that was specified but never implemented: the
+        `document.version.ocr.requested` event deliberately carries no
+        resolved field specs *because* the worker was supposed to re-read
+        them here at claim time. It didn't, so the queue path always ran
+        with `requested_fields=None` and `document_ocr_field_results` was
+        never written by a real upload -- only by the dev-trigger endpoint,
+        which passes specs explicitly in its request body. Everything
+        downstream of that table (dms-core's OcrEventsConsumer ->
+        applyOcrFields -> document_metadata_values) therefore had nothing
+        to act on.
+
+        Returns `None` when the column is empty, which preserves the
+        pre-existing behavior exactly: `None` means "legacy zone-template +
+        generic regex over everything", and a document uploaded without a
+        `requestedFields` parameter must keep getting that. A non-empty
+        column returns a list -- possibly empty, if none of the requested
+        keys resolve, which is a real (and loudly logged) data problem, not
+        a reason to silently fall back to guessing at unrelated fields.
+
+        Mirrors DocumentTypeFieldServiceImpl#getSchema's own filters:
+        current schema version only, non-deleted mapping AND field rows,
+        tenant-scoped, options only for option-backed data types and only
+        the active ones in display order.
+        """
+        raw = version.requested_fields
+        if isinstance(raw, str):  # jsonb round-tripped as text by some drivers
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.error("version %s: requested_fields is not valid JSON (%r)", version.version_id, raw)
+                return None
+        keys = [k for k in (raw or []) if isinstance(k, str) and k]
+        if not keys:
+            return None
+
+        rows = self.session.execute(
+            select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type)
+            .join(DocumentTypeField, DocumentTypeField.field_id == MetadataField.field_id)
+            .join(DocumentType, DocumentType.document_type_id == DocumentTypeField.document_type_id)
+            .where(
+                DocumentTypeField.document_type_id == document_type_id,
+                DocumentTypeField.tenant_id == version.tenant_id,
+                DocumentTypeField.schema_version == DocumentType.current_schema_version,
+                DocumentTypeField.is_deleted.is_(False),
+                MetadataField.tenant_id == version.tenant_id,
+                MetadataField.is_deleted.is_(False),
+                MetadataField.field_key.in_(keys),
+            )
+        ).all()
+        by_key = {row.field_key: row for row in rows}
+
+        option_backed_ids = [row.field_id for row in rows if row.data_type in OPTION_BACKED_DATA_TYPES]
+        options_by_field_id: dict[uuid.UUID, list[str]] = {}
+        if option_backed_ids:
+            option_rows = self.session.execute(
+                select(MetadataFieldOption.field_id, MetadataFieldOption.option_value)
+                .where(
+                    MetadataFieldOption.field_id.in_(option_backed_ids),
+                    MetadataFieldOption.tenant_id == version.tenant_id,
+                    MetadataFieldOption.is_deleted.is_(False),
+                    MetadataFieldOption.status == "active",
+                )
+                .order_by(MetadataFieldOption.field_id, MetadataFieldOption.display_order)
+            ).all()
+            for option in option_rows:
+                options_by_field_id.setdefault(option.field_id, []).append(option.option_value)
+
+        specs: list[FieldSpec] = []
+        unresolved: list[str] = []
+        for key in keys:  # caller's order, not the schema's
+            row = by_key.get(key)
+            if row is None:
+                unresolved.append(key)
+                continue
+            specs.append(
+                FieldSpec(
+                    field_key=row.field_key,
+                    data_type=row.data_type,
+                    options=options_by_field_id.get(row.field_id) if row.data_type in OPTION_BACKED_DATA_TYPES else None,
+                )
+            )
+        if unresolved:
+            # Not fatal: extract what we can and say plainly what was
+            # dropped. A key can legitimately vanish here if the document
+            # type's schema was edited between upload and processing.
+            logger.warning(
+                "version %s: %d of %d requested field(s) are not in document type %s's current schema: %s",
+                version.version_id, len(unresolved), len(keys), document_type_id, ", ".join(unresolved),
+            )
+        return specs
 
     def ensure_queued_job(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None) -> None:
         """Dev/smoke-test convenience only -- the real production path
@@ -187,23 +304,87 @@ class OcrRepository:
             self.session.refresh(job)
         return job
 
+    def describe_unclaimable(self, version_id: uuid.UUID) -> str:
+        """Why `claim_job` returned None, in words, for the ack-and-skip log
+        line. Diagnostic only -- never control flow.
+        """
+        now = datetime.now(timezone.utc)
+        row = self.session.execute(
+            select(ProcessingJob.status, ProcessingJob.lease_expires_at, ProcessingJob.next_attempt_at)
+            .where(
+                ProcessingJob.reference_type == "document_versions",
+                ProcessingJob.reference_id == version_id,
+                ProcessingJob.job_type == "ocr",
+                ProcessingJob.status.in_(["queued", "processing"]),
+            )
+        ).first()
+        if row is None:
+            return "no queued/processing job row exists for this version"
+        status, lease_expires_at, next_attempt_at = row
+        if next_attempt_at is not None and _as_utc(next_attempt_at) > now:
+            return f"retry backoff has not elapsed (next_attempt_at={next_attempt_at})"
+        if status == "processing":
+            return f"another worker holds a live lease (expires {lease_expires_at})"
+        return f"job is {status!r} but did not match the claim predicate"
+
     def get_job(self, job_id: uuid.UUID) -> ProcessingJob:
         job = self.session.get(ProcessingJob, job_id)
         if job is None:
             raise VersionNotFound(f"processing_jobs row {job_id}")
         return job
 
-    def find_expired_leases(self, *, limit: int = 50) -> list[ProcessingJob]:
+    @staticmethod
+    def _reapable(now: datetime, leaseless_grace_seconds: int):
+        """The one definition of "this 'processing' row is the reaper's to
+        take", shared by the scan and by both CAS updates that act on its
+        results. They must agree exactly, or the scan hands the reaper rows
+        its own UPDATE can never match and the reaper spins on them every
+        tick.
+
+        Two cases:
+
+        1. **A real expired lease** -- the ordinary one.
+        2. **No lease at all**, on a row older than the lease duration.
+           `lease_expires_at IS NULL` makes case 1's comparison NULL, so
+           such a row was invisible to the reaper *forever* and sat in
+           'processing' holding V36's partial unique index slot for its
+           version. V37's CHECK constraint now forbids writing that shape
+           in the first place, and `claim_job` (the only production writer
+           of `status='processing'`) always set both columns together
+           anyway -- this arm is defense in depth for a row that predates
+           the constraint or arrives by some future path, not a case that
+           should occur.
+
+        `started_at` is the right clock for case 2 (it is what a claim
+        sets), but a row with no lease plausibly has no `started_at`
+        either -- all four found in the local database had both NULL. So
+        it falls back to `created_at`, which is NOT NULL with a DB default
+        and therefore guarantees such a row can never be invisible again.
+        """
+        leaseless_cutoff = now - timedelta(seconds=leaseless_grace_seconds)
+        return or_(
+            ProcessingJob.lease_expires_at < now,
+            and_(
+                ProcessingJob.lease_expires_at.is_(None),
+                func.coalesce(ProcessingJob.started_at, ProcessingJob.created_at) < leaseless_cutoff,
+            ),
+        )
+
+    def find_expired_leases(self, *, leaseless_grace_seconds: int, limit: int = 50) -> list[ProcessingJob]:
         """Reaper scan (repository.py's own `ix_processing_jobs_lease_reaper`
-        index, V36) -- every 'processing' row whose lease has expired
-        without a matching completion. A crashed/hung worker never comes
-        back to move these out of 'processing' on its own.
+        index, V36) -- every 'processing' row the reaper may take, per
+        `_reapable`. A crashed/hung worker never comes back to move these
+        out of 'processing' on its own.
         """
         now = datetime.now(timezone.utc)
         rows = (
             self.session.execute(
                 select(ProcessingJob)
-                .where(ProcessingJob.job_type == "ocr", ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+                .where(
+                    ProcessingJob.job_type == "ocr",
+                    ProcessingJob.status == "processing",
+                    self._reapable(now, leaseless_grace_seconds),
+                )
                 .limit(limit)
             )
             .scalars()
@@ -211,24 +392,108 @@ class OcrRepository:
         )
         return list(rows)
 
-    def reap_requeue(self, *, job_id: uuid.UUID, backoff_seconds: int, tenant_id: uuid.UUID, version_id: uuid.UUID, event_payload: dict) -> bool:
-        """CAS: requeues one expired-lease job for retry, and -- in the
-        SAME transaction -- inserts a fresh `document.version.ocr.requested`
-        outbox event (never publishes to RabbitMQ directly; matches
-        ocr-worker's own existing, already-proven outbox-write pattern for
-        `.completed`/`.failed`). Guarded by the identical `status='processing'
-        AND lease_expires_at < now()` predicate `claim_job` uses, so this
-        is safe under multiple concurrent ocr-worker instances each running
-        their own reaper loop -- at most one wins per row, with no
-        additional locking primitive needed. Returns False if another
-        reaper (or a worker that came back just in time) already moved this
-        row, so the caller knows not to also emit the event.
+    @staticmethod
+    def is_leaseless(job: ProcessingJob) -> bool:
+        """True for the case-2 rows above, so the reaper can log them
+        distinctly -- a missing lease is a different (and more alarming)
+        thing than an expired one, and worth saying out loud rather than
+        quietly reaping.
+        """
+        return job.status == "processing" and job.lease_expires_at is None
+
+    def reap_requeue(self, *, job_id: uuid.UUID, backoff_seconds: int, leaseless_grace_seconds: int) -> bool:
+        """CAS: moves one reapable job back to 'queued' with its backoff
+        window set. Guarded by the same `_reapable` predicate the scan
+        used, so this is safe under multiple concurrent ocr-worker
+        instances each running their own reaper loop -- at most one wins
+        per row, with no additional locking primitive needed. Returns False
+        if another reaper (or a worker that came back just in time) already
+        moved this row.
+
+        **Deliberately emits no event.** It used to insert the
+        `document.version.ocr.requested` outbox row right here, in the same
+        transaction -- and that combination silently dropped every single
+        retry. Verified live during Phase 1 close-out:
+
+            05:23:59  Reaper requeued job ... attempts=1/5, backoff=5s
+            05:24:01  Version ...: no claimable job; ack-and-skip
+
+        OutboxRelay polls every 2s, so the event always reached the
+        consumer *inside* the backoff window; `claim_job`'s own
+        `next_attempt_at <= now` guard then correctly refused the claim,
+        the consumer acked and skipped -- and nothing ever published
+        again. The job sat in 'queued' with an elapsed `next_attempt_at`
+        forever (`find_expired_leases` only looks at 'processing'), and its
+        version never left 'pending'. The larger the backoff, the more
+        certain the drop, so the production 30s backoff was worse than the
+        5s one this was caught with.
+
+        `publish_due_retry` below is the other half: the event is emitted
+        on a later reaper tick, once the backoff has actually elapsed.
         """
         now = datetime.now(timezone.utc)
         stmt = (
             update(ProcessingJob)
-            .where(ProcessingJob.job_id == job_id, ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+            .where(
+                ProcessingJob.job_id == job_id,
+                ProcessingJob.status == "processing",
+                self._reapable(now, leaseless_grace_seconds),
+            )
             .values(status="queued", next_attempt_at=now + timedelta(seconds=backoff_seconds), lease_expires_at=None)
+            .execution_options(synchronize_session=False)
+        )
+        result = self.session.execute(stmt)
+        self.session.flush()
+        return result.rowcount == 1
+
+    def find_due_retries(self, *, limit: int = 50) -> list[ProcessingJob]:
+        """Jobs the reaper has already requeued whose backoff has now
+        elapsed, and which therefore need their `.requested` event emitted.
+
+        `next_attempt_at IS NOT NULL` is what distinguishes these from an
+        ordinary 'queued' row dms-core just inserted -- dms-core publishes
+        its own event in the same transaction and never sets this column,
+        so a fresh upload is never picked up here and never double-fired.
+        """
+        now = datetime.now(timezone.utc)
+        rows = (
+            self.session.execute(
+                select(ProcessingJob)
+                .where(
+                    ProcessingJob.job_type == "ocr",
+                    ProcessingJob.status == "queued",
+                    ProcessingJob.next_attempt_at.is_not(None),
+                    ProcessingJob.next_attempt_at <= now,
+                )
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)
+
+    def publish_due_retry(self, *, job_id: uuid.UUID, tenant_id: uuid.UUID, version_id: uuid.UUID, event_payload: dict) -> bool:
+        """CAS: clears the elapsed backoff and, in the SAME transaction,
+        inserts the `document.version.ocr.requested` outbox event (never
+        publishes to RabbitMQ directly -- same outbox pattern as
+        `.completed`/`.failed`).
+
+        Clearing `next_attempt_at` is both the claim gate opening and the
+        de-duplication key: the UPDATE only matches while it is still set,
+        so two racing reapers (or two ticks) can never emit the event
+        twice, and `claim_job`'s `next_attempt_at <= now` check passes
+        immediately afterwards.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.job_id == job_id,
+                ProcessingJob.status == "queued",
+                ProcessingJob.next_attempt_at.is_not(None),
+                ProcessingJob.next_attempt_at <= now,
+            )
+            .values(next_attempt_at=None)
             .execution_options(synchronize_session=False)
         )
         result = self.session.execute(stmt)
@@ -247,19 +512,30 @@ class OcrRepository:
         self.session.flush()
         return True
 
-    def reap_dead_letter(self, *, job_id: uuid.UUID, version: DocumentVersion, error: str, event_payload: dict) -> bool:
-        """CAS: moves one expired-lease job to 'dead_letter' after it has
+    def reap_dead_letter(
+        self, *, job_id: uuid.UUID, version: DocumentVersion, error: str, event_payload: dict, leaseless_grace_seconds: int
+    ) -> bool:
+        """CAS: moves one reapable job to 'dead_letter' after it has
         exhausted max_delivery_attempts, sets document_versions.ocr_status
         ='failed', and -- in the SAME transaction -- inserts a
         `document.version.ocr.failed` outbox event. This is what actually
         satisfies "zero stuck processing versions": nothing else would ever
         move this version out of 'processing' if the worker that held the
         lease crashed (e.g. an OOM kill) without ever coming back.
+
+        Guarded by the same `_reapable` predicate the scan used -- if this
+        narrowed it (as it did before, to `lease_expires_at < now`), a
+        leaseless row would be returned by the scan on every tick and this
+        UPDATE would match nothing, forever.
         """
         now = datetime.now(timezone.utc)
         stmt = (
             update(ProcessingJob)
-            .where(ProcessingJob.job_id == job_id, ProcessingJob.status == "processing", ProcessingJob.lease_expires_at < now)
+            .where(
+                ProcessingJob.job_id == job_id,
+                ProcessingJob.status == "processing",
+                self._reapable(now, leaseless_grace_seconds),
+            )
             .values(status="dead_letter", last_error=error[:4000], finished_at=now)
             .execution_options(synchronize_session=False)
         )

@@ -173,6 +173,21 @@ dms:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
+  ocr:
+    # Safety net (Phase 1 B.1): GET /{documentId}/ocr-status re-applies OCR
+    # field results onto document_metadata_values at poll time, on top of
+    # dms-core's own OcrEventsConsumer already doing it off the
+    # document.version.ocr.completed event. It exists because the consumer
+    # path had never been proven end to end -- and it MASKED a real defect
+    # for a whole phase (the relay's double-encoded payloads meant the
+    # consumer never ran at all, and nobody noticed because polling kept
+    # the UI correct; see docs/ocr/phase1-verification.md "Defects found").
+    #
+    # Turning this off is how that masking is ruled out: with it false, any
+    # metadata value that appears MUST have come from the event path. It is
+    # a config flag rather than a commented-out block specifically so that
+    # proof can be re-run at any time, not just once.
+    poll-reapply-enabled: ${OCR_POLL_REAPPLY_ENABLED:true}
 
 # Naming deliberately mirrors backend/workers/ocr-worker/src/ocr_worker/config.py's
 # MINIO_* env vars -- dms-core writes the source object here, ocr-worker

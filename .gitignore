@@ -6,3 +6,9 @@ infra/secrets/*.env
 # Ignore dms-core encrypted secrets file
 infra/secrets/dms-core.secrets.enc.env
 infra/secrets/dms-core.secrets.env
+# Python build/test artifacts (ocr-worker and scripts/dev). These appear
+# whenever pytest runs with the source tree bind-mounted into a container,
+# which is how the ocr-worker suite is run -- see its README.
+__pycache__/
+*.py[cod]
+.pytest_cache/

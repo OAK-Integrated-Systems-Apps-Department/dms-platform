@@ -36,6 +36,12 @@ class DocumentType(Base):
     document_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     type_name: Mapped[str] = mapped_column(String(150))
+    # Which document_type_fields rows make up the CURRENT schema -- the
+    # table keeps every historical schema_version's mapping rows side by
+    # side, so resolving a field set without this pin would mix versions
+    # (dms-core's DocumentTypeFieldServiceImpl#getSchema filters on exactly
+    # this). Defaulted so test fixtures that predate it keep working.
+    current_schema_version: Mapped[int] = mapped_column(default=1)
 
 
 class Document(Base):
@@ -58,6 +64,16 @@ class DocumentVersion(Base):
     mime_type: Mapped[str] = mapped_column(String(255))
     scan_status: Mapped[str] = mapped_column(String(30))
     ocr_status: Mapped[str] = mapped_column(String(30))
+    # V35__add_ocr_field_selection.sql -- the field_keys the uploader
+    # actually asked OCR to extract, written by dms-core's
+    # uploadDocument/prepareRerun. docs/events/ocr-scanning-events.md's
+    # Phase 1 Decision 1 says the `.requested` event carries no resolved
+    # field specs and ocr-worker re-reads this column at claim time
+    # instead; `OcrRepository.resolve_requested_field_specs` is the half
+    # of that decision that was missing until Phase 1 close-out.
+    # jsonb on Postgres; SQLAlchemy's dialect-agnostic JSON keeps this
+    # readable against SQLite in tests, same as OutboxEvent.payload.
+    requested_fields: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
 
 class ProcessingJob(Base):
@@ -74,6 +90,14 @@ class ProcessingJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Only read by the reaper, as the guaranteed-non-NULL fallback clock for
+    # a 'processing' row that somehow has neither a lease nor a started_at
+    # (see OcrRepository._reapable). Given an application-level default for
+    # the same reason OutboxEvent.created_at has one: the DB default is
+    # `now()`, which Postgres freezes for a whole transaction.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     # V36__ocr_job_leasing.sql -- see repository.py's claim_job/reaper
     # queries. Explicit DateTime(timezone=True): real bug found live in
     # this session's own tests -- without it, SQLite round-trips a naive
@@ -117,6 +141,60 @@ class DocumentTypeOcrZone(Base):
     y0: Mapped[float] = mapped_column(Numeric(6, 5))
     x1: Mapped[float] = mapped_column(Numeric(6, 5))
     y1: Mapped[float] = mapped_column(Numeric(6, 5))
+
+
+class DocumentTypeField(Base):
+    """dms-core's document-type -> field mapping (module 2.7). Read-only
+    here, and only to resolve `document_versions.requested_fields`
+    (a list of field_key strings) into the `data_type`/`options` the
+    extraction dispatch needs -- see
+    `OcrRepository.resolve_requested_field_specs`.
+
+    Only the columns that resolution actually uses are mapped; the real
+    table has many more (see dms-core's own DocumentTypeField entity).
+    """
+
+    __tablename__ = "document_type_fields"
+
+    document_type_field_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    document_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_types.document_type_id"))
+    field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("metadata_fields.field_id"))
+    schema_version: Mapped[int] = mapped_column(default=1)
+    is_hidden: Mapped[bool] = mapped_column(default=False)
+    display_order: Mapped[int] = mapped_column(default=0)
+    is_deleted: Mapped[bool] = mapped_column(default=False)
+
+
+class MetadataField(Base):
+    """dms-core's field catalog. Read-only here -- `field_key` and
+    `data_type` are what turn a requested field_key into a `FieldSpec`.
+    """
+
+    __tablename__ = "metadata_fields"
+
+    field_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    field_key: Mapped[str] = mapped_column(String(100))
+    data_type: Mapped[str] = mapped_column(String(30))
+    is_deleted: Mapped[bool] = mapped_column(default=False)
+
+
+class MetadataFieldOption(Base):
+    """Allowed values for a `dropdown`/`multi_select` field. Read-only
+    here: extraction.py matches OCR'd text against this list rather than
+    free-forming a value for an option-backed field.
+    """
+
+    __tablename__ = "metadata_field_options"
+
+    option_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("metadata_fields.field_id"))
+    option_value: Mapped[str] = mapped_column(String(150))
+    display_order: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(30), default="active")
+    is_deleted: Mapped[bool] = mapped_column(default=False)
 
 
 class DocumentOcrFieldResult(Base):

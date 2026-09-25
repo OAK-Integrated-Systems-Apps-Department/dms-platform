@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -15,7 +16,20 @@ from ocr_worker.models import Base, Document, DocumentType, DocumentTypeOcrZone,
 
 @pytest.fixture()
 def session_factory():
-    engine = create_engine("sqlite:///:memory:")
+    """StaticPool + check_same_thread=False, not SQLAlchemy's default for
+    an in-memory SQLite URL.
+
+    The default (SingletonThreadPool) hands every *thread* its own fresh
+    connection -- and for `:memory:` a connection IS the database, so a
+    session opened on a second thread sees an empty schema. That is only a
+    test artifact (Postgres has no such behavior), but it would make the
+    per-document hard-timeout watchdog -- which deliberately writes its
+    failure record from its own thread, see deadline.py -- untestable
+    here. StaticPool shares the one connection across threads instead.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 

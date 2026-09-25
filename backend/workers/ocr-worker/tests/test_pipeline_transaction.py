@@ -77,7 +77,14 @@ class FakeLayoutEngine:
     def __init__(self, doc: FakeLayoutDocument):
         self._doc = doc
 
-    def load(self, file_bytes, mime_type, original_filename):
+    def load(self, file_bytes, mime_type, original_filename, on_page_count=None):
+        # Honors the real contract: the hook fires here, inside load(),
+        # before the (here, non-existent) Docling conversion -- not after
+        # the document is handed back. A fake that ignored it would let
+        # the ocr_max_pages guard and the per-document deadline silently
+        # stop being exercised at all.
+        if on_page_count is not None:
+            on_page_count(self._doc.page_count())
         return self._doc
 
 

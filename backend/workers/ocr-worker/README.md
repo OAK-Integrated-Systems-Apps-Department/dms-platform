@@ -19,18 +19,23 @@ frontend -> dms-core (Keycloak-authenticated) -> ocr-worker (internal-only)
   `tenant_id`/`user_id`/`document_version_id` passed explicitly by the
   caller -- dms-core in production; for now, whatever calls the dev-trigger
   endpoint (`scripts/dev/smoke_test_ocr.py`, `scripts/dev/publish_fake_scan_event.py`).
+- **Since Phase 1 the production trigger is not an HTTP call at all.**
+  dms-core's upload/rerun writes a `document.version.ocr.requested` outbox
+  event in the same transaction as the `document_versions` row, and
+  ocr-worker consumes it off `ocr-worker.q.ocr-requested`. `POST
+  /ocr/process/{version_id}` survives only as a dev-trigger and for the
+  synchronous zone/rubber-band routes. See
+  `docs/events/ocr-scanning-events.md` for the wire contract.
 - Every `/ocr/*` route additionally requires an `X-Internal-Token` header
   matching `INTERNAL_SERVICE_TOKEN` (see `infra/secrets/ocr-worker.secrets.env`).
   This is defense in depth, **not** an authentication scheme -- the real
   boundary is the missing published port. `/healthz`/`/readyz` don't
   require it (container-orchestration probes only, low risk).
-- dms-core's passthrough `/ocr/*` routes and the real frontend upload/view
-  page are **out of scope for this task** -- they depend on dms-core's
-  `document`/`storage` modules, which don't exist yet. There is no
-  standalone test UI either; verification here is via the dev-trigger
-  endpoint and the smoke-test script only (see below), both of which have
-  to run *on the docker network*, not from the bare host, precisely
-  because there's no published port to reach from outside it.
+- dms-core's `document`/`storage` modules and the frontend upload/view page
+  now exist, so the full `frontend -> dms-core -> queue -> ocr-worker` path
+  is real. Anything that talks to ocr-worker directly still has to run *on
+  the docker network*, not from the bare host, because there is no
+  published port to reach from outside it.
 
 ## Native-text vs. PaddleOCR decision logic
 
@@ -161,14 +166,17 @@ template").
 ## Known upstream gap
 
 **`backend/workers/scan-worker/` does not exist yet.** Section 2.2 requires
-OCR to never run on a version until it has been scanned clean, and this
-service's queue consumer is built against that precondition -- but nothing
-in this codebase currently flips `document_versions.scan_status` to `clean`
-or publishes the event below. See `docs/events/ocr-scanning-events.md` for
-the full contract (routing keys, DLQ convention), flagged there as assumed
-pending scan-worker's implementation.
+OCR to never run on a version until it has been scanned clean, and the
+`document.version.scan.completed` consumer is built against that
+precondition -- but nothing in this codebase actually scans. dms-core's
+`uploadDocument` sets `scan_status='clean'` directly at upload, which is
+what makes the version eligible today; `get_version_for_processing` still
+refuses anything not `clean`, so wiring a real scanner in later is a
+producer change, not a change here. See `docs/events/ocr-scanning-events.md`
+for the full contract (routing keys, wire format, DLQ convention), where
+that one event is flagged as assumed pending scan-worker's implementation.
 
-Two things exercise the full pipeline without scan-worker -- both have to
+Two things exercise the pipeline without scan-worker -- both have to
 run on the docker network (no published host port, see above):
 
 1. **`scripts/dev/publish_fake_scan_event.py`** -- bootstraps a fixture
@@ -238,7 +246,74 @@ This prints the **real** output JSON for each fixture to stdout --
 should show `"method": "paddleocr"` with real detected text/bboxes/
 confidence scores from actually running the model.
 
-### 3. Unit tests
+### 3. Phase 1 exit criteria -- the queue path under load
+
+`scripts/dev/smoke_test_ocr.py` and `scripts/dev/repro_batch.py` both drive
+the **dev-trigger HTTP endpoint**, which is no longer how production
+triggers OCR. `scripts/dev/phase1_verification.py` drives the real path:
+it stages N versions in Postgres + MinIO, inserts
+`document.version.ocr.requested` rows into `outbox_events` so dms-core's
+own `OutboxRelay` publishes them, and then waits on the database for each
+version's terminal state.
+
+```bash
+docker run --rm --network local_default \
+  -v "$(pwd)/../../..:/repo" -v "<repro-fixtures>:/fixtures" \
+  ocr-worker-test:latest \
+  python /repo/scripts/dev/phase1_verification.py \
+    --fixtures-dir /fixtures --total 50 --burst 10 \
+    --report-json /fixtures/phase1-run.json
+```
+
+Fixtures come from `scripts/dev/build_fixtures.py` (it expands the three
+committed fixtures into the 20-file mixed set: HEIC, multi-page and CCITT
+G4 TIFF, rotated scans, 35-page PDFs, encrypted, corrupt, DOCX). The run
+deliberately lies about `Content-Type` on a few items so magic-byte
+sniffing is exercised on the live path too.
+
+Use `--trigger direct` to publish straight to RabbitMQ with pika, which
+isolates ocr-worker by bypassing the relay. Do **not** make that the
+default: publishing that way is precisely how an earlier version of this
+harness passed while dms-core's relay was double-encoding every payload
+and both directions of the queue path were dead.
+
+### 3b. Phase 1 close-out -- fault injection and the field path end to end
+
+`scripts/dev/phase1_closeout_verification.py` covers what the load run
+could not: selectable field extraction through the real upload API (with
+dms-core's poll-time re-apply switched off, so only the event path can be
+responsible for the result), a pool worker SIGKILLed mid-document, and a
+per-page budget the document cannot meet. See
+`docs/ocr/phase1-closeout.md` for the results.
+
+Each check needs its own compose overlay, and refuses to run against the
+wrong one rather than producing a pass for the wrong reason:
+
+```bash
+cd infra/local
+docker compose -f docker-compose.yml -f docker-compose.closeout-fields.yml  up -d dms-core
+docker compose -f docker-compose.yml -f docker-compose.closeout-reaper.yml  up -d ocr-worker
+docker compose -f docker-compose.yml -f docker-compose.closeout-timeout.yml up -d ocr-worker
+```
+
+```bash
+docker run --rm --network local_default \
+  -v "<repo>:/repo" -v /var/run/docker.sock:/var/run/docker.sock \
+  -e KEYCLOAK_ADMIN_PASSWORD=... \
+  -e VERIFY_DSN=postgresql://postgres:...@postgres:5432/dms_core_db \
+  ocr-worker-test:latest \
+  python /repo/scripts/dev/phase1_closeout_verification.py fields \
+    --report-json /repo/docs/ocr/phase1-closeout-fields.json
+```
+
+The docker socket mount is what lets the harness read pool-worker PIDs out
+of the ocr-worker container and kill one -- it runs *inside* a container
+(it has to, to resolve `dms-core`/`postgres` by service name) and that
+container has no docker CLI. Put the stack back with plain
+`docker compose -f docker-compose.yml up -d dms-core ocr-worker` when
+done; the overlays are fault-injection settings, not ones to leave running.
+
+### 4. Unit tests
 
 ```bash
 pip install -e ".[dev]"
@@ -280,9 +355,133 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | env var | default | meaning |
 |---|---|---|
 | `MIN_CONFIDENCE_THRESHOLD` | `0.95` | OS-NFR-001; below this, `flags.low_confidence`/`requires_review` are set rather than silently accepted -- never dropped |
-| `PREFETCH_COUNT` / `WORKER_POOL_SIZE` | `4` / `4` | OS-NFR-004: RabbitMQ prefetch and the thread-pool size backing it, so multiple documents process concurrently instead of one file blocking the queue |
+| `FIELD_LOW_CONFIDENCE_THRESHOLD` | `0.6` | per-field bar (`extracted` vs. `low_confidence`), far lower than the document-level one above; the value is returned either way |
+| `PREFETCH_COUNT` | *(= `OCR_WORKER_PROCESSES`)* | OS-NFR-004: how many deliveries RabbitMQ may have unacked with this worker at once. See "Prefetch" below |
+| `OCR_WORKER_PROCESSES` | `2` | size of the `pebble` **process** pool that actually runs inference; one PaddleOCR + one Docling instance per process, never shared across threads |
+| `OCR_WORKER_MAX_TASKS_PER_PROCESS` | `50` | recycle a pool worker after this many documents, bounding any per-call native-library leak |
+| `OCR_TIMEOUT_BASE_S` / `OCR_TIMEOUT_PER_PAGE_S` | `60` / `25` | per-document budget is `base + per_page * the document's REAL page count`. See "Per-document timeout" below |
+| `OCR_TIMEOUT_HARD_GRACE_S` | `30` | how long after the budget the in-worker hard watchdog fires, killing that one pool worker |
+| `OCR_MAX_PAGES` | `50` | `TOO_MANY_PAGES` above this; sized so one document can't monopolize a pool worker for the better part of an hour |
+| `OCR_MAX_FILE_SIZE_BYTES` | `104857600` | `FILE_TOO_LARGE` above this |
+| `OCR_LEASE_DURATION_S` | `1800` | how long a claimed `processing_jobs` row's lease is valid before the reaper may reclaim it. Also the grace the reaper gives a `processing` row that has *no* lease at all before treating it as expired — see "Every `processing` row has a lease" below |
+| `OCR_REAPER_INTERVAL_S` | `30` | how often the lease reaper sweeps for expired leases |
+| `OCR_REAPER_BACKOFF_BASE_S` | `30` | linear backoff: a job's Nth requeue waits `N * this` before becoming claimable again |
+| `MAX_DELIVERY_ATTEMPTS` | `5` | after this many attempts the reaper dead-letters the job and sets `ocr_status='failed'` |
+| `OCR_RENDER_DPI` | `200` | page raster DPI for OCR (Phase 2 raises this to 300 with tiling) |
+| `OCR_LANGUAGES` | `en` | PaddleOCR language set |
 | `INTERNAL_SERVICE_TOKEN` | (see `infra/secrets/ocr-worker.secrets.env`) | required `X-Internal-Token` header value on every `/ocr/*` request |
 | `DB_URL` | points at `dms_core_db` | see "Database access" below |
+
+### Memory — measured, and now bounded
+
+`docker stats` sampled every 3s across the full 50-upload Phase 1 run (368
+samples, `OCR_WORKER_PROCESSES=2`):
+
+| min | median | p95 | **peak** |
+|---|---|---|---|
+| 3.04 GiB | 4.60 GiB | 5.77 GiB | **6.89 GiB** |
+
+`infra/local/docker-compose.yml` sets **`mem_limit: 8704m` (8.5 GiB)** on
+`ocr-worker` — that peak plus ~25% headroom. Before this the container ran
+with `HostConfig.Memory=0`: nothing bounded it at all, and it had already
+been OOM-killed once during load testing (which is why the service also
+carries `restart: unless-stopped`). A cgroup limit turns "the host runs out
+of memory and the kernel picks a victim" into "this one container is killed
+and restarted".
+
+Each pool worker holds its own Docling layout model plus PaddleOCR det/rec
+models resident, so budget roughly **3.4 GiB per `OCR_WORKER_PROCESSES`
+plus a ~1.5 GiB shared/parent floor** and raise the limit with the pool
+size. Re-measure rather than extrapolating if you change `OCR_RENDER_DPI`
+or the model set.
+
+### Prefetch
+
+`PREFETCH_COUNT` defaults to **`OCR_WORKER_PROCESSES`**, not to a fixed
+number. Phase 1 shipped a flat `4` against a pool of `2`, which the exit-
+criteria run confirmed live: RabbitMQ held exactly 4 deliveries unacked
+throughout. Two of those were messages this worker had no free pool process
+to start — held, invisible to any other consumer, for as long as the two
+running documents took (up to ~1000s for a 35-page scan in that run).
+Prefetch above the pool size buys no throughput, because the pool and not
+the queue is the bottleneck; it only delays redistribution. An explicit
+`PREFETCH_COUNT` still overrides the default if you want a deliberate
+buffer.
+
+One caveat: `ScanCompletedConsumer` and `OcrRequestedConsumer` each set QoS
+on their own channel, so with both connected the process-wide ceiling is
+`2 x PREFETCH_COUNT`. That is currently moot — nothing publishes
+`document.version.scan.completed` until scan-worker exists (see "Known
+upstream gap") — but it is the thing to revisit when it does.
+
+### Per-document timeout
+
+The budget is `OCR_TIMEOUT_BASE_S + OCR_TIMEOUT_PER_PAGE_S × the
+document's real page count`, read the instant PyMuPDF has opened the file
+and **before** Docling's conversion runs. At the defaults a one-page photo
+gets 85s and a 50-page document gets 1310s.
+
+Phase 1 sized one uniform ceiling from `OCR_MAX_PAGES` instead — 1310s for
+*every* document, one-page photos included — because the dispatching side
+cannot know a page count without doing the pool worker's own job first.
+With `OCR_WORKER_PROCESSES=2`, a single hung one-page upload therefore took
+half the service's capacity out for 22 minutes. Three layers replace it
+(`deadline.py`):
+
+1. **Soft**, checked between pages. Raises `OcrTimeoutError`, which rides
+   the ordinary failure path: `TIMEOUT: ...` in `processing_jobs.last_error`,
+   `ocr_status='failed'`, a `.failed` event — and the pool worker survives
+   to take the next document.
+2. **Hard**, a watchdog thread armed alongside the soft deadline and firing
+   `OCR_TIMEOUT_HARD_GRACE_S` later. A single wedged native
+   PaddleOCR/Docling call never returns to a soft check and Python cannot
+   interrupt it, so the watchdog writes the same `TIMEOUT` record itself and
+   then `os._exit`s. `pebble` replaces that one worker; the rest of the pool
+   is untouched. The exit code (`OCR_TIMEOUT_EXIT_CODE`) is what lets the
+   parent tell this apart from an OOM kill, where no record was written and
+   the reaper still owns the lease.
+3. **The `pebble` `schedule(timeout=...)` ceiling**, sized above the largest
+   budget layer 2 can possibly arm. It only fires if the watchdog thread
+   never got scheduled at all.
+
+**`OCR_LEASE_DURATION_S` must stay larger than
+`OCR_TIMEOUT_BASE_S + OCR_MAX_PAGES × OCR_TIMEOUT_PER_PAGE_S + 2 ×
+OCR_TIMEOUT_HARD_GRACE_S`** (1370s against the default 1800s lease), or the
+reaper stops backing the worker up and starts competing with it: the lease
+expires mid-inference, the reaper requeues, the retry restarts the same
+document from scratch, and a document that was never failing can livelock
+until `MAX_DELIVERY_ATTEMPTS` dead-letters it. ocr-worker logs a warning at
+startup when that does not hold. (Observed for real during Phase 1
+close-out, against a deliberately shortened lease.)
+
+### Every `processing` row has a lease
+
+`processing_jobs.lease_expires_at` is NULL for every status *except*
+`processing`: a `queued` row has no lease yet, and a completed/failed/
+dead-lettered one has none any more. A `processing` row without one is a
+bug, and `V37__processing_jobs_require_lease.sql` enforces that with
+`CHECK (status <> 'processing' OR lease_expires_at IS NOT NULL)`.
+
+The constraint exists because such a row is **invisible to the reaper**:
+its scan is `lease_expires_at < now()`, and in SQL a comparison against
+NULL is NULL, not true. So the row never gets requeued, never gets
+dead-lettered, and keeps holding V36's `uq_processing_jobs_active_ocr_ref`
+slot — which blocks every future OCR job for that version. Four such rows
+had accumulated in the local dev database, all written by one test
+fixture; `claim_job`, the only production writer of that status, has
+always set the lease in the same UPDATE.
+
+The reaper also treats a leaseless `processing` row older than
+`OCR_LEASE_DURATION_S` (by `COALESCE(started_at, created_at)`) as expired,
+and logs a `WARNING` naming the row. That is a backstop for anything that
+predates the constraint, not a supported state.
+
+`WORKER_POOL_SIZE` no longer exists. It configured a `ThreadPoolExecutor`
+sharing one PaddleOCR and one Docling instance across threads, which
+`docs/ocr/failure-analysis.md` #2 measured at a 2.7x slowdown under only 4
+concurrent requests (GIL + native-library contention). `OCR_WORKER_PROCESSES`
+replaces it, and the two are not interchangeable: it sizes real OS
+processes, so raising it multiplies resident model memory.
 
 ## Database access
 

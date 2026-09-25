@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 import uuid
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import sessionmaker, Session
 
 from .confidence import ConfidenceEvaluator
-from .config import Settings
+from .config import OCR_TIMEOUT_EXIT_CODE, Settings
 from .db import session_scope
+from .deadline import DocumentDeadline
 from .errors import (
     EngineError,
     FileTooLargeError,
     OcrEngineError,
+    OcrTimeoutError,
     TooManyPagesError,
     UnsupportedFormatError,
 )
@@ -34,6 +38,25 @@ from .storage import ObjectStorage, ocr_output_key
 from .zones import ZoneRegion, validate_normalized_box
 
 logger = logging.getLogger(__name__)
+
+
+def _check_deadline(deadline: DocumentDeadline | None, where: str) -> None:
+    """The SOFT half of the per-document timeout: called at each point in
+    the page/zone loop where the pipeline is between two units of native
+    work and can still fail cleanly.
+
+    Raising here is far better than letting the hard watchdog fire -- the
+    exception rides the ordinary `_finalize_failure` path (TIMEOUT recorded,
+    `.failed` event published, lease released) and the pool worker survives
+    to take the next document. The watchdog only exists for the case where
+    execution never comes back to one of these points at all.
+    """
+    if deadline is None or not deadline.expired():
+        return
+    budget = deadline.budget_s or 0.0
+    raise OcrTimeoutError(
+        f"exceeded the {budget:.0f}s budget for this document ({where})"
+    )
 
 
 def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict], list[dict]]:
@@ -159,6 +182,71 @@ class OcrPipeline:
         self._confidence = ConfidenceEvaluator(settings.min_confidence_threshold)
 
     # ------------------------------------------------------------------
+    # Per-document timeout (see deadline.py)
+    # ------------------------------------------------------------------
+    def _make_deadline(
+        self, *, job_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None
+    ) -> DocumentDeadline:
+        return DocumentDeadline(
+            base_s=self._settings.ocr_timeout_base_s,
+            per_page_s=self._settings.ocr_timeout_per_page_s,
+            hard_grace_s=self._settings.ocr_timeout_hard_grace_s,
+            on_expiry=lambda budget_s: self._on_hard_timeout(
+                job_id=job_id, version_id=version_id, correlation_id=correlation_id, budget_s=budget_s
+            ),
+        )
+
+    def _on_hard_timeout(
+        self, *, job_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None, budget_s: float
+    ) -> None:
+        """Runs on `DocumentDeadline`'s watchdog thread when even the soft
+        between-pages check never got a turn -- i.e. one native
+        PaddleOCR/Docling call has wedged and will not return.
+
+        Writes the TIMEOUT failure record FIRST, then hard-exits. Doing it
+        in that order is the whole point: before this, a timeout left the
+        `processing_jobs` row claimed with a live lease and relied entirely
+        on the reaper to notice `ocr_lease_duration_s` (1800s by default)
+        later -- so a document that timed out at 85s still showed
+        `processing` for another half hour, and came back as
+        `WORKER_CRASH`, not `TIMEOUT`. Recording it here makes the status
+        correct and immediate, and leaves the reaper as the backstop for
+        what it is actually for (a worker that died without warning).
+
+        `os._exit`, not `sys.exit`: this is a non-main thread, so
+        `SystemExit` would only unwind this thread and leave the wedged
+        inference running. `_exit` skips atexit/finalizers deliberately --
+        there is nothing safe to flush from a process whose native
+        extension is stuck mid-call.
+        """
+        logger.error(
+            "Hard per-document timeout after %.0fs (+%ds grace) for version %s -- recording TIMEOUT and "
+            "terminating this pool worker",
+            budget_s, self._settings.ocr_timeout_hard_grace_s, version_id,
+        )
+        try:
+            with session_scope(self._session_factory) as session:
+                repo = OcrRepository(session)
+                job = repo.get_job(job_id)
+                ctx = repo.get_version_for_processing(version_id)
+                self._finalize_failure(
+                    repo=repo, job=job, ctx=ctx,
+                    exc=OcrTimeoutError(
+                        f"exceeded the {budget_s:.0f}s budget for this document "
+                        f"({self._settings.ocr_timeout_base_s}s + pages x {self._settings.ocr_timeout_per_page_s}s)"
+                    ),
+                    correlation_id=correlation_id,
+                )
+        except Exception:
+            # Nothing left to escalate to -- this thread is about to end the
+            # process. Log it and let the reaper reclaim the lease the old
+            # way rather than silently exiting with no trace of why.
+            logger.exception("Could not record the TIMEOUT failure for version %s; leaving it to the reaper", version_id)
+        finally:
+            logging.shutdown()
+            os._exit(OCR_TIMEOUT_EXIT_CODE)
+
+    # ------------------------------------------------------------------
     # Event-path / dev-trigger: full document
     # ------------------------------------------------------------------
     def process_version(
@@ -166,14 +254,25 @@ class OcrPipeline:
         version_id: uuid.UUID,
         correlation_id: uuid.UUID | None = None,
         requested_fields: list[FieldSpec] | None = None,
+        resolve_fields_from_db: bool = False,
     ) -> ProcessingOutcome:
         """`requested_fields`, when given (even as an empty list), restricts
         extraction to exactly those fields (see extraction.py's
         extract_requested_fields) -- selectable OCR field extraction for
-        the My Documents upload page. `None` (the default, and always what
-        the RabbitMQ consumer passes) preserves the original behavior: the
-        legacy zone-template + generic invoice-regex fallback over
-        everything, unchanged.
+        the My Documents upload page. `None` preserves the original
+        behavior: the legacy zone-template + generic invoice-regex fallback
+        over everything, unchanged.
+
+        `resolve_fields_from_db=True` (what the RabbitMQ consumers pass, and
+        only them) fills `requested_fields` in from
+        `document_versions.requested_fields` during the claim transaction,
+        per docs/events/ocr-scanning-events.md's Phase 1 Decision 1 -- the
+        `.requested` event carries no resolved specs precisely so that a
+        rerun which widens the requested set is picked up by an already
+        in-flight run. A version with an empty `requested_fields` column
+        still resolves to `None`, i.e. the legacy behavior above; see
+        `OcrRepository.resolve_requested_field_specs`. The dev-trigger
+        endpoint passes its specs explicitly instead and never sets this.
 
         Three short, separate transactions (Phase 1 stability -- see
         docs/ocr/failure-analysis.md #1/#3: the previous single-transaction
@@ -192,6 +291,18 @@ class OcrPipeline:
         3. COMMIT -- a fresh transaction (today's `_finalize_success`/
            `_finalize_failure`), re-fetching the job/version rows since the
            ones from phase 1 belong to a session that's already closed.
+
+        The per-document timeout (`deadline.py`) is armed during phase 2,
+        as soon as the document is open and its real page count is known.
+        Phase 2 deliberately holds no transaction, which is precisely what
+        makes it safe for the hard watchdog to write the TIMEOUT failure
+        record from its own thread: there is no row lock for it to block
+        on. The same is NOT true of `process_zone_request`/
+        `process_rubber_band_request` below, which keep one transaction
+        open across their inference, so a watchdog write from another thread
+        would block on their own row lock -- they get no deadline and stay
+        bounded only by the outer pebble ceiling (they are single-page,
+        synchronous, caller-visible operations).
         """
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
@@ -203,14 +314,32 @@ class OcrPipeline:
             repo.ensure_queued_job(tenant_id=ctx.version.tenant_id, version_id=version_id, correlation_id=correlation_id)
             job = repo.claim_job(version_id=version_id, lease_seconds=self._settings.ocr_lease_duration_s)
             if job is None:
-                logger.info("Version %s: no claimable job (already owned by a live lease); ack-and-skip", version_id)
+                # Several distinct causes, and telling them apart matters:
+                # "already owned by a live lease" alone sent a whole
+                # debugging session down the wrong path when the real
+                # reason was an unelapsed retry backoff (see
+                # OcrRepository.reap_requeue). Report what the row
+                # actually says.
+                logger.info(
+                    "Version %s: no claimable job (%s); ack-and-skip",
+                    version_id, repo.describe_unclaimable(version_id),
+                )
                 return ProcessingOutcome(status="skipped", version_id=version_id)
             job_id = job.job_id
             mime_type = ctx.version.mime_type
             storage_object_key = ctx.version.storage_object_key
             original_filename = ctx.version.original_filename
             zone_regions = repo.get_zone_regions(ctx.document_type_id)
+            if requested_fields is None and resolve_fields_from_db:
+                requested_fields = repo.resolve_requested_field_specs(
+                    version=ctx.version, document_type_id=ctx.document_type_id
+                )
+                logger.info(
+                    "Version %s: resolved %s requested field(s) from document_versions.requested_fields",
+                    version_id, "no" if requested_fields is None else len(requested_fields),
+                )
 
+        deadline = self._make_deadline(job_id=job_id, version_id=version_id, correlation_id=correlation_id)
         try:
             pages, fields, field_results, file_repaired = self._run_inference(
                 mime_type=mime_type,
@@ -218,10 +347,21 @@ class OcrPipeline:
                 original_filename=original_filename,
                 zone_regions=zone_regions,
                 requested_fields=requested_fields,
+                deadline=deadline,
             )
             result: tuple | Exception = (pages, fields, field_results, file_repaired)
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
             result = exc
+
+        if not deadline.settle():
+            # The hard watchdog won the race: it has already written (or is
+            # writing) this job's TIMEOUT failure record and is about to
+            # os._exit() this process. Writing a second, contradictory
+            # outcome here would be the one way this can corrupt state, so
+            # block until that exit lands rather than racing it.
+            logger.error("Version %s: hard timeout watchdog already claimed this job; standing down", version_id)
+            time.sleep(self._settings.ocr_timeout_hard_grace_s)
+            raise OcrTimeoutError(f"version {version_id} was claimed by the hard timeout watchdog")
 
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
@@ -243,6 +383,7 @@ class OcrPipeline:
         original_filename: str,
         zone_regions: list,
         requested_fields: list[FieldSpec] | None,
+        deadline: DocumentDeadline | None = None,
     ) -> tuple[list[PageResult], dict, list | None, bool]:
         """Phase 2 of process_version -- no DB transaction open. Raises a
         classified `errors.OcrEngineError` subclass on every recognized
@@ -269,14 +410,26 @@ class OcrPipeline:
         if mime_type not in SUPPORTED_MIME_TYPES:
             raise UnsupportedFormatError(mime_type)
 
-        with self._layout_engine.load(file_bytes, mime_type, original_filename) as layout_doc:
-            if layout_doc.page_count() > self._settings.ocr_max_pages:
+        # Both of these run inside `load()`, the moment PyMuPDF has opened
+        # the file and BEFORE Docling's conversion -- the single most
+        # expensive step in the pipeline (~104s for a 35-page scanned PDF,
+        # measured live). Checking the page cap after `load()` returned
+        # meant an oversized document paid that cost in full before being
+        # rejected, and arming the deadline afterwards left that same step
+        # outside the budget it exists to bound. See LayoutEngine.load.
+        def on_page_count(page_count: int) -> None:
+            if page_count > self._settings.ocr_max_pages:
                 raise TooManyPagesError(
-                    f"{layout_doc.page_count()} pages exceeds ocr_max_pages={self._settings.ocr_max_pages}"
+                    f"{page_count} pages exceeds ocr_max_pages={self._settings.ocr_max_pages}"
                 )
+            # Deliberately after the cap check, so an oversized document is
+            # rejected rather than handed an enormous budget.
+            if deadline is not None:
+                deadline.arm(page_count)
 
+        with self._layout_engine.load(file_bytes, mime_type, original_filename, on_page_count=on_page_count) as layout_doc:
             if zone_regions:
-                pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions)
+                pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions, deadline=deadline)
                 zone_derived_fields = extracted_fields
                 # No real per-line position data for a zone-cropped run
                 # (each region's whole crop already IS the value) -- any
@@ -295,7 +448,7 @@ class OcrPipeline:
                 # (priority 1) -- that would let an unrelated regex guess
                 # bypass the new dispatch's own, more field-appropriate
                 # strategy for a requested field.
-                pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc)
+                pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc, deadline=deadline)
                 zone_derived_fields = []
             file_repaired = getattr(layout_doc, "file_repaired", False)
 
@@ -317,7 +470,7 @@ class OcrPipeline:
         return pages, fields, field_results, file_repaired
 
     def _run_full_document(
-        self, layout_doc
+        self, layout_doc, deadline: DocumentDeadline | None = None
     ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]]]:
         """OS-FR-001/002, per the native-text-vs-paddleocr decision logic:
         a page with a real native text layer (Docling extracts it
@@ -339,6 +492,7 @@ class OcrPipeline:
         lines_by_page: dict[int, list[LineBlock]] = {}
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
+            _check_deadline(deadline, f"before page {page_number} of {layout_doc.page_count()}")
             native_blocks = layout_doc.native_text_blocks_for_page(page_number, self._settings.ocr_render_dpi)
 
             if native_blocks:
@@ -361,7 +515,9 @@ class OcrPipeline:
         extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
         return pages, extracted_fields, lines_by_page
 
-    def _run_zone_ocr(self, layout_doc, regions: list[ZoneRegion]) -> tuple[list[PageResult], list[ExtractedField]]:
+    def _run_zone_ocr(
+        self, layout_doc, regions: list[ZoneRegion], deadline: DocumentDeadline | None = None
+    ) -> tuple[list[PageResult], list[ExtractedField]]:
         """OS-FR-003: always PaddleOCR on the cropped region, never a
         native-text lookup -- the decision logic's item 4 is explicit that
         zone/rubber-band OCR always runs PaddleOCR regardless of whether
@@ -373,6 +529,7 @@ class OcrPipeline:
         rendered_pages: dict[int, "Any"] = {}
 
         for region in regions:
+            _check_deadline(deadline, f"before zone {region.name!r}")
             if region.page not in rendered_pages:
                 rendered_pages[region.page] = layout_doc.render_page(region.page, self._settings.ocr_render_dpi)
             page_image = rendered_pages[region.page]

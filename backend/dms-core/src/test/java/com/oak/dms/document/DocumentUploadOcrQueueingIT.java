@@ -102,8 +102,25 @@ class DocumentUploadOcrQueueingIT {
                 ProcessingJob.REFERENCE_TYPE_DOCUMENT_VERSION, version.getVersionId(), ProcessingJob.JOB_TYPE_OCR,
                 List.of(ProcessingJob.STATUS_QUEUED, ProcessingJob.STATUS_PROCESSING));
         assertThat(jobs).hasSize(1);
-        assertThat(jobs.get(0).getStatus()).isEqualTo(ProcessingJob.STATUS_QUEUED);
-        assertThat(jobs.get(0).getAttempts()).isZero();
+        // 'queued' OR 'processing', and 0 or 1 attempts -- not because the
+        // upload path is vague about which it writes (it always writes
+        // 'queued' with attempts=0), but because this IT runs against the
+        // live compose stack, where a real ocr-worker is consuming the very
+        // queue this upload just published to. OutboxRelay polls every 2s
+        // and the whole test takes ~3.5s, so on an idle worker the row is
+        // legitimately already claimed by the time these lines run.
+        //
+        // Asserting 'queued' alone made this test pass only while the
+        // worker happened to be busy -- it failed as soon as the pool was
+        // free (observed during Phase 1 close-out: "expected: queued but
+        // was: processing"). A claim is the queue path WORKING; a test
+        // that fails because the system responded promptly is testing the
+        // wrong thing. What actually belongs to uploadDocument -- exactly
+        // one active job row, and the outbox event below, in the same
+        // transaction as the version -- is still asserted exactly.
+        assertThat(jobs.get(0).getStatus())
+                .isIn(ProcessingJob.STATUS_QUEUED, ProcessingJob.STATUS_PROCESSING);
+        assertThat(jobs.get(0).getAttempts()).isBetween(0, 1);
 
         List<OutboxEvent> events = outboxEventRepository.findAll().stream()
                 .filter(e -> e.getAggregateId().equals(version.getVersionId())
@@ -112,15 +129,17 @@ class DocumentUploadOcrQueueingIT {
         assertThat(events).hasSize(1);
         assertThat(events.get(0).getPayload()).contains(version.getVersionId().toString());
 
-        // Phase 1 B.8: the polling contract the frontend branches on must
-        // report this freshly-queued job as "queued", not "processing" --
-        // the distinction is only real since B.1 made upload set 'pending'
-        // and left 'processing' for an actual ocr-worker claim. errorCode/
-        // friendlyError (B.6) are null while nothing has failed.
+        // Phase 1 B.8: the polling contract the frontend branches on
+        // distinguishes "queued" from "processing" at all -- only real
+        // since B.1 made upload set 'pending' and left 'processing' for an
+        // actual ocr-worker claim. Same live-worker race as above (a claim
+        // rewrites ocr_status to 'processing'), so either is correct here;
+        // what must never appear is "failed", and errorCode/friendlyError
+        // (B.6) must stay absent while nothing has failed.
         mockMvc.perform(get("/api/v1/documents/" + version.getDocumentId() + "/ocr-status")
                         .with(jwt().jwt(builder -> builder.subject(keycloakId.toString())).authorities()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("queued"))
+                .andExpect(jsonPath("$.status").value(org.hamcrest.Matchers.oneOf("queued", "processing", "completed")))
                 .andExpect(jsonPath("$.errorCode").doesNotExist())
                 .andExpect(jsonPath("$.friendlyError").doesNotExist());
     }

@@ -19,12 +19,14 @@ import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,6 +73,29 @@ class OcrEventsConsumerLiveIT {
     private ProcessingJobRepository processingJobRepository;
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    /** The one row this test leaves behind that outlives its usefulness: an
+     * active (`processing`) processing_jobs row holds V36's partial unique
+     * index slot for its version, so it is not inert test detritus the way
+     * the tenant/document/version rows are. Deleted in {@link #tearDown()}.
+     */
+    private UUID createdJobId;
+
+    /** This IT runs against the shared local compose database, not a
+     * throwaway one, so anything it leaves in an ACTIVE state accumulates
+     * across runs. Four such rows had built up before this cleanup existed.
+     *
+     * Only the processing_jobs row is removed: the tenant/user/document/
+     * version/metadata rows it also creates are inert history, and deleting
+     * them would mean unpicking a chain of foreign keys for no benefit.
+     */
+    @AfterEach
+    void tearDown() {
+        if (createdJobId != null) {
+            processingJobRepository.deleteById(createdJobId);
+            createdJobId = null;
+        }
+    }
 
     @Test
     void aRealCompletedEventPublishedToRabbitMqEndsUpAsARealMetadataValue() {
@@ -177,7 +202,19 @@ class OcrEventsConsumerLiveIT {
         // Simulates the claim a real ocr-worker would have made -- the
         // staleness check needs a real processing_jobs row to compare
         // the event's attempt against.
-        processingJobRepository.save(ProcessingJob.builder()
+        //
+        // startedAt AND leaseExpiresAt are both set because a real claim
+        // sets both (ocr-worker's repository.py#claim_job writes
+        // status/attempts/started_at/lease_expires_at in one UPDATE).
+        // Omitting them made this the ONLY writer in the system that could
+        // produce a 'processing' row with no lease -- and such a row is
+        // invisible to the reaper's `lease_expires_at < now()` scan, so it
+        // sat in 'processing' forever, holding V36's partial unique index
+        // slot for its version. Four had accumulated in the local database
+        // from past runs of this test (see docs/ocr/phase1-closeout.md,
+        // "Still open after this" #3). V37 now forbids the shape outright.
+        OffsetDateTime claimedAt = OffsetDateTime.now();
+        createdJobId = processingJobRepository.save(ProcessingJob.builder()
                 .jobId(UUID.randomUUID())
                 .tenantId(tenantId)
                 .jobType(ProcessingJob.JOB_TYPE_OCR)
@@ -185,7 +222,9 @@ class OcrEventsConsumerLiveIT {
                 .referenceId(versionId)
                 .status(ProcessingJob.STATUS_PROCESSING)
                 .attempts(1)
-                .build());
+                .startedAt(claimedAt)
+                .leaseExpiresAt(claimedAt.plusSeconds(1800))  // OCR_LEASE_DURATION_S's default
+                .build()).getJobId();
 
         // Map.of() tops out at 10 key-value pairs -- this payload has 11,
         // so a mutable map is needed instead.

@@ -85,10 +85,18 @@ def _pool_worker_init(settings: Settings, threads_per_process: int, ready_counte
 
 
 def _run_process_version(
-    version_id: uuid.UUID, correlation_id: uuid.UUID | None, requested_fields: "list[FieldSpec] | None"
+    version_id: uuid.UUID,
+    correlation_id: uuid.UUID | None,
+    requested_fields: "list[FieldSpec] | None",
+    resolve_fields_from_db: bool = False,
 ) -> "ProcessingOutcome":
     assert _pipeline is not None, "pool worker task ran before its initializer completed"
-    return _pipeline.process_version(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
+    return _pipeline.process_version(
+        version_id,
+        correlation_id=correlation_id,
+        requested_fields=requested_fields,
+        resolve_fields_from_db=resolve_fields_from_db,
+    )
 
 
 def _run_process_zone(
@@ -110,10 +118,22 @@ def compute_threads_per_process(cpu_count: int, worker_processes: int) -> int:
 
 
 def compute_task_timeout_s(settings: Settings) -> float:
-    """See OcrProcessPool.task_timeout_s's docstring for why this is a
-    single worst-case ceiling rather than a dynamic per-document value.
+    """The OUTERMOST backstop only -- see OcrProcessPool.task_timeout_s.
+
+    The real per-document budget is `deadline.DocumentDeadline`, armed
+    inside the pool worker from the document's actual page count. This
+    value is sized to always be larger than the largest budget that
+    watchdog can possibly arm (`ocr_max_pages` worth) plus the grace it
+    waits and the time it needs to write its own failure record, so pebble
+    only ever fires when the watchdog thread itself never got scheduled.
+    If pebble wins, no TIMEOUT row is written and the reaper reclaims the
+    lease as `WORKER_CRASH`, which is the correct description of that case.
     """
-    return settings.ocr_timeout_base_s + settings.ocr_max_pages * settings.ocr_timeout_per_page_s
+    return (
+        settings.ocr_timeout_base_s
+        + settings.ocr_max_pages * settings.ocr_timeout_per_page_s
+        + 2 * settings.ocr_timeout_hard_grace_s
+    )
 
 
 def _run_process_rubber_band(
@@ -169,23 +189,59 @@ class OcrProcessPool:
             "OcrProcessPool starting: %d workers x %d threads/process (cpu_count=%s), max_tasks_per_process=%d",
             self._worker_count, threads_per_process, os.cpu_count(), settings.ocr_worker_max_tasks_per_process,
         )
+        self.warn_on_misconfigured_lease()
+
+    def warn_on_misconfigured_lease(self) -> str | None:
+        """The lease must outlast the longest a document can legitimately
+        take, or the reaper stops being a backstop and starts competing
+        with the worker: the lease expires mid-inference, the reaper
+        requeues, the retry starts the same document from scratch, and it
+        can livelock until max_delivery_attempts dead-letters a document
+        that was never actually failing.
+
+        Not hypothetical -- provoked during Phase 1 close-out by an
+        overlay that shortened the lease to 60s while leftover 35-page
+        scanned fixtures (~1000s each) were still queued. They cycled
+        indefinitely and saturated the pool. Cheap to detect at startup,
+        genuinely confusing to diagnose at runtime, so it is checked here
+        and logged rather than left to be rediscovered.
+
+        A warning, not a refusal to start: the fault-injection overlays in
+        infra/local deliberately violate it, and an operator who has
+        decided to is entitled to.
+        """
+        longest_document_s = compute_task_timeout_s(self._settings)
+        if self._settings.ocr_lease_duration_s > longest_document_s:
+            return None
+        message = (
+            "OCR_LEASE_DURATION_S=%ds is not longer than the longest a single document may take "
+            "(%.0fs = OCR_TIMEOUT_BASE_S + OCR_MAX_PAGES x OCR_TIMEOUT_PER_PAGE_S + 2 x "
+            "OCR_TIMEOUT_HARD_GRACE_S). The reaper can therefore reclaim a lease from a worker that "
+            "is still legitimately working, and that document will restart from scratch on every "
+            "retry. Raise the lease or lower OCR_MAX_PAGES/OCR_TIMEOUT_PER_PAGE_S."
+        ) % (self._settings.ocr_lease_duration_s, longest_document_s)
+        logger.warning(message)
+        return message
 
     def is_ready(self) -> bool:
         with self._ready_counter.get_lock():
             return self._ready_counter.value >= self._worker_count
 
     def task_timeout_s(self) -> float:
-        # Worst-case ceiling (Settings.ocr_max_pages), used for every task
-        # uniformly -- a truly dynamic per-document timeout would need the
-        # dispatching side to fetch+open the file just to read its page
-        # count, then have the pool worker fetch+open it again; deliberately
-        # not done here (see docs/ocr/ocr-production-prompt.md Phase 1 plan,
-        # B.3). On timeout, pebble terminates and replaces the specific
-        # worker process (verified live); the claimed processing_jobs row
-        # is left 'processing' with its lease -- B.4's reaper (not yet
-        # implemented) is what reclaims it, exactly like any other crashed
-        # worker (WORKER_CRASH), so no separate timeout-finalization write
-        # is attempted from here.
+        # Third-line backstop, NOT the per-document timeout. Phase 1 shipped
+        # this worst-case ceiling as the only timeout, because the
+        # dispatching side genuinely cannot know a document's page count
+        # without doing the pool worker's own job first -- so a hung 1-page
+        # photo held a worker for the full 1310s (Phase 1 open item #1).
+        #
+        # Phase 1 close-out moved the real budget into the pool worker,
+        # where the page count IS known (deadline.py): a soft check between
+        # pages, and a hard watchdog that records TIMEOUT itself and exits
+        # with OCR_TIMEOUT_EXIT_CODE. This ceiling now only fires if that
+        # watchdog thread never ran at all; when it does, pebble terminates
+        # and replaces the one worker process (verified live) and the
+        # claimed processing_jobs row is left 'processing' for the reaper,
+        # exactly like any other crashed worker (WORKER_CRASH).
         return compute_task_timeout_s(self._settings)
 
     def schedule_process_version(
@@ -193,10 +249,11 @@ class OcrProcessPool:
         version_id: uuid.UUID,
         correlation_id: uuid.UUID | None = None,
         requested_fields: "list[FieldSpec] | None" = None,
+        resolve_fields_from_db: bool = False,
     ) -> ProcessFuture:
         return self._pool.schedule(
             _run_process_version,
-            args=(version_id, correlation_id, requested_fields),
+            args=(version_id, correlation_id, requested_fields, resolve_fields_from_db),
             timeout=self.task_timeout_s(),
         )
 

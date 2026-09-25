@@ -118,6 +118,94 @@ def test_a_real_pdf_still_invokes_docling_conversion():
     assert len(calls) == 1
 
 
+# --- on_page_count: the early hook the ocr_max_pages guard and the
+# per-document deadline both hang off (see LayoutEngine.load). Its whole
+# value is the ORDERING -- before Docling's conversion, which is ~104s for
+# a 35-page scanned PDF (measured live). A test that only checked "the
+# hook was called" would pass just as happily with it fired afterwards.
+
+
+class _OrderRecordingDoclingConverter:
+    def __init__(self, order: list[str]):
+        self._order = order
+
+    def convert(self, path):
+        self._order.append("docling.convert")
+        return SimpleNamespace(document=SimpleNamespace(pages={}, texts=[]))
+
+
+def test_on_page_count_fires_before_docling_conversion():
+    order: list[str] = []
+    seen: list[int] = []
+
+    DoclingLayoutDocument(
+        _pdf_bytes(612, 792), "application/pdf", "letter.pdf",
+        _OrderRecordingDoclingConverter(order),
+        on_page_count=lambda pages: (order.append("on_page_count"), seen.append(pages)),
+    )
+
+    assert order == ["on_page_count", "docling.convert"]
+    assert seen == [1]
+
+
+def test_raising_from_on_page_count_skips_the_conversion_entirely():
+    """This is how TOO_MANY_PAGES short-circuits. Before the hook existed
+    the guard lived in pipeline.py, after `load()` had returned -- so an
+    oversized document paid Docling's full conversion cost and only then
+    got rejected, on every single attempt.
+    """
+    order: list[str] = []
+
+    class _TooBig(Exception):
+        pass
+
+    with pytest.raises(_TooBig):
+        DoclingLayoutDocument(
+            _pdf_bytes(612, 792), "application/pdf", "letter.pdf",
+            _OrderRecordingDoclingConverter(order),
+            on_page_count=_raise(_TooBig),
+        )
+
+    assert order == []
+
+
+def test_raising_from_on_page_count_still_releases_the_open_document():
+    """No `with` block protects the caller yet -- __init__ hasn't
+    returned -- so the constructor has to clean up after itself or every
+    oversized document leaks a temp file and an open MuPDF handle.
+    """
+    class _TooBig(Exception):
+        pass
+
+    captured: dict = {}
+    original_init = DoclingLayoutDocument.close
+
+    def spy(self):
+        captured["tmp_path"] = self._tmp.name
+        original_init(self)
+
+    DoclingLayoutDocument.close = spy
+    try:
+        with pytest.raises(_TooBig):
+            DoclingLayoutDocument(
+                _pdf_bytes(612, 792), "application/pdf", "letter.pdf",
+                _OrderRecordingDoclingConverter([]), on_page_count=_raise(_TooBig),
+            )
+    finally:
+        DoclingLayoutDocument.close = original_init
+
+    import os
+
+    assert not os.path.exists(captured["tmp_path"])
+
+
+def _raise(exception_class):
+    def raiser(_pages):
+        raise exception_class()
+
+    return raiser
+
+
 # --- DoclingTextDocument: native .docx text extraction, no OCR at all ---
 # Real bug found live: a .docx upload ("OCR could not process this
 # document") was rejected outright (UnsupportedMimeType) -- fitz can't

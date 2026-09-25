@@ -7,12 +7,16 @@ import com.oak.dms.audit.AuditService;
 import com.oak.dms.messaging.RabbitMqConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageDeliveryMode;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -69,10 +73,10 @@ public class OutboxRelay {
 
     private void publishOne(OutboxEvent event) {
         try {
-            rabbitTemplate.convertAndSend(
+            rabbitTemplate.send(
                     RabbitMqConfig.DMS_EVENTS_EXCHANGE,
                     event.getEventType(),
-                    event.getPayload());
+                    jsonMessage(event.getPayload()));
             event.setStatus(OutboxEvent.Status.published);
             event.setPublishedAt(OffsetDateTime.now());
         } catch (Exception e) {
@@ -90,6 +94,39 @@ public class OutboxRelay {
         } finally {
             outboxEventRepository.save(event);
         }
+    }
+
+    /**
+     * {@code payload} is a {@code jsonb} column -- it is ALREADY a serialized
+     * JSON object, so it goes on the wire as raw UTF-8 bytes with
+     * {@code content_type: application/json} rather than through
+     * {@link RabbitTemplate}'s converter.
+     * <p>
+     * This is not a stylistic preference. The previous
+     * {@code convertAndSend(exchange, routingKey, event.getPayload())} handed
+     * a {@code String} to the configured
+     * {@link org.springframework.amqp.support.converter.Jackson2JsonMessageConverter},
+     * which serialized it AGAIN -- as a quoted JSON string literal
+     * ({@code "{\"tenant_id\": ...}"}), stamped {@code __TypeId__=java.lang.String}
+     * -- so every consumer got a String where an object was expected. Verified
+     * live against the local stack: every ocr-worker-produced
+     * {@code document.version.ocr.completed} event dead-lettered with
+     * {@code MismatchedInputException: Cannot construct instance of
+     * java.util.LinkedHashMap ... from String value}, and every dms-core-produced
+     * {@code document.version.ocr.requested} event broke ocr-worker's Python
+     * consumer with {@code AttributeError: 'str' object has no attribute 'get'}.
+     * Both directions of the Phase 1 queue path were dead.
+     * <p>
+     * No {@code __TypeId__} header is set, on purpose: Spring AMQP's converter
+     * defaults to {@code TypePrecedence.INFERRED}, so each listener's own
+     * parameter type (e.g. {@code Map<String, Object>}) governs deserialization.
+     */
+    private static Message jsonMessage(String payloadJson) {
+        MessageProperties properties = new MessageProperties();
+        properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+        properties.setContentEncoding(StandardCharsets.UTF_8.name());
+        properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+        return new Message(payloadJson.getBytes(StandardCharsets.UTF_8), properties);
     }
 
     private void auditPermanentFailure(OutboxEvent event, Exception cause) {

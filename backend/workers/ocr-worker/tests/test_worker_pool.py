@@ -34,9 +34,19 @@ def test_compute_threads_per_process(cpu_count, worker_processes, expected):
     assert compute_threads_per_process(cpu_count, worker_processes) == expected
 
 
-def test_compute_task_timeout_s_matches_base_plus_per_page_ceiling():
-    settings = Settings(ocr_timeout_base_s=60, ocr_timeout_per_page_s=25, ocr_max_pages=50)
-    assert compute_task_timeout_s(settings) == 60 + 50 * 25
+def test_compute_task_timeout_s_is_the_outer_backstop_above_the_largest_in_worker_budget():
+    """The pool-level ceiling must always sit ABOVE the largest deadline
+    deadline.py can arm (ocr_max_pages worth) plus its hard grace -- if
+    pebble fired first, the in-worker watchdog would never get to record
+    TIMEOUT and every timeout would come back as WORKER_CRASH via the
+    reaper, which is exactly the behavior Phase 1 close-out replaced.
+    """
+    settings = Settings(
+        ocr_timeout_base_s=60, ocr_timeout_per_page_s=25, ocr_max_pages=50, ocr_timeout_hard_grace_s=30
+    )
+    largest_in_worker_hard_deadline = 60 + 50 * 25 + 30
+    assert compute_task_timeout_s(settings) == 60 + 50 * 25 + 2 * 30
+    assert compute_task_timeout_s(settings) > largest_in_worker_hard_deadline
 
 
 # ----------------------------------------------------------------------
@@ -50,8 +60,8 @@ class _FakePipeline:
     def __init__(self):
         self.calls: list[tuple] = []
 
-    def process_version(self, version_id, correlation_id=None, requested_fields=None):
-        self.calls.append(("process_version", version_id, correlation_id, requested_fields))
+    def process_version(self, version_id, correlation_id=None, requested_fields=None, resolve_fields_from_db=False):
+        self.calls.append(("process_version", version_id, correlation_id, requested_fields, resolve_fields_from_db))
         return "version-result"
 
     def process_zone_request(self, version_id, zone_names, correlation_id=None):
@@ -72,7 +82,21 @@ def test_run_process_version_delegates_to_the_worker_local_pipeline(monkeypatch)
     result = _run_process_version(version_id, correlation_id, None)
 
     assert result == "version-result"
-    assert fake.calls == [("process_version", version_id, correlation_id, None)]
+    assert fake.calls == [("process_version", version_id, correlation_id, None, False)]
+
+
+def test_run_process_version_passes_the_db_field_resolution_flag_through(monkeypatch):
+    """The queue consumers -- and only they -- ask the pipeline to resolve
+    requested_fields from document_versions itself (Phase 1 Decision 1);
+    the dev-trigger endpoint sends explicit specs instead.
+    """
+    fake = _FakePipeline()
+    monkeypatch.setattr("ocr_worker.worker_pool._pipeline", fake)
+    version_id = uuid.uuid4()
+
+    _run_process_version(version_id, None, None, True)
+
+    assert fake.calls == [("process_version", version_id, None, None, True)]
 
 
 def test_run_process_zone_delegates_to_the_worker_local_pipeline(monkeypatch):
@@ -164,3 +188,39 @@ def test_real_pool_kills_and_replaces_the_worker_on_timeout():
         assert isinstance(revived.result(), int)
     finally:
         pool.close()
+
+
+# ----------------------------------------------------------------------
+# Lease-vs-document-duration invariant. Found the hard way during Phase 1
+# close-out (see OcrProcessPool.warn_on_misconfigured_lease): a lease
+# shorter than the longest a document may legitimately take turns the
+# reaper from a backstop into a competitor, and long documents livelock.
+# ----------------------------------------------------------------------
+def test_lease_longer_than_the_longest_document_is_not_warned_about():
+    settings = Settings(
+        ocr_lease_duration_s=1800, ocr_timeout_base_s=60, ocr_timeout_per_page_s=25,
+        ocr_max_pages=50, ocr_timeout_hard_grace_s=30,
+    )
+    # The shipped defaults must satisfy this: 1800s > 60 + 50*25 + 2*30 = 1370s.
+    assert compute_task_timeout_s(settings) < settings.ocr_lease_duration_s
+    assert OcrProcessPool.warn_on_misconfigured_lease(_SettingsOnlyPool(settings)) is None
+
+
+def test_a_lease_shorter_than_the_longest_document_is_warned_about():
+    settings = Settings(
+        ocr_lease_duration_s=60, ocr_timeout_base_s=60, ocr_timeout_per_page_s=25,
+        ocr_max_pages=50, ocr_timeout_hard_grace_s=30,
+    )
+    message = OcrProcessPool.warn_on_misconfigured_lease(_SettingsOnlyPool(settings))
+    assert message is not None
+    assert "OCR_LEASE_DURATION_S=60s" in message
+
+
+class _SettingsOnlyPool:
+    """Stands in for a real OcrProcessPool: `warn_on_misconfigured_lease`
+    reads nothing but `self._settings`, and constructing a real pool would
+    spawn processes that load PaddleOCR/Docling models.
+    """
+
+    def __init__(self, settings: Settings):
+        self._settings = settings

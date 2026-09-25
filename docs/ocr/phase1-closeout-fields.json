@@ -1,0 +1,248 @@
+{
+  "check": "fields",
+  "passed": true,
+  "poll_reapply_enabled": "false",
+  "version_id": "8bd3a320-8fb9-4b8a-819e-07a430104814",
+  "document_id": "5d59629a-af1a-4c6f-af75-fb3000b99871",
+  "ocr_status": "completed",
+  "requested_fields_column": [
+    "invoice_number",
+    "invoice_date",
+    "amount",
+    "currency",
+    "vendor_supplier_name",
+    "classification_level",
+    "purchase_order_number"
+  ],
+  "seconds_to_terminal": 2.0,
+  "seconds_to_metadata_values": 1.0,
+  "field_results": [
+    {
+      "field_key": "amount",
+      "value": "2500.00",
+      "confidence": 0.8,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "classification_level",
+      "value": "confidential",
+      "confidence": 0.85,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "currency",
+      "value": "GBP",
+      "confidence": 0.85,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "invoice_date",
+      "value": "2026-03-14",
+      "confidence": 0.9,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "invoice_number",
+      "value": "INV-2026-00184",
+      "confidence": 0.8,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "purchase_order_number",
+      "value": "PO-55821",
+      "confidence": 0.8,
+      "status": "extracted",
+      "source_page": 1
+    },
+    {
+      "field_key": "vendor_supplier_name",
+      "value": "Northwind Trading Ltd",
+      "confidence": 0.8,
+      "status": "extracted",
+      "source_page": 1
+    }
+  ],
+  "metadata_values": [
+    {
+      "field_key": "amount",
+      "value": "2500.00",
+      "source": "ocr",
+      "confidence_score": 0.8
+    },
+    {
+      "field_key": "classification_level",
+      "value": "confidential",
+      "source": "ocr",
+      "confidence_score": 0.85
+    },
+    {
+      "field_key": "currency",
+      "value": "GBP",
+      "source": "ocr",
+      "confidence_score": 0.85
+    },
+    {
+      "field_key": "invoice_date",
+      "value": "2026-03-14T00:00:00+00:00",
+      "source": "ocr",
+      "confidence_score": 0.9
+    },
+    {
+      "field_key": "invoice_number",
+      "value": "INV-2026-00184",
+      "source": "ocr",
+      "confidence_score": 0.8
+    },
+    {
+      "field_key": "purchase_order_number",
+      "value": "PO-55821",
+      "source": "ocr",
+      "confidence_score": 0.8
+    },
+    {
+      "field_key": "vendor_supplier_name",
+      "value": "Northwind Trading Ltd",
+      "source": "ocr",
+      "confidence_score": 0.8
+    }
+  ],
+  "outbox": [
+    {
+      "event_type": "document.version.ocr.requested",
+      "status": "published",
+      "attempts": 0,
+      "created_at": "2026-09-25T05:14:14.026319+00:00"
+    },
+    {
+      "event_type": "document.version.ocr.completed",
+      "status": "published",
+      "attempts": 0,
+      "created_at": "2026-09-25T05:14:15.662167+00:00"
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "adc16b80-35b0-4ed1-9eb5-a06c0b952f98",
+      "status": "completed",
+      "attempts": 1,
+      "last_error": null,
+      "lease_expires_at": "2026-09-25T05:44:14.323207+00:00",
+      "next_attempt_at": null,
+      "started_at": "2026-09-25T05:14:14.323207+00:00",
+      "finished_at": "2026-09-25T05:14:15.656076+00:00"
+    }
+  ],
+  "ocr_status_endpoint": {
+    "id": "5d59629a-af1a-4c6f-af75-fb3000b99871",
+    "status": "completed",
+    "fields": {
+      "invoice_number": {
+        "value": "INV-2026-00184",
+        "confidence": 0.8,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            431.0,
+            622.0,
+            473.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "invoice_date": {
+        "value": "2026-03-14",
+        "confidence": 0.9,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            484.0,
+            510.0,
+            526.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "amount": {
+        "value": "2500.00",
+        "confidence": 0.8,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            1125.0,
+            532.0,
+            1175.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "currency": {
+        "value": "GBP",
+        "confidence": 0.85,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            589.0,
+            372.0,
+            631.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "vendor_supplier_name": {
+        "value": "Northwind Trading Ltd",
+        "confidence": 0.8,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            378.0,
+            720.0,
+            420.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "classification_level": {
+        "value": "confidential",
+        "confidence": 0.85,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            642.0,
+            525.0,
+            684.0
+          ]
+        },
+        "status": "extracted"
+      },
+      "purchase_order_number": {
+        "value": "PO-55821",
+        "confidence": 0.8,
+        "source": {
+          "page": 1,
+          "bbox": [
+            167.0,
+            537.0,
+            484.0,
+            579.0
+          ]
+        },
+        "status": "extracted"
+      }
+    },
+    "errorCode": null,
+    "friendlyError": null
+  },
+  "run_id": "a7df85a2",
+  "completed_at": "2026-09-25T05:14:17.165684+00:00"
+}

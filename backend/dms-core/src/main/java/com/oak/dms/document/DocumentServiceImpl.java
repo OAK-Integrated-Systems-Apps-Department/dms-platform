@@ -23,6 +23,7 @@ import com.oak.dms.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -74,6 +75,14 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentMetadataService documentMetadataService;
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
+
+    /** See {@code dms.ocr.poll-reapply-enabled} in application.yml. Not on the
+     * constructor via {@code @RequiredArgsConstructor} because it is a scalar
+     * property, not a collaborator -- {@code @Value} on the field keeps the
+     * generated constructor to real dependencies.
+     */
+    @Value("${dms.ocr.poll-reapply-enabled:true}")
+    private boolean pollReapplyEnabled;
 
     @Override
     @Transactional
@@ -345,20 +354,23 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         String collapsedStatus = collapseOcrStatus(version.getOcrStatus());
-        if ("completed".equals(collapsedStatus)) {
-            // Kept as an explicit safety net (Phase 1 B.1): applyOcrFields
-            // is meant to run as a side effect of dms-core's own
-            // OcrEventsConsumer reacting to the document.version.ocr.completed
-            // event ocr-worker publishes -- but that consumer isn't built
-            // yet, and even once it is, this poll-time re-apply stays in
-            // place until it's verified under real concurrent load (per
-            // explicit instruction, not deleted alongside the old
-            // synchronous-HTTP path this replaced). Re-running the
-            // (idempotent, override-safe) mapping here, from whatever
+        if ("completed".equals(collapsedStatus) && pollReapplyEnabled) {
+            // Safety net, not the primary path (Phase 1 B.1): applyOcrFields
+            // runs as a side effect of dms-core's own OcrEventsConsumer
+            // reacting to the document.version.ocr.completed event
+            // ocr-worker publishes. Re-running the (idempotent,
+            // override-safe) mapping here, from whatever
             // document_ocr_field_results currently holds, means a client
             // that only ever polls (never receives the event, or polls
             // before the event arrives) still converges to the correct
             // metadata values.
+            //
+            // It is behind `dms.ocr.poll-reapply-enabled` because this
+            // exact code silently masked a real, total failure of the
+            // event path for a whole phase (see
+            // docs/ocr/phase1-verification.md "Defects found" #1). Setting
+            // that flag false is how the event path gets proven on its own
+            // merits; leave it true in normal operation.
             try {
                 Map<String, Object> ocrFieldsRaw = new LinkedHashMap<>();
                 for (DocumentOcrFieldResult row : rows) {

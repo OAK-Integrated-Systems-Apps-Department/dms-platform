@@ -108,7 +108,13 @@ class DoclingLayoutDocument:
     Docling installation behind an apparently-successful OCR run.
     """
 
-    def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter):
+    def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter, on_page_count=None):
+        """`on_page_count`, if given, is called with the real page count
+        the instant PyMuPDF has opened the file and BEFORE Docling's
+        conversion runs -- see `LayoutEngine.load`'s own docstring for why
+        that ordering is load-bearing rather than cosmetic. It may raise
+        (`TooManyPagesError`); this constructor cleans up either way.
+        """
         import fitz  # PyMuPDF
 
         # fitz/MuPDF (verified against the installed 1.28.2 build) cannot
@@ -125,6 +131,20 @@ class DoclingLayoutDocument:
         self._tmp = tempfile.NamedTemporaryFile(suffix=self._suffix, delete=False)
         self._tmp.write(file_bytes)
         self._tmp.flush()
+        self._doc = None
+
+        try:
+            self._open(file_bytes, mime_type, original_filename, docling_converter, on_page_count)
+        except BaseException:
+            # Nothing here owns a `with` block yet -- the caller only gets a
+            # context manager once __init__ returns -- so a raise from the
+            # page-count hook (or from Docling) would otherwise leak both
+            # the temp file and the open MuPDF handle.
+            self.close()
+            raise
+
+    def _open(self, file_bytes, mime_type, original_filename, docling_converter, on_page_count) -> None:
+        import fitz  # PyMuPDF
 
         # PyMuPDF opens PDF and single-page raster formats (PNG/JPEG/TIFF/
         # BMP/GIF, verified live -- see _PIL_PRECONVERT_MIME_TYPES's own
@@ -163,6 +183,24 @@ class DoclingLayoutDocument:
         # result (pipeline.py's _finalize_success), never silently trusted
         # like a genuinely intact file.
         self.file_repaired = "repair" in fitz.TOOLS.mupdf_warnings().lower()
+
+        # The earliest point at which the real page count is known, and
+        # deliberately BEFORE the Docling conversion below. Both of this
+        # hook's callers depend on that ordering:
+        #
+        #  - the `ocr_max_pages` guard. errors.py has always described
+        #    TooManyPagesError as "checked right after page_count(),
+        #    before any rendering/Docling work, so an oversized document
+        #    never even starts consuming a worker slot" -- which was not
+        #    true while the check lived in pipeline.py, after `load()` had
+        #    returned. Measured live during Phase 1 close-out: a 35-page
+        #    scanned PDF spent ~104s inside `docling_converter.convert`
+        #    before anything looked at its page count, every attempt.
+        #  - the per-document deadline (deadline.py). Arming it after the
+        #    conversion would leave the single most expensive step of the
+        #    whole pipeline outside the budget it is supposed to bound.
+        if on_page_count is not None:
+            on_page_count(self._doc.page_count)
 
         # A plain raster image can never have a native text layer -- with
         # do_ocr=False (see LayoutEngine._converter's own comment),
@@ -333,7 +371,9 @@ class DoclingLayoutDocument:
         return tables or None
 
     def close(self) -> None:
-        self._doc.close()
+        if self._doc is not None:
+            self._doc.close()
+            self._doc = None
         Path(self._tmp.name).unlink(missing_ok=True)
 
     def __enter__(self) -> "DoclingLayoutDocument":
@@ -367,11 +407,22 @@ class DoclingTextDocument:
     _label_proximity_value), with no bbox/spatial data needed.
     """
 
-    def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter):
+    def __init__(self, file_bytes: bytes, mime_type: str, original_filename: str, docling_converter, on_page_count=None):
         self._suffix = Path(original_filename).suffix or _suffix_for_mime(mime_type)
         self._tmp = tempfile.NamedTemporaryFile(suffix=self._suffix, delete=False)
         self._tmp.write(file_bytes)
         self._tmp.flush()
+
+        # Always 1 (see page_count below -- a reflowable .docx has no fixed
+        # pagination), so unlike DoclingLayoutDocument this needs nothing
+        # from the file to answer it, and the hook can run before the
+        # conversion rather than merely alongside it.
+        if on_page_count is not None:
+            try:
+                on_page_count(self.page_count())
+            except BaseException:
+                self.close()
+                raise
 
         result = docling_converter.convert(self._tmp.name)
         self._text = result.document.export_to_text()
@@ -574,10 +625,27 @@ class LayoutEngine:
             )
         return self._docling_converter
 
-    def load(self, file_bytes: bytes, mime_type: str, original_filename: str) -> DoclingLayoutDocument | DoclingTextDocument:
-        if mime_type == _DOCX_MIME_TYPE:
-            return DoclingTextDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
-        return DoclingLayoutDocument(file_bytes, mime_type, original_filename, docling_converter=self._converter())
+    def load(
+        self, file_bytes: bytes, mime_type: str, original_filename: str, on_page_count=None
+    ) -> DoclingLayoutDocument | DoclingTextDocument:
+        """`on_page_count(page_count)` is invoked as early as the format
+        allows -- for a PDF/image, right after PyMuPDF has opened the file
+        and before Docling converts it; for a .docx, before the conversion
+        entirely (its page count is a constant 1).
+
+        That "before the conversion" part is the whole point of the hook
+        existing, rather than the caller simply reading `page_count()` off
+        the returned document: Docling's conversion is by far the most
+        expensive step in `load()` (~104s for a 35-page scanned PDF,
+        measured live during Phase 1 close-out), and both the
+        `ocr_max_pages` guard and the per-document deadline mean very
+        little if they only take effect after it has already run.
+        """
+        document_class = DoclingTextDocument if mime_type == _DOCX_MIME_TYPE else DoclingLayoutDocument
+        return document_class(
+            file_bytes, mime_type, original_filename,
+            docling_converter=self._converter(), on_page_count=on_page_count,
+        )
 
 
 # Real bug found live (docs/ocr/failure-analysis.md #4): the caller-

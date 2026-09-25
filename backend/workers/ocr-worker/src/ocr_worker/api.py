@@ -3,10 +3,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from pebble import ProcessExpired
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from .config import Settings
+from .config import OCR_TIMEOUT_EXIT_CODE, Settings
 from .errors import UnsupportedFormatError
 from .extraction import FieldSpec
 from .repository import VersionNotEligible, VersionNotFound
@@ -122,12 +123,24 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         except VersionNotEligible as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
-            # See worker_pool.py's task_timeout_s: pebble already killed
-            # and replaced the specific pool worker; the claimed job row is
-            # left 'processing' for B.4's reaper (not yet implemented) to
-            # reclaim -- the caller gets a clear timeout now rather than
-            # hanging until its own client-side timeout.
+            # The outer pebble ceiling (worker_pool.py's task_timeout_s):
+            # pebble already killed and replaced the specific pool worker,
+            # and nothing recorded a failure, so the claimed job row is
+            # left 'processing' for the reaper to reclaim -- the caller
+            # gets a clear timeout now rather than hanging until its own
+            # client-side timeout.
             raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {version_id}") from exc
+        except ProcessExpired as exc:
+            if exc.exitcode == OCR_TIMEOUT_EXIT_CODE:
+                # The pool worker's own per-document watchdog (deadline.py)
+                # recorded TIMEOUT and terminated itself -- same 504 the
+                # caller would have got above, but the job row is already
+                # 'failed' rather than waiting on the reaper.
+                raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {version_id}") from exc
+            raise HTTPException(
+                status_code=500,
+                detail=f"OCR pool worker died (exitcode={exc.exitcode}) processing version {version_id}",
+            ) from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
     @app.post("/ocr/zone", dependencies=[Depends(require_internal_token)])

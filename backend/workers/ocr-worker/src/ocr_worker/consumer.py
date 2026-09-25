@@ -8,10 +8,12 @@ import uuid
 import aio_pika
 from aio_pika import ExchangeType
 from aio_pika.abc import AbstractIncomingMessage
+from pebble import ProcessExpired
 
 from .config import (
     DMS_EVENTS_DLX,
     DMS_EVENTS_EXCHANGE,
+    OCR_TIMEOUT_EXIT_CODE,
     QUEUE_DEAD_LETTER,
     QUEUE_OCR_REQUESTED,
     QUEUE_SCAN_COMPLETED,
@@ -24,6 +26,63 @@ from .repository import VersionNotEligible, VersionNotFound
 from .worker_pool import OcrProcessPool
 
 logger = logging.getLogger(__name__)
+
+
+async def _decode_event(message: AbstractIncomingMessage, queue_name: str) -> dict | None:
+    """Decode a message body into an event dict, or nack-without-requeue and
+    return None if it is a poison message.
+
+    Every rejection path here must end in an explicit ack or nack. An
+    exception escaping a consumer callback leaves the delivery neither
+    acked nor nacked, so RabbitMQ redelivers it on every reconnect,
+    forever, and it permanently occupies a prefetch slot. That was not
+    hypothetical: dms-core's OutboxRelay used to double-encode payloads as
+    JSON string literals, `json.loads` returned a `str`, `body.get(...)`
+    raised `AttributeError` out of `_on_message`, and three such messages
+    survived a full stack restart still unacked (verified live, then fixed
+    on the producer side in OutboxRelay.jsonMessage). This guard is the
+    consumer-side half: a malformed payload must dead-letter loudly, not
+    wedge a prefetch slot.
+    """
+    try:
+        body = json.loads(message.body)
+    except json.JSONDecodeError:
+        logger.error("Discarding unparseable message on %s", queue_name)
+        await message.nack(requeue=False)
+        return None
+
+    if not isinstance(body, dict):
+        logger.error(
+            "Discarding message on %s whose JSON payload is a %s, not an object",
+            queue_name, type(body).__name__,
+        )
+        await message.nack(requeue=False)
+        return None
+
+    return body
+
+
+async def _parse_ids(body: dict, message: AbstractIncomingMessage, queue_name: str) -> tuple[uuid.UUID, uuid.UUID | None] | None:
+    """Pull `version_id`/`correlation_id` out of a decoded event, or
+    nack-without-requeue and return None. Same contract as `_decode_event`:
+    a malformed id is a poison message, not an exception to let escape.
+    """
+    version_id_raw = body.get("version_id")
+    if not version_id_raw:
+        logger.error("Discarding message on %s with no version_id: %s", queue_name, body)
+        await message.nack(requeue=False)
+        return None
+
+    try:
+        version_id = uuid.UUID(str(version_id_raw))
+        correlation_raw = body.get("correlation_id")
+        correlation_id = uuid.UUID(str(correlation_raw)) if correlation_raw else None
+    except (ValueError, AttributeError, TypeError):
+        logger.error("Discarding message on %s with malformed ids: %s", queue_name, body)
+        await message.nack(requeue=False)
+        return None
+
+    return version_id, correlation_id
 
 
 async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, *, version_id: uuid.UUID, loop, task_timeout_s: float) -> None:
@@ -40,12 +99,39 @@ async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, 
         await message.ack()
         return
     except TimeoutError:
-        # pebble already terminated and replaced the specific pool
-        # worker process (verified live) -- the claimed processing_jobs
-        # row is left 'processing' with a live lease. B.4's reaper
-        # reclaims it (requeue-or-dead-letter) once the lease expires,
-        # the same as any other crashed worker.
-        logger.error("Timed out processing version %s (task timeout=%.0fs)", version_id, task_timeout_s)
+        # The OUTERMOST pebble ceiling fired, meaning the pool worker's own
+        # per-document watchdog (deadline.py) never got a turn either.
+        # pebble already terminated and replaced that specific worker
+        # process (verified live) -- but nothing recorded a failure, so the
+        # claimed processing_jobs row is left 'processing' with a live
+        # lease and the reaper reclaims it (requeue-or-dead-letter) once
+        # that lease expires, the same as any other crashed worker.
+        logger.error(
+            "Version %s hit the outer pool ceiling (%.0fs) -- the in-worker deadline never fired; "
+            "leaving the lease for the reaper",
+            version_id, task_timeout_s,
+        )
+        await message.nack(requeue=False)
+        return
+    except ProcessExpired as exc:
+        # The pool worker died mid-document. Two very different cases,
+        # told apart by the exit code alone (pebble surfaces both
+        # identically otherwise):
+        if exc.exitcode == OCR_TIMEOUT_EXIT_CODE:
+            # Its own hard per-document watchdog killed it, AFTER writing
+            # the TIMEOUT failure record + '.failed' event (pipeline.py's
+            # _on_hard_timeout). Nothing left to reclaim -- this is an
+            # ordinary recorded failure, so nack without requeue exactly
+            # like the `outcome.status != "completed"` branch below.
+            logger.error("Version %s timed out; its pool worker recorded TIMEOUT and was replaced", version_id)
+        else:
+            # A real crash (OOM kill, segfault in a native library). No
+            # failure record was written, so the lease stands and the
+            # reaper owns it.
+            logger.error(
+                "Pool worker died (exitcode=%s, pid=%s) processing version %s; leaving the lease for the reaper",
+                exc.exitcode, exc.pid, version_id,
+            )
         await message.nack(requeue=False)
         return
     except Exception:
@@ -98,7 +184,7 @@ class ScanCompletedConsumer:
     async def start(self) -> None:
         self._connection = await aio_pika.connect_robust(self._settings.rabbitmq_url)
         self._channel = await self._connection.channel()
-        await self._channel.set_qos(prefetch_count=self._settings.prefetch_count)
+        await self._channel.set_qos(prefetch_count=self._settings.effective_prefetch_count)
 
         events_exchange = await self._channel.declare_exchange(DMS_EVENTS_EXCHANGE, ExchangeType.TOPIC, durable=True)
         dlx = await self._channel.declare_exchange(DMS_EVENTS_DLX, ExchangeType.TOPIC, durable=True)
@@ -119,7 +205,7 @@ class ScanCompletedConsumer:
         await main_queue.consume(self._on_message)
         logger.info(
             "ScanCompletedConsumer listening on %s (routing key %s), prefetch=%d",
-            QUEUE_SCAN_COMPLETED, ROUTING_KEY_SCAN_COMPLETED, self._settings.prefetch_count,
+            QUEUE_SCAN_COMPLETED, ROUTING_KEY_SCAN_COMPLETED, self._settings.effective_prefetch_count,
         )
 
     async def stop(self) -> None:
@@ -129,31 +215,26 @@ class ScanCompletedConsumer:
         # lifespan (constructed and closed there), not by this consumer.
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
-        try:
-            body = json.loads(message.body)
-        except json.JSONDecodeError:
-            logger.error("Discarding unparseable message on %s", QUEUE_SCAN_COMPLETED)
-            await message.nack(requeue=False)
+        body = await _decode_event(message, QUEUE_SCAN_COMPLETED)
+        if body is None:
             return
 
         scan_status = body.get("scan_status")
-        version_id_raw = body.get("version_id")
-
         if scan_status != "clean":
-            logger.info("Skipping version %s: scan_status=%r is not 'clean'", version_id_raw, scan_status)
+            logger.info(
+                "Skipping version %s: scan_status=%r is not 'clean'",
+                body.get("version_id"), scan_status,
+            )
             await message.ack()
             return
 
-        if not version_id_raw:
-            logger.error("Discarding message with no version_id: %s", body)
-            await message.nack(requeue=False)
+        ids = await _parse_ids(body, message, QUEUE_SCAN_COMPLETED)
+        if ids is None:
             return
-
-        version_id = uuid.UUID(version_id_raw)
-        correlation_id = uuid.UUID(body["correlation_id"]) if body.get("correlation_id") else None
+        version_id, correlation_id = ids
 
         loop = asyncio.get_running_loop()
-        future = self._pool.schedule_process_version(version_id, correlation_id)
+        future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
         await _await_outcome_and_finalize(
             future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s()
         )
@@ -186,7 +267,7 @@ class OcrRequestedConsumer:
     async def start(self) -> None:
         self._connection = await aio_pika.connect_robust(self._settings.rabbitmq_url)
         self._channel = await self._connection.channel()
-        await self._channel.set_qos(prefetch_count=self._settings.prefetch_count)
+        await self._channel.set_qos(prefetch_count=self._settings.effective_prefetch_count)
 
         events_exchange = await self._channel.declare_exchange(DMS_EVENTS_EXCHANGE, ExchangeType.TOPIC, durable=True)
         dlx = await self._channel.declare_exchange(DMS_EVENTS_DLX, ExchangeType.TOPIC, durable=True)
@@ -207,7 +288,7 @@ class OcrRequestedConsumer:
         await main_queue.consume(self._on_message)
         logger.info(
             "OcrRequestedConsumer listening on %s (routing key %s), prefetch=%d",
-            QUEUE_OCR_REQUESTED, ROUTING_KEY_OCR_REQUESTED, self._settings.prefetch_count,
+            QUEUE_OCR_REQUESTED, ROUTING_KEY_OCR_REQUESTED, self._settings.effective_prefetch_count,
         )
 
     async def stop(self) -> None:
@@ -217,24 +298,17 @@ class OcrRequestedConsumer:
         # and owned by main.py's lifespan, not by this consumer.
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
-        try:
-            body = json.loads(message.body)
-        except json.JSONDecodeError:
-            logger.error("Discarding unparseable message on %s", QUEUE_OCR_REQUESTED)
-            await message.nack(requeue=False)
+        body = await _decode_event(message, QUEUE_OCR_REQUESTED)
+        if body is None:
             return
 
-        version_id_raw = body.get("version_id")
-        if not version_id_raw:
-            logger.error("Discarding message with no version_id: %s", body)
-            await message.nack(requeue=False)
+        ids = await _parse_ids(body, message, QUEUE_OCR_REQUESTED)
+        if ids is None:
             return
-
-        version_id = uuid.UUID(version_id_raw)
-        correlation_id = uuid.UUID(body["correlation_id"]) if body.get("correlation_id") else None
+        version_id, correlation_id = ids
 
         loop = asyncio.get_running_loop()
-        future = self._pool.schedule_process_version(version_id, correlation_id)
+        future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
         await _await_outcome_and_finalize(
             future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s()
         )

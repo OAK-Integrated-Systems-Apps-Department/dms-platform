@@ -4,21 +4,139 @@ Owner: `backend/workers/ocr-worker`. Traces to requirement-registry.md section
 2.4 ("OCR & Scanning", OS-FR-001..006, OS-NFR-001..006) and the section 2.2
 precondition that scanning must complete, clean, before OCR ever runs.
 
-**Status: ASSUMED, pending scan-worker.** `backend/workers/scan-worker/` does
-not exist yet -- nothing in this codebase currently flips
-`document_versions.scan_status` to `clean` or publishes the event ocr-worker
-consumes below. Everything in this document is ocr-worker's own proposal for
-that contract, built so scan-worker (or whatever eventually owns malware
-scanning) has something concrete to implement against, not a negotiated
-agreement with that service. Treat wiring the real producer as a follow-on
-integration task. Until then, the contract is validated via
-`scripts/dev/publish_fake_scan_event.py` (publishes it by hand) and
-`POST /ocr/process/{version_id}` (bypasses it entirely).
+**Status since Phase 1 (stability):** `document.version.ocr.requested`,
+`.completed` and `.failed` are **live and verified end to end** on the local
+stack -- they are the real production trigger and outcome path, replacing the
+synchronous `POST /ocr/process/{id}` call that used to sit on dms-core's
+upload thread. `document.version.scan.completed` remains **ASSUMED**:
+`backend/workers/scan-worker/` still does not exist, nothing flips
+`document_versions.scan_status` to `clean` except dms-core's own upload
+(which sets it directly), and that one contract is still ocr-worker's
+proposal rather than a negotiated agreement. It is exercised by hand via
+`scripts/dev/publish_fake_scan_event.py`.
 
 All events are published to the existing `oak.dms.events` topic exchange
 (`RabbitMqConfig.DMS_EVENTS_EXCHANGE`), durable, no auto-delete -- ocr-worker
 never declares that exchange with different parameters, only queues/bindings
 against it, per the ownership model in `RabbitMqConfig.java`'s class comment.
+
+## Wire format (binding on every producer and consumer here)
+
+A message body on `oak.dms.events` is **the UTF-8 bytes of a JSON object**,
+with `content_type: application/json` and no `__TypeId__` header. That is
+not a stylistic note; it is the contract, and violating it took down both
+directions of this path once already.
+
+Neither service publishes to RabbitMQ directly: both write `outbox_events`
+rows and dms-core's `OutboxRelay` does the publishing (see "Database access"
+in ocr-worker's README). `outbox_events.payload` is a `jsonb` column, so it
+is *already* serialized JSON. The relay used to hand that `String` to
+`RabbitTemplate.convertAndSend`, whose `Jackson2JsonMessageConverter`
+serialized it a second time into a quoted string literal
+(`"{\"tenant_id\": ...}"`, header `__TypeId__=java.lang.String`). Observed
+consequences on the live stack, both silent to the user:
+
+- dms-core's `OcrEventsConsumer` takes `Map<String, Object>` and got a
+  `String`: every `.completed` event failed with `MismatchedInputException`,
+  retried, and dead-lettered. `applyOcrFields` never ran off the event.
+  (`DocumentServiceImpl.getOcrStatus`'s poll-time re-apply masked this in the
+  UI, which is why it went unnoticed -- and why that safety net must stay
+  until this path has run under sustained real load.)
+- ocr-worker's consumers do `json.loads(message.body)` and got a `str`:
+  `body.get(...)` raised `AttributeError` straight out of the callback, so
+  the delivery was neither acked nor nacked. RabbitMQ redelivered it on
+  every reconnect, forever, each one permanently holding a prefetch slot.
+  Three such messages were found still stuck after a full stack restart, and
+  uploads made through the real API never triggered OCR at all.
+
+Fixed on both sides, and both sides are covered by tests that fail if it
+regresses:
+
+- Producer: `OutboxRelay.jsonMessage` sends the payload bytes as-is, via
+  `rabbitTemplate.send` rather than `convertAndSend`
+  (`OutboxRelayWireFormatTest`).
+- Consumer: ocr-worker dead-letters any body that is not a JSON object, and
+  any delivery it cannot parse ids from, instead of letting an exception
+  escape the callback. Every delivery now ends in an explicit ack or nack
+  (`tests/test_consumer_poison_messages.py`).
+
+No `__TypeId__` header is set on purpose: Spring AMQP's converter defaults to
+`TypePrecedence.INFERRED`, so each listener's own parameter type governs
+deserialization.
+
+## Consumed: `document.version.ocr.requested`
+
+Routing key: `document.version.ocr.requested`
+Queue (declared by ocr-worker): `ocr-worker.q.ocr-requested`
+
+**This is the production trigger.** Produced by dms-core
+(`DocumentServiceImpl.queueOcrJobAndPublishRequested`, called from both
+`uploadDocument` and `prepareRerun`) in the same transaction as the
+`document_versions` row and a `queued` `processing_jobs` row -- and also by
+ocr-worker's own lease reaper when it requeues an expired-lease job
+(`repository.py#reap_requeue`). A consumer must handle it identically
+regardless of which one produced it.
+
+| field | type | notes |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `tenant_id`, `document_id`, `version_id` | uuid | |
+| `correlation_id` | uuid \| null | propagated onto `processing_jobs.correlation_id` and the produced outcome event |
+| `occurred_at` | ISO-8601 timestamp | |
+
+Deliberately carries **no resolved field specs** (Phase 1 plan Decision 1):
+ocr-worker re-reads `document_versions.requested_fields` and resolves the
+schema itself at claim time
+(`repository.py#resolve_requested_field_specs`, joining
+`document_type_fields` at the document type's *current* schema version ->
+`metadata_fields` -> `metadata_field_options`). A rerun that widens the
+requested set while a run is already in flight is therefore picked up by
+that in-flight run, without a second event.
+
+> That resolution was specified here from the start but **was not
+> implemented until Phase 1 close-out**. Until then the queue consumers
+> dispatched with `requested_fields=None`, so the pipeline took the legacy
+> generic-regex branch, `document_ocr_field_results` was never written by a
+> real upload, and dms-core's `OcrEventsConsumer` had nothing to apply to
+> `document_metadata_values`. Only the dev-trigger endpoint — which sends
+> resolved specs in its request body — ever exercised the selectable-field
+> path. Proven end to end by
+> `scripts/dev/phase1_closeout_verification.py fields`.
+
+An empty `requested_fields` column resolves to "no restriction", i.e. the
+legacy zone-template + generic-regex pass, so a document uploaded without a
+`requestedFields` parameter behaves exactly as before.
+
+Consumer behavior:
+- No `scan_status` check here, unlike `scan.completed`: `get_version_for_processing` already refuses anything whose `scan_status` isn't `clean`.
+- Body that isn't a JSON object, missing `version_id`, or unparseable `version_id`/`correlation_id` -> nack without requeue (straight to the dead-letter queue; requeueing cannot fix a malformed message).
+- Otherwise claims the job (`claim_job`, a compare-and-swap with a lease) and dispatches into the process pool. Ack only after the outcome transaction commits; a pipeline failure has already recorded `ocr_status='failed'` + `processing_jobs.last_error` + the `.failed` outbox event inside that transaction, so it is nacked without requeue and retry policy is governed by `processing_jobs.attempts`, never by RabbitMQ redelivery.
+- A per-document timeout (`deadline.py`, sized from the document's real page count) records `TIMEOUT` itself, through the same failure path — it does **not** leave the lease for the reaper. Only the outer `pebble` ceiling, or a genuine crash/OOM kill, does that.
+
+**Producer note — the reaper's retry event is emitted on a LATER tick than
+the requeue.** `reap_requeue` moves the expired-lease job back to `queued`
+with `next_attempt_at = now + backoff` and emits nothing; a subsequent
+reaper tick finds it via `find_due_retries` once that backoff has elapsed
+and emits the event then (`publish_due_retry`, which clears
+`next_attempt_at` in the same CAS so the event can never be emitted twice).
+
+The two used to happen together, and that silently dropped **every** retry:
+`OutboxRelay` polls every 2s, so the event always reached the consumer
+inside the backoff window, `claim_job`'s own `next_attempt_at <= now` guard
+correctly refused the claim, the consumer acked and skipped — and nothing
+ever published again. The job sat in `queued` with a long-elapsed
+`next_attempt_at` forever, since `find_expired_leases` only looks at
+`processing` rows. Caught live during Phase 1 close-out:
+
+```
+05:23:59  Reaper requeued job ... attempts=1/5, backoff=5s
+05:24:01  Version ...: no claimable job; ack-and-skip
+```
+
+The larger the backoff, the more certain the drop, so the production 30s
+backoff was strictly worse than the 5s one it was found with. A consumer of
+this event does not need to care which producer emitted it — that part of
+the contract is unchanged.
 
 ## Consumed: `document.version.scan.completed`
 
@@ -51,6 +169,7 @@ Routing key: `document.version.ocr.completed`. Written to `outbox_events` in the
 | `page_count` | int | |
 | `flags` | object | `{"low_confidence": bool, "requires_review": bool}` -- see "Open question: representing low confidence" below |
 | `correlation_id` | uuid \| null | |
+| `attempt` | int | the claiming `processing_jobs` row's `attempts` at the time this outcome was recorded; a consumer compares it against the job's CURRENT `attempts` to skip an outcome the reaper has already superseded with a fresh retry, rather than trusting delivery order |
 | `occurred_at` | ISO-8601 timestamp | |
 
 Deliberately slim: the full per-page detail and structured `fields` live only in the MinIO artifact, not duplicated onto the event -- a downstream consumer (a future indexing step, OS-FR-006) fetches `extracted_text_ref` for that. ocr-worker writes the data; it does not own the search index itself.
@@ -63,9 +182,35 @@ Routing key: `document.version.ocr.failed`. Same outbox mechanism as above, writ
 |---|---|---|
 | `schema_version` | int | `1` |
 | `tenant_id`, `document_id`, `version_id` | uuid | |
-| `error` | string | exception message, also written to `processing_jobs.last_error` |
+| `error` | string | `CODE: human message` (see the error-code taxonomy in ocr-worker's `errors.py`), also written to `processing_jobs.last_error` |
 | `correlation_id` | uuid \| null | |
+| `attempt` | int | same staleness semantics as on `.completed` |
 | `occurred_at` | ISO-8601 timestamp | |
+
+Also produced by the lease reaper (`repository.py#reap_dead_letter`) when a
+job exhausts `MAX_DELIVERY_ATTEMPTS`: it sets `processing_jobs.status
+='dead_letter'` and `document_versions.ocr_status='failed'` and writes this
+event in the same transaction. That is what actually guarantees "no version
+stays `processing` forever" -- nothing else would move a version whose
+worker was OOM-killed while holding the lease.
+
+## Consumed by dms-core: `document.version.ocr.completed` / `.failed`
+
+Queue (declared by dms-core, `RabbitMqConfig`): `dms-core.q.ocr-events`,
+bound to `oak.dms.events` on both routing keys, dead-lettering to
+`dms-core.q.ocr-events.dead-letter`. Handler: `OcrEventsConsumer`.
+
+ocr-worker has already written `document_versions.ocr_status` and
+`document_ocr_field_results` directly before publishing, so the consumer's
+only job on `.completed` is `DocumentMetadataService.applyOcrFields` -- the
+one write path (`document_metadata_values`) that only dms-core owns, and
+which never overwrites a `source='manual'` value. `.failed` only logs;
+`ocr_status`/`last_error` are already persisted.
+
+Idempotent by construction (`applyOcrFields` is delete-then-insert per field
+and override-safe), so a redelivered event converges to the same state with
+no dedupe table. Staleness is handled separately via the `attempt` field
+above.
 
 ## Dead-letter convention
 
