@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -72,10 +72,12 @@ export function DocumentUploadForm() {
   const [documentType, setDocumentType] = useState("")
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
   const [fieldValues, setFieldValues] = useState<MetadataValues>({})
+  const [needsReview, setNeedsReview] = useState<Set<string>>(new Set())
   const [uploading, setUploading] = useState(false)
   const [savingFields, setSavingFields] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [version, setVersion] = useState<DocumentVersionResponse | null>(null)
+  const [showRawData, setShowRawData] = useState(false)
 
   // Field keys the user has hand-edited since the last OCR result landed --
   // never silently overwritten by a later poll tick or re-run result (only
@@ -151,11 +153,12 @@ export function DocumentUploadForm() {
       .then((saved) => {
         setFieldValues((prev) => {
           const next = { ...prev }
-          for (const [fieldKey, value] of Object.entries(saved)) {
+          for (const [fieldKey, value] of Object.entries(saved.values)) {
             if (!userTouchedFields.current.has(fieldKey)) next[fieldKey] = value
           }
           return next
         })
+        setNeedsReview(new Set(saved.needsReview))
       })
       .catch(() => {
         // Best-effort, same as the old post-OCR refetch: the OCR result
@@ -199,7 +202,9 @@ export function DocumentUploadForm() {
     if (!version) return
     setSavingFields(true)
     try {
-      setFieldValues(await saveDocumentMetadata(version.documentId, fieldValues))
+      const saved = await saveDocumentMetadata(version.documentId, fieldValues)
+      setFieldValues(saved.values)
+      setNeedsReview(new Set(saved.needsReview))
       toast.success("Fields saved.")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save these field values.")
@@ -357,8 +362,29 @@ export function DocumentUploadForm() {
                   onChange={handleFieldChange}
                   disabled={savingFields}
                   ocrResults={ocrResultsByFieldKey}
+                  needsReview={needsReview}
                   onRerunField={phase === "done" || phase === "failed" ? (fieldKey) => handleRerun([fieldKey]) : undefined}
                 />
+              </div>
+            )}
+
+            {(phase === "done" || phase === "failed") && (
+              <div className="mb-4 rounded-md border border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowRawData((prev) => !prev)}
+                  className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[11.5px] font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  {showRawData ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  View raw extraction data
+                </button>
+                {showRawData && (
+                  <pre className="max-h-[400px] overflow-auto border-t border-border bg-muted px-3 py-2.5 font-mono text-[11.5px] leading-[1.5] text-foreground">
+                    {ocrResultsByFieldKey && Object.keys(ocrResultsByFieldKey).length > 0
+                      ? JSON.stringify(ocrResultsByFieldKey, null, 2)
+                      : "No OCR extraction results for this document."}
+                  </pre>
+                )}
               </div>
             )}
 

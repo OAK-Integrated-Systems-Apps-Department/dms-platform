@@ -48,9 +48,14 @@ ENV PYTHONPATH=/install/lib/python3.12/site-packages \
 # whl/cpu index together.
 RUN pip install --no-cache-dir --prefix=/install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-COPY pyproject.toml .
+COPY pyproject.toml requirements.lock.txt .
 COPY src src
-RUN pip install --no-cache-dir --prefix=/install .
+# -c (constraints), not -r: pyproject.toml's own dependency list still
+# drives WHICH packages get installed, requirements.lock.txt only pins
+# WHICH VERSION of each once pip's resolver would otherwise pick one --
+# see that file's own header for why (torch/torchvision excluded on
+# purpose; not a full `-r` replacement of this install).
+RUN pip install --no-cache-dir --prefix=/install -c requirements.lock.txt .
 
 FROM python:3.12-slim AS runtime
 # libgomp1: paddlepaddle's native libpaddle.so dlopen()s libgomp.so.1 for

@@ -9,6 +9,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { CreateMetadataFieldForm } from "@/components/metadata-fields/metadata-field-form"
 import type { CreateMetadataFieldFormValues } from "@/components/metadata-fields/schema"
 import { createMetadataField } from "@/lib/metadata-fields/api"
+import { normalizeLabelHints } from "@/lib/metadata-fields/label-hints"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useQueryClient } from "@tanstack/react-query"
@@ -20,6 +21,7 @@ export default function AddMetadataFieldPage() {
   const queryClient = useQueryClient()
 
   async function handleSubmit(values: CreateMetadataFieldFormValues): Promise<string | null> {
+    const labelAliases = normalizeLabelHints(values.labelAliases)
     try {
       const field = await createMetadataField({
         fieldKey: values.fieldKey,
@@ -29,6 +31,7 @@ export default function AddMetadataFieldPage() {
         defaultValue: values.defaultValue || undefined,
         searchable: values.searchable,
         ocrExtractable: values.ocrExtractable,
+        labelAliases: labelAliases.length > 0 ? labelAliases : undefined,
       })
       queryClient.invalidateQueries({ queryKey: ["metadata-fields"] })
       toast.success(`Field "${field.label}" created.`)

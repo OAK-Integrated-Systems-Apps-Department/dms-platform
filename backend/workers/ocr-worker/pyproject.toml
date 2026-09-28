@@ -15,14 +15,27 @@ dependencies = [
     "minio>=7.2",
     "pillow>=10.4",
     "pymupdf>=1.24",
-    "docling>=2.0",
+    # Exact-pinned, not >=: ocr_engine.py's PaddleOcrEngine is written
+    # against paddleocr 3.x's specific predict()/rec_texts/rec_scores/
+    # rec_boxes return shape, which is NOT compatible with 2.x's nested
+    # [[box, (text, confidence)], ...] shape (2.x also used different
+    # constructor kwargs -- see that module's own doc comment) -- a floor-only
+    # ">=2.9" would technically permit installing an incompatible 2.x release.
+    # layout.py's LayoutEngine is similarly written against docling 2.x's
+    # DocumentConverter/coord_origin API. requirements.lock.txt (generated via
+    # `pip freeze` against a known-working install -- see Dockerfile) is the
+    # actual reproducibility guarantee for the full dependency tree; these
+    # exact pins are the documented, human-readable floor for the two
+    # libraries with a known history of breaking output-format changes
+    # between major versions.
+    "docling==2.129.0",
     # paddleocr>=3 no longer pulls in its own inference engine -- paddlepaddle
     # (CPU) and paddlepaddle-gpu are separate PyPI packages, unlike torch's
     # single-name/local-version-tag scheme, so this stays CPU-only with no
     # special index needed (see Dockerfile's torch comment for the case
     # where that *isn't* true).
-    "paddlepaddle>=3.0",
-    "paddleocr>=2.9",
+    "paddlepaddle==3.3.1",
+    "paddleocr==3.7.0",
     # Selectable OCR field extraction's "language" field: ISO 639-1 codes
     # directly, pure-Python, no model download -- no existing dependency
     # here does language detection at all.

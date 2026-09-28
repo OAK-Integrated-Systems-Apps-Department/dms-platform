@@ -1,6 +1,6 @@
 "use client"
 
-import { Lock } from "lucide-react"
+import { Lock, TriangleAlert } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -67,6 +67,32 @@ export function reconcileRequestedFields(
 export interface FieldOcrBadgeInfo {
   confidence: number | null
   status: "extracted" | "not_found" | "low_confidence"
+  /** See `OcrFieldResult.matchBasis` -- optional/nullable since results recorded before it was tracked carry none. */
+  matchBasis?: "label_hint" | "field_name" | "zone" | "pattern" | "generated" | null
+}
+
+/**
+ * The secondary line shown under a field whose OCR result needs its "how"
+ * spelled out -- `null` when the badge alone says enough. Only the two
+ * label-driven bases get a note: a `not_found` is otherwise ambiguous
+ * between "this field has no label hints, so OCR only looked for its name"
+ * (fixable by an admin adding hints) and "it has hints and none of them
+ * are on this document" (the document genuinely doesn't say), and a value
+ * found through the bare field-name fallback is worth a second look since
+ * nobody configured how this field should be recognised. Exported for tests.
+ */
+export function ocrMatchNote(result: FieldOcrBadgeInfo, fieldLabel: string): string | null {
+  if (result.status === "not_found") {
+    // "field_name" means no hints APPLY to this document's type -- the field
+    // may still have hints scoped to other document types, so this must not
+    // claim "no label hints configured". "label_hint" also covers a hint
+    // whose label was found but whose value wasn't usable (e.g. a dropdown
+    // value outside the field's options), so it says no VALUE was found.
+    if (result.matchBasis === "field_name") return `No label hints apply to this document type — searched for the field name “${fieldLabel}”`
+    if (result.matchBasis === "label_hint") return "No value found under this field's label hints"
+    return null
+  }
+  return result.matchBasis === "field_name" ? "Matched by field name" : null
 }
 
 export function DocumentFieldsForm({
@@ -76,6 +102,7 @@ export function DocumentFieldsForm({
   onChange,
   disabled,
   ocrResults,
+  needsReview,
   onRerunField,
 }: {
   schema: DocumentTypeSchemaResponseDto | undefined
@@ -85,6 +112,17 @@ export function DocumentFieldsForm({
   disabled?: boolean
   /** Present once a document's OCR pass has completed -- drives the small confidence badge next to each requested field's label. */
   ocrResults?: Record<string, FieldOcrBadgeInfo>
+  /**
+   * Field keys whose CURRENTLY SAVED value is a low-confidence OCR
+   * extraction (from `DocumentMetadataResponse.needsReview`) -- unlike
+   * `ocrResults` (the latest raw OCR attempt, regardless of what happened
+   * after), this reflects the actual saved value's own state: it's cleared
+   * the moment a manual edit overrides that field, so it never mislabels a
+   * value the user has since retyped. Only rendered when `ocrResults` has
+   * no live result for that field, to avoid showing two overlapping badges
+   * for the same information right after a fresh OCR run.
+   */
+  needsReview?: Set<string>
   /** Omit to hide the per-field "Re-run" affordance entirely (e.g. before any OCR pass has run yet). */
   onRerunField?: (fieldKey: string) => void
 }) {
@@ -102,6 +140,8 @@ export function DocumentFieldsForm({
       {fields.map((field) => {
         const id = `field-${field.fieldKey}`
         const ocrResult = ocrResults?.[field.fieldKey]
+        const flaggedForReview = !ocrResult && needsReview?.has(field.fieldKey)
+        const matchNote = ocrResult ? ocrMatchNote(ocrResult, field.label) : null
         return (
           <div key={field.fieldId}>
             <Label htmlFor={id} className="flex items-center gap-1.5">
@@ -109,12 +149,13 @@ export function DocumentFieldsForm({
                 {field.label}
                 {field.mandatory && <span className="text-[var(--rust)]"> *</span>}
               </span>
-              {field.ocrExtractable && !ocrResult && (
+              {field.ocrExtractable && !ocrResult && !flaggedForReview && (
                 <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground">
                   OCR
                 </span>
               )}
               {ocrResult && <OcrResultBadge result={ocrResult} />}
+              {flaggedForReview && <NeedsReviewBadge />}
               {ocrResult && onRerunField && (
                 <button
                   type="button"
@@ -128,11 +169,22 @@ export function DocumentFieldsForm({
               )}
             </Label>
             <FieldInput id={id} field={field} value={values[field.fieldKey]} onChange={onChange} disabled={disabled} />
-            {field.helpText && <p className="mt-1.5 text-[12px] text-muted-foreground">{field.helpText}</p>}
+            {matchNote && <p className="mt-1 text-[11.5px] text-muted-foreground">{matchNote}</p>}
+            {field.helpText &&<p className="mt-1.5 text-[12px] text-muted-foreground">{field.helpText}</p>}
           </div>
         )
       })}
     </div>
+  )
+}
+
+/** Badge for a field whose currently saved value is flagged `needsReview` (see `DocumentFieldsForm`'s own prop doc comment) -- distinct styling from `OcrResultBadge` so a persisted, still-unverified low-confidence value reads the same as one right after a fresh OCR run. */
+function NeedsReviewBadge() {
+  return (
+    <span className="flex items-center gap-1 rounded-full border border-[var(--rust)]/30 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-[var(--rust)]">
+      <TriangleAlert size={10} />
+      Needs review
+    </span>
   )
 }
 

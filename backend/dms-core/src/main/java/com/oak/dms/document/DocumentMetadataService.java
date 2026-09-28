@@ -1,5 +1,7 @@
 package com.oak.dms.document;
 
+import com.oak.dms.document.dto.DocumentMetadataResponse;
+
 import java.util.Map;
 import java.util.UUID;
 
@@ -12,12 +14,11 @@ import java.util.UUID;
 public interface DocumentMetadataService {
 
     /**
-     * @return field_key -> value (a String for a single-value field, a
-     * List&lt;String&gt; for multi_select), for every field on this
-     * document's type that currently has at least one saved value. A field
-     * with no saved value is simply absent from the map.
+     * @return the document's current field values plus which of them still
+     * need human review (see {@link DocumentMetadataResponse}). A field
+     * with no saved value is simply absent from {@code values}.
      */
-    Map<String, Object> getValues(UUID documentId);
+    DocumentMetadataResponse getValues(UUID documentId);
 
     /**
      * Saves the given values with source="manual", one row (or ordinal

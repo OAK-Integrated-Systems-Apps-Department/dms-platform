@@ -37,8 +37,8 @@ from .errors import (
 )
 from .grounding import SourceIndex, ground
 from .llm_client import LlmClient
-from .prompts import SYSTEM_PROMPT, build_messages
-from .schema import EXTRACTION_JSON_SCHEMA, ExtractedTable, ExtractionResult, FieldValue, StructuredResult, parse_model_reply
+from .prompts import SYSTEM_PROMPT, TargetField, build_messages, target_block
+from .schema import ExtractedTable, ExtractionResult, FieldValue, StructuredResult, extraction_schema, parse_model_reply
 
 logger = logging.getLogger(__name__)
 
@@ -93,18 +93,30 @@ class StructuredExtractionService:
     def client_error(self) -> StructuringError | None:
         return self._client_error
 
-    def chunk_budget_tokens(self) -> int:
+    def chunk_budget_tokens(self, targets: list[TargetField] | None = None) -> int:
         s = self._settings
-        derived = s.llm_context_tokens - s.llm_max_output_tokens - estimate_tokens(SYSTEM_PROMPT, s.llm_chars_per_token) - _PROMPT_WRAPPER_TOKENS
+        prompt = SYSTEM_PROMPT + (target_block(targets) if targets else "")
+        derived = s.llm_context_tokens - s.llm_max_output_tokens - estimate_tokens(prompt, s.llm_chars_per_token) - _PROMPT_WRAPPER_TOKENS
         budget = min(s.llm_chunk_max_tokens, derived) if s.llm_chunk_max_tokens > 0 else derived
         return max(budget, _MIN_CHUNK_TOKENS)
 
     # ------------------------------------------------------------------
-    def extract(self, pages: list[dict], *, document_version_id: str | None = None, ocr_output_ref: str | None = None) -> dict:
+    def extract(
+        self,
+        pages: list[dict],
+        *,
+        document_version_id: str | None = None,
+        ocr_output_ref: str | None = None,
+        targets: list[TargetField] | None = None,
+    ) -> dict:
+        """`targets`: the DMS fields this document's type needs (requested
+        fields); each comes back under its own key in `fields` (value or
+        null). None = free-form extraction only."""
         started = time.monotonic()
-        base = {"document_version_id": document_version_id, "ocr_output_ref": ocr_output_ref, "model": self.model_info}
+        base = {"document_version_id": document_version_id, "ocr_output_ref": ocr_output_ref, "model": self.model_info,
+                "requested_fields": [t.key for t in targets] if targets else None}
         try:
-            envelope = self._extract(pages, base, started)
+            envelope = self._extract(pages, base, started, targets or [])
         except Exception as exc:  # noqa: BLE001 - structuring must never take the OCR worker down; type only, no message (may hold content)
             logger.error("structured extraction crashed for version %s (%s)", document_version_id, type(exc).__name__)
             logger.debug("structured extraction traceback", exc_info=True)
@@ -116,7 +128,7 @@ class StructuredExtractionService:
             }
         return validated_result(envelope)
 
-    def _extract(self, pages: list[dict], base: dict, started: float) -> dict:
+    def _extract(self, pages: list[dict], base: dict, started: float, targets: list[TargetField]) -> dict:
         s = self._settings
         if self._client is None:
             error = self._client_error or StructuringError(INTERNAL_ERROR, "no LLM client configured")
@@ -128,7 +140,7 @@ class StructuredExtractionService:
             error = StructuringError(EMPTY_OCR_RESULT, "OCR produced no text on any page; nothing to structure")
             return {**base, "status": "skipped", "error": error.to_dict(), "warnings": warnings, "stats": {"pages": len(document.pages)}}
 
-        budget = self.chunk_budget_tokens()
+        budget = self.chunk_budget_tokens(targets)
         chunks = plan_chunks(document, budget_tokens=budget, chars_per_token=s.llm_chars_per_token)
         planned = len(chunks)
         truncated = planned > s.llm_max_chunks
@@ -147,7 +159,7 @@ class StructuredExtractionService:
             if fatal is not None:
                 outcomes.append(_ChunkOutcome(index=index, error=StructuringError(fatal.code, f"skipped after an earlier chunk failed with {fatal.code}")))
                 continue
-            for outcome in self._process_chunk(chunk, index=index, total=len(chunks), usage=usage):
+            for outcome in self._process_chunk(chunk, index=index, total=len(chunks), usage=usage, targets=targets):
                 outcomes.append(outcome)
                 if outcome.error is not None and outcome.error.code in FATAL_CODES:
                     fatal = outcome.error
@@ -180,7 +192,7 @@ class StructuredExtractionService:
             logger.warning("structured extraction failed for version %s: %s after %d call(s)", base["document_version_id"], error["code"], usage.calls)
             return {**base, "status": "failed", "error": error, "warnings": warnings, "stats": stats}
 
-        merged, merge_warnings = _merge([(o.index, o.result) for o in successes])
+        merged, merge_warnings = _merge([(o.index, o.result) for o in successes], keep_keys={t.key for t in targets})
         warnings.extend(merge_warnings)
         status = "partial" if (failures or truncated) else "completed"
         logger.info(
@@ -198,17 +210,17 @@ class StructuredExtractionService:
             "stats": stats,
         }
 
-    def _process_chunk(self, chunk: Chunk, *, index: int, total: int, usage: _Usage) -> list[_ChunkOutcome]:
+    def _process_chunk(self, chunk: Chunk, *, index: int, total: int, usage: _Usage, targets: list[TargetField]) -> list[_ChunkOutcome]:
         s = self._settings
-        schema = EXTRACTION_JSON_SCHEMA if s.llm_use_json_schema else None
+        schema = extraction_schema([t.key for t in targets]) if s.llm_use_json_schema else None
         repair_problem: str | None = None
         for attempt in range(s.llm_max_retries + 1):
-            messages = build_messages(chunk.render(), part=index + 1, total=total, pages=chunk.page_numbers, repair_problem=repair_problem)
+            messages = build_messages(chunk.render(), part=index + 1, total=total, pages=chunk.page_numbers, repair_problem=repair_problem, targets=targets)
             try:
                 response = self._client.complete_json(messages, schema=schema, max_tokens=s.llm_max_output_tokens)
             except StructuringError as exc:
                 if exc.code == CONTEXT_OVERFLOW:
-                    return self._split_or_fail(chunk, exc, index=index, total=total, usage=usage)
+                    return self._split_or_fail(chunk, exc, index=index, total=total, usage=usage, targets=targets)
                 return [_ChunkOutcome(index=index, error=exc)]
             usage.calls += 1
             usage.prompt_tokens += response.prompt_tokens or 0
@@ -217,10 +229,10 @@ class StructuredExtractionService:
 
             if response.prompt_tokens is not None and response.prompt_tokens >= s.llm_context_tokens - 16:
                 overflow = StructuringError(CONTEXT_OVERFLOW, f"prompt used {response.prompt_tokens} of {s.llm_context_tokens} context tokens and was likely truncated")
-                return self._split_or_fail(chunk, overflow, index=index, total=total, usage=usage)
+                return self._split_or_fail(chunk, overflow, index=index, total=total, usage=usage, targets=targets)
             if response.finish_reason == "length":
                 cut = StructuringError(INCOMPLETE_RESPONSE, f"reply hit the {s.llm_max_output_tokens}-token output limit (LLM_MAX_OUTPUT_TOKENS)")
-                return self._split_or_fail(chunk, cut, index=index, total=total, usage=usage)
+                return self._split_or_fail(chunk, cut, index=index, total=total, usage=usage, targets=targets)
 
             try:
                 result, parse_warnings = parse_model_reply(response.content)
@@ -229,24 +241,27 @@ class StructuredExtractionService:
                     repair_problem = exc.message
                     continue
                 if exc.code == INCOMPLETE_RESPONSE:
-                    return self._split_or_fail(chunk, exc, index=index, total=total, usage=usage)
+                    return self._split_or_fail(chunk, exc, index=index, total=total, usage=usage, targets=targets)
                 return [_ChunkOutcome(index=index, error=exc)]
 
             grounded, grounding_warnings = ground(result, SourceIndex(chunk.source_texts), s.llm_grounding_policy)
             return [_ChunkOutcome(index=index, result=grounded, warnings=parse_warnings + grounding_warnings)]
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def _split_or_fail(self, chunk: Chunk, error: StructuringError, *, index: int, total: int, usage: _Usage) -> list[_ChunkOutcome]:
+    def _split_or_fail(self, chunk: Chunk, error: StructuringError, *, index: int, total: int, usage: _Usage, targets: list[TargetField]) -> list[_ChunkOutcome]:
         if chunk.depth >= _MAX_SPLIT_DEPTH or not chunk.can_split():
             return [_ChunkOutcome(index=index, error=error)]
         first, second = chunk.split()
-        return self._process_chunk(first, index=index, total=total, usage=usage) + self._process_chunk(second, index=index, total=total, usage=usage)
+        return (self._process_chunk(first, index=index, total=total, usage=usage, targets=targets)
+                + self._process_chunk(second, index=index, total=total, usage=usage, targets=targets))
 
 
 # ----------------------------------------------------------------------
 # Merging chunk results
 # ----------------------------------------------------------------------
-def _merge(results: list[tuple[int, ExtractionResult]]) -> tuple[ExtractionResult, list[dict]]:
+def _merge(results: list[tuple[int, ExtractionResult]], keep_keys: set[str] = frozenset()) -> tuple[ExtractionResult, list[dict]]:
+    """`keep_keys` (the DMS's requested field keys) are kept verbatim
+    instead of normalized, so they still match their document_type field."""
     warnings: list[dict] = []
     fields: dict = {}
     tables: list[tuple[int, ExtractedTable]] = []
@@ -257,7 +272,7 @@ def _merge(results: list[tuple[int, ExtractionResult]]) -> tuple[ExtractionResul
         if result.document_type:
             document_types[normalize_key(result.document_type)] += 1
         for raw_key, value in result.fields.items():
-            key = normalize_key(raw_key)
+            key = raw_key if raw_key in keep_keys else normalize_key(raw_key)
             merged = _merge_value(fields.get(key), value)
             try:
                 fields[key] = _field_value_adapter.validate_python(merged)
@@ -300,6 +315,7 @@ def _square_table(table: ExtractedTable, position: int, warnings: list[dict]) ->
     width = len(table.headers)
     if not width:
         return table
+    table = _drop_row_number_column(table, warnings, position)
     rows = []
     ragged = False
     for row in table.rows:
@@ -312,6 +328,23 @@ def _square_table(table: ExtractedTable, position: int, warnings: list[dict]) ->
     if ragged:
         warnings.append({"code": MALFORMED_TABLE, "message": "model returned rows whose length differs from the header count; short rows were padded with null", "path": f"tables[{position}]"})
     return table.model_copy(update={"rows": rows})
+
+
+def _drop_row_number_column(table: ExtractedTable, warnings: list[dict], position: int) -> ExtractedTable:
+    """Small models often prepend a row counter (0, 1, 2... or 1, 2, 3...)
+    the document doesn't have, shifting every cell one column right of its
+    header. Every row one cell longer than the headers, with a leading
+    0- or 1-based sequence, is that artifact: the counter is dropped. (The
+    grounding guard flags such counters too; this restores the alignment.)"""
+    rows, width = table.rows, len(table.headers)
+    if not rows or any(len(r) != width + 1 for r in rows):
+        return table
+    firsts = [r[0] for r in rows]
+    for start in (0, 1):
+        if all(str(v).strip() == str(start + i) for i, v in enumerate(firsts)):
+            warnings.append({"code": MALFORMED_TABLE, "message": "model added a row-number column; removed", "path": f"tables[{position}]"})
+            return table.model_copy(update={"rows": [r[1:] for r in rows]})
+    return table
 
 
 def validated_result(envelope: dict) -> dict:

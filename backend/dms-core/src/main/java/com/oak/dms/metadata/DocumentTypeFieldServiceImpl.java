@@ -42,6 +42,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
     private final MetadataFieldValidationRepository metadataFieldValidationRepository;
     private final DocumentTypeFieldMapper documentTypeFieldMapper;
     private final SchemaCacheService schemaCacheService;
+    private final MetadataFieldLabelAliasService labelAliasService;
 
     @Override
     @Transactional(readOnly = true)
@@ -49,7 +50,8 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
         UUID tenantId = TenantContext.getTenantId();
         DocumentType documentType = findDocumentType(documentTypeId, tenantId);
         return toResponses(documentTypeFieldRepository
-                .findByDocumentTypeAndVersion(documentTypeId, tenantId, documentType.getCurrentSchemaVersion()), tenantId);
+                .findByDocumentTypeAndVersion(documentTypeId, tenantId, documentType.getCurrentSchemaVersion()),
+                documentTypeId, tenantId);
     }
 
     @Override
@@ -57,7 +59,8 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
     public List<DocumentTypeFieldResponse> getFieldsAtVersion(UUID documentTypeId, int version) {
         UUID tenantId = TenantContext.getTenantId();
         findDocumentType(documentTypeId, tenantId);
-        return toResponses(documentTypeFieldRepository.findByDocumentTypeAndVersion(documentTypeId, tenantId, version), tenantId);
+        return toResponses(documentTypeFieldRepository.findByDocumentTypeAndVersion(documentTypeId, tenantId, version),
+                documentTypeId, tenantId);
     }
 
     @Override
@@ -150,6 +153,22 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
         documentTypeFieldRepository.saveAll(oldMapping);
         List<DocumentTypeField> savedNewMapping = documentTypeFieldRepository.saveAll(newMapping);
 
+        // Type-scoped OCR label hints are keyed by (document type, field), not
+        // by schema version, so every field this publish keeps carries its
+        // hints over untouched - but they must not outlive the field's
+        // mapping into this type. ocr-worker puts EVERY hint scoped to a
+        // document's type into its stop-label set, mapped field or not, so a
+        // leftover "Total" on a field dropped here would keep clipping other
+        // fields' values on every later document of this type, while the
+        // label-aliases endpoints (404 for an unmapped field) and the Fields
+        // tab (mapped rows only) would give the admin no way to see or clear
+        // it. So a dropped field's type-scoped hints go now; mapping it back
+        // later starts from an empty type-scoped list, and its GLOBAL hints -
+        // part of the field itself - are untouched either way. Runs under the
+        // row lock above, which the hint PUT takes too, so a concurrent hint
+        // save can't land on a field this publish is dropping.
+        labelAliasService.deleteTypeScopedAliasesOfUnmappedFields(tenantId, documentTypeId, requestedFieldIds);
+
         documentType.setCurrentSchemaVersion(newVersion);
         documentType.setUpdatedBy(TenantContext.getUserId());
         documentType.setUpdatedAt(now);
@@ -159,7 +178,7 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
         log.info("Published schema version {} for document type {} ({} fields)",
                 newVersion, documentTypeId, savedNewMapping.size());
 
-        return toResponses(savedNewMapping, tenantId);
+        return toResponses(savedNewMapping, documentTypeId, tenantId);
     }
 
     @Override
@@ -209,11 +228,20 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
                 mapping.getDisplayOrder(), mapping.getFieldGroup(), effectiveDefault, options, validations);
     }
 
-    private List<DocumentTypeFieldResponse> toResponses(List<DocumentTypeField> mapping, UUID tenantId) {
+    private List<DocumentTypeFieldResponse> toResponses(List<DocumentTypeField> mapping, UUID documentTypeId,
+                                                         UUID tenantId) {
         Map<UUID, MetadataField> fieldsById = fetchFieldsByIds(mapping, tenantId);
+        // Type-scoped OCR label hints, one query for the whole type. Keyed by
+        // (document type, field) only - hints aren't versioned - so an
+        // archived ?version=N row shows the same current hints as the live
+        // row, and a publish never needs to copy them forward.
+        Map<UUID, List<String>> labelAliasesByField = mapping.isEmpty()
+                ? Map.of()
+                : labelAliasService.listTypeScopedAliasesByField(tenantId, documentTypeId);
         return mapping.stream()
                 .filter(m -> fieldsById.containsKey(m.getFieldId()))
-                .map(m -> documentTypeFieldMapper.toResponse(m, fieldsById.get(m.getFieldId())))
+                .map(m -> documentTypeFieldMapper.toResponse(m, fieldsById.get(m.getFieldId()),
+                        labelAliasesByField.getOrDefault(m.getFieldId(), List.of())))
                 .toList();
     }
 

@@ -1,8 +1,10 @@
 package com.oak.dms.metadata;
 
+import com.oak.dms.metadata.dto.DocumentTypeFieldLabelAliasesResponse;
 import com.oak.dms.metadata.dto.DocumentTypeFieldResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ReplaceDocumentTypeFieldsRequest;
+import com.oak.dms.metadata.dto.ReplaceLabelAliasesRequest;
 import com.oak.dms.metadata.dto.ValidateMetadataRequest;
 import com.oak.dms.metadata.dto.ValidationError;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,7 +21,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The document-type <-> field mapping and resolved schema (A6).
+ * The document-type <-> field mapping and resolved schema (A6), plus each
+ * mapped field's type-scoped OCR label hints ({@code /fields/{fieldId}/label-aliases}).
  */
 @RestController
 @RequestMapping("/api/v1/document-types/{documentTypeId}")
@@ -29,6 +32,7 @@ public class DocumentTypeFieldController {
 
     private final DocumentTypeFieldService documentTypeFieldService;
     private final MetadataValidationService metadataValidationService;
+    private final MetadataFieldLabelAliasService labelAliasService;
 
     @GetMapping("/fields")
     @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
@@ -47,10 +51,43 @@ public class DocumentTypeFieldController {
     @Operation(summary = "Replace a document type's field mapping, publishing a new schema version",
             description = "The given field list becomes schema_version = current + 1; the prior version's "
                     + "rows are archived, not deleted. A field newly marked mandatory on this publish gets "
-                    + "requires_backfill = true so legacy documents can be flagged rather than rejected.")
+                    + "requires_backfill = true so legacy documents can be flagged rather than rejected. "
+                    + "Type-scoped OCR label hints of any field this publish drops are deleted; the fields kept "
+                    + "keep theirs.")
     public List<DocumentTypeFieldResponse> replaceFields(@PathVariable UUID documentTypeId,
                                                            @Valid @RequestBody ReplaceDocumentTypeFieldsRequest request) {
         return documentTypeFieldService.replaceMapping(documentTypeId, request);
+    }
+
+    @GetMapping("/fields/{fieldId}/label-aliases")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @Operation(summary = "Get a mapped field's OCR label hints for this document type only",
+            description = "The hints OCR tries for this field on documents of this type, before the field's "
+                    + "global hints (which are on GET /api/v1/metadata-fields/{fieldId} instead). 404 unless the "
+                    + "field is mapped into the type's current schema version.")
+    public DocumentTypeFieldLabelAliasesResponse getLabelAliases(@PathVariable UUID documentTypeId,
+                                                                  @PathVariable UUID fieldId) {
+        return labelAliasService.getTypeScopedAliases(documentTypeId, fieldId);
+    }
+
+    // Same permission as publishing the mapping itself - type-scoped hints are
+    // configured from the document type's Fields tab, alongside the mapping -
+    // but saving them is NOT a publish: no new schema version is created.
+    @PutMapping("/fields/{fieldId}/label-aliases")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @Operation(summary = "Replace a mapped field's OCR label hints for this document type only",
+            description = "The given list (in priority order, most specific first) replaces the type-scoped "
+                    + "list wholesale; [] clears it. Entries lose invisible formatting characters (zero-width "
+                    + "space, soft hyphen, BOM, bidi marks) and are trimmed and whitespace-collapsed, must be 2-100 "
+                    + "characters with at least one letter or digit and no control characters, at most 20 after "
+                    + "case-insensitive de-duplication (duplicates are dropped silently, keeping the first) - "
+                    + "otherwise 400 with "
+                    + "fieldErrors on labelAliases. Does not publish a new schema version. 404 unless the field is "
+                    + "mapped into the type's current schema version.")
+    public DocumentTypeFieldLabelAliasesResponse replaceLabelAliases(@PathVariable UUID documentTypeId,
+                                                                      @PathVariable UUID fieldId,
+                                                                      @Valid @RequestBody ReplaceLabelAliasesRequest request) {
+        return labelAliasService.replaceTypeScopedAliases(documentTypeId, fieldId, request);
     }
 
     @GetMapping("/schema")

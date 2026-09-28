@@ -3,6 +3,8 @@ package com.oak.dms.metadata.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 /**
  * Request body for updating an existing field's descriptive/behavioral
  * attributes. {@code fieldKey} is immutable after creation (it's what
@@ -25,6 +27,13 @@ public record UpdateMetadataFieldRequest(
         String defaultValue,
 
         boolean searchable,
-        boolean ocrExtractable
+        boolean ocrExtractable,
+
+        // Global OCR label hints. Unlike every other property here, null/
+        // omitted means "leave unchanged" rather than "clear", so an older
+        // client (or any screen that doesn't show hints) can't wipe them just
+        // by not knowing about the property; [] clears them, and any other
+        // list replaces the global list wholesale, in the given order.
+        List<String> labelAliases
 ) {
 }

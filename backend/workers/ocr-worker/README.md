@@ -222,9 +222,41 @@ returned):
 | `UNGROUNDED_VALUE` (warning) | value not found in the chunk's text | nulled (`LLM_GROUNDING_POLICY=nullify`) |
 | `LLM_ENDPOINT_NOT_LOCAL` | `LLM_BASE_URL` is a public host | the model is never called |
 
-Structuring can never fail, roll back or delay OCR. It runs after the OCR
+Structuring can never fail or roll back OCR. It runs after the OCR
 transaction commits, on its own bounded thread pool, and its failures are
 recorded only on its own result.
+
+**Requested fields: how Qwen's values reach the DMS.** The upload form and
+the document's metadata read only `document_ocr_field_results` (dms-core's
+`GET /ocr-status` re-applies those rows onto the metadata on every poll
+once the version is `completed`). So when an upload carries
+`requested_fields`:
+
+1. OCR runs and the rule-based extractor (label hints, spatial matching,
+   patterns) writes its results as before. The HTTP response is unchanged,
+   but the version stays `ocr_status='processing'`.
+2. Qwen is told which DMS fields to fill. Each requested key goes into the
+   prompt with its tenant label hints, and the JSON Schema makes each one
+   a required `fields` property (value or null).
+3. `structuring/field_merge.py` folds Qwen's grounded values into those
+   rows (`LLM_FIELD_POLICY=llm_first`): Qwen's value wins, and Qwen's
+   `null` for a blank label clears a value the rules grabbed from a
+   neighbouring label. Only then is the version marked `completed`, so the
+   upload form, which polls while `processing`, shows the final values.
+4. If Qwen fails (model unavailable, timeout, invalid output), the rule
+   results stay exactly as they were and the version completes. That
+   fallback is recorded as `field_sources: {key: "rules"}` in the
+   structured result and in the log. It is never silent.
+
+The result's `field_sources` says, per requested field, whether the value
+came from Qwen (`llm`) or the rules. `document_ocr_field_results.match_basis`
+is NULL for Qwen values: see the FOLLOW-UP below.
+
+FOLLOW-UP: `match_basis`'s CHECK constraint (V40) has no `'llm'` value, so
+Qwen-decided rows store NULL and the upload form shows no basis note for
+them. A migration adding `'llm'` to the constraint, and a label for it in
+the form's `ocrMatchNote`, would make AI-extracted values visible to the
+user. It isn't done here because V40 isn't on this branch yet.
 
 **Security.** Inference is local only. `LLM_BASE_URL` must be loopback, a
 private IP, or a single-label or internal (`.internal`, `.svc`, `.local`)
@@ -287,6 +319,8 @@ Studio instead of Ollama, set `LLM_PROVIDER=openai_compatible` and point
 | `LLM_GROUNDING_POLICY` | `nullify` | `nullify` / `flag` / `off` |
 | `LLM_KEEP_ALIVE` | `30m` | how long Ollama keeps the model loaded |
 | `LLM_MAX_CONCURRENCY` | `1` | documents structured at once |
+| `LLM_FIELD_POLICY` | `llm_first` | requested fields: `llm_first` (Qwen's grounded value/null wins) or `fill_missing` (Qwen only fills what the rules missed) |
+| `LLM_FIELD_CONFIDENCE` | `0.85` | confidence recorded for a Qwen-decided field value |
 | `LLM_WARMUP_ON_STARTUP` | `false` | load the model at worker start |
 | `LLM_ALLOWED_HOSTS` / `LLM_ALLOW_NON_LOCAL` | empty / `false` | escape hatches for the locality guard |
 | `MAX_DOCUMENT_BYTES` / `MAX_DOCUMENT_PAGES` | `52428800` / `500` | upload validation limits |

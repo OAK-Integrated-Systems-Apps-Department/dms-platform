@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { DocumentTypeSchemaResponseDto } from "@/lib/document-type-fields/api"
 
-import { FieldChips, defaultRequestedFields, mandatoryRequestedFields, reconcileRequestedFields } from "./document-fields-form"
+import { FieldChips, defaultRequestedFields, mandatoryRequestedFields, ocrMatchNote, reconcileRequestedFields } from "./document-fields-form"
 
 function field(overrides: Partial<DocumentTypeSchemaResponseDto["fields"][number]>): DocumentTypeSchemaResponseDto["fields"][number] {
   return {
@@ -142,5 +142,31 @@ describe("reconcileRequestedFields (reset on document-type change)", () => {
   it("never drops a mandatory field even if it wasn't in the previous selection", () => {
     const result = reconcileRequestedFields(new Set(), schemaWith([CLASSIFICATION]))
     expect(result).toEqual(new Set(["classification_level"]))
+  })
+})
+
+describe("ocrMatchNote (why a field was or wasn't found)", () => {
+  it("not_found via the field-name fallback names the label it searched for", () => {
+    expect(ocrMatchNote({ status: "not_found", confidence: null, matchBasis: "field_name" }, "PO Date")).toBe(
+      "No label hints apply to this document type — searched for the field name “PO Date”"
+    )
+  })
+
+  it("not_found despite configured label hints says so", () => {
+    expect(ocrMatchNote({ status: "not_found", confidence: null, matchBasis: "label_hint" }, "PO Date")).toBe(
+      "No value found under this field's label hints"
+    )
+  })
+
+  it("a value found only by field name gets a small note, for both extracted and low_confidence", () => {
+    expect(ocrMatchNote({ status: "extracted", confidence: 0.8, matchBasis: "field_name" }, "PO Date")).toBe("Matched by field name")
+    expect(ocrMatchNote({ status: "low_confidence", confidence: 0.4, matchBasis: "field_name" }, "PO Date")).toBe("Matched by field name")
+  })
+
+  it("adds nothing for other bases, or for results recorded before matchBasis existed", () => {
+    expect(ocrMatchNote({ status: "extracted", confidence: 0.9, matchBasis: "label_hint" }, "PO Date")).toBeNull()
+    expect(ocrMatchNote({ status: "extracted", confidence: 0.95, matchBasis: "zone" }, "PO Date")).toBeNull()
+    expect(ocrMatchNote({ status: "not_found", confidence: null, matchBasis: null }, "PO Date")).toBeNull()
+    expect(ocrMatchNote({ status: "not_found", confidence: null }, "PO Date")).toBeNull()
   })
 })

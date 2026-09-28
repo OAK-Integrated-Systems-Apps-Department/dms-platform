@@ -1,6 +1,19 @@
 import { z } from "zod"
 
+import { labelHintsError } from "@/lib/metadata-fields/label-hints"
+
 import { DATA_TYPES } from "./types"
+
+/**
+ * The field's GLOBAL OCR label hints (see lib/metadata-fields/label-hints.ts).
+ * `LabelHintsInput` already refuses a bad entry as it's typed, so this is the
+ * backstop for the list as a whole — mainly the 20-hint cap — reported as one
+ * message under the input rather than per chip.
+ */
+const labelAliasesSchema = z.array(z.string()).superRefine((hints, ctx) => {
+  const error = labelHintsError(hints)
+  if (error) ctx.addIssue({ code: "custom", message: error })
+})
 
 /** Create Field form — fieldKey/dataType are immutable after creation, so only this schema accepts them. */
 export const createMetadataFieldSchema = z.object({
@@ -16,6 +29,7 @@ export const createMetadataFieldSchema = z.object({
   defaultValue: z.string().trim().max(500).optional().or(z.literal("")),
   searchable: z.boolean(),
   ocrExtractable: z.boolean(),
+  labelAliases: labelAliasesSchema,
 })
 export type CreateMetadataFieldFormValues = z.infer<typeof createMetadataFieldSchema>
 
@@ -26,5 +40,6 @@ export const updateMetadataFieldSchema = z.object({
   defaultValue: z.string().trim().max(500).optional().or(z.literal("")),
   searchable: z.boolean(),
   ocrExtractable: z.boolean(),
+  labelAliases: labelAliasesSchema,
 })
 export type UpdateMetadataFieldFormValues = z.infer<typeof updateMetadataFieldSchema>

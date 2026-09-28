@@ -17,6 +17,27 @@ export interface DocumentTypeFieldResponseDto {
   fieldGroup: string | null
   defaultValueOverride: string | null
   archivedAt: string | null
+  /**
+   * OCR label hints scoped to THIS document type for this field, in
+   * priority order — tried before the field's own global hints
+   * (`MetadataFieldResponseDto.labelAliases`, which are NOT repeated here).
+   * Stored outside the versioned mapping, so it's the same on every
+   * version's rows and is never part of the Publish payload below — see
+   * `replaceDocumentTypeFieldLabelAliases`.
+   */
+  labelAliases: string[]
+}
+
+/**
+ * Mirrors backend/dms-core's response for `GET`/`PUT .../fields/{fieldId}/label-aliases`.
+ * (Only the PUT is called from here — the Fields tab already has every row's
+ * type-scoped hints from `DocumentTypeFieldResponseDto.labelAliases`.)
+ */
+export interface DocumentTypeFieldLabelAliasesResponseDto {
+  documentTypeId: string
+  fieldId: string
+  /** The type-scoped hints only — never the field's global ones. */
+  labelAliases: string[]
 }
 
 export interface DocumentTypeFieldMappingItemPayload {
@@ -84,6 +105,26 @@ export async function replaceDocumentTypeFields(
     `${base(documentTypeId)}/fields`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) },
     "Could not save the field mapping."
+  )
+}
+
+/**
+ * Replaces one field's type-scoped OCR label hints wholesale (`[]` clears
+ * them). Saved on its own, immediately — unlike the mapping, this does NOT
+ * publish a new schema version, and the field must already be mapped into
+ * the type's CURRENT published version (dms-core 404s otherwise, which is
+ * why the Fields tab disables the editor for a row that's only been added
+ * locally and not yet published).
+ */
+export async function replaceDocumentTypeFieldLabelAliases(
+  documentTypeId: string,
+  fieldId: string,
+  labelAliases: string[]
+): Promise<DocumentTypeFieldLabelAliasesResponseDto> {
+  return apiFetchJson(
+    `${base(documentTypeId)}/fields/${fieldId}/label-aliases`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labelAliases }) },
+    "Could not save this field's hints for this document type."
   )
 }
 

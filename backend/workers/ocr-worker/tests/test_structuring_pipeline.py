@@ -312,3 +312,95 @@ def test_object_storage_picks_the_newest_ocr_or_structured_object():
     storage._client = SimpleNamespace(list_objects=lambda bucket, prefix, recursive: iter(listing))
     assert storage.latest_ocr_output_key("t", "v") == "ocr/t/v/b.json"
     assert storage.latest_ocr_output_key("t", "v", structured=True) == "ocr/t/v/b.structured.json"
+
+
+# ----------------------------------------------------------------------
+# Requested fields: the LLM's values reach document_ocr_field_results
+# ----------------------------------------------------------------------
+from ocr_worker.extraction import FieldSpec  # noqa: E402
+from ocr_worker.models import DocumentOcrFieldResult  # noqa: E402
+
+REQUESTED = [FieldSpec(field_key="invoice_no", data_type="text"), FieldSpec(field_key="email", data_type="text")]
+
+
+def _form_doc():
+    return FakeLayoutDocument(
+        page_count=1,
+        native_text_by_page={1: [
+            NativeTextBlock(text="Invoice No: INV-4471", bbox=(10, 60, 300, 90)),
+            NativeTextBlock(text="Email:", bbox=(10, 120, 100, 150)),
+            NativeTextBlock(text="Phone: 0771234567", bbox=(10, 180, 300, 210)),
+        ]},
+    )
+
+
+def _rows(session_factory):
+    with session_factory() as session:
+        return {r.field_key: (r.value, r.status) for r in session.query(DocumentOcrFieldResult).all()}
+
+
+def _ocr_status(session_factory, version_id):
+    with session_factory() as session:
+        return session.get(DocumentVersion, version_id).ocr_status
+
+
+def test_llm_values_replace_rule_results_and_version_completes_only_afterwards(session_factory, seeded_version):
+    reply = {"document_type": "invoice", "fields": {"invoice_no": "INV-4471", "email": None}, "tables": [], "sections": []}
+    env = _build(session_factory, mode="async", reply=reply, layout_doc=_form_doc())
+    outcome = env.pipeline.process_version(seeded_version["version_id"], requested_fields=REQUESTED)
+
+    assert outcome.status == "completed"
+    # OCR is committed, but the version stays 'processing' (the upload form
+    # keeps polling) until the LLM's values have been applied.
+    assert _ocr_status(session_factory, seeded_version["version_id"]) == "processing"
+
+    _drain(env.runner)
+    assert _ocr_status(session_factory, seeded_version["version_id"]) == "completed"
+    rows = _rows(session_factory)
+    assert rows["invoice_no"] == ("INV-4471", "extracted")
+    assert rows["email"] == (None, "not_found")  # the model saw a blank label
+    [structured] = env.storage.structured().values()
+    assert structured["requested_fields"] == ["invoice_no", "email"]
+    assert structured["field_sources"] == {"invoice_no": "llm", "email": "llm"}
+
+
+def test_targets_carry_the_requested_keys_into_the_prompt(session_factory, seeded_version):
+    captured = {}
+
+    class Capturing(ScriptedClient):
+        def complete_json(self, messages, *, schema, max_tokens):
+            captured["user"], captured["schema"] = messages[1]["content"], schema
+            return super().complete_json(messages, schema=schema, max_tokens=max_tokens)
+
+    env = _build(session_factory, mode="sync", layout_doc=_form_doc(),
+                 reply={"document_type": None, "fields": {"invoice_no": "INV-4471", "email": None}, "tables": [], "sections": []})
+    env.runner._service._client = Capturing(env.client._reply)
+    env.pipeline.process_version(seeded_version["version_id"], requested_fields=REQUESTED)
+    assert '- "invoice_no": invoice no' in captured["user"]
+    assert captured["schema"]["properties"]["fields"]["required"] == ["invoice_no", "email"]
+
+
+def test_llm_failure_falls_back_to_rule_results_and_still_completes(session_factory, seeded_version):
+    env = _build(session_factory, mode="sync", reply=StructuringError("LLM_TIMEOUT", "no reply"), layout_doc=_form_doc())
+    outcome = env.pipeline.process_version(seeded_version["version_id"], requested_fields=REQUESTED)
+
+    assert _ocr_status(session_factory, seeded_version["version_id"]) == "completed"
+    assert _rows(session_factory)["invoice_no"][0] == "INV-4471"  # rule-based value kept
+    structured = outcome.output["structured"]
+    assert structured["status"] == "failed" and structured["error"]["code"] == "LLM_TIMEOUT"
+    assert set(structured["field_sources"].values()) == {"rules"}  # the fallback is visible, not silent
+
+
+def test_without_requested_fields_the_version_completes_immediately(session_factory, seeded_version):
+    env = _build(session_factory, mode="async")
+    env.pipeline.process_version(seeded_version["version_id"])
+    assert _ocr_status(session_factory, seeded_version["version_id"]) == "completed"
+    _drain(env.runner)
+
+
+def test_misconfigured_llm_never_holds_the_version(session_factory, seeded_version):
+    env = _build(session_factory, mode="async", layout_doc=_form_doc())
+    env.runner._service._client = None  # e.g. LLM_ENDPOINT_NOT_LOCAL at startup
+    env.pipeline.process_version(seeded_version["version_id"], requested_fields=REQUESTED)
+    assert _ocr_status(session_factory, seeded_version["version_id"]) == "completed"
+    _drain(env.runner)

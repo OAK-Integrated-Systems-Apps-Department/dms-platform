@@ -97,6 +97,22 @@ public class DocumentMetadataValue {
     @Column(name = "confidence_score")
     private BigDecimal confidenceScore;
 
+    /**
+     * True only for an OCR-sourced value whose extraction confidence fell
+     * below ocr-worker's own threshold (status "low_confidence" -- see
+     * extraction.py's RequestedFieldResult). Written, not suppressed: a
+     * low-confidence guess is still saved (better than a blank field), just
+     * flagged so the frontend can visually distinguish it from a confident
+     * extraction rather than presenting both identically. Always false for
+     * "manual" (a human editing/confirming a field is exactly what should
+     * clear it) -- see DocumentMetadataServiceImpl#writeValues, which
+     * deletes and rebuilds a field's rows on every write, so this never
+     * needs an explicit clear step of its own.
+     */
+    @Column(name = "needs_review", nullable = false)
+    @Builder.Default
+    private boolean needsReview = false;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

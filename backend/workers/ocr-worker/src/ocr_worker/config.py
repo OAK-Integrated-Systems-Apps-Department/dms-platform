@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     # confidential documents to an external API.
     llm_allowed_hosts: str = ""
     llm_allow_non_local: bool = False
+    # How the LLM's values for the DMS's requested fields combine with the
+    # rule-based (label-hint/regex) ones -- structuring/field_merge.py.
+    # "llm_first": the model's grounded value (or its null for a blank
+    # label) wins; "fill_missing": the model only fills fields the rules
+    # didn't find.
+    llm_field_policy: str = "llm_first"
+    # Confidence recorded for an LLM-decided field value (the model gives
+    # none); above FIELD_LOW_CONFIDENCE_THRESHOLD so it counts as extracted.
+    llm_field_confidence: float = 0.85
 
 
 def get_settings() -> Settings:

@@ -68,6 +68,15 @@ public class DocumentOcrFieldResult {
     @Column(name = "source_bbox", columnDefinition = "jsonb")
     private String sourceBbox;
 
+    /**
+     * How ocr-worker found this value - or, for a not_found row, what it
+     * searched for: 'label_hint' | 'field_name' | 'zone' | 'pattern' |
+     * 'generated' (see V40's comment for what each means). Null on rows
+     * written before V40.
+     */
+    @Column(name = "match_basis")
+    private String matchBasis;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from label_vocabulary_seed import SEED_VOCABULARY  # noqa: E402
 from ocr_worker.extraction import (  # noqa: E402
     FieldSpec,
     extract_requested_fields,
@@ -111,7 +112,7 @@ def test_date_field_normalizes_multiple_printed_formats_to_iso():
         ("Effective Date: May 1, 2026", "2026-05-01"),
     ]
     for text, expected in cases:
-        results = extract_requested_fields(specs=[FieldSpec("effective_date", "date")], text=text, zone_fields={})
+        results = extract_requested_fields(specs=[FieldSpec("effective_date", "date")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
         by_field = {r.field_key: r for r in results}
         assert by_field["effective_date"].value == expected, f"input {text!r}"
         assert by_field["effective_date"].status == "extracted"
@@ -120,7 +121,7 @@ def test_date_field_normalizes_multiple_printed_formats_to_iso():
 def test_expiry_before_effective_flags_both_low_confidence_without_dropping_either():
     text = "Effective Date: 2026-06-01\nExpiry Date: 2026-01-01"
     results = extract_requested_fields(
-        specs=[FieldSpec("effective_date", "date"), FieldSpec("expiry_date", "date")], text=text, zone_fields={}
+        specs=[FieldSpec("effective_date", "date"), FieldSpec("expiry_date", "date")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY
     )
     by_field = {r.field_key: r for r in results}
     assert by_field["effective_date"].value == "2026-06-01"
@@ -132,7 +133,7 @@ def test_expiry_before_effective_flags_both_low_confidence_without_dropping_eith
 def test_expiry_after_effective_stays_extracted():
     text = "Effective Date: 2026-01-01\nExpiry Date: 2026-06-01"
     results = extract_requested_fields(
-        specs=[FieldSpec("effective_date", "date"), FieldSpec("expiry_date", "date")], text=text, zone_fields={}
+        specs=[FieldSpec("effective_date", "date"), FieldSpec("expiry_date", "date")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY
     )
     by_field = {r.field_key: r for r in results}
     assert by_field["effective_date"].status == "extracted"
@@ -141,30 +142,30 @@ def test_expiry_after_effective_stays_extracted():
 
 def test_language_detects_english_text():
     text = "This agreement is entered into by and between the parties for the purpose of establishing terms."
-    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "en"
     assert results[0].status in ("extracted", "low_confidence")
 
 
 def test_language_detects_non_english_text():
     text = "Este es un acuerdo entre las partes con el fin de establecer los terminos y condiciones del contrato."
-    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "es"
 
 
 def test_language_not_found_for_empty_or_too_short_text():
-    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text="", zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text="", zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "not_found"
     assert results[0].value is None
 
-    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text="hi", zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("language", "dropdown")], text="hi", zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "not_found"
 
 
 def test_classification_level_matches_case_insensitive_exact_value():
     text = "Classification Level: CONFIDENTIAL\nDepartment: Legal"
     spec = FieldSpec("classification_level", "dropdown", options=["public", "internal", "confidential", "restricted"])
-    results = extract_requested_fields(specs=[spec], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[spec], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "confidential"
     assert results[0].status == "extracted"
 
@@ -172,14 +173,14 @@ def test_classification_level_matches_case_insensitive_exact_value():
 def test_classification_level_matches_via_synonym():
     text = "Classification Level: Top Secret"
     spec = FieldSpec("classification_level", "dropdown", options=["public", "internal", "confidential", "restricted"])
-    results = extract_requested_fields(specs=[spec], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[spec], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "confidential"
 
 
 def test_classification_level_never_invents_a_value_outside_options():
     text = "Classification Level: Top Priority Urgent"
     spec = FieldSpec("classification_level", "dropdown", options=["public", "internal", "confidential", "restricted"])
-    results = extract_requested_fields(specs=[spec], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[spec], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "not_found"
     assert results[0].value is None
 
@@ -187,21 +188,21 @@ def test_classification_level_never_invents_a_value_outside_options():
 def test_retention_class_case_insensitive_match():
     text = "Retention Class: SHORT_TERM"
     spec = FieldSpec("retention_class", "dropdown", options=["short_term", "medium_term", "long_term", "permanent"])
-    results = extract_requested_fields(specs=[spec], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[spec], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "short_term"
     assert results[0].status == "extracted"
 
 
 def test_reference_number_regex_extraction():
     text = "Reference Number: REF-2026-8841\nOther text follows."
-    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "REF-2026-8841"
     assert results[0].status == "extracted"
 
 
 def test_reference_number_falls_back_to_label_proximity_when_no_pattern_matches():
     text = "Reference Number: see attached schedule A"
-    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("reference_number", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "see attached schedule A"
     assert results[0].status == "extracted"  # 0.7 confidence >= the 0.6 default field_confidence_threshold
 
@@ -213,7 +214,7 @@ def test_only_requested_fields_are_ever_returned():
     that wasn't asked for, even when the fallback would have found one.
     """
     text = "Invoice No: INV-4471\nAuthor: Jane Doe\nTotal Due: $500.00"
-    results = extract_requested_fields(specs=[FieldSpec("author", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("author", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert [r.field_key for r in results] == ["author"]
     assert results[0].value == "Jane Doe"
 
@@ -222,7 +223,7 @@ def test_only_requested_fields_are_ever_returned():
 
 
 def test_empty_requested_fields_list_returns_nothing():
-    results = extract_requested_fields(specs=[], text="Author: Jane Doe", zone_fields={})
+    results = extract_requested_fields(specs=[], text="Author: Jane Doe", zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results == []
 
 
@@ -230,7 +231,7 @@ def test_zone_match_takes_priority_over_label_proximity():
     zone_field = field_for_zone_name("author", "Jane From Zone", 0.99, "author_zone", bbox=(1, 2, 3, 4), page=1)
     text = "Author: Jane Doe"  # would otherwise match via label proximity
     results = extract_requested_fields(
-        specs=[FieldSpec("author", "text")], text=text, zone_fields={"author": zone_field}
+        specs=[FieldSpec("author", "text")], text=text, zone_fields={"author": zone_field}, vocabulary=SEED_VOCABULARY
     )
     assert results[0].value == "Jane From Zone"
     assert results[0].bbox == (1, 2, 3, 4)
@@ -239,17 +240,31 @@ def test_zone_match_takes_priority_over_label_proximity():
 
 def test_tags_free_text_fallback_generates_lowercase_deduplicated_low_confidence_list():
     text = "Policy Policy Compliance Compliance Governance Requirements Requirements Overview"
-    results = extract_requested_fields(specs=[FieldSpec("tags", "multi_select")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("tags", "multi_select")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "low_confidence"
     assert isinstance(results[0].value, list)
     assert len(results[0].value) == len(set(results[0].value))  # deduplicated
     assert all(v == v.lower() for v in results[0].value)
 
 
+def test_requested_fields_to_output_dict_preserves_status_for_confidence_gating():
+    """dms-core's DocumentMetadataServiceImpl#applyOcrFields gates a
+    low_confidence result instead of writing it as trustworthy -- that
+    only works if `status` actually survives into the HTTP response dict."""
+    text = "some free-form description text about a policy matter"
+    results = extract_requested_fields(
+        specs=[FieldSpec("description", "long_text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY
+    )
+    assert results[0].status == "low_confidence"
+
+    output = requested_fields_to_output_dict(results)
+    assert output["description"]["status"] == "low_confidence"
+
+
 def test_requested_fields_to_output_dict_json_encodes_multi_select_values():
     import json
 
-    results = extract_requested_fields(specs=[FieldSpec("tags", "multi_select")], text="policy hr governance rules", zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("tags", "multi_select")], text="policy hr governance rules", zone_fields={}, vocabulary=SEED_VOCABULARY)
     output = requested_fields_to_output_dict(results)
     assert isinstance(output["tags"]["value"], str)
     assert json.loads(output["tags"]["value"]) == results[0].value
@@ -290,7 +305,7 @@ def test_invoice_number_does_not_swallow_every_field_crammed_onto_one_ocr_line()
         "4400051211 USD Vendor / Supplier: R-PAC Printcare Lanka (Pvt) Ltd 21, Sri Pushparama Mv, "
         "Pahala Kadawatha Ship To / Department: Silueta (Pvt) Ltd - Procurement Dept Cost Centre: CC-1042"
     )
-    results = extract_requested_fields(specs=[FieldSpec("invoice_number", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("invoice_number", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "not_found"
     assert results[0].value is None
 
@@ -305,7 +320,7 @@ def test_vendor_supplier_name_clips_at_the_next_known_label_on_a_crammed_line():
         "Vendor / Supplier: R-PAC Printcare Lanka (Pvt) Ltd 21, Sri Pushparama Mv, Pahala Kadawatha "
         "Ship To / Department: Silueta (Pvt) Ltd - Procurement Dept Cost Centre: CC-1042"
     )
-    results = extract_requested_fields(specs=[FieldSpec("vendor_supplier_name", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("vendor_supplier_name", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "extracted"
     assert "Department" not in results[0].value
     assert "Cost Centre" not in results[0].value
@@ -326,7 +341,7 @@ def test_amount_prefers_total_amount_label_over_the_net_amount_table_header():
         "Subtotal\n545.65\nTax (0%)\n0.00\nTotal Amount\n545.65\n"
         "Payment terms: Net 30 days"
     )
-    results = extract_requested_fields(specs=[FieldSpec("amount", "decimal")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("amount", "decimal")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].value == "545.65"
 
 
@@ -369,6 +384,7 @@ def test_spatial_matching_recovers_invoice_number_as_the_separate_span_to_its_ri
         specs=[FieldSpec("invoice_number", "text")],
         text="Invoice Number: Invoice Date: PO Number: Currency: INV-2026-004821 09/15/2026 4400051211 USD",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_INVOICE_LINES_PAGE_1},
     )
     assert results[0].value == "INV-2026-004821"
@@ -383,6 +399,7 @@ def test_spatial_matching_recovers_po_number_and_currency_and_invoice_date_from_
         specs=specs,
         text="Invoice Number: Invoice Date: PO Number: Currency: INV-2026-004821 09/15/2026 4400051211 USD",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_INVOICE_LINES_PAGE_1},
     )
     by_field = {r.field_key: r for r in results}
@@ -402,6 +419,7 @@ def test_spatial_matching_does_not_pick_a_sibling_columns_label_as_the_value():
         specs=[FieldSpec("vendor_supplier_name", "text")],
         text="Vendor / Supplier: R-PAC Printcare Lanka (Pvt) Ltd Ship To / Department: Silueta (Pvt) Ltd",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_INVOICE_LINES_PAGE_1},
     )
     assert results[0].value == "R-PAC Printcare Lanka (Pvt) Ltd"
@@ -411,8 +429,8 @@ def test_spatial_matching_does_not_pick_a_sibling_columns_label_as_the_value():
 
 def test_spatial_matching_prefers_total_amount_row_over_the_net_amount_header():
     """"Net Amount" (a table column header, containing the substring
-    "amount") sits ABOVE "Total Amount" in reading order -- _LABEL_ALIASES
-    already tries "total amount" before the bare "amount" (see the
+    "amount") sits ABOVE "Total Amount" in reading order -- the seeded hints'
+    display_order already tries "total amount" before the bare "amount" (see the
     text-only test above), and spatial matching must still land on the
     real total ("545.65", same row) rather than anything near "Net Amount".
     """
@@ -420,6 +438,7 @@ def test_spatial_matching_prefers_total_amount_row_over_the_net_amount_header():
         specs=[FieldSpec("amount", "decimal")],
         text="Net Amount\nTotal Amount\n545.65",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_INVOICE_LINES_PAGE_1},
     )
     assert results[0].value == "545.65"
@@ -433,7 +452,7 @@ def test_spatial_matching_is_skipped_when_no_line_data_is_available():
     error out or silently return nothing.
     """
     results = extract_requested_fields(
-        specs=[FieldSpec("author", "text")], text="Author: Jane Doe", zone_fields={}, lines_by_page=None
+        specs=[FieldSpec("author", "text")], text="Author: Jane Doe", zone_fields={}, vocabulary=SEED_VOCABULARY, lines_by_page=None
     )
     assert results[0].value == "Jane Doe"
 
@@ -467,6 +486,7 @@ def test_spatial_matching_skips_a_lone_colon_rendered_as_its_own_span():
         specs=[FieldSpec("invoice_number", "text"), FieldSpec("purchase_order_number", "text")],
         text="Date : 15/12/2025 Invoice No : IN/2025/01448 Customer PO NO : 15/12/2025",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_INVOICE_2_LINES_PAGE_1},
     )
     by_field = {r.field_key: r for r in results}
@@ -488,7 +508,7 @@ def test_bare_single_word_alias_does_not_match_inside_ordinary_prose():
         "Supplier's proforma invoice, and shall not be deviated and/or amended in any manner what so ever, "
         "without the prior written approval."
     )
-    results = extract_requested_fields(specs=[FieldSpec("vendor_supplier_name", "text")], text=text, zone_fields={})
+    results = extract_requested_fields(specs=[FieldSpec("vendor_supplier_name", "text")], text=text, zone_fields={}, vocabulary=SEED_VOCABULARY)
     assert results[0].status == "not_found"
     assert results[0].value is None
 
@@ -498,7 +518,7 @@ def test_bare_single_word_alias_still_matches_a_real_colon_labeled_value():
     genuinely used as a label, with a real colon, still works.
     """
     results = extract_requested_fields(
-        specs=[FieldSpec("vendor_supplier_name", "text")], text="Supplier: Acme Corp", zone_fields={}
+        specs=[FieldSpec("vendor_supplier_name", "text")], text="Supplier: Acme Corp", zone_fields={}, vocabulary=SEED_VOCABULARY
     )
     assert results[0].value == "Acme Corp"
 
@@ -533,9 +553,68 @@ def test_bare_single_word_label_alone_on_its_own_line_still_matches():
         specs=[FieldSpec("currency", "dropdown", ["USD", "EUR", "GBP", "LKR"])],
         text="Number Date Currency Value : 4400051211 : 03.03.2026 : USD :    3,611.20",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: _REAL_PO_LINES_PAGE_1},
     )
     assert results[0].value == "USD"
+
+
+def test_purchase_order_number_resolves_via_bare_number_label_fallback():
+    """Real bug found live against this exact document: its header table
+    labels the PO number with just "Number" (relying on a separate
+    "PURCHASE ORDER" box title elsewhere on the page for a human reader's
+    context), which none of purchase_order_number's more specific hints
+    ("purchase order number", "po number", "po no", "po#", "order number")
+    cover. "number" is now an ordinary seeded hint of the field (V41, last
+    in display_order) rather than a hardcoded branch, and
+    build_label_vocabulary's standalone rule puts it in the whole_line_only
+    tier _find_field_value tries only after those all fail -- the same
+    lookup the deleted branch did (test_label_vocabulary.py covers the
+    vocabulary side: without the "number" hint this comes back not_found).
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("purchase_order_number", "text")],
+        text="Number Date Currency Value : 4400051211 : 03.03.2026 : USD :    3,611.20",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        lines_by_page={1: _REAL_PO_LINES_PAGE_1},
+    )
+    assert results[0].value == "4400051211"
+
+
+def test_purchase_order_number_bare_fallback_does_not_steal_another_fields_label():
+    """The bare "number" hint must never match as the TAIL of a more
+    specific, different field's own label -- "Invoice Number:" contains
+    the word "number", but it's the invoice's own number, not a PO
+    number, and there's no separate PO context anywhere in this text.
+    Being standalone (it's the tail of the seeded "invoice number"/
+    "reference number" hints), it's only ever tried whole_line_only, which
+    requires "number" be the label's ENTIRE line -- "Invoice Number:" is
+    not (it's preceded by "Invoice").
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("purchase_order_number", "text")],
+        text="Invoice Number: INV-2024-001",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+    )
+    assert results[0].status == "not_found"
+    assert results[0].value is None
+
+
+def test_purchase_order_number_prefers_its_own_specific_alias_over_the_bare_fallback():
+    """When a real "PO Number" label is present, it must win outright --
+    the standalone "number" hint is only ever tried after every one of
+    purchase_order_number's primary hints has already failed to match
+    anywhere in the document.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("purchase_order_number", "text")],
+        text="Invoice Number: INV-2024-001\nPO Number: PO-99",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+    )
+    assert results[0].value == "PO-99"
 
 
 def test_spatial_matching_strips_a_leading_colon_bundled_into_the_value_span():
@@ -549,6 +628,156 @@ def test_spatial_matching_strips_a_leading_colon_bundled_into_the_value_span():
         specs=[FieldSpec("reference_number", "text")],
         text="Reference : REF-99",
         zone_fields={},
+        vocabulary=SEED_VOCABULARY,
         lines_by_page={1: [("Reference", (297, 53, 348, 73)), (" : REF-99", (365, 52, 475, 72))]},
     )
     assert results[0].value == "REF-99"
+
+
+# Real per-line text+bbox for the line-items table's own header ROW on the
+# same real Purchase Order as _REAL_PO_LINES_PAGE_1 above (dumped the same
+# way: PyMuPDF's own get_text("dict") against the actual PDF, cross-checked
+# against Docling's do_table_structure=True output for the same region,
+# which marks every one of these as column_header=True). "Description" and
+# "Size" are two of this row's own cells, immediately adjacent.
+_REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1: list[tuple[str, tuple[int, int, int, int]]] = [
+    ("Line#", (67, 421, 127, 435)),
+    ("Sales Order", (173, 421, 233, 455)),
+    ("S/O Line", (296, 421, 344, 455)),
+    ("Item#", (443, 421, 503, 435)),
+    ("Description", (712, 421, 844, 435)),
+    ("Size", (1003, 421, 1051, 435)),
+    ("Qty", (1133, 421, 1169, 435)),
+    ("U.O.M", (1236, 421, 1296, 435)),
+    ("Price Per Unit", (1330, 421, 1426, 455)),
+    ("Net Price", (1507, 421, 1615, 435)),
+]
+
+_REAL_PO_TABLE_HEADER_TEXTS = {t.lower() for t, _ in _REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1}
+
+
+def test_description_field_without_table_header_texts_reproduces_the_original_bug():
+    """Documents the real bug as found live, before the fix: with no
+    knowledge of Docling's own table structure, description's bare
+    "description" alias matches the line-items table's "Description"
+    column-header cell (alone on its own line/cell, so the bare-word
+    end-of-line rule in _label_pattern is satisfied) and returns the
+    ADJACENT header cell ("Size") -- a completely different column's
+    header, not a free-text summary of the document -- as if it were a
+    correctly "extracted" value.
+    """
+    text = "\n".join(t for t, _ in _REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1)
+    results = extract_requested_fields(
+        specs=[FieldSpec("description", "long_text")],
+        text=text,
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        lines_by_page={1: _REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1},
+    )
+    assert results[0].value == "Size"
+    assert results[0].status == "extracted"
+
+
+def test_description_field_does_not_mistake_the_line_items_tables_own_column_header_for_its_label():
+    """The fix: table_header_texts (built from Docling's real
+    column_header=True cells, never a hand-maintained word list -- see
+    pipeline.py's _run_full_document) makes both the spatial and
+    flattened-text label matchers skip a line that IS itself a recognized
+    table column header, in EITHER path (this fixture exercises the
+    spatial one; a matching flattened-text-only variant is covered by
+    _label_proximity_value's own reuse of the same check). description
+    must fall through to its free-text fallback instead of returning
+    another column's header as its value.
+    """
+    text = "\n".join(t for t, _ in _REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1)
+    results = extract_requested_fields(
+        specs=[FieldSpec("description", "long_text")],
+        text=text,
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        lines_by_page={1: _REAL_PO_LINE_ITEMS_HEADER_ROW_PAGE_1},
+        table_header_texts=_REAL_PO_TABLE_HEADER_TEXTS,
+    )
+    assert results[0].value != "Size"
+    assert results[0].value != "Description"
+    assert results[0].status == "low_confidence"  # free-text fallback, always forced low_confidence
+
+
+def test_table_header_exclusion_does_not_break_a_genuine_label_match_outside_any_table():
+    """The fix must not become so broad it blocks a real, non-table label
+    match -- a genuine "Description: ..." field label elsewhere in the
+    document (never marked as a table column header) must still resolve
+    normally, even with the same table_header_texts in scope.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("description", "long_text")],
+        text="Description: A routine maintenance policy update.",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        table_header_texts=_REAL_PO_TABLE_HEADER_TEXTS,
+    )
+    assert results[0].value == "A routine maintenance policy update."
+
+
+def test_amount_resolves_via_the_bare_value_label_on_the_real_purchase_order():
+    """Real bug found live against the same real Purchase Order as
+    _REAL_PO_LINES_PAGE_1 above: its header info-box's ONLY total-amount
+    label anywhere says "Value" (alone on its own line, colon+number on
+    the adjacent line -- same shape as "Currency"/"Number" in this exact
+    box), not any of amount's existing aliases ("total amount", "total
+    due", "grand total", "amount due", "net amount due", "amount") -- none
+    of which contain the word "value" at all. amount came back not_found
+    despite a real, unambiguous total sitting right there.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="Number Date Currency Value : 4400051211 : 03.03.2026 : USD :    3,611.20",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        lines_by_page={1: _REAL_PO_LINES_PAGE_1},
+    )
+    assert results[0].value == "3,611.20"
+    assert results[0].status == "extracted"
+
+
+# Real per-line text+bbox for the same document's final page, which restates
+# its total as an ordinary "label ... value" row (unlike the header
+# info-box's separate-line-below shape) -- corroborates the header box's
+# 3,611.20 from a second, independent spot in the same document.
+_REAL_PO_TOTAL_LINE_PAGE_6: list[tuple[str, tuple[int, int, int, int]]] = [
+    ("Total net item value excl tax", (57, 492, 492, 507)),
+    ("3,611.20  USD", (1361, 492, 1585, 507)),
+]
+
+
+def test_amount_resolves_via_the_total_net_item_value_label_on_the_real_purchase_orders_final_page():
+    """Same real document's own final-page total restatement -- a
+    completely different label wording ("Total net item value excl tax")
+    from the header box's bare "Value", on the same row as its value, real
+    per-line bboxes from the live PDF.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="Total net item value excl tax\n3,611.20  USD",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+        lines_by_page={1: _REAL_PO_TOTAL_LINE_PAGE_6},
+    )
+    assert results[0].value == "3,611.20  USD"
+    assert results[0].status == "extracted"
+
+
+def test_amount_bare_value_alias_does_not_match_inside_ordinary_prose():
+    """Same protection as vendor_supplier_name's bare "supplier" fix --
+    "value" is common enough in ordinary prose/legal boilerplate that it
+    must require a real label marker (":"/"-") or be the entire rest of
+    the line, not just appear as a word.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="This warranty is provided without any representation as to value and is not transferable.",
+        zone_fields={},
+        vocabulary=SEED_VOCABULARY,
+    )
+    assert results[0].status == "not_found"
+    assert results[0].value is None

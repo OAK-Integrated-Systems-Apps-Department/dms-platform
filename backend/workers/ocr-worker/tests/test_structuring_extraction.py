@@ -345,3 +345,70 @@ def test_chunk_budget_is_derived_from_context_and_capped_by_explicit_setting():
 def test_dates_glued_to_their_label_by_ocr_still_ground():
     source = _source("Invoice Date12 September 2026", "Due Date12/10/2026")
     assert source.supports("2026-09-12") and source.supports("2026-10-12")
+
+
+def test_dates_with_day_and_month_glued_by_ocr_still_ground():
+    assert _source("Effective From | 15March 2026").supports("2026-03-15")
+    assert _source("Effective From 15 March 2026").supports("2026-03-15")
+
+
+# ----------------------------------------------------------------------
+# Targeted fields (the DMS's requested fields)
+# ----------------------------------------------------------------------
+from ocr_worker.structuring.prompts import TargetField, build_messages  # noqa: E402
+from ocr_worker.structuring.schema import extraction_schema  # noqa: E402
+
+TARGETS = [
+    TargetField(key="employee_name", label="Employee Name", hints=("Name",)),
+    TargetField(key="joining_date", label="Joining Date", data_type="date"),
+    TargetField(key="Emergency Phone", label="Phone"),  # a non-snake key must survive merging verbatim
+]
+
+
+def test_targets_are_listed_in_the_prompt_and_required_by_the_schema():
+    user = build_messages("<page n=\"1\"></page>", part=1, total=1, pages=[1], targets=TARGETS)[1]["content"]
+    assert '- "employee_name": Employee Name (also labelled: Name) -- text' in user
+    assert '"joining_date": Joining Date -- a date: YYYY-MM-DD' in user
+    schema = extraction_schema([t.key for t in TARGETS])
+    assert schema["properties"]["fields"]["required"] == ["employee_name", "joining_date", "Emergency Phone"]
+    assert extraction_schema(None) is extraction_schema([])  # free-form unchanged
+
+
+def test_targeted_run_returns_every_target_key_and_sends_the_targeted_schema():
+    seen = {}
+
+    def answer(messages):
+        return _reply({"document_type": "employee_contract",
+                       "fields": {"employee_name": "John Silva", "joining_date": "2026-09-01", "Emergency Phone": None, "department": "Finance"},
+                       "tables": [], "sections": []})
+
+    class SchemaCapturing(ScriptedClient):
+        def complete_json(self, messages, *, schema, max_tokens):
+            seen["schema"] = schema
+            return super().complete_json(messages, schema=schema, max_tokens=max_tokens)
+
+    result = _service(SchemaCapturing(answer)).extract([EMPLOYEE_PAGE], targets=TARGETS)
+    assert result["requested_fields"] == ["employee_name", "joining_date", "Emergency Phone"]
+    assert result["fields"]["Emergency Phone"] is None  # kept verbatim, not normalized to emergency_phone
+    assert result["fields"]["employee_name"] == "John Silva" and result["fields"]["department"] == "Finance"
+    assert seen["schema"]["properties"]["fields"]["required"] == ["employee_name", "joining_date", "Emergency Phone"]
+
+
+def test_target_prompt_reduces_the_chunk_budget():
+    service = _service(ScriptedClient(_reply({})))
+    assert service.chunk_budget_tokens(TARGETS) < service.chunk_budget_tokens()
+
+
+def test_a_row_number_column_added_by_the_model_is_removed():
+    reply = _reply({"document_type": None, "fields": {}, "sections": [],
+                    "tables": [{"name": None, "page": 1, "headers": ["Department"], "rows": [[0, "Finance"], [1, "Finance"]]}]})
+    result = _service(ScriptedClient(reply), llm_grounding_policy="flag").extract([EMPLOYEE_PAGE])
+    assert result["tables"][0]["rows"] == [["Finance"], ["Finance"]]
+    assert any(w["code"] == "MALFORMED_TABLE" for w in result["warnings"])
+
+
+def test_a_real_leading_numeric_column_is_kept():
+    reply = _reply({"document_type": None, "fields": {}, "sections": [],
+                    "tables": [{"name": None, "page": 1, "headers": ["Department"], "rows": [[5, "Finance"], [9, "Finance"]]}]})
+    result = _service(ScriptedClient(reply), llm_grounding_policy="flag").extract([EMPLOYEE_PAGE])
+    assert result["tables"][0]["rows"] == [[5, "Finance"], [9, "Finance"]]

@@ -49,6 +49,19 @@ public class GlobalExceptionHandler {
                         "Validation failed", request.getRequestURI(), fieldErrors));
     }
 
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ErrorResponse> handleFieldValidation(FieldValidationException ex,
+            HttpServletRequest request) {
+        // Service-layer counterpart of handleValidation above (it is an
+        // ApiException, but this more specific handler wins over
+        // handleApiException) - same status, message and fieldErrors
+        // shape, so a client can't tell which layer rejected the field.
+        log.warn("Field validation failed on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.ofValidation(HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        "Validation failed", request.getRequestURI(), ex.getFieldErrors()));
+    }
+
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolation(
             jakarta.validation.ConstraintViolationException ex,

@@ -42,6 +42,19 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DocumentServiceImpl implements DocumentService {
 
+    /**
+     * The one fixed row V39__seed_platform_default_storage_location.sql
+     * seeds -- see that migration's own comment and DocumentVersion
+     * #storageLocationId for why this exists: document_versions.storage_
+     * location_id is a real NOT NULL column (from the pluggable-storage
+     * feature's V32, merged in only to fix a migration-numbering
+     * collision), but this branch has no pluggable-storage abstraction of
+     * its own and never reads this value back. Every version this branch
+     * creates points at the same row unconditionally.
+     */
+    private static final UUID PLATFORM_DEFAULT_STORAGE_LOCATION_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000002");
+
     private final DocumentTypeRepository documentTypeRepository;
     private final DocumentTypeFieldService documentTypeFieldService;
     private final DocumentRepository documentRepository;
@@ -151,6 +164,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .versionNumber(1)
                 .majorVersion(1)
                 .minorVersion(0)
+                .storageLocationId(PLATFORM_DEFAULT_STORAGE_LOCATION_ID)
                 .storageObjectKey(storageObjectKey)
                 .originalFilename(originalFilename)
                 .mimeType(file.getContentType() != null ? file.getContentType() : "application/octet-stream")
@@ -305,7 +319,8 @@ public class DocumentServiceImpl implements DocumentService {
                     value,
                     row.getConfidence() != null ? row.getConfidence().doubleValue() : null,
                     source,
-                    row.getStatus()));
+                    row.getStatus(),
+                    row.getMatchBasis()));
         }
 
         String collapsedStatus = collapseOcrStatus(version.getOcrStatus());
@@ -338,6 +353,13 @@ public class DocumentServiceImpl implements DocumentService {
                     if (row.getConfidence() != null) {
                         entry.put("confidence", row.getConfidence());
                     }
+                    // Without this, every poll's re-sync silently clears
+                    // needs_review back to false (applyOcrFields only flags
+                    // low_confidence when it sees "status" in the map) --
+                    // document_ocr_field_results already has it, this was
+                    // just never copied across before DocumentMetadataValue
+                    // #needsReview existed for anything to read it into.
+                    entry.put("status", row.getStatus());
                     ocrFieldsRaw.put(row.getFieldKey(), entry);
                 }
                 if (!ocrFieldsRaw.isEmpty()) {

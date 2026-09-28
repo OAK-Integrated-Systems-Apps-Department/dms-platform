@@ -260,3 +260,68 @@ def test_only_non_obvious_key_values_are_hinted():
     assert hints == ['L2->L2: "Invoice No" = "INV-7"', 'L2->L2: "Bill To" = "Oak"']
     # A label is never paired with a segment that is its own "Label: value".
     assert not any(kv.label == "Signature" for kv in doc.key_values)
+
+
+def test_data_row_flagged_as_second_header_row_stays_data():
+    # Real TableFormer output on a purchase order: row 1 (an item line) came
+    # back with column_header=True and was merged into the headers.
+    cells = [
+        {"row": 0, "col": 0, "text": "Item#", "column_header": True}, {"row": 0, "col": 1, "text": "Qty", "column_header": True},
+        {"row": 1, "col": 0, "text": "30043697", "column_header": True}, {"row": 1, "col": 1, "text": "2892.000", "column_header": True},
+        {"row": 2, "col": 0, "text": "30043698"}, {"row": 2, "col": 1, "text": "146.000"},
+    ]
+    doc = build_normalized_document([{"page_number": 1, "method": "native_text", "blocks": [], "tables": [{"bbox": [0, 0, 9, 9], "num_rows": 3, "num_cols": 2, "cells": cells}]}])
+    table = doc.tables[0]
+    assert table.headers == ["Item#", "Qty"]
+    assert table.rows == [["30043697", "2892.000"], ["30043698", "146.000"]]
+
+
+def test_heading_labelled_total_joins_its_amount_on_the_same_row():
+    # Real Docling output: the total's label is labelled section_header and
+    # its amount sits at the far right of the same visual row.
+    page = {
+        "page_number": 1, "method": "native_text", "confidence": 1.0, "tables": [],
+        "blocks": [
+            _block("Terms and Conditions", 79, 198, 400, 220, label="section_header"),
+            _block("Total net item value excl tax", 79, 669, 500, 690, label="section_header"),
+            _block("3,611.20 USD", 1890, 669, 2050, 690),
+        ],
+    }
+    doc = build_normalized_document([page])
+    assert [(l.kind, l.text) for l in doc.lines] == [
+        ("heading", "Terms and Conditions"),
+        ("text", "Total net item value excl tax | 3,611.20 USD"),
+    ]
+
+
+def test_labels_side_by_side_pair_with_the_value_below_in_their_own_column():
+    page = _ocr_page([
+        _block("Line Manager:", 150, 566, 400, 600), _block("Work Location:", 700, 566, 950, 600),
+        _block("Nimal Fernando", 157, 625, 420, 660), _block("Colombo Head Office", 705, 625, 1050, 660),
+        _block("Email:", 150, 700, 260, 735),
+        _block("Phone:", 150, 760, 270, 795),
+    ])
+    pairs = {(kv.label, kv.value, kv.relation) for kv in build_normalized_document([page]).key_values}
+    assert ("Line Manager", "Nimal Fernando", "below") in pairs
+    assert ("Work Location", "Colombo Head Office", "below") in pairs
+    # A blank label is never paired with the next label.
+    assert not any(kv.label in ("Email", "Phone") for kv in build_normalized_document([page]).key_values)
+
+
+def test_taller_short_lines_are_headings_on_ocr_and_native_pages():
+    body = [_block(f"Body line {i} value {i}", 150, 300 + 60 * i, 700, 330 + 60 * i) for i in range(6)]  # 30px high
+    heading = _block("Salary Information", 150, 200, 600, 240)  # 40px high
+    ocr = build_normalized_document([_ocr_page([heading] + body)])
+    assert ocr.lines[0].kind == "heading" and all(l.kind == "text" for l in ocr.lines[1:])
+
+    native = {
+        "page_number": 1, "method": "native_text", "confidence": 1.0, "tables": [], "blocks": [],
+        "lines": [{"text": b["text"], "bbox": b["bbox"]} for b in [heading] + body],
+    }
+    assert build_normalized_document([native]).lines[0].kind == "heading"
+
+
+def test_a_tall_line_with_a_value_or_colon_is_not_a_heading():
+    body = [_block(f"Body line {i}", 150, 300 + 60 * i, 700, 330 + 60 * i) for i in range(6)]
+    doc = build_normalized_document([_ocr_page([_block("Total: 150,000", 150, 200, 600, 240)] + body)])
+    assert doc.lines[0].kind == "text"

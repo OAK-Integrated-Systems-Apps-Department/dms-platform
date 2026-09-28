@@ -24,7 +24,10 @@ from .layout import LayoutEngine, SUPPORTED_MIME_TYPES
 from .ocr_engine import OcrEngine
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
 from .storage import ObjectStorage, ocr_output_key
+from .models import DocumentVersion
 from .structuring import StructuredExtractionRunner
+from .structuring.field_merge import merge_requested_fields
+from .structuring.prompts import TargetField
 from .zones import ZoneRegion, validate_normalized_box
 
 logger = logging.getLogger(__name__)
@@ -147,6 +150,11 @@ class ProcessingOutcome:
     output: dict | None = None  # the exact JSON also stored at extracted_text_ref -- see "Output contract"
     error: str | None = None
     extracted_text_ref: str | None = None  # MinIO key of `output`; set on success
+    # Set on success, for the LLM field hand-off (_apply_llm_fields).
+    tenant_id: uuid.UUID | None = None
+    document_id: uuid.UUID | None = None
+    document_type_id: uuid.UUID | None = None
+    field_results: list | None = None
 
 
 class OcrPipeline:
@@ -196,16 +204,97 @@ class OcrPipeline:
         """
         outcome = self._process_version_ocr(version_id, correlation_id=correlation_id, requested_fields=requested_fields)
         if self._structuring is not None and outcome.status == "completed":
+            refine = bool(requested_fields) and self._llm_refines_fields
             try:
                 structured = self._structuring.after_ocr(
-                    version_id=outcome.version_id, extracted_text_ref=outcome.extracted_text_ref, pages=outcome.output["pages"]
+                    version_id=outcome.version_id,
+                    extracted_text_ref=outcome.extracted_text_ref,
+                    pages=outcome.output["pages"],
+                    targets=self._targets_for(requested_fields, outcome) if refine else None,
+                    on_result=(lambda result: self._apply_llm_fields(outcome, requested_fields, result)) if refine else None,
                 )
             except Exception:  # noqa: BLE001 - OCR already committed; a structuring hand-off failure is logged, not raised
                 logger.exception("could not start structured extraction for version %s", outcome.version_id)
                 structured = None
+                if refine:
+                    self._release_version(outcome.version_id)
             if structured is not None:
                 outcome.output["structured"] = structured
         return outcome
+
+    @property
+    def _llm_refines_fields(self) -> bool:
+        """Whether requested fields go through the LLM before the version
+        is marked OCR-completed (needs a usable model configuration)."""
+        return self._structuring is not None and self._structuring.enabled and self._structuring.has_client
+
+    def _targets_for(self, specs: list[FieldSpec], outcome: ProcessingOutcome) -> list[TargetField]:
+        """The requested fields as LLM targets, labelled with the same
+        tenant label hints the rule-based matcher uses (when this build has
+        label hints), else the field key spelled out."""
+        vocabulary = None
+        if hasattr(OcrRepository, "get_label_vocabulary") and outcome.document_type_id is not None:
+            try:
+                with session_scope(self._session_factory) as session:
+                    vocabulary = OcrRepository(session).get_label_vocabulary(
+                        tenant_id=outcome.tenant_id, document_type_id=outcome.document_type_id, field_keys=[s.field_key for s in specs]
+                    )
+            except Exception:  # noqa: BLE001 - hints only sharpen the prompt; the key alone still works
+                logger.warning("could not load label hints for LLM targets of version %s", outcome.version_id)
+        targets = []
+        for spec in specs:
+            hints = list(vocabulary.hints_for(spec.field_key).all_hints) if vocabulary is not None else []
+            label = hints.pop(0) if hints else spec.field_key.replace("_", " ")
+            targets.append(TargetField(key=spec.field_key, label=label, hints=tuple(hints), data_type=spec.data_type, options=tuple(spec.options or ())))
+        return targets
+
+    def _apply_llm_fields(self, outcome: ProcessingOutcome, specs: list[FieldSpec], structured: dict) -> dict:
+        """After the LLM run: fold its values into the requested fields'
+        document_ocr_field_results rows (what the upload form and the
+        document's metadata read) and only then mark the version OCR-
+        completed. A failed LLM run leaves the rule-based rows as they were
+        -- that fallback is recorded as field_sources "rules" in the
+        structured result and in the log."""
+        try:
+            merged, sources = merge_requested_fields(
+                specs, outcome.field_results or [], structured,
+                policy=self._settings.llm_field_policy, llm_confidence=self._settings.llm_field_confidence,
+            )
+            before = {r.field_key: r for r in outcome.field_results or []}
+            changed = [r for r in merged if before.get(r.field_key) != r]
+            with session_scope(self._session_factory) as session:
+                if changed:
+                    OcrRepository(session).upsert_field_results(
+                        tenant_id=outcome.tenant_id, document_id=outcome.document_id, version_id=outcome.version_id, results=changed
+                    )
+                self._mark_completed(session, outcome.version_id)
+            if structured.get("status") not in ("completed", "partial"):
+                logger.warning(
+                    "LLM structuring %s for version %s (%s): requested fields keep their rule-based values",
+                    structured.get("status"), outcome.version_id, (structured.get("error") or {}).get("code"),
+                )
+            else:
+                logger.info("LLM set %d of %d requested field(s) for version %s", sum(v == "llm" for v in sources.values()), len(specs), outcome.version_id)
+            if outcome.output is not None and "fields" in outcome.output:
+                outcome.output["fields"] = requested_fields_to_output_dict(merged)
+            return {"field_sources": sources}
+        except Exception:  # noqa: BLE001 - never leave the version stuck in 'processing'
+            logger.exception("could not apply LLM field values for version %s", outcome.version_id)
+            self._release_version(outcome.version_id)
+            return {}
+
+    def _release_version(self, version_id: uuid.UUID) -> None:
+        try:
+            with session_scope(self._session_factory) as session:
+                self._mark_completed(session, version_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not mark version %s OCR-completed", version_id)
+
+    @staticmethod
+    def _mark_completed(session, version_id: uuid.UUID) -> None:
+        version = session.get(DocumentVersion, version_id)
+        if version is not None and version.ocr_status == "processing":
+            version.ocr_status = "completed"
 
     def _process_version_ocr(
         self,
@@ -232,6 +321,22 @@ class OcrPipeline:
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
                 zone_regions = repo.get_zone_regions(ctx.document_type_id)
+                # The tenant's OCR label hints (metadata_field_label_aliases),
+                # resolved for THIS document type -- one query per document,
+                # read alongside the zone template and before the slow
+                # layout/OCR work, and only for the selectable-field path:
+                # the legacy requested_fields=None path (RabbitMQ consumer,
+                # extract_structured_fields) never used label vocabulary and
+                # still doesn't look any up.
+                vocabulary = (
+                    repo.get_label_vocabulary(
+                        tenant_id=ctx.version.tenant_id,
+                        document_type_id=ctx.document_type_id,
+                        field_keys=[s.field_key for s in requested_fields],
+                    )
+                    if requested_fields is not None
+                    else None
+                )
 
                 with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
                     if zone_regions:
@@ -246,6 +351,7 @@ class OcrPipeline:
                         # document_type_ocr_zones' own "nothing writes to
                         # it outside test fixtures" note).
                         lines_by_page: dict[int, list[LineBlock]] = {}
+                        table_header_texts: set[str] = set()
                     else:
                         # No zone/field template configured for this document
                         # type -- extracted_fields here is the LEGACY generic
@@ -255,7 +361,7 @@ class OcrPipeline:
                         # (priority 1) -- that would let an unrelated regex
                         # guess bypass the new dispatch's own, more
                         # field-appropriate strategy for a requested field.
-                        pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc)
+                        pages, extracted_fields, lines_by_page, table_header_texts = self._run_full_document(layout_doc)
                         zone_derived_fields = []
 
                 field_results = None
@@ -266,7 +372,9 @@ class OcrPipeline:
                         specs=requested_fields,
                         text=full_text,
                         zone_fields=zone_fields_by_key,
+                        vocabulary=vocabulary,
                         lines_by_page=lines_by_page,
+                        table_header_texts=table_header_texts,
                         field_confidence_threshold=self._settings.field_low_confidence_threshold,
                     )
                     fields = requested_fields_to_output_dict(field_results)
@@ -283,7 +391,7 @@ class OcrPipeline:
 
     def _run_full_document(
         self, layout_doc
-    ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]]]:
+    ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]], set[str]]:
         """OS-FR-001/002, per the native-text-vs-paddleocr decision logic:
         a page with a real native text layer (Docling extracts it
         directly from the PDF) is used as-is -- it is never re-OCR'd. A
@@ -299,9 +407,26 @@ class OcrPipeline:
         ITS entries is already exactly one detected text LINE (per
         ocr_engine.py's own comment on `rec_texts`/`rec_boxes`), so no
         extra line-clustering is needed there either.
+
+        Also collects `table_header_texts` -- the lowercased text of every
+        cell Docling's real table-structure model marked `column_header`
+        across every recognized table on every page. Real bug found live:
+        native_text_lines_for_page's PyMuPDF line dict has no concept of
+        Docling's table structure, so a line-items table's own header row
+        ("Description | Size | Qty | Unit Price | ...", each its own
+        PyMuPDF text line/cell) is indistinguishable, to the spatial/
+        flattened-text label matchers, from a genuine document-level field
+        label -- description's bare "description" alias matched the
+        table's "Description" column header and returned the ADJACENT
+        header cell ("Size") as if it were the field's value. Threaded
+        into extract_requested_fields so it can refuse to treat a line as
+        ANY field's label when Docling itself already identified that
+        exact text as a table's own column header -- real structure, not
+        another hand-maintained word list.
         """
         pages: list[PageResult] = []
         lines_by_page: dict[int, list[LineBlock]] = {}
+        table_header_texts: set[str] = set()
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
             native_blocks = layout_doc.native_text_blocks_for_page(page_number, self._settings.ocr_render_dpi)
@@ -314,6 +439,10 @@ class OcrPipeline:
                 if native_lines:
                     lines_by_page[page_number] = [(b.text, b.bbox) for b in native_lines]
                     pages[-1].lines = [{"text": b.text, "bbox": list(b.bbox)} for b in native_lines]
+                for t in tables:
+                    for c in t.cells:
+                        if c.column_header and c.text and c.text.strip():
+                            table_header_texts.add(c.text.strip().lower())
             else:
                 page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
                 result = self._ocr_engine.recognize(page_image.image, lang=self._settings.ocr_languages)
@@ -325,7 +454,7 @@ class OcrPipeline:
         full_text = "\n\n".join(p.text for p in pages)
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
-        return pages, extracted_fields, lines_by_page
+        return pages, extracted_fields, lines_by_page, table_header_texts
 
     def _run_zone_ocr(self, layout_doc, regions: list[ZoneRegion]) -> tuple[list[PageResult], list[ExtractedField]]:
         """OS-FR-003: always PaddleOCR on the cropped region, never a
@@ -503,7 +632,16 @@ class OcrPipeline:
                 version_id=ctx.version.version_id,
                 results=field_results,
             )
-        return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json, extracted_text_ref=object_key)
+            if self._llm_refines_fields:
+                # The LLM still has to refine these fields: keep the version
+                # 'processing' (the upload form keeps polling) until
+                # _apply_llm_fields has written its values and completes it.
+                ctx.version.ocr_status = "processing"
+        return ProcessingOutcome(
+            status="completed", version_id=ctx.version.version_id, output=output_json, extracted_text_ref=object_key,
+            tenant_id=ctx.version.tenant_id, document_id=ctx.document.document_id, document_type_id=ctx.document_type_id,
+            field_results=field_results,
+        )
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
         logger.exception("OCR processing failed for version %s", ctx.version.version_id)

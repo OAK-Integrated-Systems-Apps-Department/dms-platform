@@ -24,7 +24,7 @@ type Tab = "details" | "fields"
 /** Document Type Details (A5) with a Fields tab for editing this type's versioned field mapping (A6). */
 export default function DocumentTypeDetailPage() {
   const params = useParams<{ typeId: string }>()
-  const { documentType, loading, notFound: typeNotFound, fields, replaceFields } = useDocumentType(params.typeId)
+  const { documentType, loading, notFound: typeNotFound, fields, replaceFields, saveFieldLabelAliases } = useDocumentType(params.typeId)
   const { hasPermission } = usePermissions()
   const canView = hasPermission(PermissionCodes.MDTM_METADATA_SCHEMA_VIEW_FIELD) || hasPermission(PermissionCodes.MDTM_METADATA_SCHEMA_UPDATE_FIELD)
   const { fields: catalogueFields } = useMetadataFields(canView)
@@ -101,9 +101,11 @@ export default function DocumentTypeDetailPage() {
             </div>
           ) : (
             <DocumentTypeFieldsTab
+              documentTypeName={documentType.typeName}
               currentFields={fields}
               availableFields={catalogueFields}
               canUpdate={canUpdateMapping}
+              onSaveLabelHints={saveFieldLabelAliases}
               onPublish={(rows) =>
                 replaceFields(
                   rows.map((row, index) => ({

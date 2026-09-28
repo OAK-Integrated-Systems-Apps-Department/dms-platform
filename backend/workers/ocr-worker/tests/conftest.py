@@ -10,7 +10,15 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ocr_worker.models import Base, Document, DocumentType, DocumentTypeOcrZone, DocumentVersion  # noqa: E402
+from ocr_worker.models import (  # noqa: E402
+    Base,
+    Document,
+    DocumentType,
+    DocumentTypeOcrZone,
+    DocumentVersion,
+    MetadataField,
+    MetadataFieldLabelAlias,
+)
 
 
 @pytest.fixture()
@@ -69,4 +77,32 @@ def seed_zone(session_factory, *, tenant_id, document_type_id, zone_name, field_
                 x0=x0, y0=y0, x1=x1, y1=y1,
             )
         )
+        session.commit()
+
+
+def seed_metadata_field(session_factory, *, tenant_id, field_key, label, is_deleted=False):
+    """Test helper mirroring one dms-core metadata_fields row (V28) -- only
+    the columns ocr-worker maps. Returns the new field_id."""
+    field_id = uuid.uuid4()
+    with session_factory() as session:
+        session.add(MetadataField(field_id=field_id, tenant_id=tenant_id, field_key=field_key, label=label, is_deleted=is_deleted))
+        session.commit()
+    return field_id
+
+
+def seed_label_aliases(session_factory, *, tenant_id, field_id, aliases, document_type_id=None):
+    """Test helper mirroring dms-core's metadata_field_label_aliases writes
+    (V40): one row per hint, display_order = (index + 1) * 10 in list order,
+    document_type_id None for the field's global hints."""
+    with session_factory() as session:
+        for index, alias in enumerate(aliases):
+            session.add(
+                MetadataFieldLabelAlias(
+                    tenant_id=tenant_id,
+                    field_id=field_id,
+                    document_type_id=document_type_id,
+                    alias_text=alias,
+                    display_order=(index + 1) * 10,
+                )
+            )
         session.commit()

@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -26,6 +28,11 @@ import java.util.UUID;
  * referenced by any {@code document_type_fields} or
  * {@code document_metadata_values} row is blocked from deletion entirely -
  * deprecate is offered instead.
+ * <p>
+ * Every response carries the field's global OCR label hints
+ * ({@code labelAliases}, owned by {@link MetadataFieldLabelAliasService}).
+ * Deleting a field needs no hint cleanup here: its hint rows go with it via
+ * V40's ON DELETE CASCADE.
  */
 @Slf4j
 @Service
@@ -37,6 +44,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
     private final DocumentTypeFieldRepository documentTypeFieldRepository;
     private final MetadataFieldMapper metadataFieldMapper;
     private final SchemaCacheService schemaCacheService;
+    private final MetadataFieldLabelAliasService labelAliasService;
 
     @Override
     public MetadataFieldResponse createField(CreateMetadataFieldRequest request) {
@@ -45,6 +53,11 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         if (metadataFieldRepository.existsByTenantIdAndFieldKeyAndDeletedFalse(tenantId, request.fieldKey())) {
             throw new DuplicateResourceException("A metadata field already exists with key " + request.fieldKey());
         }
+
+        // Validate the hints before inserting anything, so a bad hint list
+        // 400s without first spending an insert this transaction would only
+        // roll back.
+        List<String> labelAliases = LabelAliasNormalizer.normalize(request.labelAliases());
 
         MetadataField field = MetadataField.builder()
                 .tenantId(tenantId)
@@ -60,14 +73,17 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                 .build();
 
         MetadataField saved = metadataFieldRepository.save(field);
+        List<String> savedAliases = labelAliases.isEmpty()
+                ? List.of()
+                : labelAliasService.replaceGlobalAliases(tenantId, saved.getFieldId(), labelAliases);
         log.info("Created metadata field {} ({}) in tenant {}", saved.getFieldId(), saved.getFieldKey(), tenantId);
-        return metadataFieldMapper.toResponse(saved);
+        return metadataFieldMapper.toResponse(saved, savedAliases);
     }
 
     @Override
     @Transactional(readOnly = true)
     public MetadataFieldResponse getField(UUID fieldId) {
-        return metadataFieldMapper.toResponse(findOwnedByCallerTenant(fieldId));
+        return toResponse(findOwnedByCallerTenant(fieldId));
     }
 
     @Override
@@ -79,14 +95,25 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         String dataTypeFilter = dataType == null || dataType.isBlank() ? null : dataType;
         String searchFilter = search == null || search.isBlank() ? null : "%" + search.toLowerCase() + "%";
 
-        return metadataFieldRepository
-                .search(TenantContext.getTenantId(), statusFilter, dataTypeFilter, searchFilter, pageable)
-                .map(metadataFieldMapper::toResponse);
+        UUID tenantId = TenantContext.getTenantId();
+        Page<MetadataField> page = metadataFieldRepository
+                .search(tenantId, statusFilter, dataTypeFilter, searchFilter, pageable);
+        // One query for the whole page's hints, not one per field.
+        Map<UUID, List<String>> aliasesByField = labelAliasService.listGlobalAliasesByField(
+                tenantId, page.getContent().stream().map(MetadataField::getFieldId).toList());
+        return page.map(f -> metadataFieldMapper.toResponse(f, aliasesByField.getOrDefault(f.getFieldId(), List.of())));
     }
 
     @Override
     public MetadataFieldResponse updateField(UUID fieldId, UpdateMetadataFieldRequest request) {
         MetadataField field = findOwnedByCallerTenant(fieldId);
+        UUID tenantId = TenantContext.getTenantId();
+
+        // null = leave the hints unchanged (see UpdateMetadataFieldRequest);
+        // normalized up front so a bad list 400s before anything is written.
+        List<String> requestedAliases = request.labelAliases() == null
+                ? null
+                : LabelAliasNormalizer.normalize(request.labelAliases());
 
         field.setLabel(request.label());
         field.setHelpText(request.helpText());
@@ -97,9 +124,12 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         field.setUpdatedAt(OffsetDateTime.now());
 
         MetadataField saved = metadataFieldRepository.save(field);
-        schemaCacheService.evictTenant(TenantContext.getTenantId());
+        List<String> labelAliases = requestedAliases == null
+                ? labelAliasService.listGlobalAliases(tenantId, fieldId)
+                : labelAliasService.replaceGlobalAliases(tenantId, fieldId, requestedAliases);
+        schemaCacheService.evictTenant(tenantId);
         log.info("Updated metadata field {}", saved.getFieldId());
-        return metadataFieldMapper.toResponse(saved);
+        return metadataFieldMapper.toResponse(saved, labelAliases);
     }
 
     @Override
@@ -167,7 +197,12 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
         MetadataField saved = metadataFieldRepository.save(field);
         schemaCacheService.evictTenant(TenantContext.getTenantId());
         log.info("Set metadata field {} status to {}", fieldId, status);
-        return metadataFieldMapper.toResponse(saved);
+        return toResponse(saved);
+    }
+
+    private MetadataFieldResponse toResponse(MetadataField field) {
+        return metadataFieldMapper.toResponse(field,
+                labelAliasService.listGlobalAliases(field.getTenantId(), field.getFieldId()));
     }
 
     private MetadataField findOwnedByCallerTenant(UUID fieldId) {

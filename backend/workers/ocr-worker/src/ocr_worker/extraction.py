@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from types import MappingProxyType
+from typing import NamedTuple
 
 try:
     from langdetect import detect_langs
@@ -167,55 +170,85 @@ def fields_to_dict(fields: list[ExtractedField]) -> dict[str, dict]:
 
 _REFERENCE_NUMBER_RE = re.compile(r"\b([A-Z]{2,6}[-/][A-Z0-9]{2,4}[-/][A-Z0-9]{2,10}|[A-Z]{2,6}[-/][A-Z0-9]{3,12})\b")
 
-# Short, explicit label variants per field -- matches this module's own
-# "best-effort, not a general NLP extractor" ethos (see the module
-# docstring above), not a generic heuristic. A field with no entry here
-# falls back to its own key with underscores turned into spaces (e.g.
-# "review_due_date" -> "review due date").
-_LABEL_ALIASES: dict[str, list[str]] = {
-    "author": ["author", "prepared by", "written by", "authored by"],
-    "department": ["department", "dept", "division", "business unit"],
-    "reference_number": ["reference number", "reference no", "ref no", "ref. no", "ref#", "ref #", "reference"],
-    "classification_level": ["classification level", "classification", "sensitivity"],
-    "retention_class": ["retention class", "retention schedule", "retention"],
-    "effective_date": ["effective date", "effective from", "effective"],
-    "expiry_date": ["expiry date", "expiration date", "expires on", "valid until", "expires"],
-    "description": ["description", "summary"],
-    "tags": ["tags"],
-    "keywords": ["keywords", "key words"],
-    # Invoice-shaped fields (own field_key.replace("_", " ") alone worked
-    # for the exact label "Invoice Number:", but a real document just as
-    # often uses a synonym ("Inv #", "Reference No" on a PO) -- see the
-    # field-isolation/synonym-matching bug report this table was added to
-    # fix. Ordered most-specific-first on purpose: "total amount" must be
-    # tried before the bare "amount" is required for "amount" specifically
-    # (see the reasoning below), because "amount" alone matches inside a
-    # table's "Net Amount"/"Unit Price" column header -- the first (and
-    # therefore wrong) occurrence on a typical invoice, well before the
-    # real total.
-    "invoice_number": ["invoice number", "invoice no", "inv no", "inv#", "inv #", "invoice#"],
-    "invoice_date": ["invoice date"],
-    "purchase_order_number": ["purchase order number", "po number", "po no", "po#", "order number"],
-    "currency": ["currency"],
-    "vendor_supplier_name": ["vendor / supplier", "vendor/supplier", "vendor", "supplier", "billed by", "seller"],
-    "cost_centre": ["cost centre", "cost center"],
-    "amount": ["total amount", "total due", "grand total", "amount due", "net amount due", "amount"],
-}
+# Which printed labels ("Invoice No", "PO Number", "Prepared by", ...) each
+# requested field is looked for under. This used to be a hardcoded
+# `_LABEL_ALIASES` dict right here, keyed by field_key -- which meant a
+# tenant-defined field (anything outside the ~17 keys that dict happened to
+# know) could only ever be found under its own key with underscores turned
+# into spaces, and adding one synonym seen on a real document meant a code
+# change and a redeploy of this worker. That vocabulary now lives in
+# dms-core's metadata_field_label_aliases table (V40) as tenant-editable
+# "label hints", seeded from the old dict verbatim by V41 (plus "number" for
+# purchase_order_number, which replaces the hardcoded bare-"Number" branch
+# _extract_field_value used to have -- see build_label_vocabulary's
+# standalone rule), and repository.py's get_label_vocabulary reads it once
+# per document. Everything that decides WHICH hints a field gets (type-scope
+# precedence, de-duplication, the field-name fallback, the stop-label set,
+# the standalone rule) is pure and lives in build_label_vocabulary below, so
+# it stays unit-testable without a database; the matching functions further
+# down only ever receive its result. The matching algorithm itself is
+# unchanged -- only where the aliases come from. The priority reasoning that
+# used to be commented inline on the dict (e.g. "total amount" must be tried
+# before the bare "amount", which otherwise matches a line-items table's
+# "Net Amount" header first) is now carried by each hint's display_order --
+# see V41's own header and tests/label_vocabulary_seed.py, which mirrors it.
 
-# Extra clip-only stop labels: real header labels that commonly sit right
+# Built-in clip-only stop labels: real header labels that commonly sit right
 # next to an extractable field's own label/value on the same OCR'd line
 # (e.g. "Vendor / Supplier: ... Ship To / Department: ...") but aren't
-# themselves one of this app's metadata fields, so they'd never get an
-# entry in _LABEL_ALIASES above. Only used to bound _clip_at_next_label --
-# never matched as a field's own alias.
-_EXTRA_STOP_LABELS: list[str] = ["ship to", "bill to", "sold to"]
+# themselves one of this app's metadata fields, so no tenant's label hints
+# would ever contain them. They're structural boundaries of a document
+# rather than field vocabulary, which is why they stay in code instead of
+# moving to metadata_field_label_aliases with everything else. Only ever used
+# to bound _clip_at_next_label/_looks_like_a_label (via
+# LabelVocabulary.known_labels) and as part of the standalone rule's
+# reference set -- never matched as a field's own hint.
+BUILTIN_STOP_LABELS: tuple[str, ...] = ("ship to", "bill to", "sold to")
+
+# Built-in reference-only labels for build_label_vocabulary's standalone
+# rule (rule 4): never matched as any field's hint and never a stop label
+# either -- only counted when deciding whether a one-word hint is too
+# ambiguous to trust as an ordinary label. Without them, whether a bare
+# "Number" hint gets the whole-line-only protection would depend on which
+# OTHER fields a tenant's catalogue happens to contain: it's the seeded
+# invoice_number/reference_number hints ("invoice number", "reference
+# number") that make purchase_order_number's seeded "number" standalone, so
+# a tenant without those two fields (a hand-made catalogue, a hard-deleted
+# field -- its hints cascade away with it -- or an admin trimming those
+# fields' hints on the field form) would silently get an unanchored "number"
+# that matches the tail of an "Invoice Number:"/"Account Number:" printed on
+# the document and steals its value. That's exactly the Purchase Order vs
+# Invoice "Number" ambiguity type-scoped hints exist to keep safe, and the
+# old hardcoded bare-"Number" branch was whole-line-only regardless of the
+# catalogue -- these keep that true. Deliberately NOT part of known_labels:
+# they'd start clipping values ("Supplier: Acme Ltd Account Number: 12345")
+# that were never clipped before.
+BUILTIN_AMBIGUOUS_TAIL_LABELS: tuple[str, ...] = ("invoice number", "order number", "account number", "reference number")
+
+# document_ocr_field_results.match_basis values (V40's
+# ck_document_ocr_field_results_match_basis): HOW a result was found -- or,
+# for a not_found result, WHAT was searched for -- so the upload page can
+# say "no label hints configured, searched for the field's own name" rather
+# than a bare, unexplained "not found". The field-name fallback in
+# particular must never be silent: a tenant field with no hints still gets
+# searched for, just under its own label, and the result says so. A
+# not_found result only ever claims a label search that really ran: the
+# language field is never label-searched (langdetect over the whole text is
+# the only thing tried), so its not_found records "generated", not the
+# "field_name"/"label_hint" of hints nobody looked for.
+MATCH_BASIS_LABEL_HINT = "label_hint"  # through a configured label hint (not_found: hints configured, no value found under any)
+MATCH_BASIS_FIELD_NAME = "field_name"  # no hints configured -- through the field's own label (not_found: searched for it)
+MATCH_BASIS_ZONE = "zone"  # a zone template region supplied the value
+MATCH_BASIS_PATTERN = "pattern"  # a value-shape regex alone (bare date pattern, reference-number pattern)
+MATCH_BASIS_GENERATED = "generated"  # derived from the whole text (summary/keywords fallback, language detection)
 
 # Obvious classification synonyms -> this app's seeded classification_level
 # option values (see V30__seed_metadata_field_catalogue_and_document_types.sql).
-# Deliberately small and explicit, same reasoning as _LABEL_ALIASES -- never
-# a fuzzy/semantic match, and a synonym is only ever used if its target is
-# actually present in the caller-supplied `options` (never invents a value
-# outside that list).
+# Deliberately small and explicit, same reasoning as the label hints above --
+# never a fuzzy/semantic match, and a synonym is only ever used if its target
+# is actually present in the caller-supplied `options` (never invents a value
+# outside that list). Value-shape logic, not label vocabulary, so it stays in
+# code rather than moving to metadata_field_label_aliases.
 _CLASSIFICATION_SYNONYMS: dict[str, str] = {
     "top secret": "confidential",
     "secret": "confidential",
@@ -261,21 +294,280 @@ class RequestedFieldResult:
     status: str  # "extracted" | "not_found" | "low_confidence"
     page: int | None = None
     bbox: tuple[int, int, int, int] | None = None
+    # One of the MATCH_BASIS_* values above -- how this value was found, or
+    # for a not_found result, what was searched for. None only for a result
+    # built outside extract_requested_fields.
+    match_basis: str | None = None
 
 
-# Every label this module knows about, across all fields -- used only to
-# tell "this is where the NEXT field's label starts" apart from "this is
-# still part of the current field's value" (see _clip_at_next_label).
-# Longest first so a compound label like "total amount" is recognized as
-# itself rather than accidentally matched via a shorter one first.
-_ALL_KNOWN_LABELS: list[str] = sorted(
-    {alias for aliases in _LABEL_ALIASES.values() for alias in aliases} | set(_EXTRA_STOP_LABELS),
-    key=len,
-    reverse=True,
-)
+@dataclass(frozen=True)
+class FieldLabelHints:
+    """The resolved label hints for ONE requested field -- see
+    build_label_vocabulary for how they're chosen. `primary` hints go
+    through _label_pattern's normal rules, in priority order. `standalone`
+    hints are the ambiguous one-word ones (e.g. "number", which is also the
+    tail of "Invoice Number"/"Reference Number") that are only trusted as a
+    label's ENTIRE line (whole_line_only=True), and only after every primary
+    hint has found nothing -- see _find_field_value. `basis` is what a match
+    through either tier records as its match_basis: "label_hint" when the
+    tenant configured hints for this field, "field_name" when it didn't and
+    these tiers just hold the field's own label.
+    """
+
+    field_key: str
+    primary: tuple[str, ...]
+    standalone: tuple[str, ...] = ()
+    basis: str = MATCH_BASIS_LABEL_HINT
+
+    @property
+    def all_hints(self) -> tuple[str, ...]:
+        """Both tiers together, primary first -- a convenience for callers
+        (and tests) that want the field's whole hint list. NOT the
+        own-alias exclusion set for _clip_at_next_label: _find_field_value
+        searches one tier at a time and each tier excludes only its own
+        hints, exactly as the old separate alias-list/bare-"number" calls
+        did -- so a primary label like "PO Number:" crammed after a value
+        the bare "Number" found still clips it. A standalone hint is never
+        a stop label to begin with (see build_label_vocabulary's rule 3).
+        """
+        return self.primary + self.standalone
 
 
-def _clip_at_next_label(value: str, own_aliases: list[str]) -> str:
+@dataclass(frozen=True)
+class LabelVocabulary:
+    """Immutable, per-document label vocabulary, built by
+    build_label_vocabulary (never by hand outside tests). `fields` maps each
+    requested field_key to its resolved hints. `known_labels` is every label
+    ANY of this tenant's fields could be printed under on this document type
+    (its primary hints -- a standalone hint is too ambiguous to mark
+    anything, see build_label_vocabulary's rule 3), plus
+    BUILTIN_STOP_LABELS -- used only to tell "this is where the NEXT
+    field's label starts" apart from "this is still part of the current
+    field's value" (_clip_at_next_label/_looks_like_a_label). Longest first
+    so a compound label like "total amount" is recognized as itself rather
+    than accidentally matched via a shorter one first.
+    """
+
+    fields: Mapping[str, FieldLabelHints]
+    known_labels: tuple[str, ...]
+
+    def hints_for(self, field_key: str, label: str | None = None) -> FieldLabelHints:
+        """`field_key`'s resolved hints, or -- for a key this vocabulary was
+        never built for (pipeline.py always builds it for exactly the
+        requested keys, so in practice only a hand-built test vocabulary
+        gets here) -- the same field-name fallback build_label_vocabulary
+        itself applies: `label` if given, else the key with underscores
+        turned into spaces, split into tiers by the standalone rule against
+        known_labels plus BUILTIN_AMBIGUOUS_TAIL_LABELS (the closest
+        reference set available without the builder's per-field alias
+        lists).
+        """
+        hints = self.fields.get(field_key)
+        if hints is not None:
+            return hints
+        tails = _standalone_tails([*self.known_labels, *BUILTIN_AMBIGUOUS_TAIL_LABELS])
+        return _classify_hints(field_key, [_field_name_hint(field_key, label)], MATCH_BASIS_FIELD_NAME, tails)
+
+
+class LabelFieldRow(NamedTuple):
+    """One non-deleted metadata_fields row of the tenant's catalog, as
+    build_label_vocabulary needs it -- repository.py's get_label_vocabulary
+    builds these from its query; tests build them directly.
+    """
+
+    field_id: Hashable
+    field_key: str
+    label: str | None
+
+
+class LabelAliasRow(NamedTuple):
+    """One metadata_field_label_aliases row. `document_type_id` None means
+    catalog-level ("global": applies wherever the field is mapped);
+    otherwise the hint only applies to documents of that document type.
+    """
+
+    field_id: Hashable
+    document_type_id: Hashable | None
+    alias_text: str
+    display_order: int
+
+
+def _field_name_hint(field_key: str, label: str | None) -> str:
+    """The field-name fallback for a field with no applicable hints: its
+    own catalog label (e.g. "PO Date" -- NOT NULL in the database), or, if
+    the key isn't in the catalog at all or the label is blank, the key with
+    underscores turned into spaces -- which is exactly what the old
+    hardcoded dict fell back to for a key it didn't know.
+    """
+    if label and label.strip():
+        return label.strip()
+    return field_key.replace("_", " ")
+
+
+def _dedupe_casefold(labels: Iterable[str]) -> list[str]:
+    """Case-insensitive de-duplication keeping the FIRST occurrence (and
+    its original casing) -- so a type-scoped hint that repeats a global one
+    keeps the type-scoped hint's higher priority position.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for label in labels:
+        key = label.lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(label)
+    return result
+
+
+def _standalone_tails(reference_labels: Iterable[str]) -> frozenset[str]:
+    """The last whitespace-separated token (lowercased) of every MULTI-word
+    label in `reference_labels` -- a one-word hint that is one of these is
+    ambiguous by construction (see build_label_vocabulary's rule 4).
+    """
+    tails: set[str] = set()
+    for label in reference_labels:
+        tokens = label.split()
+        if len(tokens) > 1:
+            tails.add(tokens[-1].lower())
+    return frozenset(tails)
+
+
+def _classify_hints(field_key: str, hints: Sequence[str], basis: str, tails: frozenset[str]) -> FieldLabelHints:
+    def is_standalone(hint: str) -> bool:
+        return len(hint.split()) == 1 and hint.lower() in tails
+
+    return FieldLabelHints(
+        field_key=field_key,
+        primary=tuple(h for h in hints if not is_standalone(h)),
+        standalone=tuple(h for h in hints if is_standalone(h)),
+        basis=basis,
+    )
+
+
+def build_label_vocabulary(
+    *,
+    document_type_id: Hashable | None,
+    field_rows: Iterable[LabelFieldRow],
+    alias_rows: Iterable[LabelAliasRow],
+    requested_keys: Iterable[str],
+) -> LabelVocabulary:
+    """Resolves one tenant's label hints for one document -- pure, no I/O
+    (repository.py's get_label_vocabulary does the single query and hands
+    the rows here). `field_rows` is the tenant's whole non-deleted catalog
+    (any status), `alias_rows` every hint row of those fields. Rules:
+
+    1. Per requested field_key: hints scoped to THIS document type (by
+       display_order), then the field's global hints (document_type_id
+       NULL, by display_order), case-insensitively de-duplicated keeping
+       the first. Hints scoped to any OTHER document type are ignored
+       entirely -- here, in known_labels and in the standalone rule alike.
+       That scoping is what lets a bare "Number" mean the PO number on a
+       Purchase Order without making it ambiguous on an Invoice.
+    2. No applicable hints -> the field-name fallback (_field_name_hint),
+       basis "field_name"; otherwise basis "label_hint".
+    3. known_labels = every global hint of every tenant field, plus this
+       document type's type-scoped hints, plus BUILTIN_STOP_LABELS --
+       lowercased (every pattern that uses them is case-insensitive
+       anyway), de-duplicated, longest first, ties alphabetical for
+       determinism -- EXCEPT a hint rule 4 makes standalone for its field
+       (unless some other field has it as a primary hint). A standalone
+       hint is by construction the tail of a more specific label, and a
+       stop label is matched anywhere on a word boundary (see
+       _clip_at_next_label), so the seeded "number" as a stop label would
+       clip every other field's value
+       at any "Phone Number:"/"VAT Number:"/"number-plate" inside it -- the
+       very tail-matching the standalone tier exists to avoid, and not
+       something the old stop set ever did (the bare "Number" was never in
+       it). Field-name fallbacks are NOT added either: before this moved to
+       the database the stop set was exactly the configured aliases plus the
+       built-in extras, and a field's bare catalog label (e.g. "Date") was
+       never a stop label. Over the V41 seed this is exactly the old stop
+       set.
+    4. Standalone rule: a one-word hint of field K is standalone iff it is
+       the last token of some MULTI-word hint of a DIFFERENT field (global
+       or this type's), or of a BUILTIN_STOP_LABELS /
+       BUILTIN_AMBIGUOUS_TAIL_LABELS entry. Over the V41 seed this flags
+       exactly one hint -- "number" on purchase_order_number, the tail of
+       "invoice number"/"reference number" -- i.e. exactly the old
+       hardcoded branch, while every other field's hints stay primary as
+       before; the built-in reference labels keep "number" standalone even
+       for a tenant whose catalogue lacks those two fields. A field's OWN
+       multi-word hints never make its own one-word hint standalone
+       ("supplier" stays primary next to vendor_supplier_name's own "vendor
+       / supplier"). Applies to field-name fallbacks too, deliberately: a
+       custom field whose only label is one word that ends another field's
+       label ("Supplier", "Date", "Total") is matched only as its label's
+       whole line, where the old key search matched it on a word boundary
+       and would take "Vendor / Supplier:"'s, "Invoice Date:"'s or "Grand
+       Total:"'s value as its own. Such a field's not_found result says
+       match_basis "field_name", i.e. "configure a label hint" (e.g. "Grand
+       Total"), rather than silently claiming another field's value.
+
+    The result is exactly the tenant's database state: no code-level
+    default hints for well-known keys, by design -- a field created (or
+    hard-deleted and recreated) after V41 ran starts with none and gets the
+    field-name fallback until an admin adds some, and the stop set only
+    holds labels of fields the tenant actually has.
+    """
+    fields_by_id = {row.field_id: row for row in field_rows}
+    label_by_key = {row.field_key: row.label for row in fields_by_id.values()}
+
+    type_scoped: dict[str, list[LabelAliasRow]] = {}
+    global_scope: dict[str, list[LabelAliasRow]] = {}
+    for row in alias_rows:
+        field = fields_by_id.get(row.field_id)
+        text = (row.alias_text or "").strip()
+        if field is None or not text:
+            continue
+        if row.document_type_id is None:
+            bucket = global_scope
+        elif document_type_id is not None and row.document_type_id == document_type_id:
+            bucket = type_scoped
+        else:
+            continue  # rule 1: another document type's hint never applies here
+        bucket.setdefault(field.field_key, []).append(row._replace(alias_text=text))
+
+    def in_priority_order(rows: list[LabelAliasRow]) -> list[str]:
+        return [r.alias_text for r in sorted(rows, key=lambda r: (r.display_order, r.alias_text.lower()))]
+
+    applicable: dict[str, list[str]] = {
+        key: _dedupe_casefold(in_priority_order(type_scoped.get(key, [])) + in_priority_order(global_scope.get(key, [])))
+        for key in set(type_scoped) | set(global_scope)
+    }
+
+    # Rule 4's reference set for field K is every OTHER field's applicable
+    # hints plus the built-in reference labels, and only the tails of its
+    # multi-word labels matter -- so count how many fields contribute each
+    # tail and discount K's own contribution, rather than rebuilding the
+    # set once per field (rule 3 needs every tenant field classified, not
+    # just the requested ones).
+    builtin_tails = _standalone_tails([*BUILTIN_STOP_LABELS, *BUILTIN_AMBIGUOUS_TAIL_LABELS])
+    own_tails = {key: _standalone_tails(labels) for key, labels in applicable.items()}
+    tail_owners = Counter(tail for tails in own_tails.values() for tail in tails)
+
+    def reference_tails(key: str) -> frozenset[str]:
+        mine = own_tails.get(key, frozenset())
+        return builtin_tails | {tail for tail, owners in tail_owners.items() if owners > (1 if tail in mine else 0)}
+
+    classified = {
+        key: _classify_hints(key, labels, MATCH_BASIS_LABEL_HINT, reference_tails(key)) for key, labels in applicable.items()
+    }
+
+    known = {hint.lower() for hints in classified.values() for hint in hints.primary} | set(BUILTIN_STOP_LABELS)
+    known_labels = tuple(sorted(known, key=lambda label: (-len(label), label)))
+
+    fields: dict[str, FieldLabelHints] = {}
+    for key in dict.fromkeys(requested_keys):
+        hints = classified.get(key)
+        if hints is None:
+            fallback = [_field_name_hint(key, label_by_key.get(key))]
+            hints = _classify_hints(key, fallback, MATCH_BASIS_FIELD_NAME, reference_tails(key))
+        fields[key] = hints
+
+    return LabelVocabulary(fields=MappingProxyType(fields), known_labels=known_labels)
+
+
+def _clip_at_next_label(value: str, own_aliases: Sequence[str], known_labels: Sequence[str]) -> str:
     """A label and its value routinely share one OCR'd "line" with the
     NEXT field's label crammed right after it, with no real line break in
     the underlying PDF/OCR block -- verified live against a real invoice
@@ -287,11 +579,12 @@ def _clip_at_next_label(value: str, own_aliases: list[str]) -> str:
     Clips `value` at the earliest point any OTHER known field's label
     starts (own_aliases excluded, so a field's own alias reappearing
     inside its own value -- e.g. "Reference: see reference above" --
-    isn't mistaken for the next field).
+    isn't mistaken for the next field). `known_labels` is the document's
+    LabelVocabulary.known_labels.
     """
     own = {a.lower() for a in own_aliases}
     earliest = None
-    for label in _ALL_KNOWN_LABELS:
+    for label in known_labels:
         if label.lower() in own:
             continue
         match = re.search(rf"\b{re.escape(label)}\b\s*[:\-]", value, re.IGNORECASE)
@@ -300,7 +593,7 @@ def _clip_at_next_label(value: str, own_aliases: list[str]) -> str:
     return value[:earliest].strip() if earliest is not None else value
 
 
-def _label_pattern(alias: str) -> re.Pattern[str]:
+def _label_pattern(alias: str, whole_line_only: bool = False) -> re.Pattern[str]:
     """A single bare word (e.g. "vendor", "supplier", "amount") is common
     enough in ordinary prose or a Terms and Conditions clause that it must
     be followed by a real label marker (":"/"-") OR be the entire rest of
@@ -321,13 +614,31 @@ def _label_pattern(alias: str) -> re.Pattern[str]:
     A multi-word phrase (e.g. "total amount", "invoice number") is
     unlikely to occur by coincidence in flowing prose either way, so it
     keeps matching regardless of what follows it.
+
+    `whole_line_only` additionally requires nothing but optional leading
+    whitespace precede the alias -- i.e. the alias must be the label's
+    ENTIRE own line/cell, not just its tail. Only used for an alias so
+    generic (e.g. "number") that it's also the tail of several other,
+    more specific, already-known labels ("Invoice Number:", "Order
+    Number:", "Account Number:") -- without this, `\b{alias}\b` (a word
+    boundary, not a line-start anchor) would just as happily match those
+    other fields' own labels and steal their value. See
+    _find_field_value's standalone tier for the only caller, and
+    build_label_vocabulary's rule 4 for which hints end up in it.
     """
     require_marker = " " not in alias.strip()
     marker = r"\s*(?:[:\-]|$)" if require_marker else r"\s*[:\-]?"
-    return re.compile(rf"\b{re.escape(alias)}\b{marker}\s*(.*)$", re.IGNORECASE)
+    start = r"^\s*" if whole_line_only else r"\b"
+    return re.compile(rf"{start}{re.escape(alias)}\b{marker}\s*(.*)$", re.IGNORECASE)
 
 
-def _label_proximity_value(text: str, aliases: list[str]) -> str | None:
+def _label_proximity_value(
+    text: str,
+    aliases: Sequence[str],
+    known_labels: Sequence[str],
+    whole_line_only: bool = False,
+    table_header_texts: set[str] | None = None,
+) -> str | None:
     """Finds a label like "Author:" and returns whatever's on the rest of
     that same line, or -- if the label is alone on its own line -- the
     next non-empty line below it. Returns None if no alias appears at all.
@@ -340,20 +651,35 @@ def _label_proximity_value(text: str, aliases: list[str]) -> str | None:
     field's label happens to sit on the very next visual line" apart from
     "this really is the label's own next line," which the real geometry
     resolves for free).
+
+    `table_header_texts` (see pipeline.py's _run_full_document) is the set
+    of lowercased cell text Docling's real table-structure model marked as
+    a column header, ACROSS the whole document -- a line-items table's
+    cells are merged into this same flattened text (see
+    _merge_native_text_and_tables), each cell its own line, so its header
+    row is otherwise indistinguishable here from a genuine document-level
+    field label. A line matching one of these is never treated as a label
+    occurrence for any field.
+
+    `known_labels` is the document's LabelVocabulary.known_labels (the
+    stop set for _clip_at_next_label).
     """
     lines = [line.strip() for line in text.splitlines()]
+    headers = table_header_texts or set()
     for alias in aliases:
-        pattern = _label_pattern(alias)
+        pattern = _label_pattern(alias, whole_line_only)
         for i, line in enumerate(lines):
+            if line.lower() in headers:
+                continue
             match = pattern.search(line)
             if not match:
                 continue
             value = match.group(1).strip()
             if value:
-                return _clip_at_next_label(value, aliases)
+                return _clip_at_next_label(value, aliases, known_labels)
             for next_line in lines[i + 1 :]:
                 if next_line and _has_real_content(next_line):
-                    return _clip_at_next_label(_strip_leading_marker(next_line), aliases)
+                    return _clip_at_next_label(_strip_leading_marker(next_line), aliases, known_labels)
             return None
     return None
 
@@ -361,19 +687,20 @@ def _label_proximity_value(text: str, aliases: list[str]) -> str | None:
 LineBlock = tuple[str, tuple[int, int, int, int]]  # (text, (x0, y0, x1, y1)) in page-pixel space, at OCR_RENDER_DPI
 
 
-def _looks_like_a_label(text: str) -> bool:
-    """True if `text` contains one of this module's own known field
-    labels -- used to stop spatial matching from picking ANOTHER field's
-    label as if it were this field's value. Real invoices often put two
-    label/value columns side by side on the same visual row, sometimes
-    behind a leading connector (e.g. "Vendor / Supplier:" ... "Ship To /
-    Department:" -- the label itself is "Department:", not at the very
-    start of that span) -- the second is a different field's label, not
-    the first field's value, even though it's the nearest thing to the
-    right of the first. Deliberately a substring search (not anchored to
-    the start of `text`), not just a stricter startswith check.
+def _looks_like_a_label(text: str, known_labels: Sequence[str]) -> bool:
+    """True if `text` contains one of the document's known field labels
+    (LabelVocabulary.known_labels) -- used to stop spatial matching from
+    picking ANOTHER field's label as if it were this field's value. Real
+    invoices often put two label/value columns side by side on the same
+    visual row, sometimes behind a leading connector (e.g. "Vendor /
+    Supplier:" ... "Ship To / Department:" -- the label itself is
+    "Department:", not at the very start of that span) -- the second is a
+    different field's label, not the first field's value, even though it's
+    the nearest thing to the right of the first. Deliberately a substring
+    search (not anchored to the start of `text`), not just a stricter
+    startswith check.
     """
-    for label in _ALL_KNOWN_LABELS:
+    for label in known_labels:
         if re.search(rf"\b{re.escape(label)}\b\s*[:\-]", text, re.IGNORECASE):
             return True
     return False
@@ -417,7 +744,13 @@ def _strip_leading_marker(text: str) -> str:
     return re.sub(r"^[:\-]\s*", "", text.strip()).strip()
 
 
-def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[str | None, tuple[int, int, int, int] | None]:
+def _spatial_value_on_page(
+    lines: list[LineBlock],
+    aliases: Sequence[str],
+    known_labels: Sequence[str],
+    whole_line_only: bool = False,
+    table_header_texts: set[str] | None = None,
+) -> tuple[str | None, tuple[int, int, int, int] | None]:
     """Finds a label among REAL per-visual-line text+bbox (see layout.py's
     native_text_lines_for_page / ocr_engine.py's PaddleOCR line results,
     each already one entry per detected line -- NOT the flattened,
@@ -438,16 +771,31 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
     vendor_supplier_name/department (label above, value stacked below)
     correctly from the exact same document, because the real per-line
     bboxes it works from were never merged in the first place.
+
+    `table_header_texts` (see _label_proximity_value's own doc comment on
+    the same param) excludes a line from being treated as a label
+    occurrence at all when Docling's real table-structure model already
+    identified that exact text as one of a table's own column headers --
+    e.g. a line-items table's "Description" header cell, which would
+    otherwise be indistinguishable here from a genuine document-level
+    "Description" field label and return the ADJACENT header cell
+    ("Size") as if it were that field's value.
+
+    `known_labels`: see _label_proximity_value's own doc comment on the
+    same param.
     """
+    headers = table_header_texts or set()
     for alias in aliases:
-        pattern = _label_pattern(alias)
+        pattern = _label_pattern(alias, whole_line_only)
         for i, (text, bbox) in enumerate(lines):
+            if text.strip().lower() in headers:
+                continue
             match = pattern.search(text)
             if not match:
                 continue
             same_line_rest = match.group(1).strip()
             if same_line_rest and _has_real_content(same_line_rest):
-                return _clip_at_next_label(same_line_rest, aliases), bbox
+                return _clip_at_next_label(same_line_rest, aliases, known_labels), bbox
 
             x0, y0, x1, y1 = bbox
             same_row = [
@@ -465,7 +813,7 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
                 # below in the same column instead.
                 and other_bbox[0] > x0
                 and _ranges_overlap(y0, y1, other_bbox[1], other_bbox[3])
-                and not _looks_like_a_label(other_text)
+                and not _looks_like_a_label(other_text, known_labels)
                 and _has_real_content(other_text)
             ]
             if same_row:
@@ -480,7 +828,7 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
                 and other_bbox[1] > y1
                 and other_bbox[1] - y1 <= max(row_height * 4, 40)
                 and _ranges_overlap(x0, x1, other_bbox[0], other_bbox[2], min_overlap_ratio=0.2)
-                and not _looks_like_a_label(other_text)
+                and not _looks_like_a_label(other_text, known_labels)
                 and _has_real_content(other_text)
             ]
             if below:
@@ -492,7 +840,11 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
 
 
 def _spatial_label_value(
-    lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    aliases: Sequence[str],
+    known_labels: Sequence[str],
+    whole_line_only: bool = False,
+    table_header_texts: set[str] | None = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Page-ordered wrapper over _spatial_value_on_page -- `lines_by_page`
     is 1-indexed (matching this whole module's page numbering elsewhere),
@@ -502,14 +854,19 @@ def _spatial_label_value(
     if not lines_by_page:
         return None, None, None
     for page in sorted(lines_by_page):
-        value, bbox = _spatial_value_on_page(lines_by_page[page], aliases)
+        value, bbox = _spatial_value_on_page(lines_by_page[page], aliases, known_labels, whole_line_only, table_header_texts)
         if value:
             return value, page, bbox
     return None, None, None
 
 
 def _find_value(
-    text: str, lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    aliases: Sequence[str],
+    known_labels: Sequence[str],
+    whole_line_only: bool = False,
+    table_header_texts: set[str] | None = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Tries real per-line spatial matching first (_spatial_label_value --
     far more precise when page position data is available), falling back
@@ -517,10 +874,45 @@ def _find_value(
     line-level data isn't available at all or the spatial pass found
     nothing on it.
     """
-    value, page, bbox = _spatial_label_value(lines_by_page, aliases)
+    value, page, bbox = _spatial_label_value(lines_by_page, aliases, known_labels, whole_line_only, table_header_texts)
     if value:
         return value, page, bbox
-    return _label_proximity_value(text, aliases), None, None
+    return _label_proximity_value(text, aliases, known_labels, whole_line_only, table_header_texts), None, None
+
+
+def _find_field_value(
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    hints: FieldLabelHints,
+    known_labels: Sequence[str],
+    table_header_texts: set[str] | None = None,
+) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
+    """_find_value over one field's resolved hints, in two tiers: every
+    primary hint first (normal _label_pattern rules, spatial then
+    flattened-text), and only if that found nothing, the standalone hints
+    with whole_line_only=True. This is the generic form of what used to be
+    purchase_order_number's own hardcoded dispatch: a real purchase order's
+    header table labels the PO number with just "Number" as its whole label
+    cell (relying on a separate "PURCHASE ORDER" box title elsewhere on the
+    page for a human reader's context), but an unanchored "number" would
+    just as happily match the TAIL of "Invoice Number:"/"Order
+    Number:"/"Account Number:" and steal another field's value. Tried only
+    after every primary hint has already found nothing, and whole-line-only,
+    a standalone hint can never preempt a more specific label. Which hints
+    are standalone is decided once, per document, by
+    build_label_vocabulary's rule 4 -- not by field_key here.
+
+    Each tier's own hints are its _clip_at_next_label own-alias exclusion,
+    exactly as the old separate calls had it (the dict's alias list, then
+    just ["number"]): a value the bare "Number" found is still clipped at a
+    "PO Number:" crammed after it on the same line.
+    """
+    value, page, bbox = _find_value(text, lines_by_page, hints.primary, known_labels, table_header_texts=table_header_texts)
+    if value or not hints.standalone:
+        return value, page, bbox
+    return _find_value(
+        text, lines_by_page, hints.standalone, known_labels, whole_line_only=True, table_header_texts=table_header_texts
+    )
 
 
 def _match_enum(candidate: str | None, options: list[str], field_key: str) -> str | None:
@@ -548,18 +940,28 @@ def _match_enum(candidate: str | None, options: list[str], field_key: str) -> st
 
 
 def _extract_date_candidate(
-    text: str, lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
-) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
-    candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    hints: FieldLabelHints,
+    known_labels: Sequence[str],
+    table_header_texts: set[str] | None = None,
+) -> tuple[str | None, int | None, tuple[int, int, int, int] | None, bool]:
+    """Returns (raw_date, page, bbox, via_label) -- `via_label` is True only
+    when the date came out of a label hint's own value, False when it came
+    from the bare date-pattern fallback below (match_basis "pattern" --
+    deliberately independent of the caller's confidence-only `from_label`
+    check, which can be True even when the label's value held no date).
+    """
+    candidate, page, bbox = _find_field_value(text, lines_by_page, hints, known_labels, table_header_texts)
     if candidate:
         match = _DATE_RE.search(candidate)
         if match:
-            return (match.group(1) if match.groups() else match.group(0)), page, bbox
+            return (match.group(1) if match.groups() else match.group(0)), page, bbox, True
     # Pattern-rule fallback: no label match, but a date pattern appears
     # somewhere in the text -- lower confidence, applied by the caller, and
     # no single position (matched against concatenated text).
     match = _DATE_RE.search(text)
-    return ((match.group(1) if match.groups() else match.group(0)) if match else None), None, None
+    return ((match.group(1) if match.groups() else match.group(0)) if match else None), None, None, False
 
 
 def _keywords_from_text(text: str, limit: int = 8) -> list[str]:
@@ -598,67 +1000,89 @@ def _extract_language(text: str) -> tuple[str | None, float | None]:
 
 
 def _extract_field_value(
-    spec: FieldSpec, text: str, lines_by_page: dict[int, list[LineBlock]] | None = None
-) -> tuple[str | list[str] | None, float | None, bool, int | None, tuple[int, int, int, int] | None]:
+    spec: FieldSpec,
+    text: str,
+    hints: FieldLabelHints,
+    known_labels: Sequence[str],
+    lines_by_page: dict[int, list[LineBlock]] | None = None,
+    table_header_texts: set[str] | None = None,
+) -> tuple[str | list[str] | None, float | None, bool, int | None, tuple[int, int, int, int] | None, str | None]:
     """Dispatches ONE requested field (no zone match) through, in order:
     spatial label matching (when lines_by_page is available -- see
     _find_value) -> flattened-text label proximity -> pattern rules ->
     free-text fallback, plus the field-specific handling the spec calls
-    for. Returns (value, confidence, forced_low_confidence, page, bbox) --
-    `forced_low_confidence` is True only for a free-text-fallback value
-    (description/tags/keywords with no label match), which must be marked
-    low_confidence regardless of any confidence number. `page`/`bbox` are
-    only ever non-None when the value came from real per-line spatial
-    matching -- never from the flattened-text fallback, a pattern-rule
-    match, or the free-text fallback (none of those have one single page
-    position to report).
+    for. Returns (value, confidence, forced_low_confidence, page, bbox,
+    match_basis) -- `forced_low_confidence` is True only for a
+    free-text-fallback value (description/tags/keywords with no label
+    match), which must be marked low_confidence regardless of any
+    confidence number. `page`/`bbox` are only ever non-None when the value
+    came from real per-line spatial matching -- never from the
+    flattened-text fallback, a pattern-rule match, or the free-text
+    fallback (none of those have one single page position to report).
+    `match_basis` says which of those produced the value (hints.basis for
+    anything found through a label hint) -- or, when there's no value, what
+    was actually searched: hints.basis wherever the field's label hints
+    were tried (every path but language), MATCH_BASIS_GENERATED for
+    language, whose langdetect pass never looks at a label at all (a
+    "Language" hint an admin adds is not used by it either), so its
+    not_found never claims a label search that didn't happen.
+
+    There's no field_key-specific branch for purchase_order_number any
+    more: its bare "Number" fallback is now the standalone tier every field
+    gets through _find_field_value, so it takes the generic text-field path
+    below (same 0.8 that branch returned).
     """
     field_key, data_type, options = spec.field_key, spec.data_type, spec.options or []
-    aliases = _LABEL_ALIASES.get(field_key, [field_key.replace("_", " ")])
+    not_found = (None, None, False, None, None, hints.basis)
 
     if field_key == "language":
         lang, prob = _extract_language(text)
-        return lang, prob, False, None, None
+        return lang, prob, False, None, None, MATCH_BASIS_GENERATED
 
     if data_type == "dropdown" and options:
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_field_value(text, lines_by_page, hints, known_labels, table_header_texts)
         matched = _match_enum(candidate, options, field_key)
-        return (matched, 0.85, False, page, bbox) if matched else (None, None, False, None, None)
+        return (matched, 0.85, False, page, bbox, hints.basis) if matched else not_found
 
     if data_type in ("date", "datetime"):
-        raw_date, page, bbox = _extract_date_candidate(text, lines_by_page, aliases)
+        raw_date, page, bbox, via_label = _extract_date_candidate(text, lines_by_page, hints, known_labels, table_header_texts)
         if raw_date is None:
-            return None, None, False, None, None
-        from_label = page is not None or _label_proximity_value(text, aliases) is not None
-        return _normalize_date(raw_date), (0.9 if from_label else 0.65), False, page, bbox
+            return not_found
+        # Same tiering as the candidate search itself (primary, then
+        # standalone whole-line), flattened text only -- exactly what the
+        # old single-alias-list check did for a field with no standalone hints.
+        from_label = page is not None or _find_field_value(text, None, hints, known_labels, table_header_texts)[0] is not None
+        basis = hints.basis if via_label else MATCH_BASIS_PATTERN
+        return _normalize_date(raw_date), (0.9 if from_label else 0.65), False, page, bbox, basis
 
     if field_key == "reference_number":
         match = _REFERENCE_NUMBER_RE.search(text)
         if match:
-            return match.group(1).strip(), 0.85, False, None, None
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
-        return (candidate.strip(), 0.7, False, page, bbox) if candidate else (None, None, False, None, None)
+            return match.group(1).strip(), 0.85, False, None, None, MATCH_BASIS_PATTERN
+        candidate, page, bbox = _find_field_value(text, lines_by_page, hints, known_labels, table_header_texts)
+        return (candidate.strip(), 0.7, False, page, bbox, hints.basis) if candidate else not_found
 
     if data_type in ("long_text", "multi_select"):
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_field_value(text, lines_by_page, hints, known_labels, table_header_texts)
         if candidate:
             if data_type == "multi_select":
                 value = _split_list_value(candidate)
                 if value:
-                    return value, 0.75, False, None, None  # a split list has no single bbox
+                    return value, 0.75, False, None, None, hints.basis  # a split list has no single bbox
             else:
                 value = candidate.strip()
                 if value:
-                    return value, 0.75, False, page, bbox
+                    return value, 0.75, False, page, bbox, hints.basis
         # Free-text fallback: generated FROM the document, not found via a
         # label -- always low_confidence per spec, whatever the number below.
         value = _keywords_from_text(text) if data_type == "multi_select" else _summary_from_text(text)
-        return (value, 0.5, True, None, None) if value else (None, None, False, None, None)
+        return (value, 0.5, True, None, None, MATCH_BASIS_GENERATED) if value else not_found
 
-    # Generic single-line text field (author, department, and anything else
-    # with no more specific handling above).
-    candidate, page, bbox = _find_value(text, lines_by_page, aliases)
-    return (candidate.strip(), 0.8, False, page, bbox) if candidate else (None, None, False, None, None)
+    # Generic single-line text field (author, department,
+    # purchase_order_number, and anything else with no more specific
+    # handling above).
+    candidate, page, bbox = _find_field_value(text, lines_by_page, hints, known_labels, table_header_texts)
+    return (candidate.strip(), 0.8, False, page, bbox, hints.basis) if candidate else not_found
 
 
 def _split_list_value(raw: str, limit: int = 8) -> list[str]:
@@ -674,13 +1098,28 @@ def _split_list_value(raw: str, limit: int = 8) -> list[str]:
 
 
 def _finalize_result(
-    spec: FieldSpec, value, confidence: float | None, page: int | None, bbox, threshold: float, forced_low_confidence: bool = False
+    spec: FieldSpec,
+    value,
+    confidence: float | None,
+    page: int | None,
+    bbox,
+    threshold: float,
+    forced_low_confidence: bool = False,
+    *,
+    match_basis: str | None = None,
 ) -> RequestedFieldResult:
+    """`match_basis` is recorded whatever the status: how a value was
+    found, or for an empty one WHAT was searched (configured hints vs the
+    field's own name, see _extract_field_value), so a not_found row still
+    explains itself.
+    """
     is_empty = value is None or (isinstance(value, list) and not value) or (isinstance(value, str) and not value.strip())
     if is_empty:
-        return RequestedFieldResult(field_key=spec.field_key, value=None, confidence=None, status="not_found")
+        return RequestedFieldResult(field_key=spec.field_key, value=None, confidence=None, status="not_found", match_basis=match_basis)
     status = "low_confidence" if forced_low_confidence or confidence is None or confidence < threshold else "extracted"
-    return RequestedFieldResult(field_key=spec.field_key, value=value, confidence=confidence, status=status, page=page, bbox=bbox)
+    return RequestedFieldResult(
+        field_key=spec.field_key, value=value, confidence=confidence, status=status, page=page, bbox=bbox, match_basis=match_basis
+    )
 
 
 def _apply_effective_expiry_validation(results: list[RequestedFieldResult]) -> list[RequestedFieldResult]:
@@ -716,7 +1155,9 @@ def extract_requested_fields(
     specs: list[FieldSpec],
     text: str,
     zone_fields: dict[str, ExtractedField],
+    vocabulary: LabelVocabulary,
     lines_by_page: dict[int, list[LineBlock]] | None = None,
+    table_header_texts: set[str] | None = None,
     field_confidence_threshold: float = 0.6,
 ) -> list[RequestedFieldResult]:
     """The selectable-field entry point: attempts ONLY `specs` (never a
@@ -731,37 +1172,88 @@ def extract_requested_fields(
     _extract_field_value for (2)-(5). Always returns exactly one result
     per spec, including a `not_found` one, so document_ocr_field_results
     has a complete record of every field that was actually asked for.
+
+    `table_header_texts` (see pipeline.py's _run_full_document) is the
+    lowercased text of every cell Docling's real table-structure model
+    marked as a column header, across the whole document -- passed through
+    to (2) and (3) so a line-items table's own header row is never
+    mistaken for a document-level field's label (see
+    _spatial_value_on_page/_label_proximity_value's own doc comments).
+
+    `vocabulary` (required -- see build_label_vocabulary, loaded per
+    document by pipeline.py via repository.py's get_label_vocabulary) says
+    which labels each spec is searched under and which labels mark the
+    start of ANOTHER field. Every result carries a match_basis (see the
+    MATCH_BASIS_* constants): "zone" for (1); hints.basis ("label_hint" or
+    "field_name") for (2)/(3); "pattern" for (4); "generated" for (5) and
+    language detection; and, for a not_found result, what was searched for
+    -- hints.basis again, "generated" for language (never label-searched),
+    or "zone" when an empty zone crop was the only thing tried (a zone hit
+    never falls through to label matching).
     """
+    known_labels = vocabulary.known_labels
     results: list[RequestedFieldResult] = []
     for spec in specs:
+        hints = vocabulary.hints_for(spec.field_key)
         zone_hit = zone_fields.get(spec.field_key)
         if zone_hit is not None:
             results.append(
-                _finalize_result(spec, zone_hit.value, zone_hit.confidence, zone_hit.page, zone_hit.bbox, field_confidence_threshold)
+                _finalize_result(
+                    spec,
+                    zone_hit.value,
+                    zone_hit.confidence,
+                    zone_hit.page,
+                    zone_hit.bbox,
+                    field_confidence_threshold,
+                    match_basis=MATCH_BASIS_ZONE,
+                )
             )
             continue
-        value, confidence, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page)
-        results.append(_finalize_result(spec, value, confidence, page, bbox, field_confidence_threshold, forced_low_confidence))
+        value, confidence, forced_low_confidence, page, bbox, match_basis = _extract_field_value(
+            spec, text, hints, known_labels, lines_by_page, table_header_texts
+        )
+        results.append(
+            _finalize_result(
+                spec,
+                value,
+                confidence,
+                page,
+                bbox,
+                field_confidence_threshold,
+                forced_low_confidence,
+                match_basis=match_basis,
+            )
+        )
 
     return _apply_effective_expiry_validation(results)
 
 
 def requested_fields_to_output_dict(results: list[RequestedFieldResult]) -> dict[str, dict]:
     """The sparse HTTP-response `fields` shape (same `{value, confidence,
-    bbox}` shape the legacy fields_to_dict already produces, so dms-core's
-    existing DocumentMetadataServiceImpl#applyOcrFields mapping keeps
-    working unchanged) -- a `not_found` result is omitted entirely, same
-    as a non-matching regex simply not appearing today. A multi_select
-    field's `value` (a real Python list) is JSON-encoded to a string here,
-    since this dict's `value` must stay a plain scalar for the existing
-    Java-side `Map<String,Object>`/`instanceof String` check to keep
-    working -- the Java side must `ObjectMapper`-decode that JSON string
-    back into a list for a multi_select field specifically.
+    bbox}` shape the legacy fields_to_dict already produces, plus `status`,
+    so dms-core's DocumentMetadataServiceImpl#applyOcrFields can gate a
+    `low_confidence` result instead of writing it as if trustworthy -- a
+    `not_found` result is still omitted entirely, same as a non-matching
+    regex simply not appearing today. A multi_select field's `value` (a
+    real Python list) is JSON-encoded to a string here, since this dict's
+    `value` must stay a plain scalar for the existing Java-side
+    `Map<String,Object>`/`instanceof String` check to keep working -- the
+    Java side must `ObjectMapper`-decode that JSON string back into a list
+    for a multi_select field specifically. `match_basis` rides along for any
+    caller reading the response directly; dms-core's own OCR-status view
+    reads it from document_ocr_field_results instead (where not_found rows,
+    omitted here, carry it too).
     """
     output: dict[str, dict] = {}
     for result in results:
         if result.status == "not_found" or result.value is None:
             continue
         value = json.dumps(result.value) if isinstance(result.value, list) else result.value
-        output[result.field_key] = {"value": value, "confidence": result.confidence, "bbox": list(result.bbox) if result.bbox else None}
+        output[result.field_key] = {
+            "value": value,
+            "confidence": result.confidence,
+            "bbox": list(result.bbox) if result.bbox else None,
+            "status": result.status,
+            "match_basis": result.match_basis,
+        }
     return output

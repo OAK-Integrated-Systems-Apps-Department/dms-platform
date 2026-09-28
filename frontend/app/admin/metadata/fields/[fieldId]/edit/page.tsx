@@ -11,6 +11,7 @@ import { UpdateMetadataFieldForm } from "@/components/metadata-fields/metadata-f
 import { FieldOptionEditor } from "@/components/metadata-fields/field-option-editor"
 import { FieldValidationEditor } from "@/components/metadata-fields/field-validation-editor"
 import { OPTION_BACKED_DATA_TYPES, type DataType } from "@/components/metadata-fields/types"
+import { normalizeLabelHints } from "@/lib/metadata-fields/label-hints"
 import { useMetadataField } from "@/lib/metadata-fields/use-metadata-field"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -61,8 +62,13 @@ export default function EditMetadataFieldPage() {
                 defaultValue: field.defaultValue ?? "",
                 searchable: field.searchable,
                 ocrExtractable: field.ocrExtractable,
+                labelAliases: field.labelAliases ?? [],
               }}
-              onSubmit={updateField}
+              // Always sends the full global hint list (even `[]`): the form
+              // was seeded from the saved list, so what's on screen IS the
+              // intended list — `[]` here means the user removed them all,
+              // not "leave unchanged" (which is what omitting it would mean).
+              onSubmit={(values) => updateField({ ...values, labelAliases: normalizeLabelHints(values.labelAliases) })}
             />
 
             {isOptionBacked && (

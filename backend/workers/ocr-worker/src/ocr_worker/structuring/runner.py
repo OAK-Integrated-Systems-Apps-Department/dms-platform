@@ -15,12 +15,15 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from ..storage import ObjectStorage, structured_output_key
 from .errors import StructuringError
+from .field_merge import POLICIES as FIELD_POLICIES
 from .grounding import POLICIES
 from .llm_client import build_llm_client
+from .prompts import TargetField
 from .service import StructuredExtractionService, validated_result
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,8 @@ class StructuredExtractionRunner:
             raise ValueError(f"LLM_EXTRACTION_MODE must be one of {MODES}, got {settings.llm_extraction_mode!r}")
         if settings.llm_grounding_policy not in POLICIES:
             raise ValueError(f"LLM_GROUNDING_POLICY must be one of {POLICIES}, got {settings.llm_grounding_policy!r}")
+        if settings.llm_field_policy not in FIELD_POLICIES:
+            raise ValueError(f"LLM_FIELD_POLICY must be one of {FIELD_POLICIES}, got {settings.llm_field_policy!r}")
         self._mode = mode
         self._settings = settings
         self._storage = storage
@@ -61,18 +66,46 @@ class StructuredExtractionRunner:
             return self._executor
 
     # ------------------------------------------------------------------
-    def after_ocr(self, *, version_id: uuid.UUID, extracted_text_ref: str | None, pages: list[dict]) -> dict | None:
-        """Returns the structured result in sync mode, None otherwise."""
+    @property
+    def has_client(self) -> bool:
+        return self._service.client is not None
+
+    def after_ocr(
+        self,
+        *,
+        version_id: uuid.UUID,
+        extracted_text_ref: str | None,
+        pages: list[dict],
+        targets: list[TargetField] | None = None,
+        on_result: Callable[[dict], dict] | None = None,
+    ) -> dict | None:
+        """Returns the structured result in sync mode, None otherwise.
+        `on_result(result)` runs once structuring has finished (in the
+        background in async mode) and before the result is stored; the keys
+        it returns are added to the stored result."""
         if not self.enabled or not extracted_text_ref:
             return None
         if self._mode == "sync":
-            return self.run(version_id=version_id, extracted_text_ref=extracted_text_ref, pages=pages)
+            return self.run(version_id=version_id, extracted_text_ref=extracted_text_ref, pages=pages, targets=targets, on_result=on_result)
         self._write_pending(version_id, extracted_text_ref)
-        self._pool().submit(self._run_in_background, version_id, extracted_text_ref, pages)
+        self._pool().submit(self._run_in_background, version_id, extracted_text_ref, pages, targets, on_result)
         return None
 
-    def run(self, *, version_id: uuid.UUID, extracted_text_ref: str, pages: list[dict]) -> dict:
-        result = self._service.extract(pages, document_version_id=str(version_id), ocr_output_ref=extracted_text_ref)
+    def run(
+        self,
+        *,
+        version_id: uuid.UUID,
+        extracted_text_ref: str,
+        pages: list[dict],
+        targets: list[TargetField] | None = None,
+        on_result: Callable[[dict], dict] | None = None,
+    ) -> dict:
+        result = self._service.extract(pages, document_version_id=str(version_id), ocr_output_ref=extracted_text_ref, targets=targets)
+        if on_result is not None:
+            try:
+                result.update(on_result(result) or {})
+            except Exception:  # noqa: BLE001 - the hand-off logs its own failures; the result is still stored
+                logger.exception("structured-result hand-off failed for version %s", version_id)
         try:
             self._storage.put_ocr_output_json(structured_output_key(extracted_text_ref), result)
         except Exception:  # noqa: BLE001 - the caller still gets the result; the store failure is logged
@@ -132,6 +165,14 @@ class StructuredExtractionRunner:
         threading.Thread(target=_warm, name="llm-warmup", daemon=True).start()
 
     def shutdown(self) -> None:
+        # FOLLOW-UP: a version whose requested fields are waiting on the LLM
+        # is held at ocr_status 'processing' until on_result runs
+        # (pipeline._apply_llm_fields). cancel_futures drops queued runs, and
+        # a crash/restart loses in-flight ones, so those versions stay
+        # 'processing' for good and the upload form polls forever. Not fixed
+        # here: needs a startup sweep that completes versions left
+        # 'processing' with committed OCR output (their rule-based field rows
+        # are already written), or a staleness timeout on dms-core's side.
         if self._executor is not None:
             self._executor.shutdown(wait=False, cancel_futures=True)
 
@@ -149,9 +190,9 @@ class StructuredExtractionRunner:
     def _load_pages(self, ocr_key: str) -> list[dict]:
         return self._storage.get_ocr_output_json(ocr_key).get("pages") or []
 
-    def _run_in_background(self, version_id: uuid.UUID, extracted_text_ref: str, pages: list[dict]) -> None:
+    def _run_in_background(self, version_id: uuid.UUID, extracted_text_ref: str, pages: list[dict], targets=None, on_result=None) -> None:
         try:
-            self.run(version_id=version_id, extracted_text_ref=extracted_text_ref, pages=pages)
+            self.run(version_id=version_id, extracted_text_ref=extracted_text_ref, pages=pages, targets=targets, on_result=on_result)
         except Exception:  # noqa: BLE001 - a background failure must be logged, never raised into the pool
             logger.exception("background structured extraction failed for version %s", version_id)
 

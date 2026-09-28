@@ -212,6 +212,45 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
                 row -> tagsFieldId.equals(row.getFieldId()) && row.getValueOrdinal() == 1 && "hr".equals(row.getValueText())));
     }
 
+    /**
+     * The confidence gate: a "low_confidence" OCR result is still written
+     * (not suppressed), but flagged via {@code needsReview} so the frontend
+     * can distinguish it from a confident extraction instead of presenting
+     * both identically -- see DocumentMetadataValue#needsReview and
+     * extraction.py's requested_fields_to_output_dict (which is what
+     * actually puts "status" in this map in production).
+     */
+    @Test
+    void lowConfidenceOcrResultIsWrittenButFlaggedNeedsReview() {
+        UUID descriptionFieldId = UUID.randomUUID();
+        UUID referenceFieldIdForThisTest = UUID.randomUUID();
+        Document document = Document.builder()
+                .documentId(documentId).tenantId(tenantId).documentTypeId(documentTypeId)
+                .title("doc").latestVersionId(UUID.randomUUID()).ownerUserId(UUID.randomUUID())
+                .build();
+        when(documentRepository.findById(documentId)).thenReturn(java.util.Optional.of(document));
+
+        DocumentTypeSchemaResponse schema = new DocumentTypeSchemaResponse(
+                documentTypeId, "GENERAL", "General", 1, List.of(
+                        schemaField(descriptionFieldId, "description"),
+                        schemaField(referenceFieldIdForThisTest, "reference_number")));
+        when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(schema);
+        when(metadataValueRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId))
+                .thenReturn(List.of());
+
+        DocumentMetadataServiceImpl service = new DocumentMetadataServiceImpl(
+                documentRepository, metadataValueRepository, documentTypeFieldService, metadataValidationService, objectMapper);
+
+        service.applyOcrFields(documentId, Map.of(
+                "description", Map.of("value", "auto-summarized guess", "confidence", 0.5, "status", "low_confidence"),
+                "reference_number", Map.of("value", "REF-1", "confidence", 0.95, "status", "extracted")));
+
+        verify(metadataValueRepository).save(org.mockito.ArgumentMatchers.argThat(
+                row -> descriptionFieldId.equals(row.getFieldId()) && row.isNeedsReview()));
+        verify(metadataValueRepository).save(org.mockito.ArgumentMatchers.argThat(
+                row -> referenceFieldIdForThisTest.equals(row.getFieldId()) && !row.isNeedsReview()));
+    }
+
     private static DocumentMetadataValue argThatFieldIdIs(UUID fieldId) {
         return org.mockito.ArgumentMatchers.argThat(row -> row != null && fieldId.equals(row.getFieldId()));
     }

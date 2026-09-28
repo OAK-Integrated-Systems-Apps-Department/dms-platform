@@ -1,0 +1,640 @@
+{
+  "_doc": "Ground truth for evaluate_quality.py. keys: acceptable field-name token sets (all tokens of one entry must appear in the flattened field path); '=x' means the path must be exactly x. type: text | date | number | bool | email. accept: extra acceptable values (e.g. the document's own spelling of an ambiguous date).",
+  "employee_contract_native": {
+    "description": "Native-text PDF, 1 page: label/value form, 2-column salary table, numbered terms, blank signature line.",
+    "document_type": [
+      "contract",
+      "employ"
+    ],
+    "fields": [
+      {
+        "label": "Employee Name",
+        "keys": [
+          "employee_name"
+        ],
+        "value": "John Silva"
+      },
+      {
+        "label": "Employee ID",
+        "keys": [
+          "employee_id"
+        ],
+        "value": "EMP-1023"
+      },
+      {
+        "label": "Department",
+        "keys": [
+          "department"
+        ],
+        "value": "Finance"
+      },
+      {
+        "label": "Designation",
+        "keys": [
+          "designation"
+        ],
+        "value": "Senior Accountant"
+      },
+      {
+        "label": "Joining Date",
+        "keys": [
+          "joining_date",
+          "join_date",
+          "start_date"
+        ],
+        "value": "2026-09-01",
+        "type": "date"
+      },
+      {
+        "label": "Salary",
+        "keys": [
+          "salary"
+        ],
+        "value": "150000",
+        "type": "number"
+      },
+      {
+        "label": "Reporting Manager",
+        "keys": [
+          "reporting_manager",
+          "manager"
+        ],
+        "value": "Nimal Fernando"
+      },
+      {
+        "label": "Signature date",
+        "keys": [
+          "signature_date",
+          "date_signed",
+          "signed_date",
+          "=date",
+          "signing_date"
+        ],
+        "value": "2026-08-25",
+        "type": "date",
+        "accept": [
+          "25/08/2026"
+        ]
+      }
+    ],
+    "null_fields": [
+      {
+        "label": "Employee Signature (blank line)",
+        "keys": [
+          "employee_signature",
+          "=signature"
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "label": "Salary Breakdown",
+        "headers": [
+          "Component",
+          "Monthly Amount"
+        ],
+        "key_columns": [
+          "Component"
+        ],
+        "rows": [
+          {
+            "Component": "Basic Salary",
+            "Monthly Amount": "120,000"
+          },
+          {
+            "Component": "Transport Allowance",
+            "Monthly Amount": "20,000"
+          },
+          {
+            "Component": "Meal Allowance",
+            "Monthly Amount": "10,000"
+          },
+          {
+            "Component": "Total",
+            "Monthly Amount": "150,000"
+          }
+        ],
+        "types": {
+          "Monthly Amount": "number"
+        }
+      }
+    ],
+    "sections": [
+      {
+        "heading": "Terms",
+        "content": "probation"
+      }
+    ]
+  },
+  "employee_contract_scan": {
+    "description": "Same contract as a noisy 150-DPI scan (PNG): no text layer, PaddleOCR only, table has no parser structure.",
+    "same_as": "employee_contract_native"
+  },
+  "invoice_scanned": {
+    "description": "Image-only scanned PDF invoice: two-column header (label and value in separate OCR boxes, some glued), ruled line-item table, totals block.",
+    "document_type": [
+      "invoice"
+    ],
+    "fields": [
+      {
+        "label": "Invoice No",
+        "keys": [
+          "invoice_no",
+          "invoice_number",
+          "invoice_id"
+        ],
+        "value": "INV-2026-0457"
+      },
+      {
+        "label": "Invoice Date",
+        "keys": [
+          "invoice_date"
+        ],
+        "value": "2026-09-12",
+        "type": "date"
+      },
+      {
+        "label": "PO Number",
+        "keys": [
+          "po_number",
+          "po_no",
+          "purchase_order"
+        ],
+        "value": "PO-88213"
+      },
+      {
+        "label": "Bill To",
+        "keys": [
+          "bill_to",
+          "billed_to",
+          "customer_name"
+        ],
+        "value": "Oak Integrated Systems"
+      },
+      {
+        "label": "Customer ID",
+        "keys": [
+          "customer_id"
+        ],
+        "value": "CUST-3310"
+      },
+      {
+        "label": "Due Date (ambiguous 12/10/2026)",
+        "keys": [
+          "due_date"
+        ],
+        "value": "2026-10-12",
+        "type": "date",
+        "accept": [
+          "12/10/2026"
+        ]
+      },
+      {
+        "label": "Supplier",
+        "keys": [
+          "supplier",
+          "vendor",
+          "seller",
+          "company_name",
+          "issuer",
+          "from"
+        ],
+        "value": "Lanka Office Supplies Ltd"
+      },
+      {
+        "label": "Subtotal",
+        "keys": [
+          "subtotal",
+          "sub_total"
+        ],
+        "value": "89250.00",
+        "type": "number"
+      },
+      {
+        "label": "VAT 18%",
+        "keys": [
+          "vat",
+          "tax"
+        ],
+        "value": "16065.00",
+        "type": "number"
+      },
+      {
+        "label": "Total Due",
+        "keys": [
+          "total_due",
+          "amount_due",
+          "grand_total",
+          "=total",
+          "total_amount"
+        ],
+        "value": "105315.00",
+        "type": "number"
+      },
+      {
+        "label": "Bank account",
+        "keys": [
+          "account",
+          "a_c"
+        ],
+        "value": "1002-3344-55"
+      }
+    ],
+    "null_fields": [],
+    "tables": [
+      {
+        "label": "Line items",
+        "headers": [
+          "Description",
+          "Qty",
+          "Unit Price",
+          "Amount"
+        ],
+        "key_columns": [
+          "Description"
+        ],
+        "rows": [
+          {
+            "Description": "A4 Copy Paper 80gsm (box)",
+            "Qty": "10",
+            "Unit Price": "4,500.00",
+            "Amount": "45,000.00"
+          },
+          {
+            "Description": "Toner Cartridge HP 26A",
+            "Qty": "2",
+            "Unit Price": "18,750.00",
+            "Amount": "37,500.00"
+          },
+          {
+            "Description": "Stapler Heavy Duty",
+            "Qty": "3",
+            "Unit Price": "2,250.00",
+            "Amount": "6,750.00"
+          }
+        ],
+        "types": {
+          "Qty": "number",
+          "Unit Price": "number",
+          "Amount": "number"
+        }
+      }
+    ],
+    "sections": []
+  },
+  "bank_statement_3pages_native": {
+    "description": "Native 3-page statement: header fields on page 1, one 75-row transaction table running across all 3 pages (parser detects it as a table on page 1 only).",
+    "document_type": [
+      "statement"
+    ],
+    "fields": [
+      {
+        "label": "Account Holder",
+        "keys": [
+          "account_holder",
+          "account_name"
+        ],
+        "value": "Oak Integrated Systems"
+      },
+      {
+        "label": "Account Number",
+        "keys": [
+          "account_number",
+          "account_no"
+        ],
+        "value": "1002-3344-55"
+      },
+      {
+        "label": "Statement Period start",
+        "keys": [
+          "period",
+          "from",
+          "start"
+        ],
+        "value": "2026-08-01",
+        "type": "date",
+        "accept": [
+          "01/08/2026"
+        ]
+      },
+      {
+        "label": "Statement Period end",
+        "keys": [
+          "period",
+          "to",
+          "end"
+        ],
+        "value": "2026-08-31",
+        "type": "date",
+        "accept": [
+          "31/08/2026"
+        ]
+      }
+    ],
+    "null_fields": [],
+    "tables": [
+      {
+        "label": "Transactions (sample rows from pages 1, 2 and 3)",
+        "headers": [
+          "Date",
+          "Description",
+          "Reference",
+          "Debit",
+          "Credit",
+          "Balance"
+        ],
+        "key_columns": [
+          "Reference"
+        ],
+        "rows_from_truth": "bank_statement_3pages_native.truth.json",
+        "sample_references": [
+          "TXN100001",
+          "TXN100017",
+          "TXN100030",
+          "TXN100031",
+          "TXN100045",
+          "TXN100060",
+          "TXN100061",
+          "TXN100075"
+        ],
+        "expected_row_count": 75,
+        "types": {
+          "Debit": "number",
+          "Credit": "number",
+          "Balance": "number"
+        }
+      }
+    ],
+    "sections": []
+  },
+  "vendor_form_native": {
+    "description": "Native form built to test nulls and repeats: blank Email/Fax/Website labels, Phone given twice, three Director Name lines, dd/mm/yyyy date, Yes/No field.",
+    "document_type": [
+      "vendor",
+      "registration",
+      "supplier"
+    ],
+    "fields": [
+      {
+        "label": "Company Name",
+        "keys": [
+          "company_name"
+        ],
+        "value": "Ceylon Tea Traders (Pvt) Ltd"
+      },
+      {
+        "label": "Business Registration No",
+        "keys": [
+          "registration_no",
+          "registration_number"
+        ],
+        "value": "PV 104522"
+      },
+      {
+        "label": "Date of Incorporation",
+        "keys": [
+          "incorporation"
+        ],
+        "value": "2018-03-15",
+        "type": "date",
+        "accept": [
+          "15/03/2018"
+        ]
+      },
+      {
+        "label": "Registered Address",
+        "keys": [
+          "address"
+        ],
+        "value": "12 Temple Road, Kandy"
+      },
+      {
+        "label": "Contact Person",
+        "keys": [
+          "contact_person"
+        ],
+        "value": "Sunil Perera"
+      },
+      {
+        "label": "VAT Registered",
+        "keys": [
+          "vat"
+        ],
+        "value": "yes",
+        "type": "bool"
+      },
+      {
+        "label": "Annual Turnover",
+        "keys": [
+          "turnover"
+        ],
+        "value": "12500000.00",
+        "type": "number"
+      }
+    ],
+    "null_fields": [
+      {
+        "label": "Email (blank underline)",
+        "keys": [
+          "email",
+          "e_mail"
+        ]
+      },
+      {
+        "label": "Fax (blank)",
+        "keys": [
+          "fax"
+        ]
+      },
+      {
+        "label": "Website (blank)",
+        "keys": [
+          "website",
+          "web"
+        ]
+      }
+    ],
+    "repeated": [
+      {
+        "label": "Phone (label appears twice)",
+        "keys": [
+          "phone"
+        ],
+        "values": [
+          "081 222 3344",
+          "077 123 4567"
+        ],
+        "type": "number"
+      },
+      {
+        "label": "Director Name (x3)",
+        "keys": [
+          "director"
+        ],
+        "values": [
+          "Sunil Perera",
+          "Kamala Perera",
+          "Ruwan Silva"
+        ]
+      }
+    ],
+    "tables": [],
+    "sections": []
+  },
+  "hr_difficult_native": {
+    "description": "Native PDF built to be hard for label-hint extraction: label/value in separate columns with no colon, two labels side by side with values on the next line, sections reusing similar labels, an item table, blank Email/Phone.",
+    "document_type": [
+      "onboarding",
+      "employee",
+      "staff",
+      "hr"
+    ],
+    "fields": [
+      {
+        "label": "Employee ID",
+        "keys": [
+          "employee_id"
+        ],
+        "value": "EMP-1023"
+      },
+      {
+        "label": "Employee Name",
+        "keys": [
+          "employee_name"
+        ],
+        "value": "John Silva"
+      },
+      {
+        "label": "Department",
+        "keys": [
+          "department"
+        ],
+        "value": "Finance"
+      },
+      {
+        "label": "Joining Date",
+        "keys": [
+          "joining_date",
+          "join_date"
+        ],
+        "value": "2026-09-01",
+        "type": "date"
+      },
+      {
+        "label": "Line Manager (value on next line)",
+        "keys": [
+          "line_manager",
+          "manager"
+        ],
+        "value": "Nimal Fernando"
+      },
+      {
+        "label": "Work Location (value on next line, 2nd column)",
+        "keys": [
+          "work_location",
+          "location"
+        ],
+        "value": "Colombo Head Office"
+      },
+      {
+        "label": "Basic Salary",
+        "keys": [
+          "basic_salary"
+        ],
+        "value": "120000",
+        "type": "number"
+      },
+      {
+        "label": "Allowances",
+        "keys": [
+          "allowance"
+        ],
+        "value": "30000",
+        "type": "number"
+      },
+      {
+        "label": "Effective From (15 March 2026)",
+        "keys": [
+          "effective"
+        ],
+        "value": "2026-03-15",
+        "type": "date",
+        "accept": [
+          "15 March 2026"
+        ]
+      },
+      {
+        "label": "Emergency Contact Name",
+        "keys": [
+          "contact_name"
+        ],
+        "value": "Kamala Silva"
+      }
+    ],
+    "null_fields": [
+      {
+        "label": "Email (blank)",
+        "keys": [
+          "email",
+          "e_mail"
+        ]
+      },
+      {
+        "label": "Phone (blank)",
+        "keys": [
+          "phone"
+        ]
+      }
+    ],
+    "repeated": [
+      {
+        "label": "Benefits (list)",
+        "keys": [
+          "benefit"
+        ],
+        "values": [
+          "Medical insurance for employee and spouse",
+          "Annual performance bonus"
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "label": "Equipment Issued",
+        "headers": [
+          "Item",
+          "Quantity",
+          "Unit Price",
+          "Total"
+        ],
+        "key_columns": [
+          "Item"
+        ],
+        "rows": [
+          {
+            "Item": "Laptop",
+            "Quantity": "2",
+            "Unit Price": "150,000",
+            "Total": "300,000"
+          },
+          {
+            "Item": "Monitor",
+            "Quantity": "3",
+            "Unit Price": "50,000",
+            "Total": "150,000"
+          }
+        ],
+        "types": {
+          "Quantity": "number",
+          "Unit Price": "number",
+          "Total": "number"
+        }
+      }
+    ],
+    "sections": []
+  },
+  "hr_difficult_scanned": {
+    "description": "Same document as an image-only scanned PDF (PaddleOCR only, glued words like '15March', no table structure).",
+    "same_as": "hr_difficult_native"
+  }
+}

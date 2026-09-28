@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.document.dto.DocumentMetadataResponse;
 import com.oak.dms.metadata.DocumentTypeFieldService;
 import com.oak.dms.metadata.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
@@ -24,6 +25,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -54,7 +56,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
 
     @Override
     @Transactional(readOnly = true)
-    public Map<String, Object> getValues(UUID documentId) {
+    public DocumentMetadataResponse getValues(UUID documentId) {
         UUID tenantId = TenantContext.getTenantId();
         Document document = requireDocument(documentId, tenantId);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
@@ -68,6 +70,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                 .collect(Collectors.groupingBy(DocumentMetadataValue::getFieldId));
 
         Map<String, Object> result = new LinkedHashMap<>();
+        Set<String> needsReview = new java.util.HashSet<>();
         for (var entry : rowsByField.entrySet()) {
             DocumentTypeSchemaResponse.SchemaField field = fieldsById.get(entry.getKey());
             List<String> values = entry.getValue().stream()
@@ -75,8 +78,15 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                     .map(row -> displayValue(row, field.dataType()))
                     .toList();
             result.put(field.fieldKey(), "multi_select".equals(field.dataType()) ? values : values.get(0));
+            // Every row for one field shares the same needsReview state --
+            // writeValues always replaces a field's full row set together,
+            // same reasoning as applyOcrFields' sourceByFieldId above -- so
+            // checking any one row is representative of the whole field.
+            if (entry.getValue().get(0).isNeedsReview()) {
+                needsReview.add(field.fieldKey());
+            }
         }
-        return result;
+        return new DocumentMetadataResponse(result, needsReview);
     }
 
     @Override
@@ -85,7 +95,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         UUID tenantId = TenantContext.getTenantId();
         Document document = requireDocument(documentId, tenantId);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
-        writeValues(document, tenantId, schema, valuesByFieldKey, "manual", null, enforceMandatory);
+        writeValues(document, tenantId, schema, valuesByFieldKey, "manual", null, null, enforceMandatory);
     }
 
     // REQUIRES_NEW, not the default REQUIRED: DocumentServiceImpl#runOcr (itself
@@ -123,6 +133,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
 
         Map<String, Object> toApply = new LinkedHashMap<>();
         Map<String, BigDecimal> confidenceByFieldKey = new LinkedHashMap<>();
+        Set<String> lowConfidenceFieldKeys = new java.util.HashSet<>();
         for (var entry : ocrFieldsRaw.entrySet()) {
             String fieldKey = entry.getKey();
             DocumentTypeSchemaResponse.SchemaField field = fieldsByKey.get(fieldKey);
@@ -155,16 +166,26 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                 if (ocrField.get("confidence") instanceof Number confidence) {
                     confidenceByFieldKey.put(field.fieldKey(), BigDecimal.valueOf(confidence.doubleValue()));
                 }
+                // "low_confidence" is the only status that reaches here as a
+                // real value: requested_fields_to_output_dict already omits
+                // "not_found" entirely, and neither Python nor this map has
+                // any other status today (see extraction.py's
+                // RequestedFieldResult). Gate on the flag, not silently write
+                // as if trustworthy -- see DocumentMetadataValue#needsReview.
+                if ("low_confidence".equals(ocrField.get("status"))) {
+                    lowConfidenceFieldKeys.add(field.fieldKey());
+                }
             }
         }
         if (!toApply.isEmpty()) {
-            writeValues(document, tenantId, schema, toApply, "ocr", confidenceByFieldKey, false);
+            writeValues(document, tenantId, schema, toApply, "ocr", confidenceByFieldKey, lowConfidenceFieldKeys, false);
         }
     }
 
     private void writeValues(Document document, UUID tenantId, DocumentTypeSchemaResponse schema,
                               Map<String, Object> valuesByFieldKey, String source,
-                              Map<String, BigDecimal> confidenceByFieldKey, boolean enforceMandatory) {
+                              Map<String, BigDecimal> confidenceByFieldKey, Set<String> lowConfidenceFieldKeys,
+                              boolean enforceMandatory) {
         if (enforceMandatory) {
             List<ValidationError> errors = metadataValidationService.validate(document.getDocumentTypeId(), null, valuesByFieldKey);
             List<ValidationError> blocking = errors.stream().filter(e -> "error".equals(e.severity())).toList();
@@ -200,11 +221,12 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                 continue;
             }
             BigDecimal confidence = confidenceByFieldKey != null ? confidenceByFieldKey.get(field.fieldKey()) : null;
+            boolean needsReview = lowConfidenceFieldKeys != null && lowConfidenceFieldKeys.contains(field.fieldKey());
 
             List<DocumentMetadataValue> rows = new ArrayList<>();
             try {
                 for (int ordinal = 0; ordinal < rawValues.size(); ordinal++) {
-                    rows.add(buildRow(tenantId, document.getDocumentId(), field, rawValues.get(ordinal), ordinal, source, confidence));
+                    rows.add(buildRow(tenantId, document.getDocumentId(), field, rawValues.get(ordinal), ordinal, source, confidence, needsReview));
                 }
             } catch (MetadataValidationFailedException e) {
                 if (bestEffort) {
@@ -220,14 +242,16 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     }
 
     private DocumentMetadataValue buildRow(UUID tenantId, UUID documentId, DocumentTypeSchemaResponse.SchemaField field,
-                                            String rawValue, int ordinal, String source, BigDecimal confidence) {
+                                            String rawValue, int ordinal, String source, BigDecimal confidence,
+                                            boolean needsReview) {
         DocumentMetadataValue.DocumentMetadataValueBuilder row = DocumentMetadataValue.builder()
                 .tenantId(tenantId)
                 .documentId(documentId)
                 .fieldId(field.fieldId())
                 .valueOrdinal(ordinal)
                 .source(source)
-                .confidenceScore(confidence);
+                .confidenceScore(confidence)
+                .needsReview(needsReview);
 
         switch (field.dataType()) {
             case "number", "decimal" -> row.valueNumber(parseNumber(field, rawValue));

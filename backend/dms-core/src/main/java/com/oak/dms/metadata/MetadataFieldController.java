@@ -57,7 +57,11 @@ public class MetadataFieldController {
 
     @PutMapping("/{fieldId}")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).MDTM_METADATA_SCHEMA_UPDATE_FIELD)")
-    @Operation(summary = "Update a metadata field's descriptive/behavioral attributes")
+    @Operation(summary = "Update a metadata field's descriptive/behavioral attributes",
+            description = "labelAliases (the field's global OCR label hints, in priority order) is the one "
+                    + "exception to full replacement: null/omitted leaves them unchanged, [] clears them. Hints "
+                    + "for a single document type are set via PUT /api/v1/document-types/{documentTypeId}/fields/"
+                    + "{fieldId}/label-aliases instead.")
     public MetadataFieldResponse updateField(@PathVariable UUID fieldId,
                                               @Valid @RequestBody UpdateMetadataFieldRequest request) {
         return metadataFieldService.updateField(fieldId, request);

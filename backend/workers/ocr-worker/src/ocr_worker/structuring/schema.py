@@ -89,6 +89,20 @@ EXTRACTION_JSON_SCHEMA: dict = {
     "required": ["document_type", "fields", "tables", "sections"],
 }
 
+def extraction_schema(target_keys: list[str] | None = None) -> dict:
+    """EXTRACTION_JSON_SCHEMA, plus -- when the DMS asked for specific
+    fields -- each of those keys as a required `fields` property, so a
+    schema-constrained decoder must emit every one of them (a value or
+    null) instead of only the ones it happened to think of."""
+    if not target_keys:
+        return EXTRACTION_JSON_SCHEMA
+    schema = json.loads(json.dumps(EXTRACTION_JSON_SCHEMA))
+    fields = schema["properties"]["fields"]
+    fields["properties"] = {key: _FIELD_VALUE for key in target_keys}
+    fields["required"] = list(target_keys)
+    return schema
+
+
 # bool before int/float: pydantic's smart union keeps the exact JSON type,
 # but listing it first documents that true/false must stay booleans.
 Scalar = Union[bool, int, float, str, None]
@@ -153,6 +167,11 @@ class StructuredResult(BaseModel):
     status: Literal["pending", "completed", "partial", "failed", "skipped"]
     document_version_id: str | None = None
     ocr_output_ref: str | None = None
+    # DMS field keys this run was asked for (targets), or None.
+    requested_fields: list[str] | None = None
+    # Per requested field: "llm" (value decided by the model) or "rules"
+    # (label-hint/regex value kept, e.g. because structuring failed).
+    field_sources: dict[str, str] | None = None
     document_type: str | None = None
     fields: dict[str, FieldValue] = Field(default_factory=dict)
     tables: list[ExtractedTable] = Field(default_factory=list)

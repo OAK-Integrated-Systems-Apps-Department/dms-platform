@@ -14,6 +14,14 @@ export interface MetadataFieldResponseDto {
   searchable: boolean
   ocrExtractable: boolean
   status: "active" | "inactive" | "deprecated"
+  /**
+   * The field's GLOBAL OCR label hints, in priority order — words ocr-worker
+   * looks for on a page to find this field's value, wherever the field is
+   * mapped. Hints scoped to a single document type are NOT included here;
+   * those come from `DocumentTypeFieldResponseDto.labelAliases` in
+   * lib/document-type-fields/api.ts.
+   */
+  labelAliases: string[]
   createdAt: string
   updatedAt: string | null
 }
@@ -36,6 +44,8 @@ export interface CreateMetadataFieldPayload {
   defaultValue?: string
   searchable: boolean
   ocrExtractable: boolean
+  /** Global OCR label hints, in priority order — omit for none. */
+  labelAliases?: string[]
 }
 
 export interface UpdateMetadataFieldPayload {
@@ -44,6 +54,13 @@ export interface UpdateMetadataFieldPayload {
   defaultValue?: string
   searchable: boolean
   ocrExtractable: boolean
+  /**
+   * Global OCR label hints. Unlike every other attribute here, omitting it
+   * (or sending `null`) leaves the saved hints UNCHANGED rather than
+   * clearing them — send `[]` to clear. Any other list replaces the saved
+   * one wholesale, in the given (priority) order.
+   */
+  labelAliases?: string[] | null
 }
 
 /** Mirrors backend/dms-core's MetadataFieldOptionResponse DTO. */

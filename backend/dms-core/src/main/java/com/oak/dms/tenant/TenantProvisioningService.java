@@ -57,6 +57,28 @@ public class TenantProvisioningService {
 
     @Transactional
     public TenantProvisioningResponse provisionTenant(ProvisionTenantRequest request) {
+        // FOLLOW-UP (flagged, not fixed here - see also V41's header): a
+        // provisioned tenant starts with NO metadata catalog at all. Neither
+        // this method nor TenantServiceImpl#createTenant ever inserts
+        // metadata_fields, metadata_field_options, document_types or
+        // document_type_fields - V30's starter catalogue (and V41's OCR label
+        // hints, which hang off it) only reached tenants that already existed
+        // when those migrations ran, as V30's own header admits. Evidence: in
+        // the local dev database, 200 of 314 active tenants have zero
+        // metadata fields, every one of them created after V30 ran
+        // (2026-09-18) - their users get no fields, no document types, and
+        // nothing for OCR to extract into. Not fixed alongside the label-hint
+        // work because it's a provisioning change with its own decisions
+        // (what a new tenant should start with), and no migration can ever
+        // fix it: a migration only reaches the tenants that exist when it
+        // runs. The platform tenant (SystemActor.PLATFORM_TENANT_ID, seeded
+        // by V24) already holds the full starter catalogue plus its hints and
+        // is the natural template. A fix belongs here, inside this
+        // transaction, and must copy - idempotently - the template's fields,
+        // their options and validations, its document types, their current
+        // mappings AND their metadata_field_label_aliases rows, remapping
+        // every field_id/document_type_id (and parent_option_id) onto the new
+        // tenant's own rows, since every FK involved is tenant-scoped.
         if (tenantRepository.existsByDomainAndDeletedFalse(request.domain())) {
             throw new DuplicateResourceException("A tenant already exists for domain " + request.domain());
         }

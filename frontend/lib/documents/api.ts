@@ -20,6 +20,18 @@ export interface DocumentVersionResponse {
 export type MetadataValues = Record<string, string | string[]>
 
 /**
+ * Mirrors com.oak.dms.document.dto.DocumentMetadataResponse. `needsReview`
+ * is the set of field keys whose current value is a low-confidence OCR
+ * extraction (written, not suppressed -- see that DTO's own doc comment) --
+ * the caller should visually flag these rather than presenting them as
+ * indistinguishable from a confident value.
+ */
+export interface DocumentMetadataResponse {
+  values: MetadataValues
+  needsReview: string[]
+}
+
+/**
  * Uploads a file as a new document's first version. `documentType` picks
  * which zone/field template (if any) ocr-worker applies -- see
  * backend/workers/ocr-worker's README "Zone / structured-field templates".
@@ -62,13 +74,14 @@ export async function uploadDocument(
   )
 }
 
-/** Current saved metadata field values for a document (field_key -> value). */
-export async function fetchDocumentMetadata(documentId: string): Promise<MetadataValues> {
+/** Current saved metadata field values for a document, plus which of them
+ * still need human review (see `DocumentMetadataResponse`). */
+export async function fetchDocumentMetadata(documentId: string): Promise<DocumentMetadataResponse> {
   return apiFetchJson(`${API_BASE_URL}/api/v1/documents/${documentId}/metadata`, undefined, "Could not load this document's fields.")
 }
 
 /** Replaces the given field keys' saved values; returns the full saved state. */
-export async function saveDocumentMetadata(documentId: string, values: MetadataValues): Promise<MetadataValues> {
+export async function saveDocumentMetadata(documentId: string, values: MetadataValues): Promise<DocumentMetadataResponse> {
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents/${documentId}/metadata`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) },
@@ -92,7 +105,20 @@ export interface OcrFieldResult {
   confidence: number | null
   source: { page: number; bbox: [number, number, number, number] } | null
   status: "extracted" | "not_found" | "low_confidence"
+  /**
+   * How ocr-worker found this value -- or, for `not_found`, what it searched
+   * for: `label_hint` (one of the field's configured OCR label hints),
+   * `field_name` (the field had NO hints, so it fell back to looking for the
+   * field's own label -- surfaced in the UI so that fallback is never
+   * silent), `zone` (a zone-template region), `pattern` (a value-shape match
+   * such as a bare date, with no label), `generated` (derived from the whole
+   * text, e.g. a summary or detected language). `null` for results recorded
+   * before this was tracked.
+   */
+  matchBasis: OcrMatchBasis | null
 }
+
+export type OcrMatchBasis = "label_hint" | "field_name" | "zone" | "pattern" | "generated"
 
 export interface OcrStatusResponse {
   id: string

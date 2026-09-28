@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
+import com.oak.dms.document.dto.DocumentMetadataResponse;
 import com.oak.dms.document.dto.DocumentVersionResponse;
 import com.oak.dms.document.dto.OcrRerunRequest;
 import com.oak.dms.document.dto.OcrRerunResponse;
@@ -108,10 +109,11 @@ public class DocumentController {
     }
 
     @Operation(summary = "Get a document's currently saved metadata field values",
-            description = "field_key -> value (a String, or a List<String> for a multi_select field). "
-                    + "A field with no saved value is simply absent from the response.")
+            description = "values: field_key -> value (a String, or a List<String> for a multi_select "
+                    + "field) -- a field with no saved value is simply absent. needsReview: field keys "
+                    + "whose current value is a low-confidence OCR extraction the caller should verify.")
     @GetMapping("/{documentId}/metadata")
-    public Map<String, Object> getMetadata(@PathVariable UUID documentId) {
+    public DocumentMetadataResponse getMetadata(@PathVariable UUID documentId) {
         return documentMetadataService.getValues(documentId);
     }
 
@@ -120,7 +122,7 @@ public class DocumentController {
                     + "body, validated against the document type's mandatory fields. Returns the full "
                     + "saved state (same shape as GET).")
     @PutMapping("/{documentId}/metadata")
-    public Map<String, Object> saveMetadata(@PathVariable UUID documentId, @RequestBody Map<String, Object> values) {
+    public DocumentMetadataResponse saveMetadata(@PathVariable UUID documentId, @RequestBody Map<String, Object> values) {
         documentMetadataService.saveValues(documentId, values, true);
         return documentMetadataService.getValues(documentId);
     }

@@ -64,6 +64,9 @@ def _normalize_number(token: str) -> str:
 
 def _parse_dates(text: str) -> set[date]:
     found: set[date] = set()
+    # OCR also glues day and month ("15March 2026"): split digit/letter
+    # boundaries so the spelled-out-month forms below still parse.
+    text = re.sub(r"(?<=\d)(?=[A-Za-z]{3})|(?<=[A-Za-z])(?=\d)", " ", text)
     for match in _DATE_CANDIDATE.finditer(text):
         raw = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", match.group(0)).replace(",", "").replace(".", " " if " " in match.group(0) else ".")
         raw = re.sub(r"\s+", " ", raw).strip()

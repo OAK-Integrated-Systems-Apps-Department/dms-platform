@@ -5,17 +5,19 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED
-from .extraction import RequestedFieldResult
+from .extraction import LabelAliasRow, LabelFieldRow, LabelVocabulary, RequestedFieldResult, build_label_vocabulary
 from .models import (
     Document,
     DocumentOcrFieldResult,
     DocumentType,
     DocumentTypeOcrZone,
     DocumentVersion,
+    MetadataField,
+    MetadataFieldLabelAlias,
     OcrOutput,
     OutboxEvent,
     ProcessingJob,
@@ -97,6 +99,58 @@ class OcrRepository:
             )
             for row in rows
         ]
+
+    def get_label_vocabulary(
+        self, *, tenant_id: uuid.UUID, document_type_id: uuid.UUID, field_keys: list[str]
+    ) -> LabelVocabulary:
+        """The tenant's OCR label hints for one document, resolved into an
+        immutable LabelVocabulary -- ONE query: every non-deleted catalog
+        field of this tenant (any status -- an inactive field's hints are
+        still a real label that can sit next to an active field's value, so
+        they still belong in the stop set), LEFT JOINed to its hint rows, so
+        a field with no hints still comes back (its label is the field-name
+        fallback). tenant_id is filtered explicitly on both tables even
+        though the composite foreign key already implies it for the hints --
+        this worker has no request-scoped tenant context of its own to lean
+        on, so every read names its tenant. Hints scoped to other document
+        types come back too and are dropped by build_label_vocabulary,
+        which owns every resolution rule so they're unit-tested without a
+        database; this method only fetches and reshapes rows.
+        """
+        rows = self.session.execute(
+            select(
+                MetadataField.field_id,
+                MetadataField.field_key,
+                MetadataField.label,
+                MetadataFieldLabelAlias.document_type_id,
+                MetadataFieldLabelAlias.alias_text,
+                MetadataFieldLabelAlias.display_order,
+            )
+            .select_from(MetadataField)
+            .outerjoin(
+                MetadataFieldLabelAlias,
+                and_(
+                    MetadataFieldLabelAlias.field_id == MetadataField.field_id,
+                    MetadataFieldLabelAlias.tenant_id == tenant_id,
+                ),
+            )
+            .where(MetadataField.tenant_id == tenant_id, MetadataField.is_deleted.is_(False))
+            .order_by(MetadataField.field_key, MetadataFieldLabelAlias.display_order)
+        ).all()
+
+        field_rows: dict[uuid.UUID, LabelFieldRow] = {}
+        alias_rows: list[LabelAliasRow] = []
+        for row in rows:
+            field_rows.setdefault(row.field_id, LabelFieldRow(row.field_id, row.field_key, row.label))
+            if row.alias_text is not None:
+                alias_rows.append(LabelAliasRow(row.field_id, row.document_type_id, row.alias_text, row.display_order))
+
+        return build_label_vocabulary(
+            document_type_id=document_type_id,
+            field_rows=field_rows.values(),
+            alias_rows=alias_rows,
+            requested_keys=field_keys,
+        )
 
     def start_job(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, correlation_id: uuid.UUID | None) -> ProcessingJob:
         job = ProcessingJob(
@@ -180,6 +234,7 @@ class OcrRepository:
                 existing.status = result.status
                 existing.source_page = result.page
                 existing.source_bbox = bbox
+                existing.match_basis = result.match_basis
                 existing.updated_at = now
             else:
                 self.session.add(
@@ -193,6 +248,7 @@ class OcrRepository:
                         status=result.status,
                         source_page=result.page,
                         source_bbox=bbox,
+                        match_basis=result.match_basis,
                     )
                 )
         self.session.flush()

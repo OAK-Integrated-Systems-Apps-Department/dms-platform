@@ -55,6 +55,20 @@ public class DocumentVersion {
     @Column(name = "version_label")
     private String versionLabel;
 
+    /**
+     * FK into {@code storage_locations}, added by the pluggable-storage
+     * feature's V32 (merged in from develop to resolve a migration-
+     * numbering collision -- see V39's own comment). This branch has no
+     * pluggable-storage abstraction of its own (a single, non-pluggable
+     * MinIO-backed {@link com.oak.dms.storage.ObjectStorageService}, not a
+     * {@code StorageLocation}/factory/resolver setup) and never reads this
+     * value back -- every row here always points at V39's one fixed
+     * platform-default row ({@code DocumentServiceImpl#PLATFORM_DEFAULT_STORAGE_LOCATION_ID}),
+     * purely to satisfy the column's NOT NULL constraint.
+     */
+    @Column(name = "storage_location_id", nullable = false)
+    private UUID storageLocationId;
+
     @Column(name = "storage_object_key", nullable = false)
     private String storageObjectKey;
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
+import { LabelHintsInput } from "./label-hints-input"
 import {
   createMetadataFieldSchema,
   updateMetadataFieldSchema,
@@ -24,6 +25,94 @@ const FLAG_FIELDS: { name: "searchable" | "ocrExtractable"; label: string; hint:
   { name: "searchable", label: "Searchable", hint: "Included in full-text/metadata search results" },
   { name: "ocrExtractable", label: "OCR Extractable", hint: "Can be auto-populated from OCR text" },
 ]
+
+const LABEL_HINTS_INPUT_ID = "field-label-aliases"
+
+/**
+ * Keeps the Create/Edit form from submitting while the Label hints input
+ * still holds text it refused (too short, no letter/digit, over the 20-hint
+ * cap…). The input commits whatever is typed on blur, so by the time a
+ * Submit click lands anything acceptable is already a chip — what's left
+ * was refused, with its reason showing under the input. Submitting anyway
+ * would silently drop it (and the create page navigates straight to the
+ * list, so the user never gets to fix it). The Fields tab's "Hints for this
+ * type" Save refuses in the same situation, so the two hint surfaces agree.
+ *
+ * Refs, not state: the text is only ever read from the submit handler, and
+ * the blur that sets it lands just before the submit in the same click.
+ */
+function usePendingLabelHintGuard(showError: (message: string | null) => void) {
+  const pendingTextRef = useRef("")
+  const blockedRef = useRef(false)
+
+  return {
+    onPendingTextChange(text: string) {
+      pendingTextRef.current = text
+      // Cleared without being committed as a chip: nothing is being dropped
+      // any more. (Committing one clears the error through the form's own
+      // re-validation of labelAliases instead.)
+      if (blockedRef.current && !text.trim()) {
+        blockedRef.current = false
+        showError(null)
+      }
+    },
+    /** Call from the submit handlers; `true` means "don't submit". */
+    blockIfPending(): boolean {
+      const pending = pendingTextRef.current.trim()
+      if (!pending) return false
+      blockedRef.current = true
+      showError(`“${pending}” hasn't been added as a hint — fix it or clear it before saving.`)
+      document.getElementById(LABEL_HINTS_INPUT_ID)?.focus()
+      return true
+    },
+  }
+}
+
+/**
+ * The field's GLOBAL OCR label hints — applied wherever this field is
+ * mapped. Its helper text deliberately names the other surface (a document
+ * type's Fields tab, "Hints for this type") so nobody adds a hint here that
+ * only makes sense for one type: a bare "Number" is right for a Purchase
+ * Order's PO number, but on an Invoice it would grab the invoice number.
+ * That tab's helper text points back here in the same way.
+ */
+function GlobalLabelHintsInput({
+  value,
+  onChange,
+  onBlur,
+  onPendingTextChange,
+  error,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  onBlur: () => void
+  onPendingTextChange: (text: string) => void
+  error?: string
+}) {
+  return (
+    <div className="mt-5">
+      <Label htmlFor={LABEL_HINTS_INPUT_ID}>
+        Label hints <span className="text-[var(--ink-faint)] normal-case">(optional)</span>
+      </Label>
+      <LabelHintsInput
+        id={LABEL_HINTS_INPUT_ID}
+        value={value}
+        onChange={onChange}
+        onBlur={onBlur}
+        onInputChange={onPendingTextChange}
+        placeholder="Type a hint, then press Enter or comma"
+        aria-invalid={Boolean(error)}
+        aria-describedby="field-label-aliases-help"
+      />
+      {error && <p className="mt-1.5 text-[12px] text-destructive">{error}</p>}
+      <p id="field-label-aliases-help" className="mt-1.5 text-[12px] leading-[1.5] text-muted-foreground">
+        Words this field may appear as on documents, for every document type that uses it. Tried in order — put the
+        most specific first. Leave empty to match on the field&apos;s label. To add hints for just one document type,
+        use that type&apos;s Fields tab.
+      </p>
+    </div>
+  )
+}
 
 interface CreateFieldFormProps {
   onSubmit: (values: CreateMetadataFieldFormValues) => Promise<string | null>
@@ -38,6 +127,8 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<CreateMetadataFieldFormValues>({
     resolver: zodResolver(createMetadataFieldSchema),
@@ -49,10 +140,15 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
       defaultValue: "",
       searchable: true,
       ocrExtractable: false,
+      labelAliases: [],
     },
   })
+  const pendingHintGuard = usePendingLabelHintGuard((message) =>
+    message ? setError("labelAliases", { type: "manual", message }) : clearErrors("labelAliases")
+  )
 
   async function handleFormSubmit(values: CreateMetadataFieldFormValues) {
+    if (pendingHintGuard.blockIfPending()) return
     setSubmitError(null)
     const error = await onSubmit(values)
     if (error) setSubmitError(error)
@@ -60,7 +156,8 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
 
   return (
     <form
-      onSubmit={handleSubmit(handleFormSubmit)}
+      // The invalid branch checks too, so a refused hint is flagged alongside any other field's error rather than only on the next attempt.
+      onSubmit={handleSubmit(handleFormSubmit, () => pendingHintGuard.blockIfPending())}
       className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       {submitError && (
@@ -140,6 +237,20 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
         ))}
       </div>
 
+      <Controller
+        name="labelAliases"
+        control={control}
+        render={({ field }) => (
+          <GlobalLabelHintsInput
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            onPendingTextChange={pendingHintGuard.onPendingTextChange}
+            error={errors.labelAliases?.message}
+          />
+        )}
+      />
+
       <hr className="my-6 border-dashed border-border" />
 
       <div className="flex items-center justify-end gap-2.5">
@@ -179,13 +290,19 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<UpdateMetadataFieldFormValues>({
     resolver: zodResolver(updateMetadataFieldSchema),
     defaultValues,
   })
+  const pendingHintGuard = usePendingLabelHintGuard((message) =>
+    message ? setError("labelAliases", { type: "manual", message }) : clearErrors("labelAliases")
+  )
 
   async function handleFormSubmit(values: UpdateMetadataFieldFormValues) {
+    if (pendingHintGuard.blockIfPending()) return
     setSubmitError(null)
     const error = await onSubmit(values)
     if (error) setSubmitError(error)
@@ -193,7 +310,8 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
 
   return (
     <form
-      onSubmit={handleSubmit(handleFormSubmit)}
+      // See CreateMetadataFieldForm: the invalid branch checks too.
+      onSubmit={handleSubmit(handleFormSubmit, () => pendingHintGuard.blockIfPending())}
       className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       {submitError && (
@@ -240,6 +358,20 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
           />
         ))}
       </div>
+
+      <Controller
+        name="labelAliases"
+        control={control}
+        render={({ field }) => (
+          <GlobalLabelHintsInput
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            onPendingTextChange={pendingHintGuard.onPendingTextChange}
+            error={errors.labelAliases?.message}
+          />
+        )}
+      />
 
       <hr className="my-6 border-dashed border-border" />
 

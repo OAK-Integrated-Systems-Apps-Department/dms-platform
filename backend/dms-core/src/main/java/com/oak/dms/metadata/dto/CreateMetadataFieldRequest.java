@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 /**
  * Request body for adding a new field to the tenant's metadata schema
  * registry. {@code dataType} is validated against
@@ -34,6 +36,11 @@ public record CreateMetadataFieldRequest(
         String defaultValue,
 
         boolean searchable,
-        boolean ocrExtractable
+        boolean ocrExtractable,
+
+        // Optional global OCR label hints, in priority order; null/omitted =
+        // none (the matcher then falls back to the field's own label).
+        // Normalized/validated in the service layer - see LabelAliasNormalizer.
+        List<String> labelAliases
 ) {
 }

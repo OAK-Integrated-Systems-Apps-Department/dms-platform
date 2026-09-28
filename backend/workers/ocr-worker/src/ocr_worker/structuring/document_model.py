@@ -257,9 +257,11 @@ def build_normalized_document(pages: list[dict], *, include_bboxes: bool = True,
         else:
             segments = _segments_outside_tables(page.get("blocks") or [], page.get("tables") or [])
         page_lines: list[Line] = []
-        for row in _group_rows(segments):
+        rows = _group_rows(segments)
+        median_height = _median_line_height(rows)
+        for row in rows:
             line_counter += 1
-            line = Line(id=f"L{line_counter}", page=number, segments=row, kind=_line_kind(row, source))
+            line = Line(id=f"L{line_counter}", page=number, segments=row, kind=_line_kind(row, source, median_height))
             page_lines.append(line)
         lines.extend(page_lines)
         key_values.extend(_key_value_candidates(page_lines))
@@ -346,7 +348,7 @@ def _group_rows(segments: list[Segment]) -> list[list[Segment]]:
     rows: list[list[Segment]] = []
     for segment in positioned:
         target = None
-        if len(segment.text) <= _MAX_ROW_SEGMENT_CHARS and segment.label not in HEADING_LABELS:
+        if len(segment.text) <= _MAX_ROW_SEGMENT_CHARS:
             for row in rows[-2:]:
                 if _row_accepts(row, segment):
                     target = row
@@ -361,7 +363,7 @@ def _group_rows(segments: list[Segment]) -> list[list[Segment]]:
 
 
 def _row_accepts(row: list[Segment], segment: Segment) -> bool:
-    if any(len(s.text) > _MAX_ROW_SEGMENT_CHARS or s.label in HEADING_LABELS for s in row):
+    if any(len(s.text) > _MAX_ROW_SEGMENT_CHARS for s in row) or not _heading_mix_allowed(row + [segment]):
         return False
     top = min(s.bbox[1] for s in row)
     bottom = max(s.bbox[3] for s in row)
@@ -374,7 +376,20 @@ def _row_accepts(row: list[Segment], segment: Segment) -> bool:
     return all(segment.bbox[0] >= s.bbox[2] - 2 or segment.bbox[2] <= s.bbox[0] + 2 for s in row)
 
 
-def _line_kind(row: list[Segment], source: str) -> str:
+def _heading_mix_allowed(segments: list[Segment]) -> bool:
+    """A heading normally stands alone on its row. The exception is a
+    heading-labelled block beside a value: Docling labels totals such as
+    "Total net item value excl tax" as section headers (verified on a real
+    purchase order), and the amount at the far right of the same row is
+    that label's value -- splitting them would orphan the amount."""
+    headings = [s for s in segments if s.label in HEADING_LABELS]
+    if not headings:
+        return True
+    others = [s for s in segments if s.label not in HEADING_LABELS]
+    return len(headings) == 1 and bool(others) and all(any(ch.isdigit() for ch in s.text) for s in others)
+
+
+def _line_kind(row: list[Segment], source: str, median_height: float | None = None) -> str:
     if len(row) == 1:
         label = row[0].label
         if label == "title":
@@ -387,7 +402,33 @@ def _line_kind(row: list[Segment], source: str) -> str:
             return label
         if label is None and source != "native_text" and _looks_like_heading(row[0].text):
             return "heading"
+        if label in (None, "text") and median_height and _is_tall_short_line(row[0], median_height):
+            return "heading"
     return "text"
+
+
+def _is_tall_short_line(segment: Segment, median_height: float) -> bool:
+    """A section title without a Docling label (every OCR page, and
+    headings Docling classed as plain text): short, no colon or value, and
+    set in visibly larger type than the page's typical line. Verified on
+    PaddleOCR and PyMuPDF output: 13pt headings over 11pt body text come
+    back ~1.2-1.4x taller."""
+    if not segment.bbox:
+        return False
+    text = segment.text
+    height = segment.bbox[3] - segment.bbox[1]
+    return (
+        height >= 1.15 * median_height
+        and len(text.split()) <= 6
+        and ":" not in text
+        and not any(c.isdigit() for c in text)
+        and any(c.isalpha() for c in text)
+    )
+
+
+def _median_line_height(rows: list[list[Segment]]) -> float | None:
+    heights = sorted(s.bbox[3] - s.bbox[1] for row in rows for s in row if s.bbox and s.bbox[3] > s.bbox[1])
+    return heights[len(heights) // 2] if len(heights) >= 5 else None
 
 
 def _looks_like_heading(text: str) -> bool:
@@ -427,16 +468,16 @@ def _key_value_candidates(page_lines: list[Line]) -> list[KeyValueCandidate]:
             label = _label_only(segment.text)
             if label is None:
                 continue
-            if j + 1 < len(segments):
-                value = segments[j + 1].text
-                # "Signature: | Date: 25/08/2026" -- the next segment is its
-                # own label/value pair, not this label's value.
-                if _label_only(value) is None and not _INLINE_KV_RE.match(value):
-                    candidates.append(KeyValueCandidate(label, value, line.page, line.id, line.id, "same_row"))
-            elif j == len(segments) - 1:
-                below = _value_below(line, segment, page_lines[index + 1] if index + 1 < len(page_lines) else None)
-                if below is not None:
-                    candidates.append(KeyValueCandidate(label, below.segments[0].text, line.page, line.id, below.id, "below"))
+            next_value = segments[j + 1].text if j + 1 < len(segments) else None
+            # "Signature: | Date: 25/08/2026" -- the next segment is its own
+            # label/value pair, not this label's value.
+            if next_value is not None and _label_only(next_value) is None and not _INLINE_KV_RE.match(next_value):
+                candidates.append(KeyValueCandidate(label, next_value, line.page, line.id, line.id, "same_row"))
+                continue
+            below = _value_below(segment, page_lines[index + 1] if index + 1 < len(page_lines) else None)
+            if below is not None:
+                below_line, below_segment = below
+                candidates.append(KeyValueCandidate(label, below_segment.text, line.page, line.id, below_line.id, "below"))
         # Two-box row without a colon ("Invoice Number    INV-0042"): a
         # short label-like box followed by a box containing a digit.
         if len(segments) == 2 and ":" not in segments[0].text and _is_label(segments[0].text) and len(segments[0].text.split()) <= 4:
@@ -446,18 +487,29 @@ def _key_value_candidates(page_lines: list[Line]) -> list[KeyValueCandidate]:
     return candidates
 
 
-def _value_below(line: Line, label_segment: Segment, next_line: Line | None) -> Line | None:
-    if next_line is None or not label_segment.bbox or not next_line.bbox:
-        return None
-    first = next_line.segments[0]
-    if not first.bbox or _label_only(first.text) is not None or _INLINE_KV_RE.match(first.text):
+def _value_below(label_segment: Segment, next_line: Line | None) -> tuple[Line, Segment] | None:
+    """The segment of the next line that sits in this label's column --
+    "Line Manager: | Work Location:" over "Nimal Fernando | Colombo Head
+    Office" pairs each label with the value under IT, not with the next
+    line's first part."""
+    if next_line is None or not label_segment.bbox:
         return None
     height = max(label_segment.bbox[3] - label_segment.bbox[1], 1)
-    gap = first.bbox[1] - label_segment.bbox[3]
-    horizontally_related = first.bbox[0] < label_segment.bbox[2] and first.bbox[2] > label_segment.bbox[0] - height
-    if 0 <= gap <= 2 * height and horizontally_related:
-        return next_line
+    lx0, lx1 = label_segment.bbox[0], label_segment.bbox[2]
+    for candidate in next_line.segments:
+        box = candidate.bbox
+        if not box or _label_only(candidate.text) is not None or _INLINE_KV_RE.match(candidate.text):
+            continue
+        gap = box[1] - label_segment.bbox[3]
+        same_column = box[0] < lx1 and box[2] > lx0 - height and abs(box[0] - lx0) <= max(3 * height, (lx1 - lx0))
+        if 0 <= gap <= 2 * height and same_column:
+            return next_line, candidate
     return None
+
+
+def _mostly_numeric(text: str) -> bool:
+    chars = [c for c in text if not c.isspace()]
+    return bool(chars) and sum(c.isdigit() for c in chars) >= len(chars) / 2
 
 
 def _build_table(raw: dict, *, table_id: str, page: int) -> Table | None:
@@ -512,6 +564,12 @@ def _build_table(raw: dict, *, table_id: str, page: int) -> Table | None:
     header_row_count = 0
     for r in range(num_rows):
         filled = [c for c in range(num_cols) if grid[r][c]]
+        # TableFormer can flag the first data row as a second header row
+        # (verified on a real purchase order: item number and quantity ended
+        # up merged into the headers as "Item# / 30043697"). A later "header"
+        # row holding numeric cells is data.
+        if r > 0 and any(_mostly_numeric(grid[r][c]) for c in filled):
+            break
         if filled and all(header_flags[r][c] for c in filled):
             header_row_count += 1
         else:
