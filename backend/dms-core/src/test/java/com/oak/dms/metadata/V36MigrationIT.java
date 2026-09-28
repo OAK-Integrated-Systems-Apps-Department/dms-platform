@@ -87,7 +87,7 @@ class V36MigrationIT {
             }
             assertThat(expectedContractV1Ids).hasSize(13);
 
-            migrate(url, "latest");
+            migrate(url, "36");
 
             try (Connection c = connect(url)) {
                 // Every live legacy row is in exactly one schema row, with identical values.
@@ -180,7 +180,7 @@ class V36MigrationIT {
                         + "values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'x')");
             }
 
-            assertThatThrownBy(() -> migrate(url, "latest"))
+            assertThatThrownBy(() -> migrate(url, "36"))
                     .hasStackTraceContaining("document_metadata_values is not empty");
             try (Connection c = connect(url)) {
                 assertThat(count(c, "select count(*) from document_metadata_values")).isEqualTo(1);

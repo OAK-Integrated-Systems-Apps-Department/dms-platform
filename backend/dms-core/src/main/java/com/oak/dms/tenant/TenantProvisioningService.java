@@ -5,6 +5,7 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
+import com.oak.dms.metadata.seed.TenantStarterCatalogService;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.tenant.dto.ProvisionTenantRequest;
@@ -33,8 +34,9 @@ import java.util.UUID;
  * easy to get wrong in a way that's invisible until the client's admin
  * can't log in (e.g. a mistyped tenant_id attribute).
  * <p>
- * <b>Failure handling:</b> the two DB writes (tenant, user) share one
- * Spring transaction and roll back together automatically. The two
+ * <b>Failure handling:</b> the DB writes (tenant, its starter metadata
+ * catalogue, user) share one Spring transaction and roll back together
+ * automatically. The two
  * Keycloak calls are not part of that transaction - Keycloak has no
  * concept of it - so once the Keycloak user exists, any later failure is
  * handled with an explicit compensating delete of that user rather than
@@ -54,6 +56,7 @@ public class TenantProvisioningService {
     private final KeycloakUserService keycloakUserService;
     private final PasswordResetService passwordResetService;
     private final AuditService auditService;
+    private final TenantStarterCatalogService starterCatalogService;
 
     @Transactional
     public TenantProvisioningResponse provisionTenant(ProvisionTenantRequest request) {
@@ -67,8 +70,13 @@ public class TenantProvisioningService {
                 .subscriptionTier(request.subscriptionTier())
                 .status(Tenant.TenantStatus.active)
                 .build();
-        tenant = tenantRepository.save(tenant);
+        // Flushed so the tenants row exists before the catalogue rows that
+        // reference it. Installed before any Keycloak call, so a failure here
+        // rolls back with the rest of this transaction and leaves nothing
+        // outside the database to clean up.
+        tenant = tenantRepository.saveAndFlush(tenant);
         UUID tenantId = tenant.getTenantId();
+        starterCatalogService.install(tenantId);
 
         // Creates the Keycloak user and sets an unguessable temporary
         // password nobody is told - same as a normal user invite (see
