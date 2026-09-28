@@ -44,7 +44,7 @@ class V37MigrationIT {
                         .isEqualTo(25);
             }
 
-            migrate(url, "latest");
+            migrate(url, "37");
 
             try (Connection c = connect(url)) {
                 assertThat(count(c, "select count(*) from tenants where tenant_id = '" + PLATFORM_TENANT + "'")).isZero();
@@ -78,7 +78,7 @@ class V37MigrationIT {
             migrate(url, "36");
             UUID tenantId = insertTenant(url);
 
-            migrate(url, "latest");
+            migrate(url, "37");
 
             try (Connection c = connect(url)) {
                 assertThat(count(c, "select count(*) from metadata_fields where tenant_id = ?", tenantId)).isEqualTo(25);
@@ -120,7 +120,7 @@ class V37MigrationIT {
                 before = catalogSnapshot(c, tenantId);
             }
 
-            migrate(url, "latest");
+            migrate(url, "37");
 
             try (Connection c = connect(url)) {
                 assertThat(catalogSnapshot(c, tenantId)).containsAll(before);
@@ -168,7 +168,7 @@ class V37MigrationIT {
                 assertThat(count(c, "select count(*) from metadata_fields where tenant_id = ?", tenantId)).isEqualTo(25);
             }
 
-            migrate(url, "latest");
+            migrate(url, "37");
 
             try (Connection c = connect(url)) {
                 assertThat(catalogSnapshot(c, tenantId)).isEqualTo(before);
@@ -189,7 +189,7 @@ class V37MigrationIT {
                 s.execute("update tenants set created_by = '" + SYSTEM_USER + "' where tenant_id = '" + tenantId + "'");
             }
 
-            migrate(url, "latest");
+            migrate(url, "37");
 
             try (Connection c = connect(url)) {
                 assertThat(strings(c, "select coalesce(created_by::text, 'null') || ',' || coalesce(updated_by::text, 'null') "
@@ -235,7 +235,7 @@ class V37MigrationIT {
                 s.execute(blockerSql);
             }
 
-            assertThatThrownBy(() -> migrate(url, "latest")).hasStackTraceContaining(expectedMessage);
+            assertThatThrownBy(() -> migrate(url, "37")).hasStackTraceContaining(expectedMessage);
 
             try (Connection c = connect(url)) {
                 assertThat(count(c, "select count(*) from tenants where tenant_id = '" + PLATFORM_TENANT + "'")).isEqualTo(1);

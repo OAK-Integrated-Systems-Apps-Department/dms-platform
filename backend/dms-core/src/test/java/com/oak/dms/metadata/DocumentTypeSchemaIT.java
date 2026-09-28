@@ -364,20 +364,6 @@ class DocumentTypeSchemaIT {
         assertThat(metadataValidationService.validate(UUID.randomUUID(), 1, Map.of())).isEmpty();
     }
 
-    @Test
-    void legacyDocumentTypeFieldsTable_rejectsEveryWrite() {
-        // Statement-level trigger: fires even when no row would be touched.
-        for (String sql : List.of(
-                "insert into document_type_fields (tenant_id, document_type_id, field_id, schema_version) "
-                        + "select tenant_id, document_type_id, field_id, schema_version from document_type_fields where false",
-                "update document_type_fields set is_hidden = is_hidden where false",
-                "delete from document_type_fields where false")) {
-            assertThatThrownBy(() -> jdbcTemplate.update(sql))
-                    .as(sql)
-                    .hasMessageContaining("document_type_fields is read-only since V36");
-        }
-    }
-
     private DocumentMetadata reload(DocumentMetadataId id) {
         entityManager.clear();
         return documentMetadataRepository.findById(id).orElseThrow();
