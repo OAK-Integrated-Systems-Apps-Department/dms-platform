@@ -21,7 +21,7 @@ import java.util.UUID;
 /**
  * A single entry in the tenant's centralized metadata schema registry
  * (MDTM-FR-001) - the reusable catalog of typed fields that
- * {@link DocumentTypeField} draws from to build each document type's form.
+ * {@link DocumentTypeSchema} draws from to build each document type's form.
  */
 @Entity
 @Table(name = "metadata_fields", uniqueConstraints = {

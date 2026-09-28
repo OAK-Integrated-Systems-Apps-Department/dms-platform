@@ -4,6 +4,7 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.metadata.seed.TenantStarterCatalogService;
 import com.oak.dms.tenant.dto.CreateTenantRequest;
 import com.oak.dms.tenant.dto.UpdateTenantRequest;
 import com.oak.dms.tenant.dto.TenantResponse;
@@ -34,6 +35,7 @@ public class TenantServiceImpl implements TenantService {
     private final TenantRepository tenantRepository;
     private final TenantMapper tenantMapper;
     private final AuditService auditService;
+    private final TenantStarterCatalogService starterCatalogService;
 
     @Override
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -48,7 +50,10 @@ public class TenantServiceImpl implements TenantService {
                 .status(Tenant.TenantStatus.active)
                 .build();
 
-        Tenant saved = tenantRepository.save(tenant);
+        // Flushed so the tenants row exists before the catalogue rows that
+        // reference it; neither has a JPA association to the other.
+        Tenant saved = tenantRepository.saveAndFlush(tenant);
+        starterCatalogService.install(saved.getTenantId());
         log.info("Created tenant {} ({})", saved.getTenantId(), saved.getDomain());
 
         // platformLevel() - this event isn't about the caller's own tenant
