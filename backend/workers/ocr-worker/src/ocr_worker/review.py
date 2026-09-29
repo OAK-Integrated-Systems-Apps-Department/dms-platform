@@ -45,6 +45,18 @@ class ReviewDecision:
         out: dict = {"requires_review": self.requires_review}
         if self.reasons:
             out["reasons"] = self.reasons
+        if self.poor_quality_pages:
+            # A DOCUMENT-level summary of the per-page flag, not a
+            # duplicate of it. Consumers ask "does this document need
+            # re-scanning?" and should not have to scan `pages[]` to find
+            # out -- `poor_quality_pages` below then says which ones.
+            #
+            # Its absence was a real gap: `eval/run.py` scores the quality
+            # flag from exactly this key, so with only the per-page flag
+            # set it recorded 45 false negatives and 0.0 recall on the
+            # corpus -- the gate looked calibrated-and-failing when in
+            # fact it was reading a key nobody wrote.
+            out["poor_image_quality"] = True
         if self.missing_mandatory:
             out["missing_mandatory"] = self.missing_mandatory
         if self.validation_failures:

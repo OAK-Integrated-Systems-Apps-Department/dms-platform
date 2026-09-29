@@ -223,3 +223,22 @@ def test_the_letterhead_fallback_returns_the_whole_company_line():
     assert result.value == "Contoso Supplies PLC"
     # A positional guess, never silently trusted.
     assert result.status == "low_confidence"
+
+
+def test_a_document_level_poor_image_quality_summary_is_emitted():
+    """`eval/run.py` scores the quality flag from the DOCUMENT-level
+    `flags.poor_image_quality`. With only the per-page flag set it saw 45
+    false negatives and 0.0 recall -- a gate reading a key nobody wrote."""
+    class Page:
+        page_number = 2
+        flags = {"poor_image_quality": True}
+
+    out = review.decide(pages=[Page()]).to_dict()
+    assert out["poor_image_quality"] is True
+    assert out["poor_quality_pages"] == [2]
+
+
+def test_a_clean_document_has_no_poor_image_quality_key_at_all():
+    """Absent, not False: `flags` carries only what is true."""
+    out = review.decide(pages=[type("P", (), {"page_number": 1, "flags": {}})()]).to_dict()
+    assert "poor_image_quality" not in out

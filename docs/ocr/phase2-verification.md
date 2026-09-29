@@ -1503,17 +1503,20 @@ OCR sees and has to be justified by a before/after eval per section 5.
 | suite | before Phase 2 | now |
 |---|---|---|
 | ocr-worker `pytest` | 183 passed, 2 deselected | **588 passed**, 2 deselected |
-| dms-core `mvn test` | 41 passed | **59 passed** |
+| dms-core `mvn test` | 41 passed | **61 passed** |
 | dms-core `*IT` | 2 passed | **2 + `OcrFieldsReconcilerIT` (4) passed** |
 | frontend `vitest` | 20 passed | 20 passed (untouched) |
 
-`pytest` re-run after Step 5 and the rotation work (524 passed, 18.2s).
-New: `test_quality.py` (23) and `test_rotation_and_table_bound.py` (17),
-plus three rewritten timeout tests that pin the new in-worker retry
-contract.
+`pytest` re-run after Phase 3 a-f (588 passed). New in Phase 2:
+`test_quality.py` and `test_rotation_and_table_bound.py`, plus rewritten
+timeout tests pinning the in-worker retry contract. New in Phase 3:
+`test_field_confidence_and_review.py` (30) and `test_line_items.py` (22).
 
-The dms-core rows are as recorded when this document was written and were not
-re-run that day — nothing in dms-core changed after them.
+The dms-core rows were re-run on 2026-09-29 after V39: **61 passed, 0
+failures** with the database reachable. Run without one, `contextLoads`
+errors on a `PSQLException` -- an environment failure, not a regression;
+it is also the test that proves V39 applies, since the context only loads
+if Flyway ran.
 
 New ocr-worker tests: `test_eval_metrics.py` (25 — the harness's own
 scoring, hand-computed rather than golden-file, because a bug in it would
@@ -1631,8 +1634,8 @@ that had never finished inside its budget, completed.
 
 | scope | figure |
 |---|---|
-| ocr-worker peak, over the run | **5.14 GiB** against its 8.5 GiB limit (60%) |
-| ocr-worker steady state | 4.23 GiB |
+| ocr-worker peak | **7.33 GiB** against its 8.5 GiB limit (86%) |
+| ocr-worker steady state | 4.23-4.53 GiB |
 | **whole stack, steady state** | **~4.94 GiB** across 8 containers |
 | **whole stack, provision for** | **~9.2 GiB** — ocr-worker's 8.5 GiB limit plus ~0.7 GiB for everything else |
 
@@ -1643,13 +1646,24 @@ limit set**, and it is 96% of the stack's budget — the other seven run
 unbounded against the host, which is fine for dev and is something a
 production deployment should set explicitly rather than inherit.
 
-One inconsistency worth stating rather than smoothing: the sampler
-reports `peak 5.136 GiB` (from the kernel's `memory.peak`) alongside
-`p95 5.521 GiB` (from sampled `memory.current`). p95 should not exceed a
-high-water mark. `peak_was_reset_first` is false because `/sys/fs/cgroup`
-is read-only in these containers, so the two are not measured over
-identical windows. Treat ~5.5 GiB as the honest upper bound for this run;
-either way it sits well inside the limit, where earlier runs sat at 6.8.
+**A correction, and the bug behind it.** This section first published
+`peak 5.136 GiB`, taken from a sampler run whose window spanned a
+`--force-recreate`. `memory.peak` is a property of the RUNNING container
+and resets when it is recreated, so that sampler read a counter that had
+started over while its own samples still held the previous container's
+higher readings -- and reported a peak BELOW its own p95, which is
+impossible. The real figure, read from the container that actually ran
+the close-out, is **7.33 GiB**.
+
+`scripts/dev/container_memory_sampler.sh` now takes the greater of the
+kernel counter and the largest observed sample, records `peak_source` so
+a reset is visible, and emits an explicit `INVARIANT_VIOLATED` key if p95
+ever exceeds peak again.
+
+One honesty caveat on the 7.33 GiB itself: that container's lifetime
+covers the close-out run **plus about thirteen minutes** of the worker
+chewing through leftover queued jobs from the earlier interrupted runs.
+It is a sound UPPER BOUND for the run, not an exact attribution to it.
 
 ## What Phase 2 delivered
 

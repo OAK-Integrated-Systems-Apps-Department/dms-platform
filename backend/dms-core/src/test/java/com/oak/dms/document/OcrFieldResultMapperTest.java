@@ -96,4 +96,45 @@ class OcrFieldResultMapperTest {
     void anEmptyInputProducesAnEmptyMapRatherThanNull() {
         assertThat(OcrFieldResultMapper.toOcrFieldsRaw(List.of())).isEmpty();
     }
+
+    /**
+     * V39 added {@code raw_value}. The metadata value must stay the NORMALISED
+     * one: a {@code date} field handed "10/08/2026" instead of "2026-08-10"
+     * fails to parse in DocumentMetadataServiceImpl and the field silently
+     * stays blank -- the exact failure normalisation exists to prevent.
+     */
+    @Test
+    void rawValueIsCarriedOnTheRowButNeverBecomesTheMetadataValue() {
+        DocumentOcrFieldResult dateRow = DocumentOcrFieldResult.builder()
+                .fieldResultId(UUID.randomUUID())
+                .fieldKey("invoice_date")
+                .value("2026-08-10")
+                .rawValue("10/08/2026")
+                .status("extracted")
+                .confidence(BigDecimal.valueOf(0.9))
+                .build();
+
+        assertThat(dateRow.getRawValue()).isEqualTo("10/08/2026");
+
+        Map<String, Object> out = OcrFieldResultMapper.toOcrFieldsRaw(List.of(dateRow));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> entry = (Map<String, Object>) out.get("invoice_date");
+        assertThat(entry).containsEntry("value", "2026-08-10");
+        assertThat(entry).doesNotContainKey("raw_value");
+        assertThat(entry).doesNotContainKey("rawValue");
+    }
+
+    /**
+     * A row written before Phase 3 has no raw_value. It must map exactly as it
+     * always did -- the column is additive, not a new requirement.
+     */
+    @Test
+    void aPrePhase3RowWithNoRawValueMapsUnchanged() {
+        Map<String, Object> out = OcrFieldResultMapper.toOcrFieldsRaw(
+                List.of(row("invoice_number", "INV-1", "extracted", 0.93)));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> entry = (Map<String, Object>) out.get("invoice_number");
+        assertThat(entry).containsEntry("value", "INV-1");
+    }
 }

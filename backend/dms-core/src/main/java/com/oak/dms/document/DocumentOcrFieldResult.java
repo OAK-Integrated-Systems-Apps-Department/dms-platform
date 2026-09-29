@@ -53,6 +53,22 @@ public class DocumentOcrFieldResult {
     @Column(name = "value")
     private String value;
 
+    /**
+     * The string as ocr-worker read it off the page, before normalisation (V39).
+     * Equal to {@link #value} for every field that is not normalised; differs for
+     * dates, where {@code value} is ISO and this is what the document printed.
+     * <p>
+     * Deliberately NOT consumed by {@link OcrFieldResultMapper}: a metadata value
+     * must be the normalised one, or a {@code date} field would receive
+     * "10/08/2026" and fail to parse. This exists for the Phase 4 review screen,
+     * where showing a reviewer the ISO date alone gives them no way to judge a
+     * day-first/month-first reading.
+     * <p>
+     * NULL on rows written before Phase 3.
+     */
+    @Column(name = "raw_value")
+    private String rawValue;
+
     @Column(name = "confidence")
     private BigDecimal confidence;
 
