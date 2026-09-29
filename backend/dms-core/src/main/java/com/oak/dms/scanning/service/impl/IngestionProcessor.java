@@ -5,6 +5,7 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.scanning.dto.ScanTarget;
+import com.oak.dms.scanning.dto.ThreatQuarantinedEvent;
 import com.oak.dms.scanning.dto.ScanVerdict;
 import com.oak.dms.scanning.entity.QuarantineRecord;
 import com.oak.dms.scanning.entity.ScanEngine;
@@ -28,6 +29,7 @@ import com.oak.dms.storage.exception.StorageException;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -75,6 +77,8 @@ public class IngestionProcessor {
     private final DocumentPromoter documentPromoter;
     private final AuditService auditService;
     private final ScanProperties scanProperties;
+    private final ReleaseAttemptFinalizer releaseAttemptFinalizer;
+    private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
 
     public IngestionProcessor(ScanResultRepository scanResultRepository,
@@ -87,6 +91,8 @@ public class IngestionProcessor {
                               DocumentPromoter documentPromoter,
                               AuditService auditService,
                               ScanProperties scanProperties,
+                              ReleaseAttemptFinalizer releaseAttemptFinalizer,
+                              ApplicationEventPublisher eventPublisher,
                               PlatformTransactionManager transactionManager) {
         this.scanResultRepository = scanResultRepository;
         this.quarantineRecordRepository = quarantineRecordRepository;
@@ -98,6 +104,8 @@ public class IngestionProcessor {
         this.documentPromoter = documentPromoter;
         this.auditService = auditService;
         this.scanProperties = scanProperties;
+        this.releaseAttemptFinalizer = releaseAttemptFinalizer;
+        this.eventPublisher = eventPublisher;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -145,7 +153,13 @@ public class IngestionProcessor {
             switch (verdict.status()) {
                 case CLEAN -> promote(row, staging, verdict, durationMs, leaseToken);
                 case INFECTED -> {
-                    if (markInfected(row.getScanResultId(), leaseToken, verdict, durationMs)) {
+                    if (row.isReleaseAttempt()) {
+                        // A quarantine release re-scan that still detects the
+                        // threat: the file already sits under its original
+                        // quarantine record - refuse the release, don't
+                        // quarantine it a second time.
+                        refuseRelease(row.getScanResultId(), leaseToken, verdict, durationMs);
+                    } else if (markInfected(row.getScanResultId(), leaseToken, verdict, durationMs)) {
                         isolate(reload(scanResultId), leaseToken);
                     }
                 }
@@ -191,6 +205,7 @@ public class IngestionProcessor {
         storageObjectMover.copyVerified(staging, row.getStagingObjectKey(), plan.documentLocation(),
                 plan.objectKey(), row.getSizeBytes(), row.getMimeType(), row.getFileHash());
 
+        ReleaseAttemptFinalizer.ReleasedObject[] released = new ReleaseAttemptFinalizer.ReleasedObject[1];
         boolean committed;
         try {
             committed = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
@@ -221,6 +236,11 @@ public class IngestionProcessor {
                         .newValue(Map.of("versionId", plan.versionId(), "sizeBytes", locked.getSizeBytes(),
                                 "scanResultId", locked.getScanResultId(), "uploadedBy", locked.getUploadedBy()))
                         .log();
+                if (locked.isReleaseAttempt()) {
+                    // A quarantine release re-scan came back clean: close out the
+                    // quarantine record in this same transaction (V40).
+                    released[0] = releaseAttemptFinalizer.markReleased(locked, plan.documentId());
+                }
                 return true;
             }));
         } catch (RuntimeException e) {
@@ -238,6 +258,12 @@ public class IngestionProcessor {
         log.info("Scan result {} clean - promoted to document {} version {}", row.getScanResultId(),
                 plan.documentId(), plan.versionId());
         purgeStaging(row.getScanResultId());
+        if (released[0] != null) {
+            // The released file now lives in the document location; its
+            // quarantine copy is no longer needed (the record keeps the hash).
+            storageLocationRepository.findByStorageLocationIdAndDeletedFalse(released[0].quarantineLocationId())
+                    .ifPresent(location -> storageObjectMover.deleteQuietly(location, released[0].quarantineObjectKey()));
+        }
     }
 
     private boolean markInfected(UUID scanResultId, OffsetDateTime leaseToken, ScanVerdict verdict, long durationMs) {
@@ -308,12 +334,47 @@ public class IngestionProcessor {
                     .newValue(Map.of("scanResultId", locked.getScanResultId(), "threatName", locked.getThreatName(),
                             "fileHash", locked.getFileHash(), "uploadedBy", locked.getUploadedBy()))
                     .log();
+            // Delivered by ThreatNotificationListener only after this commits.
+            eventPublisher.publishEvent(new ThreatQuarantinedEvent(record.getQuarantineId(),
+                    locked.getScanResultId(), locked.getTenantId()));
             return true;
         });
 
         if (Boolean.TRUE.equals(committed)) {
             log.warn("Scan result {} quarantined as {}", row.getScanResultId(), quarantineKey);
             purgeStaging(row.getScanResultId());
+        }
+    }
+
+    /**
+     * pending -> quarantined for a release re-scan that still detects the
+     * threat. No new quarantine record, no copy: the original record stays
+     * {@code held} and still owns the quarantined object.
+     */
+    private void refuseRelease(UUID scanResultId, OffsetDateTime leaseToken, ScanVerdict verdict, long durationMs) {
+        Boolean committed = transactionTemplate.execute(status -> {
+            ScanResult locked = lockOwned(scanResultId, leaseToken, ScanResultStatus.pending);
+            if (locked == null) {
+                return false;
+            }
+            OffsetDateTime now = OffsetDateTime.now();
+            String threat = firstNonBlank(verdict.threatName(), locked.getThreatName(), UNKNOWN_THREAT);
+            applyEngineInfo(locked, verdict, durationMs, now);
+            locked.setStatus(ScanResultStatus.quarantined);
+            locked.setThreatName(threat);
+            locked.setFailureReason("Re-scan still detects " + threat + " - release refused");
+            locked.setLeaseExpiresAt(null);
+            locked.setNextAttemptAt(null);
+            locked.setUpdatedAt(now);
+            scanResultRepository.save(locked);
+            audit(AuditActionCatalog.DOCUMENT_SCAN_INFECTED, locked, AuditOutcome.SUCCESS, null,
+                    scanValues(locked, Map.of("threatName", threat, "releaseAttempt", true)));
+            releaseAttemptFinalizer.auditRefused(locked);
+            return true;
+        });
+        if (Boolean.TRUE.equals(committed)) {
+            log.warn("Release re-scan {} still detects a threat - release refused", scanResultId);
+            purgeStaging(scanResultId);
         }
     }
 

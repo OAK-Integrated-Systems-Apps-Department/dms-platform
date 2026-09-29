@@ -40,6 +40,7 @@ public class IngestionTicketMapper {
                     ? "The scan service is temporarily unavailable. Your file is held and will be scanned automatically."
                     : "Your file is being scanned for malware.";
             case clean -> "The file passed the malware scan and has been added.";
+            case released_override -> "The file was released from quarantine by an administrator.";
             case infected, quarantined -> "A threat was detected" + (threatName != null ? " (" + threatName + ")" : "")
                     + ". The file was blocked and quarantined.";
             case unscannable -> "Password-protected or encrypted files can't be scanned and are not accepted. "

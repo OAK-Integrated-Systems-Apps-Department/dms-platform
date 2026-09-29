@@ -99,11 +99,12 @@ public class DocumentServiceImpl implements DocumentService {
         // version (the V39 trigger guarantees it; checked again here), so
         // staging and quarantine are unreachable through this path. And only
         // scanned-clean bytes are served - legacy versions uploaded before
-        // the gate existed are refused.
+        // the gate existed are refused. An administrator's quarantine
+        // override ('overridden', V40) is servable by design.
         if (location.getPurpose() != StoragePurpose.document) {
             throw new ResourceNotFoundException("Document", documentId);
         }
-        if (!"clean".equals(version.getScanStatus())) {
+        if (!version.isServable()) {
             throw new DocumentNotScannedException(documentId);
         }
 

@@ -33,6 +33,16 @@ import java.util.UUID;
 @Builder
 public class DocumentVersion {
 
+    /** Scanned clean by the malware scan gate. */
+    public static final String SCAN_STATUS_CLEAN = "clean";
+    /** Released from quarantine by an administrator override despite the scanner's verdict (V40). */
+    public static final String SCAN_STATUS_OVERRIDDEN = "overridden";
+
+    /** Whether this version's bytes may be served - scanned clean, or explicitly released by an administrator. */
+    public boolean isServable() {
+        return SCAN_STATUS_CLEAN.equals(scanStatus) || SCAN_STATUS_OVERRIDDEN.equals(scanStatus);
+    }
+
     // No @UuidGenerator - same reasoning as Document.documentId: assigned by
     // DocumentServiceImpl before save() so it can build the matching
     // Document.latestVersionId/currentVersionId up front.

@@ -28,7 +28,7 @@ public final class IngestionTicketResponses {
 
     public static ResponseEntity<IngestionTicketResponse> toResponseEntity(IngestionTicketResponse ticket) {
         return switch (ticket.status()) {
-            case clean -> ticket.documentId() != null
+            case clean, released_override -> ticket.documentId() != null
                     ? ResponseEntity.created(URI.create("/api/v1/documents/" + ticket.documentId())).body(ticket)
                     : ResponseEntity.status(HttpStatus.CREATED).body(ticket);
             case pending -> ResponseEntity.accepted()

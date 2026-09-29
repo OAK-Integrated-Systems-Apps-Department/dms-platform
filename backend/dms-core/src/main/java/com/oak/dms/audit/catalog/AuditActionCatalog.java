@@ -106,6 +106,10 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_SCAN_FAILED = "DOCUMENT_SCAN_FAILED";
     public static final String DOCUMENT_SCAN_UNSCANNABLE = "DOCUMENT_SCAN_UNSCANNABLE";
     public static final String DOCUMENT_QUARANTINED = "DOCUMENT_QUARANTINED";
+    public static final String QUARANTINE_RELEASED = "QUARANTINE_RELEASED";
+    public static final String QUARANTINE_RELEASE_REFUSED = "QUARANTINE_RELEASE_REFUSED";
+    public static final String QUARANTINE_OVERRIDE_RELEASED = "QUARANTINE_OVERRIDE_RELEASED";
+    public static final String QUARANTINE_DELETED = "QUARANTINE_DELETED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -274,7 +278,20 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_SCAN_INFECTED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
             Map.entry(DOCUMENT_SCAN_FAILED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_SCAN_UNSCANNABLE, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
-            Map.entry(DOCUMENT_QUARANTINED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false))
+            Map.entry(DOCUMENT_QUARANTINED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+
+            // Quarantine review actions (QuarantineController) - module DOCM,
+            // VMSBDI FR-005 / NFR-003. All HIGH: each is a decision about a
+            // security control. All reason-required - every one of these
+            // endpoints takes a mandatory reason (QuarantineActionRequest).
+            // RELEASED: a re-scan came back clean and the file was promoted.
+            // RELEASE_REFUSED: a re-scan still detected the threat.
+            // OVERRIDE_RELEASED: an administrator force-released a file the
+            // scanner still flags (docm.quarantine.override).
+            Map.entry(QUARANTINE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
+            Map.entry(QUARANTINE_RELEASE_REFUSED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
+            Map.entry(QUARANTINE_OVERRIDE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
+            Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true))
     );
 
     private AuditActionCatalog() {

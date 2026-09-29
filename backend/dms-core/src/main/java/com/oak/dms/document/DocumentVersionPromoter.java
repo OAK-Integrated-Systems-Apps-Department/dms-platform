@@ -21,7 +21,8 @@ import java.util.UUID;
 /**
  * <b>The only class that creates a {@link DocumentVersion}.</b> Implements the
  * scan gate's {@link DocumentPromoter} and is called only by the gate, for a
- * scan result with a CLEAN verdict - every creation path (initial upload
+ * scan result with a CLEAN verdict (or, since V40, an administrator's
+ * explicit quarantine override - see {@code QuarantineReleaseService}) - every creation path (initial upload
  * today; replacement upload, workflow update, signed copy and migration
  * later) arrives here through
  * {@link com.oak.dms.scanning.service.IngestionGate#submit}. Don't add a
@@ -70,9 +71,11 @@ public class DocumentVersionPromoter implements DocumentPromoter {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void persist(PromotionPlan plan, ScanResult cleanResult) {
-        if (cleanResult.getStatus() != ScanResultStatus.clean || !plan.versionId().equals(cleanResult.getDocumentVersionId())) {
+        boolean clean = cleanResult.getStatus() == ScanResultStatus.clean;
+        boolean override = cleanResult.getStatus() == ScanResultStatus.released_override;
+        if ((!clean && !override) || !plan.versionId().equals(cleanResult.getDocumentVersionId())) {
             throw new IllegalStateException("Scan result " + cleanResult.getScanResultId()
-                    + " is not a clean result linked to version " + plan.versionId());
+                    + " is neither a clean result nor an administrator override linked to version " + plan.versionId());
         }
         UUID tenantId = cleanResult.getTenantId();
         UUID uploadedBy = cleanResult.getUploadedBy();
@@ -89,7 +92,10 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                 .fileHash(cleanResult.getFileHash())
                 .sizeBytes(cleanResult.getSizeBytes())
                 .createdReason(cleanResult.getCreatedReason())
-                .scanStatus(ScanResultStatus.clean.name())
+                // 'overridden' only for a quarantine override release (V40) -
+                // the gate trigger pairs it with the released_override result
+                // and the reviewed quarantine record behind it.
+                .scanStatus(override ? DocumentVersion.SCAN_STATUS_OVERRIDDEN : DocumentVersion.SCAN_STATUS_CLEAN)
                 .createdBy(uploadedBy);
 
         if (cleanResult.getIngestionKind() == IngestionKind.new_document) {

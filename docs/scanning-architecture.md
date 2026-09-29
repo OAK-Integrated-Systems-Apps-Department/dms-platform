@@ -1,9 +1,10 @@
-# Virus & Malware Scanning - the Ingestion Scan Gate (Phase 1)
+# Virus & Malware Scanning - the Ingestion Scan Gate
 
 Requirement: VMSBDI (requirement-registry.md, "Virus and Malware Scanning
-Before Document Ingestion"). Phase 1 delivers the scan gate on three
-providers. Notifications, quarantine admin APIs/screens and quarantine
-release/delete are Phase 2.
+Before Document Ingestion"). Phase 1 (V39) delivers the scan gate on three
+providers. Phase 2 (V40) adds quarantine review - release, override and
+delete - plus threat notifications and permissions (§12–§15). The manual
+acceptance checklist is [scanning-acceptance-checklist.md](scanning-acceptance-checklist.md).
 
 **No file becomes a document version without being scanned.** Clean files are
 promoted to documents. Infected files are isolated in quarantine with a
@@ -194,8 +195,11 @@ reference them.
    `DocumentServiceImpl#downloadDocument` re-checks
    `purpose == document` as well.
 3. `generatePresignedDownloadUrl` has no callers.
-4. `quarantine_records` has no controller or DTO in Phase 1. The tenant
-   storage-location API lists and creates only `document` locations.
+4. The quarantine review API (§13) exposes records and scan detail only -
+   no DTO carries a storage location or object key, and there is no
+   download, presigned URL or preview endpoint, for administrators either.
+   The tenant storage-location API lists and creates only `document`
+   locations.
 5. `storage_locations.purpose` is immutable (trigger).
 6. `StorageLocationBootstrap` **refuses to start** if the platform staging or
    quarantine location resolves to the same physical target as the document
@@ -270,16 +274,24 @@ All events are module `DOCM`, with object type `SCAN_RESULT` (or
 - `DOCUMENT_SCAN_FAILED` (MEDIUM, one per failed attempt, with `attempt` and
   `terminal` flags)
 - `DOCUMENT_SCAN_UNSCANNABLE` (MEDIUM)
+- Quarantine review (Phase 2, object type `QUARANTINE_RECORD`, all HIGH and
+  reason-required): `QUARANTINE_RELEASED`, `QUARANTINE_RELEASE_REFUSED`,
+  `QUARANTINE_OVERRIDE_RELEASED`, `QUARANTINE_DELETED`. Each carries the
+  threat name, file hash and reviewer in `new_value`.
 
 `DOCUMENT_UPLOADED` is now emitted when a clean file is promoted. Events on
 async paths carry the tenant explicitly and record the SYSTEM actor, with
 `uploadedBy` in `new_value`.
 
-## 11. Known limitations (Phase 1)
+## 11. Known limitations
 
-- No notifications, quarantine admin API/screen, or release/delete of
-  quarantined files (Phase 2). V39's triggers will need a `released` path
-  when release lands.
+- Threat notifications are best-effort: a mail lost to an SMTP failure or a
+  crash is not retried (§14). The quarantine record, audit events and review
+  screen are the durable record.
+- `TENANT_ADMIN`/`PLATFORM_ADMIN` hold every permission implicitly
+  (`AuthorizationService#hasFullAccess`), including
+  `docm.quarantine.override`. Requiring an explicit grant for override even
+  for tenant admins would be a separate change to that bypass.
 - No batch/bulk upload path. The requirement's bulk-report alternate flow is
   out of scope until bulk upload exists.
 - There's no health screen for signature age or failed updates, because the
@@ -289,3 +301,100 @@ async paths carry the tenant explicitly and record the SYSTEM actor, with
   in a sandbox with Defender/GuardDuty enabled, using the EICAR test file.
 - `new_version` promotion does a minor-version increment. Publishing and
   major-version rules belong to the future versioning module.
+
+## 12. Releasing a false positive (Phase 2, V40)
+
+The V39 gate trigger only accepts a version linked to a **clean** scan
+result, and a quarantined file's result is `quarantined`. Release therefore
+works in two steps, both recorded as a *release attempt* - a `scan_results`
+row whose `released_from_scan_result_id` points at the original quarantined
+result, carrying `review_requested_by` and a mandatory `review_reason`:
+
+1. **Re-scan** (`docm.quarantine.release`). `QuarantineReleaseService` copies
+   the quarantined bytes back into staging (hash-verified) and runs them
+   through the ordinary gate on the tenant's **current** engine and
+   signatures (`IngestionProcessor.process`).
+   - Clean: promoted by `DocumentVersionPromoter` like any upload - the
+     trigger is satisfied honestly - and `ReleaseAttemptFinalizer` marks the
+     quarantine record `released` in the same transaction. The quarantine
+     copy is deleted after commit. The original uploader owns the document.
+   - Still infected: the attempt ends `quarantined` ("refused"); no second
+     quarantine record, the record stays `held`, no notification.
+   - Cloud engines: the copy into the protected staging area *is* the
+     re-submission; the attempt stays `pending` until the scheduler or a
+     callback reads the verdict. The API answers `202` and the detail screen
+     polls.
+2. **Override** (`docm.quarantine.override`, a separate permission). Allowed
+   only once a re-scan has been refused and nothing is in flight. Promotes
+   the file as a version with `scan_status = 'overridden'`, backed by a
+   `released_override` scan result, and marks the record `released` - one
+   transaction, HIGH audit, reason mandatory.
+
+**The widened trigger** (V40 replaces `document_versions_require_clean_scan`)
+accepts exactly two pairings: a `clean` version with a `clean` scan result
+(unchanged), or an `overridden` version with a `released_override` result
+that has a reviewer and reason, **and** whose `released_from_scan_result_id`
+has a quarantine record that is `released`, reviewed by that same user,
+pointing at this document, with the same file hash, over an original result
+the scanner `quarantined`. Quarantine records are only ever created by
+`IngestionProcessor` after the engine scanned and flagged those exact bytes,
+so an override can only release a file the scanner has seen - never new or
+unscanned bytes. An ordinary unscanned insert is still rejected. A unique
+index (`uq_scan_results_one_active_release`) allows at most one in-flight or
+successful release per quarantined file.
+
+Downloads serve `clean` and `overridden` versions only.
+
+## 13. Quarantine review API
+
+`/api/v1/quarantine`, tenant-scoped (another tenant's id is a 404):
+
+| Method + path | Permission | Notes |
+|---|---|---|
+| `GET /` | any of view/release/delete/override | `status`, `detectedFrom`, `detectedTo`, `search` (filename or threat), paged, newest first |
+| `GET /{id}` | same | record, original scan detail, release history, `releaseInProgress`, `overrideAvailable` |
+| `POST /{id}/release` | `docm.quarantine.release` | `{reason}` → `200` released/refused/failed, `202` pending |
+| `POST /{id}/override-release` | `docm.quarantine.override` | `{reason}` → `200`; `409` before any refused re-scan |
+| `POST /{id}/delete` | `docm.quarantine.delete` | `{reason}` → `204`; removes the object, record kept as `deleted` |
+
+All actions `409` unless the record is `held` and no release is in flight.
+`ck_quarantine_records_reviewed` requires `reviewed_by`/`reviewed_at` on
+every non-held record; the services always set both, plus `review_reason`.
+
+## 14. Threat notifications (VMSBDI FR-003)
+
+`IngestionProcessor.isolate` publishes `ThreatQuarantinedEvent` inside the
+quarantine transaction (original detections only, never refused re-scans).
+`ThreatNotificationListener` handles it with `@TransactionalEventListener(AFTER_COMMIT)`
+on Spring Boot's `applicationTaskExecutor`, so it runs only once the
+quarantine is durable, can never roll it back, and never delays the upload.
+Mail uses `JavaMailSender` directly, following `PasswordResetService`
+(`ThreatNotificationMailer`); there is no generic notification module.
+
+Recipients:
+- the **uploader** - filename, threat, time, "not added";
+- **administrators** - active in-tenant users holding `docm.quarantine.view`
+  through a DB role (`RolePermissionRepository.findUserIdsWithPermission`),
+  plus the tenant's `TENANT_ADMIN` users (Keycloak role members matched to
+  `users` by `keycloak_id`), i.e. exactly who can act on quarantine. A
+  Keycloak failure only drops the second group. The admin mail adds uploader,
+  hash, engine/signature version and a link to the review screen - never the
+  file.
+
+Every failure is caught and logged at WARN. Config:
+`dms.scanning.notifications.enabled` (`SCAN_NOTIFY_ENABLED`) and
+`dms.scanning.notifications.mail-from` (`SCAN_NOTIFY_MAIL_FROM`).
+
+## 15. Permissions and admin screen
+
+V40 seeds `docm.quarantine.view`, `.release`, `.delete` and `.override`
+under module `DOCM` (new actions `RELEASE` and `OVERRIDE_RELEASE`), granted
+to **no role** - an administrator assigns them. Mirrored in
+`PermissionCodes.java` and `frontend/lib/auth/permission-codes.ts`.
+
+Frontend: a **Quarantine** item in the sidebar's Governance group (with Roles,
+Permissions and Audit Log), shown to holders of any of the four codes.
+`app/admin/quarantine` lists files (search, status, detection range);
+`app/admin/quarantine/[id]` shows the record, scan result and release
+history, with Release, Override and Delete each behind a reason-mandatory
+confirmation dialog and shown only to holders of that permission.

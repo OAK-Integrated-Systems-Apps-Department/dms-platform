@@ -36,6 +36,7 @@ public class ScanProperties {
     private final ClamAv clamav = new ClamAv();
     private final AzureDefender azureDefender = new AzureDefender();
     private final AwsGuardDuty awsGuardduty = new AwsGuardDuty();
+    private final Notifications notifications = new Notifications();
 
     @Getter
     @Setter
@@ -47,6 +48,14 @@ public class ScanProperties {
         /** Must comfortably exceed timeoutSeconds plus the staging -> document/quarantine copy time. */
         private int leaseSeconds = 300;
         private int batchSize = 20;
+    }
+
+    /** Threat-detected emails to the uploader and administrators (VMSBDI FR-003). */
+    @Getter
+    @Setter
+    public static class Notifications {
+        private boolean enabled = true;
+        private String mailFrom = "no-reply@oakdms.local";
     }
 
     @Getter

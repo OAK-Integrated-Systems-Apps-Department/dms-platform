@@ -1,6 +1,7 @@
 package com.oak.dms.scanning.helper;
 
 import com.oak.dms.storage.dto.DownloadedObject;
+import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
@@ -37,13 +38,15 @@ public class StorageObjectMover {
 
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
 
-    public void copyVerified(StorageLocation from, String fromKey, StorageLocation to, String toKey,
-                             long sizeBytes, String contentType, String expectedSha256) {
+    /** @return the copied object's metadata at the destination (its ETag is what a cloud scanner reports back) */
+    public StoredObjectMetadata copyVerified(StorageLocation from, String fromKey, StorageLocation to, String toKey,
+                                             long sizeBytes, String contentType, String expectedSha256) {
         ObjectStorageService target = objectStorageServiceFactory.resolve(to);
         DownloadedObject source = objectStorageServiceFactory.resolve(from).download(from, fromKey);
         MessageDigest digest = sha256();
+        StoredObjectMetadata stored = null;
         try (InputStream content = new DigestInputStream(source.content(), digest)) {
-            target.upload(to, toKey, content, sizeBytes, contentType);
+            stored = target.upload(to, toKey, content, sizeBytes, contentType);
         } catch (IOException e) {
             log.debug("Closing source stream for {} failed", fromKey, e);
         }
@@ -52,6 +55,7 @@ public class StorageObjectMover {
             target.delete(to, toKey);
             throw new StagedObjectChangedException(fromKey);
         }
+        return stored;
     }
 
     /** Best-effort delete - a leftover staged object is swept up later by the staging purge. */

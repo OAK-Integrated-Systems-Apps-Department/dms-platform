@@ -156,6 +156,25 @@ public class ScanResult {
     @Column(name = "title", updatable = false)
     private String title;
 
+    /**
+     * Set only on a quarantine release attempt (V40): the original,
+     * quarantined scan result this row re-scans (or force-releases).
+     */
+    @Column(name = "released_from_scan_result_id", updatable = false)
+    private UUID releasedFromScanResultId;
+
+    /** The administrator who requested the release attempt. */
+    @Column(name = "review_requested_by", updatable = false)
+    private UUID reviewRequestedBy;
+
+    /** Their mandatory reason - carried to the quarantine record once the attempt completes. */
+    @Column(name = "review_reason", updatable = false)
+    private String reviewReason;
+
+    public boolean isReleaseAttempt() {
+        return releasedFromScanResultId != null;
+    }
+
     @Column(name = "created_by")
     private UUID createdBy;
 

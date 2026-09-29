@@ -237,6 +237,14 @@ dms:
     cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
     # How long a failed file's staged object is kept before it is purged.
     failed-retention-hours: ${SCAN_FAILED_RETENTION_HOURS:72}
+    # Threat-detected emails (VMSBDI FR-003) - to the uploader, and to every
+    # administrator who can act on quarantine (docm.quarantine.view holders +
+    # the tenant's TENANT_ADMIN users). Sent after the quarantine commits, off
+    # the upload thread; a mail failure never affects the quarantine itself.
+    # Uses spring.mail.* (Mailpit locally, http://localhost:8026).
+    notifications:
+      enabled: ${SCAN_NOTIFY_ENABLED:true}
+      mail-from: ${SCAN_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
     retry:
       poll-interval-ms: ${SCAN_RETRY_POLL_INTERVAL_MS:30000}
       max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}
