@@ -218,6 +218,46 @@ services:
       retries: 10
       start_period: 10s
 
+  # Malware scanning engine for the ingestion scan gate (com.oak.dms.scanning,
+  # see docs/scanning-architecture.md) - clamd, spoken to over TCP with the
+  # INSTREAM protocol by ClamAvScanAdapter. clamav-debian rather than
+  # clamav/clamav: the latter publishes amd64 only, the former is multi-arch
+  # (Apple Silicon included). Same upstream release.
+  #
+  # Signature updates (VMSBDI-FR-006 / NFR-002): the image's own /init runs
+  # freshclam as a daemon next to clamd, checking FRESHCLAM_CHECKS times a
+  # day. If an update fails, clamd keeps scanning with the last good
+  # definitions - ClamAV's own behaviour, no application code involved.
+  # clamd/freshclam settings are applied by /init from CLAMD_CONF_<Key>/
+  # FRESHCLAM_CONF_<Key> env vars; a mounted freshclam.conf "Checks" line
+  # would be ignored (/init passes --checks explicitly).
+  clamav:
+    image: clamav/clamav-debian:1.4.3
+    container_name: oakdms-clamav
+    <<: *secrets-env
+    environment:
+      FRESHCLAM_CHECKS: "12" # every 2 hours
+      # Kept >= dms.scanning.max-file-size-bytes (100MB), otherwise clamd
+      # answers "INSTREAM size limit exceeded" for files the gate accepted.
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+      CLAMD_CONF_MaxScanSize: 400M
+    ports:
+      - "3310:3310" # clamd - for a host-run dms-core (dms.scanning.clamav.host=localhost)
+    volumes:
+      # The signature database - persisted so a restart doesn't re-download
+      # ~300MB of definitions before clamd can start.
+      - clamav_db:/var/lib/clamav
+    healthcheck:
+      # The image's own check: PING -> PONG on 3310.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # The first start downloads the full signature database before clamd
+      # listens - several minutes on a fresh volume.
+      start_period: 600s
+
   dms-core:
     build:
       context: ../../backend
@@ -276,6 +316,11 @@ services:
       # container, where "localhost" means this container, not the
       # seaweedfs one. "seaweedfs" resolves via Compose's internal DNS.
       S3_ENDPOINT: http://seaweedfs:8333
+      # Malware scanning (com.oak.dms.scanning) - see docs/scanning-architecture.md.
+      # Staging (/data/dms/staging) and quarantine (/data/dms/quarantine)
+      # default to FILE_SYSTEM on the same documents_data volume below, in
+      # directories separate from /data/dms/documents.
+      CLAMAV_HOST: clamav
     ports:
       - "8080:8080"
     volumes:
@@ -299,6 +344,8 @@ services:
       mailpit:
         condition: service_healthy
       seaweedfs:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
 
   frontend:
@@ -332,3 +379,4 @@ volumes:
   redis_data:
   seaweedfs_data:
   documents_data:
+  clamav_db:

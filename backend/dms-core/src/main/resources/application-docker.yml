@@ -27,3 +27,8 @@ keycloak:
     # server-to-server call from dms-core to Keycloak's token endpoint
     # goes over the internal docker network, same as keycloak.admin above.
     server-url: http://keycloak:8080
+
+dms:
+  scanning:
+    clamav:
+      host: clamav

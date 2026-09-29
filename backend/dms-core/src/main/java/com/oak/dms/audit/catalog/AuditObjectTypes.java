@@ -41,6 +41,10 @@ public final class AuditObjectTypes {
     public static final String DOCUMENT = "DOCUMENT";
     public static final String DOCUMENT_VERSION = "DOCUMENT_VERSION";
     public static final String STORAGE_LOCATION = "STORAGE_LOCATION";
+    /** A malware scan of one upload (scan_results) - the object of every DOCUMENT_SCAN_* event. */
+    public static final String SCAN_RESULT = "SCAN_RESULT";
+    /** A quarantined infected upload (quarantine_records) - the object of DOCUMENT_QUARANTINED. */
+    public static final String QUARANTINE_RECORD = "QUARANTINE_RECORD";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

@@ -101,6 +101,11 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED";
     public static final String DOCUMENT_DELETED = "DOCUMENT_DELETED";
     public static final String STORAGE_LOCATION_CREATED = "STORAGE_LOCATION_CREATED";
+    public static final String DOCUMENT_SCAN_CLEAN = "DOCUMENT_SCAN_CLEAN";
+    public static final String DOCUMENT_SCAN_INFECTED = "DOCUMENT_SCAN_INFECTED";
+    public static final String DOCUMENT_SCAN_FAILED = "DOCUMENT_SCAN_FAILED";
+    public static final String DOCUMENT_SCAN_UNSCANNABLE = "DOCUMENT_SCAN_UNSCANNABLE";
+    public static final String DOCUMENT_QUARANTINED = "DOCUMENT_QUARANTINED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -257,7 +262,19 @@ public final class AuditActionCatalog {
             // is tenant infrastructure, comparable in blast radius to
             // TENANT_PROVISIONED, so HIGH rather than the MEDIUM a plain
             // catalog-entity create would get.
-            Map.entry(STORAGE_LOCATION_CREATED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false))
+            Map.entry(STORAGE_LOCATION_CREATED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+
+            // Malware scan outcomes (com.oak.dms.scanning ingestion gate) -
+            // module DOCM, VMSBDI-NFR-003. INFECTED/QUARANTINED are HIGH: a
+            // detected threat is a security event. FAILED is logged per
+            // failed attempt (retries are capped), UNSCANNABLE for encrypted
+            // or password-protected uploads. Quarantine review actions
+            // (release/delete) are Phase 2.
+            Map.entry(DOCUMENT_SCAN_CLEAN, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SCAN_INFECTED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SCAN_FAILED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SCAN_UNSCANNABLE, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_QUARANTINED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false))
     );
 
     private AuditActionCatalog() {

@@ -31,6 +31,13 @@ an on-prem filesystem never touches `DocumentService`, `DocumentController`, or
 any other document business logic - only which `StorageLocation` row that
 tenant resolves to.
 
+**Malware scanning.** Uploads no longer write straight into the document
+location: every file is staged, scanned and only then promoted, through the
+scan gate in `com.oak.dms.scanning`. Storage locations now carry a `purpose`
+(`document` | `staging` | `quarantine`), and `StorageLocationResolver`
+resolves by tenant *and* purpose. See
+[scanning-architecture.md](scanning-architecture.md).
+
 ## 2. Adapter / Strategy / Factory responsibilities
 
 - **Adapter** (`S3ObjectStorageAdapter`, `AzureBlobStorageAdapter`,

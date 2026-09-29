@@ -22,6 +22,15 @@ spring:
         order_inserts: true
         order_updates: true
 
+  # Spring's own multipart default is 1MB, which silently capped uploads
+  # before the scan gate existed. Kept in line with
+  # dms.scanning.max-file-size-bytes below; the scan gate enforces the exact
+  # byte limit itself, this just stops the servlet layer rejecting first.
+  servlet:
+    multipart:
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:101MB}
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -182,6 +191,80 @@ dms:
       container: ${AZURE_STORAGE_CONTAINER:}
       account-name: ${AZURE_STORAGE_ACCOUNT_NAME:}
       account-key: ${AZURE_STORAGE_ACCOUNT_KEY:}
+    # Platform-default staging and quarantine locations for the scan gate
+    # (com.oak.dms.scanning - see docs/scanning-architecture.md), seeded by
+    # StorageLocationBootstrap next to the document location above. Each must
+    # be a physically separate target - the bootstrap refuses to start if
+    # either overlaps the document location (same bucket/container, or a
+    # nested base path). Blank bucket/endpoint fall back to the s3.*/
+    # azure-blob.* values above, so set a distinct bucket/container whenever
+    # the provider isn't FILE_SYSTEM. A cloud scan engine needs its staging
+    # location on its own storage: AZURE_DEFENDER => AZURE_BLOB container on a
+    # Defender-protected account, AWS_GUARDDUTY => S3 bucket with a Malware
+    # Protection plan.
+    staging:
+      provider: ${SCAN_STAGING_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_STAGING_BASE_PATH:/data/dms/staging}
+      bucket: ${SCAN_STAGING_BUCKET:}
+      endpoint: ${SCAN_STAGING_ENDPOINT:}
+      region: ${SCAN_STAGING_REGION:}
+      path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
+    quarantine:
+      provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
+      bucket: ${SCAN_QUARANTINE_BUCKET:}
+      endpoint: ${SCAN_QUARANTINE_ENDPOINT:}
+      region: ${SCAN_QUARANTINE_REGION:}
+      path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+  ingestion:
+    # Extensions the ingestion gate accepts - each is verified against the
+    # file's content (magic bytes) by FileTypeInspector, and the client's
+    # Content-Type is ignored. No archive types: this system accepts no
+    # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
+    # docs/scanning-architecture.md).
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,rtf,txt,csv,png,jpg,jpeg,tif,tiff}
+  scanning:
+    # Backs the platform-default ScanEngine (tenant_id NULL) that
+    # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
+    # AZURE_DEFENDER | AWS_GUARDDUTY.
+    default-provider: ${SCAN_PROVIDER:CLAMAV}
+    timeout-seconds: ${SCAN_TIMEOUT_SECONDS:60}
+    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:104857600}
+    # A cloud-scanned file still without a verdict this long after staging is
+    # failed - never promoted.
+    cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
+    # How long a failed file's staged object is kept before it is purged.
+    failed-retention-hours: ${SCAN_FAILED_RETENTION_HOURS:72}
+    retry:
+      poll-interval-ms: ${SCAN_RETRY_POLL_INTERVAL_MS:30000}
+      max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}
+      initial-backoff-seconds: ${SCAN_RETRY_INITIAL_BACKOFF_SECONDS:30}
+      max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
+      lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:300}
+      batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
+    clamav:
+      host: ${CLAMAV_HOST:localhost}
+      port: ${CLAMAV_PORT:3310}
+      connect-timeout-ms: ${CLAMAV_CONNECT_TIMEOUT_MS:5000}
+      chunk-size-bytes: ${CLAMAV_CHUNK_SIZE_BYTES:65536}
+    azure-defender:
+      # Blob Service endpoint of the Defender-protected account that holds the
+      # staging container - verdicts are read from its blob index tags.
+      endpoint: ${AZURE_DEFENDER_BLOB_ENDPOINT:}
+      account-name: ${AZURE_DEFENDER_ACCOUNT_NAME:}
+      account-key: ${AZURE_DEFENDER_ACCOUNT_KEY:}
+      # Sent by Event Grid as X-Oak-Scan-Callback-Secret. Blank disables
+      # the callback endpoint (verdicts then arrive by polling only).
+      callback-secret: ${AZURE_DEFENDER_CALLBACK_SECRET:}
+    aws-guardduty:
+      region: ${AWS_GUARDDUTY_REGION:us-east-1}
+      access-key: ${AWS_GUARDDUTY_ACCESS_KEY:}
+      secret-key: ${AWS_GUARDDUTY_SECRET_KEY:}
+      # Sent by the EventBridge API destination as X-Oak-Scan-Callback-Secret.
+      # Blank disables the callback endpoint.
+      callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
 
 management:
   endpoints:
