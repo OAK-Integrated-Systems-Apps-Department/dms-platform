@@ -1,0 +1,207 @@
+import type { AssignedUserStatus } from "@/components/roles/types"
+
+/**
+ * Shared types for the User Management feature (User List, View User, User
+ * MFA Management, User Sessions, User Activity / Audit History).
+ *
+ * Kept separate from components/roles/types.ts the same way that folder
+ * is kept separate from components/dashboard/types.ts — one feature, one
+ * types file.
+ *
+ * User status reuses AssignedUserStatus from the Roles feature so the same
+ * user has a consistent status representation across Role Details and
+ * User Management.
+ */
+
+/**
+ * A DMS user's activity entry.
+ *
+ * ISO-ish "YYYY-MM-DD, HH:mm" string, matching dms-view-user.html's format.
+ */
+export interface UserActivityEntry {
+  id: string
+
+  /**
+   * ISO-ish "YYYY-MM-DD, HH:mm" string, matching
+   * dms-view-user.html's format.
+   */
+  time: string
+
+  /**
+   * Rendered as-is; wrap the emphasized part in the caller if needed.
+   */
+  text: string
+
+  actor: string
+
+  /**
+   * Coarse category, used by User Activity / Audit History (U10)'s
+   * "Event type" filter. The View User screen's short activity list
+   * ignores this and just renders every entry.
+   *
+   * Kept broader than the wireframe's four named examples (login, failed
+   * login, role change, password reset) since `recentActivity` already
+   * carries ordinary document actions too — one array backs both the
+   * short list on View User and the full filterable feed on U10.
+   */
+  type:
+    | "login"
+    | "failed-login"
+    | "role-change"
+    | "status-change"
+    | "password-reset"
+    | "mfa"
+    | "document"
+    | "other"
+}
+
+/**
+ * A single active login session for a user, as returned by
+ * `GET /admin/realms/{realm}/users/{id}/sessions`.
+ */
+export interface UserSessionEntry {
+  id: string
+
+  /**
+   * Device/browser label as reported by Keycloak, e.g.
+   * "Chrome on macOS".
+   */
+  device: string
+
+  ip: string
+
+  /**
+   * ISO-ish "YYYY-MM-DD HH:mm" string, matching the wireframe's
+   * "Started: YYYY-MM-DD HH:MM" format.
+   */
+  startedAt: string
+
+  /**
+   * Coarse geolocation string, e.g. "Colombo, LK". Best-effort — not
+   * always available depending on IP geolocation configuration.
+   */
+  location: string
+}
+
+/**
+ * A DMS user.
+ *
+ * Kept structurally close to `AssignedUserStatus` (`components/roles/types.ts`)
+ * for the status field, plus email and tenant that Role Details doesn't
+ * need, so the same person shows up consistently across Role Details'
+ * assigned-users table and User Access Summary.
+ *
+ * Sourced from Keycloak's admin user list
+ * (`GET /admin/realms/{realm}/users`) in a real integration.
+ */
+export interface UserRecord {
+  id: string
+  name: string
+  username: string
+  email: string
+
+  /**
+   * Tenant the user belongs to.
+   */
+  tenant: string
+
+  /**
+   * Role names, matching RoleRecord.name in components/roles/types.ts.
+   * Tenant-defined DMS roles only — see `platformRoles` for the fixed
+   * Keycloak-only roles (PLATFORM_ADMIN/TENANT_ADMIN/MEMBER) that never
+   * have a RoleRecord backing them.
+   */
+  roles: string[]
+
+  /**
+   * The fixed platform roles (PLATFORM_ADMIN, TENANT_ADMIN, MEMBER) this
+   * user holds in Keycloak, if any — kept separate from `roles` because
+   * these have no RoleRecord, no permissions/description, and no Role
+   * Management screen to click into; they're surfaced here purely for
+   * visibility (e.g. so an account like the seeded TENANT_ADMIN doesn't
+   * appear to have "no role" just because it was never assigned a
+   * tenant-defined one). See `GET /api/v1/users/{userId}/platform-roles`.
+   */
+  platformRoles: string[]
+
+  /**
+   * Reuses the Roles feature's status type so User Management and
+   * Role Details use the same "Active" / "Inactive" values.
+   */
+  status: AssignedUserStatus
+
+  /**
+   * Whether this person has actually completed account setup (verified
+   * their email and set a real password), independent of `status` — a
+   * freshly invited user has status "Active" and verified false at the
+   * same time. Drives the "Pending" indicator and disables Reset
+   * Password / Deactivate on the User List and View User screens until
+   * they've actually logged in once.
+   */
+  verified: boolean
+
+  /**
+   * "YYYY-MM-DD, HH:mm" (see `formatDateTime` in lib/utils.ts — date and
+   * time, unlike the date-only fields below), or "—" for a user who has
+   * never logged in.
+   */
+  lastLogin: string
+
+  // --- Detail-only fields, shown on the View User screen ---
+
+  firstName: string
+  lastName: string
+
+  /**
+   * ISO date string.
+   */
+  createdOn: string
+
+  mfaStatus: string
+  lastPasswordChange: string
+  activeSessions: number
+  recentActivity: UserActivityEntry[]
+
+  // --- MFA-management-only fields, shown on User MFA Management (U8) ---
+
+  /**
+   * Whether the user currently has an MFA credential enrolled. Drives the
+   * status chip on U8; `mfaStatus` above stays a free-text summary for the
+   * View User screen, this is the structured flag U8's chip/actions
+   * branch on.
+   */
+  mfaEnrolled: boolean
+
+  /**
+   * Registered credential type(s), e.g. "Authenticator app (TOTP)".
+   * Empty when `mfaEnrolled` is false.
+   *
+   * Sourced from `GET /admin/realms/{realm}/users/{id}/credentials` in a
+   * real integration.
+   */
+  mfaMethods: string[]
+
+  /**
+   * ISO date string, or null when `mfaEnrolled` is false.
+   */
+  mfaEnrolledOn: string | null
+
+  /**
+   * Whether the user's role/tenant currently mandates MFA. Independent of
+   * `mfaEnrolled` — a policy can require MFA before the user has enrolled.
+   */
+  mfaRequiredByPolicy: boolean
+
+  // --- Session-management-only fields, shown on User Sessions (U9) ---
+
+  /**
+   * Active login sessions. `activeSessions` above stays the plain count
+   * shown on the View User screen; this is the detailed, per-session list
+   * U9 lists and revokes from — kept in sync with `activeSessions.length`
+   * whenever a session is revoked (see `stores/users-store.ts`).
+   *
+   * Sourced from `GET /admin/realms/{realm}/users/{id}/sessions` in a
+   * real integration.
+   */
+  sessions: UserSessionEntry[]
+}

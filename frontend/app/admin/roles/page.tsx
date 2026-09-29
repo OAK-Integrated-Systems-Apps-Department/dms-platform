@@ -1,0 +1,264 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { AlertTriangle, Grid3x3, Plus } from "lucide-react"
+import { toast } from "sonner"
+
+import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
+import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { RolesTable } from "@/components/roles/roles-table"
+import { SearchInput } from "@/components/ui/search-input"
+import { SearchableSelect } from "@/components/ui/searchable-select"
+import { TablePagination } from "@/components/ui/table-pagination"
+import { LoadingState } from "@/components/ui/loading-state"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
+import { usePageTitle } from "@/lib/use-page-title"
+import { useUsers } from "@/lib/users/use-users"
+import { useRolesStore } from "@/stores/roles-store"
+
+const DEFAULT_PAGE_SIZE = 10
+
+/**
+ * Role Management — Role List (R1). Search roles, add a role, or
+ * edit/activate/deactivate/delete an existing one. System roles are
+ * read-only — see the footnote and `RolesTable`'s handling of
+ * `role.system`. The backend has no "system role" concept yet (see
+ * `fromBackend` in `stores/roles-store.ts`), so every role fetched from
+ * the API currently comes back editable/deletable regardless of that
+ * footnote.
+ */
+export default function RoleListPage() {
+  usePageTitle("Role List")
+
+  const roles = useRolesStore((state) => state.roles)
+  const loading = useRolesStore((state) => state.loading)
+  const fetchError = useRolesStore((state) => state.error)
+  const fetchRoles = useRolesStore((state) => state.fetchRoles)
+  const toggleStatus = useRolesStore((state) => state.toggleStatus)
+  const deleteRole = useRolesStore((state) => state.deleteRole)
+  const { hasPermission, hasAnyPermission } = usePermissions()
+  // Add Role also syncs the role's initial permissions in the same flow
+  // (see stores/roles-store.ts's addRole) - gate the link on either code
+  // the target page's form can actually exercise.
+  const canCreateRole = hasAnyPermission(
+    PermissionCodes.ASM_ROLES_CREATE_ROLE,
+    PermissionCodes.ASM_ROLES_ASSIGN_PERMISSIONS
+  )
+  const canUpdateRole = hasPermission(PermissionCodes.ASM_ROLES_UPDATE_ROLE)
+  const canDeleteRole = hasPermission(PermissionCodes.ASM_ROLES_DELETE_ROLE)
+  const canView = hasAnyPermission(
+    PermissionCodes.ASM_ROLES_VIEW_ROLE,
+    PermissionCodes.ASM_ROLES_UPDATE_ROLE
+  )
+
+  // `RoleRecord.assignedUsers` from the store is always 0 — there's no
+  // `GET /api/v1/roles/{roleId}/users` endpoint (see `fromBackend`'s doc
+  // comment in `stores/roles-store.ts`). Pull the real user list
+  // (`useUsers()`, the same data source the User List page is built on)
+  // and count matches on `user.roles.includes` client-side instead of
+  // trusting the store's placeholder field - same approach Role Details
+  // uses.
+  const { users } = useUsers()
+  const assignedUserCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const user of users) {
+      for (const roleName of user.roles) {
+        counts.set(roleName, (counts.get(roleName) ?? 0) + 1)
+      }
+    }
+    return counts
+  }, [users])
+  const rolesWithRealCounts = useMemo(
+    () =>
+      roles.map((role) => ({
+        ...role,
+        assignedUsers: assignedUserCounts.get(role.name) ?? 0,
+      })),
+    [roles, assignedUserCounts]
+  )
+
+  const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "Active" | "Inactive"
+  >("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    // GET /api/v1/roles requires asm.manage-roles-permissions.view-role or
+    // .update-role — skip the call entirely for a caller with neither,
+    // rather than let it 403 and, since nothing here ever marks that
+    // permanent, keep re-firing it on every remount for the rest of the
+    // session.
+    if (canView) fetchRoles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView])
+
+  const filteredRoles = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return rolesWithRealCounts.filter((role) => {
+      const matchesQuery =
+        !q ||
+        role.name.toLowerCase().includes(q) ||
+        role.description.toLowerCase().includes(q)
+      const matchesStatus =
+        statusFilter === "all" || role.status === statusFilter
+      return matchesQuery && matchesStatus
+    })
+  }, [rolesWithRealCounts, query, statusFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRoles.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageRoles = filteredRoles.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
+
+  function handleQueryChange(value: string) {
+    setQuery(value)
+    setPage(1)
+  }
+
+  function handleStatusFilterChange(value: "all" | "Active" | "Inactive") {
+    setStatusFilter(value)
+    setPage(1)
+  }
+
+  function handlePageSizeChange(size: number) {
+    setPageSize(size)
+    setPage(1)
+  }
+
+  async function handleToggleStatus(id: string) {
+    setActionError(null)
+    const role = roles.find((r) => r.id === id)
+    const { error } = await toggleStatus(id)
+    if (error) {
+      setActionError(error)
+      toast.error(error)
+      return
+    }
+    toast.success(
+      role
+        ? `${role.name} is now ${role.status === "Active" ? "inactive" : "active"}.`
+        : "Role status updated."
+    )
+  }
+
+  async function handleDeleteRole(id: string) {
+    setActionError(null)
+    const role = roles.find((r) => r.id === id)
+    const { error } = await deleteRole(id)
+    if (error) {
+      toast.error(error)
+    } else {
+      toast.success(role ? `${role.name} deleted.` : "Role deleted.")
+    }
+    return error
+  }
+
+  return (
+    <DashboardShell initialActiveLabel="Users & Roles">
+      <AdminBreadcrumb
+        className="mb-3"
+        segments={[{ label: "Dashboard", href: "/" }, { label: "Roles" }]}
+      />
+      <div className="mb-[22px] max-w-[680px]">
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+          Role Management - Role List
+        </h1>
+        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          Roles available within the current tenant. Search or filter by
+          status, add a role, or view, edit, activate/deactivate, or delete
+          existing roles.
+        </p>
+      </div>
+
+      <PermissionGate permission={[PermissionCodes.ASM_ROLES_VIEW_ROLE, PermissionCodes.ASM_ROLES_UPDATE_ROLE]}>
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        <SearchInput
+          className="min-w-[220px] flex-1"
+            value={query}
+          onChange={handleQueryChange}
+            placeholder="Search roles…"
+          />
+        
+        <SearchableSelect
+          className="w-[150px]"
+          allLabel="All statuses"
+          searchable={false}
+          selected={statusFilter === "all" ? "" : statusFilter}
+          onChange={(value) =>
+            handleStatusFilterChange((value || "all") as "all" | "Active" | "Inactive")
+          }
+          options={[
+            { value: "Active", label: "Active" },
+            { value: "Inactive", label: "Inactive" },
+          ]}
+        />
+
+        <Link
+          href="/admin/roles/matrix"
+          className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
+        >
+          <Grid3x3 size={16} />
+          Permission Matrix
+        </Link>
+        {canCreateRole && (
+          <Link
+            href="/admin/roles/new"
+            className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+          >
+            <Plus size={16} />
+            Add Role
+          </Link>
+        )}
+      </div>
+
+      {actionError && (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
+        {loading && roles.length === 0 ? (
+          <LoadingState message="Loading roles…" />
+        ) : fetchError && roles.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+            <AlertTriangle size={20} className="text-[var(--rust)]" />
+            <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
+            <button
+              type="button"
+              onClick={() => fetchRoles()}
+              className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <>
+            <RolesTable
+              roles={pageRoles}
+              onToggleStatus={handleToggleStatus}
+              onDeleteRole={handleDeleteRole}
+              canUpdate={canUpdateRole}
+              canDelete={canDeleteRole}
+            />
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          </>
+        )}
+      </PermissionGate>
+    </DashboardShell>
+  )
+}

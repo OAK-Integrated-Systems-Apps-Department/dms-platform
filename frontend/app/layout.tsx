@@ -1,25 +1,32 @@
-"use client"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Inter, IBM_Plex_Mono } from "next/font/google"
+import { cookies } from "next/headers"
 
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import { Providers } from "@/components/providers/providers"
+import { SIDEBAR_COOKIE_NAME } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useState } from "react"
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
-const fontMono = Geist_Mono({
+const headingFont = IBM_Plex_Mono({
   subsets: ["latin"],
+  weight: ["500", "600"],
+  variable: "--font-heading",
+})
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
   variable: "--font-mono",
 })
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const [queryClient] = useState(() => new QueryClient())
+  const cookieStore = await cookies()
+  const sidebarOpen = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value !== "false" // defaults to expanded
 
   return (
     <html
@@ -27,15 +34,14 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn(
         "antialiased",
-        fontMono.variable,
+        plexMono.variable,
         "font-sans",
-        geist.variable
+        inter.variable,
+        headingFont.variable
       )}
     >
       <body>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>{children}</ThemeProvider>
-        </QueryClientProvider>
+        <Providers initialSidebarOpen={sidebarOpen}>{children}</Providers>
       </body>
     </html>
   )

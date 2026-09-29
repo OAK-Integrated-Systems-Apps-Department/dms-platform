@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+#
+# Dev-only image: runs `next dev` with hot reload. Source is bind-mounted
+# in from the host by docker-compose, so this file only needs to install
+# dependencies - it does NOT run `next build`.
+#
+# Build context is frontend/, same as the prod Dockerfile:
+#   docker build -t oakdms-frontend-dev -f frontend/Dockerfile.dev frontend
+
+FROM oven/bun:1
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+EXPOSE 3000
+
+CMD ["bun", "run", "dev"]
