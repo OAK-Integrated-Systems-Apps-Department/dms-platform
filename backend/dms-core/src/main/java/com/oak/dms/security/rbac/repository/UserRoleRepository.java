@@ -33,4 +33,22 @@ public interface UserRoleRepository extends JpaRepository<UserRole, UUID> {
      * one level up from that.
      */
     boolean existsByRoleId(UUID roleId);
+
+    /**
+     * Names of the tenant roles that currently apply to the user - the same
+     * "applies" rule as RolePermissionRepository#findEffectivePermissionCodes
+     * (role not deleted, status active), so what My Profile lists always
+     * matches what the user's permissions are actually derived from.
+     * Distinct because one role can be assigned at several scopes.
+     */
+    @Query("""
+            select distinct r.roleName
+            from UserRole ur
+            join Role r on r.roleId = ur.roleId
+            where ur.userId = :userId and ur.tenantId = :tenantId
+              and r.deleted = false
+              and r.status = com.oak.dms.security.rbac.entity.Role.RoleStatus.active
+            order by r.roleName
+            """)
+    List<String> findActiveRoleNames(@Param("userId") UUID userId, @Param("tenantId") UUID tenantId);
 }

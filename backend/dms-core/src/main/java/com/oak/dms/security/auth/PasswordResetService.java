@@ -7,7 +7,6 @@ import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;
-import com.oak.dms.security.keycloak.KeycloakAdminProperties;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
@@ -15,7 +14,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.WebApplicationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.keycloak.admin.client.Keycloak;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -74,8 +72,6 @@ public class PasswordResetService {
 
     private final UserRepository userRepository;
     private final KeycloakUserService keycloakUserService;
-    private final Keycloak keycloakAdminClient;
-    private final KeycloakAdminProperties keycloakAdminProperties;
     private final PasswordResetTokenRepository tokenRepository;
     private final JavaMailSender mailSender;
     private final BrandingProperties branding;
@@ -294,17 +290,14 @@ public class PasswordResetService {
     }
 
     /**
-     * Exact-match lookup against Keycloak's Admin API, same approach as
-     * {@link AuthService#isMfaRequired} - {@code usernameOrEmail} is
-     * matched against Keycloak's username, which
-     * {@link KeycloakUserService#createUser} always sets to the account's
-     * email, so a single exact-match search covers both "username" and
-     * "email" from the person's point of view.
+     * Exact-match lookup by username, then by email - see
+     * {@link KeycloakUserService#findByUsernameOrEmail}. Usernames are no
+     * longer the account's email ({@link KeycloakUserService#createUser}
+     * takes them separately), so a username-only search missed everyone
+     * who typed their email here.
      */
     private Optional<UserRepresentation> findKeycloakUser(String usernameOrEmail) {
-        List<UserRepresentation> matches = keycloakAdminClient.realm(keycloakAdminProperties.getRealm())
-                .users().search(usernameOrEmail, true);
-        return matches.stream().findFirst();
+        return keycloakUserService.findByUsernameOrEmail(usernameOrEmail);
     }
 
     /**

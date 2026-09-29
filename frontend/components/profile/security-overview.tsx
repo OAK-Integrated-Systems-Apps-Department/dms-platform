@@ -9,6 +9,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { KEYCLOAK_ACCOUNT_URL } from "@/lib/api-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { formatDateTime } from "@/lib/utils"
 
 /**
  * Password and Multi-Factor Authentication sections for My Profile —
@@ -59,7 +60,7 @@ export function SecurityOverview() {
             Last Changed
           </p>
           <p className="font-mono text-[12.5px] text-foreground">
-            {user?.lastPasswordChangedAt ? user.lastPasswordChangedAt.slice(0, 10) : "—"}
+            {user?.lastPasswordChangedAt ? formatDateTime(user.lastPasswordChangedAt) : "—"}
           </p>
         </div>
         <div>
