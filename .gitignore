@@ -11,3 +11,9 @@ infra/secrets/*.env
 # Ignore dms-core encrypted secrets file
 infra/secrets/dms-core.secrets.enc.env
 infra/secrets/dms-core.secrets.env
+# Production server-side files (infra/production) - real secrets and deploy
+# state live only on the server; see infra/production/.env.example.
+infra/production/.env
+infra/production/dms-core.env
+infra/production/.deploy-history
+infra/production/.deploy.lock
