@@ -172,5 +172,38 @@ curl -s -f -X PUT "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM" \
   -d "$UPDATED_REALM"
 
 echo "SMTP config applied"
+
+# --- Web client URLs ---------------------------------------------------
+# Same IGNORE_EXISTING problem as the SMTP block above: the realm file's
+# ${OAK_DMS_WEB_URL} redirectUris/webOrigins are only substituted on the
+# realm's FIRST import. Re-applying them here on every run means changing
+# PUBLIC_HOST in infra/local/.env is enough to move an existing stack to a
+# new host - no manual admin-console edits.
+if [ -n "${KEYCLOAK_WEB_CLIENT_URL:-}" ]; then
+  KEYCLOAK_WEB_CLIENT_ID="${KEYCLOAK_WEB_CLIENT_ID:-oak-dms-web}"
+  WEB_CLIENT_URL="${KEYCLOAK_WEB_CLIENT_URL%/}"
+
+  echo "Applying redirect URIs/web origins ($WEB_CLIENT_URL) to client $KEYCLOAK_WEB_CLIENT_ID..."
+
+  WEB_CLIENT=$(curl -s -f -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/clients?clientId=$KEYCLOAK_WEB_CLIENT_ID&exact=true" \
+    -H "Authorization: Bearer $TOKEN" | jq '.[0]')
+
+  if [ -z "$WEB_CLIENT" ] || [ "$WEB_CLIENT" = "null" ]; then
+    echo "Failed to find client $KEYCLOAK_WEB_CLIENT_ID"
+    exit 1
+  fi
+
+  WEB_CLIENT_UUID=$(echo "$WEB_CLIENT" | jq -r '.id')
+  UPDATED_WEB_CLIENT=$(echo "$WEB_CLIENT" | jq --arg url "$WEB_CLIENT_URL" \
+    '.redirectUris = [$url + "/*"] | .webOrigins = [$url]')
+
+  curl -s -f -X PUT "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/clients/$WEB_CLIENT_UUID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$UPDATED_WEB_CLIENT"
+
+  echo "Web client URLs applied"
+fi
+
 echo "Bootstrap completed successfully"
 exit 0

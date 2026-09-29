@@ -1,6 +1,9 @@
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/dms_core_db
+    # Placeholder, not a literal: a literal here would override DB_URL
+    # from the environment (profile yml beats application.yml's own
+    # ${DB_URL:...}), silently ignoring the compose file's value.
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/dms_core_db}
   rabbitmq:
     host: rabbitmq
 
@@ -15,7 +18,10 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081/realms/oak-dms
+          # Must match the browser-facing Keycloak URL (KC_HOSTNAME) - set
+          # from PUBLIC_HOST in infra/local/docker-compose.yml and from
+          # PUBLIC_URL in infra/production/docker-compose.yml.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/oak-dms}
           jwk-set-uri: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
 
 keycloak:
