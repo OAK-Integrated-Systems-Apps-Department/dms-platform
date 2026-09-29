@@ -401,6 +401,38 @@ class OcrRepository:
         """
         return job.status == "processing" and job.lease_expires_at is None
 
+    def record_death_cause(self, *, version_id: uuid.UUID, error: str) -> bool:
+        """Write WHY a pool worker died, from the PARENT, without touching
+        the job's status or its lease.
+
+        This exists because of a real hole. When a pool worker is
+        OOM-killed, or the outer pebble ceiling fires, the worker never
+        gets to write anything -- so the row was left `processing` with a
+        live lease and *no `last_error` at all*, and the reaper, seeing no
+        cause, retried it as though it were a transient crash. For a
+        document that is simply too large or too slow that retry can never
+        succeed: the 50-upload run at 4 MP spent ~40 of its 60 minutes on
+        one 35-page scan being retried five times.
+
+        Deliberately does NOT change `status` or clear the lease. The
+        reaper still owns reclaiming the row -- this only leaves it the
+        evidence it needs to decide how many times that is worth doing.
+        Returns False if the row is no longer `processing` (a worker that
+        came back just in time, or another reaper got there first), which
+        is not an error.
+        """
+        result = self.session.execute(
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.job_type == "ocr",
+                ProcessingJob.reference_type == "document_versions",
+                ProcessingJob.reference_id == version_id,
+                ProcessingJob.status == "processing",
+            )
+            .values(last_error=error[:4000])
+        )
+        return bool(result.rowcount)
+
     def reap_requeue(self, *, job_id: uuid.UUID, backoff_seconds: int, leaseless_grace_seconds: int) -> bool:
         """CAS: moves one reapable job back to 'queued' with its backoff
         window set. Guarded by the same `_reapable` predicate the scan
@@ -577,6 +609,16 @@ class OcrRepository:
         version.ocr_status = "completed"
 
         job.status = "completed"
+        # A job that failed once and then succeeded must not keep the old
+        # error. Two things go wrong if it does, and the second is not
+        # cosmetic: a `completed` row reading "WORKER_CRASH: pool worker
+        # died" is simply false to anyone inspecting it, AND the reaper
+        # reads `last_error` to choose a retry budget -- so a later rerun
+        # that died with no recorded cause would inherit this stale one,
+        # and the "OOM-killed twice" rule would fire on a crash that
+        # already resolved. Observed live: version 32520b6a completed on
+        # attempt 2 still carrying attempt 1's WORKER_CRASH.
+        job.last_error = None
         job.finished_at = datetime.now(timezone.utc)
 
         self.session.add(
@@ -638,6 +680,40 @@ class OcrRepository:
                         source_bbox=bbox,
                     )
                 )
+        self.session.flush()
+
+    def requeue_after_failure(self, *, job: ProcessingJob, error: str, backoff_seconds: int) -> None:
+        """A failure the retry policy says is worth another attempt: back
+        to 'queued' with a backoff, instead of terminal 'failed'.
+
+        This closes a real asymmetry. The retry policy
+        (`OCR_RETRY_ATTEMPTS_BY_CODE`) was only ever consulted by the
+        reaper, which sees a job whose worker *died*. A worker that
+        survives and records its own failure went straight to terminal --
+        so the identical cause got a different number of attempts
+        depending only on whether the process lived through it. TIMEOUT is
+        the case that matters: `TIMEOUT=1` in the policy, but an in-worker
+        deadline produced zero retries while the pool ceiling produced one.
+
+        **Emits no event, deliberately** -- the same rule, and for the same
+        measured reason, as `reap_requeue` above: OutboxRelay polls every
+        2s, so an event published here always arrives inside the backoff
+        window, `claim_job`'s `next_attempt_at <= now` guard refuses it,
+        the consumer acks and skips, and nothing ever publishes again. The
+        reaper's `publish_due_retry` is what re-requests this job, on a
+        later tick, once the backoff has actually elapsed.
+
+        The version is left non-terminal and untouched, matching what a
+        reaper requeue leaves behind -- `claim_job` sets it back to
+        'processing' on the next attempt. Writing 'failed' here would show
+        the user a terminal failure for a document that is about to be
+        retried.
+        """
+        now = datetime.now(timezone.utc)
+        job.status = "queued"
+        job.last_error = error[:4000]
+        job.next_attempt_at = now + timedelta(seconds=backoff_seconds)
+        job.lease_expires_at = None
         self.session.flush()
 
     def complete_failure(self, *, job: ProcessingJob, version: DocumentVersion, error: str, event_payload: dict) -> None:

@@ -1,0 +1,27 @@
+{
+  "doc_id": "invoice-fax_g4_tiff-02",
+  "type_code": "INVOICE",
+  "condition": "fax_g4_tiff",
+  "filename": "invoice-fax_g4_tiff-02.tiff",
+  "mime_type": "image/tiff",
+  "degraded": true,
+  "expected_page_count": 1,
+  "set": "synthetic",
+  "fields": {
+    "invoice_number": "INV-2026-55818",
+    "invoice_date": "2026-06-09",
+    "amount": "43182.42",
+    "currency": "USD",
+    "vendor_supplier_name": "Fabrikam Industries",
+    "purchase_order_number": "PO-37687",
+    "classification_level": "internal",
+    "department": "Legal",
+    "cost_centre": "CC-1042",
+    "tags": [
+      "renewal",
+      "urgent"
+    ],
+    "description": "Bulk purchase of packaging materials for the export division."
+  },
+  "reference_text": "Fabrikam Industries\n15 Harbour Road, Colombo 03\nVAT Reg. GB 384 2910 55\nINVOICE\nInvoice Number:\nINV-2026-55818\nInvoice Date:\n09/06/2026\nTotal Amount:\n43,182.42\nCurrency:\nUSD\nVendor / Supplier:\nFabrikam Industries\nPO Number:\nPO-37687\nClassification:\nInternal\nDepartment:\nLegal\nTags:\nrenewal, urgent\nDescription:\nBulk purchase of packaging materials for the export division.\nDescription\nQty\nUnit Price\nLine Total\nA4 Copier Paper 80gsm\n12\n18.50\n222.00\nToner Cartridge HP 26A\n3\n96.00\n288.00\nRing Binders 50mm\n25\n4.20\n105.00\nArchive Storage Boxes\n40\n3.75\n150.00\nCost Centre: CC-1042\nRemittance: Bank of Ceylon, Colombo 03, sort 77-11-04, account 8830142297, ref as above.\nRegistered in England and Wales no. 04482137. VAT registration GB 384 2910 55.\nLate payment interest accrues at 8% above base rate per annum under the Late Payment of\nCommercial Debts (Interest) Act 1998. Goods remain our property until paid in full.\nTerms: payment due within 30 days of the invoice date."
+}

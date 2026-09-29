@@ -16,7 +16,7 @@ import pytest
 fitz = pytest.importorskip("fitz")
 PIL_Image = pytest.importorskip("PIL.Image")
 
-from ocr_worker.layout import DoclingLayoutDocument, DoclingTextDocument, _MAX_RENDER_DIMENSION_PX
+from ocr_worker.layout import DEFAULT_RENDER_MAX_MP, DoclingLayoutDocument, DoclingTextDocument
 
 
 class _FakeDoclingConverter:
@@ -57,7 +57,12 @@ def test_render_page_caps_pixel_size_for_an_ordinary_high_resolution_photo():
 
     page_image = doc.render_page(0, dpi=200)
 
-    assert max(page_image.width_px, page_image.height_px) <= _MAX_RENDER_DIMENSION_PX
+    # The rasterizer rounds each side up independently, so the realised
+    # area can exceed the budget by at most one extra row plus one extra
+    # column. Asserted with exactly that slack rather than a round fudge
+    # factor, so a real regression in the scale cannot hide inside it.
+    rounding_slack = page_image.width_px + page_image.height_px + 1
+    assert page_image.width_px * page_image.height_px <= DEFAULT_RENDER_MAX_MP * 1_000_000 + rounding_slack
     # Aspect ratio preserved, not squashed to a square.
     assert page_image.width_px < page_image.height_px
 
@@ -87,7 +92,12 @@ def test_render_page_caps_an_oversized_pdf_page_too():
 
     page_image = doc.render_page(0, dpi=300)
 
-    assert max(page_image.width_px, page_image.height_px) <= _MAX_RENDER_DIMENSION_PX
+    # The rasterizer rounds each side up independently, so the realised
+    # area can exceed the budget by at most one extra row plus one extra
+    # column. Asserted with exactly that slack rather than a round fudge
+    # factor, so a real regression in the scale cannot hide inside it.
+    rounding_slack = page_image.width_px + page_image.height_px + 1
+    assert page_image.width_px * page_image.height_px <= DEFAULT_RENDER_MAX_MP * 1_000_000 + rounding_slack
 
 
 def test_a_bare_raster_image_never_invokes_docling_conversion():
@@ -418,3 +428,288 @@ def test_sniff_falls_back_to_alias_normalized_declared_type_when_unsniffable():
 def test_sniff_identifies_real_pdf_bytes_correctly():
     result = sniff_and_normalize_mime_type(_pdf_bytes_full(), "application/octet-stream")
     assert result == "application/pdf"
+
+
+# ----------------------------------------------------------------------
+# EXIF orientation (production prompt 3.2, "apply EXIF orientation for
+# camera images before anything else").
+#
+# Nothing in the worker did this explicitly, which looked like a plain
+# gap. It is not: fitz/MuPDF applies EXIF orientation itself during
+# rasterization, so the ordinary JPEG/TIFF path is already correct. These
+# tests pin that, because it is load-bearing behaviour of a dependency
+# that nothing in this codebase asserts -- and because the ONE path that
+# does not get it for free (the PIL-preconvert path for WEBP/HEIC/HEIF,
+# which re-encodes to PNG, a format with no orientation tag) had to be
+# fixed. Without these, a future switch away from fitz would silently
+# start feeding OCR sideways phone photos.
+# ----------------------------------------------------------------------
+_EXIF_ORIENTATION_TAG = 274
+
+# Landscape, so a quarter-turn is visible in the dimensions, with a marked
+# corner so the 180-degree case -- which preserves dimensions -- is
+# answerable too.
+_EXIF_W, _EXIF_H = 400, 200
+
+
+def _marked_image():
+    image = PIL_Image.new("RGB", (_EXIF_W, _EXIF_H), "white")
+    image.paste(PIL_Image.new("RGB", (40, 40), "black"), (0, 0))  # top-left
+    return image
+
+
+def _with_exif_orientation(fmt: str, orientation: int) -> bytes:
+    exif = PIL_Image.Exif()
+    exif[_EXIF_ORIENTATION_TAG] = orientation
+    buf = io.BytesIO()
+    _marked_image().save(buf, format=fmt, exif=exif)
+    return buf.getvalue()
+
+
+def _black_corner_of(image) -> str:
+    w, h = image.size
+    corners = {
+        "TL": image.getpixel((10, 10)),
+        "TR": image.getpixel((w - 10, 10)),
+        "BL": image.getpixel((10, h - 10)),
+        "BR": image.getpixel((w - 10, h - 10)),
+    }
+    dark = [name for name, px in corners.items() if sum(px[:3]) < 200]
+    assert len(dark) == 1, f"expected exactly one marked corner, found {dark}"
+    return dark[0]
+
+
+def _fitz_render(data: bytes, filetype: str):
+    doc = fitz.open(stream=data, filetype=filetype)
+    pixmap = doc[0].get_pixmap()
+    image = PIL_Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+    doc.close()
+    return image
+
+
+@pytest.mark.parametrize(
+    "orientation,expected_landscape,expected_corner",
+    [
+        (1, True, "TL"),   # already upright
+        (3, True, "BR"),   # 180
+        (6, False, "TR"),  # 90 CW -- the common iPhone/Android portrait shot
+        (8, False, "BL"),  # 90 CCW
+    ],
+)
+def test_fitz_applies_exif_orientation_when_it_rasterizes(
+    orientation, expected_landscape, expected_corner
+):
+    rendered = _fitz_render(_with_exif_orientation("JPEG", orientation), "jpg")
+    assert (rendered.size[0] > rendered.size[1]) is expected_landscape
+    assert _black_corner_of(rendered) == expected_corner
+
+
+def test_the_pil_preconvert_path_applies_exif_orientation_itself():
+    """The one path that does not inherit fitz's handling: WEBP/HEIC/HEIF
+    are decoded by Pillow and re-encoded as PNG, and PNG carries no
+    orientation tag -- so whatever is not applied here is lost for good.
+
+    Verified against the installed Pillow: a WEBP written with
+    Orientation=6 opens at its raw 400x200 with tag 274 still set, i.e.
+    Pillow does NOT apply it on open (unlike pillow-heif, which does), and
+    the page reached OCR sideways before this.
+    """
+    from ocr_worker.layout import _decode_via_pil_to_png
+
+    data = _with_exif_orientation("WEBP", 6)
+    assert PIL_Image.open(io.BytesIO(data)).size == (_EXIF_W, _EXIF_H)  # not yet applied
+
+    rendered = _fitz_render(_decode_via_pil_to_png(data, "image/webp"), "png")
+
+    assert rendered.size[0] < rendered.size[1]  # now portrait: the rotation was applied
+    assert _black_corner_of(rendered) == "TR"
+
+
+def test_the_pil_preconvert_path_leaves_an_already_upright_image_alone():
+    from ocr_worker.layout import _decode_via_pil_to_png
+
+    rendered = _fitz_render(_decode_via_pil_to_png(_with_exif_orientation("WEBP", 1), "image/webp"), "png")
+
+    assert rendered.size[0] > rendered.size[1]
+    assert _black_corner_of(rendered) == "TL"
+
+
+# ----------------------------------------------------------------------
+# Discarded scanner pixels are reported, not thrown away in silence
+#
+# The render budget means a genuine 300- or 600-DPI scan is downsampled
+# on arrival. That is a legitimate trade against a measured OOM ceiling,
+# but doing it silently is not: a high-DPI scan that reads badly is
+# indistinguishable from a bad scan unless the output says the worker
+# threw most of it away. See docs/ocr/phase2-verification.md Step 4.
+# ----------------------------------------------------------------------
+def test_a_high_resolution_scan_records_what_was_discarded():
+    # A real 300-DPI A4 scan: 2480x3508 native. PyMuPDF opens a bare
+    # raster as a one-page document whose point size is its pixel size
+    # scaled by 72/96, so this is the true "supplied a big scan" case.
+    source = _jpeg_bytes(2480, 3508)
+    doc = DoclingLayoutDocument(source, "image/jpeg", "scan.jpg", _FakeDoclingConverter())
+
+    geometry = doc.page_geometry(0, dpi=200)
+
+    assert geometry.downsampled_from == (2480, 3508)
+    reported = geometry.to_dict()["downsampled_from"]
+    assert reported["width_px"] == 2480
+    assert reported["height_px"] == 3508
+    assert reported["megapixels"] == pytest.approx(8.70, abs=0.01)
+    # A real fraction of the source, so "how much was lost" is answerable
+    # without the consumer redoing the arithmetic.
+    assert 0 < reported["scale"] < 1
+
+
+def test_a_page_that_lost_nothing_says_nothing():
+    """Absence has to mean "nothing was discarded", not "nobody looked" --
+    otherwise the field is useless for deciding whether to re-scan."""
+    source = _pdf_bytes(612, 792)  # vector, no raster at all
+    doc = DoclingLayoutDocument(source, "application/pdf", "letter.pdf", _FakeDoclingConverter())
+
+    geometry = doc.page_geometry(0, dpi=200)
+
+    assert geometry.downsampled_from is None
+    assert "downsampled_from" not in geometry.to_dict()
+
+
+def test_a_small_image_rendered_at_or_above_its_own_size_is_not_downsampled():
+    """An upscale is not a loss. A 400x300 image rendered larger than
+    itself has had nothing discarded, and reporting it as downsampled
+    would train whoever reads these to ignore the field."""
+    source = _jpeg_bytes(400, 300)
+    doc = DoclingLayoutDocument(source, "image/jpeg", "small.jpg", _FakeDoclingConverter())
+
+    geometry = doc.page_geometry(0, dpi=200)
+
+    assert geometry.width_px >= 400
+    assert geometry.downsampled_from is None
+
+
+def test_the_discard_is_logged_with_both_sizes(caplog):
+    """The log line is what a support engineer has when nobody kept the
+    output JSON, so it has to carry the source size, the rendered size
+    and the budget that caused it."""
+    import logging
+
+    source = _jpeg_bytes(2480, 3508)
+    doc = DoclingLayoutDocument(source, "image/jpeg", "scan.jpg", _FakeDoclingConverter())
+
+    with caplog.at_level(logging.INFO, logger="ocr_worker.layout"):
+        doc.render_page(0, dpi=200)
+
+    messages = [r.getMessage() for r in caplog.records]
+    downsample_lines = [m for m in messages if "downsampled" in m]
+    assert len(downsample_lines) == 1
+    line = downsample_lines[0]
+    assert "2480x3508" in line
+    assert "OCR_RENDER_MAX_MP" in line
+
+
+def test_forgetting_the_budget_still_caps_the_render():
+    """`max_megapixels=None` means the default, NOT "uncapped".
+
+    Got this wrong first time: with None meaning no cap, this very
+    fixture rendered 3000x4000pt at 12500x16667 = 208 MP, which at the
+    measured ~0.7 GiB/MP is an instant OOM kill taking every other
+    in-flight document in that worker with it. The safe value has to be
+    the one you get by forgetting.
+    """
+    source = _pdf_bytes(3000, 4000)
+    doc = DoclingLayoutDocument(
+        source, "application/pdf", "drawing.pdf", _FakeDoclingConverter(), max_megapixels=None
+    )
+
+    page_image = doc.render_page(0, dpi=300)
+
+    slack = page_image.width_px + page_image.height_px + 1
+    assert page_image.width_px * page_image.height_px <= DEFAULT_RENDER_MAX_MP * 1_000_000 + slack
+
+
+def test_a_scanned_pdf_page_also_reports_its_source_raster():
+    """The other shape of the same case, and the reason `get_images()`
+    was not enough: a scan usually arrives as a PDF wrapping one big
+    image, not as a bare JPEG. Both must be detected, or the field is
+    only trustworthy for half the population it describes."""
+    photo = _jpeg_bytes(2480, 3508)
+    pdf_doc = fitz.open()
+    page = pdf_doc.new_page(width=595, height=842)  # A4, in points
+    page.insert_image(fitz.Rect(0, 0, 595, 842), stream=photo)
+    buf = io.BytesIO()
+    pdf_doc.save(buf)
+    pdf_doc.close()
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "application/pdf", "scan.pdf", _FakeDoclingConverter())
+    geometry = doc.page_geometry(0, dpi=200)
+
+    assert geometry.downsampled_from == (2480, 3508)
+    assert geometry.to_dict()["downsampled_from"]["megapixels"] == pytest.approx(8.70, abs=0.01)
+
+
+def test_a_pdf_page_never_takes_the_expensive_native_size_path():
+    """A performance regression that cost whole documents, pinned.
+
+    `page_geometry()` is called at least twice per page, and it calls
+    `native_pixel_size()`. Using `get_image_info()` there -- which parses
+    the content stream and decodes enough of each image to describe it --
+    measured **1930ms for a single scanned page** and 3341ms for a
+    35-page scan. Under the 50-upload concurrent run that pushed
+    one-page documents past their 85s budget and timed out a 35-page scan
+    at page 34 of 35.
+
+    `get_images()` reads only the resource dictionary, returns the
+    identical dimensions on a PDF, and takes 0.4ms. Asserted by spying on
+    the call rather than by timing, because a timing assertion on a
+    loaded CI box is a flake generator.
+    """
+    from ocr_worker.layout import native_pixel_size
+
+    photo = _jpeg_bytes(2480, 3508)
+    pdf_doc = fitz.open()
+    page = pdf_doc.new_page(width=595, height=842)
+    page.insert_image(fitz.Rect(0, 0, 595, 842), stream=photo)
+    buf = io.BytesIO()
+    pdf_doc.save(buf)
+    pdf_doc.close()
+
+    doc = fitz.open(stream=buf.getvalue(), filetype="pdf")
+    real_page = doc[0]
+    calls = {"info": 0, "images": 0}
+    real_get_image_info = real_page.get_image_info
+    real_get_images = real_page.get_images
+
+    class Spy:
+        rect = real_page.rect
+
+        def get_image_info(self, *a, **k):
+            calls["info"] += 1
+            return real_get_image_info(*a, **k)
+
+        def get_images(self, *a, **k):
+            calls["images"] += 1
+            return real_get_images(*a, **k)
+
+    try:
+        size = native_pixel_size(Spy(), raster_source=False)
+        assert size == (2480, 3508)
+        assert calls["images"] == 1
+        assert calls["info"] == 0, "a PDF must not take the content-stream-parsing path"
+    finally:
+        doc.close()
+
+
+def test_a_bare_raster_uses_the_path_that_actually_works_for_it():
+    """The other half of the split. `get_images()` lists a PDF page's
+    image XObjects and returns NOTHING for a bare JPEG/TIFF, because
+    MuPDF synthesises a page around such a file -- so a phone photo would
+    report "nothing discarded". For that shape `get_image_info()` is both
+    correct and already fast (0.4-1.0ms measured)."""
+    from ocr_worker.layout import native_pixel_size
+
+    doc = fitz.open(stream=_jpeg_bytes(2300, 3000), filetype="jpg")
+    try:
+        assert native_pixel_size(doc[0], raster_source=False) is None  # the wrong path sees nothing
+        assert native_pixel_size(doc[0], raster_source=True) == (2300, 3000)
+    finally:
+        doc.close()

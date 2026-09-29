@@ -104,6 +104,16 @@ public class DocumentVersion {
     @Builder.Default
     private String requestedFields = "[]";
 
+    /**
+     * When {@code applyOcrFields} last ran for this version; {@code null}
+     * means never. See {@code V38__ocr_fields_applied_marker.sql} for why
+     * this is an explicit marker rather than something inferred from
+     * {@code document_metadata_values}. Stamped by {@code OcrEventsConsumer},
+     * {@code OcrFieldsReconciler} and the poll-time re-apply.
+     */
+    @Column(name = "ocr_fields_applied_at")
+    private OffsetDateTime ocrFieldsAppliedAt;
+
     @Column(name = "is_protected", nullable = false)
     @Builder.Default
     private boolean protectedVersion = false;

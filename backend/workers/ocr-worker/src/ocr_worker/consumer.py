@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 import aio_pika
@@ -85,13 +86,57 @@ async def _parse_ids(body: dict, message: AbstractIncomingMessage, queue_name: s
     return version_id, correlation_id
 
 
-async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, *, version_id: uuid.UUID, loop, task_timeout_s: float) -> None:
+async def _record_death_cause(session_factory, version_id: uuid.UUID, error: str) -> None:
+    """Write WHY a pool worker died, from the parent, before its lease is
+    left to the reaper.
+
+    This closes a real hole. When a worker is OOM-killed, or the outer
+    pebble ceiling fires, the worker never gets to write anything -- the
+    `processing_jobs` row was left `processing` with no `last_error` at
+    all, and the reaper, seeing no cause, retried it as an ordinary
+    transient crash. For a document that is simply too large or too slow
+    that retry can never succeed, and the cost is real: the 50-upload run
+    at 4 MP spent ~40 of its 60 minutes retrying one 35-page scan five
+    times.
+
+    Runs on a worker thread because the session is synchronous and this
+    is the event loop. Best-effort by design -- if the DB is unreachable
+    the message must still be nacked, so a failure here is logged and
+    swallowed rather than replacing one lost outcome with another.
+    """
+    if session_factory is None:
+        return
+
+    def _write() -> bool:
+        from .db import session_scope
+        from .repository import OcrRepository
+
+        with session_scope(session_factory) as session:
+            return OcrRepository(session).record_death_cause(version_id=version_id, error=error)
+
+    try:
+        wrote = await asyncio.to_thread(_write)
+    except Exception:  # noqa: BLE001 -- never let bookkeeping lose the nack
+        logger.exception("Could not record the death cause for version %s", version_id)
+        return
+    if not wrote:
+        logger.info(
+            "Death cause for version %s not recorded: its job is no longer 'processing'", version_id
+        )
+
+
+async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, *, version_id: uuid.UUID, loop, task_timeout_s: float, session_factory=None) -> None:
     """Shared by every consumer that dispatches a task into the
     OcrProcessPool and then must ack/nack based on the real outcome --
     ScanCompletedConsumer and OcrRequestedConsumer differ only in which
     routing key/payload shape they parse; once dispatched, what ack/nack
     means is identical for both.
     """
+    # Wall-clock for this task, so a SIGKILL at the ceiling can be told
+    # apart from an OOM kill: both surface as exitcode -9, and only the
+    # timing distinguishes them. See the ProcessExpired branch below.
+    dispatched_at = time.monotonic()
+    elapsed_s: float | None = None
     try:
         outcome = await asyncio.wrap_future(future, loop=loop)
     except (VersionNotFound, VersionNotEligible) as exc:
@@ -111,9 +156,14 @@ async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, 
             "leaving the lease for the reaper",
             version_id, task_timeout_s,
         )
+        await _record_death_cause(
+            session_factory, version_id,
+            f"TIMEOUT: hit the outer pool ceiling ({task_timeout_s:.0f}s) without the in-worker deadline firing",
+        )
         await message.nack(requeue=False)
         return
     except ProcessExpired as exc:
+        elapsed_s = time.monotonic() - dispatched_at
         # The pool worker died mid-document. Two very different cases,
         # told apart by the exit code alone (pebble surfaces both
         # identically otherwise):
@@ -124,6 +174,27 @@ async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, 
             # ordinary recorded failure, so nack without requeue exactly
             # like the `outcome.status != "completed"` branch below.
             logger.error("Version %s timed out; its pool worker recorded TIMEOUT and was replaced", version_id)
+        elif elapsed_s is not None and elapsed_s >= task_timeout_s:
+            # pebble's own ceiling normally surfaces as `TimeoutError`
+            # above, but it force-terminates the worker to do so -- and a
+            # force-kill is SIGKILL, which is indistinguishable from an
+            # OOM kill by exit code alone (both -9). If the task ran for
+            # at least the ceiling, the ceiling is the explanation, and
+            # calling it WORKER_CRASH would give it the wrong retry
+            # budget (3 instead of 1) and the wrong message to the user
+            # ("the worker died" instead of "this took too long").
+            logger.error(
+                "Version %s ran %.0fs against a %.0fs ceiling and its worker was killed "
+                "(exitcode=%s) -- recording TIMEOUT, not a crash",
+                version_id, elapsed_s, task_timeout_s, exc.exitcode,
+            )
+            await _record_death_cause(
+                session_factory, version_id,
+                f"TIMEOUT: ran {elapsed_s:.0f}s against the {task_timeout_s:.0f}s pool ceiling "
+                f"before its worker was terminated",
+            )
+            await message.nack(requeue=False)
+            return
         else:
             # A real crash (OOM kill, segfault in a native library). No
             # failure record was written, so the lease stands and the
@@ -131,6 +202,15 @@ async def _await_outcome_and_finalize(future, message: AbstractIncomingMessage, 
             logger.error(
                 "Pool worker died (exitcode=%s, pid=%s) processing version %s; leaving the lease for the reaper",
                 exc.exitcode, exc.pid, version_id,
+            )
+            # The lease is what the reaper reclaims, but WHY it died is
+            # what decides how often that is worth doing -- an OOM kill
+            # caused by this document's own size repeats identically on
+            # every attempt. Recorded here because the worker that would
+            # normally record it is the thing that just died.
+            await _record_death_cause(
+                session_factory, version_id,
+                f"WORKER_CRASH: pool worker died with exitcode={exc.exitcode} while processing this document",
             )
         await message.nack(requeue=False)
         return
@@ -175,8 +255,11 @@ class ScanCompletedConsumer:
     reappear between the two dispatch paths.
     """
 
-    def __init__(self, settings: Settings, pool: OcrProcessPool):
+    def __init__(self, settings: Settings, pool: OcrProcessPool, session_factory=None):
         self._settings = settings
+        # Used only to record WHY a pool worker died (see
+        # _record_death_cause); the pipeline owns every other DB write.
+        self._session_factory = session_factory
         self._pool = pool
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
@@ -236,7 +319,8 @@ class ScanCompletedConsumer:
         loop = asyncio.get_running_loop()
         future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
         await _await_outcome_and_finalize(
-            future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s()
+            future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s(),
+            session_factory=self._session_factory,
         )
 
 
@@ -258,8 +342,11 @@ class OcrRequestedConsumer:
     a second DLQ.
     """
 
-    def __init__(self, settings: Settings, pool: OcrProcessPool):
+    def __init__(self, settings: Settings, pool: OcrProcessPool, session_factory=None):
         self._settings = settings
+        # Used only to record WHY a pool worker died (see
+        # _record_death_cause); the pipeline owns every other DB write.
+        self._session_factory = session_factory
         self._pool = pool
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
@@ -310,5 +397,6 @@ class OcrRequestedConsumer:
         loop = asyncio.get_running_loop()
         future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
         await _await_outcome_and_finalize(
-            future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s()
+            future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s(),
+            session_factory=self._session_factory,
         )

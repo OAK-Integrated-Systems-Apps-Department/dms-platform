@@ -1,0 +1,14 @@
+{
+  "container": "oakdms-ocr-worker",
+  "label": "1.81 MP + routing + cheap native-size path + death-cause recording, 50 uploads / 10 concurrent",
+  "samples": 1600,
+  "interval_s": 2,
+  "duration_s": 3900,
+  "peak_gib": 6.796,
+  "peak_was_reset_first": false,
+  "median_gib": 4.250,
+  "p95_gib": 5.334,
+  "limit_gib": 8.500,
+  "headroom_gib": 1.704,
+  "utilisation": 0.7995
+}

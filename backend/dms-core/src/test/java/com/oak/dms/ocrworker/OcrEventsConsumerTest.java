@@ -3,6 +3,7 @@ package com.oak.dms.ocrworker;
 import com.oak.dms.document.DocumentMetadataService;
 import com.oak.dms.document.DocumentOcrFieldResult;
 import com.oak.dms.document.DocumentOcrFieldResultRepository;
+import com.oak.dms.document.DocumentVersionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -37,13 +38,15 @@ class OcrEventsConsumerTest {
     private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
     @Mock
     private DocumentMetadataService documentMetadataService;
+    @Mock
+    private DocumentVersionRepository documentVersionRepository;
 
     private final UUID tenantId = UUID.randomUUID();
     private final UUID documentId = UUID.randomUUID();
     private final UUID versionId = UUID.randomUUID();
 
     private OcrEventsConsumer consumer() {
-        return new OcrEventsConsumer(processingJobRepository, documentOcrFieldResultRepository, documentMetadataService);
+        return new OcrEventsConsumer(processingJobRepository, documentOcrFieldResultRepository, documentMetadataService, documentVersionRepository);
     }
 
     private Map<String, Object> completedPayload(int attempt) {

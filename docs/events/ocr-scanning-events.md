@@ -174,6 +174,21 @@ Routing key: `document.version.ocr.completed`. Written to `outbox_events` in the
 
 Deliberately slim: the full per-page detail and structured `fields` live only in the MinIO artifact, not duplicated onto the event -- a downstream consumer (a future indexing step, OS-FR-006) fetches `extracted_text_ref` for that. ocr-worker writes the data; it does not own the search index itself.
 
+### Per-page `quality` and `flags` (Phase 2 Step 5, added 2026-09-29)
+
+The event payload is unchanged. What changed is the artifact at `extracted_text_ref`: every **rasterized** page now carries a `quality` block (`effective_dpi`, `blur_score`, `contrast`, `skew_angle`, and the `thresholds` they were judged against) and a per-page `flags` object.
+
+Two page-level flags exist today:
+
+| flag | meaning |
+|---|---|
+| `poor_image_quality` (+ `poor_image_quality_reasons`: `LOW_RESOLUTION` / `BLURRY` / `LOW_CONTRAST`) | the page is below a configured quality bar. It was still OCR'd -- production prompt 3.3 forbids rejecting a page for quality -- and this is what drives the "please re-scan at a higher resolution" message |
+| `table_structure_skipped` | Docling's table pass was abandoned on its per-page deadline. The page kept all its text and lost only table structure |
+
+Both are **page-level** and must not be confused with the document-level `flags` on the event payload above. `flags` carries only what is true, so an empty object reads as a clean page; a page with no `quality` block at all was never rasterized (a native-text page), which is a different fact from `{"measured": false}`.
+
+**This is the second criterion "Open question: representing low confidence" said did not exist.** That note records `low_confidence` and `requires_review` as always equal, because confidence was the only input. A page flagged `poor_image_quality` is a real, independent reason to route a document to review even when its confidence is acceptable -- a washed-out scan can be read confidently and wrongly. Phase 3's `requires_review` rule is where the two stop being the same boolean; the flags it needs are now emitted.
+
 ## Produced: `document.version.ocr.failed`
 
 Routing key: `document.version.ocr.failed`. Same outbox mechanism as above, written when the pipeline hits an unrecoverable error (bad/corrupt file, unsupported mime type, storage fetch failure, a Docling/PaddleOCR failure that couldn't be recovered, etc.) -- never for a low-confidence result, which is `.completed` with `flags.low_confidence: true` (see below). No silent fallback: a real Docling or PaddleOCR exception is what lands here, verbatim, in `error` and `processing_jobs.last_error` -- never swallowed into a placeholder success.
@@ -211,6 +226,38 @@ Idempotent by construction (`applyOcrFields` is delete-then-insert per field
 and override-safe), so a redelivered event converges to the same state with
 no dedupe table. Staleness is handled separately via the `attempt` field
 above.
+
+Since Phase 2 the consumer also stamps
+`document_versions.ocr_fields_applied_at` (V38) after applying. That marker
+is what makes a *lost* `.completed` event detectable -- see below.
+
+## Backstop for a lost `.completed`: `OcrFieldsReconciler`
+
+A `.completed` event that never arrives leaves a document in a state no
+part of the event path will ever revisit: `document_ocr_field_results`
+correct, `document_metadata_values` silently empty. This is not
+hypothetical -- the `OutboxRelay` double-encoding defect killed every
+delivery for an entire phase (see `docs/ocr/phase1-verification.md`).
+
+`OcrFieldsReconciler` (dms-core, `@Scheduled`, `dms.ocr.reconciler-*`) is
+the backstop. Every minute it looks for versions where `ocr_status =
+'completed'`, `ocr_fields_applied_at IS NULL`, the newest OCR job's
+`finished_at` is older than `dms.ocr.stale-after-minutes` (10 by default,
+far beyond the normal commit -> 2s relay poll -> listener latency), and at
+least one applicable field result exists. For each, it binds the row's own
+tenant, applies the fields, stamps the marker -- and **logs a warning**.
+
+The warning is the deliverable. A healthy system produces none; each one
+that appears names a message that genuinely went missing. That is the
+difference from the poll-time re-apply it replaces
+(`dms.ocr.poll-reapply-enabled`), which only ever rescued a document
+somebody happened to open, and rescued it silently -- which is precisely
+how a total failure of this path went unnoticed for a phase.
+
+Concurrency-safe without a lock: the marker stamp is a guarded CAS
+(`UPDATE ... WHERE ocr_fields_applied_at IS NULL`), so if two instances, or
+the reconciler and the listener, reach the same version at once, exactly
+one gets a row back and logs. Same approach as ocr-worker's reaper.
 
 ## Dead-letter convention
 

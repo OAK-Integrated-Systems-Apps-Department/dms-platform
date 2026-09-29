@@ -3,6 +3,8 @@ package com.oak.dms.ocrworker;
 import com.oak.dms.document.DocumentMetadataService;
 import com.oak.dms.document.DocumentOcrFieldResult;
 import com.oak.dms.document.DocumentOcrFieldResultRepository;
+import com.oak.dms.document.DocumentVersionRepository;
+import com.oak.dms.document.OcrFieldResultMapper;
 import com.oak.dms.messaging.RabbitMqConfig;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +61,7 @@ public class OcrEventsConsumer {
     private final ProcessingJobRepository processingJobRepository;
     private final DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
     private final DocumentMetadataService documentMetadataService;
+    private final DocumentVersionRepository documentVersionRepository;
 
     @RabbitListener(queues = RabbitMqConfig.QUEUE_OCR_EVENTS)
     public void onMessage(Map<String, Object> payload) {
@@ -76,6 +79,12 @@ public class OcrEventsConsumer {
         try {
             if (RabbitMqConfig.ROUTING_KEY_OCR_COMPLETED.equals(eventType)) {
                 applyFieldResults(documentId, tenantId);
+                // Stamped whether or not anything was written: the marker
+                // records that this path RAN, which is the distinction
+                // OcrFieldsReconciler needs. A document whose every field
+                // was manually overridden legitimately applies nothing, and
+                // must not look unapplied forever (see V38's comment).
+                documentVersionRepository.markOcrFieldsApplied(versionId, OffsetDateTime.now());
             } else if (RabbitMqConfig.ROUTING_KEY_OCR_FAILED.equals(eventType)) {
                 log.warn("OCR failed for version {}: {}", versionId, payload.get("error"));
             } else {
@@ -99,29 +108,14 @@ public class OcrEventsConsumer {
                 .orElse(false);
     }
 
-    /** Mirrors DocumentServiceImpl#getOcrStatus's own poll-fallback mapping
-     * loop exactly (document_ocr_field_results row -> the {value, confidence}
-     * map shape applyOcrFields expects) -- deliberately not extracted into a
-     * shared helper across the document/ocrworker package boundary for a
-     * ~10-line loop this stable; kept symmetric on purpose, not accidentally
-     * duplicated.
+    /** The row-to-map rule now lives in {@link OcrFieldResultMapper}, shared with
+     * DocumentServiceImpl#getOcrStatus and OcrFieldsReconciler. It used to be
+     * duplicated here deliberately ("kept symmetric on purpose"), which held at two
+     * copies; the reconciler made it three.
      */
     private void applyFieldResults(UUID documentId, UUID tenantId) {
         List<DocumentOcrFieldResult> rows = documentOcrFieldResultRepository.findByDocumentIdAndTenantId(documentId, tenantId);
-
-        Map<String, Object> ocrFieldsRaw = new LinkedHashMap<>();
-        for (DocumentOcrFieldResult row : rows) {
-            if (row.getValue() == null || "not_found".equals(row.getStatus())) {
-                continue;
-            }
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("value", row.getValue());
-            if (row.getConfidence() != null) {
-                entry.put("confidence", row.getConfidence());
-            }
-            ocrFieldsRaw.put(row.getFieldKey(), entry);
-        }
-
+        Map<String, Object> ocrFieldsRaw = OcrFieldResultMapper.toOcrFieldsRaw(rows);
         if (!ocrFieldsRaw.isEmpty()) {
             documentMetadataService.applyOcrFields(documentId, ocrFieldsRaw);
         }

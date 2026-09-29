@@ -48,14 +48,14 @@ class _SlowLayoutDocument(FakeLayoutDocument):
         return [NativeTextBlock(text=f"page {page_no}", bbox=(0, 0, 100, 20))]
 
 
-def _pipeline(session_factory, layout_doc, **setting_overrides):
+def _pipeline(session_factory, layout_doc, storage=None, **setting_overrides):
     settings = Settings(
         min_confidence_threshold=0.95, ocr_languages="en", ocr_render_dpi=200, **setting_overrides
     )
     return OcrPipeline(
         settings=settings,
         session_factory=session_factory,
-        storage=FakeStorage(),
+        storage=storage or FakeStorage(),
         layout_engine=FakeLayoutEngine(layout_doc),
         ocr_engine=FakeOcrEngine(text="", confidence=0.99),
     )
@@ -81,14 +81,80 @@ def test_a_document_that_blows_its_page_scaled_budget_is_recorded_as_timeout(ses
         job = session.query(ProcessingJob).one()
         events = session.query(OutboxEvent).all()
 
-    # The whole point: a terminal state, written by the worker itself, at
-    # the moment the budget was blown -- not a row left 'processing' with a
-    # live lease for the reaper to find half an hour later.
+    # The whole point: a state written by the worker ITSELF at the moment
+    # the budget was blown -- not a row left 'processing' with a live
+    # lease for the reaper to find half an hour later.
+    #
+    # On attempt 1 of 2 that state is 'queued', not 'failed':
+    # OCR_RETRY_ATTEMPTS_BY_CODE gives TIMEOUT one retry, and it now
+    # applies to a timeout the worker recorded as well as one the reaper
+    # inferred. No event yet -- publishing inside the backoff window is
+    # what silently dropped every retry once before (see
+    # `OcrRepository.reap_requeue`); the reaper re-requests it later.
+    assert job.attempts == 1
+    assert job.status == "queued"
+    assert job.next_attempt_at is not None
+    assert job.lease_expires_at is None
+    assert job.last_error.startswith("TIMEOUT: ")
+    assert version.ocr_status != "failed"
+    assert events == []
+
+
+def test_a_timeout_on_its_last_attempt_is_terminal(session_factory, seeded_version):
+    """The other half of the retry budget: once it is spent, a timeout
+    fails for good, with the event that tells dms-core so."""
+    pipeline = _pipeline(
+        session_factory,
+        _SlowLayoutDocument(page_count=4, seconds_per_page=0.05),
+        ocr_timeout_base_s=0,
+        ocr_timeout_per_page_s=0.01,
+        ocr_timeout_hard_grace_s=600,
+    )
+    # Attempt 1 requeues. The job row does not exist until the first
+    # claim creates it, so the budget is spent by running, not by seeding.
+    pipeline.process_version(seeded_version["version_id"])
+    with session_factory() as session:
+        job = session.query(ProcessingJob).one()
+        assert job.status == "queued" and job.attempts == 1
+        # Skip the backoff the reaper would otherwise wait out.
+        job.next_attempt_at = None
+        session.commit()
+
+    # Attempt 2 is the last one the policy allows.
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    assert outcome.status == "failed"
+    with session_factory() as session:
+        version = session.get(DocumentVersion, seeded_version["version_id"])
+        job = session.query(ProcessingJob).one()
+        events = session.query(OutboxEvent).all()
+
     assert version.ocr_status == "failed"
     assert job.status == "failed"
-    assert job.last_error.startswith("TIMEOUT: ")
     assert job.finished_at is not None
     assert [e.event_type for e in events] == ["document.version.ocr.failed"]
+
+
+def test_a_non_timeout_failure_is_still_terminal_on_its_first_attempt(session_factory, seeded_version):
+    """The retry policy is extended to TIMEOUT only, on purpose. An
+    in-worker failure the worker survived to classify is deterministic --
+    a missing object fails identically every time -- so retrying it buys
+    nothing and costs a pool worker per attempt."""
+    pipeline = _pipeline(
+        session_factory,
+        _SlowLayoutDocument(page_count=1, seconds_per_page=0.0),
+        ocr_timeout_base_s=30,
+        ocr_timeout_per_page_s=30,
+        storage=FakeStorage(fail_fetch=True),
+    )
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    assert outcome.status == "failed"
+    with session_factory() as session:
+        job = session.query(ProcessingJob).one()
+    assert job.status == "failed"
+    assert not job.last_error.startswith("TIMEOUT: ")
 
 
 def test_the_budget_comes_from_the_real_page_count_not_ocr_max_pages(session_factory, seeded_version):
@@ -162,10 +228,16 @@ def test_the_hard_watchdog_records_timeout_before_killing_its_worker(session_fac
         version = session.get(DocumentVersion, seeded_version["version_id"])
         job = session.query(ProcessingJob).one()
         events = session.query(OutboxEvent).all()
-    assert version.ocr_status == "failed"
-    assert job.status == "failed"
+    # The record is written BEFORE the exit -- that is the whole reason
+    # this is not just `os._exit` on a timer. On attempt 1 of 2 the record
+    # is a requeue, because a hard timeout is still a TIMEOUT and gets the
+    # same one retry as any other; what matters is that the worker wrote
+    # the cause down rather than leaving a claimed row for the reaper.
     assert job.last_error.startswith("TIMEOUT: ")
-    assert [e.event_type for e in events] == ["document.version.ocr.failed"]
+    assert job.status == "queued"
+    assert job.attempts == 1
+    assert version.ocr_status != "failed"
+    assert events == []
 
 
 def test_a_document_inside_its_budget_is_untouched(session_factory, seeded_version):

@@ -15,6 +15,7 @@ import com.oak.dms.metadata.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.ocrworker.OcrErrorMessages;
+import com.oak.dms.ocrworker.OcrProperties;
 import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
@@ -23,7 +24,6 @@ import com.oak.dms.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -76,13 +76,12 @@ public class DocumentServiceImpl implements DocumentService {
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
 
-    /** See {@code dms.ocr.poll-reapply-enabled} in application.yml. Not on the
-     * constructor via {@code @RequiredArgsConstructor} because it is a scalar
-     * property, not a collaborator -- {@code @Value} on the field keeps the
-     * generated constructor to real dependencies.
+    /** See {@code dms.ocr.poll-reapply-enabled}. Phase 2 moved the
+     * {@code dms.ocr.*} keys into {@link com.oak.dms.ocrworker.OcrProperties}
+     * once the reconciler added four more of them -- a single scalar was
+     * fine as a {@code @Value}, five are not.
      */
-    @Value("${dms.ocr.poll-reapply-enabled:true}")
-    private boolean pollReapplyEnabled;
+    private final OcrProperties ocrProperties;
 
     @Override
     @Transactional
@@ -354,7 +353,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         String collapsedStatus = collapseOcrStatus(version.getOcrStatus());
-        if ("completed".equals(collapsedStatus) && pollReapplyEnabled) {
+        if ("completed".equals(collapsedStatus) && ocrProperties.isPollReapplyEnabled()) {
             // Safety net, not the primary path (Phase 1 B.1): applyOcrFields
             // runs as a side effect of dms-core's own OcrEventsConsumer
             // reacting to the document.version.ocr.completed event
@@ -372,21 +371,17 @@ public class DocumentServiceImpl implements DocumentService {
             // that flag false is how the event path gets proven on its own
             // merits; leave it true in normal operation.
             try {
-                Map<String, Object> ocrFieldsRaw = new LinkedHashMap<>();
-                for (DocumentOcrFieldResult row : rows) {
-                    if (row.getValue() == null || "not_found".equals(row.getStatus())) {
-                        continue;
-                    }
-                    Map<String, Object> entry = new LinkedHashMap<>();
-                    entry.put("value", row.getValue());
-                    if (row.getConfidence() != null) {
-                        entry.put("confidence", row.getConfidence());
-                    }
-                    ocrFieldsRaw.put(row.getFieldKey(), entry);
-                }
+                Map<String, Object> ocrFieldsRaw = OcrFieldResultMapper.toOcrFieldsRaw(rows);
                 if (!ocrFieldsRaw.isEmpty()) {
                     documentMetadataService.applyOcrFields(documentId, ocrFieldsRaw);
                 }
+                // Stamp the marker so OcrFieldsReconciler does not later
+                // warn about a version this path already rescued. Without
+                // it the reconciler would report a lost event for every
+                // document the poll had quietly fixed -- which is precisely
+                // the silent-rescue behaviour that let a total event-path
+                // failure go unnoticed for a phase.
+                documentVersionRepository.markOcrFieldsApplied(version.getVersionId(), OffsetDateTime.now());
             } catch (Exception e) {
                 log.warn("Could not map OCR fields onto document {} metadata during status poll: {}", documentId, e.getMessage());
             }

@@ -121,3 +121,33 @@ class LowImageQualityError(OcrEngineError):
     """
 
     code = "LOW_IMAGE_QUALITY"
+
+
+# Every code this worker can record, as a set, so configuration that
+# names a code can be validated at startup rather than failing silently
+# at the moment it would have mattered (see
+# `Settings.retry_attempts_by_code`). Derived from the classes above so
+# a new error type cannot be added without appearing here.
+KNOWN_ERROR_CODES: frozenset[str] = frozenset(
+    subclass.code
+    for subclass in OcrEngineError.__subclasses__()
+    if getattr(subclass, "code", None)
+)
+
+
+def error_code_of(message: str | None) -> str | None:
+    """The code prefix of a `CODE: human message` string, or None.
+
+    `processing_jobs.last_error` stores failures in that shape (section
+    3.12), so this is how a later reader -- the reaper deciding whether a
+    job may be retried -- recovers the cause without a second column.
+    Returns None for anything that is not a recognized code, which the
+    caller must treat as "unknown cause", never as "no failure".
+    """
+    if not message:
+        return None
+    code, separator, _ = str(message).partition(":")
+    code = code.strip().upper()
+    if not separator or code not in KNOWN_ERROR_CODES:
+        return None
+    return code

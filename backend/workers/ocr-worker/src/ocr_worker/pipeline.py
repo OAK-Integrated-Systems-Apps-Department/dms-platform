@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -33,6 +33,9 @@ from .extraction import (
 )
 from .layout import LayoutEngine, SUPPORTED_MIME_TYPES, sniff_and_normalize_mime_type
 from .ocr_engine import OcrEngine
+from . import quality as quality_mod
+from . import routing
+from .orientation import NullOrientationClassifier, OrientationClassifier, decide as decide_orientation
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
 from .storage import ObjectStorage, ocr_output_key
 from .zones import ZoneRegion, validate_normalized_box
@@ -59,7 +62,45 @@ def _check_deadline(deadline: DocumentDeadline | None, where: str) -> None:
     )
 
 
-def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict], list[dict]]:
+# The OCR output JSON's own schema version (section 3.11). See its use
+# in `_finalize_success` for why this is "added at 2", not "bumped to 2".
+OUTPUT_SCHEMA_VERSION = 2
+
+
+def _page_geometry(layout_doc, page_index: int, dpi: int):
+    """This page's geometry, or None when the document has none.
+
+    Tolerant of a `LayoutDocument` implementation that predates
+    `page_geometry` (the Protocol gained it in Phase 2) rather than
+    requiring every fake in the test suite to grow the method at once.
+    A missing geometry means `bbox_norm` is null, which is honest -- it
+    never means "assume a default page size", because guessing here
+    would put a confidently wrong highlight on a real document.
+    """
+    getter = getattr(layout_doc, "page_geometry", None)
+    if getter is None:
+        return None
+    try:
+        return getter(page_index, dpi)
+    except NotImplementedError:
+        return None
+
+
+def _norm(geometry, bbox):
+    """Normalized form of a pixel bbox, or None when there is no geometry.
+
+    Output contract v2 (docs/ocr/ocr-production-prompt.md section 3.5):
+    every bbox carries 0-1 fractions of page width/height alongside the
+    pixel box that is kept for backward compatibility. The normalized
+    form is the one every consumer should use -- it survives a DPI
+    change, which the pixel box does not.
+    """
+    if geometry is None or bbox is None:
+        return None
+    return geometry.normalize(tuple(bbox))
+
+
+def _merge_native_text_and_tables(native_blocks, tables, geometry=None) -> tuple[str, list[dict], list[dict]]:
     """Combines Docling's flat paragraph text with its (optional) real
     table structure into one reading-order `blocks`/`text`, plus a
     separate structured `tables` list.
@@ -78,17 +119,33 @@ def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict
     """
     positioned: list[tuple[int, int, list[dict], dict | None]] = []
     for b in native_blocks:
-        positioned.append((b.bbox[1], b.bbox[0], [{"text": b.text, "bbox": list(b.bbox), "confidence": 1.0}], None))
+        positioned.append((
+            b.bbox[1],
+            b.bbox[0],
+            [{
+                "text": b.text,
+                "bbox": list(b.bbox),
+                "bbox_norm": _norm(geometry, b.bbox),
+                "confidence": 1.0,
+            }],
+            None,
+        ))
 
     for t in tables:
         ordered_cells = sorted(t.cells, key=lambda c: (c.row, c.col))
         cell_blocks = [
-            {"text": c.text, "bbox": list(c.bbox) if c.bbox else None, "confidence": 1.0}
+            {
+                "text": c.text,
+                "bbox": list(c.bbox) if c.bbox else None,
+                "bbox_norm": _norm(geometry, c.bbox),
+                "confidence": 1.0,
+            }
             for c in ordered_cells
             if c.text
         ]
         table_dict = {
             "bbox": list(t.bbox),
+            "bbox_norm": _norm(geometry, t.bbox),
             "num_rows": t.num_rows,
             "num_cols": t.num_cols,
             "cells": [
@@ -99,6 +156,7 @@ def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict
                     "col_span": c.col_span,
                     "text": c.text,
                     "bbox": list(c.bbox) if c.bbox else None,
+                    "bbox_norm": _norm(geometry, c.bbox),
                     "column_header": c.column_header,
                     "row_header": c.row_header,
                 }
@@ -114,13 +172,65 @@ def _merge_native_text_and_tables(native_blocks, tables) -> tuple[str, list[dict
     return text, blocks, tables_out
 
 
+def _upright_page_heights(geometry_by_page: dict, orientation_by_page: dict) -> dict[int, float]:
+    """Page heights in the space `lines_by_page` is expressed in.
+
+    Not the same as the page's own height: a 90/270 correction swaps a
+    page's dimensions, and extraction's "value stacked below the label"
+    radius is a fraction of page height (see `_spatial_value_on_page`).
+    Feeding it a portrait height for a page OCR read as landscape would
+    make that radius wrong by the page's aspect ratio in both directions.
+    """
+    heights: dict[int, float] = {}
+    for page, geometry in geometry_by_page.items():
+        orientation = orientation_by_page.get(page)
+        if orientation is None:
+            heights[page] = geometry.exact_height_px
+        else:
+            _, heights[page] = orientation.upright_page_size(
+                geometry.exact_width_px, geometry.exact_height_px
+            )
+    return heights
+
+
+def _restore_field_bboxes(field_results, orientation_by_page: dict):
+    """Maps each spatially-matched field's bbox out of the corrected
+    reading space and back into its page's own.
+
+    Returns a new list rather than mutating: `RequestedFieldResult` is a
+    frozen dataclass, deliberately -- it is the exact row
+    `document_ocr_field_results` stores.
+
+    Only touches a result that actually has a page and a bbox: a
+    pattern-rule or flattened-text match has neither (see
+    `extract_requested_fields`), and a zone-derived one was never in the
+    corrected space to begin with -- `_run_zone_ocr` does not reorient.
+    """
+    if not field_results or not orientation_by_page:
+        return field_results
+    restored = []
+    for result in field_results:
+        orientation = orientation_by_page.get(result.page)
+        if orientation is None or result.bbox is None or not orientation.applied:
+            restored.append(result)
+            continue
+        restored.append(replace(result, bbox=tuple(orientation.to_original(result.bbox))))
+    return restored
+
+
 @dataclass
 class PageResult:
     """One entry of the output contract's `pages` array. `page_number` is
     1-indexed, matching the contract's own example and Docling's native
-    numbering. `blocks` bboxes are always in the full page's pixel space
-    at `ocr_render_dpi`, regardless of which method produced them, so a
-    consumer can treat native_text and paddleocr blocks uniformly.
+    numbering.
+
+    Every block carries both a pixel `bbox` in the full page's raster
+    space and, since schema v2, a `bbox_norm` in 0-1 page fractions.
+    Both are produced from this page's single `geometry`, regardless of
+    which method produced the block, so a consumer can treat native_text
+    and paddleocr blocks uniformly -- which was only true in intent
+    before Phase 2 (see `layout.PageGeometry`). `geometry` is None for a
+    reflowable `.docx`, and then every `bbox_norm` on the page is null.
 
     `tables` is only ever non-empty for a `native_text` page: real
     row/column/cell structure from Docling's table-structure model
@@ -138,16 +248,55 @@ class PageResult:
     confidence: float
     blocks: list[dict] = field(default_factory=list)
     tables: list[dict] = field(default_factory=list)
+    geometry: "Any | None" = None  # layout.PageGeometry, None for a .docx
+    # What preprocessing this page went through, per production prompt
+    # section 3.4 ("each step individually toggleable in config and
+    # recorded in the output"). Empty for a native-text page, which is
+    # never rasterized and so never preprocessed. Records the decision
+    # even when nothing was applied -- "the classifier looked and said
+    # upright" and "the classifier never ran" are different facts, and
+    # only the second is a reason to suspect the config.
+    preprocessing: dict = field(default_factory=dict)
+    # Which of native_text / paddleocr / hybrid this page took and every
+    # number that decision was made from (production prompt 3.6). The
+    # metrics are carried, not just the verdict: "this invoice came back
+    # empty" is answerable from "routed native_text at garbage ratio 0.02
+    # and 91% text coverage", and unanswerable from the word alone.
+    routing: dict = field(default_factory=dict)
+    # Per-page boolean facts a consumer has to branch on, kept apart from
+    # the metric dicts above so that "is anything wrong with this page"
+    # is one lookup rather than a scan of four nested structures.
+    # `poor_image_quality` (production prompt 3.3) and
+    # `table_structure_skipped` both live here. Absent keys mean false;
+    # the dict carries only what is true, so an empty dict reads as a
+    # clean page.
+    flags: dict = field(default_factory=dict)
+    # Measured per-page image quality (production prompt 3.3): effective
+    # DPI, blur, contrast and skew. Empty for a page that was never
+    # rasterized, which is the same distinction `preprocessing` draws --
+    # "measured and fine" and "never measured" are different facts.
+    quality: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "page_number": self.page_number,
             "method": self.method,
             "text": self.text,
             "confidence": self.confidence,
             "blocks": self.blocks,
             "tables": self.tables,
+            "preprocessing": self.preprocessing,
+            "routing": self.routing,
+            "flags": self.flags,
+            "quality": self.quality,
         }
+        # Schema v2: the page's own dimensions, so a consumer can turn a
+        # normalized bbox back into pixels or points without having to
+        # reproduce this worker's render-scale arithmetic. Their absence
+        # was a real gap -- see docs/ocr/failure-analysis.md 2.6, where a
+        # pixel bbox carried no scale reference anywhere in the output.
+        out["geometry"] = self.geometry.to_dict() if self.geometry is not None else None
+        return out
 
 
 @dataclass
@@ -173,12 +322,18 @@ class OcrPipeline:
         storage: ObjectStorage,
         layout_engine: LayoutEngine,
         ocr_engine: OcrEngine,
+        orientation_classifier: OrientationClassifier | None = None,
     ):
         self._settings = settings
         self._session_factory = session_factory
         self._storage = storage
         self._layout_engine = layout_engine
         self._ocr_engine = ocr_engine
+        # Defaults to the no-op rather than to the real model so a test
+        # (and `OCR_ORIENTATION_ENABLED=false`) gets a pipeline that needs
+        # no paddleocr at all, while still running the identical code path
+        # -- see orientation.NullOrientationClassifier.
+        self._orientation = orientation_classifier or NullOrientationClassifier()
         self._confidence = ConfidenceEvaluator(settings.min_confidence_threshold)
 
     # ------------------------------------------------------------------
@@ -427,7 +582,10 @@ class OcrPipeline:
             if deadline is not None:
                 deadline.arm(page_count)
 
-        with self._layout_engine.load(file_bytes, mime_type, original_filename, on_page_count=on_page_count) as layout_doc:
+        with self._layout_engine.load(
+            file_bytes, mime_type, original_filename, on_page_count=on_page_count,
+            max_megapixels=self._settings.ocr_render_max_mp,
+        ) as layout_doc:
             if zone_regions:
                 pages, extracted_fields = self._run_zone_ocr(layout_doc, zone_regions, deadline=deadline)
                 zone_derived_fields = extracted_fields
@@ -439,6 +597,7 @@ class OcrPipeline:
                 # configured yet (see document_type_ocr_zones' own
                 # "nothing writes to it outside test fixtures" note).
                 lines_by_page: dict[int, list[LineBlock]] = {}
+                orientation_by_page: dict[int, "Any"] = {}
             else:
                 # No zone/field template configured for this document
                 # type -- extracted_fields here is the LEGACY generic
@@ -448,10 +607,23 @@ class OcrPipeline:
                 # (priority 1) -- that would let an unrelated regex guess
                 # bypass the new dispatch's own, more field-appropriate
                 # strategy for a requested field.
-                pages, extracted_fields, lines_by_page = self._run_full_document(layout_doc, deadline=deadline)
+                pages, extracted_fields, lines_by_page, orientation_by_page = self._run_full_document(layout_doc, deadline=deadline)
                 zone_derived_fields = []
             file_repaired = getattr(layout_doc, "file_repaired", False)
 
+        # Which pages gave up on table structure (see layout.py's
+        # `_install_table_structure_bound`). Recorded per page rather than
+        # per document because a 40-page contract losing tables on one
+        # page is a very different fact from losing them on all forty,
+        # and `requires_review` in Phase 3 has to be able to tell.
+        skipped = getattr(self._layout_engine, "table_structure_skipped_pages", None)
+        for page_no in (skipped() if callable(skipped) else set()):
+            page_result = next((p for p in pages if p.page_number == page_no + 1), None)
+            if page_result is not None:
+                page_result.flags["table_structure_skipped"] = True
+
+        # 1-indexed, matching ExtractedField.page / RequestedFieldResult.page.
+        geometry_by_page = {p.page_number: p.geometry for p in pages if p.geometry is not None}
         field_results = None
         if requested_fields is not None:
             full_text = "\n\n".join(p.text for p in pages)
@@ -461,17 +633,249 @@ class OcrPipeline:
                 text=full_text,
                 zone_fields=zone_fields_by_key,
                 lines_by_page=lines_by_page,
+                page_heights_px=_upright_page_heights(geometry_by_page, orientation_by_page),
                 field_confidence_threshold=self._settings.field_low_confidence_threshold,
             )
-            fields = requested_fields_to_output_dict(field_results)
+            # `lines_by_page` was in the corrected reading space, so a
+            # spatially-matched field's bbox comes back in it too. Put it
+            # back in the page's own space before it reaches the output
+            # (and document_ocr_field_results, which the review UI's
+            # highlights are drawn from).
+            field_results = _restore_field_bboxes(field_results, orientation_by_page)
+            fields = requested_fields_to_output_dict(field_results, geometry_by_page)
         else:
-            fields = fields_to_dict(extracted_fields)
+            fields = fields_to_dict(extracted_fields, geometry_by_page)
 
         return pages, fields, field_results, file_repaired
 
+    # ------------------------------------------------------------------
+    # Preprocessing (production prompt 3.4) -- see orientation.py
+    # ------------------------------------------------------------------
+    def _orient(self, page_image):
+        """`(image_for_ocr, decision)` for one rendered page.
+
+        Runs only on the rasterized path. A native-text page needs no
+        orientation work even when it is visually sideways: its text comes
+        out of the PDF's own text layer in reading order regardless of how
+        the page is displayed, and PyMuPDF already applies a page's
+        `/Rotate` and a JPEG's EXIF orientation when it rasterizes (both
+        verified live -- see `test_layout.py`).
+        """
+        if not self._settings.ocr_orientation_enabled:
+            return page_image.image, None
+        image, decision = decide_orientation(
+            self._orientation,
+            page_image.image,
+            original_size=(page_image.width_px, page_image.height_px),
+            min_confidence=self._settings.ocr_orientation_min_confidence,
+        )
+        if decision.applied:
+            logger.info(
+                "page %d arrived rotated %d deg (confidence %.3f); corrected before OCR",
+                page_image.page_no + 1,
+                decision.angle,
+                decision.confidence,
+            )
+        return image, decision
+
+    @staticmethod
+    def _preprocessing_dict(decision) -> dict:
+        return {"orientation": decision.to_dict()} if decision is not None else {}
+
+    # ------------------------------------------------------------------
+    # Image quality (production prompt 3.3) -- see quality.py
+    # ------------------------------------------------------------------
+    def _assess_quality(self, page_result, image, layout_doc, page_index: int, geometry) -> None:
+        """Measure one rasterized page and flag it if it is poor.
+
+        Measured on the image OCR actually consumed, i.e. after any
+        orientation correction. That makes the reported `skew_angle` the
+        RESIDUAL skew -- the small angle left after whole-page rotation
+        was handled -- which is the number deskewing (3.4 step 2) needs.
+        Measuring before would report 90 degrees for a sideways page and
+        say nothing about whether its text is level.
+
+        Only ever adds to the page. Nothing here can fail a document:
+        production prompt 3.3 says a page is never rejected for quality,
+        and `quality.assess_page` does not raise.
+        """
+        if not self._settings.ocr_quality_enabled:
+            return
+
+        width_pt = getattr(geometry, "width_pt", None) if geometry is not None else None
+        height_pt = getattr(geometry, "height_pt", None) if geometry is not None else None
+        native_px = None
+        getter = getattr(layout_doc, "native_pixel_size_for_page", None)
+        if callable(getter):
+            native_px = getter(page_index)
+
+        measured, reasons = quality_mod.assess_page(
+            image,
+            width_pt=width_pt,
+            height_pt=height_pt,
+            native_pixel_size=native_px,
+            min_dpi=self._settings.ocr_quality_min_dpi,
+            min_blur=self._settings.ocr_quality_min_blur,
+            min_contrast=self._settings.ocr_quality_min_contrast,
+        )
+        page_result.quality = measured
+        if reasons:
+            page_result.flags["poor_image_quality"] = True
+            page_result.flags["poor_image_quality_reasons"] = reasons
+            logger.info(
+                "page %d flagged poor_image_quality (%s): dpi=%s blur=%s contrast=%s",
+                page_result.page_number, ", ".join(reasons),
+                measured.get("effective_dpi"), measured.get("blur_score"),
+                measured.get("contrast"),
+            )
+
+    # ------------------------------------------------------------------
+    # Per-page routing (production prompt 3.6) -- see routing.py
+    # ------------------------------------------------------------------
+    def _route(self, layout_doc, page_index: int, native_blocks, geometry):
+        """Which of `native_text` / `paddleocr` / `hybrid` this page takes.
+
+        With routing disabled this reproduces the old rule exactly -- any
+        native text at all means native_text -- so the toggle is a real
+        rollback and not merely a different set of bugs.
+        """
+        page_number = page_index + 1
+        if not self._settings.ocr_routing_enabled:
+            return routing.RouteDecision(
+                route=routing.NATIVE_TEXT if native_blocks else routing.OCR,
+                reason="routing disabled (OCR_ROUTING_ENABLED=false)",
+                native_chars=sum(len(b.text) for b in native_blocks or []),
+            )
+
+        blocks = native_blocks or []
+        native_text = "\n".join(b.text for b in blocks)
+        native_boxes = [b.bbox for b in blocks if b.bbox]
+
+        if geometry is None:
+            # Every routing metric except the garbage check is an AREA
+            # fraction, and without geometry there is no area to take a
+            # fraction of. A `.docx` is the real case: reflowable, never
+            # rasterized, so there is nothing to OCR even if we wanted to.
+            # Falling back to the old rule is the only safe answer --
+            # guessing a page size here would invent coverage numbers and
+            # route real documents on them.
+            return routing.RouteDecision(
+                route=routing.NATIVE_TEXT if blocks else routing.OCR,
+                reason="no page geometry; coverage cannot be measured",
+                native_chars=len(native_text.strip()),
+            )
+
+        getter = getattr(layout_doc, "image_regions_for_page", None)
+        image_boxes = getter(page_index, self._settings.ocr_render_dpi) if getter else []
+        page_box = (0, 0, geometry.exact_width_px, geometry.exact_height_px)
+
+        decision = routing.decide_route(
+            native_text=native_text,
+            native_boxes=native_boxes,
+            image_boxes=image_boxes,
+            page_box=page_box,
+            max_garbage_ratio=self._settings.ocr_routing_max_garbage_ratio,
+            min_plausibility=self._settings.ocr_routing_min_plausibility,
+            min_uncovered_image_coverage=self._settings.ocr_routing_min_uncovered_image,
+        )
+        if decision.route != routing.NATIVE_TEXT and blocks:
+            # Only worth a log line when the decision OVERRODE a text
+            # layer that the old rule would have trusted -- that is the
+            # case that used to fail silently, and the one an operator
+            # investigating a bad read needs to see.
+            logger.info(
+                "page %d routed %s instead of native_text: %s "
+                "(garbage %.2f, plausibility %.2f, text coverage %.2f, uncovered image %.2f)",
+                page_number, decision.route, decision.reason,
+                decision.garbage_ratio, decision.plausibility,
+                decision.text_coverage, decision.uncovered_image_coverage,
+            )
+        return decision
+
+    def _run_hybrid_page(self, layout_doc, page_index: int, native_blocks, decision, geometry):
+        """A good text layer plus image regions it does not explain: keep
+        the text, OCR the images, merge in reading order.
+
+        Deliberately NOT orientation-corrected. A page whose native text
+        layer reads correctly has already told us which way up it is, and
+        rotating it would invalidate the native boxes that are being
+        merged with the OCR ones -- the exact coordinate-space collision
+        Step 2 existed to remove, which hybrid routing is the first thing
+        to make possible.
+        """
+        page_number = page_index + 1
+        page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
+        geometry = page_image.geometry or geometry
+
+        positioned: list[tuple[float, float, dict]] = []
+        for block in native_blocks or []:
+            positioned.append((block.bbox[1], block.bbox[0], {
+                "text": block.text,
+                "bbox": list(block.bbox),
+                "bbox_norm": _norm(geometry, block.bbox),
+                "confidence": 1.0,
+                "source": "native_text",
+            }))
+
+        ocr_confidences: list[float] = []
+        for region in decision.ocr_regions:
+            crop_box = (
+                max(0, int(region[0])), max(0, int(region[1])),
+                min(page_image.width_px, int(region[2])), min(page_image.height_px, int(region[3])),
+            )
+            if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+                continue
+            cropped = page_image.image.crop(crop_box)
+            result = self._ocr_engine.recognize(cropped, lang=self._settings.ocr_languages)
+            for word in result.words:
+                # Crop-local pixels back into full-page pixels, so an OCR
+                # block and a native block on this page are in one space.
+                page_bbox = [
+                    word.bbox[0] + crop_box[0], word.bbox[1] + crop_box[1],
+                    word.bbox[2] + crop_box[0], word.bbox[3] + crop_box[1],
+                ]
+                positioned.append((page_bbox[1], page_bbox[0], {
+                    "text": word.text,
+                    "bbox": page_bbox,
+                    "bbox_norm": _norm(geometry, page_bbox),
+                    "confidence": word.confidence,
+                    "source": "paddleocr",
+                }))
+                ocr_confidences.append(word.confidence)
+
+        positioned.sort(key=lambda entry: (entry[0], entry[1]))
+        blocks = [block for _, _, block in positioned]
+        text = "\n".join(block["text"] for block in blocks)
+        # Native text is certain; OCR is not. A page that is mostly
+        # native with a small OCR'd region should not be reported as
+        # uncertain as its worst word, nor as certain as its text layer.
+        confidence = (
+            sum(b["confidence"] for b in blocks) / len(blocks) if blocks else 0.0
+        )
+        logger.info(
+            "page %d hybrid: %d native blocks + %d OCR'd blocks from %d image region(s)",
+            page_number, len(native_blocks or []), len(ocr_confidences), len(decision.ocr_regions),
+        )
+        page_result = PageResult(
+            page_number=page_number,
+            method=routing.HYBRID,
+            text=text,
+            confidence=confidence,
+            blocks=blocks,
+            geometry=geometry,
+            routing=decision.to_dict(),
+        )
+        # A hybrid page IS rasterized (that is what the image regions were
+        # cropped from), so it gets the same quality assessment as a fully
+        # OCR'd one. Measured on the whole page rather than on the crops:
+        # the user is told to re-scan a page, not a region.
+        self._assess_quality(page_result, page_image.image, layout_doc, page_index, geometry)
+        lines = [(block["text"], tuple(block["bbox"])) for block in blocks]
+        return page_result, lines
+
     def _run_full_document(
         self, layout_doc, deadline: DocumentDeadline | None = None
-    ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]]]:
+    ) -> tuple[list[PageResult], list[ExtractedField], dict[int, list[LineBlock]], dict]:
         """OS-FR-001/002, per the native-text-vs-paddleocr decision logic:
         a page with a real native text layer (Docling extracts it
         directly from the PDF) is used as-is -- it is never re-OCR'd. A
@@ -487,33 +891,84 @@ class OcrPipeline:
         ITS entries is already exactly one detected text LINE (per
         ocr_engine.py's own comment on `rec_texts`/`rec_boxes`), so no
         extra line-clustering is needed there either.
+
+        The fourth return value maps a 1-indexed page number to its
+        `orientation.PageOrientation` for every rasterized page, because
+        `lines_by_page` is in the CORRECTED (reading) space while the
+        output contract is in the page's own -- whoever consumes those
+        lines owes their results a trip back through it.
         """
         pages: list[PageResult] = []
         lines_by_page: dict[int, list[LineBlock]] = {}
+        orientation_by_page: dict[int, "Any"] = {}
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
             _check_deadline(deadline, f"before page {page_number} of {layout_doc.page_count()}")
             native_blocks = layout_doc.native_text_blocks_for_page(page_number, self._settings.ocr_render_dpi)
+            geometry = _page_geometry(layout_doc, page_index, self._settings.ocr_render_dpi)
+            decision = self._route(layout_doc, page_index, native_blocks, geometry)
 
-            if native_blocks:
+            if decision.route == routing.NATIVE_TEXT:
                 tables = layout_doc.tables_for_page(page_number, self._settings.ocr_render_dpi) or []
-                text, blocks, table_dicts = _merge_native_text_and_tables(native_blocks, tables)
-                pages.append(PageResult(page_number=page_number, method="native_text", text=text, confidence=1.0, blocks=blocks, tables=table_dicts))
+                text, blocks, table_dicts = _merge_native_text_and_tables(native_blocks, tables, geometry)
+                pages.append(PageResult(page_number=page_number, method="native_text", text=text, confidence=1.0, blocks=blocks, tables=table_dicts, geometry=geometry, routing=decision.to_dict()))
                 native_lines = layout_doc.native_text_lines_for_page(page_index, self._settings.ocr_render_dpi)
                 if native_lines:
                     lines_by_page[page_number] = [(b.text, b.bbox) for b in native_lines]
+            elif decision.route == routing.HYBRID:
+                _check_deadline(deadline, f"before hybrid page {page_number}")
+                page_result, hybrid_lines = self._run_hybrid_page(
+                    layout_doc, page_index, native_blocks, decision, geometry
+                )
+                pages.append(page_result)
+                if hybrid_lines:
+                    lines_by_page[page_number] = hybrid_lines
             else:
                 page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
-                result = self._ocr_engine.recognize(page_image.image, lang=self._settings.ocr_languages)
-                blocks = [{"text": w.text, "bbox": list(w.bbox), "confidence": w.confidence} for w in result.words]
-                pages.append(PageResult(page_number=page_number, method="paddleocr", text=result.text, confidence=result.mean_confidence, blocks=blocks))
+                # The rasterizer's own pixmap dimensions win over the
+                # predicted ones -- PyMuPDF rounds, and normalizing an OCR
+                # box against a size a pixel off from the image it was
+                # detected in is a needless source of drift.
+                geometry = page_image.geometry or geometry
+                _check_deadline(deadline, f"before orienting page {page_number}")
+                image_for_ocr, orientation = self._orient(page_image)
+                result = self._ocr_engine.recognize(image_for_ocr, lang=self._settings.ocr_languages)
+                # Every bbox goes back into the ORIGINAL page raster's
+                # space before it leaves here -- OCR saw an upright page,
+                # but the viewer and the review UI see the page as stored.
+                # See orientation.PageOrientation.
+                boxes = [
+                    orientation.to_original(w.bbox) if orientation is not None else w.bbox
+                    for w in result.words
+                ]
+                blocks = [
+                    {
+                        "text": w.text,
+                        "bbox": list(bbox),
+                        "bbox_norm": _norm(geometry, bbox),
+                        "confidence": w.confidence,
+                    }
+                    for w, bbox in zip(result.words, boxes)
+                ]
+                ocr_page = PageResult(page_number=page_number, method="paddleocr", text=result.text, confidence=result.mean_confidence, blocks=blocks, geometry=geometry, preprocessing=self._preprocessing_dict(orientation), routing=decision.to_dict())
+                self._assess_quality(ocr_page, image_for_ocr, layout_doc, page_index, geometry)
+                pages.append(ocr_page)
+                if orientation is not None:
+                    orientation_by_page[page_number] = orientation
                 if result.words:
+                    # Deliberately the UNROTATED-back boxes: spatial field
+                    # matching asks "what is to the right of / below this
+                    # label", which only means anything in reading
+                    # orientation. On a page that arrived sideways, "right
+                    # of" in the stored raster is "below" to a reader.
+                    # These are mapped back to the page's own space once
+                    # matching is done -- see _run_inference.
                     lines_by_page[page_number] = [(w.text, w.bbox) for w in result.words]
 
         full_text = "\n\n".join(p.text for p in pages)
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
-        return pages, extracted_fields, lines_by_page
+        return pages, extracted_fields, lines_by_page, orientation_by_page
 
     def _run_zone_ocr(
         self, layout_doc, regions: list[ZoneRegion], deadline: DocumentDeadline | None = None
@@ -540,12 +995,24 @@ class OcrPipeline:
             result = self._ocr_engine.recognize(cropped, lang=self._settings.ocr_languages)
 
             offset_x, offset_y = crop_box[0], crop_box[1]
-            blocks = [
-                {"text": w.text, "bbox": [w.bbox[0] + offset_x, w.bbox[1] + offset_y, w.bbox[2] + offset_x, w.bbox[3] + offset_y], "confidence": w.confidence}
-                for w in result.words
-            ]
+            geometry = page_image.geometry
+            blocks = []
+            for w in result.words:
+                # Re-based from crop-local pixels into full-page pixels
+                # before normalizing, so a zone result's coordinates mean
+                # the same thing as a full-page one's.
+                page_bbox = [
+                    w.bbox[0] + offset_x, w.bbox[1] + offset_y,
+                    w.bbox[2] + offset_x, w.bbox[3] + offset_y,
+                ]
+                blocks.append({
+                    "text": w.text,
+                    "bbox": page_bbox,
+                    "bbox_norm": _norm(geometry, page_bbox),
+                    "confidence": w.confidence,
+                })
 
-            page_result = pages_by_number.setdefault(page_number, PageResult(page_number=page_number, method="paddleocr", text="", confidence=0.0, blocks=[]))
+            page_result = pages_by_number.setdefault(page_number, PageResult(page_number=page_number, method="paddleocr", text="", confidence=0.0, blocks=[], geometry=geometry))
             page_result.text = f"{page_result.text}\n[{region.name}] {result.text}".strip()
             page_result.blocks.extend(blocks)
 
@@ -586,11 +1053,21 @@ class OcrPipeline:
                     raise UnsupportedFormatError(ctx.version.mime_type)
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
-                with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
+                with self._layout_engine.load(
+                    file_bytes, ctx.version.mime_type, ctx.version.original_filename,
+                    max_megapixels=self._settings.ocr_render_max_mp,
+                ) as layout_doc:
                     pages, extracted_fields = self._run_zone_ocr(layout_doc, regions)
 
+                # Zone-derived fields carry a real page and a real bbox (the
+                # zone's own pixel box), so unlike the regex path they have
+                # something to normalize -- and the review UI's highlights
+                # come from exactly these.
+                zone_geometry_by_page = {p.page_number: p.geometry for p in pages if p.geometry is not None}
                 return self._finalize_success(
-                    repo=repo, job=job, ctx=ctx, pages=pages, fields=fields_to_dict(extracted_fields), correlation_id=correlation_id
+                    repo=repo, job=job, ctx=ctx, pages=pages,
+                    fields=fields_to_dict(extracted_fields, zone_geometry_by_page),
+                    correlation_id=correlation_id,
                 )
             except (VersionNotFound, VersionNotEligible):
                 raise
@@ -619,7 +1096,10 @@ class OcrPipeline:
                     raise UnsupportedFormatError(ctx.version.mime_type)
 
                 file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
-                with self._layout_engine.load(file_bytes, ctx.version.mime_type, ctx.version.original_filename) as layout_doc:
+                with self._layout_engine.load(
+                    file_bytes, ctx.version.mime_type, ctx.version.original_filename,
+                    max_megapixels=self._settings.ocr_render_max_mp,
+                ) as layout_doc:
                     page_image = layout_doc.render_page(page, self._settings.ocr_render_dpi)
                     x0, y0, x1, y1 = box
                     pixel_box = (
@@ -630,11 +1110,24 @@ class OcrPipeline:
                     result = self._ocr_engine.recognize(cropped, lang=self._settings.ocr_languages)
 
                 offset_x, offset_y = pixel_box[0], pixel_box[1]
-                blocks = [
-                    {"text": w.text, "bbox": [w.bbox[0] + offset_x, w.bbox[1] + offset_y, w.bbox[2] + offset_x, w.bbox[3] + offset_y], "confidence": w.confidence}
-                    for w in result.words
-                ]
-                pages = [PageResult(page_number=page + 1, method="paddleocr", text=result.text, confidence=result.mean_confidence, blocks=blocks)]
+                geometry = page_image.geometry
+                blocks = []
+                for w in result.words:
+                    page_bbox = [
+                        w.bbox[0] + offset_x, w.bbox[1] + offset_y,
+                        w.bbox[2] + offset_x, w.bbox[3] + offset_y,
+                    ]
+                    blocks.append({
+                        "text": w.text,
+                        "bbox": page_bbox,
+                        "bbox_norm": _norm(geometry, page_bbox),
+                        "confidence": w.confidence,
+                    })
+                pages = [PageResult(page_number=page + 1, method="paddleocr", text=result.text, confidence=result.mean_confidence, blocks=blocks, geometry=geometry)]
+                # No geometry map passed deliberately: extract_structured_fields
+                # is the regex path over concatenated text, which never sets a
+                # page or a bbox (see its own docstring), so there is nothing
+                # to normalize and `bbox_norm` is correctly null.
                 fields = fields_to_dict(extract_structured_fields(result.text, base_confidence=result.mean_confidence))
 
                 return self._finalize_success(repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, correlation_id=correlation_id)
@@ -679,6 +1172,17 @@ class OcrPipeline:
         output_id = uuid.uuid4()
         object_key = ocr_output_key(ctx.version.tenant_id, ctx.version.version_id, output_id)
         output_json = {
+            # Added in Phase 2, not bumped: v1 had no version marker at
+            # all, so a consumer reading an old artifact sees the key
+            # missing and should treat that as 1. Distinct from
+            # events.py's SCHEMA_VERSION, which versions the *event*
+            # payloads and is unrelated.
+            #
+            # v2 adds, additively per section 3.11: `bbox_norm` on every
+            # block, table and cell; `geometry` on every page; and
+            # `bbox_norm` on every field. Every v1 key keeps its meaning,
+            # so dms-core's applyOcrFields needs no change.
+            "schema_version": OUTPUT_SCHEMA_VERSION,
             "document_version_id": str(ctx.version.version_id),
             "text": "\n\n".join(p.text for p in pages),
             "pages": [p.to_dict() for p in pages],
@@ -725,6 +1229,34 @@ class OcrPipeline:
         # wrapped as the generic ENGINE_ERROR catch-all -- still classified,
         # never raw.
         error_message = exc.formatted() if isinstance(exc, OcrEngineError) else EngineError(str(exc)).formatted()
+
+        # A TIMEOUT this worker recorded gets the same budget as one the
+        # reaper inferred from a dead worker. Without this, `TIMEOUT=1`
+        # meant one retry when the pool ceiling killed the worker and zero
+        # when the in-worker deadline fired first -- the same cause, a
+        # different budget, decided only by which of two timers won.
+        #
+        # Deliberately TIMEOUT and nothing else. Extending it to every
+        # code was tried and is wrong: an in-worker failure is a failure
+        # the worker survived long enough to *classify*, and the
+        # classified ones are deterministic. A missing MinIO object
+        # (ENGINE_ERROR) fails identically on all four attempts, so the
+        # retries buy nothing and cost a pool worker each. The codes that
+        # genuinely benefit from a retry are the ones where the process
+        # died and left no diagnosis -- which is the reaper's half, and is
+        # already handled there.
+        code = exc.code if isinstance(exc, OcrEngineError) else EngineError.code
+        max_attempts = self._settings.max_attempts_for(code)
+        if isinstance(exc, OcrTimeoutError) and job.attempts < max_attempts:
+            backoff_seconds = self._settings.ocr_reaper_backoff_base_s * job.attempts
+            repo.requeue_after_failure(job=job, error=error_message, backoff_seconds=backoff_seconds)
+            logger.warning(
+                "Version %s failed with %s on attempt %d/%d; requeued with a %ds backoff "
+                "(the reaper re-requests it once that has elapsed)",
+                ctx.version.version_id, code, job.attempts, max_attempts, backoff_seconds,
+            )
+            return ProcessingOutcome(status="failed", version_id=ctx.version.version_id, error=error_message)
+
         payload = build_ocr_failed_payload(
             tenant_id=ctx.version.tenant_id,
             document_id=ctx.document.document_id,

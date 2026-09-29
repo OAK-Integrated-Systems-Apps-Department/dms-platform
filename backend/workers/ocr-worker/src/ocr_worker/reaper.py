@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from .config import Settings
 from .db import session_scope
-from .errors import WorkerCrashError
+from .errors import WorkerCrashError, error_code_of
 from .events import build_ocr_failed_payload, build_ocr_requested_payload
 from .models import Document, DocumentVersion
 from .repository import OcrRepository
@@ -108,10 +108,7 @@ class Reaper:
                     continue
                 document = session.get(Document, version.document_id)
 
-                if job.attempts < self._settings.max_delivery_attempts:
-                    self._requeue(repo, job=job, version=version, document=document)
-                else:
-                    self._dead_letter(repo, job=job, version=version, document=document)
+                self._reap_one(repo, job=job, version=version, document=document)
 
             for job in repo.find_due_retries():
                 version = session.get(DocumentVersion, job.reference_id)
@@ -121,6 +118,69 @@ class Reaper:
                 document = session.get(Document, version.document_id)
                 self._publish_due_retry(repo, job=job, version=version, document=document)
 
+    def _reap_one(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
+        """Requeue or dead-letter one expired job, based on WHY it died.
+
+        The old rule was `attempts < max_delivery_attempts` and nothing
+        else -- it treated every death as transient. For a document that
+        is simply too large or too slow it never is, and the cost was
+        measured: the 50-upload run at 4 MP spent ~40 of its 60 minutes
+        retrying one 35-page scan five times, each attempt burning the
+        full 935s budget before dying the same way.
+
+        The cause comes from `processing_jobs.last_error`, which the
+        parent now writes even when the worker died without being able to
+        (see consumer.py's `_record_death_cause`). An unknown cause still
+        gets `max_delivery_attempts`, because "we do not know why" is
+        exactly where a transient fault is still plausible.
+        """
+        code = error_code_of(job.last_error)
+
+        # A version OOM-killed twice is not unlucky, it is too big for
+        # this worker at this configuration. Checked before the ordinary
+        # budget because the crash budget alone would let it burn another
+        # pool worker to learn the same thing again.
+        if code == WorkerCrashError.code:
+            # `attempts` is a PROXY, and worth naming as one: a requeue
+            # reuses the same `processing_jobs` row and overwrites
+            # `last_error`, so there is no durable per-cause history to
+            # count without a new column. What this actually says is
+            # "this version has been attempted N times and the latest
+            # attempt killed a worker" -- which for the case that
+            # matters, a document too big for this worker's memory, is
+            # the same population, because such a document kills a worker
+            # on every attempt. A version whose first attempt timed out
+            # and whose second crashed would be dead-lettered one attempt
+            # early; that is the acceptable side of the trade.
+            if job.attempts >= self._settings.ocr_max_worker_crashes_per_version:
+                self._dead_letter(
+                    repo, job=job, version=version, document=document,
+                    error=(
+                        f"{WorkerCrashError.code}: the document exceeded worker memory -- "
+                        f"a pool worker died on it on attempt {job.attempts}, so it will not be retried again"
+                    ),
+                )
+                return
+
+        max_attempts = self._settings.max_attempts_for(code)
+        if job.attempts < max_attempts:
+            self._requeue(repo, job=job, version=version, document=document)
+        else:
+            retries = max_attempts - 1
+            # The code must be one dms-core knows how to turn into a
+            # user-facing message (section 3.12), so an unknown cause
+            # keeps the existing catch-all rather than inventing an
+            # `UNKNOWN:` prefix that would fall through its mapping and
+            # surface as raw text to a user.
+            self._dead_letter(
+                repo, job=job, version=version, document=document,
+                error=(
+                    f"{code or WorkerCrashError.code}: exhausted the retry budget for this failure "
+                    f"({retries} retr{'y' if retries == 1 else 'ies'} allowed, "
+                    f"{job.attempts} attempt{'' if job.attempts == 1 else 's'} made)"
+                ),
+            )
+
     def _requeue(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
         backoff_seconds = self._settings.ocr_reaper_backoff_base_s * job.attempts
         won = repo.reap_requeue(
@@ -128,9 +188,11 @@ class Reaper:
             leaseless_grace_seconds=self._settings.ocr_lease_duration_s,
         )
         if won:
+            code = error_code_of(job.last_error)
             logger.warning(
-                "Reaper requeued job %s (version %s): attempts=%d/%d, retrying in %ds",
-                job.job_id, version.version_id, job.attempts, self._settings.max_delivery_attempts, backoff_seconds,
+                "Reaper requeued job %s (version %s): attempts=%d/%d for cause %s, retrying in %ds",
+                job.job_id, version.version_id, job.attempts,
+                self._settings.max_attempts_for(code), code or "unrecorded", backoff_seconds,
             )
 
     def _publish_due_retry(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
@@ -147,8 +209,10 @@ class Reaper:
                 job.job_id, version.version_id, job.attempts + 1, self._settings.max_delivery_attempts,
             )
 
-    def _dead_letter(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document) -> None:
-        error = WorkerCrashError(
+    def _dead_letter(self, repo: OcrRepository, *, job, version: DocumentVersion, document: Document, error: str | None = None) -> None:
+        # `error` names the real cause and its budget; the fallback keeps
+        # the pre-Phase-3 message for any caller that has none.
+        error = error or WorkerCrashError(
             f"exceeded max_delivery_attempts ({self._settings.max_delivery_attempts})"
         ).formatted()
         payload = build_ocr_failed_payload(

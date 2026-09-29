@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -19,9 +20,48 @@ from .worker_pool import OcrProcessPool
 logger = logging.getLogger(__name__)
 
 
+def apply_network_posture(settings: Settings) -> None:
+    """Pin the model loaders offline, before anything can load a model.
+
+    Must run before `OcrProcessPool` is constructed, not merely before the
+    first document: pool workers are started with `spawn`, so what they
+    inherit is this process's `os.environ` as it stands at fork/spawn
+    time. Setting it later would leave every worker online while the
+    parent looked correctly configured.
+
+    huggingface_hub and transformers both read their flag once, at import,
+    so this also has to happen before the first `import docling` pulls
+    them in transitively.
+    """
+    if not settings.ocr_offline_models:
+        return
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    logger.info(
+        "OCR_OFFLINE_MODELS=true: model hubs pinned to the local cache. This worker now "
+        "makes no outbound network call of any kind -- only Postgres, RabbitMQ and MinIO. "
+        "Model weights must already be present in the mounted caches."
+    )
+
+
 def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
+    apply_network_posture(settings)
+
+    # Fail fast on a malformed retry policy, here rather than lazily on
+    # the reaper tick that first needs it. A typo in
+    # OCR_RETRY_ATTEMPTS_BY_CODE would otherwise surface as a caught
+    # exception inside a background loop -- logged, swallowed, and
+    # leaving every failure on the old "retry five times" fallback, which
+    # is exactly the behaviour the setting exists to remove.
+    policy = settings.retry_attempts_by_code
+    logger.info(
+        "Retry policy (retries after the first attempt): %s; an unrecorded cause gets %d, "
+        "the same as WORKER_CRASH, because a container-level OOM kills the parent too",
+        ", ".join(f"{code}={retries}" for code, retries in sorted(policy.items())) or "(none)",
+        settings.max_attempts_for(None) - 1,
+    )
 
     # session_factory/storage here are lightweight, main-process-only uses
     # (/readyz's DB ping, ensure_buckets at startup) -- real OCR processing
@@ -35,8 +75,8 @@ def create_application() -> FastAPI:
     # instead of the old synchronous HTTP call). scan_consumer stays for
     # document.version.scan.completed, still an assumed contract since
     # scan-worker doesn't exist yet. Both share the one OcrProcessPool.
-    scan_consumer = ScanCompletedConsumer(settings, pool)
-    ocr_requested_consumer = OcrRequestedConsumer(settings, pool)
+    scan_consumer = ScanCompletedConsumer(settings, pool, session_factory)
+    ocr_requested_consumer = OcrRequestedConsumer(settings, pool, session_factory)
     consumer_state = {"scan_connected": False, "ocr_requested_connected": False}
     # Own session_factory, not the lightweight one above -- kept separate
     # so the reaper's own connection pool usage is visible/attributable on

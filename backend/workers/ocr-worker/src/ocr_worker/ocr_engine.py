@@ -62,9 +62,21 @@ class PaddleOcrEngine:
             # `show_log` kwargs entirely (verified against the installed
             # version -- passing them raises "Unknown argument"). Doc
             # orientation classification and unwarping are also new
-            # pipeline stages on top of the 2.x det+cls+rec flow, disabled
-            # here because layout.py already renders pages at a known
-            # orientation via PyMuPDF -- nothing to unwarp/reorient.
+            # pipeline stages on top of the 2.x det+cls+rec flow.
+            #
+            # `use_doc_orientation_classify` stays False, but NOT because
+            # there is nothing to reorient -- the claim this comment used
+            # to make ("layout.py already renders pages at a known
+            # orientation via PyMuPDF") was simply false, and cost the
+            # eval corpus's rotated conditions ~83 accuracy points. Phase
+            # 2 Step 3 runs that same model itself, in orientation.py,
+            # precisely so the rotation and its inverse are ours: enabling
+            # it HERE would have PaddleX rotate the page internally and
+            # return every box in the rotated image's coordinate space,
+            # silently invalidating `bbox`/`bbox_norm` against the page a
+            # viewer actually renders.
+            # `use_doc_unwarping` stays off pending Step 6 (curled-page
+            # correction is only worth its cost on photos).
             # Real crash found live: with these left at PaddleX's own
             # defaults (None -> batch every detected text line through the
             # recognition/textline-orientation models in one single forward

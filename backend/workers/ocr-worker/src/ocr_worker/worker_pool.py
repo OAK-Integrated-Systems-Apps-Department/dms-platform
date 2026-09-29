@@ -58,24 +58,39 @@ def _pool_worker_init(settings: Settings, threads_per_process: int, ready_counte
     from .db import make_session_factory
     from .layout import LayoutEngine
     from .ocr_engine import PaddleOcrEngine
+    from .orientation import NullOrientationClassifier, PaddleDocOrientationClassifier
     from .pipeline import OcrPipeline
     from .storage import ObjectStorage
 
     global _pipeline
-    layout_engine = LayoutEngine()
+    layout_engine = LayoutEngine(
+        table_timeout_per_page_s=settings.ocr_table_timeout_per_page_s,
+        normalize_rotation=settings.ocr_normalize_page_rotation,
+    )
     ocr_engine = PaddleOcrEngine()
+    orientation_classifier = (
+        PaddleDocOrientationClassifier()
+        if settings.ocr_orientation_enabled
+        else NullOrientationClassifier()
+    )
     _pipeline = OcrPipeline(
         settings=settings,
         session_factory=make_session_factory(settings),
         storage=ObjectStorage(settings),
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
+        orientation_classifier=orientation_classifier,
     )
 
     # Eager warm-up: pay the real model-construction cost now, once, not on
     # this process's first real document.
     layout_engine.warm_up()
     ocr_engine.warm_up(lang=settings.ocr_languages)
+    # Same reasoning, and the same /readyz gate: the orientation model is
+    # small (1 MiB marginal RSS, measured) but it still downloads its
+    # weights on first use, and paying that inside the first real
+    # document's deadline is exactly what eager warm-up exists to avoid.
+    orientation_classifier.warm_up()
 
     with ready_counter.get_lock():
         ready_counter.value += 1

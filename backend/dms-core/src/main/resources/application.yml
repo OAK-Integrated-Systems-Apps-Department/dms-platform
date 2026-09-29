@@ -2,6 +2,18 @@ spring:
   application:
     name: dms-core
 
+  task:
+    scheduling:
+      # Spring Boot's default scheduler is a SINGLE thread shared by every
+      # @Scheduled method. Until Phase 2 there was only one (OutboxRelay,
+      # every 2s), so that was fine. OcrFieldsReconciler is the second, and
+      # its tick can do real work -- a schema lookup plus a
+      # delete-then-insert per field, for up to dms.ocr.batch-size versions.
+      # On one thread, a slow reconciler tick delays the relay, and the
+      # relay is the mechanism every OCR job is triggered by.
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:2}
+
   servlet:
     multipart:
       # Spring Boot's own default is 1MB for both -- verified live: a real
@@ -188,6 +200,21 @@ dms:
     # a config flag rather than a commented-out block specifically so that
     # proof can be re-run at any time, not just once.
     poll-reapply-enabled: ${OCR_POLL_REAPPLY_ENABLED:true}
+
+    # OcrFieldsReconciler (Phase 2) -- the replacement for the safety net
+    # above, and the reason it can eventually be removed. Where the poll
+    # re-apply only rescues a document somebody opens, and does it
+    # silently, the reconciler finds every completed version whose fields
+    # were never applied and logs a warning naming each one. A healthy
+    # system produces no warnings; each one that appears is a
+    # document.version.ocr.completed event that genuinely went missing.
+    reconciler-enabled: ${OCR_RECONCILER_ENABLED:true}
+    reconciler-interval-ms: ${OCR_RECONCILER_INTERVAL_MS:60000}
+    # Must comfortably exceed the normal path's latency (ocr-worker commit
+    # -> outbox relay's 2s poll -> listener), so a warning means the event
+    # never arrived rather than that it is still in flight.
+    stale-after-minutes: ${OCR_RECONCILER_STALE_AFTER_MINUTES:10}
+    batch-size: ${OCR_RECONCILER_BATCH_SIZE:50}
 
 # Naming deliberately mirrors backend/workers/ocr-worker/src/ocr_worker/config.py's
 # MINIO_* env vars -- dms-core writes the source object here, ocr-worker

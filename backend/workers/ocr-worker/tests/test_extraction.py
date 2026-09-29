@@ -51,9 +51,48 @@ def test_field_for_zone_name_uses_the_templates_field_mapping_directly():
 
 
 def test_fields_to_dict_matches_output_contract_shape():
+    """Schema v2 adds `bbox_norm` additively (section 3.11).
+
+    It is null here because this field has no page number -- normalizing
+    needs to know which page's geometry to divide by, and a zone field
+    built without one cannot say. `test_fields_to_dict_normalizes_when_
+    page_geometry_is_available` covers the populated case.
+    """
     field = field_for_zone_name("invoice_number", "INV-99", 0.88, "invoice_number_zone", bbox=(10, 20, 30, 40))
     result = fields_to_dict([field])
-    assert result == {"invoice_number": {"value": "INV-99", "confidence": 0.88, "bbox": [10, 20, 30, 40]}}
+    assert result == {
+        "invoice_number": {
+            "value": "INV-99",
+            "confidence": 0.88,
+            "bbox": [10, 20, 30, 40],
+            "bbox_norm": None,
+        }
+    }
+
+
+def test_fields_to_dict_normalizes_when_page_geometry_is_available():
+    from ocr_worker.layout import PageGeometry
+
+    geometry = PageGeometry(
+        page_no=0, width_pt=500.0, height_pt=1000.0, render_scale=2.0,
+        width_px=1000, height_px=2000,
+    )
+    field = field_for_zone_name(
+        "invoice_number", "INV-99", 0.88, "z", bbox=(100, 200, 300, 400), page=1
+    )
+    result = fields_to_dict([field], {1: geometry})
+    assert result["invoice_number"]["bbox"] == [100, 200, 300, 400]
+    assert result["invoice_number"]["bbox_norm"] == [0.1, 0.1, 0.3, 0.2]
+
+
+def test_fields_to_dict_leaves_bbox_norm_null_for_a_page_with_no_geometry():
+    """A .docx reports no geometry; its bboxes are (0,0,0,0) placeholders.
+
+    Emitting a normalized zero box would be drawn by a review UI as a
+    real highlight in the page corner, so null is the honest answer.
+    """
+    field = field_for_zone_name("invoice_number", "INV-99", 0.88, "z", bbox=(0, 0, 0, 0), page=1)
+    assert fields_to_dict([field], {})["invoice_number"]["bbox_norm"] is None
 
 
 def test_fields_to_dict_uses_null_bbox_for_regex_derived_fields():

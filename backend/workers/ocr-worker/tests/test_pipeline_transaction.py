@@ -36,10 +36,25 @@ class FakeLayoutDocument:
         native_text_lines_by_page: dict | None = None,
         tables_by_page: dict | None = None,
         fail_render: bool = False,
+        rendered_image=None,
+        geometry=None,
+        image_regions=None,
     ):
+        # Both default to "absent", which is what every pre-Step-7 test
+        # wants: no geometry means per-page routing cannot measure
+        # coverage and falls back to the old "any native text -> native"
+        # rule, so those tests keep asserting the behaviour they were
+        # written for.
+        self._geometry = geometry
+        self._image_regions = image_regions or {}
         self._page_count = page_count
-        self._width = width
-        self._height = height
+        # A real PIL image, for the tests that need one -- orientation
+        # correction actually rotates the page, which `FakeImage` cannot
+        # do. Its own dimensions then win, so `width`/`height` can't
+        # silently disagree with the pixels.
+        self._rendered_image = rendered_image
+        self._width = rendered_image.size[0] if rendered_image is not None else width
+        self._height = rendered_image.size[1] if rendered_image is not None else height
         self._native_text_by_page = native_text_by_page or {}
         # 0-indexed (PyMuPDF convention), unlike native_text_by_page above --
         # matches the real native_text_lines_for_page. Defaults to empty so
@@ -55,7 +70,15 @@ class FakeLayoutDocument:
     def render_page(self, page_no: int, dpi: int) -> PageImage:
         if self._fail_render:
             raise RuntimeError("corrupt page data")
-        return PageImage(page_no=page_no, width_px=self._width, height_px=self._height, image=FakeImage())
+        image = self._rendered_image if self._rendered_image is not None else FakeImage()
+        return PageImage(page_no=page_no, width_px=self._width, height_px=self._height, image=image)
+
+    def page_geometry(self, page_no: int, dpi: int):
+        return self._geometry
+
+    def image_regions_for_page(self, page_no: int, dpi: int):
+        # 0-indexed, matching the real method.
+        return self._image_regions.get(page_no, [])
 
     def native_text_blocks_for_page(self, page_no: int, dpi: int):
         return self._native_text_by_page.get(page_no)
@@ -77,7 +100,13 @@ class FakeLayoutEngine:
     def __init__(self, doc: FakeLayoutDocument):
         self._doc = doc
 
-    def load(self, file_bytes, mime_type, original_filename, on_page_count=None):
+    def load(self, file_bytes, mime_type, original_filename, on_page_count=None, max_megapixels=None):
+        # `max_megapixels` is accepted and ignored: this fake's pages have
+        # fixed dimensions, so there is no rendering for a budget to cap.
+        # Accepting it keeps the fake honest against the real signature --
+        # a fake that rejected it would fail every pipeline test the
+        # moment the real one grew the argument, which is exactly what
+        # happened.
         # Honors the real contract: the hook fires here, inside load(),
         # before the (here, non-existent) Docling conversion -- not after
         # the document is handed back. A fake that ignored it would let
@@ -121,11 +150,24 @@ class FakeStorage:
         return object_key
 
 
-def make_pipeline(session_factory, *, layout_doc, ocr_text="", ocr_confidence=0.99, threshold=0.95, storage=None):
-    settings = Settings(min_confidence_threshold=threshold, ocr_languages="en", ocr_render_dpi=200)
+def make_pipeline(
+    session_factory,
+    *,
+    layout_doc,
+    ocr_text="",
+    ocr_confidence=0.99,
+    threshold=0.95,
+    storage=None,
+    ocr_words=None,
+    orientation_classifier=None,
+    **settings_overrides,
+):
+    settings = Settings(
+        min_confidence_threshold=threshold, ocr_languages="en", ocr_render_dpi=200, **settings_overrides
+    )
     storage = storage or FakeStorage()
     layout_engine = FakeLayoutEngine(layout_doc)
-    ocr_engine = FakeOcrEngine(text=ocr_text, confidence=ocr_confidence)
+    ocr_engine = FakeOcrEngine(text=ocr_text, confidence=ocr_confidence, words=ocr_words)
 
     pipeline = OcrPipeline(
         settings=settings,
@@ -133,6 +175,10 @@ def make_pipeline(session_factory, *, layout_doc, ocr_text="", ocr_confidence=0.
         storage=storage,
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
+        # Omitted means the no-op classifier, which is what every test
+        # that isn't *about* orientation wants: the same code path, no
+        # paddleocr, and no page ever rotated.
+        orientation_classifier=orientation_classifier,
     )
     return pipeline, storage, ocr_engine
 

@@ -150,13 +150,35 @@ def field_for_zone_name(
     return ExtractedField(field=zone_field, value=text.strip(), confidence=confidence, source=f"zone:{zone_name}", bbox=bbox, page=page)
 
 
-def fields_to_dict(fields: list[ExtractedField]) -> dict[str, dict]:
+def _normalize_for_page(geometry_by_page, page: int | None, bbox):
+    """Schema v2 `bbox_norm` for a field value.
+
+    `geometry_by_page` is keyed by 1-indexed page number, matching
+    `ExtractedField.page` / `RequestedFieldResult.page`. A regex match
+    over the whole document's concatenated text has no single page and
+    therefore no bbox at all, so this returns None for it -- as it does
+    for a .docx, which has no page geometry to normalize against.
+    """
+    if not geometry_by_page or page is None or bbox is None:
+        return None
+    geometry = geometry_by_page.get(page)
+    if geometry is None:
+        return None
+    return geometry.normalize(tuple(bbox))
+
+
+def fields_to_dict(fields: list[ExtractedField], geometry_by_page: dict | None = None) -> dict[str, dict]:
     """The output contract's `fields` object is a dict keyed by field
     name, not the list this module builds internally -- this is the one
     place that conversion happens, so pipeline.py doesn't have to.
     """
     return {
-        f.field: {"value": f.value, "confidence": f.confidence, "bbox": list(f.bbox) if f.bbox else None}
+        f.field: {
+            "value": f.value,
+            "confidence": f.confidence,
+            "bbox": list(f.bbox) if f.bbox else None,
+            "bbox_norm": _normalize_for_page(geometry_by_page, f.page, f.bbox),
+        }
         for f in fields
     }
 
@@ -589,7 +611,28 @@ def _strip_leading_marker(text: str) -> str:
     return re.sub(r"^[:\-]\s*", "", text.strip()).strip()
 
 
-def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[str | None, tuple[int, int, int, int] | None]:
+# How far below a label the "value is stacked underneath" search will
+# reach, as a fraction of page height.
+#
+# This used to be a bare `40` pixels. 40px is ~2.5% of an A4 page at the
+# ~137 DPI the renderer actually produces (842pt x 1.90 = 1600px), so
+# this reproduces today's behavior exactly -- but it keeps meaning the
+# same thing when Phase 2 raises the render DPI to 300, where a literal
+# 40px would silently shrink to ~1.1% of the page and start missing
+# values that are currently found.
+_BELOW_SEARCH_PAGE_FRACTION = 0.025
+
+# Used only when the caller has no page geometry to offer (a .docx, or a
+# test constructing lines by hand). Same number as before, so nothing
+# that relied on it changes.
+_BELOW_SEARCH_FALLBACK_PX = 40
+
+
+def _spatial_value_on_page(
+    lines: list[LineBlock],
+    aliases: list[str],
+    page_height_px: float | None = None,
+) -> tuple[str | None, tuple[int, int, int, int] | None]:
     """Finds a label among REAL per-visual-line text+bbox (see layout.py's
     native_text_lines_for_page / ocr_engine.py's PaddleOCR line results,
     each already one entry per detected line -- NOT the flattened,
@@ -645,12 +688,17 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
                 return _strip_leading_marker(other_text), other_bbox
 
             row_height = y1 - y0
+            below_limit = (
+                page_height_px * _BELOW_SEARCH_PAGE_FRACTION
+                if page_height_px
+                else _BELOW_SEARCH_FALLBACK_PX
+            )
             below = [
                 (other_text, other_bbox)
                 for j, (other_text, other_bbox) in enumerate(lines)
                 if j != i
                 and other_bbox[1] > y1
-                and other_bbox[1] - y1 <= max(row_height * 4, 40)
+                and other_bbox[1] - y1 <= max(row_height * 4, below_limit)
                 and _ranges_overlap(x0, x1, other_bbox[0], other_bbox[2], min_overlap_ratio=0.2)
                 and not _looks_like_a_label(other_text)
                 and _has_real_content(other_text)
@@ -664,7 +712,9 @@ def _spatial_value_on_page(lines: list[LineBlock], aliases: list[str]) -> tuple[
 
 
 def _spatial_label_value(
-    lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    aliases: list[str],
+    page_heights_px: dict[int, float] | None = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Page-ordered wrapper over _spatial_value_on_page -- `lines_by_page`
     is 1-indexed (matching this whole module's page numbering elsewhere),
@@ -674,14 +724,19 @@ def _spatial_label_value(
     if not lines_by_page:
         return None, None, None
     for page in sorted(lines_by_page):
-        value, bbox = _spatial_value_on_page(lines_by_page[page], aliases)
+        value, bbox = _spatial_value_on_page(
+            lines_by_page[page], aliases, (page_heights_px or {}).get(page)
+        )
         if value:
             return value, page, bbox
     return None, None, None
 
 
 def _find_value(
-    text: str, lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    aliases: list[str],
+    page_heights_px: dict[int, float] | None = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Tries real per-line spatial matching first (_spatial_label_value --
     far more precise when page position data is available), falling back
@@ -689,7 +744,7 @@ def _find_value(
     line-level data isn't available at all or the spatial pass found
     nothing on it.
     """
-    value, page, bbox = _spatial_label_value(lines_by_page, aliases)
+    value, page, bbox = _spatial_label_value(lines_by_page, aliases, page_heights_px)
     if value:
         return value, page, bbox
     return _label_proximity_value(text, aliases), None, None
@@ -720,9 +775,12 @@ def _match_enum(candidate: str | None, options: list[str], field_key: str) -> st
 
 
 def _extract_date_candidate(
-    text: str, lines_by_page: dict[int, list[LineBlock]] | None, aliases: list[str]
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    aliases: list[str],
+    page_heights_px: dict[int, float] | None = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
-    candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+    candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
     if candidate:
         match = _DATE_RE.search(candidate)
         if match:
@@ -770,7 +828,10 @@ def _extract_language(text: str) -> tuple[str | None, float | None]:
 
 
 def _extract_field_value(
-    spec: FieldSpec, text: str, lines_by_page: dict[int, list[LineBlock]] | None = None
+    spec: FieldSpec,
+    text: str,
+    lines_by_page: dict[int, list[LineBlock]] | None = None,
+    page_heights_px: dict[int, float] | None = None,
 ) -> tuple[str | list[str] | None, float | None, bool, int | None, tuple[int, int, int, int] | None]:
     """Dispatches ONE requested field (no zone match) through, in order:
     spatial label matching (when lines_by_page is available -- see
@@ -793,7 +854,7 @@ def _extract_field_value(
         return lang, prob, False, None, None
 
     if data_type == "dropdown" and options:
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         matched = _match_enum(candidate, options, field_key)
         if matched:
             return matched, 0.85, False, page, bbox
@@ -809,7 +870,7 @@ def _extract_field_value(
         return None, None, False, None, None
 
     if data_type in ("date", "datetime"):
-        raw_date, page, bbox = _extract_date_candidate(text, lines_by_page, aliases)
+        raw_date, page, bbox = _extract_date_candidate(text, lines_by_page, aliases, page_heights_px)
         if raw_date is None:
             return None, None, False, None, None
         from_label = page is not None or _label_proximity_value(text, aliases) is not None
@@ -827,14 +888,14 @@ def _extract_field_value(
         # to prefer the value a real label points at over an incidental
         # lookalike, so it must never run before the label match gets a
         # chance.
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
             return candidate.strip(), 0.85, False, page, bbox
         match = _REFERENCE_NUMBER_RE.search(text)
         return (match.group(1).strip(), 0.65, False, None, None) if match else (None, None, False, None, None)
 
     if data_type in ("long_text", "multi_select"):
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
             if data_type == "multi_select":
                 value = _split_list_value(candidate)
@@ -850,7 +911,7 @@ def _extract_field_value(
         return (value, 0.5, True, None, None) if value else (None, None, False, None, None)
 
     if field_key == "vendor_supplier_name":
-        candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
             return candidate.strip(), 0.8, False, page, bbox
         # Letterhead fallback: real invoice found live with no "Vendor:"/
@@ -869,7 +930,7 @@ def _extract_field_value(
 
     # Generic single-line text field (author, department, and anything else
     # with no more specific handling above).
-    candidate, page, bbox = _find_value(text, lines_by_page, aliases)
+    candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
     return (candidate.strip(), 0.8, False, page, bbox) if candidate else (None, None, False, None, None)
 
 
@@ -929,6 +990,11 @@ def extract_requested_fields(
     text: str,
     zone_fields: dict[str, ExtractedField],
     lines_by_page: dict[int, list[LineBlock]] | None = None,
+    # 1-indexed page number -> that page's pixel height, so the
+    # "value stacked below the label" search radius stays a constant
+    # fraction of the page rather than a fixed pixel count that would
+    # silently shrink when the render DPI rises.
+    page_heights_px: dict[int, float] | None = None,
     field_confidence_threshold: float = 0.6,
 ) -> list[RequestedFieldResult]:
     """The selectable-field entry point: attempts ONLY `specs` (never a
@@ -952,13 +1018,15 @@ def extract_requested_fields(
                 _finalize_result(spec, zone_hit.value, zone_hit.confidence, zone_hit.page, zone_hit.bbox, field_confidence_threshold)
             )
             continue
-        value, confidence, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page)
+        value, confidence, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page, page_heights_px)
         results.append(_finalize_result(spec, value, confidence, page, bbox, field_confidence_threshold, forced_low_confidence))
 
     return _apply_effective_expiry_validation(results)
 
 
-def requested_fields_to_output_dict(results: list[RequestedFieldResult]) -> dict[str, dict]:
+def requested_fields_to_output_dict(
+    results: list[RequestedFieldResult], geometry_by_page: dict | None = None
+) -> dict[str, dict]:
     """The sparse HTTP-response `fields` shape (same `{value, confidence,
     bbox}` shape the legacy fields_to_dict already produces, so dms-core's
     existing DocumentMetadataServiceImpl#applyOcrFields mapping keeps
@@ -975,5 +1043,10 @@ def requested_fields_to_output_dict(results: list[RequestedFieldResult]) -> dict
         if result.status == "not_found" or result.value is None:
             continue
         value = json.dumps(result.value) if isinstance(result.value, list) else result.value
-        output[result.field_key] = {"value": value, "confidence": result.confidence, "bbox": list(result.bbox) if result.bbox else None}
+        output[result.field_key] = {
+            "value": value,
+            "confidence": result.confidence,
+            "bbox": list(result.bbox) if result.bbox else None,
+            "bbox_norm": _normalize_for_page(geometry_by_page, result.page, result.bbox),
+        }
     return output
