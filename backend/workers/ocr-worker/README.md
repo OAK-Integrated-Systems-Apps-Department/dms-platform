@@ -715,11 +715,11 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | `PREFETCH_COUNT` | *(= `OCR_WORKER_PROCESSES`)* | OS-NFR-004: how many deliveries RabbitMQ may have unacked with this worker at once. See "Prefetch" below |
 | `OCR_WORKER_PROCESSES` | `2` | size of the `pebble` **process** pool that actually runs inference; one PaddleOCR + one Docling instance per process, never shared across threads |
 | `OCR_WORKER_MAX_TASKS_PER_PROCESS` | `50` | recycle a pool worker after this many documents, bounding any per-call native-library leak |
-| `OCR_TIMEOUT_BASE_S` / `OCR_TIMEOUT_PER_PAGE_S` | `60` / `25` | per-document budget is `base + per_page * the document's REAL page count`. See "Per-document timeout" below |
+| `OCR_TIMEOUT_BASE_S` / `OCR_TIMEOUT_PER_PAGE_S` | `60` / `45` | per-document budget is `base + per_page * the document's REAL page count`. Per-page raised 25 -> 45 on 2026-09-29 against a measured 29.2s/page under load. See "Per-document timeout" below |
 | `OCR_TIMEOUT_HARD_GRACE_S` | `30` | how long after the budget the in-worker hard watchdog fires, killing that one pool worker |
 | `OCR_MAX_PAGES` | `50` | `TOO_MANY_PAGES` above this; sized so one document can't monopolize a pool worker for the better part of an hour |
 | `OCR_MAX_FILE_SIZE_BYTES` | `104857600` | `FILE_TOO_LARGE` above this |
-| `OCR_LEASE_DURATION_S` | `1800` | how long a claimed `processing_jobs` row's lease is valid before the reaper may reclaim it. Also the grace the reaper gives a `processing` row that has *no* lease at all before treating it as expired — see "Every `processing` row has a lease" below |
+| `OCR_LEASE_DURATION_S` | `2700` | how long a claimed `processing_jobs` row's lease is valid before the reaper may reclaim it. Raised 1800 -> 2700 on 2026-09-29 because the per-page timeout rise put the worst-case document at 2370s, above the old lease. Also the grace the reaper gives a `processing` row that has *no* lease at all before treating it as expired — see "Every `processing` row has a lease" below |
 | `OCR_REAPER_INTERVAL_S` | `30` | how often the lease reaper sweeps for expired leases |
 | `OCR_REAPER_BACKOFF_BASE_S` | `30` | linear backoff: a job's Nth requeue waits `N * this` before becoming claimable again |
 | `MAX_DELIVERY_ATTEMPTS` | `5` | total attempts for a failure cause with no specific policy below. The reaper then dead-letters the job and sets `ocr_status='failed'` |
@@ -790,8 +790,30 @@ upstream gap") — but it is the thing to revisit when it does.
 
 The budget is `OCR_TIMEOUT_BASE_S + OCR_TIMEOUT_PER_PAGE_S × the
 document's real page count`, read the instant PyMuPDF has opened the file
-and **before** Docling's conversion runs. At the defaults a one-page photo
-gets 85s and a 50-page document gets 1310s.
+and **before** Docling's conversion runs.
+
+|  | old | new (2026-09-29) |
+|---|---|---|
+| formula | `60 + pages × 25` | `60 + pages × 45` |
+| 1-page photo | 85s | **105s** |
+| 35-page scan | 935s | **1635s** |
+| 50-page document | 1310s | **2310s** |
+
+**Why it was raised.** The old 25s/page came from a quiet-machine rate of
+15.6s/page plus ~60% headroom, and it was wrong about the case that
+matters. Under a 10-way concurrent burst on two pool workers,
+`large_35page_scanned.pdf` took **1020.9s for 35 pages = 29.2s/page** —
+already past the 25s allowance before any headroom at all — and was
+killed at its 935s budget. It was not hanging. It was slow.
+
+`1.5 × 29.2 = 43.8`, rounded to **45**. The 35-page budget becomes 1635s
+against the 1020.9s that document really took.
+
+**This budget exists to catch a hang, not to cap a slow document.** A
+too-tight budget turns slow documents into failures, and now that
+`TIMEOUT` carries a retry, into *repeated* failures costing a pool worker
+each. An actual wedged native call is bounded by layer 2 below, whose
+grace is unchanged.
 
 Phase 1 sized one uniform ceiling from `OCR_MAX_PAGES` instead — 1310s for
 *every* document, one-page photos included — because the dispatching side
@@ -818,7 +840,8 @@ half the service's capacity out for 22 minutes. Three layers replace it
 
 **`OCR_LEASE_DURATION_S` must stay larger than
 `OCR_TIMEOUT_BASE_S + OCR_MAX_PAGES × OCR_TIMEOUT_PER_PAGE_S + 2 ×
-OCR_TIMEOUT_HARD_GRACE_S`** (1370s against the default 1800s lease), or the
+OCR_TIMEOUT_HARD_GRACE_S`** (`60 + 50 × 45 + 2 × 30` = **2370s** against
+the default **2700s** lease), or the
 reaper stops backing the worker up and starts competing with it: the lease
 expires mid-inference, the reaper requeues, the retry restarts the same
 document from scratch, and a document that was never failing can livelock

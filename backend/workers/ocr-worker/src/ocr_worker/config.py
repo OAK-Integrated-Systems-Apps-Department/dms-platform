@@ -88,18 +88,39 @@ class Settings(BaseSettings):
     # main.py), not configured directly here.
 
     # -- Per-document timeout, scaled by page count (see
-    # docs/ocr/failure-analysis.md #1: a real 35-page scanned PDF measured
-    # 15.6s/page; a single fixed timeout is wrong for both a 1-page and a
-    # 50-page document). Defaults include ~60% headroom over that measured
-    # rate for slower hardware/contention.
+    # docs/ocr/failure-analysis.md #1: a single fixed timeout is wrong for
+    # both a 1-page and a 50-page document).
+    #
+    #     budget = ocr_timeout_base_s + page_count * ocr_timeout_per_page_s
     #
     # Since Phase 1 close-out this budget is computed from the document's
     # REAL page count, read once the file is actually opened inside the
     # pool worker (pipeline.py's DocumentDeadline) -- not from
-    # ocr_max_pages. A hung 1-page photo now gets 60 + 1*25 = 85s, not the
-    # 1310s worst-case ceiling it used to hold a pool worker for.
+    # ocr_max_pages, whose 1310s worst-case ceiling a hung 1-page photo
+    # used to hold a pool worker for.
+    #
+    # **The per-page allowance was raised 25 -> 45 on 2026-09-29, against
+    # measurement rather than feel.** The old 25 came from a quiet-machine
+    # rate of 15.6s/page plus ~60% headroom, and it was wrong about the
+    # thing that matters: under a 10-way concurrent burst on two pool
+    # workers, `large_35page_scanned.pdf` took **1020.9s for 35 pages =
+    # 29.2s/page**, which already exceeds the 25s allowance before any
+    # headroom at all. It was killed at its 935s budget for being slow,
+    # not for hanging.
+    #
+    #     observed under load   29.2 s/page
+    #     x1.5                  43.8 s/page  -> 45, rounded
+    #     35-page budget        60 + 35*45 = 1635s   (was 935s)
+    #     1-page budget         60 +  1*45 = 105s    (was 85s)
+    #
+    # This budget exists to catch a HANG -- a wedged native call that will
+    # never return -- not to cap a document that is merely slow. A
+    # too-tight budget converts slow documents into failures and, now that
+    # TIMEOUT carries a retry, into repeated failures that cost a pool
+    # worker each. The hard-kill grace below is what bounds an actual
+    # wedge, and it is unchanged.
     ocr_timeout_base_s: float = 60
-    ocr_timeout_per_page_s: float = 25
+    ocr_timeout_per_page_s: float = 45
     # Grace between the SOFT deadline (checked between pages, raises
     # OcrTimeoutError and lets the worker record TIMEOUT and carry on) and
     # the HARD one (a watchdog thread that records TIMEOUT itself and then
@@ -107,6 +128,16 @@ class Settings(BaseSettings):
     # PaddleOCR/Docling call can't be interrupted from Python). Sized to
     # cover one page's worth of work plus the failure-commit transaction.
     ocr_timeout_hard_grace_s: float = 30
+    # How far the PARENT's pebble ceiling sits above the largest deadline
+    # the in-worker watchdog can arm. This is the only bound that does not
+    # depend on anything inside the worker process still working: the
+    # watchdog is a Python thread, and a native call that holds the GIL
+    # starves it -- observed live, where a 35-page scan ran past its 1665s
+    # in-worker hard deadline and was only stopped by this ceiling at
+    # 2370s. pebble force-terminates the worker, and the parent records
+    # TIMEOUT from the outside (see consumer.py's ProcessExpired branch,
+    # which tells that SIGKILL apart from an OOM kill by elapsed time).
+    ocr_pool_ceiling_grace_s: float = 30
 
     # Real measured rate (15.6s/page) makes the production-prompt spec's own
     # OCR_MAX_PAGES=200 default ~52 minutes of one worker process monopolized
@@ -118,7 +149,22 @@ class Settings(BaseSettings):
     ocr_max_file_size_bytes: int = 100 * 1024 * 1024
 
     # -- Job leasing / reaper (see V36__ocr_job_leasing.sql) --
-    ocr_lease_duration_s: int = 1800
+    # **Must stay larger than the longest a document can legitimately hold
+    # a pool worker**, which is
+    # `ocr_timeout_base_s + ocr_max_pages * ocr_timeout_per_page_s
+    #  + 2 * ocr_timeout_hard_grace_s` -- 60 + 50*45 + 60 = **2370s** at
+    # the current defaults. `OcrProcessPool.warn_on_misconfigured_lease`
+    # checks exactly this at startup.
+    #
+    # Raised 1800 -> 2700 on 2026-09-29, as a direct consequence of raising
+    # ocr_timeout_per_page_s to 45: the old 1800s lease is BELOW the new
+    # 2370s worst case, and a lease that expires mid-inference does not
+    # merely log -- the reaper reclaims the row from a worker that is still
+    # working on it, requeues, and the retry restarts the same document
+    # from scratch. A document that was never failing can livelock that way
+    # until it is dead-lettered. Observed for real during Phase 1 close-out
+    # against a deliberately shortened lease.
+    ocr_lease_duration_s: int = 2700
     ocr_reaper_interval_s: int = 30
     # Linear backoff: a job's Nth requeue waits N * this many seconds
     # before it becomes claimable again (enforced by claim_job's
@@ -224,6 +270,15 @@ class Settings(BaseSettings):
     # fires only on pages meaningfully worse than the worst one that
     # currently works. Also provisional.
     ocr_quality_min_contrast: float = 35.0
+
+    # -- Locale for parsing amounts and dates (production prompt 3.8) --
+    # `parse_amount`/`parse_date` already take a locale per call; what did
+    # not exist was anything to supply one, so every call used the
+    # `day_first` default. This is the process-wide setting, NOT the
+    # per-tenant wiring 3.8 ultimately wants -- that needs dms-core to
+    # send it on `document.version.ocr.requested`, and is still pending.
+    # A comma-decimal tenant's `1.234` stays flagged ambiguous until then.
+    ocr_locale: str = "day_first"
     # Above this fraction of unreadable glyphs, the text layer is junk and
     # the page is OCR'd instead. 0.30 is deliberately permissive: a real
     # text layer with a few unmapped glyphs (a logo font, a ligature) must

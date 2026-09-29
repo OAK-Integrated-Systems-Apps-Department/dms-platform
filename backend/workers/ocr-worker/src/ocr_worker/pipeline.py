@@ -34,6 +34,9 @@ from .extraction import (
 from .layout import LayoutEngine, SUPPORTED_MIME_TYPES, sniff_and_normalize_mime_type
 from .ocr_engine import OcrEngine
 from . import quality as quality_mod
+from . import review as review_mod
+from . import line_items as line_items_mod
+from . import validation as validation_mod
 from . import routing
 from .orientation import NullOrientationClassifier, OrientationClassifier, decide as decide_orientation
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
@@ -496,7 +499,7 @@ class OcrPipeline:
 
         deadline = self._make_deadline(job_id=job_id, version_id=version_id, correlation_id=correlation_id)
         try:
-            pages, fields, field_results, file_repaired = self._run_inference(
+            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items = self._run_inference(
                 mime_type=mime_type,
                 storage_object_key=storage_object_key,
                 original_filename=original_filename,
@@ -504,7 +507,7 @@ class OcrPipeline:
                 requested_fields=requested_fields,
                 deadline=deadline,
             )
-            result: tuple | Exception = (pages, fields, field_results, file_repaired)
+            result: tuple | Exception = (pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items)
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
             result = exc
 
@@ -524,10 +527,14 @@ class OcrPipeline:
             ctx = repo.get_version_for_processing(version_id)
             if isinstance(result, Exception):
                 return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=result, correlation_id=correlation_id)
-            pages, fields, field_results, file_repaired = result
+            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items = result
             return self._finalize_success(
                 repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, field_results=field_results,
                 correlation_id=correlation_id, file_repaired=file_repaired,
+                requested_field_specs=requested_fields,
+                validation_failures=validation_failures,
+                validation_errors=validation_errors,
+                line_items=line_items,
             )
 
     def _run_inference(
@@ -598,6 +605,7 @@ class OcrPipeline:
                 # "nothing writes to it outside test fixtures" note).
                 lines_by_page: dict[int, list[LineBlock]] = {}
                 orientation_by_page: dict[int, "Any"] = {}
+                line_confidences_by_page: dict[int, list] = {}
             else:
                 # No zone/field template configured for this document
                 # type -- extracted_fields here is the LEGACY generic
@@ -607,7 +615,7 @@ class OcrPipeline:
                 # (priority 1) -- that would let an unrelated regex guess
                 # bypass the new dispatch's own, more field-appropriate
                 # strategy for a requested field.
-                pages, extracted_fields, lines_by_page, orientation_by_page = self._run_full_document(layout_doc, deadline=deadline)
+                pages, extracted_fields, lines_by_page, orientation_by_page, line_confidences_by_page = self._run_full_document(layout_doc, deadline=deadline)
                 zone_derived_fields = []
             file_repaired = getattr(layout_doc, "file_repaired", False)
 
@@ -622,6 +630,10 @@ class OcrPipeline:
             if page_result is not None:
                 page_result.flags["table_structure_skipped"] = True
 
+        validation_failures: list[str] = []
+        validation_errors: list[dict] = []
+        line_items: list = []
+
         # 1-indexed, matching ExtractedField.page / RequestedFieldResult.page.
         geometry_by_page = {p.page_number: p.geometry for p in pages if p.geometry is not None}
         field_results = None
@@ -635,6 +647,7 @@ class OcrPipeline:
                 lines_by_page=lines_by_page,
                 page_heights_px=_upright_page_heights(geometry_by_page, orientation_by_page),
                 field_confidence_threshold=self._settings.field_low_confidence_threshold,
+                line_confidences=line_confidences_by_page,
             )
             # `lines_by_page` was in the corrected reading space, so a
             # spatially-matched field's bbox comes back in it too. Put it
@@ -642,11 +655,58 @@ class OcrPipeline:
             # (and document_ocr_field_results, which the review UI's
             # highlights are drawn from).
             field_results = _restore_field_bboxes(field_results, orientation_by_page)
+
+            # Validation (production prompt 3.9), wired in at last. The
+            # rules existed and nothing called them, so a total that
+            # disagreed with its own subtotal+tax was reported as
+            # `extracted` with full confidence.
+            #
+            # A failure never deletes a value -- every one of them is a
+            # real reading of the document, and which of three numbers was
+            # misread is not knowable from the arithmetic alone. It
+            # downgrades the status of EVERY field the rule involved, so a
+            # human resolves the contradiction rather than the pipeline
+            # guessing.
+            # Invoice line items (production prompt 3.8), read from the
+            # table grids TableFormer already produced for these pages.
+            line_items = line_items_mod.extract_from_tables(
+                {p.page_number: p.tables for p in pages if p.tables},
+                locale=self._settings.ocr_locale,
+            )
+
+            validation = validation_mod.validate_field_results(
+                field_results,
+                options_by_field={
+                    spec.field_key: spec.options for spec in (requested_fields or [])
+                },
+                data_types_by_field={
+                    spec.field_key: spec.data_type for spec in (requested_fields or [])
+                },
+                full_text=full_text,
+                locale=self._settings.ocr_locale,
+                line_items=[i.for_validation() for i in line_items] or None,
+            )
+            if not validation.ok:
+                flagged = validation.fields_to_flag()
+                field_results = [
+                    replace(r, status="low_confidence")
+                    if r.field_key in flagged and r.status == "extracted"
+                    else r
+                    for r in field_results
+                ]
+                validation_failures = [e.rule for e in validation.errors]
+                logger.info(
+                    "Validation flagged %d field(s) across %d rule(s): %s",
+                    len(flagged), len(validation.errors),
+                    ", ".join(sorted({e.rule for e in validation.errors})),
+                )
+                validation_errors = validation.to_dict()
+
             fields = requested_fields_to_output_dict(field_results, geometry_by_page)
         else:
             fields = fields_to_dict(extracted_fields, geometry_by_page)
 
-        return pages, fields, field_results, file_repaired
+        return pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items
 
     # ------------------------------------------------------------------
     # Preprocessing (production prompt 3.4) -- see orientation.py
@@ -900,6 +960,7 @@ class OcrPipeline:
         """
         pages: list[PageResult] = []
         lines_by_page: dict[int, list[LineBlock]] = {}
+        line_confidences_by_page: dict[int, list] = {}
         orientation_by_page: dict[int, "Any"] = {}
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
@@ -923,6 +984,10 @@ class OcrPipeline:
                 pages.append(page_result)
                 if hybrid_lines:
                     lines_by_page[page_number] = hybrid_lines
+                    line_confidences_by_page[page_number] = [
+                        (tuple(b["bbox"]), b["confidence"])
+                        for b in page_result.blocks if b.get("bbox") and b.get("confidence") is not None
+                    ]
             else:
                 page_image = layout_doc.render_page(page_index, self._settings.ocr_render_dpi)
                 # The rasterizer's own pixmap dimensions win over the
@@ -964,11 +1029,18 @@ class OcrPipeline:
                     # These are mapped back to the page's own space once
                     # matching is done -- see _run_inference.
                     lines_by_page[page_number] = [(w.text, w.bbox) for w in result.words]
+                    # Per-line recognition confidence, so a field's score
+                    # can carry the uncertainty of the tokens it actually
+                    # came from (production prompt 3.10). Only the OCR'd
+                    # paths have one; a native-text page has no
+                    # character-level uncertainty and is left absent,
+                    # which field_confidence reads as 1.0.
+                    line_confidences_by_page[page_number] = [(w.bbox, w.confidence) for w in result.words]
 
         full_text = "\n\n".join(p.text for p in pages)
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
-        return pages, extracted_fields, lines_by_page, orientation_by_page
+        return pages, extracted_fields, lines_by_page, orientation_by_page, line_confidences_by_page
 
     def _run_zone_ocr(
         self, layout_doc, regions: list[ZoneRegion], deadline: DocumentDeadline | None = None
@@ -1154,18 +1226,34 @@ class OcrPipeline:
         correlation_id: uuid.UUID | None,
         field_results: list | None = None,
         file_repaired: bool = False,
+        requested_field_specs: list | None = None,
+        validation_failures: list[str] | None = None,
+        validation_errors: list[dict] | None = None,
+        line_items: list | None = None,
     ) -> ProcessingOutcome:
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         decision = self._confidence.evaluate(overall_confidence)
-        # file_repaired (docs/ocr/failure-analysis.md #9's live finding:
-        # PyMuPDF silently repairs far more PDF corruption than expected,
-        # e.g. 50% truncation, and still produces a real completed result)
-        # forces requires_review even when confidence alone wouldn't --
-        # the extracted content may be genuinely correct, but it came from
-        # a file that wasn't intact, so a human should double-check it
-        # rather than it being silently trusted like any other completed
-        # result.
-        flags = {"low_confidence": decision.flagged, "requires_review": decision.flagged or file_repaired}
+
+        # `requires_review` is no longer a synonym for `low_confidence`
+        # (production prompt 3.10). The mean-page-confidence rule is kept
+        # ONLY as `low_confidence` -- "the model was unsure" -- while
+        # "a human must look" is now its own decision over three
+        # independent inputs. A mean over pages is dominated by body text
+        # and cannot see the case that matters: one mandatory field empty
+        # on an otherwise confident 40-page document, or a total that
+        # contradicts its own line items at perfect confidence.
+        mandatory_keys = {
+            spec.field_key for spec in (requested_field_specs or []) if spec.is_mandatory
+        }
+        review = review_mod.decide(
+            field_results=field_results,
+            mandatory_keys=mandatory_keys,
+            validation_failures=validation_failures,
+            pages=pages,
+            file_repaired=file_repaired,
+        )
+        flags = {"low_confidence": decision.flagged, "requires_review": review.requires_review}
+        flags.update({k: v for k, v in review.to_dict().items() if k != "requires_review"})
         if file_repaired:
             flags["file_repaired"] = True
 
@@ -1189,6 +1277,17 @@ class OcrPipeline:
             "fields": fields,
             "flags": flags,
         }
+        # Only present when there are any. An empty list would read as
+        # "this invoice has no lines", which is a claim; absence reads as
+        # "no line-items table was found", which is the truth for every
+        # non-invoice and every scanned invoice (see line_items.py).
+        if line_items:
+            output_json["line_items"] = [item.to_dict() for item in line_items]
+        if validation_errors:
+            # The failing rules, verbatim, next to the fields they
+            # downgraded -- so a reviewer sees WHY a value is flagged
+            # rather than only that it is.
+            output_json["validation_errors"] = validation_errors
         self._storage.put_ocr_output_json(object_key, output_json)
 
         payload = build_ocr_completed_payload(
@@ -1215,6 +1314,16 @@ class OcrPipeline:
                 document_id=ctx.document.document_id,
                 version_id=ctx.version.version_id,
                 results=field_results,
+            )
+        # Always called, including with an empty list: a re-run that finds
+        # NO line items must clear the previous run's, or a document whose
+        # table stopped being detected keeps showing stale lines forever.
+        if line_items is not None:
+            repo.replace_line_items(
+                tenant_id=ctx.version.tenant_id,
+                document_id=ctx.document.document_id,
+                version_id=ctx.version.version_id,
+                items=line_items,
             )
         return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
 

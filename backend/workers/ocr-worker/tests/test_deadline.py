@@ -16,13 +16,21 @@ from ocr_worker.deadline import DocumentDeadline
 
 
 def test_budget_scales_with_the_documents_real_page_count():
-    deadline = DocumentDeadline(base_s=60, per_page_s=25, hard_grace_s=30)
+    """Uses the production defaults deliberately, so this also documents
+    what a real document actually gets.
 
-    assert deadline.budget_for(1) == 85
-    assert deadline.budget_for(35) == 935
-    # The number Phase 1 applied to EVERY document, one-page photos
-    # included, is now only what a 50-page document gets.
-    assert deadline.budget_for(50) == 1310
+    The per-page allowance was raised 25 -> 45 on 2026-09-29: under a
+    10-way concurrent burst a 35-page scan measured 29.2s/page, which
+    already exceeded the old 25s allowance before any headroom, and it
+    was killed at its budget for being slow rather than for hanging.
+    """
+    deadline = DocumentDeadline(base_s=60, per_page_s=45, hard_grace_s=30)
+
+    assert deadline.budget_for(1) == 105
+    assert deadline.budget_for(35) == 1635
+    # Comfortably above the 1020.9s that document really took under load.
+    assert deadline.budget_for(35) > 1020.9
+    assert deadline.budget_for(50) == 2310
 
 
 def test_not_armed_means_never_expired():

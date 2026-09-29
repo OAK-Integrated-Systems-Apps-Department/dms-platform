@@ -245,3 +245,121 @@ def combine(*results: ValidationResult) -> ValidationResult:
     for result in results:
         combined.errors.extend(result.errors)
     return combined
+
+
+# ----------------------------------------------------------------------
+# The entry point the pipeline actually calls (production prompt 3.9).
+#
+# Everything above is a pure rule over already-parsed values. This is the
+# glue that turns a list of `RequestedFieldResult` into those values and
+# back, and it lives here rather than in extraction.py so that the rules
+# and their orchestration stay testable without the extractor.
+# ----------------------------------------------------------------------
+MONEY_FIELDS = ("subtotal", "tax_amount", "total", "amount")
+
+# The date pairs `validate_dates` checks ordering for, reused as the
+# fallback set of "keys that are dates" when no data types are supplied.
+_DEFAULT_DATE_PAIRS = (
+    ("invoice_date", "due_date"),
+    ("effective_date", "expiry_date"),
+    ("contract_start_date", "contract_end_date"),
+)
+
+
+def _money(values: dict[str, str | None], key: str, locale: str) -> "Decimal | None":
+    from .patterns import parse_amount
+
+    raw = values.get(key)
+    if not raw:
+        return None
+    parsed = parse_amount(str(raw), locale=locale)
+    return parsed.value if parsed is not None else None
+
+
+DATE_DATA_TYPES = frozenset({"date", "datetime"})
+
+
+def validate_field_results(
+    results,
+    *,
+    options_by_field: dict[str, list[str] | None] | None = None,
+    data_types_by_field: dict[str, str] | None = None,
+    full_text: str = "",
+    locale: str = "day_first",
+    line_items: list[dict] | None = None,
+) -> ValidationResult:
+    """Run every applicable rule over one document's extracted fields.
+
+    `full_text` is used only for the amounts-in-words cross-check, which
+    has no field of its own: the words are prose on the page ("Forty One
+    Thousand ... Only"), not a labelled value, so the only place to find
+    them is the document text.
+
+    The `total` the words are checked against falls back to `amount` when
+    no explicit `total` was extracted -- the seeded INVOICE type calls its
+    headline figure `amount`, and checking the words against nothing would
+    silently skip the rule on every document of that type.
+    """
+    from .patterns import amount_in_words
+
+    values: dict[str, str | None] = {}
+    for result in results or []:
+        if isinstance(result.value, list):
+            continue  # multi_select: no arithmetic or date rule applies
+        values[result.field_key] = result.value
+
+    line_totals = [
+        item["line_total"] for item in (line_items or [])
+        if item.get("line_total") is not None
+    ]
+    money = validate_money(
+        subtotal=_money(values, "subtotal", locale),
+        tax_amount=_money(values, "tax_amount", locale),
+        total=_money(values, "total", locale) or _money(values, "amount", locale),
+        line_totals=line_totals or None,
+        line_items=line_items,
+    )
+    # ONLY date-typed fields. `validate_dates` parses every value it is
+    # given and reports anything unparseable as `date_unparseable`, which
+    # is correct for a date field and nonsense for `author` -- handing it
+    # the whole dict flagged "Jane Doe" as a malformed date and downgraded
+    # a perfectly good extraction. Caught by
+    # `test_process_version_with_requested_fields_returns_only_those_fields`.
+    #
+    # When no data types are supplied at all (a caller that predates this
+    # argument), fall back to the keys the date PAIRS name, which are date
+    # fields by construction -- rather than to "everything", which is the
+    # behaviour that was wrong.
+    types = data_types_by_field or {}
+    if types:
+        date_values = {k: v for k, v in values.items() if types.get(k) in DATE_DATA_TYPES}
+    else:
+        known_date_keys = {name for pair in _DEFAULT_DATE_PAIRS for name in pair}
+        date_values = {k: v for k, v in values.items() if k in known_date_keys}
+    dates = validate_dates(date_values, locale=locale)
+    currency = validate_currency(
+        values.get("currency"), (options_by_field or {}).get("currency")
+    )
+
+    headline = _money(values, "total", locale) or _money(values, "amount", locale)
+    words = validate_result_for_words(headline, full_text)
+
+    return combine(money, dates, currency, words)
+
+
+def validate_result_for_words(headline: "Decimal | None", full_text: str) -> ValidationResult:
+    """The amounts-in-words cross-check, guarded.
+
+    Separated so the guard is visible: `amount_in_words` returns None when
+    the page carries no written amount at all, which is most documents and
+    is NOT a failure. Only a page that states an amount in words AND
+    disagrees with its own figure is worth a human's time.
+    """
+    from .patterns import amount_in_words
+
+    if headline is None or not full_text:
+        return ValidationResult()
+    words_value = amount_in_words(full_text)
+    if words_value is None:
+        return ValidationResult()
+    return cross_check_amount_in_words(headline, words_value)

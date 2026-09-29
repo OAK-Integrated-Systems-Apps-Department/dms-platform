@@ -80,6 +80,40 @@ class TestNormalizePageRotation:
             before.close()
             after.close()
 
+    def test_an_unopenable_pdf_passes_through_instead_of_raising(self):
+        """Regression, found by a live 50-upload run.
+
+        This runs BEFORE `DoclingLayoutDocument.__init__`, which is where a
+        bad PDF becomes a classified CORRUPT_FILE / ENCRYPTED_PDF. When it
+        raised PyMuPDF's own error instead, both fixtures came back as a
+        generic ENGINE_ERROR -- and that silently changed their retry
+        budget from 0 to 3, so a password-protected file would be retried
+        four times.
+        """
+        garbage = b"%PDF-1.4\nnot really a pdf at all"
+        out, changed = layout.normalize_page_rotation(garbage)
+        assert out is garbage
+        assert changed == 0
+
+    def test_a_truncated_pdf_passes_through_instead_of_raising(self):
+        raw = _page_pdf(rotation=90)
+        out, changed = layout.normalize_page_rotation(raw[: len(raw) // 3])
+        assert changed == 0
+        assert isinstance(out, bytes)
+
+    def test_a_pdf_that_opens_but_will_not_render_falls_back_to_the_original(self, monkeypatch):
+        """Opening is not the only way this can fail; re-rendering can too,
+        and the same rule applies -- hand the original bytes on."""
+        raw = _page_pdf(rotation=90)
+
+        def exploding_show(self, *args, **kwargs):
+            raise RuntimeError("damaged content stream")
+
+        monkeypatch.setattr(fitz.Page, "show_pdf_page", exploding_show)
+        out, changed = layout.normalize_page_rotation(raw)
+        assert out is raw
+        assert changed == 0
+
     def test_a_multipage_document_normalises_only_its_rotated_pages(self):
         doc = fitz.open()
         for angle in (0, 90, 0):

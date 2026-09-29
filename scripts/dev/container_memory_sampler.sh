@@ -71,11 +71,38 @@ trap 'summarize' INT TERM
 START=$(date +%s)
 
 summarize() {
-    PEAK=$(read_counter memory.peak)
-    [ -n "${PEAK:-}" ] || PEAK=$(sort -n "$SAMPLES" | tail -1)
+    # The kernel's high-water mark, and the largest value we actually
+    # observed. The reported peak is the GREATER of the two.
+    #
+    # `memory.peak` alone is not safe: it is a property of the running
+    # container, so it RESETS when the container is recreated. Sample
+    # across a `docker compose up --force-recreate` -- which a measured
+    # run routinely does, to get a clean starting peak -- and the counter
+    # restarts while $SAMPLES still holds the old container's higher
+    # readings. That produced a real, published summary with
+    # `peak_gib 5.136` next to `p95_gib 5.521`, which is impossible: a
+    # high-water mark cannot sit below an instantaneous value taken
+    # inside the same window.
+    #
+    # Taking the max makes that unrepresentable. `peak_source` says which
+    # one won, so a reset is visible in the output rather than silently
+    # corrected -- if the samples win, the kernel counter was reset
+    # mid-run and the window is not what the label claims.
+    CGROUP_PEAK=$(read_counter memory.peak)
+    MAX_SAMPLE=$(sort -n "$SAMPLES" 2>/dev/null | tail -1)
+    : "${CGROUP_PEAK:=0}"
+    : "${MAX_SAMPLE:=0}"
+    if [ "$CGROUP_PEAK" -ge "$MAX_SAMPLE" ] 2>/dev/null; then
+        PEAK=$CGROUP_PEAK
+        PEAK_SOURCE=cgroup.memory.peak
+    else
+        PEAK=$MAX_SAMPLE
+        PEAK_SOURCE=max_observed_sample
+    fi
     ELAPSED=$(( $(date +%s) - START ))
     awk -v peak="$PEAK" -v limit="$LIMIT" -v reset="$RESET" -v elapsed="$ELAPSED" \
-        -v interval="$INTERVAL" -v container="$CONTAINER" -v label="$LABEL" '
+        -v interval="$INTERVAL" -v container="$CONTAINER" -v label="$LABEL" \
+        -v peaksrc="$PEAK_SOURCE" -v cgpeak="$CGROUP_PEAK" '
         { v[NR] = $1 }
         END {
             n = NR
@@ -87,7 +114,10 @@ summarize() {
             printf "  \"container\": \"%s\",\n  \"label\": \"%s\",\n", container, label
             printf "  \"samples\": %d,\n  \"interval_s\": %s,\n  \"duration_s\": %d,\n", n, interval, elapsed
             printf "  \"peak_gib\": %.3f,\n  \"peak_was_reset_first\": %s,\n", peak / gib, reset
+            printf "  \"peak_source\": \"%s\",\n", peaksrc
+            printf "  \"cgroup_peak_gib\": %.3f,\n", cgpeak / gib
             printf "  \"median_gib\": %.3f,\n  \"p95_gib\": %.3f,\n", med / gib, p95 / gib
+            if (p95 > peak) printf "  \"INVARIANT_VIOLATED\": \"p95 exceeds peak\",\n"
             printf "  \"limit_gib\": %.3f,\n  \"headroom_gib\": %.3f,\n", limit / gib, (limit - peak) / gib
             printf "  \"utilisation\": %.4f\n}\n", peak / limit
         }' "$SAMPLES" | tee ${OUT:+"$OUT"}

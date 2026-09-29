@@ -13,11 +13,10 @@ completed, 7 failed, 0 stuck, every failure on one attempt). The rotation
 defect that run surfaced is now fixed (Step 7 follow-up), Step 5 is built,
 and the LLM tier is excluded by decision rather than deferred.
 
-**One thing is outstanding: the confirming 50-upload run.** Everything
-since the close-out is verified in isolation and by 524 unit tests, but
-has NOT been through a concurrent run. The rebuild for it was stopped by
-the host running out of memory. Until that run happens, Phase 2 is not
-finished.
+**Phase 2 is closed.** The confirming 50-upload / 10-concurrent run
+(3c313b34, 2026-09-29) came back clean: 46 completed, 4 failed with
+exactly the expected codes, 0 stuck, 0 TIMEOUT, 0 WORKER_CRASH. See
+"Phase 2 summary" at the end of this document.
 
 > ## ⚠ Every accuracy number in this document is SYNTHETIC
 >
@@ -1346,6 +1345,42 @@ is only the known instance.
 landscape page is **missed entirely** (0 tables), where the identical
 table on a portrait page yields a correct 5x4 grid. Carried forward.
 
+
+### Known limitation — a real table on a landscape page is not found
+
+Separate from the timing pathology above, found by the same experiment,
+and **not fixed by either change made for it**.
+
+| page | table on it | Docling result |
+|---|---|---|
+| portrait | one real ruled 5x4 table | **1 table, grid 5x4** — correct |
+| landscape | **the identical table** | **0 tables** |
+
+Same generator, same cells, same rules, same font. The only difference is
+the page's aspect ratio. On the landscape page the table is not detected
+at all, so its cells never reach `tables_for_page` and the grid is simply
+absent from the output.
+
+**Why this matters more than it first looks.** Landscape is the normal
+orientation for exactly the documents whose tables carry the value — a
+financial statement, a line-items schedule, a timesheet, anything wide
+enough that its author turned the page. And it is a *silent* loss: the
+text of those cells still appears in `text` and `blocks` via the merge in
+`_merge_native_text_and_tables`, so nothing looks broken. Only the
+structure disappears. Full-text search still finds the words; anything
+that wanted rows and columns gets nothing and cannot tell the difference
+between "this page has no table" and "this page's table was not seen".
+
+**This is a plausible common cause with carried-forward item 1**, where
+Docling reported `tables=0` on a generated invoice that has a real
+line-items table while the same page yielded 47 text lines. That was
+recorded as an open question about Docling's table detection; a
+shape-dependent blind spot in the layout model would explain both.
+
+Not investigated further here, because it is an accuracy question in
+Docling's layout model rather than anything this worker controls, and the
+honest next step is a real labelled corpus rather than more generated
+fixtures. Phase 3.
 ### /Rotate normalisation (`OCR_NORMALIZE_PAGE_ROTATION`, default on)
 
 `layout.normalize_page_rotation` bakes a page's `/Rotate` into its
@@ -1467,7 +1502,7 @@ OCR sees and has to be justified by a before/after eval per section 5.
 
 | suite | before Phase 2 | now |
 |---|---|---|
-| ocr-worker `pytest` | 183 passed, 2 deselected | **524 passed**, 2 deselected |
+| ocr-worker `pytest` | 183 passed, 2 deselected | **588 passed**, 2 deselected |
 | dms-core `mvn test` | 41 passed | **59 passed** |
 | dms-core `*IT` | 2 passed | **2 + `OcrFieldsReconcilerIT` (4) passed** |
 | frontend `vitest` | 20 passed | 20 passed (untouched) |
@@ -1541,8 +1576,8 @@ mocks cannot check).
    are in Step 7, "A timeout the render fix did not fix".~~ **Fixed** — see
    "Step 7 follow-up". Both a per-page table-structure bound and `/Rotate`
    normalisation shipped; the rotated fixture went 138.9s → 2.3s.
-   NOTE: the fix is verified in isolation, NOT yet in a 50-upload run.
-   The confirming run is the one outstanding piece of Phase 2.
+   Confirmed in the close-out run (3c313b34): both copies of
+   `rotated_native_text.pdf` completed, and the run carried 0 TIMEOUT.
 10. **The real corpus is drafted but unreviewed.** 24 documents in
     `eval/corpus/real/` now have draft labels in `eval/labels/real/`
     (2026-09-29). Every one is `"reviewed": false`, so `eval.run` still
@@ -1562,3 +1597,138 @@ mocks cannot check).
     measured, which is the input deskew needs, but applying a rotation
     changes what OCR sees and has to be justified by a before/after eval
     per section 5.
+
+---
+
+# Phase 2 summary — closed 2026-09-29
+
+## The close-out run
+
+`scripts/dev/phase1_verification.py`, 50 uploads with a final 10-upload
+simultaneous burst, through the real outbox path (dms-core's own
+`OutboxRelay` publishes, so both the trigger and the outcome direction are
+exercised).
+
+```
+RUN 3c313b34: 50 uploads, 1870.5s wall clock
+ocr_status:  {'completed': 46, 'failed': 4}
+stuck (non-terminal): 0
+failure codes: {'ENCRYPTED_PDF': 2, 'CORRUPT_FILE': 2}
+```
+
+| criterion | result |
+|---|---|
+| zero crashes | **0** `WORKER_CRASH`; `OOMKilled=false`, `RestartCount=0` |
+| zero stuck | **0** non-terminal |
+| clear terminal status for every file | **50/50** |
+| the 4 deliberate failures, correct codes | **2x `ENCRYPTED_PDF`, 2x `CORRUPT_FILE`**, one attempt each |
+| `TIMEOUT` | **0** |
+
+46 completed rather than 45: `large_35page_scanned.pdf`, the one fixture
+that had never finished inside its budget, completed.
+
+### Memory
+
+| scope | figure |
+|---|---|
+| ocr-worker peak, over the run | **5.14 GiB** against its 8.5 GiB limit (60%) |
+| ocr-worker steady state | 4.23 GiB |
+| **whole stack, steady state** | **~4.94 GiB** across 8 containers |
+| **whole stack, provision for** | **~9.2 GiB** — ocr-worker's 8.5 GiB limit plus ~0.7 GiB for everything else |
+
+Everything other than ocr-worker is rounding error: dms-core 250 MiB,
+Keycloak 208 MiB, MinIO 135 MiB, RabbitMQ 49 MiB, Postgres 54 MiB, Redis
+5 MiB, Mailpit 14 MiB. **ocr-worker is the only container with a memory
+limit set**, and it is 96% of the stack's budget — the other seven run
+unbounded against the host, which is fine for dev and is something a
+production deployment should set explicitly rather than inherit.
+
+One inconsistency worth stating rather than smoothing: the sampler
+reports `peak 5.136 GiB` (from the kernel's `memory.peak`) alongside
+`p95 5.521 GiB` (from sampled `memory.current`). p95 should not exceed a
+high-water mark. `peak_was_reset_first` is false because `/sys/fs/cgroup`
+is read-only in these containers, so the two are not measured over
+identical windows. Treat ~5.5 GiB as the honest upper bound for this run;
+either way it sits well inside the limit, where earlier runs sat at 6.8.
+
+## What Phase 2 delivered
+
+| step | outcome |
+|---|---|
+| 0 | containers rebuilt to match source — now verified by md5 before every measured run |
+| 1 | eval harness + recorded baseline |
+| 2 | one coordinate space; `bbox_norm` on every path |
+| 3 | orientation correction — rotated conditions 11.7-14.7% -> 92.7% |
+| 4 | **vetoed**: 300 DPI + tiling bought 0 measured accuracy for >=1.6x cost |
+| 5 | per-page quality assessment (DPI, blur, contrast, skew) + `poor_image_quality` |
+| 6 | coordinates complete; `/Rotate` normalisation added. Deskew, perspective, denoise, CLAHE **not built** |
+| 7 | per-page routing — `garbage_text_layer` 0.0% -> 93.5%, `hybrid_page` 0.0% -> 95.3%, overall 79.4% -> **93.9%** |
+| 8 | scheduled reconciler replacing the poll-time re-apply |
+
+## Eval numbers
+
+**Synthetic only, and that is the headline caveat.** 117 generated
+documents: **93.9% field accuracy**, `extracted`-status precision 96.0%,
+CER 0.0549, 0 failures.
+
+**The real set still scores nothing.** 24 real documents are in
+`eval/corpus/real/` with 24 draft labels — but every draft is
+`"reviewed": false`, and an unreviewed document is never scored, because
+a draft is the pipeline's own output and scoring against it would measure
+the pipeline against itself. Until those labels are reviewed, no number
+here is evidence about real documents.
+
+## Tests
+
+| suite | before Phase 2 | now |
+|---|---|---|
+| ocr-worker `pytest` | 183 | **588** |
+| dms-core `mvn test` | 41 | 59 |
+| dms-core `*IT` | 2 | 2 + `OcrFieldsReconcilerIT` (4) |
+| frontend `vitest` | 20 | 20 (untouched) |
+
+## Deviations from the prompt
+
+1. **Step 4 vetoed.** 300 DPI rendering with tiling is specified in
+   section 3.5 and was not built. Measured: zero accuracy gain, >=1.6x
+   slowdown, OOM above ~6 MP/inference. Shipped instead: an area-based
+   `OCR_RENDER_MAX_MP` and `downsampled_from`, so scanner pixels are
+   never discarded silently. **Re-test first when the real corpus exists.**
+2. **Routing plausibility is a shape heuristic, not a dictionary.**
+   Section 3.6 asks for dictionary-like token ratios; the check counts
+   word-shaped tokens instead.
+3. **Preprocessing 3.4 steps 2-5 not built** — deskew, perspective
+   correction, denoising, CLAHE. Skew is now measured, which is deskew's
+   input; applying a rotation changes what OCR sees and needs a
+   before/after eval to justify.
+4. **No LLM tier, permanently.** Section 3.8's optional
+   `EXTRACTION_LLM_PROVIDER` is excluded by decision, not deferred:
+   document content never leaves this worker.
+5. **Per-tenant locale not wired.** `OCR_LOCALE` is process-wide; 3.8
+   wants it per tenant, which needs dms-core to send it.
+
+## Provisional — awaiting the real corpus
+
+Every one of these was set against generated fixtures and has never been
+seen against a real document:
+
+| setting | default | risk |
+|---|---|---|
+| `OCR_RENDER_MAX_MP` | 1.81 | re-test first; a real 300 DPI scan and a real phone photo are the test |
+| `OCR_ROUTING_MAX_GARBAGE_RATIO` | 0.30 | nothing in the corpus lands near it |
+| `OCR_ROUTING_MIN_PLAUSIBILITY` | 0.50 | same, plus deviation 2 |
+| `OCR_ROUTING_MIN_UNCOVERED_IMAGE` | 0.15 | a photographed signature panel could sit near it |
+| `OCR_ORIENTATION_MIN_CONFIDENCE` | 0.6 | the model's score spans 0.008; effectively on/off |
+| `OCR_QUALITY_MIN_BLUR` | 100.0 | never measured against a real blurred photograph |
+| `OCR_QUALITY_MIN_CONTRAST` | 35.0 | never measured against a real shadowed photo |
+| Phase 3 tier weights + `extracted` threshold | see `field_confidence.py` | explicitly uncalibrated by design |
+
+## Carried into Phase 3+
+
+- A real ruled table on a **landscape** page is missed entirely (0 tables
+  vs a correct 5x4 portrait) — plausibly the same cause as a real
+  invoice's line-items table reading `tables=0`.
+- `processing_job_attempts` history table — the "OOM-killed twice" rule
+  is inferred from `attempts`, not a real per-cause count.
+- The confidence floor for orientation is uncalibratable from that
+  model's own score.

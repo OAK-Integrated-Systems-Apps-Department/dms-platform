@@ -1047,9 +1047,31 @@ def normalize_page_rotation(pdf_bytes: bytes) -> tuple[bytes, int]:
     """
     import fitz  # PyMuPDF
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        if not any(page.rotation for page in doc):
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:  # noqa: BLE001 -- see below; never fail a document here
+        # **This must not raise, and getting that wrong was a real
+        # regression.** This runs BEFORE `DoclingLayoutDocument.__init__`,
+        # which is where a PDF that cannot be opened becomes a classified
+        # `CORRUPT_FILE` or `ENCRYPTED_PDF`. When this function raised
+        # PyMuPDF's own error instead, the taxonomy was bypassed and both
+        # fixtures came back as a generic `ENGINE_ERROR` -- which also
+        # silently changed their retry budget from 0 to 3, so a
+        # password-protected file would be retried four times.
+        #
+        # Normalisation is an optimisation for Docling's benefit. If the
+        # file cannot be read, hand the original bytes on unchanged and
+        # let the real classifier downstream say what is wrong with it.
+        logger.debug("Could not open PDF for rotation normalisation; passing bytes through")
+        return pdf_bytes, 0
+
+    try:
+        try:
+            rotated = any(page.rotation for page in doc)
+        except Exception:  # noqa: BLE001 -- an encrypted doc raises on page access
+            logger.debug("Could not read page rotation; passing bytes through")
+            return pdf_bytes, 0
+        if not rotated:
             return pdf_bytes, 0
 
         out = fitz.open()
@@ -1065,6 +1087,17 @@ def normalize_page_rotation(pdf_bytes: bytes) -> tuple[bytes, int]:
                 if page.rotation:
                     changed += 1
             return out.tobytes(), changed
+        except Exception:  # noqa: BLE001 -- same rule as the open above
+            # A PDF that opens but will not re-render (damaged content
+            # stream, an unsupported filter) must not become a failure
+            # HERE, where the error has no classification. The original
+            # bytes still go through the ordinary path, which either reads
+            # them or reports a proper CORRUPT_FILE.
+            logger.warning(
+                "Could not normalise page rotation; continuing with the original bytes",
+                exc_info=True,
+            )
+            return pdf_bytes, 0
         finally:
             out.close()
     finally:

@@ -80,6 +80,27 @@ class TestSkew:
         assert angle is not None
         assert angle == pytest.approx(5.0, abs=1.5)
 
+    def test_it_is_measured_on_a_downscaled_copy(self):
+        """Skew is measured at ~1000px on the long edge. Asserted through
+        behaviour rather than by inspecting the resize: the cost must stop
+        tracking page size, since a full-resolution Canny + Hough was
+        704ms/page for a number that never raises a flag."""
+        small = quality._downscaled_for_line_detection(np.zeros((3300, 2550), dtype=np.uint8), 1000)
+        assert max(small.shape) == 1000
+
+    def test_a_page_already_small_enough_is_not_resized(self):
+        gray = np.zeros((400, 300), dtype=np.uint8)
+        assert quality._downscaled_for_line_detection(gray, 1000) is gray
+
+    @pytest.mark.parametrize("tilt", [1.0, 3.0, -2.5, 5.0])
+    def test_downscaling_does_not_cost_accuracy(self, tilt):
+        """An angle is invariant under uniform scaling, so the whole point
+        is that the cheaper measurement is the same measurement."""
+        tilted = _text_page(size=(2550, 3300)).rotate(-tilt, expand=False, fillcolor=255)
+        measured = quality.skew_angle(np.array(tilted))
+        assert measured is not None
+        assert measured == pytest.approx(tilt, abs=0.5)
+
     def test_a_blank_page_is_none_rather_than_zero(self):
         """'Nothing to measure' and 'measured, and it is level' are
         different facts and must not collapse."""

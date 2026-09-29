@@ -287,7 +287,14 @@ def test_low_confidence_result_sets_requires_review_flag(session_factory, seeded
 
     assert outcome.status == "completed"  # never silently dropped (OS-NFR-006)
     assert outcome.output["flags"]["low_confidence"] is True
-    assert outcome.output["flags"]["requires_review"] is True
+    # `requires_review` is NO LONGER a synonym for `low_confidence`
+    # (production prompt 3.10). Mean page confidence is now only
+    # `low_confidence`; review is decided by missing mandatory fields,
+    # validation failures and poor image quality. This document has no
+    # requested fields, no validation failure and no quality flag, so
+    # there is nothing for a human to act on -- a low mean over body text
+    # is not, by itself, a reason to route a document to a review queue.
+    assert outcome.output["flags"]["requires_review"] is False
 
 
 def test_high_confidence_result_does_not_require_review(session_factory, seeded_version):

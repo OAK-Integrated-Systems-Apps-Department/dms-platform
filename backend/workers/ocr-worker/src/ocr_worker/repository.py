@@ -20,6 +20,7 @@ from .models import (
     DocumentVersion,
     MetadataField,
     MetadataFieldOption,
+    DocumentOcrLineItem,
     OcrOutput,
     OutboxEvent,
     ProcessingJob,
@@ -160,7 +161,8 @@ class OcrRepository:
             return None
 
         rows = self.session.execute(
-            select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type)
+            select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type,
+                   DocumentTypeField.is_mandatory)
             .join(DocumentTypeField, DocumentTypeField.field_id == MetadataField.field_id)
             .join(DocumentType, DocumentType.document_type_id == DocumentTypeField.document_type_id)
             .where(
@@ -203,6 +205,7 @@ class OcrRepository:
                     field_key=row.field_key,
                     data_type=row.data_type,
                     options=options_by_field_id.get(row.field_id) if row.data_type in OPTION_BACKED_DATA_TYPES else None,
+                    is_mandatory=bool(row.is_mandatory),
                 )
             )
         if unresolved:
@@ -661,6 +664,7 @@ class OcrRepository:
             if existing is not None:
                 existing.version_id = version_id
                 existing.value = value
+                existing.raw_value = result.raw_value
                 existing.confidence = result.confidence
                 existing.status = result.status
                 existing.source_page = result.page
@@ -674,6 +678,7 @@ class OcrRepository:
                         version_id=version_id,
                         field_key=result.field_key,
                         value=value,
+                        raw_value=result.raw_value,
                         confidence=result.confidence,
                         status=result.status,
                         source_page=result.page,
@@ -681,6 +686,45 @@ class OcrRepository:
                     )
                 )
         self.session.flush()
+
+    def replace_line_items(self, *, tenant_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID, items) -> int:
+        """This version's line items, replacing whatever was there.
+
+        Delete-then-insert rather than an upsert keyed on line_number,
+        because a re-run can legitimately produce a DIFFERENT NUMBER of
+        lines -- a page that previously failed its table pass now reads 7
+        rows where it read 0, or a better routing decision merges two
+        wrapped descriptions into one line. An upsert would leave the
+        surplus rows from the longer previous run behind, silently
+        inventing lines that the current read does not support.
+
+        Runs in the caller's transaction, so the delete and the inserts
+        commit with the rest of the outcome -- there is no window where a
+        version has no line items because a re-run was interrupted.
+        """
+        self.session.query(DocumentOcrLineItem).filter(
+            DocumentOcrLineItem.version_id == version_id
+        ).delete(synchronize_session=False)
+
+        for item in items or []:
+            self.session.add(
+                DocumentOcrLineItem(
+                    tenant_id=tenant_id,
+                    document_id=document_id,
+                    version_id=version_id,
+                    line_number=item.line_number,
+                    description=item.description,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    line_total=item.line_total,
+                    raw_cells=item.raw_cells or None,
+                    confidence=item.confidence,
+                    source_page=item.page,
+                    source_bbox=list(item.bbox) if item.bbox else None,
+                )
+            )
+        self.session.flush()
+        return len(items or [])
 
     def requeue_after_failure(self, *, job: ProcessingJob, error: str, backoff_seconds: int) -> None:
         """A failure the retry policy says is worth another attempt: back

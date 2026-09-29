@@ -144,10 +144,24 @@ def compute_task_timeout_s(settings: Settings) -> float:
     If pebble wins, no TIMEOUT row is written and the reaper reclaims the
     lease as `WORKER_CRASH`, which is the correct description of that case.
     """
+    return longest_in_worker_hard_deadline_s(settings) + settings.ocr_pool_ceiling_grace_s
+
+
+def longest_in_worker_hard_deadline_s(settings: Settings) -> float:
+    """The largest deadline the in-worker watchdog can possibly arm.
+
+    Armed from the document's REAL page count, so the largest case is a
+    document at `ocr_max_pages`. Separated out because the pool ceiling is
+    defined *relative to this* -- `ceiling = this + pool grace` -- and
+    writing that relationship as one arithmetic expression hid it. It was
+    previously spelled `base + max_pages*per_page + 2*grace`, which is the
+    same number by coincidence of using the same grace twice and gave no
+    hint that the second `grace` meant something different from the first.
+    """
     return (
         settings.ocr_timeout_base_s
         + settings.ocr_max_pages * settings.ocr_timeout_per_page_s
-        + 2 * settings.ocr_timeout_hard_grace_s
+        + settings.ocr_timeout_hard_grace_s
     )
 
 

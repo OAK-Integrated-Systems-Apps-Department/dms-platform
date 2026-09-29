@@ -6,6 +6,9 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime
 
+from . import field_confidence
+from . import field_confidence as fc
+
 try:
     from langdetect import detect_langs
     from langdetect.lang_detect_exception import LangDetectException
@@ -254,6 +257,46 @@ _LABEL_ALIASES: dict[str, list[str]] = {
     "invoice_date": ["invoice date"],
     "purchase_order_number": ["purchase order number", "po number", "po no", "po#", "order number"],
     "currency": ["currency"],
+    # -- Invoice fields (Phase 3d, production prompt 3.8) --
+    # `amount` above is the seeded type's headline figure and already
+    # claims "total"/"grand total"/"amount due". These are the *component*
+    # figures a real invoice breaks that headline into, and the reason
+    # 3.9's `subtotal + tax = total` rule had nothing to check: none of
+    # its three inputs were ever extracted.
+    #
+    # `subtotal` deliberately does NOT list a bare "total" -- it would
+    # match the grand total on every invoice that writes "Total" once, and
+    # a subtotal that is really the total makes the arithmetic rule fire
+    # on correct documents.
+    "subtotal": [
+        "subtotal", "sub total", "sub-total", "net amount", "net value",
+        "amount before tax", "taxable amount", "taxable value",
+    ],
+    "tax_amount": [
+        "tax amount", "total tax", "vat amount", "gst amount", "sales tax",
+        "tax", "vat", "gst",
+    ],
+    "tax_rate": [
+        "tax rate", "vat rate", "gst rate", "tax %", "vat %", "gst %", "rate of tax",
+    ],
+    "total": [
+        "grand total", "total amount due", "invoice total", "total payable",
+        "balance due", "total due", "total",
+    ],
+    # A tax registration number, not a person's tax id. Distinct from
+    # `reference_number` because a document routinely carries both and
+    # they are never interchangeable.
+    "vendor_tax_id": [
+        "vat registration", "vat reg no", "vat number", "vat no", "vat id",
+        "gst number", "gstin", "tax registration number", "tax reg no",
+        "tin", "abn", "ein",
+    ],
+    "due_date": [
+        "due date", "payment due", "payment due date", "due on", "pay by",
+    ],
+    "payment_terms": [
+        "payment terms", "terms of payment", "payment term", "terms",
+    ],
     "vendor_supplier_name": ["vendor / supplier", "vendor/supplier", "vendor", "supplier", "billed by", "seller"],
     "cost_centre": ["cost centre", "cost center"],
     # "total" (bare) is deliberately LAST: a hospital/receipt-style
@@ -317,6 +360,12 @@ class FieldSpec:
     field_key: str
     data_type: str
     options: list[str] | None = None
+    # Whether the document type marks this field mandatory. Feeds
+    # `requires_review`'s first arm (production prompt 3.10). Defaults
+    # False so every existing construction site -- tests, the dev-trigger
+    # endpoint, eval -- keeps working and simply contributes nothing to
+    # the review decision, which is the safe direction.
+    is_mandatory: bool = False
 
 
 @dataclass(frozen=True)
@@ -332,6 +381,13 @@ class RequestedFieldResult:
     value: str | list[str] | None
     confidence: float | None
     status: str  # "extracted" | "not_found" | "low_confidence"
+    # The string as it was read off the page, before any normalisation
+    # (production prompt 3.8). Equal to `value` for every field that is
+    # not normalized; differs for dates, where `value` is ISO and this is
+    # what the document actually printed -- which is what a reviewer needs
+    # to judge a day-first/month-first ambiguity. None for a multi_select,
+    # whose value is a list with no single source string.
+    raw_value: str | None = None
     page: int | None = None
     bbox: tuple[int, int, int, int] | None = None
 
@@ -857,7 +913,7 @@ def _extract_field_value(
         candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         matched = _match_enum(candidate, options, field_key)
         if matched:
-            return matched, 0.85, False, page, bbox
+            return matched, fc.TIER_PATTERN, False, page, bbox
         if field_key == "currency":
             # Pattern-rule fallback: real invoice found live with no
             # "Currency:" label anywhere on the page at all (see
@@ -866,7 +922,16 @@ def _extract_field_value(
             # _match_enum never returns a value outside that list.
             fallback_matched = _match_enum(_currency_pattern_fallback(text), options, field_key)
             if fallback_matched:
-                return fallback_matched, 0.55, False, None, None
+                # forced low_confidence, like the letterhead and free-text
+                # fallbacks below: this is a guess from a bare currency
+                # code in running text, with no label anchoring it, and it
+                # must always be reviewed regardless of where the caller
+                # set its threshold. It used to reach that status by
+                # scoring 0.55 against a 0.6 default -- which quietly
+                # depended on two unrelated numbers staying in that order,
+                # and stopped being true the moment the score became
+                # computed. Saying so outright is what was meant.
+                return fallback_matched, fc.TIER_FALLBACK, True, None, None
         return None, None, False, None, None
 
     if data_type in ("date", "datetime"):
@@ -874,7 +939,16 @@ def _extract_field_value(
         if raw_date is None:
             return None, None, False, None, None
         from_label = page is not None or _label_proximity_value(text, aliases) is not None
-        return _normalize_date(raw_date), (0.9 if from_label else 0.65), False, page, bbox
+        # Returns the RAW matched string. Normalisation moved into
+        # `_finalize_result`, which is the only place that holds both
+        # forms at once and can therefore record `raw_value` alongside the
+        # ISO value (production prompt 3.8: "store the raw OCR string
+        # alongside every normalized value"). Normalising here threw the
+        # original away, so `2026-08-10` gave a reviewer no way to see
+        # that the page actually said `10/08/2026` -- which is exactly
+        # what they need in order to judge a day-first/month-first
+        # ambiguity.
+        return raw_date, (fc.TIER_SPATIAL if from_label else fc.TIER_PATTERN), False, page, bbox
 
     if field_key == "reference_number":
         # Label match first, THEN the pattern-rule regex fallback -- matches
@@ -890,9 +964,9 @@ def _extract_field_value(
         # chance.
         candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
-            return candidate.strip(), 0.85, False, page, bbox
+            return candidate.strip(), fc.TIER_PATTERN, False, page, bbox
         match = _REFERENCE_NUMBER_RE.search(text)
-        return (match.group(1).strip(), 0.65, False, None, None) if match else (None, None, False, None, None)
+        return (match.group(1).strip(), fc.TIER_PATTERN, False, None, None) if match else (None, None, False, None, None)
 
     if data_type in ("long_text", "multi_select"):
         candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
@@ -900,20 +974,20 @@ def _extract_field_value(
             if data_type == "multi_select":
                 value = _split_list_value(candidate)
                 if value:
-                    return value, 0.75, False, None, None  # a split list has no single bbox
+                    return value, fc.TIER_SPATIAL, False, None, None  # a split list has no single bbox
             else:
                 value = candidate.strip()
                 if value:
-                    return value, 0.75, False, page, bbox
+                    return value, fc.TIER_SPATIAL, False, page, bbox
         # Free-text fallback: generated FROM the document, not found via a
         # label -- always low_confidence per spec, whatever the number below.
         value = _keywords_from_text(text) if data_type == "multi_select" else _summary_from_text(text)
-        return (value, 0.5, True, None, None) if value else (None, None, False, None, None)
+        return (value, fc.TIER_FALLBACK, True, None, None) if value else (None, None, False, None, None)
 
     if field_key == "vendor_supplier_name":
         candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
-            return candidate.strip(), 0.8, False, page, bbox
+            return candidate.strip(), fc.TIER_SPATIAL, False, page, bbox
         # Letterhead fallback: real invoice found live with no "Vendor:"/
         # "Supplier:" label anywhere on the page (see
         # _vendor_letterhead_fallback's own comment) -- lower confidence
@@ -925,13 +999,13 @@ def _extract_field_value(
             # this is a position-based guess, not a labeled match, and
             # must always be flagged for human review regardless of the
             # caller's confidence threshold.
-            return name, 0.6, True, 1, bbox
+            return name, fc.TIER_FALLBACK, True, 1, bbox
         return None, None, False, None, None
 
     # Generic single-line text field (author, department, and anything else
     # with no more specific handling above).
     candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
-    return (candidate.strip(), 0.8, False, page, bbox) if candidate else (None, None, False, None, None)
+    return (candidate.strip(), fc.TIER_SPATIAL, False, page, bbox) if candidate else (None, None, False, None, None)
 
 
 def _split_list_value(raw: str, limit: int = 8) -> list[str]:
@@ -947,13 +1021,46 @@ def _split_list_value(raw: str, limit: int = 8) -> list[str]:
 
 
 def _finalize_result(
-    spec: FieldSpec, value, confidence: float | None, page: int | None, bbox, threshold: float, forced_low_confidence: bool = False
+    spec: FieldSpec, value, tier_or_confidence, page: int | None, bbox, threshold: float,
+    forced_low_confidence: bool = False, line_confidences: dict | None = None,
 ) -> RequestedFieldResult:
     is_empty = value is None or (isinstance(value, list) and not value) or (isinstance(value, str) and not value.strip())
     if is_empty:
         return RequestedFieldResult(field_key=spec.field_key, value=None, confidence=None, status="not_found")
+
+    # The raw string as it was read off the page, kept alongside the
+    # normalized value (production prompt 3.8). Normalisation happens
+    # HERE rather than in the per-field resolver so that both forms exist
+    # in one place; doing it upstream discarded the original.
+    #
+    # For most fields the two are identical -- nothing is normalized --
+    # and `raw_value` is still populated rather than left null, so a
+    # consumer never has to guess whether "null" means "same as value" or
+    # "we lost it".
+    raw_value = value if isinstance(value, str) else None
+    if isinstance(value, str) and spec.data_type in ("date", "datetime"):
+        value = _normalize_date(value)
+
+    # Production prompt 3.10: the score is COMPUTED, not asserted.
+    # `tier_or_confidence` is a tier name from the resolver above; a zone
+    # hit passes its own float straight through, because a zone template
+    # match already carries the engine's confidence for the cropped
+    # region and there is no better number to multiply it by.
+    if isinstance(tier_or_confidence, str):
+        confidence = field_confidence.compute(
+            ocr_confidence=field_confidence.mean_ocr_confidence_for_bbox(
+                (line_confidences or {}).get(page), bbox
+            ),
+            tier=tier_or_confidence,
+        )
+    else:
+        confidence = tier_or_confidence
+
     status = "low_confidence" if forced_low_confidence or confidence is None or confidence < threshold else "extracted"
-    return RequestedFieldResult(field_key=spec.field_key, value=value, confidence=confidence, status=status, page=page, bbox=bbox)
+    return RequestedFieldResult(
+        field_key=spec.field_key, value=value, raw_value=raw_value,
+        confidence=confidence, status=status, page=page, bbox=bbox,
+    )
 
 
 def _apply_effective_expiry_validation(results: list[RequestedFieldResult]) -> list[RequestedFieldResult]:
@@ -996,6 +1103,12 @@ def extract_requested_fields(
     # silently shrink when the render DPI rises.
     page_heights_px: dict[int, float] | None = None,
     field_confidence_threshold: float = 0.6,
+    # 1-indexed page -> [(line bbox, that line's OCR confidence)], so a
+    # field's score can carry the recognition confidence of the tokens it
+    # actually came from (production prompt 3.10). Absent for a native-text
+    # page, where there is no character-level uncertainty and the OCR term
+    # is 1.0 by definition.
+    line_confidences: dict[int, list] | None = None,
 ) -> list[RequestedFieldResult]:
     """The selectable-field entry point: attempts ONLY `specs` (never a
     field outside that list, even one a zone template or the legacy regex
@@ -1018,8 +1131,11 @@ def extract_requested_fields(
                 _finalize_result(spec, zone_hit.value, zone_hit.confidence, zone_hit.page, zone_hit.bbox, field_confidence_threshold)
             )
             continue
-        value, confidence, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page, page_heights_px)
-        results.append(_finalize_result(spec, value, confidence, page, bbox, field_confidence_threshold, forced_low_confidence))
+        value, tier, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page, page_heights_px)
+        results.append(_finalize_result(
+            spec, value, tier, page, bbox, field_confidence_threshold,
+            forced_low_confidence, line_confidences,
+        ))
 
     return _apply_effective_expiry_validation(results)
 

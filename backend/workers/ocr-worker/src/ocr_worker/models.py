@@ -162,6 +162,11 @@ class DocumentTypeField(Base):
     field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("metadata_fields.field_id"))
     schema_version: Mapped[int] = mapped_column(default=1)
     is_hidden: Mapped[bool] = mapped_column(default=False)
+    # Drives `requires_review`'s "any mandatory field not extracted" arm
+    # (production prompt 3.10). Read from the schema rather than from a
+    # hardcoded list here, so a tenant that marks its own field mandatory
+    # gets the review behaviour without a code change.
+    is_mandatory: Mapped[bool] = mapped_column(default=False)
     display_order: Mapped[int] = mapped_column(default=0)
     is_deleted: Mapped[bool] = mapped_column(default=False)
 
@@ -221,6 +226,10 @@ class DocumentOcrFieldResult(Base):
     # multi_select field, same as it already treats a multi_select
     # document_metadata_values row as several single-value rows internally.
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The string as read off the page, before normalisation (V39). Equal
+    # to `value` except for dates, where `value` is ISO -- see
+    # extraction._finalize_result.
+    raw_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     status: Mapped[str] = mapped_column(String(20))  # "extracted" | "not_found" | "low_confidence"
     source_page: Mapped[int | None] = mapped_column(nullable=True)
@@ -254,3 +263,35 @@ class OutboxEvent(Base):
     payload: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(default=0)
+
+
+class DocumentOcrLineItem(Base):
+    """dms-core/.../V39__ocr_line_items_and_raw_values.sql.
+
+    One row per invoice line per version. A re-run replaces this
+    version's rows wholesale (see `OcrRepository.replace_line_items`)
+    rather than accumulating, matching document_ocr_field_results' own
+    current-state shape.
+
+    A real table rather than a JSONB column because Phase 4's corrections
+    need per-line identity -- see the migration's own DECISION comment for
+    the full argument.
+    """
+
+    __tablename__ = "document_ocr_line_items"
+
+    line_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.document_id"))
+    version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.version_id"))
+    line_number: Mapped[int] = mapped_column()
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    line_total: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    raw_cells: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    source_page: Mapped[int | None] = mapped_column(nullable=True)
+    source_bbox: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
