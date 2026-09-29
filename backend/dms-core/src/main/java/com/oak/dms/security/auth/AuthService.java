@@ -9,6 +9,7 @@ import com.oak.dms.common.exception.InvalidCredentialsException;
 import com.oak.dms.common.exception.SessionExpiredException;
 import com.oak.dms.security.auth.dto.KeycloakTokenResponse;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
+import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import jakarta.servlet.http.Cookie;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -42,6 +44,7 @@ public class AuthService {
     private final AuthCookieService cookieService;
     private final Keycloak keycloakAdminClient;
     private final KeycloakAdminProperties adminProperties;
+    private final KeycloakUserService keycloakUserService;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
@@ -58,12 +61,13 @@ public class AuthService {
      */
     public boolean isMfaRequired(String username) {
         try {
-            List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
-                    .users().search(username, true);
-            if (matches.isEmpty()) {
+            // Username OR email, like the login itself - an email-only
+            // lookup miss here would skip the OTP prompt and doom the login.
+            Optional<UserRepresentation> match = keycloakUserService.findByUsernameOrEmail(username);
+            if (match.isEmpty()) {
                 return false;
             }
-            String userId = matches.get(0).getId();
+            String userId = match.get().getId();
             List<CredentialRepresentation> credentials = keycloakAdminClient.realm(adminProperties.getRealm())
                     .users().get(userId).credentials();
             return credentials.stream().anyMatch(c -> "otp".equals(c.getType()));
@@ -142,12 +146,11 @@ public class AuthService {
      */
     private User recordLastLogin(String username) {
         try {
-            List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
-                    .users().search(username, true);
-            if (matches.isEmpty()) {
+            Optional<UserRepresentation> match = keycloakUserService.findByUsernameOrEmail(username);
+            if (match.isEmpty()) {
                 return null;
             }
-            UUID keycloakId = UUID.fromString(matches.get(0).getId());
+            UUID keycloakId = UUID.fromString(match.get().getId());
             return userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).map(user -> {
                 user.setLastLoginAt(OffsetDateTime.now());
                 return userRepository.save(user);

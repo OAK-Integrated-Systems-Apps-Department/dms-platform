@@ -192,7 +192,8 @@ public class UserServiceImpl implements UserService {
         // and UserMapper's own doc comments for why that's "me"-only).
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
-                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
+                authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
+                resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
@@ -220,7 +221,8 @@ public class UserServiceImpl implements UserService {
                 .log();
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
-                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
+                authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
+                resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
