@@ -62,6 +62,24 @@ class ObjectStorage:
         )
         return object_key
 
+    def put_rendition(self, object_key: str, data: bytes, content_type: str = "application/pdf") -> str:
+        """A derived artifact (production prompt 3.11's searchable PDF).
+
+        Written to the OCR OUTPUT bucket, not the source bucket. The
+        source bucket holds what the user uploaded and is the one thing
+        this system must never be able to corrupt; everything ocr-worker
+        produces is reproducible from it and belongs on the other side of
+        that line.
+        """
+        self.client.put_object(
+            self._settings.minio_ocr_output_bucket,
+            object_key,
+            data=io.BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        return object_key
+
     def ensure_buckets(self) -> None:
         for bucket in (self._settings.minio_source_bucket, self._settings.minio_ocr_output_bucket):
             if not self.client.bucket_exists(bucket):

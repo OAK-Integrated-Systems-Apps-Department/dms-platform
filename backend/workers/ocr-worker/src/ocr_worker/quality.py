@@ -227,8 +227,22 @@ def assess_page(
         logger.exception("Could not read page image for quality assessment")
         return quality, reasons
 
-    pixel_size = native_pixel_size or (gray.shape[1], gray.shape[0])
-    dpi = effective_dpi(pixel_size[0], pixel_size[1], width_pt or 0.0, height_pt or 0.0)
+    # **No native raster means no DPI.** A vector PDF page is
+    # resolution-independent: it has no pixels of its own, and asking
+    # "what DPI is it?" has no answer. Falling back to the RENDER's pixel
+    # size -- which this used to do -- invents one, and since the render
+    # is capped at `OCR_RENDER_MAX_MP` that invented number is ~137 DPI
+    # for an A4 page, below any sane floor.
+    #
+    # Measured cost of that bug: it flagged every `native_pdf` and
+    # `multipage` document in the corpus as LOW_RESOLUTION -- 18 of the
+    # 54 false positives that took the quality flag's precision to 0.45.
+    # Those are the two conditions with nothing wrong with them at all.
+    dpi = (
+        effective_dpi(native_pixel_size[0], native_pixel_size[1], width_pt or 0.0, height_pt or 0.0)
+        if native_pixel_size
+        else None
+    )
     blur = blur_score(gray)
     contrast = contrast_score(gray)
     skew = skew_angle(gray)
@@ -255,7 +269,11 @@ def assess_page(
         reasons.append(LOW_RESOLUTION)
     if blur is not None and blur < min_blur:
         reasons.append(BLURRY)
-    if contrast is not None and contrast < min_contrast:
+    # `min_contrast <= 0` disables the check. That is the DEFAULT, and it
+    # is a finding rather than a tuning choice -- see
+    # `Settings.ocr_quality_min_contrast`. RMS contrast is still measured
+    # and reported; it is simply not fit to raise this flag.
+    if min_contrast > 0 and contrast is not None and contrast < min_contrast:
         reasons.append(LOW_CONTRAST)
 
     return quality, reasons

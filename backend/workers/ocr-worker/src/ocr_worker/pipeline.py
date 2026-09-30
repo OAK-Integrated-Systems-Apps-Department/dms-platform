@@ -35,6 +35,7 @@ from .layout import LayoutEngine, SUPPORTED_MIME_TYPES, sniff_and_normalize_mime
 from .ocr_engine import OcrEngine
 from . import quality as quality_mod
 from . import review as review_mod
+from . import searchable_pdf
 from . import line_items as line_items_mod
 from . import validation as validation_mod
 from . import routing
@@ -499,7 +500,7 @@ class OcrPipeline:
 
         deadline = self._make_deadline(job_id=job_id, version_id=version_id, correlation_id=correlation_id)
         try:
-            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items = self._run_inference(
+            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items, rendition = self._run_inference(
                 mime_type=mime_type,
                 storage_object_key=storage_object_key,
                 original_filename=original_filename,
@@ -507,7 +508,7 @@ class OcrPipeline:
                 requested_fields=requested_fields,
                 deadline=deadline,
             )
-            result: tuple | Exception = (pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items)
+            result: tuple | Exception = (pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items, rendition)
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any failure here must be flagged, never silently dropped (OS-NFR-006)
             result = exc
 
@@ -527,7 +528,7 @@ class OcrPipeline:
             ctx = repo.get_version_for_processing(version_id)
             if isinstance(result, Exception):
                 return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=result, correlation_id=correlation_id)
-            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items = result
+            pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items, rendition = result
             return self._finalize_success(
                 repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, field_results=field_results,
                 correlation_id=correlation_id, file_repaired=file_repaired,
@@ -535,6 +536,7 @@ class OcrPipeline:
                 validation_failures=validation_failures,
                 validation_errors=validation_errors,
                 line_items=line_items,
+                rendition=rendition,
             )
 
     def _run_inference(
@@ -606,6 +608,7 @@ class OcrPipeline:
                 lines_by_page: dict[int, list[LineBlock]] = {}
                 orientation_by_page: dict[int, "Any"] = {}
                 line_confidences_by_page: dict[int, list] = {}
+                rendition = (None, [])
             else:
                 # No zone/field template configured for this document
                 # type -- extracted_fields here is the LEGACY generic
@@ -615,7 +618,7 @@ class OcrPipeline:
                 # (priority 1) -- that would let an unrelated regex guess
                 # bypass the new dispatch's own, more field-appropriate
                 # strategy for a requested field.
-                pages, extracted_fields, lines_by_page, orientation_by_page, line_confidences_by_page = self._run_full_document(layout_doc, deadline=deadline)
+                pages, extracted_fields, lines_by_page, orientation_by_page, line_confidences_by_page, rendition = self._run_full_document(layout_doc, deadline=deadline)
                 zone_derived_fields = []
             file_repaired = getattr(layout_doc, "file_repaired", False)
 
@@ -706,7 +709,8 @@ class OcrPipeline:
         else:
             fields = fields_to_dict(extracted_fields, geometry_by_page)
 
-        return pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items
+        return (pages, fields, field_results, file_repaired, validation_failures,
+                validation_errors, line_items, rendition)
 
     # ------------------------------------------------------------------
     # Preprocessing (production prompt 3.4) -- see orientation.py
@@ -962,6 +966,15 @@ class OcrPipeline:
         lines_by_page: dict[int, list[LineBlock]] = {}
         line_confidences_by_page: dict[int, list] = {}
         orientation_by_page: dict[int, "Any"] = {}
+        # Built INSIDE the page loop, so page N's raster is released before
+        # page N+1 is rendered. Collecting the images to build the
+        # rendition afterwards would add roughly a gigabyte on a 35-page
+        # scan to a document that already peaks near its limit.
+        pdf_builder = (
+            searchable_pdf.SearchablePdfBuilder()
+            if self._settings.ocr_searchable_pdf_enabled
+            else None
+        )
         for page_index in range(layout_doc.page_count()):  # PyMuPDF: 0-indexed
             page_number = page_index + 1  # output contract / Docling: 1-indexed
             _check_deadline(deadline, f"before page {page_number} of {layout_doc.page_count()}")
@@ -1037,10 +1050,66 @@ class OcrPipeline:
                     # which field_confidence reads as 1.0.
                     line_confidences_by_page[page_number] = [(w.bbox, w.confidence) for w in result.words]
 
+            # The rendition page, for every route. A native-text page is
+            # included deliberately: the rendition is one artifact for the
+            # whole document, and skipping pages that happened to have a
+            # text layer would produce a PDF missing pages 3 and 7 -- a
+            # worse object than not producing one at all.
+            #
+            # `page_image` is the ORIGINAL raster, never the
+            # orientation-corrected one: the rendition must look like the
+            # document as stored, and the word boxes are in that same
+            # space (they were mapped back after OCR).
+            if pdf_builder is not None:
+                self._add_rendition_page(
+                    pdf_builder, layout_doc, page_index, page_number,
+                    pages[-1] if pages else None,
+                    orientation_by_page.get(page_number),
+                )
+
         full_text = "\n\n".join(p.text for p in pages)
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         extracted_fields = extract_structured_fields(full_text, base_confidence=overall_confidence)
-        return pages, extracted_fields, lines_by_page, orientation_by_page, line_confidences_by_page
+        rendition = searchable_pdf.result_of(pdf_builder) if pdf_builder is not None else (None, [])
+        return (pages, extracted_fields, lines_by_page, orientation_by_page,
+                line_confidences_by_page, rendition)
+
+    def _add_rendition_page(self, builder, layout_doc, page_index: int, page_number: int,
+                            page_result, orientation=None) -> None:
+        """Copy this page from the source into the rendition, overlaying
+        invisible text only where recognition actually happened.
+
+        Copying rather than rendering is what keeps a 300 DPI scan at 300
+        DPI: the rendition must not hand a user back a copy downsampled to
+        whatever `OCR_RENDER_MAX_MP` OCR happened to need. It also means
+        no page raster is decoded here at all.
+
+        Never raises; the builder records its own per-page reasons.
+        """
+        if page_result is None or page_result.page_number != page_number:
+            return
+        source_doc = None
+        getter = getattr(layout_doc, "source_document", None)
+        if callable(getter):
+            source_doc = getter()
+        if source_doc is None:
+            # A .docx has no page to copy -- it is reflowable and was
+            # never rasterized. Recording the reason is the honest
+            # outcome; a rendition of it would be an invention.
+            builder.failures.append(f"page {page_number}: source has no copyable page")
+            return
+
+        geometry = page_result.geometry
+        scale = getattr(geometry, "render_scale", 0.0) or 0.0
+        builder.add_source_page(
+            source_doc, page_index,
+            searchable_pdf.boxes_for_overlay(page_result),
+            pixels_per_point=scale,
+            # A page that arrived sideways has boxes mapped back into its
+            # own space, which leaves them tall and narrow -- the run has
+            # to be rotated to follow the ink. See `text_rotation_for`.
+            text_rotation=searchable_pdf.text_rotation_for(orientation),
+        )
 
     def _run_zone_ocr(
         self, layout_doc, regions: list[ZoneRegion], deadline: DocumentDeadline | None = None
@@ -1230,6 +1299,7 @@ class OcrPipeline:
         validation_failures: list[str] | None = None,
         validation_errors: list[dict] | None = None,
         line_items: list | None = None,
+        rendition: tuple | None = None,
     ) -> ProcessingOutcome:
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         decision = self._confidence.evaluate(overall_confidence)
@@ -1256,6 +1326,16 @@ class OcrPipeline:
         flags.update({k: v for k, v in review.to_dict().items() if k != "requires_review"})
         if file_repaired:
             flags["file_repaired"] = True
+
+        # Written BEFORE the output JSON, so a rendition that failed can
+        # say so IN that JSON. Production prompt's no-silent-fallback
+        # rule: "the rendition is simply absent" is indistinguishable
+        # from "this deployment has renditions turned off", and a user
+        # asking why they cannot search a document deserves the reason.
+        rendition_failures = self._store_searchable_pdf(repo=repo, ctx=ctx, rendition=rendition)
+        if rendition_failures:
+            flags["searchable_pdf_failed"] = True
+            flags["searchable_pdf_failure_reasons"] = rendition_failures
 
         output_id = uuid.uuid4()
         object_key = ocr_output_key(ctx.version.tenant_id, ctx.version.version_id, output_id)
@@ -1326,6 +1406,58 @@ class OcrPipeline:
                 items=line_items,
             )
         return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
+
+    def _store_searchable_pdf(self, *, repo: OcrRepository, ctx, rendition: tuple | None) -> list[str]:
+        """Upload the rendition and record it (production prompt 3.11).
+        Returns the reasons it did not fully happen, empty when it did.
+
+        **Upload first, row second.** A `renditions` row must never point
+        at an object that is not there; the reverse (an object with no
+        row) is harmless garbage. Neither failure is allowed to fail the
+        document -- its text, fields and line items are already committed
+        -- but both are *reported*, which is the difference between a
+        fallback and a silent one.
+        """
+        data, failures = rendition if rendition else (None, [])
+        failures = list(failures)
+        if not data:
+            if failures:
+                logger.warning(
+                    "No searchable PDF for version %s: %s",
+                    ctx.version.version_id, "; ".join(failures),
+                )
+            return failures
+        rendition_id = uuid.uuid4()
+        object_key = searchable_pdf.searchable_pdf_key(
+            ctx.version.tenant_id, ctx.version.version_id, rendition_id
+        )
+        try:
+            self._storage.put_rendition(object_key, data)
+        except Exception as exc:  # noqa: BLE001 -- see docstring
+            logger.exception(
+                "Could not upload the searchable PDF for version %s; no rendition recorded",
+                ctx.version.version_id,
+            )
+            failures.append(f"upload: {type(exc).__name__}: {exc}")
+            return failures
+        try:
+            repo.upsert_rendition(
+                tenant_id=ctx.version.tenant_id,
+                version_id=ctx.version.version_id,
+                rendition_type="searchable_pdf",
+                storage_object_key=object_key,
+            )
+            logger.info(
+                "Searchable PDF rendition for version %s: %d bytes at %s",
+                ctx.version.version_id, len(data), object_key,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Uploaded the searchable PDF for version %s but could not record the rendition row",
+                ctx.version.version_id,
+            )
+            failures.append(f"record: {type(exc).__name__}: {exc}")
+        return failures
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
         logger.exception("OCR processing failed for version %s", ctx.version.version_id)

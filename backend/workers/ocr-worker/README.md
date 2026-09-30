@@ -366,6 +366,97 @@ against a real document. See `docs/ocr/phase2-verification.md`, which
 lists them alongside the resolution decision as the things to re-measure
 first once a real labelled corpus exists.
 
+## Searchable PDF rendition
+
+Production prompt 3.11. Every OCR'd document gets one: a PDF that looks
+exactly like the source and selects like a text document. Written to the
+OCR output bucket and recorded in `renditions` as
+`rendition_type='searchable_pdf'` (V40), one row per version — a re-run
+upserts rather than appending.
+
+### The source page is copied, never re-rasterized
+
+`show_pdf_page` draws the original page into the rendition with its
+content intact. A 300 DPI scan stays 300 DPI, vector text stays vector,
+and a user never gets back a lower-resolution copy of what they
+uploaded. It also means **no page raster is decoded for the rendition at
+all** — memory per page is bounded by PyMuPDF's streaming, not by the
+page's pixel count.
+
+An earlier version drew the `OCR_RENDER_MAX_MP` raster instead, which
+silently downsampled every scan above 1.81 MP to whatever resolution OCR
+happened to need. That was wrong and is fixed.
+
+A bare PNG/JPEG/TIFF/HEIC opens in PyMuPDF as a one-page document
+wrapping that image at native size, so the same copy path serves every
+format — there is no separate image branch.
+
+### Invisible text goes only where recognition happened
+
+| route | overlay |
+|---|---|
+| `native_text` | **none** — the page's own text layer is exact and is copied with it |
+| `hybrid` | only the blocks whose `source` is `paddleocr` |
+| `paddleocr` | every block — the page had no text layer to copy |
+
+Overlaying a recognised approximation on a page that already has a text
+layer gives it **two**: Ctrl-F finds every word twice and copy-paste
+yields doubled text. `test_a_native_text_page_is_copied_with_no_recognised_overlay`
+and `test_a_hybrid_page_overlays_only_its_ocrd_regions` pin both halves.
+
+### The text layer is LINE-level, not word-level
+
+**This is the granularity a consumer gets, and it is worth knowing
+before building on it.** PaddleOCR's detector returns text *lines*, not
+individual words. Measured on a real receipt fixture: 9 boxes for the
+page, 6 of them containing spaces — e.g. `'Receipt No: RCPT-33210'` came
+back as one box spanning x 82→612.
+
+So the rendition carries one invisible run per detected line, and the
+font size is fitted to that line's box **width** (via
+`fitz.get_text_length`) so character positions inside it land
+approximately over the ink. Consequences:
+
+- Selecting or searching a **whole line** highlights the right region.
+- Selecting a **single word inside a line** highlights approximately —
+  the fitted run spreads evenly across the box, but real text is not
+  evenly spaced, so a word near the middle of a long line can be off by
+  a few characters' width.
+- A search index built from this layer is unaffected: it reads the text,
+  not the positions.
+
+Word-level boxes would need a second pass (splitting each line box by
+character-width estimates, or asking PaddleOCR for character boxes),
+which buys better in-viewer highlighting and nothing else. Not built.
+
+Note the same granularity applies to `pages[].blocks` — `WordResult` is
+a misnomer throughout this worker; each entry is a detected line.
+
+### Failures are recorded, never silent
+
+A rendition is additive: the document's text, fields and line items are
+already committed by the time it is written, so losing it never fails a
+document. But "the rendition is absent" must not be indistinguishable
+from "this deployment has renditions switched off", so a failure sets
+
+```json
+"flags": {
+  "searchable_pdf_failed": true,
+  "searchable_pdf_failure_reasons": ["page 3: ValueError: source page has no area (0x0)"]
+}
+```
+
+in the OCR output, with the cause. The reasons cover per-page failures,
+serialisation, the MinIO upload, and the `renditions` write.
+
+**Upload first, row second.** A `renditions` row must never point at an
+object that is not there; the reverse — an object with no row — is
+harmless garbage.
+
+A `.docx` has no page to copy (it is reflowable and never rasterized),
+so it records `source has no copyable page` rather than inventing a
+rendition.
+
 ## Output contract
 
 Every OCR result (full-document, zone, or rubber-band) is **one JSON
@@ -561,6 +652,48 @@ cd infra/local
 docker compose up -d postgres rabbitmq minio ocr-worker
 ```
 
+## Before any measured run: check the containers match the source
+
+```
+scripts/dev/check_containers_match_source.sh
+```
+
+Exit 0 everything matches, 1 something is stale, 2 the check could not
+run. **Run it before anything whose numbers you intend to believe.**
+
+This exists because a stale container has silently invalidated three
+measured runs, in three different ways:
+
+| # | what was stale | how it looked |
+|---|---|---|
+| 1 | a one-line `repository.py` edit landed after the image's source layer was copied | the run "passed" against code one line different from the tree |
+| 2 | a whole phase of worker changes | the run measured an image built before any of them |
+| 3 | **V40 never applied** — Flyway migrations are packaged inside the dms-core JAR, and the image predated the file | the stack came up **healthy** and the constraint simply was not there |
+
+None of the three failed visibly. Every one produced numbers about the
+wrong code.
+
+What it compares:
+
+- **ocr-worker**: every `.py` under `src/ocr_worker`, by md5, against
+  `/app/src/ocr_worker` in the running container — reporting `STALE`,
+  `MISSING` (in source, not in the image) and `EXTRA` (in the image,
+  deleted from source).
+- **dms-core migrations**: every `V*__*.sql` on disk against
+  `flyway_schema_history` — i.e. against **what has actually run**, not
+  against what is in the JAR. Those differ exactly when an image is
+  rebuilt without the container being recreated, which is case 3 above.
+
+Two details that matter more than they look:
+
+- **An empty comparison is a failure, not a pass.** If either listing
+  comes back empty the script exits 2 rather than reporting OK. Its first
+  version had a broken `awk` that silently emptied both sides and
+  cheerfully printed "OK" — precisely the failure it exists to prevent.
+- **Both sides are normalised identically.** `md5sum` on Git Bash prefixes
+  names with `*` (binary mode) and `find` adds `./`, so without matching
+  normalisation every single file reports as both missing and extra.
+
 ## Required verification
 
 The real deliverable, per the task this was built against: proof
@@ -740,6 +873,7 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | `OCR_QUALITY_MIN_DPI` | `150.0` | below this effective DPI the page is flagged `LOW_RESOLUTION` |
 | `OCR_QUALITY_MIN_BLUR` | `100.0` | variance-of-Laplacian floor; below it, `BLURRY`. **Provisional** — never measured against a real blurred photograph |
 | `OCR_QUALITY_MIN_CONTRAST` | `35.0` | RMS contrast floor (std-dev, 0-255); below it, `LOW_CONTRAST`. **Provisional** |
+| `OCR_SEARCHABLE_PDF_ENABLED` | `true` | write a searchable PDF rendition per OCR'd document (production prompt 3.11). Off makes the step a no-op; a failure is recorded in `flags.searchable_pdf_failed`, never silent |
 | `OCR_OFFLINE_MODELS` | `false` | pin model loaders to the local cache, removing the one outbound call this worker makes. Default off because model caches are volumes populated on first use, not baked into the image — see "No LLM, by design" |
 | `INTERNAL_SERVICE_TOKEN` | (see `infra/secrets/ocr-worker.secrets.env`) | required `X-Internal-Token` header value on every `/ocr/*` request |
 | `DB_URL` | points at `dms_core_db` | see "Database access" below |

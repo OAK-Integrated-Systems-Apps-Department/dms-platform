@@ -295,3 +295,28 @@ class DocumentOcrLineItem(Base):
     source_bbox: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Rendition(Base):
+    """dms-core/.../V33__create_ingestion_processing.sql, extended by V40.
+
+    ocr-worker writes exactly one row here, of type `searchable_pdf` --
+    the original page raster plus an invisible OCR text layer (production
+    prompt 3.11). Thumbnails and previews are somebody else's job.
+
+    One row per (version_id, rendition_type), enforced by V40's unique
+    constraint: a re-run replaces this version's rendition rather than
+    appending another, so the table says what is true now.
+    """
+
+    __tablename__ = "renditions"
+
+    RENDITION_TYPE_SEARCHABLE_PDF = "searchable_pdf"
+
+    rendition_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.version_id"))
+    rendition_type: Mapped[str] = mapped_column(String(30))
+    storage_object_key: Mapped[str] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

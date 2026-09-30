@@ -264,12 +264,32 @@ class Settings(BaseSettings):
     # the corpus's synthetic degradation. Listed with the other
     # provisional thresholds in docs/ocr/phase2-verification.md.
     ocr_quality_min_blur: float = 100.0
-    # RMS contrast (std-dev of intensity, 0-255). A clean bilevel scan
-    # runs 70-110; the corpus's `shadowed_photo` condition sits near 45.
-    # 35 is below anything in the corpus that still reads correctly, so it
-    # fires only on pages meaningfully worse than the worst one that
-    # currently works. Also provisional.
-    ocr_quality_min_contrast: float = 35.0
+    # **Disabled (0), and that is a finding, not a tuning choice.**
+    #
+    # This was 35.0, set from a guess that "a clean bilevel scan runs
+    # 70-110". Measured against the corpus, that is simply not true of
+    # document pages, and the metric is inverted for the job:
+    #
+    #     clean_scan_300          21.9      <- clean
+    #     native_pdf              26.7      <- clean
+    #     phone_photo_perspective 20.3      <- degraded
+    #     low_dpi_scan_72         19.9      <- degraded
+    #     shadowed_photo          46.5      <- degraded, and the HIGHEST
+    #
+    # RMS contrast is the standard deviation of intensity. A document page
+    # is mostly white with sparse black text, so its std-dev is naturally
+    # LOW; a shadow is a large dark region, which RAISES it. The one
+    # condition this check existed to catch scores highest of all, and the
+    # clean and degraded ranges overlap -- no threshold separates them, in
+    # either direction. At 35.0 it flagged every clean page in the corpus.
+    #
+    # The value is still measured and reported in `pages[].quality`, so
+    # nothing is lost; it just may not raise `poor_image_quality`. A
+    # working check needs a different metric -- local/adaptive contrast,
+    # or foreground/background separation via Otsu, which measures the ink
+    # against the paper rather than the whole page against itself. Not
+    # built; set a positive value to re-enable the old behaviour.
+    ocr_quality_min_contrast: float = 0.0
 
     # -- Locale for parsing amounts and dates (production prompt 3.8) --
     # `parse_amount`/`parse_date` already take a locale per call; what did
@@ -279,6 +299,13 @@ class Settings(BaseSettings):
     # send it on `document.version.ocr.requested`, and is still pending.
     # A comma-decimal tenant's `1.234` stays flagged ambiguous until then.
     ocr_locale: str = "day_first"
+
+    # -- Searchable PDF rendition (production prompt 3.11, Phase 4a) --
+    # The page raster plus an invisible OCR text layer, written to the OCR
+    # output bucket and recorded in `renditions`. Off makes the whole step
+    # a no-op: a rendition is additive, and a deployment that does not
+    # want the extra object per document should be able to say so.
+    ocr_searchable_pdf_enabled: bool = True
     # Above this fraction of unreadable glyphs, the text layer is junk and
     # the page is OCR'd instead. 0.30 is deliberately permissive: a real
     # text layer with a few unmapped glyphs (a logo font, a ligature) must

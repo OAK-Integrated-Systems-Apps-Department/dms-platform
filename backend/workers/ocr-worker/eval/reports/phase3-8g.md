@@ -1,6 +1,6 @@
 # OCR eval report -- `baseline`
 
-Generated 2026-09-29T10:57:27.804543+00:00 - 2620.5s wall clock.
+Generated 2026-09-29T18:31:36.742996+00:00 - 2825.6s wall clock.
 
 Settings: `{"ocr_render_dpi": 200, "ocr_languages": "en", "min_confidence_threshold": 0.95, "field_low_confidence_threshold": 0.6, "ocr_max_pages": 50, "ocr_timeout_base_s": 60.0, "ocr_timeout_per_page_s": 45.0, "ocr_orientation_enabled": true, "ocr_orientation_min_confidence": 0.6, "ocr_render_max_mp": 1.81, "ocr_routing_enabled": true, "ocr_routing_max_garbage_ratio": 0.3, "ocr_routing_min_plausibility": 0.5, "ocr_routing_min_uncovered_image": 0.15}`
 
@@ -26,8 +26,8 @@ _SYNTHETIC -- regression only, not real-world accuracy_
 | CER (p95) | 0.1544 |
 | WER (mean) | 0.0609 |
 | documents with reference text | 117 / 117 |
-| latency p50 / p95 per document | 24.218s / 33.967s |
-| latency p50 / p95 per page | 24.218s / 33.967s |
+| latency p50 / p95 per document | 23.997s / 44.124s |
+| latency p50 / p95 per page | 23.997s / 44.124s |
 | statuses | {"completed": 117} |
 
 ### Preprocessing -- orientation
@@ -41,19 +41,19 @@ _SYNTHETIC -- regression only, not real-world accuracy_
 
 | condition | docs | failed | field exact | CER | WER | p50 s | p95 s |
 |---|---|---|---|---|---|---|---|
-| `clean_scan_300` | 9 | 0 | 95.3% | 0.0331 | 0.0325 | 26.58 | 41.18 |
-| `fax_g4_tiff` | 9 | 0 | 94.2% | 0.0447 | 0.0565 | 21.63 | 27.07 |
-| `garbage_text_layer` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 25.53 | 33.97 |
-| `hybrid_page` | 9 | 0 | 95.3% | 0.1023 | 0.1759 | 23.25 | 29.47 |
-| `low_dpi_scan_72` | 9 | 0 | 92.2% | 0.0367 | 0.0509 | 24.84 | 36.33 |
-| `multipage` | 9 | 0 | 95.3% | 0.0250 | 0.0196 | 4.06 | 5.5 |
-| `native_pdf` | 9 | 0 | 95.3% | 0.0322 | 0.0260 | 1.69 | 2.18 |
-| `phone_photo_perspective` | 9 | 0 | 89.4% | 0.1477 | 0.1530 | 20.51 | 30.16 |
-| `rotated_180` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 27.01 | 32.76 |
-| `rotated_270` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 25.15 | 29.55 |
-| `rotated_90` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 27.0 | 34.39 |
-| `shadowed_photo` | 9 | 0 | 95.3% | 0.0327 | 0.0290 | 25.44 | 31.94 |
-| `skewed_2deg` | 9 | 0 | 95.3% | 0.1291 | 0.1372 | 26.02 | 35.03 |
+| `clean_scan_300` | 9 | 0 | 95.3% | 0.0331 | 0.0325 | 31.26 | 50.92 |
+| `fax_g4_tiff` | 9 | 0 | 94.2% | 0.0447 | 0.0565 | 22.42 | 33.88 |
+| `garbage_text_layer` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 27.05 | 46.55 |
+| `hybrid_page` | 9 | 0 | 95.3% | 0.1023 | 0.1759 | 23.15 | 41.5 |
+| `low_dpi_scan_72` | 9 | 0 | 92.2% | 0.0367 | 0.0509 | 27.54 | 48.86 |
+| `multipage` | 9 | 0 | 95.3% | 0.0250 | 0.0196 | 3.93 | 7.99 |
+| `native_pdf` | 9 | 0 | 95.3% | 0.0322 | 0.0260 | 1.69 | 2.72 |
+| `phone_photo_perspective` | 9 | 0 | 89.4% | 0.1477 | 0.1530 | 23.32 | 32.13 |
+| `rotated_180` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 25.65 | 34.58 |
+| `rotated_270` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 25.18 | 33.82 |
+| `rotated_90` | 9 | 0 | 93.5% | 0.0324 | 0.0277 | 28.22 | 43.47 |
+| `shadowed_photo` | 9 | 0 | 95.3% | 0.0327 | 0.0290 | 24.02 | 33.5 |
+| `skewed_2deg` | 9 | 0 | 95.3% | 0.1291 | 0.1372 | 24.76 | 46.1 |
 
 | field | expected | produced | correct | precision | recall | extracted-prec |
 |---|---|---|---|---|---|---|
@@ -83,6 +83,6 @@ _SYNTHETIC -- regression only, not real-world accuracy_
 
 ## Memory (whole run, both sets)
 
-- peak: **4.908 GiB** (limit 6.0 GiB, source `cgroup.memory.peak`)
-- median 3.387 GiB, p95 3.651 GiB, over 515 samples at 2.0s
+- peak: **3.558 GiB** (limit 8.5 GiB, source `cgroup.memory.peak`)
+- median 2.212 GiB, p95 2.318 GiB, over 565 samples at 2.0s
 - single-process measurement; production runs OCR_WORKER_PROCESSES=2, each with its own model set

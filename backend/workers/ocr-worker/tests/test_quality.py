@@ -131,13 +131,13 @@ class TestAssessPage:
 
     def test_a_good_page_is_measured_and_unflagged(self):
         # 2550x3300 over 612x792pt is a 300 DPI scan.
-        measured, reasons = self._assess(_text_page(size=(2550, 3300)))
+        measured, reasons = self._assess(_text_page(size=(2550, 3300)), native_pixel_size=(2550, 3300))
         assert measured["measured"] is True
         assert reasons == []
         assert measured["effective_dpi"] == pytest.approx(300.0, abs=1.0)
 
     def test_a_low_resolution_page_reports_LOW_RESOLUTION(self):
-        measured, reasons = self._assess(_text_page(size=(600, 800)))
+        measured, reasons = self._assess(_text_page(size=(600, 800)), native_pixel_size=(600, 800))
         assert quality.LOW_RESOLUTION in reasons
         assert measured["effective_dpi"] < 150
 
@@ -193,3 +193,83 @@ class TestAssessPage:
         assert measured["skew_angle"] is None
         # ...but it is genuinely flat, so contrast/blur DO fire.
         assert quality.LOW_CONTRAST in reasons
+
+
+class TestVectorPagesHaveNoDpi:
+    """A vector PDF page is resolution-independent: it has no pixels of
+    its own and asking its DPI has no answer.
+
+    Falling back to the RENDER's size invented one -- and since the render
+    is capped by OCR_RENDER_MAX_MP, that invented value is ~137 DPI for an
+    A4 page, below any sane floor. Measured cost: every `native_pdf` and
+    `multipage` document in the corpus was flagged LOW_RESOLUTION, 18 of
+    the 54 false positives that took the flag's precision to 0.45.
+    """
+
+    def _assess(self, image, **over):
+        kwargs = dict(
+            width_pt=612.0, height_pt=792.0, native_pixel_size=None,
+            min_dpi=150.0, min_blur=100.0, min_contrast=35.0,
+        )
+        kwargs.update(over)
+        return quality.assess_page(image, **kwargs)
+
+    def test_no_native_raster_means_no_dpi_at_all(self):
+        measured, reasons = self._assess(_text_page(size=(600, 800)))
+        assert measured["effective_dpi"] is None
+        assert quality.LOW_RESOLUTION not in reasons
+
+    def test_the_other_measurements_still_happen(self):
+        """Only the DPI is unanswerable; blur and contrast are properties
+        of the rendered pixels and remain meaningful."""
+        measured, _ = self._assess(_text_page(size=(600, 800)))
+        assert measured["measured"] is True
+        assert measured["blur_score"] is not None
+        assert measured["contrast"] is not None
+
+    def test_a_scanned_page_still_reports_its_own_dpi(self):
+        measured, _ = self._assess(_text_page(size=(600, 800)), native_pixel_size=(2550, 3300))
+        assert measured["effective_dpi"] == pytest.approx(300.0, abs=1.0)
+
+
+class TestContrastCheckIsDisabledByDefault:
+    """RMS contrast is measured and reported but does NOT raise the flag.
+
+    Measured on the corpus: clean pages score 21.9-26.7 and degraded ones
+    19.9-46.5 -- overlapping, and inverted for the one condition it was
+    meant to catch (`shadowed_photo` scores the HIGHEST at 46.5, because a
+    shadow is a large dark region that raises the standard deviation). No
+    threshold separates them in either direction.
+    """
+
+    def test_zero_disables_the_check(self):
+        washed = _text_page(size=(2550, 3300), fg=120, bg=150)
+        _, reasons = quality.assess_page(
+            washed, width_pt=612.0, height_pt=792.0, native_pixel_size=(2550, 3300),
+            min_dpi=150.0, min_blur=100.0, min_contrast=0.0,
+        )
+        assert quality.LOW_CONTRAST not in reasons
+
+    def test_the_value_is_still_measured_and_reported(self):
+        """Nothing is lost -- a better metric can be calibrated against
+        what is already being recorded."""
+        measured, _ = quality.assess_page(
+            _text_page(size=(600, 800)), width_pt=612.0, height_pt=792.0,
+            native_pixel_size=(600, 800), min_dpi=150.0, min_blur=100.0, min_contrast=0.0,
+        )
+        assert measured["contrast"] is not None
+        assert measured["thresholds"]["min_contrast"] == 0.0
+
+    def test_a_positive_value_re_enables_it(self):
+        washed = _text_page(size=(2550, 3300), fg=120, bg=150)
+        _, reasons = quality.assess_page(
+            washed, width_pt=612.0, height_pt=792.0, native_pixel_size=(2550, 3300),
+            min_dpi=150.0, min_blur=100.0, min_contrast=35.0,
+        )
+        assert quality.LOW_CONTRAST in reasons
+
+
+def test_the_shipped_default_disables_the_contrast_check():
+    from ocr_worker.config import Settings
+
+    assert Settings().ocr_quality_min_contrast == 0.0

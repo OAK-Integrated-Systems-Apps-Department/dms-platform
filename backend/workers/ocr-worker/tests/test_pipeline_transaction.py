@@ -39,6 +39,7 @@ class FakeLayoutDocument:
         rendered_image=None,
         geometry=None,
         image_regions=None,
+        source_pdf_bytes=None,
     ):
         # Both default to "absent", which is what every pre-Step-7 test
         # wants: no geometry means per-page routing cannot measure
@@ -63,9 +64,23 @@ class FakeLayoutDocument:
         self._native_text_lines_by_page = native_text_lines_by_page or {}
         self._tables_by_page = tables_by_page or {}
         self._fail_render = fail_render
+        # A real one-page PDF the rendition can COPY from. The searchable
+        # PDF no longer rasterizes -- it draws the source page -- so a fake
+        # without one correctly produces no rendition.
+        self._source_pdf_bytes = source_pdf_bytes
+        self._source_doc = None
 
     def page_count(self) -> int:
         return self._page_count
+
+    def source_document(self):
+        if self._source_pdf_bytes is None:
+            return None
+        if self._source_doc is None:
+            import fitz
+
+            self._source_doc = fitz.open(stream=self._source_pdf_bytes, filetype="pdf")
+        return self._source_doc
 
     def render_page(self, page_no: int, dpi: int) -> PageImage:
         if self._fail_render:
@@ -137,6 +152,7 @@ class FakeOcrEngine:
 class FakeStorage:
     def __init__(self, source_bytes: bytes = b"%PDF-fake%", fail_fetch: bool = False):
         self.written: dict[str, dict] = {}
+        self.renditions: dict[str, bytes] = {}
         self._source_bytes = source_bytes
         self._fail_fetch = fail_fetch
 
@@ -147,6 +163,10 @@ class FakeStorage:
 
     def put_ocr_output_json(self, object_key: str, data: dict) -> str:
         self.written[object_key] = data
+        return object_key
+
+    def put_rendition(self, object_key: str, data: bytes, content_type: str = "application/pdf") -> str:
+        self.renditions[object_key] = data
         return object_key
 
 
@@ -506,3 +526,286 @@ def test_outbox_created_at_reflects_real_time_not_a_stale_transaction_snapshot(s
         second_created_at = second.created_at
 
     assert second_created_at > first_created_at
+
+
+# ----------------------------------------------------------------------
+# Searchable PDF rendition (Phase 4a, production prompt 3.11).
+# ----------------------------------------------------------------------
+def _real_page_image(size=(600, 800)):
+    from PIL import Image
+
+    return Image.new("RGB", size, "white")
+
+
+def _source_pdf(visible_text=None, width_pt=612.0, height_pt=792.0, pages=1, image=False):
+    """A real one-page PDF for the rendition to copy.
+
+    `visible_text` gives the page its OWN text layer, which is what makes
+    the native_text case testable: the rendition must carry that text
+    exactly once, from the copy, with no recognised overlay on top."""
+    import fitz
+
+    doc = fitz.open()
+    for _ in range(pages):
+        page = doc.new_page(width=width_pt, height=height_pt)
+        if image:
+            import io
+
+            buf = io.BytesIO()
+            _real_page_image((1200, 1600)).save(buf, format="PNG")
+            page.insert_image(fitz.Rect(0, 0, width_pt, height_pt), stream=buf.getvalue())
+        if visible_text:
+            page.insert_text(fitz.Point(72, 100), visible_text, fontsize=12)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def _page_geometry(width_px=600, height_px=800, width_pt=612.0, height_pt=792.0):
+    """A real geometry: the rendition needs the page's POINT size, and a
+    fake without one makes the builder correctly skip every page."""
+    from ocr_worker.layout import PageGeometry
+
+    return PageGeometry(
+        page_no=0, width_pt=width_pt, height_pt=height_pt,
+        render_scale=width_px / width_pt, width_px=width_px, height_px=height_px,
+    )
+
+
+def test_a_searchable_pdf_rendition_is_uploaded_and_recorded(session_factory, seeded_version):
+    from ocr_worker.models import Rendition
+
+    layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
+    pipeline, storage, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="Invoice INV-1", ocr_confidence=0.95,
+        ocr_words=[WordResult(text="INV-1", confidence=0.95, bbox=(60, 80, 200, 110))],
+    )
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+    assert outcome.status == "completed"
+
+    assert len(storage.renditions) == 1, "no rendition object was uploaded"
+    key, data = next(iter(storage.renditions.items()))
+    assert data.startswith(b"%PDF")
+    assert key.startswith("tenants/")
+
+    with session_factory() as session:
+        rows = session.query(Rendition).all()
+    assert len(rows) == 1
+    assert rows[0].rendition_type == "searchable_pdf"
+    assert rows[0].status == "completed"
+    # The row must point at the object that was actually written -- the
+    # upload happens first precisely so this can never dangle.
+    assert rows[0].storage_object_key == key
+    assert key in storage.renditions
+
+
+def test_the_rendition_text_layer_carries_the_recognised_words(session_factory, seeded_version):
+    """A scanned page: the source image is preserved at ITS resolution and
+    the recognised text is overlaid invisibly."""
+    import fitz
+
+    layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf(image=True))
+    pipeline, storage, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="ACME", ocr_confidence=0.95,
+        ocr_words=[WordResult(text="ACME", confidence=0.95, bbox=(60, 80, 200, 110))],
+    )
+    pipeline.process_version(seeded_version["version_id"])
+
+    _, data = next(iter(storage.renditions.items()))
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        assert "ACME" in doc[0].get_text()
+        assert len(doc[0].get_images()) == 1
+    finally:
+        doc.close()
+
+
+def test_a_rerun_replaces_the_rendition_rather_than_appending(session_factory, seeded_version):
+    """V40's unique (version_id, rendition_type). Without it a version
+    accumulates one rendition per run and every reader must know to take
+    the newest."""
+    from ocr_worker.models import Rendition
+
+    for _ in range(2):
+        layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
+        pipeline, _, _ = make_pipeline(
+            session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+        )
+        with session_factory() as session:
+            version = session.get(DocumentVersion, seeded_version["version_id"])
+            version.ocr_status = "pending"
+            session.commit()
+        pipeline.process_version(seeded_version["version_id"])
+
+    with session_factory() as session:
+        rows = session.query(Rendition).all()
+    assert len(rows) == 1
+
+
+def test_disabling_the_rendition_makes_it_a_no_op(session_factory, seeded_version):
+    from ocr_worker.models import Rendition
+
+    layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
+    pipeline, storage, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+        ocr_searchable_pdf_enabled=False,
+    )
+    assert pipeline.process_version(seeded_version["version_id"]).status == "completed"
+
+    assert storage.renditions == {}
+    with session_factory() as session:
+        assert session.query(Rendition).count() == 0
+
+
+def test_a_failed_rendition_upload_never_fails_the_document(session_factory, seeded_version):
+    """The text, fields and line items are already committed by the time
+    the rendition is written. Losing a derived PDF must not undo that."""
+    from ocr_worker.models import Rendition
+
+    class ExplodingRenditionStorage(FakeStorage):
+        def put_rendition(self, object_key, data, content_type="application/pdf"):
+            raise RuntimeError("MinIO is down")
+
+    layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
+    pipeline, _, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+        storage=ExplodingRenditionStorage(),
+    )
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+    assert outcome.status == "completed"
+
+    # And no row was written, so nothing points at an object that is not there.
+    with session_factory() as session:
+        assert session.query(Rendition).count() == 0
+        version = session.get(DocumentVersion, seeded_version["version_id"])
+    assert version.ocr_status == "completed"
+
+
+def test_a_native_text_page_is_copied_with_no_recognised_overlay(session_factory, seeded_version):
+    """The page already has an exact text layer. Overlaying a recognised
+    approximation gives it TWO, so Ctrl-F finds every word twice and
+    copy-paste yields doubled text."""
+    import fitz
+
+    layout_doc = FakeLayoutDocument(
+        page_count=1,
+        rendered_image=_real_page_image(),
+        geometry=_page_geometry(),
+        source_pdf_bytes=_source_pdf(visible_text="ORIGINAL LAYER"),
+        native_text_by_page={1: [NativeTextBlock(text="ORIGINAL LAYER", bbox=(60, 80, 300, 110))]},
+    )
+    pipeline, storage, ocr_engine = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="ORIGINAL LAYER", ocr_confidence=0.95,
+    )
+    pipeline.process_version(seeded_version["version_id"])
+
+    # The page took the native route, so PaddleOCR was never called.
+    assert ocr_engine.calls == []
+
+    _, data = next(iter(storage.renditions.items()))
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        text = doc[0].get_text()
+    finally:
+        doc.close()
+    assert "ORIGINAL LAYER" in text
+    assert text.count("ORIGINAL LAYER") == 1, f"text layer duplicated: {text!r}"
+
+
+def test_a_hybrid_page_overlays_only_its_ocrd_regions(session_factory, seeded_version):
+    """Its native blocks are already in the copied page; overlaying them
+    again would duplicate exactly the text that was correct."""
+    import fitz
+    from ocr_worker.layout import PageGeometry
+
+    geometry = PageGeometry(
+        page_no=0, width_pt=612.0, height_pt=792.0,
+        render_scale=1000 / 612.0, width_px=1000, height_px=1294,
+    )
+    layout_doc = FakeLayoutDocument(
+        page_count=1,
+        width=1000,
+        height=1294,
+        rendered_image=_real_page_image((1000, 1294)),
+        geometry=geometry,
+        source_pdf_bytes=_source_pdf(visible_text="HEADER NATIVE", image=True),
+        native_text_by_page={1: [NativeTextBlock(text="HEADER NATIVE", bbox=(60, 40, 400, 80))]},
+        native_text_lines_by_page={0: [NativeTextBlock(text="HEADER NATIVE", bbox=(60, 40, 400, 80))]},
+        # A large uncovered image region forces the hybrid route.
+        image_regions={0: [(0, 200, 1000, 1294)]},
+    )
+    pipeline, storage, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="SCANNED BODY", ocr_confidence=0.9,
+        ocr_words=[WordResult(text="SCANNED BODY", confidence=0.9, bbox=(40, 300, 600, 340))],
+    )
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    page_out = outcome.output["pages"][0]
+    assert page_out["routing"]["route"] == "hybrid", page_out["routing"]
+
+    _, data = next(iter(storage.renditions.items()))
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        text = doc[0].get_text()
+    finally:
+        doc.close()
+    # The OCR'd region is added...
+    assert "SCANNED BODY" in text
+    # ...and the native header appears exactly once, from the copy.
+    assert text.count("HEADER NATIVE") == 1, f"native text duplicated: {text!r}"
+
+
+def test_a_rendition_failure_is_recorded_in_the_output_not_silently_dropped(session_factory, seeded_version):
+    """No silent fallback: 'the rendition is absent' must be
+    distinguishable from 'renditions are switched off'."""
+    layout_doc = FakeLayoutDocument(
+        page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+        source_pdf_bytes=None,  # nothing to copy -> the page cannot be added
+    )
+    pipeline, storage, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+    )
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    assert outcome.status == "completed"
+    flags = outcome.output["flags"]
+    assert flags["searchable_pdf_failed"] is True
+    assert flags["searchable_pdf_failure_reasons"], "a failure with no reason is a silent one"
+    assert "source has no copyable page" in " ".join(flags["searchable_pdf_failure_reasons"])
+    assert storage.renditions == {}
+
+
+def test_a_failed_upload_is_recorded_with_its_cause(session_factory, seeded_version):
+    class ExplodingRenditionStorage(FakeStorage):
+        def put_rendition(self, object_key, data, content_type="application/pdf"):
+            raise RuntimeError("MinIO is down")
+
+    layout_doc = FakeLayoutDocument(
+        page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+        source_pdf_bytes=_source_pdf(),
+    )
+    pipeline, _, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+        storage=ExplodingRenditionStorage(),
+    )
+
+    outcome = pipeline.process_version(seeded_version["version_id"])
+
+    assert outcome.status == "completed"
+    reasons = " ".join(outcome.output["flags"]["searchable_pdf_failure_reasons"])
+    assert "MinIO is down" in reasons
+
+
+def test_a_clean_rendition_sets_no_failure_flag(session_factory, seeded_version):
+    layout_doc = FakeLayoutDocument(
+        page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+        source_pdf_bytes=_source_pdf(),
+    )
+    pipeline, _, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+    )
+    outcome = pipeline.process_version(seeded_version["version_id"])
+    assert "searchable_pdf_failed" not in outcome.output["flags"]

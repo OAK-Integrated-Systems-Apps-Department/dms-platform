@@ -24,6 +24,7 @@ from .models import (
     OcrOutput,
     OutboxEvent,
     ProcessingJob,
+    Rendition,
 )
 from .zones import ZoneRegion
 
@@ -725,6 +726,37 @@ class OcrRepository:
             )
         self.session.flush()
         return len(items or [])
+
+    def upsert_rendition(self, *, tenant_id: uuid.UUID, version_id: uuid.UUID, rendition_type: str,
+                         storage_object_key: str, status: str = "completed") -> None:
+        """Record one rendition for this version, replacing any previous
+        one of the same type (V40's unique constraint).
+
+        Update-in-place rather than delete-and-insert so the
+        `rendition_id` is stable across re-runs -- anything that has
+        linked to a rendition by id keeps resolving, which delete-insert
+        would silently break.
+        """
+        existing = self.session.execute(
+            select(Rendition).where(
+                Rendition.version_id == version_id,
+                Rendition.rendition_type == rendition_type,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.storage_object_key = storage_object_key
+            existing.status = status
+        else:
+            self.session.add(
+                Rendition(
+                    tenant_id=tenant_id,
+                    version_id=version_id,
+                    rendition_type=rendition_type,
+                    storage_object_key=storage_object_key,
+                    status=status,
+                )
+            )
+        self.session.flush()
 
     def requeue_after_failure(self, *, job: ProcessingJob, error: str, backoff_seconds: int) -> None:
         """A failure the retry policy says is worth another attempt: back

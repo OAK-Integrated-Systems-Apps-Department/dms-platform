@@ -1636,15 +1636,55 @@ that had never finished inside its budget, completed.
 |---|---|
 | ocr-worker peak | **7.33 GiB** against its 8.5 GiB limit (86%) |
 | ocr-worker steady state | 4.23-4.53 GiB |
-| **whole stack, steady state** | **~4.94 GiB** across 8 containers |
-| **whole stack, provision for** | **~9.2 GiB** — ocr-worker's 8.5 GiB limit plus ~0.7 GiB for everything else |
+| **whole stack, steady state** | **~3.6 GiB** across 8 containers |
+| **whole stack, run with no headroom** | **~8.1 GiB** |
+| **whole stack, provision for** | **~12.6 GiB of limits; 16 GiB on a real machine** |
 
-Everything other than ocr-worker is rounding error: dms-core 250 MiB,
-Keycloak 208 MiB, MinIO 135 MiB, RabbitMQ 49 MiB, Postgres 54 MiB, Redis
-5 MiB, Mailpit 14 MiB. **ocr-worker is the only container with a memory
-limit set**, and it is 96% of the stack's budget — the other seven run
-unbounded against the host, which is fine for dev and is something a
-production deployment should set explicitly rather than inherit.
+
+### Provisioning the full stack
+
+Sized from the corrected **7.33 GiB** ocr-worker peak (see the correction
+above), not from its steady state -- a limit set to steady state is a
+limit that is exceeded on the first large scan.
+
+| container | observed steady | observed peak | **recommended `mem_limit`** | why |
+|---|---|---|---|---|
+| **ocr-worker** | 2.5-4.5 GiB | **7.33 GiB** | **8704m (8.5 GiB)** — unchanged | peak + ~16%. Already set, and the close-out ran at 86% of it |
+| keycloak | 545 MiB | — | **1g** | a JVM with no `-Xmx` sizes its heap from the *host's* RAM, so it grows to fill whatever it is given. The only container here that will silently expand without a limit |
+| dms-core | 268 MiB | — | **1g** | same JVM reasoning; 268 MiB is a quiet instance, and Flyway plus a large upload's multipart buffer both spike above it |
+| minio | 146 MiB | — | **512m** | buffers per concurrent object; a 100 MB upload (`ocr_max_file_size_bytes`) is the shape to allow for |
+| postgres | 64 MiB | — | **512m** | `shared_buffers` plus per-connection work_mem across dms-core's and ocr-worker's pools |
+| rabbitmq | 54 MiB | — | **512m** | has its own high-watermark memory alarm; the cgroup limit should sit above it, not fight it |
+| redis | 6 MiB | — | **256m** | cache only, nothing durable |
+| mailpit | 14 MiB | — | **128m** | dev-only mail sink |
+| **total** | **~3.6 GiB** | | **~12.6 GiB of limits** | |
+
+**Two different numbers, for two different questions.**
+
+| question | answer |
+|---|---|
+| RAM to run the stack, no headroom | **~8.1 GiB** — ocr-worker's 7.33 GiB peak plus ~0.8 GiB for the other seven at their observed steady state |
+| RAM to provision | **~12.6 GiB**, or **16 GiB** on a real machine | every limit above, summed. 16 GiB is the practical size: limits are ceilings that are not all hit at once, but sizing to the sum is what stops one container's spike killing another |
+
+**This host is 9.9 GiB and that is not enough.** It ran the stack and a
+separate eval container simultaneously, hit 2.9 GiB free with swap fully
+exhausted (2048/2048), and the host OOM killer took the eval twice with
+no in-container trace. Stopping ocr-worker, keycloak and mailpit freed
+4.5 GiB and the eval then completed. The stack alone fits; the stack plus
+any real second workload does not.
+
+**Only ocr-worker currently has a limit.** The other seven run
+unbounded against the host, which is why the OOM killer had a free choice
+of victim rather than one container being confined to its own budget.
+Setting the limits above turns "the host runs out and the kernel picks
+something" into "this container is confined to what it was given" --
+exactly the reasoning that put `mem_limit` on ocr-worker in Phase 1.
+
+**Raising `OCR_WORKER_PROCESSES` moves the biggest number.** Each pool
+worker holds its own Docling layout model plus PaddleOCR det/rec models
+resident, ~3.4 GiB per process over a ~1.5 GiB shared parent floor. The
+8.5 GiB limit is sized for the default of 2; a third process needs
+roughly 12 GiB and a fourth 15.5 GiB.
 
 **A correction, and the bug behind it.** This section first published
 `peak 5.136 GiB`, taken from a sampler run whose window spanned a
@@ -1746,3 +1786,43 @@ seen against a real document:
   is inferred from `attempts`, not a real per-cause count.
 - The confidence floor for orientation is uncalibratable from that
   model's own score.
+
+### Known gap — a shadowed photo is not detected as poor quality
+
+`LOW_CONTRAST` is **disabled by default** (`OCR_QUALITY_MIN_CONTRAST=0`)
+because RMS contrast cannot do the job, and the consequence is that
+`shadowed_photo` — a real and common phone-capture failure — now has no
+detector at all. `BLURRY` does not catch it either (129.2, above the
+100.0 floor), and its DPI is fine. It passes every check.
+
+The measurements, which are what settle it:
+
+| condition | contrast | degraded? |
+|---|---|---|
+| `clean_scan_300` | 21.9 | no |
+| `native_pdf` | 26.7 | no |
+| `phone_photo_perspective` | 20.3 | yes |
+| `low_dpi_scan_72` | 19.9 | yes |
+| **`shadowed_photo`** | **46.5** | **yes — and the highest of all** |
+
+RMS contrast is the standard deviation of intensity over the whole page.
+A document is mostly white with sparse black text, so its std-dev is
+naturally low; a shadow is a large dark region, which *raises* it. The
+metric does not merely fail to separate clean from degraded here — for
+this condition it is inverted, so no threshold in either direction can
+work.
+
+**Planned fix: Otsu foreground/background separation.** Threshold the
+page with Otsu's method to split ink from paper, then measure the
+separation between the two class means (and, ideally, the variance
+within each). That asks the question the flag actually cares about —
+"how well does the ink stand out from the paper?" — instead of "how much
+does the page vary against itself", which a shadow answers loudly and
+misleadingly. A shadowed page has ink and paper means that converge in
+the shadowed region even though the page-wide std-dev is high.
+
+Implementing it should also make the check work *per region* rather than
+per page, since a shadow is by definition local — a page-global number
+is the wrong shape for a local defect. Not built; `contrast` is still
+measured and reported in `pages[].quality`, so a replacement can be
+calibrated against data already being recorded.

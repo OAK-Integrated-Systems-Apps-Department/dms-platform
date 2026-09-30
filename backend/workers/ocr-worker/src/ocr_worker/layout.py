@@ -368,6 +368,8 @@ class DoclingLayoutDocument:
         self._tmp.write(file_bytes)
         self._tmp.flush()
         self._doc = None
+        # Lazily-built PDF wrapper for a non-PDF source; see source_document.
+        self._source_pdf = None
 
         try:
             self._open(file_bytes, mime_type, original_filename, docling_converter, on_page_count)
@@ -578,6 +580,40 @@ class DoclingLayoutDocument:
             regions.append((round(x0), round(y0), round(x1), round(y1)))
         return regions
 
+    def source_document(self):
+        """A **PDF-backed** PyMuPDF document, for callers that need to
+        COPY a page rather than rasterize one.
+
+        Exists for the searchable PDF rendition (production prompt 3.11),
+        which must preserve the source at its own resolution: a user who
+        uploads a 300 DPI scan must not get back a copy downsampled to
+        `OCR_RENDER_MAX_MP`. Copying the page also keeps vector content
+        sharp and, on a native-text PDF, keeps the page's OWN text layer
+        instead of overlaying a recognised approximation of it.
+
+        A bare image (PNG/JPEG/TIFF/HEIC) opens as an *image* document,
+        NOT a PDF -- and `show_pdf_page` rejects one with "is no PDF".
+        Assuming otherwise cost every image upload its rendition
+        silently, which is most real uploads. `convert_to_pdf()` wraps the
+        image in a real PDF page at its own native size, so the copy path
+        is uniform across formats without ever re-encoding the pixels.
+
+        Converted once and cached: a multi-page TIFF must not be
+        re-converted per page.
+
+        **Read-only.** The caller must not mutate or close it; its
+        lifetime belongs to this object.
+        """
+        if self._doc is None:
+            return None
+        if self._doc.is_pdf:
+            return self._doc
+        if self._source_pdf is None:
+            import fitz  # PyMuPDF
+
+            self._source_pdf = fitz.open("pdf", self._doc.convert_to_pdf())
+        return self._source_pdf
+
     def native_pixel_size_for_page(self, page_no: int) -> tuple[int, int] | None:
         """The source raster's own dimensions for this page, or None for a
         genuinely vector page.
@@ -704,6 +740,11 @@ class DoclingLayoutDocument:
         return tables or None
 
     def close(self) -> None:
+        if self._source_pdf is not None:
+            # A converted wrapper around a non-PDF source (see
+            # source_document); closed before the document it came from.
+            self._source_pdf.close()
+            self._source_pdf = None
         if self._doc is not None:
             self._doc.close()
             self._doc = None
