@@ -4,10 +4,17 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.document.dto.DocumentReviewResponse;
 import com.oak.dms.document.dto.DocumentVersionResponse;
 import com.oak.dms.document.dto.OcrFieldResultResponse;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
+import com.oak.dms.document.dto.ReviewFieldResponse;
+import com.oak.dms.document.dto.ReviewQueueItemResponse;
+import com.oak.dms.document.dto.RubberBandRequest;
+import com.oak.dms.document.dto.RubberBandResponse;
+import com.oak.dms.document.dto.SaveReviewRequest;
+import com.oak.dms.document.dto.SaveReviewResponse;
 import com.oak.dms.metadata.DocumentType;
 import com.oak.dms.metadata.DocumentTypeFieldService;
 import com.oak.dms.metadata.DocumentTypeRepository;
@@ -16,6 +23,7 @@ import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.ocrworker.OcrErrorMessages;
 import com.oak.dms.ocrworker.OcrProperties;
+import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
@@ -24,6 +32,8 @@ import com.oak.dms.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -71,6 +81,9 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
     private final ObjectStorageService objectStorageService;
     private final ProcessingJobRepository processingJobRepository;
+    private final DocumentOcrLineItemRepository documentOcrLineItemRepository;
+    private final DocumentOcrCorrectionRepository documentOcrCorrectionRepository;
+    private final OcrWorkerClient ocrWorkerClient;
     private final OutboxEventPublisher outboxEventPublisher;
     private final DocumentMetadataService documentMetadataService;
     private final MetadataValidationService metadataValidationService;
@@ -472,6 +485,29 @@ public class DocumentServiceImpl implements DocumentService {
         return version;
     }
 
+    /**
+     * JSON of whatever shape it actually is, for a column whose contents
+     * are not a list of strings -- {@code raw_cells} is an object keyed by
+     * column name (see ocr-worker's {@code line_items.py}).
+     * <p>
+     * {@link #readJson} cannot be used here: it coerces to
+     * {@code List<String>} and swallows the failure as an empty list, so a
+     * JSON object would come back as "no raw cells" rather than as an
+     * error. That is exactly backwards for a field whose whole job is to
+     * show a reviewer what the parse lost.
+     */
+    private Object readAnyJson(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, Object.class);
+        } catch (JsonProcessingException e) {
+            log.warn("Unreadable JSON in a line item's raw_cells; omitting it");
+            return null;
+        }
+    }
+
     private List<String> readJson(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -528,5 +564,332 @@ public class DocumentServiceImpl implements DocumentService {
         String normalized = Normalizer.normalize(filename, Normalizer.Form.NFC);
         String stripped = UNSAFE_STORAGE_KEY_CHARS.matcher(normalized).replaceAll("_");
         return stripped.isBlank() ? "upload" : stripped;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ReviewQueueItemResponse> getReviewQueue(Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        Page<DocumentVersion> versions = documentVersionRepository.findReviewQueue(tenantId, pageable);
+        // One findAllById for the page's documents rather than a lookup per
+        // row: the queue is read by a human refreshing a list, and 25
+        // separate primary-key selects to render one screen is the classic
+        // N+1 that only shows up once the queue is busy -- which is exactly
+        // when it matters.
+        Map<UUID, Document> documents = documentRepository
+                .findAllById(versions.getContent().stream().map(DocumentVersion::getDocumentId).toList())
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(Document::getDocumentId, d -> d));
+
+        return versions.map(version -> {
+            Document document = documents.get(version.getDocumentId());
+            // The job is only needed to recover the error code for a FAILED
+            // version -- a flagged-but-completed one carries its reasons in
+            // the version row itself, so there is nothing to look up and no
+            // reason to pay for the query.
+            ProcessingJob job = "failed".equals(version.getOcrStatus())
+                    ? processingJobRepository.findTopByReferenceTypeAndReferenceIdAndJobTypeOrderByCreatedAtDesc(
+                            ProcessingJob.REFERENCE_TYPE_DOCUMENT_VERSION,
+                            version.getVersionId(),
+                            ProcessingJob.JOB_TYPE_OCR).orElse(null)
+                    : null;
+            return ReviewQueueMapper.toItem(document, version, job, objectMapper);
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentReviewResponse getReview(UUID documentId) {
+        UUID tenantId = TenantContext.getTenantId();
+        Document document = requireDocument(documentId, tenantId);
+        DocumentVersion version = documentVersionRepository.findById(document.getLatestVersionId())
+                .orElseThrow(() -> new ResourceNotFoundException("document_versions", document.getLatestVersionId()));
+
+        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
+        Map<String, DocumentTypeSchemaResponse.SchemaField> schemaByKey = schema.fields().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        DocumentTypeSchemaResponse.SchemaField::fieldKey, f -> f));
+
+        Map<String, DocumentOcrFieldResult> rowsByKey = documentOcrFieldResultRepository
+                .findByDocumentIdAndTenantId(documentId, tenantId).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        DocumentOcrFieldResult::getFieldKey, r -> r, (a, b) -> a, LinkedHashMap::new));
+
+        // Driven off what was REQUESTED, not off what came back. A
+        // mandatory field OCR never found is the most important thing on
+        // this screen and the one with no result row -- iterating the rows
+        // would drop it silently and show the reviewer a tidy screen with
+        // no sign of the thing that sent them here.
+        List<String> requested = readJson(version.getRequestedFields());
+        LinkedHashSet<String> keys = new LinkedHashSet<>(requested);
+        // Anything OCR found that was never requested still gets shown
+        // rather than hidden: a value in the database that the screen does
+        // not display is worse than an unexpected row.
+        keys.addAll(rowsByKey.keySet());
+
+        List<ReviewFieldResponse> fields = keys.stream()
+                .sorted(java.util.Comparator.comparingInt(key -> {
+                    DocumentTypeSchemaResponse.SchemaField field = schemaByKey.get(key);
+                    return field != null ? field.displayOrder() : Integer.MAX_VALUE;
+                }))
+                .map(key -> {
+                    DocumentTypeSchemaResponse.SchemaField schemaField = schemaByKey.get(key);
+                    DocumentOcrFieldResult row = rowsByKey.get(key);
+                    boolean multiSelect = schemaField != null && "multi_select".equals(schemaField.dataType());
+                    Object value = row != null && row.getValue() != null && multiSelect
+                            ? readJson(row.getValue())
+                            : (row != null ? row.getValue() : null);
+                    // Only when the parse changed it. That difference is
+                    // where a wrong value usually comes from, and showing
+                    // the same string twice everywhere else hides it.
+                    String rawValue = row != null && row.getRawValue() != null
+                            && !row.getRawValue().equals(row.getValue())
+                            ? row.getRawValue()
+                            : null;
+                    OcrFieldResultResponse.Source source = row != null && row.getSourcePage() != null
+                            ? new OcrFieldResultResponse.Source(row.getSourcePage(), readBbox(row.getSourceBbox()))
+                            : null;
+                    return new ReviewFieldResponse(
+                            key,
+                            schemaField != null ? schemaField.label() : key,
+                            schemaField != null && schemaField.mandatory(),
+                            schemaField != null ? schemaField.dataType() : "text",
+                            value,
+                            rawValue,
+                            row != null && row.getConfidence() != null ? row.getConfidence().doubleValue() : null,
+                            // No row at all means OCR was asked and came
+                            // back with nothing, which is what "not_found"
+                            // means -- not an absence of information.
+                            row != null ? row.getStatus() : "not_found",
+                            source);
+                })
+                .toList();
+
+        List<DocumentReviewResponse.LineItemResponse> lineItems = documentOcrLineItemRepository
+                .findByVersionIdAndTenantIdOrderByLineNumberAsc(version.getVersionId(), tenantId)
+                .stream()
+                .map(item -> new DocumentReviewResponse.LineItemResponse(
+                        item.getLineNumber(),
+                        item.getDescription(),
+                        item.getQuantity(),
+                        item.getUnitPrice(),
+                        item.getLineTotal(),
+                        item.getConfidence() != null ? item.getConfidence().doubleValue() : null,
+                        item.getSourcePage(),
+                        readBbox(item.getSourceBbox()),
+                        readAnyJson(item.getRawCells())))
+                .toList();
+
+        // The queue's own row-builder, reused rather than re-derived: the
+        // summary the reviewer read in the list and the one at the top of
+        // the screen they clicked through to must be the same sentence, and
+        // two implementations of "why is this here" would drift.
+        ProcessingJob job = processingJobRepository
+                .findTopByReferenceTypeAndReferenceIdAndJobTypeOrderByCreatedAtDesc(
+                        ProcessingJob.REFERENCE_TYPE_DOCUMENT_VERSION,
+                        version.getVersionId(),
+                        ProcessingJob.JOB_TYPE_OCR)
+                .orElse(null);
+        ReviewQueueItemResponse queueRow = ReviewQueueMapper.toItem(document, version, job, objectMapper);
+
+        return new DocumentReviewResponse(
+                document.getDocumentId(),
+                version.getVersionId(),
+                document.getTitle(),
+                version.getOriginalFilename(),
+                version.getMimeType(),
+                collapseOcrStatus(version.getOcrStatus()),
+                // A document that failed before its file could be opened has
+                // no page count at all. One page is the honest fallback for a
+                // viewer that must show something -- and the preview endpoint
+                // will say so itself if that page cannot be rendered either.
+                version.getPageCount() != null ? version.getPageCount() : 1,
+                version.isRequiresReview(),
+                queueRow.reasons(),
+                queueRow.summary(),
+                fields,
+
+                lineItems,
+                queueRow.errorCode(),
+                queueRow.errorCode() != null
+                        ? OcrErrorMessages.friendlyMessageFor(queueRow.errorCode())
+                        : null);
+    }
+
+    // Deliberately NOT @Transactional: the tenant check is one indexed
+    // primary-key read, and then this blocks on ocr-worker rendering a
+    // page -- seconds, sometimes. Holding a pooled connection open across
+    // that is exactly the long-transaction pattern Phase 1 removed from
+    // the OCR path in the first place. The two reads below open and close
+    // their own.
+    @Override
+    public OcrWorkerClient.PageImage getPageImage(UUID documentId, int page) {
+        UUID tenantId = TenantContext.getTenantId();
+        Document document = requireDocument(documentId, tenantId);
+        // The tenant check happens HERE, before the version id leaves
+        // dms-core. ocr-worker has no notion of who is asking -- it answers
+        // for any version id presented with the internal token -- so this is
+        // the only thing standing between one tenant and another's pages.
+        DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
+        return ocrWorkerClient.fetchPageImage(version.getVersionId(), page, ocrProperties.getPreviewDpi());
+    }
+
+    // Not @Transactional, for the same reason as getPageImage above.
+    @Override
+    public RubberBandResponse readRegion(UUID documentId, RubberBandRequest request) {
+        UUID tenantId = TenantContext.getTenantId();
+        Document document = requireDocument(documentId, tenantId);
+        DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
+
+        Map<String, Object> answer = ocrWorkerClient.previewRubberBand(
+                version.getVersionId(), request.page(),
+                request.x0(), request.y0(), request.x1(), request.y1());
+
+        Object confidence = answer.get("confidence");
+        return new RubberBandResponse(
+                request.page(),
+                new double[]{request.x0(), request.y0(), request.x1(), request.y1()},
+                (String) answer.getOrDefault("text", ""),
+                confidence instanceof Number number ? number.doubleValue() : null);
+    }
+
+
+    @Override
+    @Transactional
+    public SaveReviewResponse saveReview(UUID documentId, SaveReviewRequest request) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+        Document document = requireDocument(documentId, tenantId);
+        DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
+
+        // The server's own view of what OCR produced, not the client's --
+        // an acceptance records OCR's value, and taking that from the
+        // request would let a stale or wrong echo be stored as though it
+        // were what the model said.
+        DocumentReviewResponse current = getReview(documentId);
+        Map<String, ReviewFieldResponse> fieldsByKey = new LinkedHashMap<>();
+        for (ReviewFieldResponse field : current.fields()) {
+            fieldsByKey.put(field.fieldKey(), field);
+        }
+
+        List<SaveReviewRequest.Decision> decisions =
+                request != null && request.decisions() != null ? request.decisions() : List.of();
+
+        int accepted = 0;
+        int corrected = 0;
+        Map<String, Object> valuesToApply = new LinkedHashMap<>();
+        OffsetDateTime now = OffsetDateTime.now();
+
+        for (SaveReviewRequest.Decision decision : decisions) {
+            ReviewFieldResponse field = fieldsByKey.get(decision.fieldKey());
+            if (field == null) {
+                // A decision about a field this document does not have is
+                // an accuracy observation about nothing. Dropped, not
+                // stored.
+                log.warn("Ignoring review decision for unknown field {} on document {}",
+                        decision.fieldKey(), documentId);
+                continue;
+            }
+
+            String action = ReviewDecisionApplier.effectiveAction(field, decision);
+            String value = ReviewDecisionApplier.valueFor(field, decision);
+
+            documentOcrCorrectionRepository.save(DocumentOcrCorrection.builder()
+                    .tenantId(tenantId)
+                    .documentId(documentId)
+                    .versionId(version.getVersionId())
+                    .fieldKey(field.fieldKey())
+                    .action(action)
+                    // Only a real correction has a source; an acceptance
+                    // was not produced by anything.
+                    .source(DocumentOcrCorrection.ACTION_CORRECTED.equals(action)
+                            ? sourceOf(decision)
+                            : null)
+                    .originalValue(ReviewDecisionApplier.asText(field.value()))
+                    .originalConfidence(field.confidence() != null
+                            ? java.math.BigDecimal.valueOf(field.confidence())
+                            : null)
+                    .originalStatus(field.status())
+                    .correctedValue(value)
+                    .correctedBy(userId)
+                    .correctedAt(now)
+                    .build());
+
+            if (DocumentOcrCorrection.ACTION_CORRECTED.equals(action)) {
+                corrected++;
+                // Only a changed value is worth writing back. Re-saving an
+                // accepted value would touch document_metadata_values (and
+                // its audit trail) for every field on every review.
+                //
+                // A multi_select value is a LIST. It is joined for display
+                // and stored joined in the correction log (one text column,
+                // one reviewer decision), but it has to be split back before
+                // it reaches saveValues -- which would otherwise store
+                // "finance, q3" as a single tag with that literal name.
+                valuesToApply.put(field.fieldKey(), splitIfMultiSelect(field, value));
+            } else {
+                accepted++;
+            }
+        }
+
+        if (!valuesToApply.isEmpty()) {
+            // enforceMandatory=false: a reviewer fixing three of four
+            // missing fields must be able to save the three. The document
+            // stays in the queue for the fourth, which is the honest
+            // outcome -- refusing the save would lose their work instead.
+            documentMetadataService.saveValues(documentId, valuesToApply, false);
+        }
+
+        List<String> remaining = ReviewDecisionApplier.unsettled(current.fields(), decisions);
+        boolean stillNeedsReview = !remaining.isEmpty();
+        version.setRequiresReview(stillNeedsReview);
+        documentVersionRepository.save(version);
+
+        log.info("Review saved for document {} version {}: {} accepted, {} corrected, requiresReview={}",
+                documentId, version.getVersionId(), accepted, corrected, stillNeedsReview);
+
+        return new SaveReviewResponse(
+                documentId, version.getVersionId(), accepted, corrected, stillNeedsReview, remaining);
+    }
+
+
+    /** See the comment at its call site in {@code saveReview}. */
+    static Object splitIfMultiSelect(ReviewFieldResponse field, String value) {
+        if (!"multi_select".equals(field.dataType())) {
+            return value;
+        }
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(part -> !part.isEmpty())
+                .toList();
+    }
+
+    /**
+     * ocr-worker's own vocabulary, not the client's: anything that is not
+     * a recognised source is recorded as null rather than stored as a
+     * value no query will ever match.
+     */
+    private static String sourceOf(SaveReviewRequest.Decision decision) {
+        if (DocumentOcrCorrection.SOURCE_REGION.equals(decision.source())) {
+            return DocumentOcrCorrection.SOURCE_REGION;
+        }
+        if (DocumentOcrCorrection.SOURCE_TYPED.equals(decision.source())) {
+            return DocumentOcrCorrection.SOURCE_TYPED;
+        }
+        return null;
+    }
+
+    private Document requireDocument(UUID documentId, UUID tenantId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("documents", documentId));
+        if (!document.getTenantId().equals(tenantId)) {
+            // Deliberately the same 404 as "no such document" -- a 403 would
+            // confirm that this id exists in some other tenant.
+            throw new ResourceNotFoundException("documents", documentId);
+        }
+        return document;
     }
 }

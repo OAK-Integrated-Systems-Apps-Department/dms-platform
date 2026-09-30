@@ -153,7 +153,14 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     container_name: oakdms-core
-    <<: *secrets-env
+    env_file:
+      - ../secrets/dms-core.secrets.env
+      # The review screen proxies two read-only ocr-worker routes through
+      # dms-core (Phase 4c), and every ocr-worker route requires the
+      # shared X-Internal-Token -- so dms-core needs the same value the
+      # worker has. Same file, not a copy: two files would drift, and the
+      # symptom would be a 401 nobody can explain.
+      - ../secrets/ocr-worker.secrets.env
     environment:
       SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://postgres:5432/dms_core_db

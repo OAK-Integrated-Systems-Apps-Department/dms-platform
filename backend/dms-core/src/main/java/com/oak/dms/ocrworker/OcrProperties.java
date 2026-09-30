@@ -67,4 +67,25 @@ public class OcrProperties {
      * backlog after a real outage.
      */
     private int batchSize = 50;
+
+    /**
+     * Where ocr-worker answers. It publishes no port, so this is a
+     * container-network address; there is no public one by design.
+     */
+    private String workerBaseUrl = "http://ocr-worker:8090";
+
+    /**
+     * The shared secret every ocr-worker route requires
+     * ({@code X-Internal-Token}) -- the same value ocr-worker reads from
+     * its own {@code INTERNAL_SERVICE_TOKEN}. Defense in depth behind the
+     * network isolation, not instead of it.
+     */
+    private String internalServiceToken = "";
+
+    /**
+     * Preview render DPI for the review screen, or null to let ocr-worker
+     * use its own {@code OCR_PREVIEW_DPI}. Present so the resolution the
+     * reviewer sees can be tuned without redeploying the worker.
+     */
+    private Integer previewDpi = null;
 }

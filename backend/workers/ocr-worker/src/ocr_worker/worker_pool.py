@@ -12,7 +12,7 @@ from .config import Settings
 
 if TYPE_CHECKING:
     from .extraction import FieldSpec
-    from .pipeline import OcrPipeline, ProcessingOutcome
+    from .pipeline import OcrPipeline, PageRender, ProcessingOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,19 @@ def _run_process_rubber_band(
     return _pipeline.process_rubber_band_request(version_id, page, box, correlation_id=correlation_id)
 
 
+def _run_render_page(version_id: uuid.UUID, page: int, dpi: int | None) -> "PageRender":
+    assert _pipeline is not None, "pool worker task ran before its initializer completed"
+    return _pipeline.render_page_png(version_id, page, dpi)
+
+
+def _run_preview_rubber_band(
+    version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+) -> dict:
+    assert _pipeline is not None, "pool worker task ran before its initializer completed"
+    return _pipeline.preview_rubber_band(version_id, page, box)
+
+
+
 class OcrProcessPool:
     """Owns the real `pebble.ProcessPool` shared by BOTH the RabbitMQ
     consumer and the synchronous /ocr/* API endpoints -- docs/ocr/
@@ -302,6 +315,27 @@ class OcrProcessPool:
     ) -> ProcessFuture:
         return self._pool.schedule(
             _run_process_rubber_band, args=(version_id, page, box, correlation_id), timeout=self.task_timeout_s()
+        )
+
+    def schedule_render_page(
+        self, version_id: uuid.UUID, page: int, dpi: int | None = None
+    ) -> ProcessFuture:
+        # A page render is seconds at worst, not the multi-minute budget a
+        # whole document gets -- a reviewer waiting on an image should get
+        # an error long before the document timeout would fire. The pool
+        # is still the right place to run it: fitz page rendering is the
+        # same native code whose memory the pool exists to isolate.
+        return self._pool.schedule(
+            _run_render_page, args=(version_id, page, dpi),
+            timeout=self._settings.ocr_preview_timeout_s,
+        )
+
+    def schedule_preview_rubber_band(
+        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+    ) -> ProcessFuture:
+        return self._pool.schedule(
+            _run_preview_rubber_band, args=(version_id, page, box),
+            timeout=self._settings.ocr_preview_timeout_s,
         )
 
     def close(self) -> None:

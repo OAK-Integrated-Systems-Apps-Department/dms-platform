@@ -600,6 +600,8 @@ class OcrRepository:
         extracted_text_ref: str,
         language: str | None,
         event_payload: dict,
+        review: dict | None = None,
+        page_count: int | None = None,
     ) -> OcrOutput:
         ocr_output = OcrOutput(
             tenant_id=version.tenant_id,
@@ -611,6 +613,18 @@ class OcrRepository:
         self.session.add(ocr_output)
 
         version.ocr_status = "completed"
+        # Phase 4b: the queue reads this column, not the MinIO artifact.
+        # Always written, including the false case -- a re-run that FIXES
+        # a document must take it out of the queue, and leaving the old
+        # true behind would keep it there forever.
+        version.requires_review = bool((review or {}).get("requires_review"))
+        version.review_reasons = review or None
+        # Phase 4c. Only a full-document run passes this; a zone or
+        # rubber-band run visits a subset of pages and leaves the real
+        # count alone rather than shrinking it to what it happened to
+        # look at.
+        if page_count is not None:
+            version.page_count = page_count
 
         job.status = "completed"
         # A job that failed once and then succeeded must not keep the old

@@ -311,6 +311,22 @@ class ProcessingOutcome:
     error: str | None = None
 
 
+@dataclass
+class PageRender:
+    """One rendered page, for the review screen (Phase 4c).
+
+    `width_px`/`height_px` travel with the bytes because the frontend
+    needs them to place highlights BEFORE the image has loaded, and
+    because the renderer may have downscaled to stay under
+    `ocr_render_max_mp` -- the caller must not assume dpi x page size.
+    """
+
+    png: bytes
+    width_px: int
+    height_px: int
+    page_count: int
+
+
 class OcrPipeline:
     """Implements workflow steps 2-6 of section 2.4. Every trigger --
     RabbitMQ consumer, POST /ocr/process/{version_id}, POST /ocr/zone,
@@ -537,6 +553,11 @@ class OcrPipeline:
                 validation_errors=validation_errors,
                 line_items=line_items,
                 rendition=rendition,
+                # A full-document run visits every page, so this IS the
+                # document's page count. A zone or rubber-band run visits
+                # a subset and passes nothing, rather than overwriting the
+                # real count with "1".
+                page_count=len(pages),
             )
 
     def _run_inference(
@@ -1215,6 +1236,110 @@ class OcrPipeline:
             except Exception as exc:  # noqa: BLE001
                 return self._finalize_failure(repo=repo, job=job, ctx=ctx, exc=exc, correlation_id=correlation_id)
 
+
+    # ------------------------------------------------------------------
+    # Read-only operations for the review UI (Phase 4c).
+    #
+    # Neither claims a job, writes a row, or publishes an event. That is
+    # the whole point: a reviewer scrolling a document or dragging a box
+    # over a number is INSPECTING it, and the existing
+    # process_rubber_band_request finalizes -- it replaces the version's
+    # entire field set and page list with whatever the one crop produced.
+    # Wiring the review screen to that would wipe every other field on
+    # the document each time somebody re-checked one of them.
+    # ------------------------------------------------------------------
+
+    def render_page_png(
+        self, version_id: uuid.UUID, page: int, dpi: int | None = None
+    ) -> "PageRender":
+        """One page as a PNG, in the SAME frame the stored bboxes live in.
+
+        Rendered on demand rather than stored: the review screen looks at
+        a handful of pages of a small minority of documents, and keeping a
+        PNG per page of every document forever to serve that would cost
+        far more storage than it saves work. The render is the cheap half
+        of OCR (no inference), so it is not worth a cache either.
+
+        The frame matters more than the resolution. `bbox_norm` is
+        normalized against the page geometry produced by this same
+        `render_page` after the same rotation normalization, and
+        orientation-corrected boxes were already mapped back to it by
+        `_restore_field_bboxes` -- so a highlight drawn at
+        (x0*w, y0*h, x1*w, y1*h) over this image lands where the text is,
+        at any DPI.
+        """
+        import io
+
+        dpi = dpi or self._settings.ocr_preview_dpi
+        with session_scope(self._session_factory) as session:
+            repo = OcrRepository(session)
+            ctx = repo.get_version_for_processing(version_id)
+            if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
+                raise UnsupportedFormatError(ctx.version.mime_type)
+            file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+
+        with self._layout_engine.load(
+            file_bytes, ctx.version.mime_type, ctx.version.original_filename,
+            max_megapixels=self._settings.ocr_render_max_mp,
+        ) as layout_doc:
+            page_count = layout_doc.page_count()
+            if page < 0 or page >= page_count:
+                raise ValueError(f"page {page} out of range (document has {page_count} pages)")
+            page_image = layout_doc.render_page(page, dpi)
+            buffer = io.BytesIO()
+            page_image.image.convert("RGB").save(buffer, format="PNG", optimize=True)
+            return PageRender(
+                png=buffer.getvalue(),
+                width_px=page_image.width_px,
+                height_px=page_image.height_px,
+                page_count=page_count,
+            )
+
+    def preview_rubber_band(
+        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+    ) -> dict:
+        """OCR one box and hand back what it says. Nothing is written.
+
+        The reviewer decides whether the answer is right; only their
+        decision is persisted, by dms-core, as a correction.
+        """
+        validate_normalized_box(*box)
+
+        with session_scope(self._session_factory) as session:
+            repo = OcrRepository(session)
+            ctx = repo.get_version_for_processing(version_id)
+            if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
+                raise UnsupportedFormatError(ctx.version.mime_type)
+            file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+
+        with self._layout_engine.load(
+            file_bytes, ctx.version.mime_type, ctx.version.original_filename,
+            max_megapixels=self._settings.ocr_render_max_mp,
+        ) as layout_doc:
+            page_count = layout_doc.page_count()
+            if page < 0 or page >= page_count:
+                raise ValueError(f"page {page} out of range (document has {page_count} pages)")
+            page_image = layout_doc.render_page(page, self._settings.ocr_render_dpi)
+            x0, y0, x1, y1 = box
+            pixel_box = (
+                round(x0 * page_image.width_px), round(y0 * page_image.height_px),
+                round(x1 * page_image.width_px), round(y1 * page_image.height_px),
+            )
+            cropped = page_image.image.crop(pixel_box)
+            result = self._ocr_engine.recognize(cropped, lang=self._settings.ocr_languages)
+
+        return {
+            "version_id": str(version_id),
+            "page": page,
+            "bbox_norm": [x0, y0, x1, y1],
+            "text": result.text,
+            "confidence": result.mean_confidence,
+            "words": [
+                {"text": w.text, "confidence": w.confidence}
+                for w in result.words
+            ],
+        }
+
     def process_rubber_band_request(
         self,
         version_id: uuid.UUID,
@@ -1300,6 +1425,7 @@ class OcrPipeline:
         validation_errors: list[dict] | None = None,
         line_items: list | None = None,
         rendition: tuple | None = None,
+        page_count: int | None = None,
     ) -> ProcessingOutcome:
         overall_confidence = sum(p.confidence for p in pages) / len(pages) if pages else 0.0
         decision = self._confidence.evaluate(overall_confidence)
@@ -1387,6 +1513,8 @@ class OcrPipeline:
             extracted_text_ref=object_key,
             language=self._settings.ocr_languages,
             event_payload=payload,
+            review=review.to_dict(),
+            page_count=page_count,
         )
         if field_results is not None:
             repo.upsert_field_results(

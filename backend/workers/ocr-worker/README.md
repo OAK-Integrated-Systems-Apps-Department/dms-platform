@@ -852,6 +852,71 @@ curl -X POST http://ocr-worker:8090/ocr/rubber-band \
 a selection made against a preview image at any resolution maps correctly
 onto the page PyMuPDF actually renders.
 
+
+## Read-only routes for the review screen (Phase 4c)
+
+Two routes exist purely so a human can look at a document and check it.
+Neither claims a job, writes a row, or publishes an event.
+
+```bash
+# One page as a PNG. 0-indexed. dpi defaults to OCR_PREVIEW_DPI.
+curl -sS "http://ocr-worker:8090/ocr/page-image/<version_id>?page=0" \
+  -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -o page.png -D -
+
+# What does this box say? Writes nothing.
+curl -X POST http://ocr-worker:8090/ocr/rubber-band/preview \
+  -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H 'content-type: application/json' \
+  -d '{"version_id": "<version_id>", "page": 0, "x0": 0.1, "y0": 0.05, "x1": 0.4, "y1": 0.12}'
+```
+
+### Why `/ocr/rubber-band/preview` is not `/ocr/rubber-band`
+
+The existing `/ocr/rubber-band` **finalizes**: it claims a job, then
+replaces the version's entire field set and page list with whatever the
+one crop produced, flips `ocr_status`, and publishes a
+`document.version.ocr.completed` event. That is correct for what it was
+built for -- a deliberate re-extraction of a whole document from one
+region -- and catastrophic for a review screen, where a reviewer
+re-checking one number would wipe every other field on the document.
+
+So the preview route runs the same crop through the same engine and
+returns the text, and nothing else happens. The reviewer's *decision* is
+what gets persisted, by dms-core, as a correction
+(`document_ocr_corrections`, V43). `tests/test_review_readonly_pipeline.py`
+counts rows before and after to keep it that way.
+
+### The preview is in the same frame as the stored boxes
+
+`bbox_norm` on every field result is normalised against the geometry
+`render_page` produces, after `/Rotate` normalisation, and
+orientation-corrected boxes were already mapped back to that frame by
+`_restore_field_bboxes`. `/ocr/page-image` renders through the same path,
+so a highlight drawn at `(x0*w, y0*h, x1*w, y1*h)` over the returned image
+lands on the text -- at any DPI, and at any browser zoom.
+
+`X-Page-Width` / `X-Page-Height` carry the real pixel size, which is **not**
+`dpi x page size`: `OCR_RENDER_MAX_MP` caps total area, so a large page
+comes back smaller than the DPI implies. `X-Page-Count` lets a caller size
+a page selector from the first request.
+
+### Pages are rendered on demand, not stored
+
+The review screen looks at a handful of pages of the small minority of
+documents that need review. Keeping a PNG per page of every document
+forever to serve that would cost far more storage than it saves work, and
+the render is the cheap half of OCR -- no inference runs. The page count
+*is* stored (`document_versions.page_count`, V42), because the screen
+needs it before it fetches anything, and because a document that failed
+before its file could be opened has no artifact to read it from.
+
+### dms-core is the only caller
+
+ocr-worker has no notion of who is asking; it answers for any version id
+presented with the internal token. The tenant check happens in dms-core
+(`DocumentServiceImpl#getPageImage` / `#readRegion`) before the version id
+ever leaves it. `GET /api/v1/documents/{documentId}/pages/{page}/image`
+and `POST /api/v1/documents/{documentId}/read-region` are the
+Keycloak-authenticated, tenant-scoped faces of these two routes.
 ## Configuration
 
 See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
@@ -888,6 +953,8 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | `OCR_QUALITY_MIN_DPI` | `150.0` | below this effective DPI the page is flagged `LOW_RESOLUTION` |
 | `OCR_QUALITY_MIN_BLUR` | `100.0` | variance-of-Laplacian floor; below it, `BLURRY`. **Provisional** — never measured against a real blurred photograph |
 | `OCR_QUALITY_MIN_CONTRAST` | `35.0` | RMS contrast floor (std-dev, 0-255); below it, `LOW_CONTRAST`. **Provisional** |
+| `OCR_PREVIEW_DPI` | `300` | render DPI for the review screen's page preview (Phase 4c). Higher than `OCR_RENDER_DPI` because these pixels are for a human eye at browser zoom, not for an OCR engine. `OCR_RENDER_MAX_MP` still caps the result, so `/ocr/page-image` reports its real pixel size in `X-Page-Width`/`X-Page-Height`. Never feeds an engine, so it cannot affect extraction |
+| `OCR_PREVIEW_TIMEOUT_S` | `90.0` | pool timeout for a preview render or a one-box OCR. Far below the per-document budget on purpose: a reviewer is waiting, and a request that has not answered in 90s is not going to |
 | `OCR_SEARCHABLE_PDF_ENABLED` | `true` | write a searchable PDF rendition per OCR'd document (production prompt 3.11). Off makes the step a no-op; a failure is recorded in `flags.searchable_pdf_failed`, never silent |
 | `OCR_FINGERPRINT_ENABLED` | `true` | serve `GET /fingerprint` (md5 per source file), so a harness can refuse to measure a stale container. Authenticated like every other /ocr route. **Turn OFF in production** -- it is a dev aid and enumerates internal module names; disabled returns 404, not 403 |
 | `OCR_OFFLINE_MODELS` | `false` | pin model loaders to the local cache, removing the one outbound call this worker makes. Default off because model caches are volumes populated on first use, not baked into the image — see "No LLM, by design" |

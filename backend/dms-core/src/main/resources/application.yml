@@ -216,6 +216,19 @@ dms:
     stale-after-minutes: ${OCR_RECONCILER_STALE_AFTER_MINUTES:10}
     batch-size: ${OCR_RECONCILER_BATCH_SIZE:50}
 
+    # The review screen (Phase 4c) is the only thing dms-core calls
+    # ocr-worker over HTTP for: a rendered page image and "what does this
+    # box say". Both are read-only and both have a human waiting, which is
+    # why they are not queued work like everything else.
+    #
+    # ocr-worker publishes no port; this is a container-network address by
+    # design, and the token is the same shared secret ocr-worker checks on
+    # every route.
+    worker-base-url: ${OCR_WORKER_BASE_URL:http://ocr-worker:8090}
+    internal-service-token: ${INTERNAL_SERVICE_TOKEN:}
+    # Empty means "use ocr-worker's own OCR_PREVIEW_DPI".
+    preview-dpi: ${OCR_PREVIEW_DPI:}
+
 # Naming deliberately mirrors backend/workers/ocr-worker/src/ocr_worker/config.py's
 # MINIO_* env vars -- dms-core writes the source object here, ocr-worker
 # reads it back from the same bucket/key, so the two must agree.

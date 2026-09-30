@@ -229,6 +229,24 @@ class Settings(BaseSettings):
     # docs/ocr/phase2-verification.md Step 4, "DECISION").
     ocr_render_max_mp: float = 1.81
 
+    # Preview render for the review screen (Phase 4c). Higher than
+    # `ocr_render_dpi` because these pixels are for a human eye at a
+    # browser zoom, not for an OCR engine -- 200 DPI text that reads
+    # perfectly to PaddleOCR is soft on screen when the reviewer is
+    # checking whether an 8pt figure is a 3 or an 8, which is exactly
+    # what the queue sends them here to do. `ocr_render_max_mp` still
+    # caps the result, so a large page comes back smaller than this
+    # implies -- which is why PageRender reports its real pixel size.
+    #
+    # Does NOT affect extraction: the preview path never feeds an engine.
+    ocr_preview_dpi: int = 300
+
+    # A reviewer is sitting in front of the browser waiting. A preview
+    # render or a one-box OCR that has not answered in 90s is not going
+    # to; failing fast frees the pool worker for the document queue
+    # rather than holding it for the whole per-document budget.
+    ocr_preview_timeout_s: float = 90.0
+
     # -- Per-page routing (production prompt section 3.6, Phase 2 Step 7).
     # Replaces "any native text on the page -> native_text", a rule that
     # cost two entire eval conditions, both at 0.0% field accuracy:

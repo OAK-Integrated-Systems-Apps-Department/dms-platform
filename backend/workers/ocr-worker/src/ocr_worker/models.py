@@ -64,6 +64,17 @@ class DocumentVersion(Base):
     mime_type: Mapped[str] = mapped_column(String(255))
     scan_status: Mapped[str] = mapped_column(String(30))
     ocr_status: Mapped[str] = mapped_column(String(30))
+    # Phase 4b (V41). The review-queue decision, persisted beside
+    # ocr_status because it answers the same kind of question: what state
+    # is this version in. Written by this worker in the same transaction
+    # as the rest of the outcome.
+    requires_review: Mapped[bool] = mapped_column(default=False)
+    review_reasons: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 4c: the review screen offers a page selector before it has
+    # fetched any page. NULL until OCR has opened the file -- including
+    # for a document that failed before it could be opened, which is
+    # honest rather than guessing 1.
+    page_count: Mapped[int | None] = mapped_column(nullable=True)
     # V35__add_ocr_field_selection.sql -- the field_keys the uploader
     # actually asked OCR to extract, written by dms-core's
     # uploadDocument/prepareRerun. docs/events/ocr-scanning-events.md's

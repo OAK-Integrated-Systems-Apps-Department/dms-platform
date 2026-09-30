@@ -532,9 +532,21 @@ def test_outbox_created_at_reflects_real_time_not_a_stale_transaction_snapshot(s
 # Searchable PDF rendition (Phase 4a, production prompt 3.11).
 # ----------------------------------------------------------------------
 def _real_page_image(size=(600, 800)):
-    from PIL import Image
+    """A page with text-like content, not a blank sheet.
 
-    return Image.new("RGB", size, "white")
+    A blank page has a Laplacian variance of 0, so quality assessment
+    correctly flags it BLURRY -- which then sets poor_image_quality and
+    puts every "clean" test document in the review queue. The fixture has
+    to look like a document for tests about documents to mean anything.
+    """
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", size, "white")
+    draw = ImageDraw.Draw(image)
+    for row in range(12):
+        y = 40 + row * (size[1] // 14)
+        draw.rectangle([40, y, size[0] - 40, y + max(6, size[1] // 60)], fill="black")
+    return image
 
 
 def _source_pdf(visible_text=None, width_pt=612.0, height_pt=792.0, pages=1, image=False):
@@ -809,3 +821,75 @@ def test_a_clean_rendition_sets_no_failure_flag(session_factory, seeded_version)
     )
     outcome = pipeline.process_version(seeded_version["version_id"])
     assert "searchable_pdf_failed" not in outcome.output["flags"]
+
+
+# ----------------------------------------------------------------------
+# Review queue state (Phase 4b, V41).
+#
+# `requires_review` used to live only in the MinIO artifact and the event
+# payload. Neither is queryable, so a queue built from them would mean
+# fetching every artifact out of object storage to filter in memory.
+# ----------------------------------------------------------------------
+def test_a_clean_document_is_not_put_in_the_review_queue(session_factory, seeded_version):
+    layout_doc = FakeLayoutDocument(
+        page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+        source_pdf_bytes=_source_pdf(),
+    )
+    pipeline, _, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="clean", ocr_confidence=0.99,
+    )
+    pipeline.process_version(seeded_version["version_id"])
+
+    with session_factory() as session:
+        version = session.get(DocumentVersion, seeded_version["version_id"])
+    assert version.requires_review is False
+    assert version.review_reasons == {"requires_review": False}
+
+
+def test_a_repaired_file_lands_in_the_queue_with_its_reason(session_factory, seeded_version):
+    """`file_repaired` is the reason available without requested fields:
+    PyMuPDF silently repairs more corruption than expected, and content
+    recovered from a file that was not intact should not be trusted like
+    any other result."""
+    layout_doc = FakeLayoutDocument(
+        page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+        source_pdf_bytes=_source_pdf(),
+    )
+    layout_doc.file_repaired = True
+    pipeline, _, _ = make_pipeline(
+        session_factory, layout_doc=layout_doc, ocr_text="recovered", ocr_confidence=0.99,
+    )
+    pipeline.process_version(seeded_version["version_id"])
+
+    with session_factory() as session:
+        version = session.get(DocumentVersion, seeded_version["version_id"])
+    assert version.requires_review is True
+    assert "file_repaired" in version.review_reasons["reasons"]
+
+
+def test_a_rerun_that_fixes_a_document_takes_it_OUT_of_the_queue(session_factory, seeded_version):
+    """The false case must be written too. Leaving the old `true` behind
+    would keep a fixed document in the queue forever."""
+    def run(repaired):
+        layout_doc = FakeLayoutDocument(
+            page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
+            source_pdf_bytes=_source_pdf(),
+        )
+        layout_doc.file_repaired = repaired
+        pipeline, _, _ = make_pipeline(
+            session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.99,
+        )
+        with session_factory() as session:
+            version = session.get(DocumentVersion, seeded_version["version_id"])
+            version.ocr_status = "pending"
+            session.commit()
+        pipeline.process_version(seeded_version["version_id"])
+
+    run(True)
+    with session_factory() as session:
+        assert session.get(DocumentVersion, seeded_version["version_id"]).requires_review is True
+
+    run(False)
+    with session_factory() as session:
+        version = session.get(DocumentVersion, seeded_version["version_id"])
+    assert version.requires_review is False, "a fixed document must leave the queue"

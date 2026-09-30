@@ -277,3 +277,26 @@ The main queue (`ocr-worker.q.scan-completed`) is declared with `x-dead-letter-e
 **Representing a low-confidence result -- resolved.** Neither `ocr_outputs.status` nor `document_versions.ocr_status` has a dedicated enum value for "completed but flagged for review" (their CHECK constraints only allow `pending/processing/completed/failed/unsupported`). ocr-worker's decision: such a result is still `ocr_status = 'completed'` / `ocr_outputs.status = 'completed'` -- the data was produced and should not be treated as failed -- with `flags: {"low_confidence": true, "requires_review": true}` carried in the output JSON and the `document.version.ocr.completed` event payload. This is the cleanest fit for the existing schema; adding a distinct status value is a schema change outside this service's ownership. The two flags are currently always equal (no second, independent criterion for "requires review" beyond the confidence threshold exists yet).
 
 **Ad-hoc zone/rubber-band requests update `document_versions.ocr_status`.** `POST /ocr/zone` and `POST /ocr/rubber-band` persist their result the same way the full pipeline does (an `ocr_outputs` row + `ocr_status = 'completed'`), since OS-FR-006 asks for extracted data to be searchable metadata regardless of trigger. A consequence: a one-off rubber-band pull on an already-OCR'd version overwrites `ocr_status` with the ad-hoc result's outcome rather than leaving the full-document result's status alone. `ocr_outputs` is append-only (one row per request) so no data is lost, but the "current" status column reflects whichever ran most recently. Flagged here as a tradeoff rather than silently decided.
+
+**Where `requires_review` actually lives, as of Phase 4b.** The flag is
+still carried in the output JSON and the `.completed` payload as above,
+but it is no longer *only* there: `document_versions.requires_review` and
+`document_versions.review_reasons` (V41) are written by ocr-worker in the
+same transaction as the rest of the outcome. The event payload is a
+write-once record of a moment; the review queue needs queryable state, and
+building it from artifacts in object storage would mean fetching every
+document's JSON to filter in memory. Both are written unconditionally,
+including the false case -- a re-run that fixes a document has to take it
+out of the queue. `document_versions.page_count` (V42) was added the same
+way and for the same reason: the review screen needs it before it fetches
+a page, and a document that failed before its file could be opened has no
+artifact to read it from.
+
+**The review screen does NOT use `POST /ocr/rubber-band`.** The tradeoff
+noted directly above -- an ad-hoc rubber-band pull overwriting the
+full-document result -- is exactly why. Phase 4c added
+`POST /ocr/rubber-band/preview` and `GET /ocr/page-image/{version_id}`,
+which claim no job, write no row and publish no event. A reviewer
+re-checking one number must not replace the document's entire field set
+with that one crop's result. The reviewer's *decision* is what gets
+persisted, by dms-core, into `document_ocr_corrections` (V43).

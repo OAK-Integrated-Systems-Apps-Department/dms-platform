@@ -4,14 +4,25 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
+import com.oak.dms.document.dto.DocumentReviewResponse;
 import com.oak.dms.document.dto.DocumentVersionResponse;
 import com.oak.dms.document.dto.OcrRerunRequest;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
+import com.oak.dms.document.dto.ReviewQueueItemResponse;
+import com.oak.dms.document.dto.RubberBandRequest;
+import com.oak.dms.document.dto.RubberBandResponse;
+import com.oak.dms.document.dto.SaveReviewRequest;
+import com.oak.dms.document.dto.SaveReviewResponse;
 import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.ocrworker.OcrWorkerClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -83,6 +95,67 @@ public class DocumentController {
     public OcrRerunResponse runOcr(@PathVariable UUID versionId, @RequestBody(required = false) OcrRerunRequest body) {
         List<String> fields = body != null ? body.fields() : null;
         return documentService.prepareRerun(versionId, fields);
+    }
+
+    @Operation(summary = "The OCR review queue",
+            description = "Every document in this tenant whose OCR failed or whose result needs a "
+                    + "human to look at it, newest first, each with the reason. Only the latest "
+                    + "version of each document appears -- a reviewer can only act on that one.")
+    @GetMapping("/review-queue")
+    public Page<ReviewQueueItemResponse> getReviewQueue(
+            @PageableDefault(size = 25) Pageable pageable) {
+        return documentService.getReviewQueue(pageable);
+    }
+
+    @Operation(summary = "Everything the review screen needs for one document",
+            description = "Fields with confidence, status and normalized bboxes; the page count; "
+                    + "the reasons the document needs review; and its line items. One call rather "
+                    + "than four because the screen can render nothing useful until it has all of it.")
+    @GetMapping("/{documentId}/review")
+    public DocumentReviewResponse getReview(@PathVariable UUID documentId) {
+        return documentService.getReview(documentId);
+    }
+
+    @Operation(summary = "One page of a document, rendered for the review screen",
+            description = "A PNG in the same coordinate frame the stored bboxes live in: a "
+                    + "highlight drawn at (x0*w, y0*h, x1*w, y1*h) over this image lands on the "
+                    + "text. `page` is 0-indexed. X-Page-Width/Height/Count carry the real pixel "
+                    + "size, which is NOT dpi x page size -- the renderer caps total area.")
+    @GetMapping(value = "/{documentId}/pages/{page}/image", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> getPageImage(@PathVariable UUID documentId, @PathVariable int page) {
+        OcrWorkerClient.PageImage image = documentService.getPageImage(documentId, page);
+        return ResponseEntity.ok()
+                .header("X-Page-Width", String.valueOf(image.widthPx()))
+                .header("X-Page-Height", String.valueOf(image.heightPx()))
+                .header("X-Page-Count", String.valueOf(image.pageCount()))
+                // A version is immutable once written, so its rendered pages
+                // are too -- and the reviewer pages back and forth. Private,
+                // because this is one tenant's document.
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
+                .contentType(MediaType.IMAGE_PNG)
+                .body(image.png());
+    }
+
+    @Operation(summary = "Read a region the reviewer selected on the page",
+            description = "OCRs the given normalized box and returns what it says. Stores nothing "
+                    + "-- deliberately not the worker's finalizing rubber-band route, which would "
+                    + "replace the document's entire field set with this one crop's result.")
+    @PostMapping("/{documentId}/read-region")
+    public RubberBandResponse readRegion(
+            @PathVariable UUID documentId, @RequestBody RubberBandRequest request) {
+        return documentService.readRegion(documentId, request);
+    }
+
+    @Operation(summary = "Save a reviewer's decisions about a document's fields",
+            description = "Records what the reviewer accepted and what they corrected, keeping "
+                    + "OCR's own value and confidence alongside theirs so extraction accuracy can "
+                    + "be measured from real usage. Corrected values are written back to the "
+                    + "document's metadata. The document leaves the review queue only once every "
+                    + "field that needed attention has been settled.")
+    @PostMapping("/{documentId}/review")
+    public SaveReviewResponse saveReview(
+            @PathVariable UUID documentId, @RequestBody SaveReviewRequest request) {
+        return documentService.saveReview(documentId, request);
     }
 
     @Operation(summary = "Poll a document's OCR status and per-field extraction results")

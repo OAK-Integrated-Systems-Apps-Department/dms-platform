@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetchJson } from "@/lib/api-fetch"
+import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
 /** Mirrors com.oak.dms.document.dto.DocumentVersionResponse on the backend. */
 export interface DocumentVersionResponse {
@@ -138,5 +138,237 @@ export async function rerunOcr(
     `${API_BASE_URL}/api/v1/documents/${versionId}/ocr`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) },
     "Could not re-run OCR on this document."
+  )
+}
+
+/**
+ * One row of the OCR review queue -- mirrors dms-core's
+ * `ReviewQueueItemResponse`.
+ *
+ * `summary` is the point of the whole screen: a queue that lists
+ * documents without saying what is wrong with each one makes the reviewer
+ * open every document to find out, which is most of the work the queue
+ * exists to save. It is always populated -- a failed document carries the
+ * friendly message for its error code, a flagged one carries the rule
+ * that fired. `reasons` is the machine-readable form behind it, for
+ * filtering and iconography; never render it raw.
+ */
+export interface ReviewQueueItem {
+  documentId: string
+  versionId: string
+  title: string
+  originalFilename: string
+  mimeType: string
+  createdAt: string
+  /** "failed" (OCR never finished) or "completed" (it did, but a rule fired). */
+  ocrStatus: string
+  requiresReview: boolean
+  reasons: string[]
+  summary: string
+  missingMandatory: string[]
+  validationFailures: string[]
+  poorQualityPages: number[]
+  /** ocr-worker's classified failure code; null unless `ocrStatus` is "failed". */
+  errorCode: string | null
+}
+
+/** Spring's `Page<ReviewQueueItemResponse>` envelope. */
+export interface ReviewQueuePage {
+  content: ReviewQueueItem[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+/**
+ * Everything in this tenant that failed OCR or came back needing a human,
+ * newest first, one page at a time. `page` is 0-indexed here (the
+ * backend's own convention) -- the hook above this converts.
+ */
+export async function fetchReviewQueue(page: number, size: number): Promise<ReviewQueuePage> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/review-queue?page=${page}&size=${size}`,
+    undefined,
+    "Could not load the review queue."
+  )
+}
+
+/** One field on the review screen -- mirrors dms-core ReviewFieldResponse. */
+export interface ReviewField {
+  fieldKey: string
+  label: string
+  mandatory: boolean
+  /** Schema data type; a `multi_select` value is a list, not a string. */
+  dataType: string
+  value: string | string[] | null
+  /** What OCR read before parsing, when that differed from `value`. */
+  rawValue: string | null
+  confidence: number | null
+  status: "extracted" | "low_confidence" | "not_found"
+  source: { page: number; bbox: [number, number, number, number] } | null
+}
+
+/** One invoice line as OCR read it. Read-only on the review screen. */
+export interface ReviewLineItem {
+  lineNumber: number
+  description: string | null
+  quantity: string | null
+  unitPrice: string | null
+  lineTotal: string | null
+  confidence: number | null
+  sourcePage: number | null
+  sourceBbox: [number, number, number, number] | null
+  /** The cells exactly as OCR read them, before parsing to numbers. */
+  raw: unknown
+}
+
+/**
+ * Everything the review screen needs, in one call -- mirrors dms-core's
+ * `DocumentReviewResponse`. One call rather than four because the screen
+ * can render nothing useful until it has all of it, so four round trips
+ * would only buy four loading states for one blank page.
+ */
+export interface DocumentReview {
+  documentId: string
+  versionId: string
+  title: string
+  originalFilename: string
+  mimeType: string
+  ocrStatus: "queued" | "processing" | "completed" | "failed"
+  /** How many pages the preview endpoint will serve. */
+  pageCount: number
+  requiresReview: boolean
+  reviewReasons: string[]
+  reviewSummary: string
+  /**
+   * Every field this version asked OCR for, in schema order, INCLUDING
+   * the ones it did not find -- a missing mandatory field is the most
+   * important thing on the screen and the one with no result row.
+   */
+  fields: ReviewField[]
+  lineItems: ReviewLineItem[]
+  errorCode: string | null
+  friendlyError: string | null
+}
+
+export async function fetchDocumentReview(documentId: string): Promise<DocumentReview> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/review`,
+    undefined,
+    "Could not load this document for review."
+  )
+}
+
+/** A rendered page plus the pixel size its highlights are placed against. */
+export interface PageImage {
+  /** An object URL -- the caller must revoke it when it swaps pages. */
+  url: string
+  widthPx: number
+  heightPx: number
+  pageCount: number
+}
+
+/**
+ * Fetched rather than set as an `<img src>` on purpose. The API is on
+ * another origin and auth is a session cookie, so a plain `<img>` would
+ * send no credentials and 401 -- and going through `apiFetch` also means
+ * an expired access token is refreshed and retried exactly like every
+ * other call, instead of the page silently showing a broken image.
+ *
+ * `page` is 0-indexed, matching `source.page - 1` on a field result.
+ */
+export async function fetchPageImage(documentId: string, page: number): Promise<PageImage> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/pages/${page}/image`,
+    undefined,
+    "Could not load that page."
+  )
+  const blob = await response.blob()
+  return {
+    url: URL.createObjectURL(blob),
+    // The renderer caps total area, so this is NOT dpi x page size and
+    // must be read from the response rather than assumed.
+    widthPx: Number(response.headers.get("X-Page-Width") ?? 0),
+    heightPx: Number(response.headers.get("X-Page-Height") ?? 0),
+    pageCount: Number(response.headers.get("X-Page-Count") ?? 1),
+  }
+}
+
+export interface RegionReading {
+  page: number
+  bbox: [number, number, number, number]
+  text: string
+  confidence: number | null
+}
+
+/**
+ * OCRs a region the user dragged over the page and returns what it says.
+ * Stores nothing -- the user decides whether the answer is right, and
+ * only that decision is saved (as a correction).
+ *
+ * Coordinates are normalized (0..1 of page width/height), the same frame
+ * every stored bbox lives in, so a selection means the same thing at any
+ * zoom or preview resolution.
+ */
+export async function readRegion(
+  documentId: string,
+  page: number,
+  bbox: [number, number, number, number]
+): Promise<RegionReading> {
+  const [x0, y0, x1, y1] = bbox
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/read-region`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page, x0, y0, x1, y1 }),
+    },
+    "Could not read that part of the page."
+  )
+}
+
+/** One reviewer decision, as sent when a review is saved. */
+export interface ReviewDecision {
+  fieldKey: string
+  action: "accepted" | "corrected"
+  /** The reviewer's value. Ignored by the server for an acceptance. */
+  value: string | null
+  /** How a correction was produced; null for an acceptance. */
+  source: "typed" | "region" | null
+}
+
+export interface SaveReviewResult {
+  documentId: string
+  versionId: string
+  accepted: number
+  corrected: number
+  /** False once every field that needed attention has been settled. */
+  requiresReview: boolean
+  /** Field keys still outstanding; empty when the review is done. */
+  remainingReasons: string[]
+}
+
+/**
+ * Saves what the reviewer decided. Both their value and OCR's are kept
+ * server-side, so the record of how often OCR was wrong survives the fix
+ * -- that is the measurement the whole feature exists for.
+ *
+ * Sent as one batch rather than a call per field: a review is one act of
+ * judgement over a document, and a half-saved one would leave it in a
+ * state nobody chose.
+ */
+export async function saveReview(
+  documentId: string,
+  decisions: ReviewDecision[]
+): Promise<SaveReviewResult> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decisions }),
+    },
+    "Could not save your review."
   )
 }

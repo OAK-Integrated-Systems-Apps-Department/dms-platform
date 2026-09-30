@@ -1,5 +1,6 @@
 package com.oak.dms.document;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -111,4 +112,38 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
             """, nativeQuery = true)
     int markOcrFieldsApplied(
             @Param("versionId") UUID versionId, @Param("appliedAt") OffsetDateTime appliedAt);
+
+    /**
+     * The review queue (Phase 4b, production prompt 3.13): every version
+     * in this tenant that failed OCR or needs a human to look at it.
+     *
+     * Native SQL so it can use V41's partial index verbatim -- the index
+     * covers exactly {@code is_deleted = false AND (requires_review OR
+     * ocr_status = 'failed')}, and a JPQL predicate that drifts from that
+     * shape silently stops using it and starts scanning every version in
+     * the tenant.
+     *
+     * Only the LATEST version of each document: a queue listing three
+     * superseded versions of the same invoice is noise, and the reviewer
+     * can only act on the current one anyway.
+     */
+    @Query(value = """
+            SELECT v.* FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND (v.requires_review = true OR v.ocr_status = 'failed')
+            ORDER BY v.created_at DESC
+            """,
+            countQuery = """
+            SELECT count(*) FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND (v.requires_review = true OR v.ocr_status = 'failed')
+            """,
+            nativeQuery = true)
+    Page<DocumentVersion> findReviewQueue(@Param("tenantId") UUID tenantId, Pageable pageable);
 }

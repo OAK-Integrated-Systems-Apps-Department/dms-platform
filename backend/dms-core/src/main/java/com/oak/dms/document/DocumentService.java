@@ -1,8 +1,17 @@
 package com.oak.dms.document;
 
+import com.oak.dms.document.dto.DocumentReviewResponse;
 import com.oak.dms.document.dto.DocumentVersionResponse;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
+import com.oak.dms.document.dto.ReviewQueueItemResponse;
+import com.oak.dms.document.dto.RubberBandRequest;
+import com.oak.dms.document.dto.RubberBandResponse;
+import com.oak.dms.document.dto.SaveReviewRequest;
+import com.oak.dms.document.dto.SaveReviewResponse;
+import com.oak.dms.ocrworker.OcrWorkerClient;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -57,4 +66,57 @@ public interface DocumentService {
      * upload page's progress UI.
      */
     OcrStatusResponse getOcrStatus(UUID documentId);
+
+    /**
+     * The review queue (Phase 4b, production prompt 3.13): every latest
+     * version in the caller's tenant that failed OCR or came back flagged,
+     * newest first, each with a sentence saying why.
+     * <p>
+     * The reason travels WITH the row deliberately. A queue that lists
+     * documents and nothing else forces the reviewer to open every one of
+     * them to find out what is wrong, which is most of the work the queue
+     * exists to save -- so a failed version carries the friendly message
+     * for its classified error code, and a flagged one carries the rule
+     * that fired and the fields or pages it fired on.
+     */
+    Page<ReviewQueueItemResponse> getReviewQueue(Pageable pageable);
+
+    /**
+     * Everything the review screen needs to draw itself, in one call
+     * (Phase 4c): the fields with their confidences, statuses and
+     * normalized boxes, the page count, the reasons the document is in
+     * the queue, and the line items.
+     */
+    DocumentReviewResponse getReview(UUID documentId);
+
+    /**
+     * One page of a document rendered as a PNG, in the same frame the
+     * stored {@code bbox_norm} values live in -- so a highlight drawn at
+     * (x0*w, y0*h, x1*w, y1*h) over this image lands on the text.
+     * <p>
+     * {@code page} is 0-indexed, matching the worker's own convention and
+     * the {@code source.page - 1} the field results carry.
+     */
+    OcrWorkerClient.PageImage getPageImage(UUID documentId, int page);
+
+    /**
+     * What OCR reads in a region the reviewer dragged over the preview.
+     * Stores nothing: this answers "what does that say", and only the
+     * reviewer's decision about the answer is persisted.
+     */
+    RubberBandResponse readRegion(UUID documentId, RubberBandRequest request);
+
+    /**
+     * Records what the reviewer decided about each field, keeping OCR's
+     * own value alongside theirs (Phase 4d, production prompt 3.13) --
+     * "so accuracy can be measured from real usage".
+     * <p>
+     * Corrected values are written back to the document's metadata; both
+     * values are kept in {@code document_ocr_corrections} either way, so
+     * the record of how often OCR was wrong survives the fix. The document
+     * leaves the review queue only when every field that needed attention
+     * has been settled -- a queue that empties itself on the first save
+     * would be lying.
+     */
+    SaveReviewResponse saveReview(UUID documentId, SaveReviewRequest request);
 }

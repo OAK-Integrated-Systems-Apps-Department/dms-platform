@@ -4,7 +4,7 @@ import hashlib
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from pebble import ProcessExpired
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -227,5 +227,66 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         except TimeoutError as exc:
             raise HTTPException(status_code=504, detail=f"OCR processing timed out for version {body.version_id}") from exc
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
+
+    @app.get("/ocr/page-image/{version_id}", dependencies=[Depends(require_internal_token)])
+    def ocr_page_image(version_id: uuid.UUID, page: int = 0, dpi: int | None = None):
+        """One page of a document as a PNG, for the review screen.
+
+        Read-only: no job is claimed, nothing is written, no event is
+        published. Internal-only like every other route here -- dms-core
+        proxies it and is the thing that checks the caller owns the
+        tenant the version belongs to.
+        """
+        future = pool.schedule_render_page(version_id, page, dpi)
+        try:
+            render = future.result()
+        except VersionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except VersionNotEligible as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (ValueError, UnsupportedFormatError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=f"rendering page {page} of {version_id} timed out") from exc
+        return Response(
+            content=render.png,
+            media_type="image/png",
+            headers={
+                # The frontend places highlights from bbox_norm against
+                # these, and needs them before the image decodes.
+                "X-Page-Width": str(render.width_px),
+                "X-Page-Height": str(render.height_px),
+                "X-Page-Count": str(render.page_count),
+                # A version is immutable once written, so its rendered
+                # pages are too. Worth saying out loud: the reviewer
+                # scrolls back and forth through the same pages.
+                "Cache-Control": "private, max-age=3600",
+            },
+        )
+
+    @app.post("/ocr/rubber-band/preview", dependencies=[Depends(require_internal_token)])
+    def ocr_rubber_band_preview(body: RubberBandRequest):
+        """What does this box say? Nothing is written.
+
+        Deliberately NOT /ocr/rubber-band: that one finalizes, replacing
+        the version's whole field set and page list with the one crop's
+        result. Pointing the review screen at it would wipe every other
+        field on the document each time a reviewer re-checked one of
+        them. The reviewer's decision is persisted by dms-core as a
+        correction instead (Phase 4d).
+        """
+        future = pool.schedule_preview_rubber_band(
+            body.version_id, body.page, (body.x0, body.y0, body.x1, body.y1)
+        )
+        try:
+            return future.result()
+        except VersionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except VersionNotEligible as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (ValueError, UnsupportedFormatError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=f"OCR of the selected region timed out") from exc
 
     return app

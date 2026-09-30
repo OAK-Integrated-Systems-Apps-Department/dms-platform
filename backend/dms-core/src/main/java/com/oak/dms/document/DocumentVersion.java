@@ -91,6 +91,42 @@ public class DocumentVersion {
     private String ocrStatus = "not_required";
 
     /**
+     * Phase 4b (V41). Written by ocr-worker in the same transaction as
+     * {@link #ocrStatus}; dms-core only reads it, to build the review queue.
+     * <p>
+     * NOT a synonym for low confidence -- production prompt 3.10 makes it
+     * any mandatory field not extracted, any validation failure, or poor
+     * image quality. A document can be read with low confidence and still
+     * need no review, and read confidently and still be wrong.
+     */
+    @Column(name = "requires_review", nullable = false)
+    @Builder.Default
+    private boolean requiresReview = false;
+
+    /**
+     * Why {@link #requiresReview} is true, as raw JSON -- same convention
+     * as {@link #requestedFields}: this codebase has no JSON-to-object
+     * converter, so callers deserialize via the injected ObjectMapper.
+     * NULL before a version has been through OCR, which is different from
+     * "reviewed and found clean".
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "review_reasons", columnDefinition = "jsonb")
+    private String reviewReasons;
+
+    /**
+     * Pages in the source document (V42), written by ocr-worker when it
+     * loads the file.
+     * <p>
+     * NULL before OCR has run, and for a document that failed before the
+     * file could be opened at all -- which is honest rather than guessing
+     * 1, and lets the review screen say "we never got to read this" for
+     * exactly the documents where that is true.
+     */
+    @Column(name = "page_count")
+    private Integer pageCount;
+
+    /**
      * JSON array of field_key strings ("selectable OCR field extraction" --
      * see V35): which fields the caller asked OCR to attempt to extract for
      * this version, set at upload and unioned-in on every re-run request.

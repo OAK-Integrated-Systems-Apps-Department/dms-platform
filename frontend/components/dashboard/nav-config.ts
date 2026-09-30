@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  ClipboardCheck,
   FileStack,
   FileText,
   Grid3x3,
@@ -27,6 +28,10 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/" },
       { label: "My Documents", icon: FileText, href: "/documents" },
+      // Phase 4b: OCR results a human still has to confirm. No permission
+      // gate -- there is no document-level permission model yet, and the
+      // endpoint scopes every row to the caller's own tenant regardless.
+      { label: "Review Queue", icon: ClipboardCheck, href: "/documents/review" },
       { label: "Shared With Me", icon: Users },
       { label: "Recent Pins", icon: Pin },
       { label: "Workflows", icon: Workflow, badge: 3 },
