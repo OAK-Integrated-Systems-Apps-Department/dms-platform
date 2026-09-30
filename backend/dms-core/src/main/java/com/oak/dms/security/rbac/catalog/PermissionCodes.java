@@ -88,6 +88,9 @@ public final class PermissionCodes {
     public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
     public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
 
+    // File Import/Export - FIE / Bulk Import Documents - see V10's seed migration.
+    public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";
+
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
     // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail

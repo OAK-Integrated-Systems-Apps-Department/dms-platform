@@ -67,6 +67,16 @@ public class ImportItem {
     @Column(name = "document_id")
     private UUID documentId;
 
+    /** Object key of the uploaded file while it waits for the import worker; null until received. */
+    @Column(name = "staged_object_key", length = 1000)
+    private String stagedObjectKey;
+
+    @Column(name = "staged_storage_location_id")
+    private UUID stagedStorageLocationId;
+
+    @Column(name = "staged_size_bytes")
+    private Long stagedSizeBytes;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default

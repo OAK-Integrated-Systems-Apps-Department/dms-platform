@@ -156,6 +156,17 @@
             <version>12.30.0</version>
         </dependency>
 
+        <!--
+          Spreadsheet read/write for bulk import templates (Module 2.1):
+          generates the .xlsx template for a document type's schema and
+          parses the filled-in manifest - see com.oak.dms.importexport.
+        -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
