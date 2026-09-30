@@ -34,6 +34,7 @@ from pathlib import Path
 
 from . import conditions as conditions_mod
 from . import harness, metrics, realset, rss, schema as schema_mod
+from . import staleness
 
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"
 
@@ -201,6 +202,17 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
     doc_latency = metrics.LatencySummary()
     page_latency = metrics.LatencySummary()
     quality_flag = metrics.BinaryCounts()
+    # Searchable PDF rendition (production prompt 3.11). Counted per
+    # document, because a rendition that failed is invisible in every
+    # other number here -- accuracy, CER and latency are all unaffected
+    # by it, so a rendition bug can pass the whole harness untouched.
+    #
+    # It did. `show_pdf_page` rejects a non-PDF source, so EVERY image
+    # upload silently produced no rendition at all, and nothing in this
+    # report moved. The flag existed; nothing read it.
+    rendition_ok = 0
+    rendition_failed = 0
+    rendition_reasons: dict[str, int] = {}
 
     per_condition: dict[str, dict] = {}
     per_type: dict[str, dict] = {}
@@ -243,6 +255,22 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
         # only it can calibrate the quality flags.
         if set_name == SYNTHETIC:
             quality_flag.add(bool(flags.get("poor_image_quality")), doc.degraded)
+
+        # Only completed documents can have a rendition; a failed one had
+        # nothing to render, and counting it would make an unrelated
+        # failure look like a rendition bug.
+        if result.status == "completed":
+            if flags.get("searchable_pdf_failed"):
+                rendition_failed += 1
+                for reason in flags.get("searchable_pdf_failure_reasons") or ["(no reason given)"]:
+                    # Group by the reason's shape, not its full text: a
+                    # per-page reason carries a page number, so the raw
+                    # strings are all distinct and a tally of them says
+                    # nothing.
+                    key = str(reason).split(":", 2)[-1].strip()[:80] if ":" in str(reason) else str(reason)[:80]
+                    rendition_reasons[key] = rendition_reasons.get(key, 0) + 1
+            else:
+                rendition_ok += 1
 
         status_totals[result.status] = status_totals.get(result.status, 0) + 1
 
@@ -368,6 +396,16 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
     }
     if set_name == SYNTHETIC:
         summary["quality_flag"] = quality_flag.to_dict()
+    attempted = rendition_ok + rendition_failed
+    summary["searchable_pdf"] = {
+        "attempted": attempted,
+        "succeeded": rendition_ok,
+        "failed": rendition_failed,
+        # None rather than 1.0 when nothing was attempted: a rate over
+        # zero documents is not a perfect score, it is no measurement.
+        "success_rate": round(rendition_ok / attempted, 4) if attempted else None,
+        "failure_reasons": dict(sorted(rendition_reasons.items(), key=lambda kv: -kv[1])),
+    }
     return summary, rows
 
 
@@ -507,6 +545,23 @@ def render_markdown(report: dict) -> str:
         lines += [f"- {p}" for p in report["real_problems"]]
         lines.append("")
 
+    for set_name in (SYNTHETIC, REAL):
+        block = ((report.get("sets") or {}).get(set_name) or {}).get("searchable_pdf") or {}
+        if not block.get("attempted"):
+            continue
+        rate = block["success_rate"]
+        lines += [
+            f"## Searchable PDF rendition -- {set_name}",
+            "",
+            f"- **{block['succeeded']} of {block['attempted']}** completed documents "
+            f"produced one ({rate:.1%})" if rate is not None else "- not measured",
+            "",
+        ]
+        if block["failed"]:
+            lines += ["Failure reasons:", ""]
+            lines += [f"- {count}x `{reason}`" for reason, count in block["failure_reasons"].items()]
+            lines += [""]
+
     memory = report["memory"]
     lines += [
         "## Memory (whole run, both sets)",
@@ -540,6 +595,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-name", default="", help="output basename (default: the variant)")
     parser.add_argument("--rss-interval-s", type=float, default=2.0)
     args = parser.parse_args(argv)
+
+    # Refuse to measure stale containers. Three runs have already been
+    # invalidated by an image older than the source; see eval/staleness.py.
+    staleness.enforce(what="eval")
 
     only = {c.strip() for c in args.only.split(",") if c.strip()}
     unknown = only - set(conditions_mod.BY_NAME)
@@ -696,6 +755,16 @@ def main(argv: list[str] | None = None) -> int:
             f"extracted_prec={_pct(head['extracted_precision'])}  "
             f"cer={_num(head['cer_mean'])}"
         )
+        rendition = summary.get("searchable_pdf") or {}
+        if rendition.get("attempted"):
+            rate = rendition["success_rate"]
+            note = "" if rendition["failed"] == 0 else "   <-- RENDITION FAILURES"
+            print(
+                f"[eval] {label} searchable_pdf {rendition['succeeded']}/"
+                f"{rendition['attempted']} ({_pct(rate)}){note}"
+            )
+            for reason, count in list(rendition["failure_reasons"].items())[:3]:
+                print(f"[eval]           {count:>4}x {reason}")
     if not (sets.get(REAL) or {}).get("documents"):
         print("[eval] NOTE: no real data -- a synthetic result can veto a change, never justify one.")
     print(f"[eval] peak memory {memory.get('peak_gib')} GiB")

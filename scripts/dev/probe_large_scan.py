@@ -46,12 +46,19 @@ def rss_gib() -> float:
     return float("nan")
 
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from _staleness_guard import enforce as _enforce_fresh  # noqa: E402
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", required=True)
     parser.add_argument("--report-json", default=None)
     parser.add_argument("--max-pages", type=int, default=0, help="0 = all")
     args = parser.parse_args()
+    _enforce_fresh("probe-large-scan")
 
     from ocr_worker.config import Settings
     from ocr_worker.layout import LayoutEngine

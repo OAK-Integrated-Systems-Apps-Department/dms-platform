@@ -524,6 +524,9 @@ def _result(**overrides):
         "synthetic_regressions": [],
         "real_regressions": [],
         "memory_regression": None,
+        # Any searchable-PDF failure fails the candidate outright -- it is
+        # not compared against the baseline (see compare.py).
+        "rendition_failures": None,
         "has_real_data": False,
         "real_improvements": [],
     }
@@ -558,3 +561,24 @@ def test_a_clean_synthetic_only_run_is_veto_only():
     name, code, why = verdict(_result())
     assert (name, code) == ("VETO-ONLY", 0)
     assert "cannot justify" in why
+
+
+def test_a_searchable_pdf_failure_fails_the_verdict():
+    """A rendition either happened or it did not. The image bug -- every
+    image upload producing none -- passed the whole harness because
+    nothing read the flag."""
+    name, code, why = verdict(_result(rendition_failures="synthetic: 45 of 117 produced none"))
+    assert (name, code) == ("FAILED", 1)
+    assert "searchable PDF" in why
+    assert "45 of 117" in why
+
+
+def test_a_real_regression_still_outranks_a_rendition_failure():
+    """The explanation must name what actually blocked, and the real set
+    losing accuracy is the more serious finding."""
+    name, code, why = verdict(_result(
+        real_regressions=["field_accuracy dropped"],
+        rendition_failures="synthetic: 1 of 3 produced none",
+    ))
+    assert (name, code) == ("FAILED", 1)
+    assert "real set" in why

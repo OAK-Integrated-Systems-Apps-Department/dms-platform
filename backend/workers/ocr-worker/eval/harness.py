@@ -61,6 +61,7 @@ class InMemoryStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
         self.outputs: dict[str, dict] = {}
+        self.renditions: dict[str, bytes] = {}
 
     def get_object_bytes(self, object_key: str) -> bytes:
         return self.objects[object_key]
@@ -71,6 +72,19 @@ class InMemoryStorage:
 
     def put_ocr_output_json(self, object_key: str, data: dict) -> str:
         self.outputs[object_key] = data
+        return object_key
+
+    def put_rendition(self, object_key: str, data: bytes, content_type: str = "application/pdf") -> str:
+        """Searchable PDF rendition (production prompt 3.11).
+
+        Its absence made every eval run fail every rendition -- silently,
+        until the report started counting them. The class docstring above
+        predicted exactly this: "a future pipeline change that starts
+        touching storage differently fails loudly here instead of being
+        quietly unmeasured". It did fail loudly; nothing was reading the
+        failure.
+        """
+        self.renditions[object_key] = data
         return object_key
 
     def ensure_buckets(self) -> None:

@@ -262,8 +262,17 @@ def snapshot(conn: psycopg.Connection, version_ids: list[uuid.UUID]) -> dict[uui
     return out
 
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from _staleness_guard import enforce as _enforce_fresh  # noqa: E402
+
+
 def main() -> int:
     args = parse_args()
+    # Three measured runs have been invalidated by a container older than
+    # the source, none of them visibly. Refuse rather than repeat it.
+    _enforce_fresh("phase1-verification", dsn=args.db_url)
     run_id = args.run_id or uuid.uuid4().hex[:8]
     print(f"== Phase 1 verification run {run_id} ==", flush=True)
 

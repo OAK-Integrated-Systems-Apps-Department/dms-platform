@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pebble import ProcessExpired
@@ -12,6 +14,29 @@ from .errors import UnsupportedFormatError
 from .extraction import FieldSpec
 from .repository import VersionNotEligible, VersionNotFound
 from .worker_pool import OcrProcessPool
+
+
+def source_fingerprint() -> dict[str, str]:
+    """md5 of every .py in this package, keyed by name.
+
+    Read from THIS process's own package directory, so it reports what is
+    actually loaded rather than what some path suggests should be.
+    """
+    root = Path(__file__).resolve().parent
+    out: dict[str, str] = {}
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        try:
+            out[path.relative_to(root).as_posix()] = hashlib.md5(path.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return out
+
+
+# Computed once at import: the files cannot change under a running
+# process, and a readiness-adjacent endpoint should not do file I/O.
+SOURCE_FINGERPRINT = source_fingerprint()
 
 
 class RequestedField(BaseModel):
@@ -75,6 +100,33 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
     @app.get("/healthz")
     def healthz():
         return {"status": "ok"}
+
+    @app.get("/fingerprint", dependencies=[Depends(require_internal_token)])
+    def fingerprint():
+        """md5 of every source file this process is actually running.
+
+        Exists so a verification harness can refuse to measure a stale
+        container. Three measured runs have already been invalidated by an
+        image older than the source, none of them visibly -- and the
+        obvious check (`docker exec` + `md5sum`) is unavailable from
+        inside a container, which is where every harness here runs. An
+        HTTP endpoint needs no docker socket and no docker CLI.
+
+        Computed once at import (see `source_fingerprint`), not per
+        request: the files cannot change under a running process, and a
+        readiness-adjacent endpoint should not do filesystem work.
+
+        **Authenticated like every other /ocr route, and off by default in
+        production.** It is a development aid, not an operational one: it
+        enumerates this service's internal module names, which is exactly
+        the sort of thing that belongs behind the same door as everything
+        else and is worth not serving at all where nothing will ask for
+        it. `OCR_FINGERPRINT_ENABLED=false` returns 404 -- not 403, so a
+        disabled deployment does not even confirm the endpoint exists.
+        """
+        if not settings.ocr_fingerprint_enabled:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return {"source": SOURCE_FINGERPRINT, "files": len(SOURCE_FINGERPRINT)}
 
     @app.get("/readyz")
     def readyz():

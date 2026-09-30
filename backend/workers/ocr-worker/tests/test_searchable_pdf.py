@@ -417,3 +417,89 @@ class TestNonPdfSources:
                 image_doc.close()
         finally:
             img.close()
+
+
+class TestEveryRotationPlacesTextOnItsInk:
+    """The end-to-end offsets these pin, measured against the corpus with
+    real OCR (`scripts/dev` probe, worst offset per fixture):
+
+        rotated_90.png            correction 270   4.2pt
+        invoice-rotated_90-00     correction  90   3.8pt
+        invoice-rotated_180-00    correction 180   8.9pt
+        invoice-rotated_270-00    correction 270   3.8pt
+        native PDF /Rotate 90     none             3.1pt
+        invoice-skewed_2deg-00    none             2.0pt
+
+    The suite cannot run OCR, so these reproduce the same geometry with
+    known boxes: a line written at rotation R must come back inside the
+    box it was read from.
+    """
+
+    @staticmethod
+    def _roundtrip(box, rotation, text="Receipt No: RCPT-33210 Date 2026-05-04"):
+        src = _source_pdf(image_px=(1200, 1600))
+        builder = SearchablePdfBuilder()
+        builder.add_source_page(src, 0, [(text, box)], pixels_per_point=1.0, text_rotation=rotation)
+        data = builder.finish()
+        src.close()
+        doc = fitz.open(stream=data, filetype="pdf")
+        try:
+            found = doc[0].search_for(text)
+            assert found, f"rotation {rotation}: the line was written but cannot be located"
+            return found[0]
+        finally:
+            doc.close()
+
+    def test_180_lands_on_its_box(self):
+        box = (100, 200, 400, 240)          # a wide, upside-down line
+        rect = self._roundtrip(box, 180)
+        assert rect.width > rect.height, "an upside-down line still runs horizontally"
+        assert rect.x0 == pytest.approx(box[0], abs=12)
+        assert rect.y0 == pytest.approx(box[1], abs=12)
+
+    def test_270_lands_on_its_box(self):
+        box = (100, 100, 140, 400)          # a tall, sideways line
+        rect = self._roundtrip(box, 270)
+        assert rect.height > rect.width, "a sideways line runs vertically"
+        assert rect.x0 == pytest.approx(box[0], abs=12)
+        assert rect.y0 == pytest.approx(box[1], abs=12)
+
+    def test_90_lands_on_its_box(self):
+        box = (100, 100, 140, 400)
+        rect = self._roundtrip(box, 90)
+        assert rect.height > rect.width
+        assert rect.x1 == pytest.approx(box[2], abs=12)
+        assert rect.y1 == pytest.approx(box[3], abs=12)
+
+    def test_0_lands_on_its_box(self):
+        box = (100, 200, 400, 240)
+        rect = self._roundtrip(box, 0)
+        assert rect.width > rect.height
+        assert rect.x0 == pytest.approx(box[0], abs=12)
+        assert rect.y1 == pytest.approx(box[3], abs=12)
+
+    def test_a_native_pdf_with_rotate_90_needs_no_text_rotation(self):
+        """`/Rotate` is normalised away before Docling, so by the time the
+        rendition is built the page is upright and orientation correction
+        had nothing to do. Measured end to end at 3.1pt worst with
+        `applied=False, angle=0` -- the two fixes compose rather than
+        both firing."""
+        from ocr_worker.layout import normalize_page_rotation
+        from ocr_worker.searchable_pdf import text_rotation_for
+
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_text(fitz.Point(72, 100), "UPRIGHT AFTER NORMALISATION", fontsize=12)
+        page.set_rotation(90)
+        raw = doc.tobytes()
+        doc.close()
+
+        normalised, changed = normalize_page_rotation(raw)
+        assert changed == 1
+        out = fitz.open(stream=normalised, filetype="pdf")
+        try:
+            assert out[0].rotation == 0
+        finally:
+            out.close()
+        # No correction was applied, so no text rotation is needed.
+        assert text_rotation_for(None) == 0

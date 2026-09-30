@@ -425,6 +425,21 @@ approximately over the ink. Consequences:
 - A search index built from this layer is unaffected: it reads the text,
   not the positions.
 
+**No line selects its neighbour -- measured, not assumed.** Worst
+placement error across the corpus is 8.9pt (the 180-degree case) against
+a median line height of 23.0pt. Checking all 42 uniquely-identifiable
+lines on that page, every one has its placed text centred inside its OWN
+box. The single apparent exception is a measurement artifact:
+`search_for("Description")` matches inside `"Description:"`, a different
+field label on the same page. Per-rotation worst offsets:
+
+| page | worst |
+|---|---|
+| upright / skewed 2deg | 2.0pt |
+| native PDF with `/Rotate 90` | 3.1pt |
+| rotated 90 / 270 | 3.8-4.2pt |
+| rotated 180 | 8.9pt |
+
 Word-level boxes would need a second pass (splitting each line box by
 character-width estimates, or asking PaddleOCR for character boxes),
 which buys better in-viewer highlighting and nothing else. Not built.
@@ -874,6 +889,7 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | `OCR_QUALITY_MIN_BLUR` | `100.0` | variance-of-Laplacian floor; below it, `BLURRY`. **Provisional** — never measured against a real blurred photograph |
 | `OCR_QUALITY_MIN_CONTRAST` | `35.0` | RMS contrast floor (std-dev, 0-255); below it, `LOW_CONTRAST`. **Provisional** |
 | `OCR_SEARCHABLE_PDF_ENABLED` | `true` | write a searchable PDF rendition per OCR'd document (production prompt 3.11). Off makes the step a no-op; a failure is recorded in `flags.searchable_pdf_failed`, never silent |
+| `OCR_FINGERPRINT_ENABLED` | `true` | serve `GET /fingerprint` (md5 per source file), so a harness can refuse to measure a stale container. Authenticated like every other /ocr route. **Turn OFF in production** -- it is a dev aid and enumerates internal module names; disabled returns 404, not 403 |
 | `OCR_OFFLINE_MODELS` | `false` | pin model loaders to the local cache, removing the one outbound call this worker makes. Default off because model caches are volumes populated on first use, not baked into the image — see "No LLM, by design" |
 | `INTERNAL_SERVICE_TOKEN` | (see `infra/secrets/ocr-worker.secrets.env`) | required `X-Internal-Token` header value on every `/ocr/*` request |
 | `DB_URL` | points at `dms_core_db` | see "Database access" below |

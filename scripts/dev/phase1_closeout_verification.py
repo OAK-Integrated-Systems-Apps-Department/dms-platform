@@ -846,8 +846,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from _staleness_guard import enforce as _enforce_fresh  # noqa: E402
+
+
 def main() -> int:
     args = parse_args()
+    _enforce_fresh("phase1-closeout")
     if not args.keycloak_admin_password:
         print("KEYCLOAK_ADMIN_PASSWORD is required (env or --keycloak-admin-password)", file=sys.stderr)
         return 2

@@ -57,6 +57,21 @@ class Settings(BaseSettings):
     # any environment where egress is actually restricted.
     ocr_offline_models: bool = False
 
+    # -- /fingerprint (development aid) --
+    # Reports md5s of the source this process actually loaded, so a
+    # verification harness can refuse to measure a stale container --
+    # three runs have been invalidated that way, none of them visibly.
+    # The obvious check (`docker exec` + `md5sum`) is unavailable from
+    # inside a container, which is where every harness here runs, so it
+    # is served over HTTP instead.
+    #
+    # Requires `X-Internal-Token` like every other /ocr route. Default ON
+    # because dev is where it earns its keep; **turn it OFF in
+    # production** -- it enumerates this service's internal module names,
+    # and nothing in production asks for it. Disabled returns 404 rather
+    # than 403, so a disabled deployment does not confirm it exists.
+    ocr_fingerprint_enabled: bool = True
+
     # -- Postgres (same instance/database as dms-core; see README for the
     # least-privilege follow-up noted there) --
     db_url: str = "postgresql+psycopg://ocr_worker_user:ocr_worker_pass@localhost:5433/dms_core_db"

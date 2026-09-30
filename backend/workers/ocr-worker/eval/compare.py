@@ -137,6 +137,7 @@ def compare(baseline: dict, candidate: dict, tolerance: float) -> dict:
         "synthetic_improvements": [],
         "notes": [],
         "memory_regression": None,
+        "rendition_failures": None,
         "has_real_data": False,
     }
 
@@ -173,6 +174,24 @@ def compare(baseline: dict, candidate: dict, tolerance: float) -> dict:
         else:
             result["notes"].append(f"peak memory: {base_peak} GiB -> {cand_peak} GiB")
 
+    # Any searchable-PDF failure fails the CANDIDATE outright -- it is not
+    # compared against the baseline. A rendition either happened or it did
+    # not; "no worse than last time" is the wrong test for something that
+    # should never fail at all, and comparing rates would have let the
+    # image bug (every image upload producing no rendition) pass as long
+    # as the baseline was equally broken. It was.
+    failures = []
+    for set_name in (SYNTHETIC, REAL):
+        block = ((candidate.get("sets") or {}).get(set_name) or {}).get("searchable_pdf") or {}
+        if block.get("failed"):
+            reasons = ", ".join(list((block.get("failure_reasons") or {}).keys())[:2])
+            failures.append(
+                f"{set_name}: {block['failed']} of {block['attempted']} documents "
+                f"produced no searchable PDF ({reasons})"
+            )
+    if failures:
+        result["rendition_failures"] = "; ".join(failures)
+
     return result
 
 
@@ -192,6 +211,8 @@ def verdict(result: dict) -> tuple[str, int, str]:
         return "VETOED", 1, "the synthetic regression set broke; that vetoes the change"
     if result["memory_regression"]:
         return "FAILED", 1, f"peak memory regressed: {result['memory_regression']}"
+    if result["rendition_failures"]:
+        return "FAILED", 1, f"searchable PDF failed: {result['rendition_failures']}"
 
     if result["has_real_data"]:
         if result["real_improvements"]:
@@ -238,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  X {line}")
     if result["memory_regression"]:
         print(f"  X {result['memory_regression']}")
+    if result["rendition_failures"]:
+        print(f"  X {result['rendition_failures']}")
 
     print("")
     print(f"{name}: {why}")
