@@ -11,6 +11,7 @@ import {
   ScrollText,
   Search,
   Shield,
+  ShieldAlert,
   Users,
   Workflow,
 } from "lucide-react"
@@ -69,6 +70,18 @@ export const navSections: NavSection[] = [
       // legacy codes, so this nav item must too.
       { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: [PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE] },
       { label: "Audit Log", icon: ScrollText, href: "/admin/audit-log", permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY },
+      // Malware-scan quarantine review (VMSBDI FR-005). Lives with the other
+      // security-control screens in Governance rather than a group of its
+      // own. Any single quarantine capability gets you in - the detail page
+      // shows only the actions you hold.
+      {
+        label: "Quarantine", icon: ShieldAlert, href: "/admin/quarantine", permission: [
+          PermissionCodes.DOCM_QUARANTINE_VIEW,
+          PermissionCodes.DOCM_QUARANTINE_RELEASE,
+          PermissionCodes.DOCM_QUARANTINE_DELETE,
+          PermissionCodes.DOCM_QUARANTINE_OVERRIDE,
+        ]
+      },
     ],
   },
   {

@@ -5,7 +5,8 @@
 #   bash bao-ops.sh status              initialized / sealed / unseal progress
 #   bash bao-ops.sh init                FIRST TIME ONLY: create unseal keys + root token
 #   bash bao-ops.sh unseal              enter unseal keys (after every OpenBao restart)
-#   bash bao-ops.sh configure           (root token) KV engine, audit log, policies,
+#   bash bao-ops.sh configure [--init-file F] [--reset-ops-password]
+#                                       (root token) KV engine, audit log, policies,
 #                                       GitHub OIDC deploy role, operator login
 #   bash bao-ops.sh import <env-file>   copy the secrets listed in secret-keys.txt into OpenBao
 #   bash bao-ops.sh verify <env-file>   check OpenBao holds exactly the same values
@@ -177,7 +178,26 @@ print(" (use it once for: bash bao-ops.sh configure - it is revoked at the end)"
 
   configure)
     require_unsealed
-    read -rsp "Root token: " BAO_TOKEN; echo
+    reset_ops=0; init_file=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --reset-ops-password) reset_ops=1 ;;
+        --init-file) init_file="${2:?--init-file needs a path}"; shift ;;
+        *) fail "unknown configure option: $1" ;;
+      esac
+      shift
+    done
+    if [ -n "$init_file" ]; then
+      # Read the root token straight from the saved `init` output - no
+      # copy/paste in between to corrupt it.
+      [ -f "$init_file" ] || fail "$init_file not found"
+      grep -q "already initialized" "$init_file" && fail "$init_file holds a REFUSED init (OpenBao was already initialized) - it has no valid token"
+      BAO_TOKEN="$(awk '/Initial root token:/ {print $4; exit}' "$init_file")"
+      [ -n "$BAO_TOKEN" ] || fail "no 'Initial root token:' line in $init_file"
+      log "root token: read from $init_file"
+    else
+      read -rsp "Root token: " BAO_TOKEN; echo
+    fi
     BAO_TOKEN="$(strip_ws "$BAO_TOKEN")"; export BAO_TOKEN
     # Fail with a clear message instead of a bare 403 on the first real call.
     probe GET auth/token/lookup-self || fail "that is not a valid token (paste only the value after 'Initial root token:', not the label or an unseal key)"
@@ -221,7 +241,7 @@ print(" (use it once for: bash bao-ops.sh configure - it is revoked at the end)"
     if ! python3 -c 'import json,sys; sys.exit(0 if "userpass/" in json.load(sys.stdin) else 1)' <<<"$auths"; then
       printf '{"type":"userpass"}' | api POST sys/auth/userpass >/dev/null
     fi
-    if probe GET "auth/userpass/users/$OPS_USER" && [ "${1:-}" != --reset-ops-password ]; then
+    if probe GET "auth/userpass/users/$OPS_USER" && [ "$reset_ops" = 0 ]; then
       log "operator login '$OPS_USER': exists (use --reset-ops-password to change it)"
     else
       read -rsp "New password for operator '$OPS_USER' (min 16 chars): " p1; echo
@@ -322,7 +342,7 @@ PY
     ;;
 
   ""|-h|--help)
-    sed -n '2,23p' "$0"
+    sed -n '2,24p' "$0"
     ;;
   *)
     fail "unknown command: $cmd (see --help)"

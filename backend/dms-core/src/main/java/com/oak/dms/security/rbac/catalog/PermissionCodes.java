@@ -87,6 +87,13 @@ public final class PermissionCodes {
     public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
     public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
     public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
+    // Quarantine review (V40) - granted to no role by default.
+    // DOCM_QUARANTINE_OVERRIDE is deliberately separate from _RELEASE: it
+    // force-releases a file the scanner still flags.
+    public static final String DOCM_QUARANTINE_VIEW = "docm.quarantine.view";
+    public static final String DOCM_QUARANTINE_RELEASE = "docm.quarantine.release";
+    public static final String DOCM_QUARANTINE_DELETE = "docm.quarantine.delete";
+    public static final String DOCM_QUARANTINE_OVERRIDE = "docm.quarantine.override";
 
     // File Import/Export - FIE / Bulk Import Documents - see V10's seed migration.
     public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";

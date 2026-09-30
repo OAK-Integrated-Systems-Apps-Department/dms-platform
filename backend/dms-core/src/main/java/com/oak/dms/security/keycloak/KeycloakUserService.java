@@ -15,6 +15,7 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -330,6 +331,33 @@ public class KeycloakUserService {
         } catch (Exception e) {
             throw new KeycloakIntegrationException(
                     "Failed to list platform realm roles for " + keycloakId, e);
+        }
+    }
+
+    /**
+     * Keycloak ids of every user directly assigned the realm role
+     * {@code roleName} (e.g. {@code TENANT_ADMIN}), across all tenants -
+     * the caller narrows to one tenant by matching {@code users.keycloak_id}.
+     * Paged through Keycloak's role-members API. Used to include tenant
+     * admins (who hold every permission implicitly, see
+     * {@code AuthorizationService#hasFullAccess}) as quarantine
+     * notification recipients.
+     */
+    public List<UUID> listRealmRoleMemberIds(String roleName) {
+        final int pageSize = 100;
+        try {
+            List<UUID> ids = new ArrayList<>();
+            for (int first = 0; ; first += pageSize) {
+                List<UserRepresentation> page = realm().roles().get(roleName).getUserMembers(first, pageSize);
+                page.forEach(user -> ids.add(UUID.fromString(user.getId())));
+                if (page.size() < pageSize) {
+                    return ids;
+                }
+            }
+        } catch (WebApplicationException e) {
+            throw keycloakFailure("list members of realm role " + roleName, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException("Failed to list members of realm role " + roleName, e);
         }
     }
 
