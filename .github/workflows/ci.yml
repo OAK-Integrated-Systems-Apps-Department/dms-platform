@@ -206,3 +206,20 @@ jobs:
         run: |
           touch infra/secrets/dms-core.secrets.env
           docker compose -f infra/local/docker-compose.yml --env-file infra/local/.env.example config --quiet
+
+      - name: OpenBao compose
+        run: docker compose -f infra/openbao/docker-compose.yml config --quiet
+
+      # The secret-keys.txt / render-secrets.py pair is what every OpenBao
+      # deploy depends on - fail here, not during a production deploy.
+      - name: Secrets renderer
+        run: |
+          python3 - <<'EOF' > /tmp/kv.json
+          import json
+          keys = [l.strip() for l in open("infra/production/secret-keys.txt") if l.strip() and not l.startswith("#")]
+          print(json.dumps({"data": {"data": {k: "ci-value-$not-interpolated" for k in keys}}}))
+          EOF
+          python3 infra/production/render-secrets.py infra/production/secret-keys.txt < /tmp/kv.json > /tmp/secrets.env
+          grep -v '^#' infra/production/.env.example | grep -vFf <(grep -v '^#' infra/production/secret-keys.txt | sed 's/$/=/') > /tmp/config.env
+          docker compose -f infra/production/docker-compose.yml --env-file /tmp/config.env --env-file /tmp/secrets.env config --quiet
+          echo "OK: stripped .env + rendered secrets make a valid production config"

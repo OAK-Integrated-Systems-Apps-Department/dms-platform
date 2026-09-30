@@ -64,9 +64,12 @@ involved. `bun dev` on a developer machine still defaults to `localhost`.
 | `DEPLOY_SSH_KNOWN_HOSTS` | The server's host key line(s) (see 2.3). Host key checking stays strict. |
 
 The application secrets (DB passwords, Keycloak secrets, …) are **not** stored
-in GitHub. They live only in the server's `infra/production/.env`, so a
-leaked GitHub secret cannot expose them. GHCR needs no secret: the workflow
-uses the job's own short-lived `GITHUB_TOKEN`.
+in GitHub. With the `BAO_ADDR` variable set they live in **OpenBao** and each
+deploy reads them with a short-lived GitHub OIDC login, into RAM only. See
+**[secrets-openbao.md](secrets-openbao.md)**. Without it, they live in the
+server's `infra/production/.env`. Either way, a leaked GitHub secret can't
+expose them. GHCR needs no secret: the workflow uses the job's own
+short-lived `GITHUB_TOKEN`.
 
 ### Variables (Settings → Secrets and variables → Actions → Variables)
 
@@ -77,6 +80,7 @@ uses the job's own short-lived `GITHUB_TOKEN`.
 | `DEPLOY_PATH` | `/opt/dms` | Optional, default `/opt/dms` |
 | `PUBLIC_URL` | `http://192.168.0.10` | Used for the post-deploy check |
 | `DEPLOY_RUNNER_LABEL` | `self-hosted` | Optional, runner label for the deploy job |
+| `BAO_ADDR` | `http://127.0.0.1:8200` | Optional: read secrets from OpenBao ([secrets-openbao.md](secrets-openbao.md)); unset = secrets in the server `.env` |
 
 ### Environment
 

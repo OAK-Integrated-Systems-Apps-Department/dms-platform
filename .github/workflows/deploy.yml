@@ -104,8 +104,14 @@ jobs:
     permissions:
       contents: read
       packages: read
+      # GitHub OIDC token -> OpenBao login (only used when vars.BAO_ADDR is set).
+      id-token: write
     env:
       IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+      # Set this repository variable (e.g. http://127.0.0.1:8200) to read the
+      # production secrets from OpenBao; leave it unset to keep using the
+      # secrets in the server's .env. See docs/secrets-openbao.md.
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/dms' }}
@@ -165,11 +171,53 @@ jobs:
             infra/production/docker-compose.yml \
             infra/production/deploy.sh \
             infra/production/.env.example \
+            infra/production/secret-keys.txt \
+            infra/production/render-secrets.py \
             infra/production/postgres \
+            infra/openbao \
             infra/production/nginx \
             infra/local/keycloak/oak-dms-realm.json \
             infra/keycloak/bootstrap.sh \
           | ssh -F "$SSH_CONFIG" deploy-target "mkdir -p '$DEPLOY_PATH' && tar -xzf - -C '$DEPLOY_PATH'"
+
+      # OpenBao mode. No stored credential: this job's own GitHub OIDC token
+      # (audience "openbao", only valid for this repo + environment production
+      # + main - see bao-ops.sh configure) buys a 10-minute read-only OpenBao
+      # token for one path. The secrets are rendered in memory and streamed
+      # over SSH into /dev/shm (RAM) on the server; nothing is written to disk
+      # on either side, nothing is printed, and the token is revoked at once.
+      - name: Fetch secrets from OpenBao
+        if: env.BAO_ADDR != ''
+        run: |
+          set -euo pipefail
+          seal="$(curl -sS --max-time 10 "$BAO_ADDR/v1/sys/seal-status")" \
+            || { echo "::error::cannot reach OpenBao at $BAO_ADDR"; exit 1; }
+          if [ "$(printf '%s' "$seal" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sealed"])')" != False ]; then
+            echo "::error::OpenBao is sealed. On oak-app run: bash $DEPLOY_PATH/infra/openbao/bao-ops.sh unseal - then re-run this job."
+            exit 1
+          fi
+
+          JWT="$(curl -sSf --max-time 10 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=openbao" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          echo "::add-mask::$JWT"
+          BAO_TOKEN="$(JWT="$JWT" python3 -c 'import json,os; print(json.dumps({"role": "dms-deploy", "jwt": os.environ["JWT"]}))' \
+            | curl -sSf --max-time 10 -X POST --data-binary @- "$BAO_ADDR/v1/auth/jwt/login" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth"]["client_token"])')" \
+            || { echo "::error::OpenBao rejected the GitHub OIDC login (role dms-deploy) - see bao-ops.sh configure"; exit 1; }
+          echo "::add-mask::$BAO_TOKEN"
+          unset JWT
+
+          rendered="$(curl -sSf --max-time 10 -H @<(printf 'X-Vault-Token: %s\n' "$BAO_TOKEN") \
+            "$BAO_ADDR/v1/secret/data/dms/production/app" \
+            | python3 infra/production/render-secrets.py infra/production/secret-keys.txt)"
+          curl -sS --max-time 10 -X POST -H @<(printf 'X-Vault-Token: %s\n' "$BAO_TOKEN") \
+            "$BAO_ADDR/v1/auth/token/revoke-self" >/dev/null || true
+          unset BAO_TOKEN
+
+          printf '%s\n' "$rendered" | ssh -F "$SSH_CONFIG" deploy-target \
+            'umask 077 && install -d -m 700 /dev/shm/oakdms && cat > /dev/shm/oakdms/.secrets.env.tmp && mv /dev/shm/oakdms/.secrets.env.tmp /dev/shm/oakdms/secrets.env'
+          unset rendered
+          echo "Secrets rendered to the server's RAM (/dev/shm/oakdms/secrets.env)"
 
       # The job's short-lived GITHUB_TOKEN (packages: read) goes over SSH
       # stdin (never the command line) into a private, throwaway
@@ -204,6 +252,11 @@ jobs:
         env:
           REMOTE_DOCKER_CONFIG: ${{ steps.registry.outputs.docker_config }}
         run: ssh -F "$SSH_CONFIG" deploy-target "rm -rf '$REMOTE_DOCKER_CONFIG'"
+
+      # Runs even if the deploy failed: the rendered secrets never outlive the job.
+      - name: Remove rendered secrets from the server
+        if: always()
+        run: ssh -F "$SSH_CONFIG" deploy-target 'rm -f /dev/shm/oakdms/secrets.env /dev/shm/oakdms/.secrets.env.tmp' || true
 
       # Independent check from outside the server: proves the app answers on
       # the LAN address users actually open, not just on the server itself.
