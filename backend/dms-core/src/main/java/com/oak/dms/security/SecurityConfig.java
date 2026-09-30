@@ -75,7 +75,13 @@ public class SecurityConfig {
             "/api/v1/auth/logout",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
-            "/api/v1/auth/reset-password/validate"
+            "/api/v1/auth/reset-password/validate",
+            // Cloud malware-scanner verdict webhooks (Azure Event Grid, AWS
+            // EventBridge) - they can't present a Keycloak JWT, so
+            // ScanCallbackController authenticates them with a shared-secret
+            // header instead, and a callback can only trigger a re-check of
+            // the provider's own verdict, never set one.
+            "/api/v1/scanning/callbacks/*"
     };
 
     @Bean

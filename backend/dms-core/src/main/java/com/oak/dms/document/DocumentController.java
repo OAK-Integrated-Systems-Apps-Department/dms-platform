@@ -2,6 +2,8 @@ package com.oak.dms.document;
 
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.scanning.controller.IngestionTicketResponses;
+import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +24,6 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.util.UUID;
 
 /**
@@ -39,16 +40,23 @@ public class DocumentController {
 
     private final DocumentService documentService;
 
+    /**
+     * Returns an ingestion ticket, uniformly across scan providers - the
+     * document only exists once the file has passed the malware scan. See
+     * {@link IngestionTicketResponses} for the status-code mapping
+     * (201 clean / 202 pending / 422 rejected). A disallowed type (415) or an
+     * oversized file (413) is refused before anything is stored.
+     */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
-    @Operation(summary = "Upload a new document (creates its first version)")
-    public ResponseEntity<DocumentResponse> uploadDocument(@RequestPart("file") MultipartFile file,
-                                                            @RequestParam("documentTypeId") UUID documentTypeId,
-                                                            @RequestParam("title") String title) throws IOException {
+    @Operation(summary = "Upload a new document - scanned for malware before it is created")
+    public ResponseEntity<IngestionTicketResponse> uploadDocument(@RequestPart("file") MultipartFile file,
+                                                                   @RequestParam("documentTypeId") UUID documentTypeId,
+                                                                   @RequestParam("title") String title) throws IOException {
         try (InputStream content = file.getInputStream()) {
-            DocumentResponse response = documentService.uploadDocument(documentTypeId, title,
-                    file.getOriginalFilename(), file.getContentType(), file.getSize(), content);
-            return ResponseEntity.created(URI.create("/api/v1/documents/" + response.documentId())).body(response);
+            IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, title,
+                    file.getOriginalFilename(), file.getSize(), content);
+            return IngestionTicketResponses.toResponseEntity(ticket);
         }
     }
 

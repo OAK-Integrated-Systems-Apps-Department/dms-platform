@@ -87,6 +87,13 @@ public final class PermissionCodes {
     public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
     public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
     public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
+    // Quarantine review (V40) - granted to no role by default.
+    // DOCM_QUARANTINE_OVERRIDE is deliberately separate from _RELEASE: it
+    // force-releases a file the scanner still flags.
+    public static final String DOCM_QUARANTINE_VIEW = "docm.quarantine.view";
+    public static final String DOCM_QUARANTINE_RELEASE = "docm.quarantine.release";
+    public static final String DOCM_QUARANTINE_DELETE = "docm.quarantine.delete";
+    public static final String DOCM_QUARANTINE_OVERRIDE = "docm.quarantine.override";
 
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";

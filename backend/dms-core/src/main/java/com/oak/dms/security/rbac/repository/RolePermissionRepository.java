@@ -109,4 +109,33 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
               and r.status = com.oak.dms.security.rbac.entity.Role.RoleStatus.active
             """)
     List<String> findEffectivePermissionCodes(@Param("userId") UUID userId, @Param("tenantId") UUID tenantId);
+
+    /**
+     * The inverse of {@link #findEffectivePermissionCodes}: every user in
+     * {@code tenantId} who holds {@code permissionCode} through an active,
+     * non-deleted role - same joins and filters, so "who gets told" matches
+     * "who is allowed" exactly. Excludes TENANT_ADMIN/PLATFORM_ADMIN's
+     * implicit full access (a Keycloak realm role, not a DB grant) - callers
+     * that need those look them up in Keycloak separately. Used by the
+     * quarantine threat notification (scanning module).
+     */
+    @Query("""
+            select distinct ur.userId
+            from RolePermission rp
+            join UserRole ur on ur.roleId = rp.roleId
+            join Role r on r.roleId = rp.roleId
+            join Permission p on p.permissionId = rp.permissionId
+            join PermissionAction a on a.actionId = p.actionId
+            join PermissionModule m on m.moduleId = a.moduleId
+            where ur.tenantId = :tenantId
+              and p.permissionCode = :permissionCode
+              and p.deleted = false
+              and (p.tenantId is null or p.tenantId = :tenantId)
+              and a.deleted = false
+              and m.deleted = false
+              and r.deleted = false
+              and r.status = com.oak.dms.security.rbac.entity.Role.RoleStatus.active
+            """)
+    List<UUID> findUserIdsWithPermission(@Param("tenantId") UUID tenantId,
+                                         @Param("permissionCode") String permissionCode);
 }

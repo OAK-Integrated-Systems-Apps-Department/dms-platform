@@ -70,4 +70,11 @@ export const PermissionCodes = {
   // stricter capability than viewing it on-screen, gated by its own
   // seeded permission code.
   ABDR_EXPORT_AUDIT_REPORTS: "abdr.export-audit-reports",
+  // Quarantine review (DOCM - seeded by backend V40, granted to no role by
+  // default). OVERRIDE is deliberately separate from RELEASE: it
+  // force-releases a file the malware scanner still flags.
+  DOCM_QUARANTINE_VIEW: "docm.quarantine.view",
+  DOCM_QUARANTINE_RELEASE: "docm.quarantine.release",
+  DOCM_QUARANTINE_DELETE: "docm.quarantine.delete",
+  DOCM_QUARANTINE_OVERRIDE: "docm.quarantine.override",
 } as const

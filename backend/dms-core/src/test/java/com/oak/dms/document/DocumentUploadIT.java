@@ -3,6 +3,9 @@ package com.oak.dms.document;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import com.oak.dms.scanning.enums.ScanResultStatus;
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.security.auth.TenantContext;
@@ -87,8 +90,7 @@ class DocumentUploadIT {
         UUID documentTypeId = createDocumentType(tenant.tenantId());
 
         byte[] content = "hello pluggable storage".getBytes(StandardCharsets.UTF_8);
-        DocumentResponse uploaded = documentService.uploadDocument(documentTypeId, "Test Doc", "hello.txt",
-                "text/plain", content.length, new ByteArrayInputStream(content));
+        DocumentResponse uploaded = uploadClean(documentTypeId, "Test Doc", "hello.txt", content);
 
         assertThat(uploaded.title()).isEqualTo("Test Doc");
         assertThat(uploaded.status()).isEqualTo("draft");
@@ -115,8 +117,7 @@ class DocumentUploadIT {
         TenantContext.set(tenantA.tenantId(), tenantA.userId());
         UUID documentTypeIdA = createDocumentType(tenantA.tenantId());
         byte[] content = "tenant A's private content".getBytes(StandardCharsets.UTF_8);
-        DocumentResponse doc = documentService.uploadDocument(documentTypeIdA, "Tenant A Doc", "a.txt",
-                "text/plain", content.length, new ByteArrayInputStream(content));
+        DocumentResponse doc = uploadClean(documentTypeIdA, "Tenant A Doc", "a.txt", content);
         TenantContext.clear();
 
         TenantFixture tenantB = createTenantWithFileSystemStorage();
@@ -174,6 +175,19 @@ class DocumentUploadIT {
                 .status(StorageLocation.Status.active)
                 .build());
 
+        // Staging and quarantine for the scan gate - tenant-scoped in the same
+        // @TempDir, separate directories from the document location.
+        for (StoragePurpose purpose : new StoragePurpose[]{StoragePurpose.staging, StoragePurpose.quarantine}) {
+            storageLocationRepository.save(StorageLocation.builder()
+                    .tenantId(tenant.getTenantId())
+                    .name("test-" + purpose + "-" + UUID.randomUUID())
+                    .provider(com.oak.dms.storage.enums.StorageProvider.FILE_SYSTEM)
+                    .purpose(purpose)
+                    .basePath(tempDir.resolve(tenant.getTenantId() + "-" + purpose).toString())
+                    .status(StorageLocation.Status.active)
+                    .build());
+        }
+
         return new TenantFixture(tenant.getTenantId(), user.getUserId());
     }
 
@@ -207,6 +221,18 @@ class DocumentUploadIT {
                 .build());
 
         return tenant.getTenantId();
+    }
+
+    /**
+     * Uploads go through the malware scan gate and return an ingestion
+     * ticket; with the local ClamAV engine a clean file is promoted before
+     * the call returns. Needs clamd reachable (docker compose up clamav).
+     */
+    private DocumentResponse uploadClean(UUID documentTypeId, String title, String filename, byte[] content) {
+        IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, title, filename,
+                content.length, new ByteArrayInputStream(content));
+        assertThat(ticket.status()).as(ticket.message()).isEqualTo(ScanResultStatus.clean);
+        return documentService.getDocument(ticket.documentId());
     }
 
     private record TenantFixture(UUID tenantId, UUID userId) {

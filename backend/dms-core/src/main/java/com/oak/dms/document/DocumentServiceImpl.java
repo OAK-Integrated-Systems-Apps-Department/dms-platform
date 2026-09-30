@@ -7,33 +7,34 @@ import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.scanning.dto.IngestionRequest;
+import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.storage.service.ObjectStorageServiceFactory;
-import com.oak.dms.storage.exception.StorageConfigurationException;
-import com.oak.dms.storage.entity.StorageLocation;
-import com.oak.dms.storage.repository.StorageLocationRepository;
-import com.oak.dms.storage.service.StorageLocationResolver;
 import com.oak.dms.storage.dto.DownloadedObject;
-import com.oak.dms.storage.dto.StoredObjectMetadata;
+import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
+import com.oak.dms.storage.exception.StorageConfigurationException;
+import com.oak.dms.storage.repository.StorageLocationRepository;
+import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
-import java.security.DigestInputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
-import java.util.HexFormat;
-import java.util.Map;
 import java.util.UUID;
 
 /**
  * See {@link DocumentService}. Only ever touches storage through
- * {@link ObjectStorageServiceFactory}/{@link StorageLocationResolver} -
- * no AWS SDK, MinIO/SeaweedFS-specific, or {@code java.nio.file} type
- * appears anywhere in this class.
+ * {@link ObjectStorageServiceFactory} - no AWS SDK, MinIO/SeaweedFS-specific,
+ * or {@code java.nio.file} type appears anywhere in this class.
+ * <p>
+ * Never creates a {@link DocumentVersion} itself: uploads go through
+ * {@link IngestionGate}, and only {@link DocumentVersionPromoter} creates
+ * versions, for scanned-clean files.
  */
 @Slf4j
 @Service
@@ -41,84 +42,27 @@ import java.util.UUID;
 @Transactional
 public class DocumentServiceImpl implements DocumentService {
 
-    private static final int INITIAL_VERSION_NUMBER = 1;
-
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
     private final StorageLocationRepository storageLocationRepository;
-    private final StorageLocationResolver storageLocationResolver;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
+    private final IngestionGate ingestionGate;
     private final AuditService auditService;
 
+    /**
+     * Not transactional: the scan gate commits each of its own steps (staging,
+     * scanning and promotion must not share one long transaction - and a
+     * cloud verdict may arrive long after this returns). The document and its
+     * first version are created by {@link DocumentVersionPromoter} only once
+     * the file is clean; DOCUMENT_UPLOADED is audited there, at promotion.
+     */
     @Override
-    public DocumentResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
-                                            String contentType, long contentLength, InputStream content) {
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-
-        StorageLocation location = storageLocationResolver.resolveForTenant(tenantId);
-
-        UUID documentId = UUID.randomUUID();
-        UUID versionId = UUID.randomUUID();
-        String objectKey = buildObjectKey(tenantId, documentId, INITIAL_VERSION_NUMBER, versionId);
-
-        // Upload before persisting anything - fail fast if the storage
-        // backend is unreachable/misconfigured, rather than leaving a
-        // Document/DocumentVersion row with no actual content behind it.
-        // The digest is computed incrementally as upload() reads the
-        // stream, so it's ready the moment upload() returns - no separate
-        // buffering pass over the whole file.
-        MessageDigest digest = sha256();
-        StoredObjectMetadata stored = objectStorageServiceFactory.resolve(location)
-                .upload(location, objectKey, new DigestInputStream(content, digest), contentLength, contentType);
-        String fileHash = HexFormat.of().formatHex(digest.digest());
-
-        DocumentVersion version = DocumentVersion.builder()
-                .versionId(versionId)
-                .documentId(documentId)
-                .tenantId(tenantId)
-                .versionNumber(INITIAL_VERSION_NUMBER)
-                .majorVersion(1)
-                .minorVersion(0)
-                .storageLocationId(location.getStorageLocationId())
-                .storageObjectKey(objectKey)
-                .originalFilename(originalFilename)
-                .mimeType(contentType != null ? contentType : "application/octet-stream")
-                .fileHash(fileHash)
-                .sizeBytes(stored.sizeBytes())
-                .createdReason("initial_upload")
-                .createdBy(userId)
-                .build();
-
-        Document document = Document.builder()
-                .documentId(documentId)
-                .tenantId(tenantId)
-                .documentTypeId(documentTypeId)
-                .title(title)
-                .currentVersionId(versionId)
-                .latestVersionId(versionId)
-                .ownerUserId(userId)
-                .createdBy(userId)
-                .build();
-
-        // Safe in either order - documents<->document_versions FKs are
-        // DEFERRABLE INITIALLY DEFERRED (see V32's migration comment).
-        Document savedDocument = documentRepository.save(document);
-        documentVersionRepository.save(version);
-
-        log.info("Uploaded document {} (version {}) for tenant {}", documentId, versionId, tenantId);
-
-        auditService.event(AuditActionCatalog.DOCUMENT_UPLOADED)
-                .objectType(AuditObjectTypes.DOCUMENT)
-                .objectId(documentId)
-                .resourceName(title)
-                .outcome(AuditOutcome.SUCCESS)
-                .newValue(Map.of("documentTypeId", documentTypeId, "versionId", versionId,
-                        "sizeBytes", stored.sizeBytes()))
-                .log();
-
-        return documentMapper.toResponse(savedDocument);
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content) {
+        return ingestionGate.submit(
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content));
     }
 
     @Override
@@ -150,6 +94,18 @@ public class DocumentServiceImpl implements DocumentService {
         // any tenant; a tenant-owned location must match the caller's own.
         if (location.getTenantId() != null && !location.getTenantId().equals(tenantId)) {
             throw new ResourceNotFoundException("Document", documentId);
+        }
+        // Scan gate, read side. Only document-purpose locations ever back a
+        // version (the V39 trigger guarantees it; checked again here), so
+        // staging and quarantine are unreachable through this path. And only
+        // scanned-clean bytes are served - legacy versions uploaded before
+        // the gate existed are refused. An administrator's quarantine
+        // override ('overridden', V40) is servable by design.
+        if (location.getPurpose() != StoragePurpose.document) {
+            throw new ResourceNotFoundException("Document", documentId);
+        }
+        if (!version.isServable()) {
+            throw new DocumentNotScannedException(documentId);
         }
 
         DownloadedObject downloaded = objectStorageServiceFactory.resolve(location)
@@ -196,23 +152,5 @@ public class DocumentServiceImpl implements DocumentService {
     private Document findOwnedByCallerTenant(UUID documentId) {
         return documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, TenantContext.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
-    }
-
-    /**
-     * Never the raw uploaded filename - always server-generated from UUIDs
-     * only, so an object key can never collide, overwrite another object,
-     * or be used to traverse/guess another tenant's objects. See
-     * docs/storage-architecture.md's object-key section.
-     */
-    private static String buildObjectKey(UUID tenantId, UUID documentId, int versionNumber, UUID versionId) {
-        return "documents/" + tenantId + "/" + documentId + "/v" + versionNumber + "/" + versionId;
-    }
-
-    private static MessageDigest sha256() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available on this JVM", e);
-        }
     }
 }
