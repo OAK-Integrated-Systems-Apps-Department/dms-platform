@@ -1,5 +1,6 @@
 package com.oak.dms.storage.entity;
 
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.enums.StorageProvider;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -50,6 +51,15 @@ public class StorageLocation {
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false)
     private StorageProvider provider;
+
+    /**
+     * Immutable once persisted (V39 trigger). Only {@code document} locations
+     * can ever back a {@code DocumentVersion} - see {@link StoragePurpose}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false, updatable = false)
+    @Builder.Default
+    private StoragePurpose purpose = StoragePurpose.document;
 
     /**
      * S3: blank/null means the provider's own default endpoint (real AWS S3).
