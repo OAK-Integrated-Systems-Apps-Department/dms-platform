@@ -19,6 +19,8 @@ public interface MetadataFieldRepository extends JpaRepository<MetadataField, UU
 
     List<MetadataField> findAllByFieldIdInAndTenantIdAndDeletedFalse(List<UUID> fieldIds, UUID tenantId);
 
+    List<MetadataField> findAllByTenantIdAndDeletedFalse(UUID tenantId);
+
     @Query("""
             select f from MetadataField f
             where f.tenantId = :tenantId and f.deleted = false

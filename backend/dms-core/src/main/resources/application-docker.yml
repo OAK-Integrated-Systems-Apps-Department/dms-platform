@@ -1,29 +1,39 @@
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/dms_core_db
+    # Placeholder, not a literal: a literal here would override DB_URL
+    # from the environment (profile yml beats application.yml's own
+    # ${DB_URL:...}), silently ignoring the compose file's value.
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/dms_core_db}
+  # Same rule for everything below: placeholders, never literals. A literal
+  # in this profile file overrides the environment variable for good -
+  # which is how production kept sending mail to mailpit while
+  # MAIL_HOST/MAIL_PORT pointed at a real SMTP relay.
   rabbitmq:
-    host: rabbitmq
+    host: ${RABBITMQ_HOST:rabbitmq}
 
   data:
     redis:
-      host: redis
+      host: ${REDIS_HOST:redis}
 
   mail:
-    host: mailpit
-    port: 1025
+    host: ${MAIL_HOST:mailpit}
+    port: ${MAIL_PORT:1025}
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081/realms/oak-dms
-          jwk-set-uri: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
+          # Must match the browser-facing Keycloak URL (KC_HOSTNAME) - set
+          # from PUBLIC_HOST in infra/local/docker-compose.yml and from
+          # PUBLIC_URL in infra/production/docker-compose.yml.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/oak-dms}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs}
 
 keycloak:
   admin:
-    server-url: http://keycloak:8080
+    server-url: ${KEYCLOAK_SERVER_URL:http://keycloak:8080}
   auth:
     # Browser-facing issuer/jwk-set-uri above stay on localhost:8081
     # (resolved by the browser / used for token validation), but this
     # server-to-server call from dms-core to Keycloak's token endpoint
     # goes over the internal docker network, same as keycloak.admin above.
-    server-url: http://keycloak:8080
+    server-url: ${KEYCLOAK_SERVER_URL:http://keycloak:8080}

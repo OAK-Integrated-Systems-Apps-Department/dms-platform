@@ -10,8 +10,8 @@ import java.util.UUID;
 /**
  * Reusable validation engine (A4): given a document type and a map of
  * submitted field values (keyed by {@code field_key}), returns every
- * validation failure. Mandatory-ness always comes from
- * {@code document_type_fields.is_mandatory}, never from a rule in
+ * validation failure. Mandatory-ness always comes from the mapping's
+ * {@code mandatory} flag in {@code document_type_schemas.fields}, never from a rule in
  * {@link MetadataFieldValidation} - there is deliberately no "required" rule
  * type. Intended for reuse by the future upload form (A11), import, OCR,
  * search, and workflow modules once they exist - nothing in this module

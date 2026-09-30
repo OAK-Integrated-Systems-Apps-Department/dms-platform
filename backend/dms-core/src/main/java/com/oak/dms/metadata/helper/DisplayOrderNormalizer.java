@@ -60,4 +60,18 @@ public final class DisplayOrderNormalizer {
         }
         return touchedSiblings;
     }
+
+    /**
+     * The displayOrder that places a new row after every sibling without
+     * re-stamping any of them: the siblings' maximum plus 10, or 10 if there
+     * are none. Used where existing rows must stay untouched (seeding a
+     * tenant's starter catalogue next to its own data).
+     */
+    public static <T> int appendOrder(List<T> siblings, Function<T, Integer> getOrder) {
+        int max = 0;
+        for (T sibling : siblings) {
+            max = Math.max(max, getOrder.apply(sibling));
+        }
+        return max + 10;
+    }
 }

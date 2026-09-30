@@ -40,7 +40,7 @@ interface FieldValidationEditorProps {
 /**
  * Inline validation-rule editor for the Edit Field screen (A4). No
  * "required" rule type is offered — mandatory-ness always comes from
- * `document_type_fields.is_mandatory` on the mapping, set from the
+ * the `mandatory` flag on the document type's schema mapping (`document_type_schemas.fields[].mandatory`), set from the
  * Document Type Fields tab / Mapping matrix, never from a rule here.
  */
 export function FieldValidationEditor({ validations, onAdd, onUpdate, onRemove }: FieldValidationEditorProps) {

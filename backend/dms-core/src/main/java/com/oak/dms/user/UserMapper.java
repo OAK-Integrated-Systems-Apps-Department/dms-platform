@@ -24,28 +24,29 @@ public interface UserMapper {
 
     @Mapping(target = "tenantName", ignore = true)
     @Mapping(target = "permissions", ignore = true)
+    @Mapping(target = "roles", ignore = true)
     @Mapping(target = "impersonating", ignore = true)
     @Mapping(target = "impersonatorDisplayName", ignore = true)
     UserResponse toResponse(User user);
 
     /** Every caller resolves and passes `tenantName` - see {@link UserResponse}'s doc comment. */
     default UserResponse toResponse(User user, String tenantName) {
-        return toResponse(user, tenantName, null, null);
+        return toResponse(user, tenantName, null, null, null);
     }
 
     /**
-     * `permissions`/impersonation status populated in addition to
+     * `permissions`/`roles`/impersonation status populated in addition to
      * `tenantName` - `getCurrentUser()`/`updateCurrentUser()` only.
      * `impersonatorDisplayName` non-null implies impersonating; null means
      * not impersonating, regardless of `permissions`.
      */
     default UserResponse toResponse(User user, String tenantName, List<String> permissions,
-            String impersonatorDisplayName) {
+            List<String> roles, String impersonatorDisplayName) {
         UserResponse base = toResponse(user);
         return new UserResponse(base.userId(), base.tenantId(), tenantName, base.keycloakId(), base.email(),
                 base.username(), base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(),
                 base.status(), base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(),
-                base.lastLoginAt(), base.lastPasswordChangedAt(), permissions,
+                base.lastLoginAt(), base.lastPasswordChangedAt(), permissions, roles,
                 impersonatorDisplayName != null, impersonatorDisplayName);
     }
 }

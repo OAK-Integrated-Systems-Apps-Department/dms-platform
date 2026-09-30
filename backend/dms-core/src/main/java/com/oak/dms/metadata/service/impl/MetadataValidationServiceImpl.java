@@ -3,12 +3,12 @@ package com.oak.dms.metadata.service.impl;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.cache.SchemaCacheService;
 import com.oak.dms.metadata.dto.ValidationError;
-import com.oak.dms.metadata.entity.DocumentTypeField;
+import com.oak.dms.metadata.entity.DocumentTypeSchema;
 import com.oak.dms.metadata.entity.MetadataField;
 import com.oak.dms.metadata.entity.MetadataFieldOption;
 import com.oak.dms.metadata.entity.MetadataFieldValidation;
-import com.oak.dms.metadata.repository.DocumentTypeFieldRepository;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.repository.DocumentTypeSchemaRepository;
 import com.oak.dms.metadata.repository.MetadataFieldOptionRepository;
 import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.metadata.repository.MetadataFieldValidationRepository;
@@ -24,6 +24,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,9 +39,9 @@ import java.util.stream.Collectors;
  * {@link SchemaCacheService} (Redis-backed) cache-aside lookup keyed by
  * {@code (tenantId, documentTypeId, version)}.
  * <p>
- * Only {@code document_type_fields} rows are immutable once a version is
- * published (see {@code DocumentTypeFieldServiceImpl#replaceMapping} -
- * archive-and-reinsert, never edited in place). The {@link MetadataField},
+ * Only a version's {@code document_type_schemas} row is immutable once
+ * published (see {@code DocumentTypeFieldServiceImpl#replaceMapping} - the
+ * previous row is archived and a new one inserted, never edited in place). The {@link MetadataField},
  * {@link MetadataFieldOption} and {@link MetadataFieldValidation} rows also
  * captured into each cached {@link ResolvedField} are NOT immutable: editing
  * a dropdown option, a validation rule, or a field's own attributes changes
@@ -57,7 +58,7 @@ import java.util.stream.Collectors;
 public class MetadataValidationServiceImpl implements MetadataValidationService {
 
     private final DocumentTypeRepository documentTypeRepository;
-    private final DocumentTypeFieldRepository documentTypeFieldRepository;
+    private final DocumentTypeSchemaRepository documentTypeSchemaRepository;
     private final MetadataFieldRepository metadataFieldRepository;
     private final MetadataFieldOptionRepository metadataFieldOptionRepository;
     private final MetadataFieldValidationRepository metadataFieldValidationRepository;
@@ -128,8 +129,16 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
     }
 
     private List<ResolvedField> resolveSchema(UUID documentTypeId, UUID tenantId, int version) {
-        List<DocumentTypeField> mapping = documentTypeFieldRepository.findByDocumentTypeAndVersion(documentTypeId, tenantId, version);
-        List<UUID> fieldIds = mapping.stream().map(DocumentTypeField::getFieldId).distinct().toList();
+        // No row for this version (never published, or an explicit unknown
+        // version) resolves to an empty schema - validation passes with no
+        // errors, exactly as an empty mapping always has.
+        List<DocumentTypeSchema.FieldMapping> mapping = documentTypeSchemaRepository
+                .findByDocumentTypeIdAndTenantIdAndSchemaVersion(documentTypeId, tenantId, version)
+                .map(schema -> schema.getFields().stream()
+                        .sorted(Comparator.comparingInt(DocumentTypeSchema.FieldMapping::displayOrder))
+                        .toList())
+                .orElse(List.of());
+        List<UUID> fieldIds = mapping.stream().map(DocumentTypeSchema.FieldMapping::fieldId).distinct().toList();
         if (fieldIds.isEmpty()) {
             return List.of();
         }
@@ -149,8 +158,8 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                                 Collectors.toList())));
 
         List<ResolvedField> resolved = new ArrayList<>();
-        for (DocumentTypeField m : mapping) {
-            MetadataField field = fieldsById.get(m.getFieldId());
+        for (DocumentTypeSchema.FieldMapping m : mapping) {
+            MetadataField field = fieldsById.get(m.fieldId());
             if (field == null) {
                 continue;
             }
@@ -161,7 +170,7 @@ public class MetadataValidationServiceImpl implements MetadataValidationService 
                     .map(r -> new CachedRule(r.getValidationId(), r.getRuleType(), r.getRuleValue(), r.getErrorMessage(), r.getSeverity()))
                     .toList();
             resolved.add(new ResolvedField(field.getFieldKey(), field.getLabel(), field.getDataType(),
-                    m.isMandatory(), m.isHidden(), field.getStatus(), activeOptions, rules));
+                    m.mandatory(), m.hidden(), field.getStatus(), activeOptions, rules));
         }
         return resolved;
     }

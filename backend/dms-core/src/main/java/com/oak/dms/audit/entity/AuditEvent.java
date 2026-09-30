@@ -83,8 +83,9 @@ public class AuditEvent implements Persistable<UUID> {
 
     /**
      * Never null in practice: {@link SystemActor#SYSTEM_USER_ID} is used
-     * for system-triggered events instead of leaving this null. Not a
-     * live FK - see the migration comment for why.
+     * for system-triggered events instead of leaving this null - a reserved
+     * id with no users row behind it. Not a live FK - see the V23 migration
+     * comment for why.
      */
     @Column(name = "actor_id", updatable = false)
     private UUID actorId;

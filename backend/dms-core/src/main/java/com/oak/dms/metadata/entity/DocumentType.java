@@ -20,7 +20,7 @@ import java.util.UUID;
 /**
  * A content type (e.g. Contract, Invoice, Policy) with its own versioned set
  * of mandatory/optional metadata fields (MDTM-FR-002), mapped via
- * {@link DocumentTypeField}.
+ * {@link DocumentTypeSchema}.
  */
 @Entity
 @Table(name = "document_types", uniqueConstraints = {

@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 /**
  * See {@link SchemaCacheService}. Live keys for a tenant are tracked in a
- * Redis SET ({@code dms:schema:keys:{tenantId}}) rather than enumerated via
+ * Redis SET ({@code dms:schema:v2:keys:{tenantId}}) rather than enumerated via
  * {@code KEYS}/{@code SCAN} over the whole keyspace at eviction time - O(this
  * tenant's own key count) instead of O(every key in the database), and never
  * blocks the Redis event loop.
@@ -23,8 +23,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RedisSchemaCacheService implements SchemaCacheService {
 
-    private static final String ENTRY_KEY_PREFIX = "dms:schema:";
-    private static final String TENANT_KEY_SET_PREFIX = "dms:schema:keys:";
+    // v2: schemas resolved from document_type_schemas (V36). Versioned so a
+    // pod still on the previous release can't populate - or read - entries
+    // under the same keys during a rolling deploy.
+    private static final String ENTRY_KEY_PREFIX = "dms:schema:v2:";
+    private static final String TENANT_KEY_SET_PREFIX = "dms:schema:v2:keys:";
 
     /**
      * Extra headroom on the tracking set's TTL over each entry's TTL, so the

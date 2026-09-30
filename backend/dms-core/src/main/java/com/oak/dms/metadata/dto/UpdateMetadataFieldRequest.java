@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Request body for updating an existing field's descriptive/behavioral
  * attributes. {@code fieldKey} is immutable after creation (it's what
- * {@code document_type_fields}/{@code document_metadata_values} conceptually
+ * {@code document_type_schemas}/{@code document_metadata} conceptually
  * key off), so it isn't accepted here. Status transitions (activate/
  * deactivate/deprecate) go through their own dedicated endpoints instead of
  * this general update, matching the Add/Edit Field screen's separate
