@@ -5,7 +5,7 @@
 --                 selection, a folder, or report data), its progress, and
 --                 the generated file until it expires
 --
--- Conventions mirrored from V28/V32/V39: uuid PK DEFAULT gen_random_uuid(),
+-- Conventions mirrored from V28/V32/V41: uuid PK DEFAULT gen_random_uuid(),
 -- tenant_id UUID NOT NULL REFERENCES tenants, created_by/updated_by as bare
 -- UUID REFERENCES users (no JPA relation), status-style columns as VARCHAR +
 -- CHECK (never a Postgres enum), and file_object_key sized like V32's

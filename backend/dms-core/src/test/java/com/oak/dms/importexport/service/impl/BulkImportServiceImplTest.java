@@ -21,8 +21,13 @@ import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.service.DocumentTypeFieldService;
 import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
+import com.oak.dms.scanning.helper.FileTypeInspector;
+import com.oak.dms.scanning.helper.IngestionProperties;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
@@ -30,10 +35,12 @@ import com.oak.dms.storage.service.StorageLocationResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -45,7 +52,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -65,6 +74,7 @@ class BulkImportServiceImplTest {
     private final DocumentTypeFieldService documentTypeFieldService = mock(DocumentTypeFieldService.class);
     private final ObjectStorageServiceFactory objectStorageServiceFactory = mock(ObjectStorageServiceFactory.class);
     private final StorageLocationRepository storageLocationRepository = mock(StorageLocationRepository.class);
+    private final StorageLocationResolver storageLocationResolver = mock(StorageLocationResolver.class);
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
 
@@ -257,6 +267,68 @@ class BulkImportServiceImplTest {
         verifyNoInteractions(importItemRepository);
     }
 
+    @Test
+    void receiveFile_stagesInTenantStagingLocation() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "a.pdf", null, null);
+        stubLockedBatch(batch, List.of(item));
+        StorageLocation staging = StorageLocation.builder()
+                .storageLocationId(UUID.randomUUID())
+                .purpose(StoragePurpose.staging)
+                .build();
+        when(storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging)).thenReturn(staging);
+        when(objectStorageServiceFactory.resolve(staging)).thenReturn(storage);
+        byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+        String expectedKey = "imports/" + tenantId + "/" + batch.getImportBatchId() + "/" + item.getImportItemId();
+        when(storage.upload(eq(staging), eq(expectedKey), any(), anyLong(), eq("application/pdf")))
+                .thenReturn(new StoredObjectMetadata(expectedKey, content.length, "application/pdf", null, null));
+
+        service(realWorkbook).receiveFile(batch.getImportBatchId(), "a.pdf", "application/octet-stream",
+                content.length, new ByteArrayInputStream(content));
+
+        verify(storage).upload(eq(staging), eq(expectedKey), any(), eq((long) content.length), eq("application/pdf"));
+        verify(storageLocationResolver, never()).resolveForTenant(any());
+        assertThat(item.getStagedStorageLocationId()).isEqualTo(staging.getStorageLocationId());
+        assertThat(item.getStagedObjectKey()).isEqualTo(expectedKey);
+    }
+
+    @Test
+    void receiveFile_contentNotMatchingExtension_rejects415AndUploadsNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "a.pdf", null, null);
+        stubLockedBatch(batch, List.of(item));
+        byte[] zip = {'P', 'K', 3, 4, 0, 0, 0, 0};
+
+        assertThatThrownBy(() -> service(realWorkbook).receiveFile(batch.getImportBatchId(), "a.pdf",
+                "application/pdf", zip.length, new ByteArrayInputStream(zip)))
+                .isInstanceOf(FileTypeNotAllowedException.class)
+                .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        verify(importItemRepository, never()).save(any());
+        assertThat(item.getStagedObjectKey()).isNull();
+    }
+
+    @Test
+    void receiveFile_passwordProtectedDocx_rejects415AndUploadsNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "a.docx", null, null);
+        stubLockedBatch(batch, List.of(item));
+        // Office stores a password-protected .docx as an OLE2 compound file.
+        byte[] ole2 = {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1, 0, 0};
+
+        assertThatThrownBy(() -> service(realWorkbook).receiveFile(batch.getImportBatchId(), "a.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ole2.length,
+                new ByteArrayInputStream(ole2)))
+                .isInstanceOf(FileTypeNotAllowedException.class)
+                .hasMessageContaining("Password-protected")
+                .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        verify(importItemRepository, never()).save(any());
+        assertThat(item.getStagedObjectKey()).isNull();
+    }
+
     /**
      * Runs {@code action} with transaction synchronization active, runs
      * {@code beforeCommit} while the "transaction" is still open, then
@@ -312,8 +384,9 @@ class BulkImportServiceImplTest {
     private BulkImportServiceImpl service(ImportTemplateWorkbook workbook) {
         return new BulkImportServiceImpl(importBatchRepository, importItemRepository, documentTypeRepository,
                 documentTypeFieldService, workbook, new ImportFilenameMatcher(),
-                mock(StorageLocationResolver.class), objectStorageServiceFactory, storageLocationRepository,
-                mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper());
+                storageLocationResolver, objectStorageServiceFactory, storageLocationRepository,
+                mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
+                new FileTypeInspector(new IngestionProperties()));
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

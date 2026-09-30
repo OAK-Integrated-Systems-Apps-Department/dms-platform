@@ -5,7 +5,7 @@
 -- import worker turns it into a document. These columns record where the
 -- staged object lives; all three stay NULL until a file is received.
 --
--- Conventions mirrored from V39: bare FK column with an index on it.
+-- Conventions mirrored from V41: bare FK column with an index on it.
 
 ALTER TABLE import_items
     ADD COLUMN staged_object_key          VARCHAR(1000) NULL,

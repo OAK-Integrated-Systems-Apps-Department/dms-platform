@@ -30,9 +30,13 @@ import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.service.DocumentTypeFieldService;
 import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.scanning.dto.DetectedFileType;
+import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
+import com.oak.dms.scanning.helper.FileTypeInspector;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
@@ -44,6 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.BufferedInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
@@ -60,7 +66,11 @@ import java.util.UUID;
  * See {@link BulkImportService}. Staged files go through
  * {@link ObjectStorageServiceFactory}/{@link StorageLocationResolver} only,
  * under a server-generated key ({@code imports/{tenantId}/{batchId}/{itemId}}) -
- * never the uploaded filename.
+ * never the uploaded filename. They are unscanned, so they wait in the
+ * tenant's {@link StoragePurpose#staging} location, never the document
+ * location - see docs/scanning-architecture.md. Each file's type is checked
+ * by {@link FileTypeInspector} at intake, the same check the scan gate runs,
+ * so a bad file is rejected before anything is stored.
  */
 @Slf4j
 @Service
@@ -89,6 +99,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final OutboxEventPublisher outboxEventPublisher;
     private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
+    private final FileTypeInspector fileTypeInspector;
 
     @Override
     @Transactional(readOnly = true)
@@ -216,13 +227,26 @@ public class BulkImportServiceImpl implements BulkImportService {
                             + "MB limit.");
         }
 
-        StorageLocation location = storageLocationResolver.resolveForTenant(tenantId);
+        // Type check on the head of the stream, as the scan gate does - a
+        // rejected file stages nothing. The client's Content-Type is never
+        // trusted; the inspector's canonical MIME type is stored instead.
+        BufferedInputStream buffered = new BufferedInputStream(content, FileTypeInspector.HEAD_BYTES * 2);
+        byte[] head = peek(buffered);
+        DetectedFileType detected = fileTypeInspector.inspect(originalFilename, head, head.length);
+        if (detected.encrypted()) {
+            // The gate would mark it unscannable anyway - reject it now.
+            throw new FileTypeNotAllowedException("Password-protected files can't be scanned for malware. "
+                    + "Remove the password and upload the file again.");
+        }
+
+        StorageLocation location = storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging);
         String objectKey = buildStagedObjectKey(tenantId, batchId, item.getImportItemId());
         ObjectStorageService storage = objectStorageServiceFactory.resolve(location);
 
         // Upload before touching the row - a storage failure leaves the
         // item exactly as it was.
-        StoredObjectMetadata stored = storage.upload(location, objectKey, content, contentLength, contentType);
+        StoredObjectMetadata stored = storage.upload(location, objectKey, buffered, contentLength,
+                detected.mimeType());
         deleteOnRollback(storage, location, objectKey);
 
         item.setStagedObjectKey(objectKey);
@@ -423,6 +447,18 @@ public class BulkImportServiceImpl implements BulkImportService {
     }
 
     private record StagedObject(StorageLocation location, String objectKey) {
+    }
+
+    /** Reads the head the inspector needs and rewinds, so the upload still sees every byte. */
+    private static byte[] peek(BufferedInputStream in) {
+        try {
+            in.mark(FileTypeInspector.HEAD_BYTES);
+            byte[] head = in.readNBytes(FileTypeInspector.HEAD_BYTES);
+            in.reset();
+            return head;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the uploaded file", e);
+        }
     }
 
     static String buildStagedObjectKey(UUID tenantId, UUID batchId, UUID itemId) {

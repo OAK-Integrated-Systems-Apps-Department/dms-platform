@@ -2,12 +2,6 @@ spring:
   application:
     name: dms-core
 
-  servlet:
-    multipart:
-      # One bulk-import file per request (up to 100MB) plus form overhead.
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE:100MB}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:110MB}
-
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/dms_dev}
     username: ${DB_USERNAME:postgres}
@@ -197,13 +191,6 @@ dms:
       container: ${AZURE_STORAGE_CONTAINER:}
       account-name: ${AZURE_STORAGE_ACCOUNT_NAME:}
       account-key: ${AZURE_STORAGE_ACCOUNT_KEY:}
-  import-export:
-    # Bulk import intake limits - see ImportExportProperties.
-    max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
-    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
-    max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
-    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
-  staging:
     # Platform-default staging and quarantine locations for the scan gate
     # (com.oak.dms.scanning - see docs/scanning-architecture.md), seeded by
     # StorageLocationBootstrap next to the document location above. Each must
@@ -215,21 +202,28 @@ dms:
     # location on its own storage: AZURE_DEFENDER => AZURE_BLOB container on a
     # Defender-protected account, AWS_GUARDDUTY => S3 bucket with a Malware
     # Protection plan.
-    provider: ${SCAN_STAGING_PROVIDER:FILE_SYSTEM}
-    base-path: ${SCAN_STAGING_BASE_PATH:/data/dms/staging}
-    bucket: ${SCAN_STAGING_BUCKET:}
-    endpoint: ${SCAN_STAGING_ENDPOINT:}
-    region: ${SCAN_STAGING_REGION:}
-    path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
-    credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
-  quarantine:
-    provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
-    base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
-    bucket: ${SCAN_QUARANTINE_BUCKET:}
-    endpoint: ${SCAN_QUARANTINE_ENDPOINT:}
-    region: ${SCAN_QUARANTINE_REGION:}
-    path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
-    credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+    staging:
+      provider: ${SCAN_STAGING_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_STAGING_BASE_PATH:/data/dms/staging}
+      bucket: ${SCAN_STAGING_BUCKET:}
+      endpoint: ${SCAN_STAGING_ENDPOINT:}
+      region: ${SCAN_STAGING_REGION:}
+      path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
+    quarantine:
+      provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
+      bucket: ${SCAN_QUARANTINE_BUCKET:}
+      endpoint: ${SCAN_QUARANTINE_ENDPOINT:}
+      region: ${SCAN_QUARANTINE_REGION:}
+      path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+  import-export:
+    # Bulk import intake limits - see ImportExportProperties.
+    max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
+    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
+    max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
+    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's
