@@ -13,8 +13,14 @@
 # of that passes is IMAGE_TAG in .env updated. On any failure the previous
 # tag is brought back automatically and the script exits non-zero.
 #
+# Secrets: if $SECRETS_ENV_FILE exists (default /dev/shm/oakdms/secrets.env,
+# RAM only - rendered from OpenBao by the deploy workflow or by
+# `bash ../openbao/bao-ops.sh render`), it is passed to Compose AFTER .env,
+# so its values win and .env can hold configuration only. Without it, the
+# secrets must be in .env as before. See docs/secrets-openbao.md.
+#
 # Env overrides: HEALTH_TIMEOUT (seconds, default 300), SKIP_NGINX_CHECK=1
-# (first install, before nginx is configured).
+# (first install, before nginx is configured), SECRETS_ENV_FILE.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -22,14 +28,42 @@ cd "$(dirname "$0")"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
 APP_SERVICES=(dms-core frontend)
 HISTORY_FILE=.deploy-history
+SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-/dev/shm/oakdms/secrets.env}"
 
 log()  { printf '[deploy] %s\n' "$*"; }
 fail() { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 
 [ -f .env ] || fail ".env not found in $(pwd) - create it from .env.example"
-if grep -qE '=CHANGE_ME$' .env; then
-  fail ".env still has CHANGE_ME placeholders: $(grep -E '=CHANGE_ME$' .env | cut -d= -f1 | tr '\n' ' ')"
+
+# Every Compose call goes through here, so .env and (if present) the
+# OpenBao-rendered secrets file are always combined the same way.
+dc() {
+  if [ -f "$SECRETS_ENV_FILE" ]; then
+    docker compose --env-file .env --env-file "$SECRETS_ENV_FILE" "$@"
+  else
+    docker compose "$@"
+  fi
+}
+
+defined_keys() { grep -hE '^[A-Za-z_][A-Za-z0-9_]*=' "$@" | cut -d= -f1 | sort -u; }
+if [ -f "$SECRETS_ENV_FILE" ]; then
+  log "secrets: from OpenBao ($SECRETS_ENV_FILE)"
+  if grep -qE "=[\"']?CHANGE_ME[\"']?$" "$SECRETS_ENV_FILE"; then
+    fail "$SECRETS_ENV_FILE still has CHANGE_ME values"
+  fi
+  # A CHANGE_ME left in .env is fine for any key the secrets file supplies.
+  placeholders="$(comm -23 <(grep -E '=CHANGE_ME$' .env | cut -d= -f1 | sort -u) <(defined_keys "$SECRETS_ENV_FILE"))"
+else
+  log "secrets: from .env (no $SECRETS_ENV_FILE)"
+  placeholders="$(grep -E '=CHANGE_ME$' .env | cut -d= -f1 || true)"
 fi
+[ -z "$placeholders" ] || fail "still CHANGE_ME: $(echo "$placeholders" | tr '\n' ' ')"
+
+# Keys from secret-keys.txt that neither .env nor the secrets file defines.
+missing_secrets() {
+  local sources=(.env); [ -f "$SECRETS_ENV_FILE" ] && sources+=("$SECRETS_ENV_FILE")
+  comm -23 <(grep -vE '^\s*(#|$)' secret-keys.txt | tr -d '\r' | sort -u) <(defined_keys "${sources[@]}")
+}
 if [ "$(stat -c %a .env)" != "600" ]; then
   log "WARNING: .env permissions are $(stat -c %a .env), expected 600 (chmod 600 .env)"
 fi
@@ -50,7 +84,7 @@ set_image_tag() {
 
 container_state() {
   local id
-  id="$(docker compose ps -a -q "$1" 2>/dev/null | head -n1)"
+  id="$(dc ps -a -q "$1" 2>/dev/null | head -n1)"
   [ -n "$id" ] || { echo missing; return; }
   docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id"
 }
@@ -109,16 +143,16 @@ check_nginx_drift() {
 }
 
 show_diagnostics() {
-  docker compose ps -a || true
+  dc ps -a || true
   for svc in "${APP_SERVICES[@]}"; do
     log "--- last 80 log lines: $svc"
-    docker compose logs --no-color --tail=80 "$svc" || true
+    dc logs --no-color --tail=80 "$svc" || true
   done
 }
 
 bring_up() {
   local tag="$1"
-  IMAGE_TAG="$tag" docker compose up -d
+  IMAGE_TAG="$tag" dc up -d
 }
 
 deploy() {
@@ -127,8 +161,11 @@ deploy() {
   prev="$(env_value IMAGE_TAG)"
   [[ "$prev" == replace-with-* ]] && prev=""
 
+  local missing; missing="$(missing_secrets)"
+  [ -z "$missing" ] || fail "secrets not available: $(echo "$missing" | tr '\n' ' ')- render them from OpenBao first (bash ../openbao/bao-ops.sh render) or put them in .env. Nothing was changed."
+
   log "deploying $new (currently: ${prev:-none})"
-  IMAGE_TAG="$new" docker compose pull --quiet "${APP_SERVICES[@]}" \
+  IMAGE_TAG="$new" dc pull --quiet "${APP_SERVICES[@]}" \
     || fail "could not pull images for $new - nothing was changed"
 
   # bring_up inside the `if` so a failing `compose up` (e.g. keycloak-bootstrap
@@ -159,10 +196,19 @@ deploy() {
 
 case "${1:-}" in
   --status)
+    # Read-only, so without rendered secrets it's safe to satisfy the
+    # compose file's required variables with throwaway placeholders.
+    missing="$(missing_secrets)"
+    if [ -n "$missing" ]; then
+      placeholder_file="$(mktemp)"; trap 'rm -f "$placeholder_file"' EXIT
+      [ -f "$SECRETS_ENV_FILE" ] && cat "$SECRETS_ENV_FILE" >"$placeholder_file"
+      while read -r k; do printf "%s='unavailable'\n" "$k"; done <<<"$missing" >>"$placeholder_file"
+      SECRETS_ENV_FILE="$placeholder_file"
+    fi
     log "deployed tag: $(env_value IMAGE_TAG)"
     [ -f "$HISTORY_FILE" ] && { log "recent deploys:"; tail -n 10 "$HISTORY_FILE"; }
     for svc in "${APP_SERVICES[@]}"; do log "$svc: $(container_state "$svc")"; done
-    docker compose ps
+    dc ps
     ;;
   --rollback)
     current="$(env_value IMAGE_TAG)"
