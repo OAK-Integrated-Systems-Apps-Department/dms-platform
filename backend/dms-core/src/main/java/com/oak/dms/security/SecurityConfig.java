@@ -145,7 +145,9 @@ public class SecurityConfig {
         // AuditRequestContextFilter, which sets this on every
         // authenticated response so the frontend can thread a related
         // sequence's correlation_id into a subsequent call.
-        configuration.setExposedHeaders(List.of("X-Correlation-Id"));
+        // Content-Disposition likewise, so file downloads (e.g. the bulk
+        // import template) can keep the server-chosen filename.
+        configuration.setExposedHeaders(List.of("X-Correlation-Id", "Content-Disposition"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

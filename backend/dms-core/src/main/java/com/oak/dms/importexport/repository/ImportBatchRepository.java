@@ -19,7 +19,8 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
     /**
      * Row-locked lookup used while a file is staged or a batch is
      * submitted, so concurrent requests against the same batch can't both
-     * claim the same item or both pass the batch-size check.
+     * claim the same item or both pass the batch-size check (and a cancel
+     * can't race an upload or a submit).
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ImportBatch b where b.importBatchId = :importBatchId and b.tenantId = :tenantId"
@@ -27,6 +28,10 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
     Optional<ImportBatch> lockByImportBatchIdAndTenantIdAndCreatedBy(@Param("importBatchId") UUID importBatchId,
                                                                      @Param("tenantId") UUID tenantId,
                                                                      @Param("createdBy") UUID createdBy);
+
+    /** The caller's newest batch in one of {@code statuses} - the one counting toward the active-batch limit. */
+    Optional<ImportBatch> findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(
+            UUID tenantId, UUID createdBy, Collection<ImportBatch.ImportBatchStatus> statuses);
 
     long countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(UUID tenantId, UUID createdBy,
                                                                Collection<ImportBatch.ImportBatchStatus> statuses);

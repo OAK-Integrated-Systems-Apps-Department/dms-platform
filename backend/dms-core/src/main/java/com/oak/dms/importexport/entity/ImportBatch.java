@@ -99,6 +99,6 @@ public class ImportBatch {
     }
 
     public enum ImportBatchStatus {
-        uploading, queued, running, completed, completed_with_errors, failed
+        uploading, queued, running, completed, completed_with_errors, failed, cancelled
     }
 }

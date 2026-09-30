@@ -2,10 +2,13 @@ package com.oak.dms.importexport.service;
 
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 
 import java.io.InputStream;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -15,6 +18,9 @@ import java.util.UUID;
  * validation and record creation happen later, in the import worker.
  */
 public interface BulkImportService {
+
+    /** Active, non-deleted document types in the caller's tenant, in display order - the template picker's options. */
+    List<ImportDocumentTypeOption> listDocumentTypes();
 
     /** An .xlsx template for the document type's current schema version. */
     ImportTemplateFile generateTemplate(UUID documentTypeId);
@@ -30,4 +36,13 @@ public interface BulkImportService {
     void submit(UUID batchId);
 
     BulkImportStatusResponse getStatus(UUID batchId);
+
+    /** The caller's batch counting toward the active-batch limit (uploading, queued or running), if any. */
+    Optional<BulkImportStatusResponse> getActive();
+
+    /**
+     * Moves an {@code uploading} or {@code queued} batch to {@code cancelled}
+     * and deletes its staged files once the transaction commits.
+     */
+    BulkImportStatusResponse cancel(UUID batchId);
 }

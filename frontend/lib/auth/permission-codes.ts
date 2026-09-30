@@ -70,4 +70,7 @@ export const PermissionCodes = {
   // stricter capability than viewing it on-screen, gated by its own
   // seeded permission code.
   ABDR_EXPORT_AUDIT_REPORTS: "abdr.export-audit-reports",
+  // File Import/Export (FIE) - BulkImportController gates every intake
+  // endpoint (template, batch, files, submit, cancel) on this one code.
+  FIE_BULK_IMPORT_UPLOAD_FILE: "fie.bulk-import-documents.upload-file",
 } as const

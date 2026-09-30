@@ -6,12 +6,14 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.exception.ActiveImportBatchLimitException;
+import com.oak.dms.importexport.exception.ImportBatchNotCancellableException;
 import com.oak.dms.importexport.exception.ImportBatchSizeException;
 import com.oak.dms.importexport.exception.ImportBatchStateException;
 import com.oak.dms.importexport.exception.InactiveDocumentTypeException;
@@ -31,6 +33,7 @@ import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.storage.service.StorageLocationResolver;
@@ -44,10 +47,13 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -68,6 +74,8 @@ public class BulkImportServiceImpl implements BulkImportService {
     private static final String XLSX_EXTENSION = ".xlsx";
     private static final List<ImportBatchStatus> ACTIVE_STATUSES =
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued, ImportBatchStatus.running);
+    private static final List<ImportBatchStatus> CANCELLABLE_STATUSES =
+            List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued);
 
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
@@ -77,9 +85,24 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ImportFilenameMatcher filenameMatcher;
     private final StorageLocationResolver storageLocationResolver;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
+    private final StorageLocationRepository storageLocationRepository;
     private final OutboxEventPublisher outboxEventPublisher;
     private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ImportDocumentTypeOption> listDocumentTypes() {
+        // Tenants have few document types, so the existing display-ordered
+        // list is filtered in memory rather than adding a query to the
+        // metadata repository. That query already drops deleted types; the
+        // check here just keeps the rule explicit.
+        return documentTypeRepository.findAllByTenantOrderedByDisplayOrder(TenantContext.getTenantId()).stream()
+                .filter(type -> type.getStatus() == DocumentType.DocumentTypeStatus.active && !type.isDeleted())
+                .map(type -> new ImportDocumentTypeOption(type.getDocumentTypeId(), type.getTypeName(),
+                        type.getTypeCode()))
+                .toList();
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -230,6 +253,10 @@ public class BulkImportServiceImpl implements BulkImportService {
         batch.setUpdatedAt(OffsetDateTime.now());
         importBatchRepository.save(batch);
 
+        // TODO(import worker): a queued batch can still be cancelled (see
+        // cancel), so the worker must re-check status == queued under
+        // lockByImportBatchIdAndTenantIdAndCreatedBy before it processes
+        // this event, and skip the batch otherwise.
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, batchId, SUBMITTED_EVENT_TYPE,
                 Map.of("importBatchId", batchId, "correlationId", batch.getCorrelationId()));
 
@@ -245,15 +272,72 @@ public class BulkImportServiceImpl implements BulkImportService {
         ImportBatch batch = importBatchRepository
                 .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
-        List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
+        return toStatusResponse(batch, importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId));
+    }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BulkImportStatusResponse> getActive() {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        return importBatchRepository
+                .findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(tenantId, userId,
+                        ACTIVE_STATUSES)
+                .map(batch -> toStatusResponse(batch,
+                        importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId())));
+    }
+
+    @Override
+    public BulkImportStatusResponse cancel(UUID batchId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        // Same lock as receiveFile/submit, so a cancel can't interleave with
+        // an in-flight upload into this batch.
+        ImportBatch batch = importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(batchId, tenantId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        requireCancellable(batch);
+
+        batch.setStatus(ImportBatchStatus.cancelled);
+        batch.setUpdatedBy(userId);
+        batch.setUpdatedAt(OffsetDateTime.now());
+        importBatchRepository.save(batch);
+
+        List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
+        List<StagedObject> staged = new ArrayList<>();
+        Map<UUID, Optional<StorageLocation>> locations = new HashMap<>();
+        for (ImportItem item : items) {
+            if (item.getStagedObjectKey() == null) {
+                continue;
+            }
+            String objectKey = item.getStagedObjectKey();
+            UUID locationId = item.getStagedStorageLocationId();
+            locations.computeIfAbsent(locationId, storageLocationRepository::findByStorageLocationIdAndDeletedFalse)
+                    .ifPresentOrElse(location -> staged.add(new StagedObject(location, objectKey)),
+                            () -> log.warn("Storage location {} for staged import object {} not found; object left"
+                                    + " in place", locationId, objectKey));
+            item.setStagedObjectKey(null);
+            item.setStagedStorageLocationId(null);
+            item.setStagedSizeBytes(null);
+            item.setUpdatedAt(OffsetDateTime.now());
+        }
+        importItemRepository.saveAll(items);
+        deleteAfterCommit(staged);
+
+        log.info("Cancelled bulk import batch {} for tenant {} ({} staged files to delete)",
+                batchId, tenantId, staged.size());
+        return toStatusResponse(batch, items);
+    }
+
+    private static BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {
         List<String> missingFilenames = items.stream()
                 .filter(item -> item.getStagedObjectKey() == null)
                 .map(ImportItem::getFilenameReference)
                 .toList();
-        return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getStatus().name(),
-                batch.getTotalRecords(), items.size() - missingFilenames.size(),
-                batch.getSuccessCount(), batch.getFailureCount(), missingFilenames);
+        return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
+                batch.getStatus().name(), batch.getTotalRecords(), items.size() - missingFilenames.size(),
+                batch.getSuccessCount(), batch.getFailureCount(), missingFilenames, batch.getCreatedAt());
     }
 
     private static void requireActive(DocumentType documentType) {
@@ -266,6 +350,13 @@ public class BulkImportServiceImpl implements BulkImportService {
     private static void requireUploading(ImportBatch batch) {
         if (batch.getStatus() != ImportBatchStatus.uploading) {
             throw new ImportBatchStateException("This import has already been submitted (status: "
+                    + batch.getStatus().name() + ").");
+        }
+    }
+
+    private static void requireCancellable(ImportBatch batch) {
+        if (!CANCELLABLE_STATUSES.contains(batch.getStatus())) {
+            throw new ImportBatchNotCancellableException("This import can no longer be cancelled (status: "
                     + batch.getStatus().name() + ").");
         }
     }
@@ -303,6 +394,35 @@ public class BulkImportServiceImpl implements BulkImportService {
                 }
             }
         });
+    }
+
+    /**
+     * Once a cancel commits, delete the batch's staged objects. Deleting
+     * only after commit means a rolled-back cancel never loses files the
+     * batch still points at. Best-effort - a failed delete is logged, never
+     * rethrown, and leaves an orphaned object behind.
+     */
+    private void deleteAfterCommit(List<StagedObject> staged) {
+        if (staged.isEmpty() || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                for (StagedObject object : staged) {
+                    try {
+                        objectStorageServiceFactory.resolve(object.location())
+                                .delete(object.location(), object.objectKey());
+                    } catch (RuntimeException e) {
+                        log.warn("Failed to delete staged import object {} for cancelled batch",
+                                object.objectKey(), e);
+                    }
+                }
+            }
+        });
+    }
+
+    private record StagedObject(StorageLocation location, String objectKey) {
     }
 
     static String buildStagedObjectKey(UUID tenantId, UUID batchId, UUID itemId) {

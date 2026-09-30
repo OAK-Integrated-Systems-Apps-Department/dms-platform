@@ -2,6 +2,7 @@ package com.oak.dms.importexport;
 
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.service.BulkImportService;
@@ -25,11 +26,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * Bulk import intake: download a template, upload the filled-in template
- * to open a batch, upload each file it lists, then submit. Every byte goes
+ * to open a batch, upload each file it lists, then submit (or cancel). Every byte goes
  * through {@link BulkImportService}.
  */
 @RestController
@@ -42,6 +44,13 @@ public class BulkImportController {
             MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     private final BulkImportService bulkImportService;
+
+    @GetMapping("/import-templates/document-types")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "List the active document types a bulk import template can be downloaded for")
+    public List<ImportDocumentTypeOption> listDocumentTypes() {
+        return bulkImportService.listDocumentTypes();
+    }
 
     @GetMapping("/import-templates")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
@@ -83,6 +92,22 @@ public class BulkImportController {
     public ResponseEntity<Void> submit(@PathVariable("batchId") UUID batchId) {
         bulkImportService.submit(batchId);
         return ResponseEntity.accepted().build();
+    }
+
+    @GetMapping("/bulk-imports/active")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "Get the caller's in-progress bulk import (204 if there is none)")
+    public ResponseEntity<BulkImportStatusResponse> getActive() {
+        return bulkImportService.getActive()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/bulk-imports/{batchId}/cancel")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "Cancel a bulk import that is still uploading or queued, discarding its staged files")
+    public BulkImportStatusResponse cancel(@PathVariable("batchId") UUID batchId) {
+        return bulkImportService.cancel(batchId);
     }
 
     @GetMapping("/bulk-imports/{batchId}")
