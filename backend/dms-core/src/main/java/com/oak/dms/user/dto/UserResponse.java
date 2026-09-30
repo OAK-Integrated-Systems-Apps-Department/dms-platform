@@ -28,6 +28,12 @@ import java.util.UUID;
  * page. The frontend's {@code usePermissions()} hook is the only reader
  * of this field.
  * <p>
+ * {@code roles} is the same {@code GET /api/v1/users/me}-only story: the
+ * caller's role names for display (platform roles, then applicable tenant
+ * roles - see
+ * {@link com.oak.dms.security.auth.AuthorizationService#myRoleNames()}),
+ * {@code null} everywhere else. Never an access-control input.
+ * <p>
  * {@code impersonating}/{@code impersonatorDisplayName} are the same
  * {@code GET /api/v1/users/me}-only story as {@code permissions} above -
  * {@code null}/{@code false} everywhere else. Sourced from
@@ -56,6 +62,7 @@ public record UserResponse(
         /** See {@link com.oak.dms.user.User#getLastPasswordChangedAt()}'s doc comment. */
         OffsetDateTime lastPasswordChangedAt,
         List<String> permissions,
+        List<String> roles,
         boolean impersonating,
         String impersonatorDisplayName
 ) {

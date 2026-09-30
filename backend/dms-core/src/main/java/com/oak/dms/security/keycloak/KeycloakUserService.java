@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +39,27 @@ public class KeycloakUserService {
 
     private RealmResource realm() {
         return keycloakAdminClient.realm(properties.getRealm());
+    }
+
+    /**
+     * Resolves whatever a person typed as their login id - username or
+     * email - to their Keycloak account, the same way Keycloak's own login
+     * does ({@code loginWithEmailAllowed: true}). Exact username match
+     * first; only if that finds nothing and the value looks like an email,
+     * an exact email match. {@code users().search(value, true)} alone only
+     * ever matches usernames, which silently broke every "username or
+     * email" lookup for people whose username isn't their email.
+     * <p>
+     * Deliberately doesn't catch anything: every caller already treats a
+     * lookup failure in its own way (fail open, no-op, or log-and-skip).
+     */
+    public Optional<UserRepresentation> findByUsernameOrEmail(String usernameOrEmail) {
+        UsersResource users = realm().users();
+        List<UserRepresentation> matches = users.searchByUsername(usernameOrEmail, true);
+        if (matches.isEmpty() && usernameOrEmail.contains("@")) {
+            matches = users.searchByEmail(usernameOrEmail, true);
+        }
+        return matches.stream().findFirst();
     }
 
     /**

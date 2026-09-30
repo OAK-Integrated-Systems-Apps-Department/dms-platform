@@ -1,0 +1,273 @@
+name: Deploy
+
+# Release flow: merge develop -> main (PR), the push to main runs this.
+# Manual runs (Actions -> Deploy -> Run workflow) can either build and deploy
+# the selected branch, or redeploy an image tag that already exists in GHCR
+# (fast rollback, no rebuild).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Redeploy this existing image tag (full commit SHA) without rebuilding. Leave empty to build and deploy the selected branch.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Never run two deploys at once, and never cancel one half-way.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    if: ${{ inputs.image_tag == '' }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      skip-images: true
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish ${{ matrix.name }} to GHCR
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: dms-core
+            context: backend
+          - name: dms-frontend
+            context: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Image name
+        id: image
+        # GHCR repository names must be lowercase; the org name is not.
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Immutable tag = full commit SHA (what deploy.sh pins). The branch tag
+      # is a moving convenience pointer only; nothing deploys from it.
+      # metadata-action also adds org.opencontainers.image.source, which links
+      # the package to this repo so the deploy job's GITHUB_TOKEN can pull it.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=ref,event=branch
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+  deploy:
+    name: Deploy to oak-app
+    needs: publish
+    # Runs after a successful publish, or on its own for an image_tag redeploy
+    # (ci/publish are skipped then).
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || (inputs.image_tag != '' && needs.publish.result == 'skipped')) }}
+    # 192.168.0.10 is a private LAN address that GitHub-hosted runners cannot
+    # reach, so this job needs a self-hosted runner inside that network (see
+    # docs/deployment.md). Override the label with the DEPLOY_RUNNER_LABEL
+    # repository variable if yours differs.
+    runs-on: ${{ vars.DEPLOY_RUNNER_LABEL || 'self-hosted' }}
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL }}
+    permissions:
+      contents: read
+      packages: read
+      # GitHub OIDC token -> OpenBao login (only used when vars.BAO_ADDR is set).
+      id-token: write
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+      # Set this repository variable (e.g. http://127.0.0.1:8200) to read the
+      # production secrets from OpenBao; leave it unset to keep using the
+      # secrets in the server's .env. See docs/secrets-openbao.md.
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/dms' }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check configuration
+        env:
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY != '' }}
+          HAS_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS != '' }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing vars.DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing vars.DEPLOY_USER"
+          [ -n "$PUBLIC_URL" ]  || missing="$missing vars.PUBLIC_URL"
+          [ "$HAS_KEY" = "true" ] || missing="$missing secrets.DEPLOY_SSH_PRIVATE_KEY"
+          [ "$HAS_KNOWN_HOSTS" = "true" ] || missing="$missing secrets.DEPLOY_SSH_KNOWN_HOSTS"
+          [ -z "$missing" ] || { echo "::error::missing configuration:$missing (see docs/deployment.md)"; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::image tag must be a full 40-character commit SHA, got '$IMAGE_TAG'"; exit 1; }
+          echo "Deploying $IMAGE_TAG to $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH"
+
+      # Key and known_hosts live in RUNNER_TEMP (wiped after the job), never in
+      # the runner's ~/.ssh - self-hosted runners persist between jobs. Host
+      # key checking stays strict: the pinned known_hosts entry is the only
+      # key accepted.
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          dir="$RUNNER_TEMP/deploy-ssh"
+          install -d -m 700 "$dir"
+          printf '%s\n' "$SSH_KEY" > "$dir/id"
+          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
+          chmod 600 "$dir/id" "$dir/known_hosts"
+          cat > "$dir/config" <<EOF
+          Host deploy-target
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            IdentityFile $dir/id
+            IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 15
+            ServerAliveInterval 30
+          EOF
+          echo "SSH_CONFIG=$dir/config" >> "$GITHUB_ENV"
+
+      # Only the files the production stack needs, at their repo paths (the
+      # compose file refers to ../local/keycloak and ../keycloak). The
+      # server-side .env / dms-core.env are never part of the upload.
+      - name: Upload deployment files
+        run: |
+          tar -czf - \
+            infra/production/docker-compose.yml \
+            infra/production/deploy.sh \
+            infra/production/.env.example \
+            infra/production/secret-keys.txt \
+            infra/production/render-secrets.py \
+            infra/production/postgres \
+            infra/openbao \
+            infra/production/nginx \
+            infra/local/keycloak/oak-dms-realm.json \
+            infra/keycloak/bootstrap.sh \
+          | ssh -F "$SSH_CONFIG" deploy-target "mkdir -p '$DEPLOY_PATH' && tar -xzf - -C '$DEPLOY_PATH'"
+
+      # OpenBao mode. No stored credential: this job's own GitHub OIDC token
+      # (audience "openbao", only valid for this repo + environment production
+      # + main - see bao-ops.sh configure) buys a 10-minute read-only OpenBao
+      # token for one path. The secrets are rendered in memory and streamed
+      # over SSH into /dev/shm (RAM) on the server; nothing is written to disk
+      # on either side, nothing is printed, and the token is revoked at once.
+      - name: Fetch secrets from OpenBao
+        if: env.BAO_ADDR != ''
+        run: |
+          set -euo pipefail
+          seal="$(curl -sS --max-time 10 "$BAO_ADDR/v1/sys/seal-status")" \
+            || { echo "::error::cannot reach OpenBao at $BAO_ADDR"; exit 1; }
+          if [ "$(printf '%s' "$seal" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sealed"])')" != False ]; then
+            echo "::error::OpenBao is sealed. On oak-app run: bash $DEPLOY_PATH/infra/openbao/bao-ops.sh unseal - then re-run this job."
+            exit 1
+          fi
+
+          JWT="$(curl -sSf --max-time 10 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=openbao" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          echo "::add-mask::$JWT"
+          BAO_TOKEN="$(JWT="$JWT" python3 -c 'import json,os; print(json.dumps({"role": "dms-deploy", "jwt": os.environ["JWT"]}))' \
+            | curl -sSf --max-time 10 -X POST --data-binary @- "$BAO_ADDR/v1/auth/jwt/login" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth"]["client_token"])')" \
+            || { echo "::error::OpenBao rejected the GitHub OIDC login (role dms-deploy) - see bao-ops.sh configure"; exit 1; }
+          echo "::add-mask::$BAO_TOKEN"
+          unset JWT
+
+          rendered="$(curl -sSf --max-time 10 -H @<(printf 'X-Vault-Token: %s\n' "$BAO_TOKEN") \
+            "$BAO_ADDR/v1/secret/data/dms/production/app" \
+            | python3 infra/production/render-secrets.py infra/production/secret-keys.txt)"
+          curl -sS --max-time 10 -X POST -H @<(printf 'X-Vault-Token: %s\n' "$BAO_TOKEN") \
+            "$BAO_ADDR/v1/auth/token/revoke-self" >/dev/null || true
+          unset BAO_TOKEN
+
+          printf '%s\n' "$rendered" | ssh -F "$SSH_CONFIG" deploy-target \
+            'umask 077 && install -d -m 700 /dev/shm/oakdms && cat > /dev/shm/oakdms/.secrets.env.tmp && mv /dev/shm/oakdms/.secrets.env.tmp /dev/shm/oakdms/secrets.env'
+          unset rendered
+          echo "Secrets rendered to the server's RAM (/dev/shm/oakdms/secrets.env)"
+
+      # The job's short-lived GITHUB_TOKEN (packages: read) goes over SSH
+      # stdin (never the command line) into a private, throwaway
+      # DOCKER_CONFIG directory used only for this deploy's pulls, and that
+      # directory is deleted afterwards - the workflow leaves no registry
+      # credential on the server. The token itself expires with this job.
+      - name: Log in to GHCR on the server (temporary)
+        id: registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          dir="$(printf '%s' "$GHCR_TOKEN" | ssh -F "$SSH_CONFIG" deploy-target "
+            set -e
+            d=\$(mktemp -d)
+            # Keep user-installed CLI plugins (e.g. docker compose) visible.
+            if [ -d \"\$HOME/.docker/cli-plugins\" ]; then ln -s \"\$HOME/.docker/cli-plugins\" \"\$d/cli-plugins\"; fi
+            DOCKER_CONFIG=\"\$d\" docker login ghcr.io -u '$GHCR_USER' --password-stdin >/dev/null
+            echo \"\$d\"")"
+          [[ "$dir" == /tmp/* ]] || { echo "::error::unexpected temp dir '$dir'"; exit 1; }
+          echo "docker_config=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy (pull, recreate, health check, auto-rollback)
+        env:
+          REMOTE_DOCKER_CONFIG: ${{ steps.registry.outputs.docker_config }}
+        run: |
+          ssh -F "$SSH_CONFIG" deploy-target \
+            "cd '$DEPLOY_PATH/infra/production' && DOCKER_CONFIG='$REMOTE_DOCKER_CONFIG' bash ./deploy.sh '$IMAGE_TAG'"
+
+      - name: Remove temporary registry login from the server
+        if: always() && steps.registry.outputs.docker_config != ''
+        env:
+          REMOTE_DOCKER_CONFIG: ${{ steps.registry.outputs.docker_config }}
+        run: ssh -F "$SSH_CONFIG" deploy-target "rm -rf '$REMOTE_DOCKER_CONFIG'"
+
+      # Runs even if the deploy failed: the rendered secrets never outlive the job.
+      - name: Remove rendered secrets from the server
+        if: always()
+        run: ssh -F "$SSH_CONFIG" deploy-target 'rm -f /dev/shm/oakdms/secrets.env /dev/shm/oakdms/.secrets.env.tmp' || true
+
+      # Independent check from outside the server: proves the app answers on
+      # the LAN address users actually open, not just on the server itself.
+      - name: Verify from the network
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$PUBLIC_URL/login")"
+          [ "$code" = "200" ] || { echo "::error::$PUBLIC_URL/login returned $code"; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$PUBLIC_URL/api/v1/auth/refresh")"
+          case "$code" in 400|401|403) ;; *) echo "::error::$PUBLIC_URL/api/ returned $code"; exit 1 ;; esac
+          echo "OK: $PUBLIC_URL serves the frontend and /api/ reaches dms-core"
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/deploy-ssh"

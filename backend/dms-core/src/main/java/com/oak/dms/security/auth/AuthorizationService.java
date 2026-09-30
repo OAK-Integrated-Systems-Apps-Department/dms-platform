@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.oak.dms.security.rbac.entity.Permission;
 import com.oak.dms.security.rbac.repository.PermissionRepository;
 import com.oak.dms.security.rbac.repository.RolePermissionRepository;
+import com.oak.dms.security.rbac.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
@@ -13,6 +14,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +37,7 @@ public class AuthorizationService {
 
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
+    private final UserRoleRepository userRoleRepository;
     private final KeycloakUserService keycloakUserService;
 
     public boolean hasPermission(String permissionCode) {
@@ -205,6 +208,22 @@ public class AuthorizationService {
     private static final String PLATFORM_ADMIN = "PLATFORM_ADMIN";
     private static final String TENANT_ADMIN = "TENANT_ADMIN";
     private static final Set<String> PLATFORM_ROLE_NAMES = Set.of(PLATFORM_ADMIN, TENANT_ADMIN, "MEMBER");
+
+    /**
+     * Every role name the caller holds, for display (My Profile): the fixed
+     * platform roles first (PLATFORM_ADMIN / TENANT_ADMIN / MEMBER, from
+     * {@link #myPlatformRoles} - so impersonation shows the target's), then
+     * the tenant-defined roles that currently apply, by name. Display only -
+     * never use this for access decisions; permissions come from
+     * {@link #myEffectivePermissionCodes}. Like that method, requires a
+     * bound TenantContext (it's only called for {@code /me}, after the
+     * caller's user has been resolved).
+     */
+    public List<String> myRoleNames() {
+        List<String> names = new ArrayList<>(myPlatformRoles());
+        names.addAll(userRoleRepository.findActiveRoleNames(TenantContext.getUserId(), TenantContext.getTenantId()));
+        return List.copyOf(names);
+    }
 
     /**
      * The caller's own resolved permission set - what {@link #hasPermission}

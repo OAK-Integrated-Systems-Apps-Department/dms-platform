@@ -9,6 +9,21 @@
 # from the committed ciphertext in infra/secrets/dms-core.secrets.enc.env
 # (encrypted with OpenBao's Transit engine - see scripts/openbao-encrypt-secrets.sh).
 # The plaintext file is gitignored and should be deleted after `docker compose up`.
+#
+# Public host: every browser-facing URL below (Keycloak's KC_HOSTNAME and
+# token issuer, the web client's redirect URIs/web origins, dms-core's CORS
+# origin and email links, the frontend's API/Keycloak URLs) is built from
+# ONE variable, PUBLIC_HOST - the hostname or IP a browser uses to reach
+# this machine. Defaults to localhost. To deploy on another machine, set it
+# once in infra/local/.env (Compose reads that file automatically):
+#     PUBLIC_HOST=192.168.1.50
+# then `docker compose up -d --force-recreate`. Nothing else needs editing -
+# keycloak-bootstrap re-applies the web client's URLs on every run, so an
+# already-imported realm picks up the new host too.
+# Plain-HTTP caveat: browsers only send Secure cookies over plain HTTP to
+# localhost, so on any other host without HTTPS also set
+#     AUTH_COOKIE_SECURE=false
+# in the same file (never do that behind real HTTPS).
 
 x-secrets-env: &secrets-env
   env_file:
@@ -106,8 +121,11 @@ services:
       # using the "keycloak:8080" service name for the request itself; it
       # only stops KC_HOSTNAME from being used to reject those requests -
       # generated links always use KC_HOSTNAME regardless.
-      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME: http://${PUBLIC_HOST:-localhost}:8081
       KC_HOSTNAME_STRICT: "false"
+      # Substituted into oak-dms-realm.json's ${OAK_DMS_WEB_URL} placeholders
+      # at first import (redirectUris/webOrigins of the oak-dms-web client).
+      OAK_DMS_WEB_URL: http://${PUBLIC_HOST:-localhost}:3000
     ports:
       - "8081:8080"
     volumes:
@@ -133,6 +151,10 @@ services:
       KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_REALM: oak-dms
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      # Re-applied to the oak-dms-web client on every run - see bootstrap.sh's
+      # web client URLs section for why the realm import alone isn't enough.
+      KEYCLOAK_WEB_CLIENT_ID: oak-dms-web
+      KEYCLOAK_WEB_CLIENT_URL: http://${PUBLIC_HOST:-localhost}:3000
       # Re-applied on every bootstrap run - see bootstrap.sh's SMTP config
       # section for why this can't just live in oak-dms-realm.json alone.
       KEYCLOAK_SMTP_HOST: mailpit
@@ -287,7 +309,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
-      KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/oak-dms
+      KEYCLOAK_ISSUER_URI: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
@@ -299,7 +321,9 @@ services:
       # spring.mail.* for why these aren't merged).
       MAIL_HOST: mailpit
       MAIL_PORT: "1025"
-      FRONTEND_BASE_URL: http://localhost:3000
+      FRONTEND_BASE_URL: http://${PUBLIC_HOST:-localhost}:3000
+      CORS_ALLOWED_ORIGINS: http://${PUBLIC_HOST:-localhost}:3000
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       # Object storage (com.oak.dms.storage) - see docs/storage-architecture.md.
       # STORAGE_PROVIDER/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY/S3_REGION/
       # S3_PATH_STYLE_ACCESS deliberately NOT listed here (same reasoning as
@@ -360,6 +384,10 @@ services:
       # into the container, so Next's dev server never sees edits.
       # Polling fixes that at the cost of a bit of CPU; harmless if unneeded.
       WATCHPACK_POLLING: "true"
+      # Read by lib/api-config.ts. These URLs are used by the BROWSER, so
+      # they must be the public host, never a docker service name.
+      NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
+      NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
     volumes:
       - ../../frontend:/app
       # Anonymous volume shadows the host's node_modules mount above with

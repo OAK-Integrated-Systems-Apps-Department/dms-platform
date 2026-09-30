@@ -282,6 +282,16 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  health:
+    # The mail indicator opens a live SMTP connection (and login) on every
+    # /actuator/health call. An external relay being slow, down or rejecting
+    # credentials would then report the whole app DOWN - and the container
+    # HEALTHCHECK (backend/Dockerfile) and deploy.sh treat DOWN as "roll this
+    # release back", even though every other feature still works. Mail
+    # failures are already handled where they happen (logged per send, see
+    # PasswordResetService), so SMTP is deliberately not a health input.
+    mail:
+      enabled: false
 
 springdoc:
   swagger-ui:

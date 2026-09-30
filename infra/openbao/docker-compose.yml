@@ -1,0 +1,44 @@
+# OpenBao for the DMS production host - a SEPARATE compose project from
+# the application stack (infra/production), so app deploys, rollbacks and
+# `docker compose down` there can never touch the secrets store.
+#
+# Start:  docker compose -f infra/openbao/docker-compose.yml up -d
+# Then:   bash infra/openbao/bao-ops.sh init   (first time only)
+# Runbook: docs/secrets-openbao.md
+
+name: openbao
+
+services:
+  openbao:
+    image: openbao/openbao:2.6.3
+    container_name: openbao
+    restart: unless-stopped
+    # The image entrypoint already adds -config=/openbao/config (the dir).
+    command: ["server"]
+    environment:
+      # For `docker exec openbao bao ...` (the CLI inside the container).
+      BAO_ADDR: http://127.0.0.1:8200
+    ports:
+      # Loopback only. The deploy runner runs on this host; nothing else
+      # may reach OpenBao. See config.hcl before ever changing this.
+      - "127.0.0.1:8200:8200"
+    volumes:
+      - ./config.hcl:/openbao/config/config.hcl:ro
+      # /openbao/file and /openbao/logs are the dirs the image prepares for
+      # its unprivileged "openbao" user (a new volume elsewhere is root-owned).
+      - openbao_data:/openbao/file
+      - openbao_audit:/openbao/logs
+    healthcheck:
+      # "Is the server process answering", NOT "is it unsealed": a sealed
+      # OpenBao is a normal state after a reboot (humans unseal it), and
+      # marking it unhealthy would only make Docker restart it in a loop.
+      # bao-ops.sh status / the deploy workflow check sealed separately.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8200/v1/sys/health?sealedcode=200&uninitcode=200&standbyok=true"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  openbao_data:
+  openbao_audit:
