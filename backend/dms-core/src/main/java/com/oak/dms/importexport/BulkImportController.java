@@ -4,6 +4,7 @@ import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
+import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.service.BulkImportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -108,6 +109,13 @@ public class BulkImportController {
     @Operation(summary = "Cancel a bulk import that is still uploading or queued, discarding its staged files")
     public BulkImportStatusResponse cancel(@PathVariable("batchId") UUID batchId) {
         return bulkImportService.cancel(batchId);
+    }
+
+    @GetMapping("/bulk-imports/{batchId}/failures")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "List the rows of a bulk import that failed, in row order, with their problems")
+    public List<ImportRowFailure> getFailures(@PathVariable("batchId") UUID batchId) {
+        return bulkImportService.getFailures(batchId);
     }
 
     @GetMapping("/bulk-imports/{batchId}")

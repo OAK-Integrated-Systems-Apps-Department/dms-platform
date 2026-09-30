@@ -23,6 +23,11 @@ export function isFinished(status: BulkImportStatus | undefined): boolean {
   return status !== undefined && FINISHED_STATUSES.includes(status)
 }
 
+/** Finished with at least some rows not imported - worth listing what failed. */
+export function hasFailedRows(status: BulkImportStatus | undefined): boolean {
+  return status === "completed_with_errors" || status === "failed"
+}
+
 /** Response of POST /bulk-imports. `expectedFilenames` has one entry per data row, in row order. */
 export interface BulkImportCreatedResponseDto {
   batchId: string
@@ -49,6 +54,25 @@ export interface BulkImportStatusResponseDto {
   /** One entry per row still waiting for its file. */
   missingFilenames: string[]
   createdAt: string
+}
+
+/** One problem with a failed row. `fieldLabel` is the column's display name (null if the problem isn't about one column). */
+export interface ImportRowProblemDto {
+  field: string | null
+  fieldLabel: string | null
+  code: string
+  message: string
+  /** "error" failed the row; "warning" is only reported. */
+  severity: "error" | "warning"
+}
+
+/** Response item of GET /bulk-imports/{batchId}/failures - failed rows only, in row order. */
+export interface ImportRowFailureDto {
+  rowNumber: number
+  filename: string
+  /** The raw title cell; null if it was left blank. */
+  title: string | null
+  problems: ImportRowProblemDto[]
 }
 
 /** Response item of GET /import-templates/document-types - active types only, in display order. */
@@ -134,6 +158,15 @@ export async function cancelBulkImport(batchId: string): Promise<BulkImportStatu
 
 export async function fetchBulkImportStatus(batchId: string): Promise<BulkImportStatusResponseDto> {
   return apiFetchJson<BulkImportStatusResponseDto>(`${BASE}/${batchId}`, undefined, "Could not load this import.")
+}
+
+/** GET /bulk-imports/{batchId}/failures - the rows that failed and why. */
+export async function fetchBulkImportFailures(batchId: string): Promise<ImportRowFailureDto[]> {
+  return apiFetchJson<ImportRowFailureDto[]>(
+    `${BASE}/${batchId}/failures`,
+    undefined,
+    "Could not load the rows that failed."
+  )
 }
 
 /** GET /bulk-imports/active - the caller's in-progress batch, or `null` (204) when there is none. */

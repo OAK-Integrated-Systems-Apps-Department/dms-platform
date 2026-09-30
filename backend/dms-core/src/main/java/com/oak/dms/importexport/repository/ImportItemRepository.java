@@ -17,6 +17,9 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
 
     List<ImportItem> findAllByImportBatchIdOrderByRowNumberAsc(UUID importBatchId);
 
+    List<ImportItem> findAllByImportBatchIdAndStatusOrderByRowNumberAsc(UUID importBatchId,
+                                                                         ImportItem.ImportItemStatus status);
+
     List<ImportItem> findAllByImportBatchIdAndImportItemIdIn(UUID importBatchId, Collection<UUID> importItemIds);
 
     List<ImportItem> findAllByImportBatchIdAndStagedObjectKeyIsNotNull(UUID importBatchId);

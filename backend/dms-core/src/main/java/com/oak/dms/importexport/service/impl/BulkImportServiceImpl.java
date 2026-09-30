@@ -1,6 +1,7 @@
 package com.oak.dms.importexport.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
@@ -8,6 +9,8 @@ import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
+import com.oak.dms.importexport.dto.ImportRowFailure;
+import com.oak.dms.importexport.dto.ImportRowProblem;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
@@ -26,6 +29,10 @@ import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
+import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportRowError;
+import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
+import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
@@ -84,6 +91,12 @@ public class BulkImportServiceImpl implements BulkImportService {
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued, ImportBatchStatus.running);
     private static final List<ImportBatchStatus> CANCELLABLE_STATUSES =
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued);
+    private static final Map<String, String> OWN_FIELD_LABELS = Map.of(
+            "file", "File",
+            ImportTemplateWorkbook.FILENAME_KEY, "Filename",
+            ImportTemplateWorkbook.TITLE_KEY, "Title");
+    private static final TypeReference<List<ImportRowError>> ROW_ERRORS = new TypeReference<>() {
+    };
 
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
@@ -98,6 +111,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
     private final FileTypeInspector fileTypeInspector;
+    private final ImportSchemaFields importSchemaFields;
 
     @Override
     @Transactional(readOnly = true)
@@ -299,6 +313,35 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<ImportRowFailure> getFailures(UUID batchId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        ImportBatch batch = importBatchRepository
+                .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        List<ImportItem> failed = importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batchId,
+                ImportItem.ImportItemStatus.failed);
+        if (failed.isEmpty()) {
+            return List.of();
+        }
+
+        // Labels come from the batch's own schema version, the one its
+        // template (and so its error field keys) was built from.
+        Map<String, ImportField> schemaFields = importSchemaFields.load(tenantId, batch.getDocumentTypeId(),
+                batch.getSchemaVersion());
+        return failed.stream()
+                .map(item -> new ImportRowFailure(item.getRowNumber(), item.getFilenameReference(), rowTitle(item),
+                        rowErrors(item).stream()
+                                .map(error -> new ImportRowProblem(error.field(),
+                                        fieldLabel(error.field(), schemaFields), error.code(), error.message(),
+                                        error.severity()))
+                                .toList()))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<BulkImportStatusResponse> getActive() {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
@@ -364,6 +407,43 @@ public class BulkImportServiceImpl implements BulkImportService {
         if (!CANCELLABLE_STATUSES.contains(batch.getStatus())) {
             throw new ImportBatchNotCancellableException("This import can no longer be cancelled (status: "
                     + batch.getStatus().name() + ").");
+        }
+    }
+
+    /** Display name of an error's column: 2.1's own columns, then the schema's label, then the raw key. */
+    static String fieldLabel(String field, Map<String, ImportField> schemaFields) {
+        if (field == null) {
+            return null;
+        }
+        String own = OWN_FIELD_LABELS.get(field);
+        if (own != null) {
+            return own;
+        }
+        ImportField schemaField = schemaFields.get(field);
+        return schemaField != null && schemaField.label() != null ? schemaField.label() : field;
+    }
+
+    // The failures report is read-only and best-effort: one unreadable row
+    // is logged and shown with what's left, rather than failing the report.
+
+    private String rowTitle(ImportItem item) {
+        try {
+            return objectMapper.readValue(item.getRowValues(), RowValues.class).title();
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            log.warn("Unreadable row_values on import item {}", item.getImportItemId(), e);
+            return null;
+        }
+    }
+
+    private List<ImportRowError> rowErrors(ImportItem item) {
+        if (item.getValidationErrors() == null) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(item.getValidationErrors(), ROW_ERRORS);
+        } catch (JsonProcessingException e) {
+            log.warn("Unreadable validation_errors on import item {}", item.getImportItemId(), e);
+            return List.of();
         }
     }
 

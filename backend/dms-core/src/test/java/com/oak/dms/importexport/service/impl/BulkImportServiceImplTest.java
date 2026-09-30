@@ -1,9 +1,12 @@
 package com.oak.dms.importexport.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
+import com.oak.dms.importexport.dto.ImportRowFailure;
+import com.oak.dms.importexport.dto.ImportRowProblem;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
@@ -16,6 +19,8 @@ import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
+import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.entity.DocumentType;
@@ -44,6 +49,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -77,6 +83,7 @@ class BulkImportServiceImplTest {
     private final StorageLocationRepository storageLocationRepository = mock(StorageLocationRepository.class);
     private final StorageLocationResolver storageLocationResolver = mock(StorageLocationResolver.class);
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
+    private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
 
     @BeforeEach
@@ -330,6 +337,92 @@ class BulkImportServiceImplTest {
         assertThat(item.getStagedObjectKey()).isNull();
     }
 
+    @Test
+    void getFailures_returnsOnlyFailedRowsInRowOrder() {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        ImportItem row2 = failedItem(batch, 2, "a.pdf", "{\"title\":\"Invoice A\",\"fields\":{}}",
+                "[{\"field\":\"file\",\"code\":\"FILE_MISSING\",\"message\":\"No file was uploaded for this row\","
+                        + "\"severity\":\"error\"}]");
+        ImportItem row5 = failedItem(batch, 5, "b.pdf", "{\"title\":null,\"fields\":{}}",
+                "[{\"field\":\"filename\",\"code\":\"DUPLICATE_FILENAME\",\"message\":\"Duplicate\","
+                        + "\"severity\":\"error\"}]");
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(row2, row5));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of());
+
+        List<ImportRowFailure> failures = service(realWorkbook).getFailures(batch.getImportBatchId());
+
+        assertThat(failures).extracting(ImportRowFailure::rowNumber).containsExactly(2, 5);
+        assertThat(failures).extracting(ImportRowFailure::filename).containsExactly("a.pdf", "b.pdf");
+        assertThat(failures).extracting(ImportRowFailure::title).containsExactly("Invoice A", null);
+        assertThat(failures.get(0).problems()).containsExactly(new ImportRowProblem("file", "File", "FILE_MISSING",
+                "No file was uploaded for this row", "error"));
+        verify(importItemRepository, never()).findAllByImportBatchIdOrderByRowNumberAsc(any());
+    }
+
+    @Test
+    void getFailures_mapsFieldLabelsFromBatchSchemaVersionOwnFieldsAndUnknownKeys() {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        ImportItem row = failedItem(batch, 3, "c.pdf", "{\"title\":\"C\",\"fields\":{}}", """
+                [{"field":"reference","code":"REQUIRED","message":"Reference is required","severity":"error"},
+                 {"field":"file","code":"FILE_INFECTED","message":"Malware found","severity":"error"},
+                 {"field":"filename","code":"FILENAME_MISSING","message":"Enter the file name","severity":"error"},
+                 {"field":"title","code":"TITLE_TOO_LONG","message":"Title too long","severity":"error"},
+                 {"field":"gone_field","code":"UNKNOWN","message":"Not in schema","severity":"warning"}]
+                """);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(row));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of("reference",
+                new ImportField(UUID.randomUUID(), "reference", "Reference", "text", true, false)));
+
+        List<ImportRowProblem> problems = service(realWorkbook).getFailures(batch.getImportBatchId()).get(0)
+                .problems();
+
+        assertThat(problems).extracting(ImportRowProblem::fieldLabel)
+                .containsExactly("Reference", "File", "Filename", "Title", "gone_field");
+        assertThat(problems.get(4)).isEqualTo(new ImportRowProblem("gone_field", "gone_field", "UNKNOWN",
+                "Not in schema", "warning"));
+    }
+
+    @Test
+    void getFailures_batchOfAnotherUserOrTenant_notFoundAndReadsNothingElse() {
+        UUID foreignBatchId = UUID.randomUUID();
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(foreignBatchId,
+                tenantId, userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service(realWorkbook).getFailures(foreignBatchId))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verifyNoInteractions(importItemRepository, importSchemaFields);
+    }
+
+    @Test
+    void getFailures_noFailedRows_returnsEmptyWithoutLoadingSchema() {
+        ImportBatch batch = batch(ImportBatchStatus.completed);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of());
+
+        assertThat(service(realWorkbook).getFailures(batch.getImportBatchId())).isEmpty();
+        verifyNoInteractions(importSchemaFields);
+    }
+
+    private void stubOwnBatch(ImportBatch batch) {
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batch.getImportBatchId(),
+                tenantId, userId)).thenReturn(Optional.of(batch));
+    }
+
+    private ImportItem failedItem(ImportBatch batch, int rowNumber, String filename, String rowValues,
+                                  String validationErrors) {
+        ImportItem item = item(batch, rowNumber, filename, null, null);
+        item.setRowValues(rowValues);
+        item.setValidationErrors(validationErrors);
+        item.setStatus(ImportItem.ImportItemStatus.failed);
+        return item;
+    }
+
     /**
      * Runs {@code action} with transaction synchronization active, runs
      * {@code beforeCommit} while the "transaction" is still open, then
@@ -388,7 +481,7 @@ class BulkImportServiceImplTest {
                 storageLocationResolver, objectStorageServiceFactory,
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
-                new FileTypeInspector(new IngestionProperties()));
+                new FileTypeInspector(new IngestionProperties()), importSchemaFields);
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

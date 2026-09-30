@@ -4,6 +4,7 @@ import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
+import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
 
 import java.io.InputStream;
@@ -36,6 +37,13 @@ public interface BulkImportService {
     void submit(UUID batchId);
 
     BulkImportStatusResponse getStatus(UUID batchId);
+
+    /**
+     * The batch's failed rows in row order, each with its problems and a
+     * display label for the column each problem is about (resolved against
+     * the batch's own schema version).
+     */
+    List<ImportRowFailure> getFailures(UUID batchId);
 
     /** The caller's batch counting toward the active-batch limit (uploading, queued or running), if any. */
     Optional<BulkImportStatusResponse> getActive();

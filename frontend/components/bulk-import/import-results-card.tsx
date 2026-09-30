@@ -4,8 +4,9 @@ import { AlertTriangle, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
+import { hasFailedRows, type BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
 
+import { FailedRowsTable } from "./failed-rows-table"
 import { StepCard } from "./step-card"
 
 interface ImportResultsCardProps {
@@ -14,7 +15,7 @@ interface ImportResultsCardProps {
   onStartOver: () => void
 }
 
-/** Summary of a finished import: how many documents were created and how many rows failed. */
+/** Summary of a finished import: how many documents were created, how many rows failed, and which ones. */
 export function ImportResultsCard({ batch, documentTypeName, onStartOver }: ImportResultsCardProps) {
   const { title, badge } = describe(batch)
   const created = `${batch.successCount} ${batch.successCount === 1 ? "document" : "documents"} created`
@@ -38,6 +39,8 @@ export function ImportResultsCard({ batch, documentTypeName, onStartOver }: Impo
           <dd className="font-medium">{badge}</dd>
         </div>
       </dl>
+
+      {hasFailedRows(batch.status) && <FailedRowsTable batchId={batch.batchId} />}
 
       <Button onClick={onStartOver}>
         <RotateCcw />
