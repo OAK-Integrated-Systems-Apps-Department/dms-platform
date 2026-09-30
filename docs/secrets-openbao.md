@@ -144,7 +144,8 @@ then OpenBao, then deploy:
 | `POSTGRES_PASSWORD` | `ALTER USER postgres PASSWORD '…'` (Keycloak also uses it) |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | Keycloak admin → Clients → dms-core-admin → Credentials → Regenerate |
 | `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin console → master realm → admin user |
-| `RABBITMQ_DEFAULT_PASS`, `REDIS_PASSWORD`, `SEAWEEDFS_*`, `SMTP_PASSWORD`, `AUDIT_CORRELATION_SECRET`, `IMPERSONATION_SECRET` | Nothing else to change; the next deploy applies them. Changing either of the last two signs out anyone mid-impersonation |
+| `RABBITMQ_DEFAULT_PASS` | RabbitMQ only reads this when its data volume is first created, so change the live user too: `printf '%s' "$NEW" \| docker exec -i oakdms-rabbitmq rabbitmqctl change_password dms` |
+| `REDIS_PASSWORD`, `SEAWEEDFS_*`, `SMTP_PASSWORD`, `AUDIT_CORRELATION_SECRET`, `IMPERSONATION_SECRET` | Nothing else to change; the next deploy applies them. Redis and SeaweedFS restart with the new value. Changing either of the last two signs out anyone mid-impersonation |
 
 ### Manual deploy (GitHub Actions unavailable)
 ```bash
