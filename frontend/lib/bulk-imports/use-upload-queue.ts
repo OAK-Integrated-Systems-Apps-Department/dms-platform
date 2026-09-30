@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import { friendlyMessage } from "@/lib/api-error"
+import { beginSessionKeepAlive } from "@/lib/auth/use-proactive-session-refresh"
 
 import { uploadBulkImportFile, type ImportFileReceivedResponseDto } from "./api"
 
@@ -38,16 +39,27 @@ export function useUploadQueue(onUploaded: (response: ImportFileReceivedResponse
   const drainingRef = useRef(false)
   const nextIdRef = useRef(1)
   const onUploadedRef = useRef(onUploaded)
+  /** Ends the session keep-alive held while the queue is uploading; null when idle. */
+  const endKeepAliveRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     onUploadedRef.current = onUploaded
   }, [onUploaded])
 
-  // Don't keep uploading into the batch after the screen is gone.
+  function endKeepAlive() {
+    endKeepAliveRef.current?.()
+    endKeepAliveRef.current = null
+  }
+
+  // Don't keep uploading into the batch after the screen is gone, or keep
+  // the session alive for it.
   useEffect(() => {
     const pending = pendingRef
+    const endKeepAlive = endKeepAliveRef
     return () => {
       pending.current = []
+      endKeepAlive.current?.()
+      endKeepAlive.current = null
     }
   }, [])
 
@@ -58,6 +70,9 @@ export function useUploadQueue(onUploaded: (response: ImportFileReceivedResponse
   async function drain() {
     if (drainingRef.current) return
     drainingRef.current = true
+    // A long queue can outlast the session's idle timeout while the user
+    // just watches, so keep it alive until the queue is empty.
+    endKeepAliveRef.current ??= beginSessionKeepAlive()
     try {
       let next = pendingRef.current.shift()
       while (next) {
@@ -74,6 +89,7 @@ export function useUploadQueue(onUploaded: (response: ImportFileReceivedResponse
       }
     } finally {
       drainingRef.current = false
+      endKeepAlive()
     }
   }
 

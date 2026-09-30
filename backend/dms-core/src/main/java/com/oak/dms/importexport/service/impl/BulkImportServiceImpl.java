@@ -79,7 +79,7 @@ import java.util.UUID;
 public class BulkImportServiceImpl implements BulkImportService {
 
     static final String AGGREGATE_TYPE = "import_batch";
-    static final String SUBMITTED_EVENT_TYPE = "import_batch.submitted";
+    public static final String SUBMITTED_EVENT_TYPE = "import_batch.submitted";
 
     private static final String XLSX_EXTENSION = ".xlsx";
     private static final List<ImportBatchStatus> ACTIVE_STATUSES =

@@ -8,7 +8,7 @@ import org.springframework.util.unit.DataSize;
 
 /**
  * Binds the dms.import-export.* configuration keys limiting bulk import
- * intake - see {@code BulkImportServiceImpl}.
+ * intake - see {@code BulkImportServiceImpl} - and sizing its worker.
  */
 @Component
 @ConfigurationProperties(prefix = "dms.import-export")
@@ -30,4 +30,10 @@ public class ImportExportProperties {
      * into memory, so this is checked before the file is opened.
      */
     private DataSize maxTemplateSize = DataSize.ofMegabytes(5);
+
+    /**
+     * Consumers on the bulk import queue - how many batches are validated
+     * at once (see {@code BulkImportMessagingConfig}).
+     */
+    private int workerConcurrency = 1;
 }

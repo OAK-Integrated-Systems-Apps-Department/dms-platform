@@ -30,6 +30,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,6 +74,16 @@ public class ImportTemplateWorkbook {
 
     private static final String DROPDOWN = "dropdown";
     private static final String MULTI_SELECT = "multi_select";
+    private static final String DATE = "date";
+    private static final String DATETIME = "datetime";
+
+    /** Excel number formats given to date/datetime data cells, so typed dates become real dates. */
+    static final String DATE_FORMAT = "yyyy-mm-dd";
+    static final String DATETIME_FORMAT = "yyyy-mm-dd hh:mm";
+
+    static final String TITLE_COMMENT = "Leave blank to use the file name (without its extension).";
+    static final String DATE_HINT = "Enter as a date, e.g. 2026-09-30";
+    static final String DATETIME_HINT = "Enter as a date and time, e.g. 2026-09-30 14:30";
 
     public record ParsedRow(int rowNumber, String filename, String title, Map<String, String> fields) {
     }
@@ -79,8 +92,9 @@ public class ImportTemplateWorkbook {
     }
 
     /**
-     * @param maxRows how many data rows the dropdown validations cover -
-     *                the batch row limit, so every usable row gets them
+     * @param maxRows how many data rows the dropdown validations and date
+     *                formats cover - the batch row limit, so every usable
+     *                row gets them
      */
     public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows) {
         List<SchemaField> fields = schema.fields().stream()
@@ -106,7 +120,12 @@ public class ImportTemplateWorkbook {
                     "Name of the file to upload for this row, including its extension.");
             columnKeys.add(FILENAME_KEY);
             writeHeader(header, 1, "Title", headerStyle);
+            addComment(drawing, factory, header.getCell(1), TITLE_COMMENT);
             columnKeys.add(TITLE_KEY);
+
+            CellStyle dateStyle = dataFormatStyle(workbook, DATE_FORMAT);
+            CellStyle dateTimeStyle = dataFormatStyle(workbook, DATETIME_FORMAT);
+            Map<Integer, CellStyle> dateColumns = new LinkedHashMap<>();
 
             int optionsColumn = 0;
             for (int i = 0; i < fields.size(); i++) {
@@ -118,6 +137,12 @@ public class ImportTemplateWorkbook {
                 String help = field.helpText() != null ? field.helpText().trim() : "";
                 if (MULTI_SELECT.equals(field.dataType())) {
                     help = (help.isEmpty() ? "" : help + "\n") + "Separate values with ;";
+                } else if (DATE.equals(field.dataType())) {
+                    help = (help.isEmpty() ? "" : help + "\n") + DATE_HINT;
+                    dateColumns.put(column, dateStyle);
+                } else if (DATETIME.equals(field.dataType())) {
+                    help = (help.isEmpty() ? "" : help + "\n") + DATETIME_HINT;
+                    dateColumns.put(column, dateTimeStyle);
                 }
                 if (!help.isEmpty()) {
                     addComment(drawing, factory, header.getCell(column), help);
@@ -142,6 +167,16 @@ public class ImportTemplateWorkbook {
                     validation.setSuppressDropDownArrow(true);
                     importSheet.addValidationData(validation);
                     optionsColumn++;
+                }
+            }
+
+            // Pre-formatted empty cells: Excel then stores what's typed into
+            // them as a date rather than text. They stay blank, so parse
+            // still skips any row nobody filled in.
+            if (!dateColumns.isEmpty()) {
+                for (int r = 1; r <= maxRows; r++) {
+                    Row row = importSheet.createRow(r);
+                    dateColumns.forEach((column, style) -> row.createCell(column).setCellStyle(style));
                 }
             }
 
@@ -251,6 +286,12 @@ public class ImportTemplateWorkbook {
         return style;
     }
 
+    private static CellStyle dataFormatStyle(XSSFWorkbook workbook, String format) {
+        CellStyle style = workbook.createCellStyle();
+        style.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat(format));
+        return style;
+    }
+
     private static void writeHeader(Row header, int column, String text, CellStyle style) {
         Cell cell = header.createCell(column);
         cell.setCellValue(text);
@@ -304,7 +345,8 @@ public class ImportTemplateWorkbook {
 
     /**
      * A cell's raw value as a string, or null if blank. Dates become ISO
-     * {@code yyyy-MM-dd}; numbers are written out in full, never in
+     * {@code yyyy-MM-dd}, or an ISO date-time ({@code yyyy-MM-ddTHH:mm:ss})
+     * when the cell holds a time other than midnight; numbers are written out in full, never in
      * exponent notation, with no trailing zeros.
      */
     static String cellValue(Cell cell) {
@@ -315,7 +357,7 @@ public class ImportTemplateWorkbook {
         String value = switch (type) {
             case STRING -> cell.getStringCellValue();
             case NUMERIC -> DateUtil.isCellDateFormatted(cell)
-                    ? cell.getLocalDateTimeCellValue().toLocalDate().toString()
+                    ? dateCellValue(cell.getLocalDateTimeCellValue())
                     : BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
             default -> null;
@@ -325,5 +367,11 @@ public class ImportTemplateWorkbook {
         }
         value = value.trim();
         return value.isEmpty() ? null : value;
+    }
+
+    private static String dateCellValue(LocalDateTime value) {
+        return value.toLocalTime().equals(LocalTime.MIDNIGHT)
+                ? value.toLocalDate().toString()
+                : value.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
     }
 }

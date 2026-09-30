@@ -1,0 +1,234 @@
+package com.oak.dms.importexport.worker;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.importexport.entity.ImportBatch;
+import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
+import com.oak.dms.importexport.entity.ImportItem;
+import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
+import com.oak.dms.importexport.messaging.BulkImportMessagingConfig;
+import com.oak.dms.importexport.repository.ImportBatchRepository;
+import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportRowError;
+import com.oak.dms.importexport.validation.ImportRowValidator;
+import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
+import com.oak.dms.importexport.validation.ImportSchemaFields;
+import com.oak.dms.security.auth.TenantContext;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.io.IOException;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Consumes {@code import_batch.submitted} and runs row-level validation over
+ * the batch: every item is checked by {@link ImportRowValidator}, failing
+ * rows are marked {@code failed} with their errors, and passing rows stay
+ * {@code pending} (with any warnings) for record creation to pick up.
+ *
+ * <p>Work runs outside any web request, the way scanning's background work
+ * does: short {@link TransactionTemplate} transactions, the batch row
+ * locked while its status changes. The batch is claimed in its own
+ * transaction, then items are validated in chunks of {@value #CHUNK_SIZE},
+ * one transaction each, so progress survives a crash part-way through.
+ *
+ * <p>Re-validating an item is safe and gives the same result, so a
+ * redelivered message for a batch already {@code running} (the previous
+ * attempt crashed, or two deliveries raced) just validates it again.
+ *
+ * <p>Unexpected exceptions propagate: the container retries the message a
+ * few times, then dead-letters it (see {@link BulkImportMessagingConfig}).
+ * A batch whose message ends up on the DLQ is left {@code running}, with
+ * whatever chunks completed saved.
+ */
+@Slf4j
+@Component
+public class BulkImportWorker {
+
+    static final int CHUNK_SIZE = 50;
+
+    private final ImportBatchRepository importBatchRepository;
+    private final ImportItemRepository importItemRepository;
+    private final ImportSchemaFields importSchemaFields;
+    private final ImportRowValidator rowValidator;
+    private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
+
+    public BulkImportWorker(ImportBatchRepository importBatchRepository,
+                            ImportItemRepository importItemRepository,
+                            ImportSchemaFields importSchemaFields,
+                            ImportRowValidator rowValidator,
+                            ObjectMapper objectMapper,
+                            PlatformTransactionManager transactionManager) {
+        this.importBatchRepository = importBatchRepository;
+        this.importItemRepository = importItemRepository;
+        this.importSchemaFields = importSchemaFields;
+        this.rowValidator = rowValidator;
+        this.objectMapper = objectMapper;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    /** What processing needs from the claimed batch, read while it was locked. */
+    record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
+    }
+
+    @RabbitListener(queues = BulkImportMessagingConfig.QUEUE,
+            containerFactory = BulkImportMessagingConfig.LISTENER_CONTAINER_FACTORY)
+    public void onMessage(Message message) {
+        UUID batchId = parseBatchId(message.getBody());
+        claim(batchId).ifPresent(this::process);
+    }
+
+    /**
+     * The batch id from an {@code import_batch.submitted} body. OutboxRelay
+     * sends the outbox row's payload - already a JSON string - through
+     * Jackson2JsonMessageConverter, which encodes it again, so today's body
+     * is a JSON string literal whose content is the payload object:
+     * {@code "{\"importBatchId\":\"...\",\"correlationId\":\"...\"}"}.
+     * A plain JSON object body is accepted too, so this keeps working if
+     * the relay stops double-encoding.
+     *
+     * @throws AmqpRejectAndDontRequeueException if the body isn't a payload
+     *         with a valid importBatchId - sent to the DLQ without retrying
+     */
+    UUID parseBatchId(byte[] body) {
+        try {
+            JsonNode payload = objectMapper.readTree(body);
+            if (payload != null && payload.isTextual()) {
+                payload = objectMapper.readTree(payload.asText());
+            }
+            JsonNode id = payload != null ? payload.get("importBatchId") : null;
+            if (id == null || !id.isTextual()) {
+                throw new IllegalArgumentException("no importBatchId");
+            }
+            return UUID.fromString(id.asText());
+        } catch (IOException | IllegalArgumentException e) {
+            log.error("Rejecting malformed {} message: {}", BulkImportMessagingConfig.ROUTING_KEY, e.getMessage());
+            throw new AmqpRejectAndDontRequeueException("Malformed import_batch.submitted payload", e);
+        }
+    }
+
+    /**
+     * Locks the batch and moves it from queued to running. Returns empty -
+     * nothing to process - if it's gone or in any other state (cancelled
+     * before the worker got to it, or already finished).
+     */
+    Optional<ClaimedBatch> claim(UUID batchId) {
+        return transactionTemplate.execute(status -> {
+            Optional<ImportBatch> locked = importBatchRepository.lockByImportBatchId(batchId);
+            if (locked.isEmpty()) {
+                log.warn("Bulk import batch {} not found; skipping", batchId);
+                return Optional.<ClaimedBatch>empty();
+            }
+            ImportBatch batch = locked.get();
+            switch (batch.getStatus()) {
+                case queued -> {
+                    OffsetDateTime now = OffsetDateTime.now();
+                    batch.setStatus(ImportBatchStatus.running);
+                    batch.setStartedAt(now);
+                    batch.setUpdatedAt(now);
+                    importBatchRepository.save(batch);
+                    log.info("Started validating bulk import batch {}", batchId);
+                }
+                case running -> log.info("Bulk import batch {} is already running; resuming (redelivery)", batchId);
+                default -> {
+                    log.info("Bulk import batch {} is {}; skipping", batchId, batch.getStatus());
+                    return Optional.<ClaimedBatch>empty();
+                }
+            }
+            return Optional.of(new ClaimedBatch(batch.getImportBatchId(), batch.getTenantId(), batch.getCreatedBy(),
+                    batch.getDocumentTypeId(), batch.getSchemaVersion()));
+        });
+    }
+
+    /** Validates every item as the batch's creator, in the batch's tenant. */
+    void process(ClaimedBatch batch) {
+        TenantContext.set(batch.tenantId(), batch.createdBy());
+        try {
+            Map<String, ImportField> fields = importSchemaFields.load(batch.tenantId(), batch.documentTypeId(),
+                    batch.schemaVersion());
+            List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(
+                    batch.importBatchId());
+            // Filenames never change after the batch is created, so the
+            // duplicate check can be worked out once for the whole batch.
+            Map<String, List<Integer>> duplicates = ImportRowValidator.duplicateRows(items);
+            List<UUID> itemIds = items.stream().map(ImportItem::getImportItemId).toList();
+
+            for (int from = 0; from < itemIds.size(); from += CHUNK_SIZE) {
+                List<UUID> chunk = itemIds.subList(from, Math.min(from + CHUNK_SIZE, itemIds.size()));
+                transactionTemplate.executeWithoutResult(status -> validateChunk(batch, chunk, fields, duplicates));
+            }
+
+            transactionTemplate.executeWithoutResult(status -> finish(batch));
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private void validateChunk(ClaimedBatch batch, List<UUID> itemIds, Map<String, ImportField> fields,
+                               Map<String, List<Integer>> duplicates) {
+        List<ImportItem> items = importItemRepository.findAllByImportBatchIdAndImportItemIdIn(
+                batch.importBatchId(), itemIds);
+        OffsetDateTime now = OffsetDateTime.now();
+        for (ImportItem item : items) {
+            if (item.getStatus() == ImportItemStatus.success) {
+                // Already turned into a record - never re-judge it.
+                continue;
+            }
+            List<ImportRowError> errors = rowValidator.validate(item, rowValues(item), fields, duplicates,
+                    batch.documentTypeId(), batch.schemaVersion(), batch.tenantId());
+            if (ImportRowValidator.hasErrors(errors)) {
+                item.setStatus(ImportItemStatus.failed);
+                item.setValidationErrors(toJson(errors));
+            } else {
+                // Converted values aren't kept: record creation reconverts
+                // row_values with the same converter.
+                item.setStatus(ImportItemStatus.pending);
+                item.setValidationErrors(errors.isEmpty() ? null : toJson(errors));
+            }
+            item.setUpdatedAt(now);
+        }
+        importItemRepository.saveAll(items);
+    }
+
+    private void finish(ClaimedBatch batch) {
+        ImportBatch locked = importBatchRepository.lockByImportBatchId(batch.importBatchId())
+                .orElseThrow(() -> new IllegalStateException("Import batch " + batch.importBatchId() + " disappeared"));
+        long failed = importItemRepository.countByImportBatchIdAndStatus(batch.importBatchId(), ImportItemStatus.failed);
+        locked.setFailureCount(Math.toIntExact(failed));
+        locked.setUpdatedAt(OffsetDateTime.now());
+        // TODO(record creation): create records for the pending rows, then
+        // set the batch's final status (completed / completed_with_errors /
+        // failed) and completedAt. Until then the batch stays running.
+        importBatchRepository.save(locked);
+        log.info("Validated bulk import batch {}: {} of {} rows failed", batch.importBatchId(), failed,
+                locked.getTotalRecords());
+    }
+
+    private RowValues rowValues(ImportItem item) {
+        try {
+            return objectMapper.readValue(item.getRowValues(), RowValues.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unreadable row_values on import item " + item.getImportItemId(), e);
+        }
+    }
+
+    private String toJson(List<ImportRowError> errors) {
+        try {
+            return objectMapper.writeValueAsString(errors);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize import row errors", e);
+        }
+    }
+}

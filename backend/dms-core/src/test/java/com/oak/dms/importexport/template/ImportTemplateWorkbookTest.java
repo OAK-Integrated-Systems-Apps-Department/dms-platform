@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,7 +47,10 @@ class ImportTemplateWorkbookTest {
                     "Filename", "Title", "Invoice Date *", "Amount", "Category", "Tags", "Reference");
             assertThat(header.getCell(7)).isNull();
 
-            assertThat(header.getCell(2).getCellComment().getString().getString()).isEqualTo("When it was issued");
+            assertThat(header.getCell(1).getCellComment().getString().getString())
+                    .isEqualTo("Leave blank to use the file name (without its extension).");
+            assertThat(header.getCell(2).getCellComment().getString().getString())
+                    .isEqualTo("When it was issued\nEnter as a date, e.g. 2026-09-30");
             assertThat(header.getCell(5).getCellComment().getString().getString())
                     .contains("Separate values with ;");
 
@@ -113,6 +117,62 @@ class ImportTemplateWorkbookTest {
         assertThat(second.filename()).isEqualTo("doc2.pdf");
         assertThat(second.title()).isNull();
         assertThat(second.fields()).containsExactly(Map.entry("amount", "1.5"));
+    }
+
+    @Test
+    void generate_dateAndDateTimeColumns_getHintsAndDateFormattedDataCells() throws IOException {
+        DocumentTypeSchemaResponse schema = new DocumentTypeSchemaResponse(DOCUMENT_TYPE_ID, "CON", "Contract", 1,
+                List.of(field("signed_on", "Signed On", null, "date", false, false, 10, List.of()),
+                        field("received_at", "Received At", "When it arrived", "datetime", false, false, 20,
+                                List.of()),
+                        field("party", "Party", null, "text", false, false, 30, List.of())));
+
+        byte[] template = templateWorkbook.generate(schema, 20);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            Row header = sheet.getRow(0);
+            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("Title");
+            assertThat(header.getCell(2).getCellComment().getString().getString())
+                    .isEqualTo("Enter as a date, e.g. 2026-09-30");
+            assertThat(header.getCell(3).getCellComment().getString().getString())
+                    .isEqualTo("When it arrived\nEnter as a date and time, e.g. 2026-09-30 14:30");
+            assertThat(header.getCell(4).getCellComment()).isNull();
+
+            // Excel rows 2..maxRows+1 (0-based 1..20) are formatted; nothing past them.
+            for (int r : List.of(1, 20)) {
+                assertThat(sheet.getRow(r).getCell(2).getCellStyle().getDataFormatString())
+                        .isEqualTo(ImportTemplateWorkbook.DATE_FORMAT);
+                assertThat(sheet.getRow(r).getCell(3).getCellStyle().getDataFormatString())
+                        .isEqualTo(ImportTemplateWorkbook.DATETIME_FORMAT);
+                assertThat(sheet.getRow(r).getCell(4)).isNull();
+            }
+            assertThat(sheet.getRow(21)).isNull();
+        }
+
+        // Pre-formatted but untouched rows are still empty rows.
+        assertThat(templateWorkbook.parse(new ByteArrayInputStream(template), 20).rows()).isEmpty();
+    }
+
+    @Test
+    void parse_dateFormattedCells_keepTimeOnlyWhenNotMidnight() {
+        DocumentTypeSchemaResponse schema = new DocumentTypeSchemaResponse(DOCUMENT_TYPE_ID, "CON", "Contract", 1,
+                List.of(field("received_at", "Received At", null, "datetime", false, false, 10, List.of())));
+        byte[] filled = fill(templateWorkbook.generate(schema, 10), workbook -> {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            // Typed into the template's own pre-formatted cells.
+            Row first = sheet.getRow(1);
+            first.createCell(0).setCellValue("a.pdf");
+            first.getCell(2).setCellValue(LocalDateTime.of(2026, 9, 30, 14, 30));
+            Row second = sheet.getRow(2);
+            second.createCell(0).setCellValue("b.pdf");
+            second.getCell(2).setCellValue(LocalDateTime.of(2026, 9, 30, 0, 0));
+        });
+
+        List<ParsedRow> rows = templateWorkbook.parse(new ByteArrayInputStream(filled), 10).rows();
+
+        assertThat(rows).extracting(row -> row.fields().get("received_at"))
+                .containsExactly("2026-09-30T14:30:00", "2026-09-30");
     }
 
     @Test

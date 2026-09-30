@@ -29,6 +29,16 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
                                                                      @Param("tenantId") UUID tenantId,
                                                                      @Param("createdBy") UUID createdBy);
 
+    /**
+     * Row-locked lookup by id alone, for {@code BulkImportWorker} only: a
+     * queue message carries no tenant or user, so the worker takes both
+     * from the locked row instead. Never call this from request handling -
+     * use the tenant- and creator-scoped lock above there.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from ImportBatch b where b.importBatchId = :importBatchId and b.deleted = false")
+    Optional<ImportBatch> lockByImportBatchId(@Param("importBatchId") UUID importBatchId);
+
     /** The caller's newest batch in one of {@code statuses} - the one counting toward the active-batch limit. */
     Optional<ImportBatch> findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(
             UUID tenantId, UUID createdBy, Collection<ImportBatch.ImportBatchStatus> statuses);

@@ -20,6 +20,26 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000
  */
 const ACTIVITY_WINDOW_MS = 10 * 60 * 1000
 
+/** How many pieces of long-running work currently want the session kept alive. */
+let keepAliveCount = 0
+
+/**
+ * Marks long-running work (e.g. a queue of uploads) as active: while any is,
+ * the periodic check refreshes the session even with no recent input and
+ * the tab in the background, since the user is waiting on it, not gone.
+ * Returns the function that ends it - safe to call more than once; always
+ * call it when the work finishes, or the session never idles out.
+ */
+export function beginSessionKeepAlive(): () => void {
+  keepAliveCount++
+  let ended = false
+  return () => {
+    if (ended) return
+    ended = true
+    keepAliveCount = Math.max(0, keepAliveCount - 1)
+  }
+}
+
 /**
  * Proactively renews the session (via the same `refreshSession` the 401
  * interceptor in lib/api-fetch.ts uses, so the two share one in-flight
@@ -47,7 +67,9 @@ const ACTIVITY_WINDOW_MS = 10 * 60 * 1000
  * fired within the last `ACTIVITY_WINDOW_MS` - checked every
  * `CHECK_INTERVAL_MS`, and skipped outright while the tab isn't visible
  * (`document.visibilityState`), so a minimized/backgrounded tab doesn't
- * keep a session alive on its own either.
+ * keep a session alive on its own either. The one exception is work
+ * registered through `beginSessionKeepAlive` - while any is active, every
+ * check refreshes regardless of activity or visibility.
  */
 export function useProactiveSessionRefresh(): void {
   useEffect(() => {
@@ -61,7 +83,7 @@ export function useProactiveSessionRefresh(): void {
 
     const intervalId = window.setInterval(() => {
       const recentlyActive = Date.now() - lastActivityAt < ACTIVITY_WINDOW_MS
-      if (recentlyActive && document.visibilityState === "visible") {
+      if (keepAliveCount > 0 || (recentlyActive && document.visibilityState === "visible")) {
         void refreshSession()
       }
     }, CHECK_INTERVAL_MS)

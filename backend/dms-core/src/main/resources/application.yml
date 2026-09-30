@@ -224,6 +224,8 @@ dms:
     max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
     max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
     max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
+    # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
+    worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's
