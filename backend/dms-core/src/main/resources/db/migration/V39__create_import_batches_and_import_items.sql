@@ -10,6 +10,11 @@
 -- tenant_id UUID NOT NULL REFERENCES tenants, created_by/updated_by as bare
 -- UUID REFERENCES users (no JPA relation), status as VARCHAR + CHECK (never
 -- a Postgres enum), and an index on every FK column.
+--
+-- import_batches follows V36's document_metadata pattern: a tenant-safe
+-- composite FK (tenant_id, document_type_id, schema_version) to
+-- document_type_schemas, so a batch can only reference a published schema
+-- version.
 
 -- =====================================================================
 -- import_batches
@@ -18,7 +23,7 @@ CREATE TABLE import_batches (
     import_batch_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           UUID NOT NULL REFERENCES tenants (tenant_id),
     source_type         VARCHAR(30) NOT NULL,
-    document_type_id    UUID NOT NULL REFERENCES document_types (document_type_id),
+    document_type_id    UUID NOT NULL,
     schema_version      INT NOT NULL,
     status              VARCHAR(30) NOT NULL DEFAULT 'uploading',
     total_records       INT NOT NULL DEFAULT 0,
@@ -35,13 +40,16 @@ CREATE TABLE import_batches (
     deleted_at          TIMESTAMPTZ,
     CONSTRAINT ck_import_batches_source_type CHECK (source_type IN ('bulk_import', 'migration')),
     CONSTRAINT ck_import_batches_status CHECK (status IN
-        ('uploading', 'queued', 'running', 'completed', 'completed_with_errors', 'failed'))
+        ('uploading', 'queued', 'running', 'completed', 'completed_with_errors', 'failed')),
+    CONSTRAINT fk_import_batches_schema FOREIGN KEY (tenant_id, document_type_id, schema_version)
+        REFERENCES document_type_schemas (tenant_id, document_type_id, schema_version)
 );
 
 -- Leading tenant_id also serves plain tenant lookups, so no separate
 -- ix_import_batches_tenant_id.
 CREATE INDEX ix_import_batches_tenant_status ON import_batches (tenant_id, status);
-CREATE INDEX ix_import_batches_document_type_id ON import_batches (document_type_id);
+-- Backs fk_import_batches_schema and "batches of type X at schema version N".
+CREATE INDEX ix_import_batches_type_version ON import_batches (document_type_id, schema_version);
 
 -- =====================================================================
 -- import_items
