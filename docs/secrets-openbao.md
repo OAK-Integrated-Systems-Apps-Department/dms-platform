@@ -90,8 +90,22 @@ so the keys and the snapshots must never be stored together.
 
 ### 1.5 Switch deploys to OpenBao
 GitHub → Settings → Secrets and variables → Actions → **Variables** →
-add **`BAO_ADDR` = `http://127.0.0.1:8200`**. The runner runs on oak-app, so
-it reaches OpenBao on loopback.
+add **`BAO_ADDR` = `http://127.0.0.1:8200`**.
+
+**`127.0.0.1` here means oak-app itself, not your PC.** The only thing
+that uses `BAO_ADDR` is the deploy job's "Fetch secrets from OpenBao" step.
+That step runs on the self-hosted runner, which is installed **on oak-app**,
+the same machine as OpenBao, so it connects over the server's own loopback.
+Do **not** use `192.168.0.10:8200`: OpenBao's port is deliberately bound to
+`127.0.0.1` only (`infra/openbao/docker-compose.yml`) and serves plain HTTP,
+so nothing on the network can reach it. Only if the runner ever moves to
+another machine would you need `https://192.168.0.10:8200`, and only after
+adding TLS in `config.hcl` and changing that port binding.
+
+Check it from the runner's point of view, on oak-app:
+```bash
+sudo -u gh-runner curl -s http://127.0.0.1:8200/v1/sys/seal-status   # JSON with "sealed": false
+```
 
 Then **Actions → Deploy → Run workflow** (branch `main`, `image_tag` = the
 current tag from `bash ../production/deploy.sh --status`). You should see:

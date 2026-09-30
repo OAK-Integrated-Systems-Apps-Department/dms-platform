@@ -81,6 +81,9 @@ require_unsealed() {
   [ "$(json_get sealed <<<"$s")" = false ] || fail "OpenBao is SEALED - run: bash bao-ops.sh unseal"
 }
 
+# Pasted tokens/keys often carry a Windows CR or stray spaces - never valid in either.
+strip_ws() { printf '%s' "$1" | tr -d '[:space:]'; }
+
 secret_keys() { grep -vE '^\s*(#|$)' "$KEYS_FILE" | tr -d '\r'; }
 
 # Reads KEY=VALUE for the secret keys from an env file (BOM/CRLF tolerant,
@@ -166,6 +169,7 @@ print(" (use it once for: bash bao-ops.sh configure - it is revoked at the end)"
       s="$(seal_status)"
       [ "$(json_get sealed <<<"$s")" = false ] && { log "unsealed"; break; }
       read -rsp "Unseal key ($(json_get progress <<<"$s")/$(json_get t <<<"$s") entered): " k; echo
+      k="$(strip_ws "$k")"
       printf '{"key":%s}' "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$k")" | api PUT sys/unseal >/dev/null
       unset k
     done
@@ -173,7 +177,10 @@ print(" (use it once for: bash bao-ops.sh configure - it is revoked at the end)"
 
   configure)
     require_unsealed
-    read -rsp "Root token: " BAO_TOKEN; echo; export BAO_TOKEN
+    read -rsp "Root token: " BAO_TOKEN; echo
+    BAO_TOKEN="$(strip_ws "$BAO_TOKEN")"; export BAO_TOKEN
+    # Fail with a clear message instead of a bare 403 on the first real call.
+    probe GET auth/token/lookup-self || fail "that is not a valid token (paste only the value after 'Initial root token:', not the label or an unseal key)"
 
     mounts="$(api GET sys/mounts)"
     if python3 -c 'import json,sys; sys.exit(0 if "secret/" in json.load(sys.stdin) else 1)' <<<"$mounts"; then
