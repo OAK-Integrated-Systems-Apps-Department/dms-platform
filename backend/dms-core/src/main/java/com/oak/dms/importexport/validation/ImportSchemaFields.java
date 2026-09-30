@@ -56,7 +56,7 @@ public class ImportSchemaFields {
         for (FieldMapping m : mapping) {
             MetadataField field = fieldsById.get(m.fieldId());
             if (field != null) {
-                fields.put(field.getFieldKey(), new ImportField(field.getFieldKey(), field.getLabel(),
+                fields.put(field.getFieldKey(), new ImportField(field.getFieldId(), field.getFieldKey(), field.getLabel(),
                         field.getDataType(), m.mandatory(), m.hidden()));
             }
         }

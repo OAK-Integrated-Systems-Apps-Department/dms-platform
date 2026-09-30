@@ -7,12 +7,15 @@ import {
   createBulkImport,
   fetchActiveBulkImport,
   fetchBulkImportStatus,
+  isInFlight,
   submitBulkImport,
   type BulkImportCreatedResponseDto,
 } from "./api"
 
 export const BULK_IMPORTS_KEY = ["bulk-imports"] as const
 const ACTIVE_KEY = [...BULK_IMPORTS_KEY, "active"] as const
+/** How often a submitted batch is re-read while the worker processes it. */
+const POLL_INTERVAL_MS = 3000
 
 function statusKey(batchId: string) {
   return [...BULK_IMPORTS_KEY, batchId] as const
@@ -24,7 +27,10 @@ function errorMessage(error: unknown, fallback: string): string {
 
 /**
  * The caller's in-progress bulk import (the one blocking a new import),
- * plus the status of the batch currently being worked on. Mutations
+ * plus the status of the batch currently being worked on - `batchId`, or
+ * else the active batch if it's already submitted, so a queued/running
+ * import found on load is watched too (`watchedId`). A submitted batch is
+ * polled until it finishes; the polling stops on unmount. Mutations
  * resolve to an error message, or `null` on success - same convention as
  * `useDocumentType`.
  */
@@ -38,11 +44,15 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     enabled,
   })
 
+  const active = activeQuery.data ?? null
+  const watchedId = batchId ?? (active && isInFlight(active.status) ? active.batchId : null)
+
   const statusQuery = useQuery({
-    queryKey: statusKey(batchId ?? ""),
-    queryFn: () => fetchBulkImportStatus(batchId as string),
+    queryKey: statusKey(watchedId ?? ""),
+    queryFn: () => fetchBulkImportStatus(watchedId as string),
     retry: false,
-    enabled: enabled && Boolean(batchId),
+    enabled: enabled && Boolean(watchedId),
+    refetchInterval: (query) => (isInFlight(query.state.data?.status) ? POLL_INTERVAL_MS : false),
   })
 
   function invalidate() {
@@ -68,12 +78,21 @@ export function useBulkImport(batchId: string | null, enabled = true) {
   })
 
   return {
-    active: activeQuery.data ?? null,
+    active,
+    watchedId,
     activeLoading: activeQuery.isLoading,
     activeError: activeQuery.error,
     status: statusQuery.data ?? null,
     statusLoading: statusQuery.isLoading,
     refetchStatus: () => statusQuery.refetch(),
+    /**
+     * Forget the active batch (it has finished, so it no longer blocks a
+     * new import) and re-check with the server.
+     */
+    clearActive: () => {
+      queryClient.setQueryData(ACTIVE_KEY, null)
+      return invalidate()
+    },
     creating: createMutation.isPending,
     submitting: submitMutation.isPending,
     cancelling: cancelMutation.isPending,

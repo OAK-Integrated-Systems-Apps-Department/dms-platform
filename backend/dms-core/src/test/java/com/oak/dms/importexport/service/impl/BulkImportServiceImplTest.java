@@ -14,6 +14,7 @@ import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.matching.ImportFilenameMatcher;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
@@ -384,7 +385,8 @@ class BulkImportServiceImplTest {
     private BulkImportServiceImpl service(ImportTemplateWorkbook workbook) {
         return new BulkImportServiceImpl(importBatchRepository, importItemRepository, documentTypeRepository,
                 documentTypeFieldService, workbook, new ImportFilenameMatcher(),
-                storageLocationResolver, objectStorageServiceFactory, storageLocationRepository,
+                storageLocationResolver, objectStorageServiceFactory,
+                new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
                 new FileTypeInspector(new IngestionProperties()));
     }

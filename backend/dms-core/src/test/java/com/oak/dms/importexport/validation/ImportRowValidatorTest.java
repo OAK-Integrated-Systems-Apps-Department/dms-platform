@@ -32,14 +32,15 @@ class ImportRowValidatorTest {
     private static final int VERSION = 4;
 
     private static final Map<String, ImportField> FIELDS = fields(
-            new ImportField("contract_value", "Contract Value", "number", true, false),
-            new ImportField("start_date", "Start Date", "date", false, false),
-            new ImportField("owner", "Owner", "user_ref", false, false));
+            new ImportField(UUID.randomUUID(), "contract_value", "Contract Value", "number", true, false),
+            new ImportField(UUID.randomUUID(), "start_date", "Start Date", "date", false, false),
+            new ImportField(UUID.randomUUID(), "owner", "Owner", "user_ref", false, false));
 
     private final MetadataValidationService metadataValidationService = mock(MetadataValidationService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final ImportRowValidator validator =
-            new ImportRowValidator(new ImportValueConverter(), metadataValidationService, userRepository);
+            new ImportRowValidator(new ImportValueConverter(), metadataValidationService,
+                    new ImportUsers(userRepository));
 
     @BeforeEach
     void noMetadataErrorsByDefault() {

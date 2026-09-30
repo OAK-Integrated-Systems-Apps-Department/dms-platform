@@ -7,11 +7,13 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
+import { isFinished } from "@/lib/bulk-imports/api"
 import { useBulkImport } from "@/lib/bulk-imports/use-bulk-import"
 import { useImportDocumentTypes } from "@/lib/bulk-imports/use-import-document-types"
 import { useUploadQueue } from "@/lib/bulk-imports/use-upload-queue"
 
 import { BatchStatusCard } from "./batch-status-card"
+import { ImportResultsCard } from "./import-results-card"
 import { StartImportSteps } from "./start-import-steps"
 import { StepCard } from "./step-card"
 import { UploadFilesStep } from "./upload-files-step"
@@ -20,8 +22,9 @@ import { UploadFilesStep } from "./upload-files-step"
  * Bulk Import screen body. What it shows is derived from the server:
  * - no batch being worked on: the caller's active batch (resume / queued /
  *   running card), or steps 1-2 to start a new one;
- * - a batch being worked on: steps 3-4 while it's `uploading`, the
- *   submitted card once it's `queued`.
+ * - a batch being worked on (or a submitted one found on load): steps 3-4
+ *   while it's `uploading`, the submitted card - polled for progress -
+ *   while it's `queued`/`running`, and the results once it's finished.
  */
 export function BulkImportWizard() {
   const [batchId, setBatchId] = useState<string | null>(null)
@@ -53,6 +56,7 @@ export function BulkImportWizard() {
     queue.reset()
     setCreatedNotice(null)
     setBatchId(null)
+    void bulkImport.clearActive()
   }
 
   function handleContinue(id: string) {
@@ -81,8 +85,9 @@ export function BulkImportWizard() {
     return error
   }
 
-  // Working on a specific batch (just created, or resumed).
-  if (batchId) {
+  // Working on a specific batch (just created, resumed, or already
+  // submitted when the screen loaded).
+  if (batchId ?? bulkImport.watchedId) {
     const status = bulkImport.status
     if (!status) {
       return bulkImport.statusLoading ? (
@@ -113,11 +118,19 @@ export function BulkImportWizard() {
         />
       )
     }
-    // Cancelled or finished elsewhere (another tab, or the worker) - it no
-    // longer blocks a new import.
+    if (isFinished(status.status)) {
+      return (
+        <ImportResultsCard
+          batch={status}
+          documentTypeName={documentTypeName(status.documentTypeId)}
+          onStartOver={handleStartOver}
+        />
+      )
+    }
+    // Cancelled elsewhere (another tab) - it no longer blocks a new import.
     return (
       <StepCard
-        title={status.status === "cancelled" ? "This import was cancelled" : "This import has finished"}
+        title="This import was cancelled"
         description="Start a new import to upload more documents."
       >
         <Button onClick={() => handleStartOver()}>

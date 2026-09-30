@@ -22,6 +22,7 @@ import com.oak.dms.importexport.matching.ImportFilenameMatcher;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.service.BulkImportService;
+import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
@@ -37,7 +38,6 @@ import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
-import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.storage.service.StorageLocationResolver;
@@ -53,8 +53,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,7 +93,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ImportFilenameMatcher filenameMatcher;
     private final StorageLocationResolver storageLocationResolver;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
-    private final StorageLocationRepository storageLocationRepository;
+    private final StagedImportFiles stagedImportFiles;
     private final OutboxEventPublisher outboxEventPublisher;
     private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
@@ -329,34 +327,18 @@ public class BulkImportServiceImpl implements BulkImportService {
         importBatchRepository.save(batch);
 
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
-        List<StagedObject> staged = new ArrayList<>();
-        Map<UUID, Optional<StorageLocation>> locations = new HashMap<>();
-        for (ImportItem item : items) {
-            if (item.getStagedObjectKey() == null) {
-                continue;
-            }
-            String objectKey = item.getStagedObjectKey();
-            UUID locationId = item.getStagedStorageLocationId();
-            locations.computeIfAbsent(locationId, storageLocationRepository::findByStorageLocationIdAndDeletedFalse)
-                    .ifPresentOrElse(location -> staged.add(new StagedObject(location, objectKey)),
-                            () -> log.warn("Storage location {} for staged import object {} not found; object left"
-                                    + " in place", locationId, objectKey));
-            item.setStagedObjectKey(null);
-            item.setStagedStorageLocationId(null);
-            item.setStagedSizeBytes(null);
-            item.setUpdatedAt(OffsetDateTime.now());
-        }
+        int toDelete = stagedImportFiles.clearAndDeleteAfterCommit(items);
         importItemRepository.saveAll(items);
-        deleteAfterCommit(staged);
 
         log.info("Cancelled bulk import batch {} for tenant {} ({} staged files to delete)",
-                batchId, tenantId, staged.size());
+                batchId, tenantId, toDelete);
         return toStatusResponse(batch, items);
     }
 
     private static BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {
+        // A file handed on to the scan gate has left staging but was received.
         List<String> missingFilenames = items.stream()
-                .filter(item -> item.getStagedObjectKey() == null)
+                .filter(item -> item.getStagedObjectKey() == null && item.getScanResultId() == null)
                 .map(ImportItem::getFilenameReference)
                 .toList();
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
@@ -418,35 +400,6 @@ public class BulkImportServiceImpl implements BulkImportService {
                 }
             }
         });
-    }
-
-    /**
-     * Once a cancel commits, delete the batch's staged objects. Deleting
-     * only after commit means a rolled-back cancel never loses files the
-     * batch still points at. Best-effort - a failed delete is logged, never
-     * rethrown, and leaves an orphaned object behind.
-     */
-    private void deleteAfterCommit(List<StagedObject> staged) {
-        if (staged.isEmpty() || !TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                for (StagedObject object : staged) {
-                    try {
-                        objectStorageServiceFactory.resolve(object.location())
-                                .delete(object.location(), object.objectKey());
-                    } catch (RuntimeException e) {
-                        log.warn("Failed to delete staged import object {} for cancelled batch",
-                                object.objectKey(), e);
-                    }
-                }
-            }
-        });
-    }
-
-    private record StagedObject(StorageLocation location, String objectKey) {
     }
 
     /** Reads the head the inspector needs and rewinds, so the upload still sees every byte. */

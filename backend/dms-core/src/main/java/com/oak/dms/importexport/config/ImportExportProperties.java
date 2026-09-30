@@ -36,4 +36,12 @@ public class ImportExportProperties {
      * at once (see {@code BulkImportMessagingConfig}).
      */
     private int workerConcurrency = 1;
+
+    /**
+     * How often {@code ImportCompletionScheduler} re-checks rows still
+     * waiting on a scan verdict. Read by its {@code @Scheduled}
+     * placeholder, which carries the same default; declared here so the
+     * key is documented with the rest.
+     */
+    private long completionIntervalMs = 30000;
 }

@@ -46,9 +46,12 @@ class ImportSchemaFieldsTest {
         Map<String, ImportField> fields = schemaFields.load(TENANT_ID, DOCUMENT_TYPE_ID, 2);
 
         assertThat(fields.keySet()).containsExactly("amount", "note", "owner");
-        assertThat(fields.get("amount")).isEqualTo(new ImportField("amount", "Amount", "decimal", true, false));
-        assertThat(fields.get("note")).isEqualTo(new ImportField("note", "Note", "text", false, true));
-        assertThat(fields.get("owner")).isEqualTo(new ImportField("owner", "Owner", "user_ref", false, false));
+        assertThat(fields.get("amount"))
+                .isEqualTo(new ImportField(amount.getFieldId(), "amount", "Amount", "decimal", true, false));
+        assertThat(fields.get("note"))
+                .isEqualTo(new ImportField(note.getFieldId(), "note", "Note", "text", false, true));
+        assertThat(fields.get("owner"))
+                .isEqualTo(new ImportField(owner.getFieldId(), "owner", "Owner", "user_ref", false, false));
     }
 
     @Test

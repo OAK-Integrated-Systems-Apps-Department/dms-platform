@@ -77,6 +77,13 @@ public class ImportItem {
     @Column(name = "staged_size_bytes")
     private Long stagedSizeBytes;
 
+    /**
+     * The scan gate's ticket for this row's file, saved as soon as the gate
+     * accepts it; null until then. See {@code ImportRecordCreator}.
+     */
+    @Column(name = "scan_result_id")
+    private UUID scanResultId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default

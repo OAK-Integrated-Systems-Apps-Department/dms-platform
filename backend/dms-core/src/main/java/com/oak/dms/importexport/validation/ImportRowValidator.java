@@ -3,8 +3,6 @@ package com.oak.dms.importexport.validation;
 import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.metadata.service.MetadataValidationService;
-import com.oak.dms.user.User;
-import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +38,7 @@ public class ImportRowValidator {
 
     private final ImportValueConverter converter;
     private final MetadataValidationService metadataValidationService;
-    private final UserRepository userRepository;
+    private final ImportUsers importUsers;
 
     /** An item's {@code row_values} JSON: the raw title and field cells, keyed by field_key. */
     public record RowValues(String title, Map<String, String> fields) {
@@ -94,10 +92,7 @@ public class ImportRowValidator {
                     + " characters long - it can be at most " + ImportTitles.MAX_LENGTH));
         }
 
-        Function<String, Optional<UUID>> activeUserByEmail = email -> userRepository
-                .findByTenantIdAndEmailAndDeletedFalse(tenantId, email)
-                .filter(user -> user.getStatus() == User.UserStatus.active)
-                .map(User::getUserId);
+        Function<String, Optional<UUID>> activeUserByEmail = importUsers.activeUserByEmail(tenantId);
 
         Map<String, Object> converted = new LinkedHashMap<>();
         Set<String> unconvertible = new HashSet<>();

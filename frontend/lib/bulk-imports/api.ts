@@ -11,6 +11,18 @@ export type BulkImportStatus =
   | "failed"
   | "cancelled"
 
+/** Statuses the worker has finished with - record creation is over. */
+export const FINISHED_STATUSES: readonly BulkImportStatus[] = ["completed", "completed_with_errors", "failed"]
+
+/** Submitted and not yet finished - worth polling for progress. */
+export function isInFlight(status: BulkImportStatus | undefined): boolean {
+  return status === "queued" || status === "running"
+}
+
+export function isFinished(status: BulkImportStatus | undefined): boolean {
+  return status !== undefined && FINISHED_STATUSES.includes(status)
+}
+
 /** Response of POST /bulk-imports. `expectedFilenames` has one entry per data row, in row order. */
 export interface BulkImportCreatedResponseDto {
   batchId: string
