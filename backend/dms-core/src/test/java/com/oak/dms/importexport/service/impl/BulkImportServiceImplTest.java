@@ -17,9 +17,13 @@ import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.matching.ImportFilenameMatcher;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.service.BulkImportAuditor;
+import com.oak.dms.importexport.service.ImportTemplateService;
 import com.oak.dms.importexport.storage.StagedImportFiles;
+import com.oak.dms.importexport.template.ImportTemplateCsv;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportRowValidator;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
@@ -41,6 +45,9 @@ import com.oak.dms.storage.service.StorageLocationResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -84,6 +91,8 @@ class BulkImportServiceImplTest {
     private final StorageLocationResolver storageLocationResolver = mock(StorageLocationResolver.class);
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
+    private final ImportRowValidator rowValidator = mock(ImportRowValidator.class);
+    private final ImportTemplateService importTemplateService = mock(ImportTemplateService.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
 
     @BeforeEach
@@ -262,6 +271,23 @@ class BulkImportServiceImplTest {
             assertThat(response.status()).isEqualTo("uploading");
             assertThat(response.filesReceived()).isEqualTo(1);
             assertThat(response.missingFilenames()).containsExactly("b.pdf");
+        });
+    }
+
+    @Test
+    void listMine_pagesOnlyTheCallersBatches_includingFinishedOnes() {
+        ImportBatch finished = batch(ImportBatchStatus.completed_with_errors);
+        PageRequest page = PageRequest.of(0, 10);
+        when(importBatchRepository.findByTenantIdAndCreatedByAndDeletedFalse(tenantId, userId, page))
+                .thenReturn(new PageImpl<>(List.of(finished), page, 1));
+        when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(finished.getImportBatchId()))
+                .thenReturn(List.of(item(finished, 1, "a.pdf", UUID.randomUUID(), null)));
+
+        Page<BulkImportStatusResponse> mine = service(realWorkbook).listMine(page);
+
+        assertThat(mine.getContent()).singleElement().satisfies(response -> {
+            assertThat(response.batchId()).isEqualTo(finished.getImportBatchId());
+            assertThat(response.status()).isEqualTo("completed_with_errors");
         });
     }
 
@@ -481,7 +507,8 @@ class BulkImportServiceImplTest {
                 storageLocationResolver, objectStorageServiceFactory,
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
-                new FileTypeInspector(new IngestionProperties()), importSchemaFields);
+                new FileTypeInspector(new IngestionProperties()), importSchemaFields, mock(BulkImportAuditor.class),
+                new ImportTemplateCsv(), rowValidator, importTemplateService);
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

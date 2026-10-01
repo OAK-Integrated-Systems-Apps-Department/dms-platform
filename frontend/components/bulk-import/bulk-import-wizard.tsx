@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
 import { isFinished } from "@/lib/bulk-imports/api"
+import { useArchiveUpload } from "@/lib/bulk-imports/use-archive-upload"
 import { useBulkImport } from "@/lib/bulk-imports/use-bulk-import"
 import { useImportDocumentTypes } from "@/lib/bulk-imports/use-import-document-types"
 import { useUploadQueue } from "@/lib/bulk-imports/use-upload-queue"
 
 import { BatchStatusCard } from "./batch-status-card"
 import { ImportResultsCard } from "./import-results-card"
+import { RecentImports } from "./recent-imports"
 import { StartImportSteps } from "./start-import-steps"
 import { StepCard } from "./step-card"
 import { UploadFilesStep } from "./upload-files-step"
@@ -35,6 +37,9 @@ export function BulkImportWizard() {
   const queue = useUploadQueue(() => {
     void bulkImport.refetchStatus()
   })
+  const archive = useArchiveUpload(() => {
+    void bulkImport.refetchStatus()
+  })
 
   function documentTypeName(documentTypeId: string): string | null {
     return documentTypes.find((type) => type.documentTypeId === documentTypeId)?.name ?? null
@@ -54,6 +59,7 @@ export function BulkImportWizard() {
 
   function handleStartOver() {
     queue.reset()
+    archive.reset()
     setCreatedNotice(null)
     setBatchId(null)
     void bulkImport.clearActive()
@@ -69,6 +75,7 @@ export function BulkImportWizard() {
     if (!error) {
       setCreatedNotice(null)
       queue.reset()
+      archive.reset()
       toast.success("Import submitted.")
     }
     return error
@@ -78,6 +85,7 @@ export function BulkImportWizard() {
     const error = await bulkImport.cancel(id)
     if (!error) {
       queue.reset()
+      archive.reset()
       setCreatedNotice(null)
       setBatchId(null)
       toast.success("Import cancelled.")
@@ -104,6 +112,10 @@ export function BulkImportWizard() {
           entries={queue.entries}
           uploading={queue.busy}
           onFiles={(files) => queue.addFiles(status.batchId, files)}
+          archive={archive.state}
+          archiveBusy={archive.busy}
+          onArchive={(file) => void archive.upload(status.batchId, file)}
+          onResumeArchive={() => void archive.resume()}
           onSubmit={() => handleSubmit(status.batchId)}
           onCancel={() => handleCancel(status.batchId)}
         />
@@ -161,15 +173,18 @@ export function BulkImportWizard() {
   }
 
   return (
-    <StartImportSteps
-      documentTypes={documentTypes}
-      documentTypesLoading={documentTypesLoading}
-      documentTypesError={
-        documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
-      }
-      creating={bulkImport.creating}
-      onCreate={handleCreate}
-    />
+    <div className="flex flex-col gap-5">
+      <StartImportSteps
+        documentTypes={documentTypes}
+        documentTypesLoading={documentTypesLoading}
+        documentTypesError={
+          documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
+        }
+        creating={bulkImport.creating}
+        onCreate={handleCreate}
+      />
+      <RecentImports documentTypeName={documentTypeName} onOpen={handleContinue} />
+    </div>
   )
 }
 

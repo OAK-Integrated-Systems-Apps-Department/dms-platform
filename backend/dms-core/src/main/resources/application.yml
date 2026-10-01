@@ -167,16 +167,9 @@ dms:
     # (sets export_jobs.expires_at). PLACEHOLDER - the real value is Phase 0
     # Key Decision #10, still open. See ExportJobProperties.
     job-ttl: ${EXPORT_JOB_TTL:PT24H}
-  import:
-    # Template-based bulk import - see BulkImportProperties. Staged files
-    # live on this node's local disk until their batch has run.
-    staging-dir: ${IMPORT_STAGING_DIR:${java.io.tmpdir}/dms-import}
-    max-rows: ${IMPORT_MAX_ROWS:5000}
-    max-archive-bytes: ${IMPORT_MAX_ARCHIVE_BYTES:2147483648}
-    max-chunk-bytes: ${IMPORT_MAX_CHUNK_BYTES:67108864}
-    session-ttl: ${IMPORT_SESSION_TTL:PT24H}
-    staging-retention: ${IMPORT_STAGING_RETENTION:PT24H}
-    concurrency: ${IMPORT_CONCURRENCY:2}
+    max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
+    max-export-size: ${EXPORT_MAX_SIZE:2GB}
+    max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
   storage:
     # Backs the single platform-default StorageLocation (tenant_id NULL)
     # that StorageLocationBootstrap creates on startup if none exists yet -
@@ -241,13 +234,19 @@ dms:
     max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
     # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
     worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
+    # ZIP intake and resumable (chunked) upload of large ZIPs.
+    max-archive-size: ${IMPORT_MAX_ARCHIVE_SIZE:2GB}
+    max-archive-entries: ${IMPORT_MAX_ARCHIVE_ENTRIES:5000}
+    max-chunk-size: ${IMPORT_MAX_CHUNK_SIZE:64MB}
+    upload-session-ttl: ${IMPORT_UPLOAD_SESSION_TTL:PT24H}
+    upload-session-dir: ${IMPORT_UPLOAD_SESSION_DIR:${java.io.tmpdir}/dms-upload-sessions}
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's
     # Content-Type is ignored. No archive types: this system accepts no
     # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
     # docs/scanning-architecture.md).
-    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,rtf,txt,csv,png,jpg,jpeg,tif,tiff}
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

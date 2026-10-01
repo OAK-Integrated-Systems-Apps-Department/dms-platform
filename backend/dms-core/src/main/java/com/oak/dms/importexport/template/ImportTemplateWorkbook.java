@@ -69,6 +69,7 @@ public class ImportTemplateWorkbook {
 
     private static final String DOCUMENT_TYPE_ID_LABEL = "documentTypeId";
     private static final String SCHEMA_VERSION_LABEL = "schemaVersion";
+    private static final String TEMPLATE_ID_LABEL = "importTemplateId";
     private static final int FIRST_COLUMN_KEY_ROW = 2;
     private static final int COLUMN_WIDTH = 24 * 256;
 
@@ -88,7 +89,58 @@ public class ImportTemplateWorkbook {
     public record ParsedRow(int rowNumber, String filename, String title, Map<String, String> fields) {
     }
 
-    public record ParsedTemplate(UUID documentTypeId, int schemaVersion, List<String> columnKeys, List<ParsedRow> rows) {
+    /**
+     * @param importTemplateId the saved template the file was generated from
+     *                         (its defaults apply on upload); null for the standard one
+     */
+    public record ParsedTemplate(UUID documentTypeId, int schemaVersion, List<String> columnKeys, List<ParsedRow> rows,
+                                 UUID importTemplateId) {
+
+        public ParsedTemplate(UUID documentTypeId, int schemaVersion, List<String> columnKeys, List<ParsedRow> rows) {
+            this(documentTypeId, schemaVersion, columnKeys, rows, null);
+        }
+    }
+
+    /**
+     * Which metadata fields a template has columns for, in order, and what
+     * each column is called - the standard template ({@link #standard}) or a
+     * saved one (ImportTemplateService#layout).
+     *
+     * @param headers field_key -> column header; a field not in it is headed by its label
+     */
+    public record TemplateLayout(UUID importTemplateId, List<SchemaField> fields, Map<String, String> headers) {
+
+        public String header(SchemaField field) {
+            String custom = headers.get(field.fieldKey());
+            return custom != null && !custom.isBlank() ? custom : field.label();
+        }
+    }
+
+    /** Every field that isn't hidden, in form order, under its own label. */
+    public static TemplateLayout standard(DocumentTypeSchemaResponse schema) {
+        return new TemplateLayout(null, templateFields(schema), Map.of());
+    }
+
+    /**
+     * A row written into a template - the failed-rows report, so a user can
+     * fix the rows and upload them again.
+     *
+     * @param fields   raw cells keyed by field_key, as they were uploaded
+     * @param problems why the row failed; written in a column after the
+     *                 template's own, which parsing never reads
+     */
+    public record PrefilledRow(String filename, String title, Map<String, String> fields, String problems) {
+    }
+
+    /** Header of the failed-rows report's extra column (outside _meta's column keys, so never parsed). */
+    static final String PROBLEMS_HEADER = "Problems (ignored on upload)";
+
+    /** The fields a template has a column for, in form order: every field that isn't hidden. */
+    public static List<SchemaField> templateFields(DocumentTypeSchemaResponse schema) {
+        return schema.fields().stream()
+                .filter(f -> !f.hidden())
+                .sorted((a, b) -> Integer.compare(a.displayOrder(), b.displayOrder()))
+                .toList();
     }
 
     /**
@@ -97,10 +149,18 @@ public class ImportTemplateWorkbook {
      *                row gets them
      */
     public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows) {
-        List<SchemaField> fields = schema.fields().stream()
-                .filter(f -> !f.hidden())
-                .sorted((a, b) -> Integer.compare(a.displayOrder(), b.displayOrder()))
-                .toList();
+        return generate(schema, maxRows, List.of());
+    }
+
+    /** As {@link #generate(DocumentTypeSchemaResponse, int)}, with {@code rows} filled in below the header. */
+    public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows, List<PrefilledRow> rows) {
+        return generate(schema, standard(schema), maxRows, rows);
+    }
+
+    /** The template for {@code layout}'s columns, with {@code rows} filled in below the header. */
+    public byte[] generate(DocumentTypeSchemaResponse schema, TemplateLayout layout, int maxRows,
+                           List<PrefilledRow> rows) {
+        List<SchemaField> fields = layout.fields();
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet importSheet = workbook.createSheet(IMPORT_SHEET);
@@ -131,7 +191,8 @@ public class ImportTemplateWorkbook {
             for (int i = 0; i < fields.size(); i++) {
                 SchemaField field = fields.get(i);
                 int column = i + 2;
-                writeHeader(header, column, field.mandatory() ? field.label() + " *" : field.label(), headerStyle);
+                writeHeader(header, column, field.mandatory() ? layout.header(field) + " *" : layout.header(field),
+                        headerStyle);
                 columnKeys.add(field.fieldKey());
 
                 String help = field.helpText() != null ? field.helpText().trim() : "";
@@ -180,12 +241,16 @@ public class ImportTemplateWorkbook {
                 }
             }
 
-            for (int c = 0; c < columnKeys.size(); c++) {
+            if (!rows.isEmpty()) {
+                writeRows(importSheet, columnKeys, rows, headerStyle);
+            }
+
+            for (int c = 0; c < columnKeys.size() + (rows.isEmpty() ? 0 : 1); c++) {
                 importSheet.setColumnWidth(c, COLUMN_WIDTH);
             }
             importSheet.createFreezePane(0, 1);
 
-            writeMeta(metaSheet, schema, columnKeys);
+            writeMeta(metaSheet, schema, columnKeys, layout.importTemplateId());
             workbook.setSheetVisibility(workbook.getSheetIndex(metaSheet), SheetVisibility.VERY_HIDDEN);
             if (optionsSheet != null) {
                 workbook.setSheetVisibility(workbook.getSheetIndex(optionsSheet), SheetVisibility.VERY_HIDDEN);
@@ -257,9 +322,37 @@ public class ImportTemplateWorkbook {
                 }
                 rows.add(new ParsedRow(r + 1, values.get(0) != null ? values.get(0) : "", values.get(1), fieldValues));
             }
-            return new ParsedTemplate(documentTypeId, schemaVersion, List.copyOf(columnKeys), List.copyOf(rows));
+            return new ParsedTemplate(documentTypeId, schemaVersion, List.copyOf(columnKeys), List.copyOf(rows),
+                    readTemplateId(metaSheet));
         } catch (IOException e) {
             throw invalid();
+        }
+    }
+
+    /**
+     * Writes prefilled rows as text cells (the converter reads ISO dates and
+     * plain numbers from text exactly as from typed cells), plus the
+     * problems column after the last template column.
+     */
+    private static void writeRows(Sheet sheet, List<String> columnKeys, List<PrefilledRow> rows, CellStyle headerStyle) {
+        int problemsColumn = columnKeys.size();
+        writeHeader(sheet.getRow(0), problemsColumn, PROBLEMS_HEADER, headerStyle);
+        for (int i = 0; i < rows.size(); i++) {
+            PrefilledRow prefilled = rows.get(i);
+            Row row = sheet.getRow(i + 1) != null ? sheet.getRow(i + 1) : sheet.createRow(i + 1);
+            setText(row, 0, prefilled.filename());
+            setText(row, 1, prefilled.title());
+            for (int c = 2; c < columnKeys.size(); c++) {
+                setText(row, c, prefilled.fields() != null ? prefilled.fields().get(columnKeys.get(c)) : null);
+            }
+            setText(row, problemsColumn, prefilled.problems());
+        }
+    }
+
+    private static void setText(Row row, int column, String value) {
+        if (value != null && !value.isEmpty()) {
+            Cell cell = row.getCell(column) != null ? row.getCell(column) : row.createCell(column);
+            cell.setCellValue(value);
         }
     }
 
@@ -309,15 +402,34 @@ public class ImportTemplateWorkbook {
         cell.setCellComment(comment);
     }
 
-    private static void writeMeta(Sheet metaSheet, DocumentTypeSchemaResponse schema, List<String> columnKeys) {
+    private static void writeMeta(Sheet metaSheet, DocumentTypeSchemaResponse schema, List<String> columnKeys,
+                                  UUID importTemplateId) {
         Row typeRow = metaSheet.createRow(0);
         typeRow.createCell(0).setCellValue(DOCUMENT_TYPE_ID_LABEL);
         typeRow.createCell(1).setCellValue(schema.documentTypeId().toString());
         Row versionRow = metaSheet.createRow(1);
         versionRow.createCell(0).setCellValue(SCHEMA_VERSION_LABEL);
         versionRow.createCell(1).setCellValue(String.valueOf(schema.schemaVersion()));
+        if (importTemplateId != null) {
+            // Beside the type id, so the A-column key list stays untouched.
+            typeRow.createCell(2).setCellValue(TEMPLATE_ID_LABEL);
+            typeRow.createCell(3).setCellValue(importTemplateId.toString());
+        }
         for (int i = 0; i < columnKeys.size(); i++) {
             metaSheet.createRow(FIRST_COLUMN_KEY_ROW + i).createCell(0).setCellValue(columnKeys.get(i));
+        }
+    }
+
+    /** The saved template's id from _meta C1/D1, or null (standard template, or an older file). */
+    private static UUID readTemplateId(Sheet metaSheet) {
+        Row row = metaSheet.getRow(0);
+        if (row == null || !TEMPLATE_ID_LABEL.equals(cellValue(row.getCell(2)))) {
+            return null;
+        }
+        try {
+            return UUID.fromString(cellValue(row.getCell(3)));
+        } catch (RuntimeException e) {
+            throw invalid();
         }
     }
 

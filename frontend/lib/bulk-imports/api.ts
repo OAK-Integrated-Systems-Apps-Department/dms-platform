@@ -88,7 +88,6 @@ export interface DownloadedFile {
 }
 
 const BASE = `${API_BASE_URL}/api/v1/bulk-imports`
-const TEMPLATE_FALLBACK_FILENAME = "import-template.xlsx"
 
 /**
  * GET /import-templates/document-types - the types a template can be
@@ -103,20 +102,121 @@ export async function fetchImportDocumentTypes(): Promise<ImportDocumentTypeOpti
   )
 }
 
-/** GET /import-templates - the .xlsx template for a document type's current schema. */
-export async function downloadImportTemplate(documentTypeId: string): Promise<DownloadedFile> {
-  const response = await apiFetch(
-    `${API_BASE_URL}/api/v1/import-templates?documentTypeId=${encodeURIComponent(documentTypeId)}`,
-    undefined,
-    "Could not download the template."
+/** Template (and failed-rows report) file formats. */
+export type TemplateFormat = "xlsx" | "csv"
+
+/** GET /import-templates - the template for a document type's current schema, as .xlsx or .csv. */
+export async function downloadImportTemplate(
+  documentTypeId: string,
+  format: TemplateFormat = "xlsx"
+): Promise<DownloadedFile> {
+  return downloadFile(
+    `${API_BASE_URL}/api/v1/import-templates?documentTypeId=${encodeURIComponent(documentTypeId)}&format=${format}`,
+    "Could not download the template.",
+    `import-template.${format}`
   )
+}
+
+/** GET /bulk-imports/{batchId}/failures/template - the failed rows as a template to fix and import again. */
+export async function downloadFailedRowsTemplate(batchId: string, format: TemplateFormat): Promise<DownloadedFile> {
+  return downloadFile(
+    `${BASE}/${batchId}/failures/template?format=${format}`,
+    "Could not download the failed rows.",
+    `failed-rows.${format}`
+  )
+}
+
+async function downloadFile(url: string, fallbackMessage: string, fallbackName: string): Promise<DownloadedFile> {
+  const response = await apiFetch(url, undefined, fallbackMessage)
   const blob = await response.blob()
-  const filename =
-    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? TEMPLATE_FALLBACK_FILENAME
+  const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? fallbackName
   return { blob, filename }
 }
 
-/** POST /bulk-imports - uploads the filled-in template and opens a batch. */
+/** Response of the ZIP endpoints - what happened to each entry. */
+export interface ImportArchiveReceivedResponseDto {
+  entriesRead: number
+  filesMatched: number
+  problemCount: number
+  /** At most the first 200 entries that weren't staged, and why. */
+  problems: { entry: string; message: string }[]
+  filesReceived: number
+  totalRecords: number
+}
+
+/**
+ * Largest ZIP sent in one request - the backend's multipart limit is
+ * 100 MB, so anything bigger goes through a resumable upload session.
+ */
+export const MAX_DIRECT_ARCHIVE_BYTES = 95 * 1024 * 1024
+
+/** Largest ZIP accepted at all (dms.import-export.max-archive-size). */
+export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+
+/** POST /bulk-imports/{batchId}/archive - one ZIP holding the template's files. */
+export async function uploadBulkImportArchive(batchId: string, archive: File): Promise<ImportArchiveReceivedResponseDto> {
+  const body = new FormData()
+  body.append("archive", archive)
+  return apiFetchJson<ImportArchiveReceivedResponseDto>(
+    `${BASE}/${batchId}/archive`,
+    { method: "POST", body },
+    `Could not upload ${archive.name}.`
+  )
+}
+
+/** Mirrors backend/dms-core's UploadSessionResponse - a resumable upload. */
+export interface UploadSessionDto {
+  uploadSessionId: string
+  fileName: string
+  totalSizeBytes: number
+  receivedBytes: number
+  status: "pending" | "uploading" | "quarantined" | "completed" | "failed"
+  maxChunkBytes: number
+  expiresAt: string
+}
+
+const SESSIONS = `${API_BASE_URL}/api/v1/upload-sessions`
+
+export async function createUploadSession(file: File): Promise<UploadSessionDto> {
+  return apiFetchJson<UploadSessionDto>(
+    SESSIONS,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: file.name, totalSizeBytes: file.size }),
+    },
+    "Could not start the upload."
+  )
+}
+
+export async function fetchUploadSession(sessionId: string): Promise<UploadSessionDto> {
+  return apiFetchJson<UploadSessionDto>(`${SESSIONS}/${sessionId}`, undefined, "Could not check the upload.")
+}
+
+/** PUT one chunk at `offset` (must equal the bytes received so far). */
+export async function uploadSessionChunk(sessionId: string, offset: number, chunk: Blob): Promise<UploadSessionDto> {
+  return apiFetchJson<UploadSessionDto>(
+    `${SESSIONS}/${sessionId}/content?offset=${offset}`,
+    { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: chunk },
+    "A part of the upload failed."
+  )
+}
+
+/** POST .../archive/from-upload-session - unpacks a completed resumable upload into the batch. */
+export async function unpackUploadSession(batchId: string, sessionId: string): Promise<ImportArchiveReceivedResponseDto> {
+  return apiFetchJson<ImportArchiveReceivedResponseDto>(
+    `${BASE}/${batchId}/archive/from-upload-session?uploadSessionId=${encodeURIComponent(sessionId)}`,
+    { method: "POST" },
+    "Could not unpack the ZIP."
+  )
+}
+
+/** GET /bulk-imports/{batchId}/row-check - the template's rows with problems, checked now (before submit). */
+export async function fetchBulkImportRowCheck(batchId: string): Promise<ImportRowFailureDto[]> {
+  return apiFetchJson<ImportRowFailureDto[]>(`${BASE}/${batchId}/row-check`, undefined, "Could not check the rows.")
+}
+
+/** POST /bulk-imports - uploads the filled-in template (.xlsx or .csv) and opens a batch. */
 export async function createBulkImport(template: File): Promise<BulkImportCreatedResponseDto> {
   const body = new FormData()
   body.append("template", template)
@@ -166,6 +266,25 @@ export async function fetchBulkImportFailures(batchId: string): Promise<ImportRo
     `${BASE}/${batchId}/failures`,
     undefined,
     "Could not load the rows that failed."
+  )
+}
+
+/** Mirrors PageResponse<BulkImportStatusResponse>. */
+export interface BulkImportPageDto {
+  content: BulkImportStatusResponseDto[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  last: boolean
+}
+
+/** GET /bulk-imports - the caller's own imports, newest first, finished ones included. `page` is 0-indexed. */
+export async function fetchMyBulkImports(page: number, size: number): Promise<BulkImportPageDto> {
+  return apiFetchJson<BulkImportPageDto>(
+    `${BASE}?page=${page}&size=${size}&sort=createdAt,desc`,
+    undefined,
+    "Could not load your recent imports."
   )
 }
 

@@ -73,6 +73,13 @@ export const PermissionCodes = {
   // File Import/Export (FIE) - BulkImportController gates every intake
   // endpoint (template, batch, files, submit, cancel) on this one code.
   FIE_BULK_IMPORT_UPLOAD_FILE: "fie.bulk-import-documents.upload-file",
+  // Bulk export - starting one also needs DOCM_DOCUMENTS_VIEW (it reads the
+  // documents); see ExportJobController.
+  FIE_BULK_EXPORT_EXECUTE: "fie.bulk-export-documents.execute-export",
+  // Saved import templates (ImportTemplateController).
+  FIE_IMPORT_TEMPLATES_CREATE: "fie.manage-import-templates.create-template",
+  FIE_IMPORT_TEMPLATES_UPDATE: "fie.manage-import-templates.update-template",
+  FIE_IMPORT_TEMPLATES_DELETE: "fie.manage-import-templates.delete-template",
   // Quarantine review (DOCM - seeded by backend V40, granted to no role by
   // default). OVERRIDE is deliberately separate from RELEASE: it
   // force-releases a file the malware scanner still flags.
@@ -83,4 +90,5 @@ export const PermissionCodes = {
   // Uploading documents (POST /api/v1/documents) - also what the upload
   // panel's document-type picker (/document-types/selectable) requires.
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
+  DOCM_DOCUMENTS_VIEW: "docm.documents.view",
 } as const

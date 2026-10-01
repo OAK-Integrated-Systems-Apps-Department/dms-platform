@@ -1,13 +1,21 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, CheckCircle2, Download, Loader2, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { hasFailedRows, type BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
+import { friendlyMessage } from "@/lib/api-error"
+import {
+  downloadFailedRowsTemplate,
+  hasFailedRows,
+  saveDownloadedFile,
+  type BulkImportStatusResponseDto,
+  type TemplateFormat,
+} from "@/lib/bulk-imports/api"
 
 import { FailedRowsTable } from "./failed-rows-table"
-import { StepCard } from "./step-card"
+import { InlineError, StepCard } from "./step-card"
 
 interface ImportResultsCardProps {
   batch: BulkImportStatusResponseDto
@@ -40,7 +48,12 @@ export function ImportResultsCard({ batch, documentTypeName, onStartOver }: Impo
         </div>
       </dl>
 
-      {hasFailedRows(batch.status) && <FailedRowsTable batchId={batch.batchId} />}
+      {hasFailedRows(batch.status) && (
+        <>
+          <FailedRowsTable batchId={batch.batchId} />
+          <FixFailedRows batchId={batch.batchId} />
+        </>
+      )}
 
       <Button onClick={onStartOver}>
         <RotateCcw />
@@ -83,4 +96,51 @@ function describe(batch: BulkImportStatusResponseDto) {
         ),
       }
   }
+}
+
+/**
+ * Fix and resubmit: the failed rows come back as a ready-to-upload
+ * template (with a column saying what was wrong); correct them and start a
+ * new import with it and just those rows' files.
+ */
+function FixFailedRows({ batchId }: { batchId: string }) {
+  const [downloading, setDownloading] = useState<TemplateFormat | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function download(format: TemplateFormat) {
+    setDownloading(format)
+    setError(null)
+    try {
+      saveDownloadedFile(await downloadFailedRowsTemplate(batchId, format))
+    } catch (e) {
+      setError(friendlyMessage(e, "Could not download the failed rows."))
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  return (
+    <section className="mb-5 rounded-md border border-dashed border-border px-4 py-3">
+      <h3 className="mb-1 text-[13px] font-semibold">Fix and import the failed rows again</h3>
+      <p className="mb-3 text-[12.5px] leading-[1.6] text-muted-foreground">
+        Download the failed rows as a template - each row as you uploaded it, with what went wrong in its last
+        column. Correct them, then start a new import with that file and the files those rows list.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {(["xlsx", "csv"] as const).map((format) => (
+          <Button
+            key={format}
+            variant="outline"
+            size="sm"
+            onClick={() => void download(format)}
+            disabled={downloading !== null}
+          >
+            {downloading === format ? <Loader2 className="animate-spin" /> : <Download />}
+            {format === "xlsx" ? "Failed rows (Excel)" : "Failed rows (CSV)"}
+          </Button>
+        ))}
+      </div>
+      {error && <InlineError>{error}</InlineError>}
+    </section>
+  )
 }

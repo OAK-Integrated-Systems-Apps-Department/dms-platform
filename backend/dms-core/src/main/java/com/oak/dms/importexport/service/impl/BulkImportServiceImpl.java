@@ -24,14 +24,27 @@ import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.matching.ImportFilenameMatcher;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.oak.dms.importexport.service.BulkImportService;
+import com.oak.dms.importexport.service.ImportTemplateService;
+import com.oak.dms.importexport.entity.ImportTemplate;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.TemplateLayout;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportRowError;
+import com.oak.dms.importexport.validation.ImportRowValidator;
 import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
+import com.oak.dms.importexport.enums.TemplateFormat;
+import com.oak.dms.importexport.template.ImportTemplateCsv;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.PrefilledRow;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.stream.Collectors;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.entity.DocumentType;
@@ -95,6 +108,8 @@ public class BulkImportServiceImpl implements BulkImportService {
             "file", "File",
             ImportTemplateWorkbook.FILENAME_KEY, "Filename",
             ImportTemplateWorkbook.TITLE_KEY, "Title");
+    /** ImportRowValidator's code for a row whose file hasn't arrived. */
+    private static final String FILE_MISSING = "FILE_MISSING";
     private static final TypeReference<List<ImportRowError>> ROW_ERRORS = new TypeReference<>() {
     };
 
@@ -112,6 +127,10 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ObjectMapper objectMapper;
     private final FileTypeInspector fileTypeInspector;
     private final ImportSchemaFields importSchemaFields;
+    private final BulkImportAuditor auditor;
+    private final ImportTemplateCsv templateCsv;
+    private final ImportRowValidator rowValidator;
+    private final ImportTemplateService importTemplateService;
 
     @Override
     @Transactional(readOnly = true)
@@ -129,7 +148,7 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     @Transactional(readOnly = true)
-    public ImportTemplateFile generateTemplate(UUID documentTypeId) {
+    public ImportTemplateFile generateTemplate(UUID documentTypeId, TemplateFormat format) {
         UUID tenantId = TenantContext.getTenantId();
         DocumentType documentType = documentTypeRepository
                 .findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId)
@@ -137,14 +156,12 @@ public class BulkImportServiceImpl implements BulkImportService {
         requireActive(documentType);
 
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(documentTypeId);
-        byte[] content = templateWorkbook.generate(schema, properties.getMaxFilesPerBatch());
-        String filename = safeFilenamePart(documentType.getTypeCode()) + "-import-template-v"
-                + schema.schemaVersion() + XLSX_EXTENSION;
-        return new ImportTemplateFile(filename, content);
+        String filename = safeFilenamePart(documentType.getTypeCode()) + "-import-template-v" + schema.schemaVersion();
+        return render(format, filename, schema, List.of());
     }
 
     @Override
-    public BulkImportCreatedResponse createBatch(long templateSize, InputStream template) {
+    public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
 
@@ -158,7 +175,9 @@ public class BulkImportServiceImpl implements BulkImportService {
         }
 
         int maxRows = properties.getMaxFilesPerBatch();
-        ParsedTemplate parsed = templateWorkbook.parse(template, maxRows);
+        ParsedTemplate parsed = isCsv(templateFilename)
+                ? templateCsv.parse(template, maxRows)
+                : templateWorkbook.parse(template, maxRows);
 
         DocumentType documentType = documentTypeRepository
                 .findByDocumentTypeIdAndTenantIdAndDeletedFalse(parsed.documentTypeId(), tenantId)
@@ -177,7 +196,11 @@ public class BulkImportServiceImpl implements BulkImportService {
                     "You already have a bulk import in progress. Wait for it to finish before starting another.");
         }
 
-        List<ParsedRow> rows = parsed.rows();
+        // A file made from a saved template gets that template's defaults
+        // for fields left out or blank - from here on they're ordinary cells.
+        Map<String, String> defaults = parsed.importTemplateId() == null ? Map.of()
+                : importTemplateService.defaultsForUpload(parsed.importTemplateId(), documentType.getDocumentTypeId());
+        List<ParsedRow> rows = parsed.rows().stream().map(row -> withDefaults(row, defaults)).toList();
         if (rows.isEmpty()) {
             throw new ImportBatchSizeException("IMPORT_ROW_COUNT_INVALID", "The template has no data rows.");
         }
@@ -190,6 +213,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .status(ImportBatchStatus.uploading)
                 .totalRecords(rows.size())
                 .correlationId(UUID.randomUUID())
+                .importTemplateId(parsed.importTemplateId())
                 .createdBy(userId)
                 .build());
 
@@ -211,6 +235,137 @@ public class BulkImportServiceImpl implements BulkImportService {
 
         return new BulkImportCreatedResponse(batch.getImportBatchId(), rows.size(),
                 rows.stream().map(ParsedRow::filename).toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ImportRowFailure> checkRows(UUID batchId) {
+        UUID tenantId = TenantContext.getTenantId();
+        ImportBatch batch = importBatchRepository
+                .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, TenantContext.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
+        Map<String, ImportField> fields = importSchemaFields.load(tenantId, batch.getDocumentTypeId(),
+                batch.getSchemaVersion());
+        Map<String, List<Integer>> duplicates = ImportRowValidator.duplicateRows(items);
+
+        List<ImportRowFailure> problems = new ArrayList<>();
+        for (ImportItem item : items) {
+            RowValues values = readRowValues(item);
+            if (values == null) {
+                continue;
+            }
+            List<ImportRowProblem> rowProblems = rowValidator.validate(item, values, fields, duplicates,
+                            batch.getDocumentTypeId(), batch.getSchemaVersion(), tenantId).stream()
+                    // Files are still arriving - the missing-files list covers that.
+                    .filter(error -> !FILE_MISSING.equals(error.code()))
+                    .map(error -> new ImportRowProblem(error.field(), fieldLabel(error.field(), fields), error.code(),
+                            error.message(), error.severity()))
+                    .toList();
+            if (!rowProblems.isEmpty()) {
+                problems.add(new ImportRowFailure(item.getRowNumber(), item.getFilenameReference(), values.title(),
+                        rowProblems));
+            }
+        }
+        return problems;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ImportTemplateFile failedRowsTemplate(UUID batchId, TemplateFormat format) {
+        UUID tenantId = TenantContext.getTenantId();
+        ImportBatch batch = importBatchRepository
+                .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, TenantContext.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        List<ImportItem> failed = importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batchId,
+                ImportItem.ImportItemStatus.failed);
+        if (failed.isEmpty()) {
+            throw new ResourceNotFoundException("Failed rows of ImportBatch", batchId);
+        }
+        DocumentType documentType = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(batch.getDocumentTypeId(), tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentType", batch.getDocumentTypeId()));
+        requireActive(documentType);
+
+        // The current schema, not the batch's: the report is a template to
+        // upload again, and only a current-version template is accepted.
+        // Cells of fields that no longer exist are dropped.
+        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(batch.getDocumentTypeId());
+        Map<String, ImportField> batchFields = importSchemaFields.load(tenantId, batch.getDocumentTypeId(),
+                batch.getSchemaVersion());
+        List<PrefilledRow> rows = failed.stream()
+                .map(item -> {
+                    RowValues values = readRowValues(item);
+                    String problems = rowErrors(item).stream()
+                            .filter(error -> ImportRowError.ERROR.equals(error.severity()))
+                            .map(error -> {
+                                String label = fieldLabel(error.field(), batchFields);
+                                return label != null ? label + ": " + error.message() : error.message();
+                            })
+                            .collect(Collectors.joining("; "));
+                    return new PrefilledRow(item.getFilenameReference(), values != null ? values.title() : null,
+                            values != null && values.fields() != null ? values.fields() : Map.of(), problems);
+                })
+                .toList();
+        String filename = safeFilenamePart(documentType.getTypeCode()) + "-failed-rows-"
+                + batchId.toString().substring(0, 8);
+        return render(format, filename, schema, rows);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ImportTemplateFile generateFromSavedTemplate(UUID importTemplateId, TemplateFormat format) {
+        ImportTemplate saved = importTemplateService.requireForDownload(importTemplateId);
+        DocumentType documentType = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(saved.getDocumentTypeId(), TenantContext.getTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentType", saved.getDocumentTypeId()));
+        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(saved.getDocumentTypeId());
+        String filename = safeFilenamePart(documentType.getTypeCode()) + "-" + safeFilenamePart(saved.getName())
+                + "-v" + schema.schemaVersion();
+        return render(format, filename, schema, importTemplateService.layout(saved, schema), List.of());
+    }
+
+    /** Fills every default the row leaves out or blank; cells the user filled always win. */
+    static ParsedRow withDefaults(ParsedRow row, Map<String, String> defaults) {
+        if (defaults.isEmpty()) {
+            return row;
+        }
+        Map<String, String> fields = new LinkedHashMap<>(row.fields());
+        defaults.forEach((key, value) -> {
+            String cell = fields.get(key);
+            if (cell == null || cell.isBlank()) {
+                fields.put(key, value);
+            }
+        });
+        return new ParsedRow(row.rowNumber(), row.filename(), row.title(), fields);
+    }
+
+    private ImportTemplateFile render(TemplateFormat format, String baseName, DocumentTypeSchemaResponse schema,
+                                      List<PrefilledRow> rows) {
+        return render(format, baseName, schema, ImportTemplateWorkbook.standard(schema), rows);
+    }
+
+    private ImportTemplateFile render(TemplateFormat format, String baseName, DocumentTypeSchemaResponse schema,
+                                      TemplateLayout layout, List<PrefilledRow> rows) {
+        if (format == TemplateFormat.csv) {
+            return new ImportTemplateFile(baseName + ".csv", ImportTemplateFile.CSV_CONTENT_TYPE,
+                    templateCsv.generate(schema, layout, rows));
+        }
+        return new ImportTemplateFile(baseName + XLSX_EXTENSION,
+                templateWorkbook.generate(schema, layout, properties.getMaxFilesPerBatch(), rows));
+    }
+
+    private static boolean isCsv(String filename) {
+        return filename != null && filename.toLowerCase(Locale.ROOT).endsWith(".csv");
+    }
+
+    private RowValues readRowValues(ImportItem item) {
+        try {
+            return objectMapper.readValue(item.getRowValues(), RowValues.class);
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            log.warn("Unreadable row_values on import item {}", item.getImportItemId(), e);
+            return null;
+        }
     }
 
     @Override
@@ -295,6 +450,8 @@ public class BulkImportServiceImpl implements BulkImportService {
         // this event, and skip the batch otherwise.
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, batchId, SUBMITTED_EVENT_TYPE,
                 Map.of("importBatchId", batchId, "correlationId", batch.getCorrelationId()));
+        auditor.submitted(batch, (int) importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId).stream()
+                .filter(item -> item.getStagedObjectKey() != null).count());
 
         log.info("Submitted bulk import batch {} for tenant {}", batchId, tenantId);
     }
@@ -342,6 +499,15 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<BulkImportStatusResponse> listMine(Pageable pageable) {
+        return importBatchRepository
+                .findByTenantIdAndCreatedByAndDeletedFalse(TenantContext.getTenantId(), TenantContext.getUserId(), pageable)
+                .map(batch -> toStatusResponse(batch,
+                        importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<BulkImportStatusResponse> getActive() {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
@@ -372,6 +538,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
         int toDelete = stagedImportFiles.clearAndDeleteAfterCommit(items);
         importItemRepository.saveAll(items);
+        auditor.cancelled(batch);
 
         log.info("Cancelled bulk import batch {} for tenant {} ({} staged files to delete)",
                 batchId, tenantId, toDelete);

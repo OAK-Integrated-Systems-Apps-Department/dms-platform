@@ -1,15 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, Send, X } from "lucide-react"
+import { Loader2, RotateCcw, Send, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import type { BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
+import type { ArchiveUploadState } from "@/lib/bulk-imports/use-archive-upload"
 import type { UploadQueueEntry } from "@/lib/bulk-imports/use-upload-queue"
 
 import { ConfirmActionDialog } from "./confirm-action-dialog"
+import { RowCheckPanel } from "./row-check-panel"
 import { InlineError, InlineSuccess, StepCard } from "./step-card"
 
 interface UploadFilesStepProps {
@@ -19,6 +21,11 @@ interface UploadFilesStepProps {
   entries: UploadQueueEntry[]
   uploading: boolean
   onFiles: (files: File[]) => void
+  /** The ZIP alternative to uploading files one by one. */
+  archive: ArchiveUploadState
+  archiveBusy: boolean
+  onArchive: (file: File) => void
+  onResumeArchive: () => void
   onSubmit: () => Promise<string | null>
   onCancel: () => Promise<string | null>
 }
@@ -30,6 +37,10 @@ export function UploadFilesStep({
   entries,
   uploading,
   onFiles,
+  archive,
+  archiveBusy,
+  onArchive,
+  onResumeArchive,
   onSubmit,
   onCancel,
 }: UploadFilesStepProps) {
@@ -74,10 +85,25 @@ export function UploadFilesStep({
       >
         {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
 
-        <FileDropzone multiple onFiles={onFiles} label="Upload import files">
-          <span className="font-semibold text-foreground">Drag files here</span> or click to browse
-          <span className="mt-0.5 block text-[12px]">Up to 100 MB per file</span>
-        </FileDropzone>
+        <div className="grid gap-3 md:grid-cols-2">
+          <FileDropzone multiple onFiles={onFiles} disabled={archiveBusy} label="Upload import files">
+            <span className="font-semibold text-foreground">Drag files here</span> or click to browse
+            <span className="mt-0.5 block text-[12px]">
+              Up to 100 MB per file - PDF, Office and OpenDocument files, images (incl. HEIC), email (.msg/.eml),
+              Visio, DWG, text/CSV/XML/JSON
+            </span>
+          </FileDropzone>
+          <FileDropzone
+            accept=".zip"
+            disabled={archiveBusy || uploading}
+            onFiles={(files) => files[0] && onArchive(files[0])}
+            label="Upload the files as one ZIP"
+          >
+            <span className="font-semibold text-foreground">Or drop one .zip</span> with all the files
+            <span className="mt-0.5 block text-[12px]">Up to 2 GB - large ZIPs resume if the connection drops</span>
+          </FileDropzone>
+        </div>
+        <ArchiveStatus state={archive} onResume={onResumeArchive} />
 
         <div className="mt-5 grid gap-5 md:grid-cols-2">
           <div>
@@ -123,6 +149,13 @@ export function UploadFilesStep({
       </StepCard>
 
       <StepCard
+        title="Check the rows"
+        description="The template's values checked against the document type's fields now, so problems can be fixed before anything is imported."
+      >
+        <RowCheckPanel batchId={status.batchId} totalRecords={status.totalRecords} />
+      </StepCard>
+
+      <StepCard
         step={4}
         title="Submit for processing"
         description={
@@ -132,11 +165,11 @@ export function UploadFilesStep({
         }
         action={cancelButton}
       >
-        <Button onClick={handleSubmitClick} disabled={uploading || submitting}>
+        <Button onClick={handleSubmitClick} disabled={uploading || archiveBusy || submitting}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
           {submitting ? "Submitting…" : "Submit import"}
         </Button>
-        {uploading && (
+        {(uploading || archiveBusy) && (
           <p className="mt-2 text-[12.5px] text-muted-foreground">Wait for the uploads in progress to finish.</p>
         )}
         {submitError && <InlineError>{submitError}</InlineError>}
@@ -210,5 +243,75 @@ function UploadStateBadge({ entry }: { entry: UploadQueueEntry }) {
       return <Badge variant="default">Matched to row {entry.rowNumber}</Badge>
     case "error":
       return <Badge variant="rust">Error</Badge>
+  }
+}
+
+function ArchiveStatus({ state, onResume }: { state: ArchiveUploadState; onResume: () => void }) {
+  switch (state.kind) {
+    case "idle":
+      return null
+    case "sending":
+      return (
+        <div className="mt-3 rounded-md border border-border px-3.5 py-2.5 text-[12.5px]" aria-live="polite">
+          <p className="mb-1.5 flex items-center gap-2">
+            <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+            Uploading {state.fileName}
+            {state.progress !== null && ` - ${Math.floor(state.progress * 100)}%`}
+          </p>
+          {state.progress !== null && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-primary transition-[width]" style={{ width: `${state.progress * 100}%` }} />
+            </div>
+          )}
+        </div>
+      )
+    case "unpacking":
+      return (
+        <p className="mt-3 inline-flex items-center gap-2 text-[12.5px] text-muted-foreground" aria-live="polite">
+          <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+          Unpacking {state.fileName} and matching its files to rows…
+        </p>
+      )
+    case "done": {
+      const { result } = state
+      return (
+        <div className="mt-3">
+          <InlineSuccess>
+            {state.fileName}: {result.filesMatched} of {result.entriesRead}{" "}
+            {result.entriesRead === 1 ? "file" : "files"} matched to rows.
+          </InlineSuccess>
+          {result.problemCount > 0 && (
+            <ul className="mt-2 max-h-[180px] overflow-y-auto rounded-md border border-border px-3.5 py-2 text-[12px]">
+              {result.problems.map((problem, i) => (
+                <li key={`${problem.entry}-${i}`} className="py-0.5">
+                  <span className="font-mono break-all">{problem.entry}</span>
+                  <span className="text-muted-foreground"> - {problem.message}</span>
+                </li>
+              ))}
+              {result.problemCount > result.problems.length && (
+                <li className="py-0.5 text-muted-foreground">
+                  …and {result.problemCount - result.problems.length} more not listed.
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      )
+    }
+    case "error":
+      return (
+        <div className="mt-3">
+          <InlineError>
+            <strong className="font-semibold">{state.fileName}: </strong>
+            {state.message}
+          </InlineError>
+          {state.resumable && (
+            <Button variant="outline" size="sm" className="mt-2" onClick={onResume}>
+              <RotateCcw />
+              Resume upload
+            </Button>
+          )}
+        </div>
+      )
   }
 }

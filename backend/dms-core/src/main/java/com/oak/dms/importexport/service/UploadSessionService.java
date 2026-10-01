@@ -1,7 +1,7 @@
 package com.oak.dms.importexport.service;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.importexport.config.BulkImportProperties;
+import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.CreateUploadSessionRequest;
 import com.oak.dms.importexport.dto.UploadSessionResponse;
 import com.oak.dms.importexport.entity.UploadSession;
@@ -9,7 +9,9 @@ import com.oak.dms.importexport.enums.UploadSessionStatus;
 import com.oak.dms.importexport.exception.BulkImportException;
 import com.oak.dms.importexport.repository.UploadSessionRepository;
 import com.oak.dms.security.auth.TenantContext;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -27,30 +29,29 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * B4 - resumable, chunked upload of a large ZIP for a bulk import (up to
- * {@code dms.import.max-archive-bytes}, in chunks of at most
- * {@code dms.import.max-chunk-bytes}). The client creates a session, sends
- * chunks in order ({@code offset} = bytes received so far), and after a
- * dropped connection asks for the session and carries on from
- * {@code receivedBytes}. A completed session is then passed to
- * {@link BulkImportService#start} instead of the ZIP itself.
+ * Resumable, chunked upload of a large ZIP for a bulk import (up to
+ * {@code dms.import-export.max-archive-size}, in chunks of at most
+ * {@code dms.import-export.max-chunk-size}). The client creates a session,
+ * sends chunks in order ({@code offset} = bytes received so far), and after
+ * a dropped connection asks for the session and carries on from
+ * {@code receivedBytes}. A completed session is then unpacked into its
+ * batch by {@code ImportArchiveIntake} - see {@link #takeCompletedFile}.
  * <p>
  * A chunk is first received into its own temporary file with no lock held
  * (that part runs at the client's network speed); only the fast local
  * append happens under the session's row lock.
  */
+@Slf4j
 @Service
 public class UploadSessionService {
 
     private final UploadSessionRepository repository;
-    private final ImportStagingArea stagingArea;
-    private final BulkImportProperties properties;
+    private final ImportExportProperties properties;
     private final TransactionTemplate transactionTemplate;
 
-    public UploadSessionService(UploadSessionRepository repository, ImportStagingArea stagingArea,
-                                BulkImportProperties properties, PlatformTransactionManager transactionManager) {
+    public UploadSessionService(UploadSessionRepository repository, ImportExportProperties properties,
+                                PlatformTransactionManager transactionManager) {
         this.repository = repository;
-        this.stagingArea = stagingArea;
         this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -59,9 +60,9 @@ public class UploadSessionService {
         if (!request.fileName().toLowerCase(Locale.ROOT).endsWith(".zip")) {
             throw BulkImportException.badRequest("INVALID_ARCHIVE", "Only .zip files can be uploaded this way.");
         }
-        if (request.totalSizeBytes() > properties.getMaxArchiveBytes()) {
+        if (request.totalSizeBytes() > properties.getMaxArchiveSize().toBytes()) {
             throw new BulkImportException(HttpStatus.CONTENT_TOO_LARGE, "ARCHIVE_TOO_LARGE",
-                    "The ZIP is larger than the " + (properties.getMaxArchiveBytes() / (1024 * 1024)) + " MB limit.");
+                    "The ZIP is larger than the " + properties.getMaxArchiveSize().toMegabytes() + " MB limit.");
         }
         OffsetDateTime now = OffsetDateTime.now();
         UploadSession session = repository.saveAndFlush(UploadSession.builder()
@@ -71,10 +72,10 @@ public class UploadSessionService {
                 .originalFilename(request.fileName())
                 .totalSizeBytes(request.totalSizeBytes())
                 .receivedBytes(0)
-                .expiresAt(now.plus(properties.getSessionTtl()))
+                .expiresAt(now.plus(properties.getUploadSessionTtl()))
                 .createdAt(now)
                 .build());
-        Path file = stagingArea.sessionFile(session.getUploadSessionId());
+        Path file = sessionFile(session.getUploadSessionId());
         try {
             Files.createDirectories(file.getParent());
             Files.deleteIfExists(file);
@@ -97,7 +98,7 @@ public class UploadSessionService {
         UploadSession session = own(sessionId);
         checkAcceptsChunk(session, offset, contentLength);
 
-        Path file = stagingArea.sessionFile(sessionId);
+        Path file = sessionFile(sessionId);
         Path chunk = file.resolveSibling(sessionId + "." + UUID.randomUUID() + ".chunk");
         try {
             long received = copyExactly(body, chunk, contentLength);
@@ -134,7 +135,7 @@ public class UploadSessionService {
             session.setStatus(UploadSessionStatus.failed);
             repository.save(session);
         });
-        stagingArea.deleteQuietly(stagingArea.sessionFile(sessionId));
+        deleteQuietly(sessionFile(sessionId));
     }
 
     private void checkAcceptsChunk(UploadSession session, long offset, long contentLength) {
@@ -151,9 +152,9 @@ public class UploadSessionService {
         if (contentLength <= 0) {
             throw BulkImportException.badRequest("EMPTY_CHUNK", "Send the chunk's Content-Length, and at least one byte.");
         }
-        if (contentLength > properties.getMaxChunkBytes()) {
+        if (contentLength > properties.getMaxChunkSize().toBytes()) {
             throw new BulkImportException(HttpStatus.CONTENT_TOO_LARGE, "CHUNK_TOO_LARGE",
-                    "A chunk may be at most " + properties.getMaxChunkBytes() + " bytes.");
+                    "A chunk may be at most " + properties.getMaxChunkSize().toBytes() + " bytes.");
         }
         if (offset + contentLength > session.getTotalSizeBytes()) {
             throw BulkImportException.badRequest("CHUNK_PAST_END", "The chunk goes past the file's declared size of "
@@ -206,6 +207,58 @@ public class UploadSessionService {
 
     private UploadSessionResponse toResponse(UploadSession s) {
         return new UploadSessionResponse(s.getUploadSessionId(), s.getOriginalFilename(), s.getTotalSizeBytes(),
-                s.getReceivedBytes(), s.getStatus(), properties.getMaxChunkBytes(), s.getExpiresAt());
+                s.getReceivedBytes(), s.getStatus(), properties.getMaxChunkSize().toBytes(), s.getExpiresAt());
+    }
+
+    /**
+     * Hands over a completed session's file and closes the session, so it
+     * can only ever be used once. The caller owns (and deletes) the file.
+     */
+    public Path takeCompletedFile(UUID sessionId) {
+        Path file = sessionFile(sessionId);
+        transactionTemplate.executeWithoutResult(status -> {
+            UploadSession session = own(sessionId);
+            UploadSession locked = repository.lockById(session.getUploadSessionId()).orElseThrow();
+            if (locked.isDeleted() || locked.getStatus() != UploadSessionStatus.completed || !Files.isRegularFile(file)) {
+                throw BulkImportException.conflict("UPLOAD_INCOMPLETE", "The ZIP upload hasn't finished yet ("
+                        + locked.getReceivedBytes() + " of " + locked.getTotalSizeBytes() + " bytes received).");
+            }
+            OffsetDateTime now = OffsetDateTime.now();
+            locked.setDeleted(true);
+            locked.setDeletedAt(now);
+            locked.setUpdatedAt(now);
+            locked.setUpdatedBy(TenantContext.getUserId());
+        });
+        return file;
+    }
+
+    /** Deletes sessions nobody finished (or used) before their expiry, with what they received. */
+    @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT10M")
+    public void expireSessions() {
+        for (UploadSession session : repository.findByDeletedFalseAndExpiresAtBefore(OffsetDateTime.now())) {
+            deleteQuietly(sessionFile(session.getUploadSessionId()));
+            transactionTemplate.executeWithoutResult(status -> repository.lockById(session.getUploadSessionId())
+                    .ifPresent(locked -> {
+                        locked.setDeleted(true);
+                        locked.setDeletedAt(OffsetDateTime.now());
+                        locked.setStatus(UploadSessionStatus.failed);
+                    }));
+        }
+    }
+
+    /** Server-chosen path from the session id only - never the uploaded name. */
+    Path sessionFile(UUID sessionId) {
+        return Path.of(properties.getUploadSessionDir()).toAbsolutePath().normalize().resolve(sessionId + ".part");
+    }
+
+    static void deleteQuietly(Path file) {
+        if (file == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            log.warn("Could not delete upload session file {}: {}", file, e.getMessage());
+        }
     }
 }

@@ -19,6 +19,7 @@ export const EXPORT_JOB_STATUS_BADGE_VARIANT: Record<ExportJobStatus, "default" 
 
 export const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
   single_document: "Single document",
+  bulk_selection: "Documents (bulk)",
   bulk_folder: "Folder (bulk)",
   report_data: "Report data",
 }

@@ -45,8 +45,12 @@ public final class AuditObjectTypes {
     public static final String SCAN_RESULT = "SCAN_RESULT";
     /** A quarantined infected upload (quarantine_records) - the object of DOCUMENT_QUARANTINED. */
     public static final String QUARANTINE_RECORD = "QUARANTINE_RECORD";
-    /** One template-based bulk import (migration_batches) - the object of every BULK_IMPORT_* event. */
-    public static final String MIGRATION_BATCH = "MIGRATION_BATCH";
+    /** One bulk import (import_batches) - the object of every BULK_IMPORT_* event. */
+    public static final String IMPORT_BATCH = "IMPORT_BATCH";
+    /** A saved import template (import_templates) - the object of every IMPORT_TEMPLATE_* event. */
+    public static final String IMPORT_TEMPLATE = "IMPORT_TEMPLATE";
+    /** One bulk export (export_jobs) - the object of every EXPORT_* event. */
+    public static final String EXPORT_JOB = "EXPORT_JOB";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

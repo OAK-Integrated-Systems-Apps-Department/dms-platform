@@ -22,6 +22,7 @@ import java.util.List;
 public class IngestionProperties {
 
     private List<String> allowedFileTypes = new ArrayList<>(List.of(
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
-            "rtf", "txt", "csv", "png", "jpg", "jpeg", "tif", "tiff"));
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "odg",
+            "rtf", "txt", "csv", "tsv", "md", "xml", "json", "msg", "eml", "vsd", "vsdx", "dwg",
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff"));
 }

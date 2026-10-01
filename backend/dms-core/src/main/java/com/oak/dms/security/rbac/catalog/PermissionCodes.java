@@ -95,16 +95,15 @@ public final class PermissionCodes {
     public static final String DOCM_QUARANTINE_DELETE = "docm.quarantine.delete";
     public static final String DOCM_QUARANTINE_OVERRIDE = "docm.quarantine.override";
 
-
-    // File Import/Export - FIE / Bulk Import Documents - see V10's seed migration.
+    // File Import/Export - FIE. Seeded by V10; the unused codes are
+    // deprecated by V49. Bulk import is gated as a whole on upload-file
+    // (using a saved template included), bulk export on execute-export, and
+    // the tenant's saved import templates on manage-import-templates.*.
     public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";
-
-    // File Import/Export - FIE, template-based bulk import. Seeded by V10;
-    // map-fields is unused so far (templates are generated from the
-    // document type's schema, so columns never need mapping).
-    public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";
-    public static final String FIE_BULK_IMPORT_VALIDATE_PREVIEW = "fie.bulk-import-documents.validate-preview";
-    public static final String FIE_BULK_IMPORT_EXECUTE = "fie.bulk-import-documents.execute-import";
+    public static final String FIE_BULK_EXPORT_EXECUTE = "fie.bulk-export-documents.execute-export";
+    public static final String FIE_IMPORT_TEMPLATES_CREATE = "fie.manage-import-templates.create-template";
+    public static final String FIE_IMPORT_TEMPLATES_UPDATE = "fie.manage-import-templates.update-template";
+    public static final String FIE_IMPORT_TEMPLATES_DELETE = "fie.manage-import-templates.delete-template";
 
 
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History

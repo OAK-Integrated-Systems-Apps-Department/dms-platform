@@ -26,9 +26,9 @@ const STATUS_OPTIONS = (Object.keys(EXPORT_JOB_STATUS_LABELS) as ExportJobStatus
 /**
  * My Exports - the signed-in user's own bulk export jobs (Module 2.1),
  * backed by `GET /api/v1/export-jobs`, which scopes to the caller's tenant
- * and user server-side. No PermissionGate: every user may see the exports
- * they requested themselves; starting an export (and its permission) and
- * downloading arrive in Phase 4.
+ * and user server-side. No PermissionGate: every user may see (and, with
+ * document access, download) the exports they requested themselves;
+ * starting one is the Bulk Export page.
  */
 export function ExportsContent() {
   usePageTitle("My Exports")

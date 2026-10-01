@@ -1,18 +1,22 @@
 "use client"
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Download, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import { SearchableSelect } from "@/components/ui/searchable-select"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { friendlyMessage } from "@/lib/api-error"
 import {
   downloadImportTemplate,
   saveDownloadedFile,
   type BulkImportCreatedResponseDto,
   type ImportDocumentTypeOptionDto,
+  type TemplateFormat,
 } from "@/lib/bulk-imports/api"
+import { downloadSavedImportTemplate, fetchImportTemplates } from "@/lib/import-templates/api"
 
 import { InlineError, StepCard } from "./step-card"
 
@@ -34,6 +38,14 @@ export function StartImportSteps({
   onCreate,
 }: StartImportStepsProps) {
   const [documentTypeId, setDocumentTypeId] = useState("")
+  const [format, setFormat] = useState<TemplateFormat>("xlsx")
+  /** "" = the standard template (every field). */
+  const [savedTemplateId, setSavedTemplateId] = useState("")
+  const savedTemplates = useQuery({
+    queryKey: ["import-templates", "for-type", documentTypeId],
+    queryFn: () => fetchImportTemplates(documentTypeId),
+    enabled: Boolean(documentTypeId),
+  })
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [templateError, setTemplateError] = useState<string | null>(null)
@@ -44,7 +56,11 @@ export function StartImportSteps({
     setDownloading(true)
     setDownloadError(null)
     try {
-      saveDownloadedFile(await downloadImportTemplate(documentTypeId))
+      saveDownloadedFile(
+        savedTemplateId
+          ? await downloadSavedImportTemplate(savedTemplateId, format)
+          : await downloadImportTemplate(documentTypeId, format)
+      )
     } catch (error) {
       setDownloadError(friendlyMessage(error, "Could not download the template."))
     } finally {
@@ -84,11 +100,31 @@ export function StartImportSteps({
               selected={documentTypeId}
               onChange={(value) => {
                 setDocumentTypeId(value)
+                setSavedTemplateId("")
                 setDownloadError(null)
               }}
               allLabel="Select a document type"
               searchPlaceholder="Search document types…"
               className="w-[300px] max-w-full"
+            />
+            {documentTypeId && (savedTemplates.data?.length ?? 0) > 0 && (
+              <SearchableSelect
+                options={(savedTemplates.data ?? []).map((t) => ({ value: t.importTemplateId, label: t.name }))}
+                selected={savedTemplateId}
+                onChange={setSavedTemplateId}
+                allLabel="Standard template (all fields)"
+                searchable={(savedTemplates.data?.length ?? 0) > 8}
+                className="w-[260px] max-w-full"
+              />
+            )}
+            <SegmentedControl
+              value={format}
+              onChange={setFormat}
+              options={[
+                { value: "xlsx", label: "Excel (.xlsx)" },
+                { value: "csv", label: "CSV" },
+              ]}
+              disabled={downloading}
             />
             <Button onClick={handleDownload} disabled={!documentTypeId || downloading}>
               {downloading ? <Loader2 className="animate-spin" /> : <Download />}
@@ -102,10 +138,10 @@ export function StartImportSteps({
       <StepCard
         step={2}
         title="Upload the filled-in template"
-        description="Upload the completed .xlsx. Each row names the file it describes; you'll upload those files next."
+        description="Upload the completed .xlsx or .csv - just the list of rows. Each row names the document file it describes; you upload the documents themselves (PDF, Office, images, email and more) in the next step."
       >
         <FileDropzone
-          accept=".xlsx"
+          accept=".xlsx,.csv"
           disabled={creating}
           onFiles={handleTemplate}
           label="Upload filled-in template"
@@ -117,7 +153,7 @@ export function StartImportSteps({
             </span>
           ) : (
             <>
-              <span className="font-semibold text-foreground">Drag the .xlsx template here</span> or click to
+              <span className="font-semibold text-foreground">Drag the .xlsx or .csv template here</span> or click to
               browse
             </>
           )}

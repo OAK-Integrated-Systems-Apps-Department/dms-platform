@@ -74,6 +74,10 @@ public class ImportBatch {
     @Column(name = "correlation_id", nullable = false)
     private UUID correlationId;
 
+    /** The saved import template the batch was uploaded with (V50); null for the standard template. */
+    @Column(name = "import_template_id", updatable = false)
+    private UUID importTemplateId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

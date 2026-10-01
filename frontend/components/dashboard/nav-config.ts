@@ -1,6 +1,8 @@
 import {
   BarChart3,
   Download,
+  FileDown,
+  FileSpreadsheet,
   FileStack,
   FileText,
   FileUp,
@@ -42,6 +44,14 @@ export const navSections: NavSection[] = [
     label: "Documents",
     items: [
       { label: "Bulk Import", icon: FileUp, href: "/documents/bulk-import", permission: PermissionCodes.FIE_BULK_IMPORT_UPLOAD_FILE },
+      { label: "Bulk Export", icon: FileDown, href: "/documents/bulk-export", permission: PermissionCodes.FIE_BULK_EXPORT_EXECUTE },
+      {
+        label: "Import Templates", icon: FileSpreadsheet, href: "/documents/import-templates", permission: [
+          PermissionCodes.FIE_IMPORT_TEMPLATES_CREATE,
+          PermissionCodes.FIE_IMPORT_TEMPLATES_UPDATE,
+          PermissionCodes.FIE_IMPORT_TEMPLATES_DELETE,
+        ]
+      },
     ],
   },
   {

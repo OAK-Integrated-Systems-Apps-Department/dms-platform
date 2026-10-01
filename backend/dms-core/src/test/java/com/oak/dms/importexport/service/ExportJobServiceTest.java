@@ -70,7 +70,7 @@ class ExportJobServiceTest {
         assertThatThrownBy(() -> service.create(tenantId, userId, "everything", null))
                 .isInstanceOf(InvalidExportJobValueException.class)
                 .hasMessageContaining("export_type")
-                .hasMessageContaining("single_document, bulk_folder, report_data")
+                .hasMessageContaining("single_document, bulk_selection, bulk_folder, report_data")
                 .satisfies(e -> assertThat(((InvalidExportJobValueException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
         verify(repository, never()).save(any());
     }

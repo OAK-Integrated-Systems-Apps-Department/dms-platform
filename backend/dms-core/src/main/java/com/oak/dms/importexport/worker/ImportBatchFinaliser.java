@@ -6,6 +6,7 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -34,15 +35,18 @@ public class ImportBatchFinaliser {
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
     private final StagedImportFiles stagedImportFiles;
+    private final BulkImportAuditor auditor;
     private final TransactionTemplate transactionTemplate;
 
     public ImportBatchFinaliser(ImportBatchRepository importBatchRepository,
                                 ImportItemRepository importItemRepository,
                                 StagedImportFiles stagedImportFiles,
+                                BulkImportAuditor auditor,
                                 PlatformTransactionManager transactionManager) {
         this.importBatchRepository = importBatchRepository;
         this.importItemRepository = importItemRepository;
         this.stagedImportFiles = stagedImportFiles;
+        this.auditor = auditor;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -77,6 +81,7 @@ public class ImportBatchFinaliser {
             batch.setStatus(finalStatus);
             batch.setCompletedAt(now);
             importBatchRepository.save(batch);
+            auditor.finished(batch);
 
             List<ImportItem> staged = importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batchId);
             if (!staged.isEmpty()) {

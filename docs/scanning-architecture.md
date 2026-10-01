@@ -247,7 +247,7 @@ Provider prerequisites:
 | `dms.scanning.azure-defender.*` | blank | endpoint, account name/key, `AZURE_DEFENDER_CALLBACK_SECRET` |
 | `dms.scanning.aws-guardduty.*` | blank | region, access/secret key (blank → AWS default credential chain), `AWS_GUARDDUTY_CALLBACK_SECRET` |
 | `dms.storage.staging.*` / `dms.storage.quarantine.*` | FILE_SYSTEM `/data/dms/staging`, `/data/dms/quarantine` | platform-default staging/quarantine locations |
-| `dms.ingestion.allowed-file-types` | pdf, doc(x), xls(x), ppt(x), odt/ods/odp, rtf, txt, csv, png, jpg/jpeg, tif/tiff | |
+| `dms.ingestion.allowed-file-types` | pdf, doc(x), xls(x), ppt(x), odt/ods/odp/odg, rtf, txt, csv, tsv, md, xml, json, msg, eml, vsd(x), dwg, png, jpg/jpeg, gif, bmp, webp, heic/heif, tif/tiff - each verified by content (FileTypeInspector); never html/svg, macro-enabled Office or archives | |
 | `spring.servlet.multipart.max-file-size` | 100 MB | previously Spring's 1 MB default |
 
 A tenant `scan_engines.credential_ref` resolves `SCAN_CRED_<REF>_ACCESS_KEY`

@@ -113,6 +113,12 @@ public final class AuditActionCatalog {
     public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
     public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
     public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
+    public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
+    public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
+    public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
+    public static final String EXPORT_REQUESTED = "EXPORT_REQUESTED";
+    public static final String EXPORT_COMPLETED = "EXPORT_COMPLETED";
+    public static final String EXPORT_DOWNLOADED = "EXPORT_DOWNLOADED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -296,12 +302,26 @@ public final class AuditActionCatalog {
             Map.entry(QUARANTINE_OVERRIDE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
 
-            // Template-based bulk import (BulkImportService) - module FIE.
+            // Bulk import (BulkImportAuditor) - module FIE.
             // One event per batch, not per row: each created document is
             // already audited as DOCUMENT_UPLOADED by the scan gate.
             Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
-            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false))
+            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+
+            // Saved import templates (ImportTemplateService) - module FIE.
+            Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(IMPORT_TEMPLATE_UPDATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(IMPORT_TEMPLATE_DELETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+
+            // Bulk export (ExportJobService / ExportJobWorker) - module FIE.
+            // DOWNLOADED is HIGH: it is the moment a bulk copy of documents
+            // leaves the system. Each document read into the ZIP should also
+            // be DOCUMENT_DOWNLOADED - see the FOLLOW-UP on
+            // DocumentServiceImpl#downloadDocument for why it isn't yet.
+            Map.entry(EXPORT_REQUESTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false))
     );
 
     private AuditActionCatalog() {

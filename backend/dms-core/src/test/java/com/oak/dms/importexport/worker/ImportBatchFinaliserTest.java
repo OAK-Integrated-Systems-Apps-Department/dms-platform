@@ -1,5 +1,6 @@
 package com.oak.dms.importexport.worker;
 
+import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
@@ -42,7 +43,7 @@ class ImportBatchFinaliserTest {
 
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
             importItemRepository, new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
-            transactionManager);
+            mock(BulkImportAuditor.class), transactionManager);
 
     @BeforeEach
     void setUp() {

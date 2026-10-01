@@ -1,5 +1,6 @@
 package com.oak.dms.importexport.worker;
 
+import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.document.DocumentService;
 import com.oak.dms.importexport.entity.ImportBatch;
@@ -66,7 +67,7 @@ class ImportCompletionSchedulerTest {
             documentMetadataRepository, importItemRepository, stagedImportFiles, new ImportValueConverter(),
             new ImportUsers(mock(UserRepository.class)), new ObjectMapper(), transactionManager);
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, stagedImportFiles, transactionManager);
+            importItemRepository, stagedImportFiles, mock(BulkImportAuditor.class), transactionManager);
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,
             importSchemaFields, ingestionGate, recordCreator, finaliser);
 

@@ -51,13 +51,23 @@ public class FileTypeInspector {
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
     private static final byte[] TIFF_LE = {'I', 'I', 42, 0};
     private static final byte[] TIFF_BE = {'M', 'M', 0, 42};
+    private static final byte[] GIF87 = "GIF87a".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] GIF89 = "GIF89a".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] BMP = {'B', 'M'};
+    private static final byte[] RIFF = "RIFF".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] WEBP = "WEBP".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] FTYP = "ftyp".getBytes(StandardCharsets.US_ASCII);
+    /** ISO-BMFF brands of HEIF/HEIC still images (not video). */
+    private static final List<String> HEIF_BRANDS = List.of("heic", "heix", "heim", "heis", "mif1", "msf1");
+    /** AutoCAD DWG files start "AC10" followed by a two-digit release (AC1015, AC1032, ...). */
+    private static final byte[] DWG = "AC10".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] OOXML_MARKER = "[Content_Types].xml".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] ODF_MIMETYPE_ENTRY = "mimetype".getBytes(StandardCharsets.US_ASCII);
     /** Executable/binary signatures that must never pass as text. */
     private static final List<byte[]> NOT_TEXT = List.of(ZIP, OLE2, PDF, "MZ".getBytes(StandardCharsets.US_ASCII),
             new byte[]{0x7F, 'E', 'L', 'F'});
 
-    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF }
+    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF, GIF, BMP, WEBP, HEIF, DWG, EMAIL, XML, JSON }
 
     private record KnownType(String mimeType, Family family) {
     }
@@ -86,6 +96,25 @@ public class FileTypeInspector {
         KNOWN_TYPES.put("jpeg", new KnownType("image/jpeg", Family.JPEG));
         KNOWN_TYPES.put("tif", new KnownType("image/tiff", Family.TIFF));
         KNOWN_TYPES.put("tiff", new KnownType("image/tiff", Family.TIFF));
+        // Added with the bulk import work (2026-10): common business formats,
+        // each still verified by content. Deliberately NOT added: anything
+        // that can carry active content when opened (html/htm/svg - scripts;
+        // docm/xlsm/pptm - macros; js/exe/bat/ps1), and archives (see above).
+        KNOWN_TYPES.put("msg", new KnownType("application/vnd.ms-outlook", Family.OLE2));
+        KNOWN_TYPES.put("eml", new KnownType("message/rfc822", Family.EMAIL));
+        KNOWN_TYPES.put("vsd", new KnownType("application/vnd.visio", Family.OLE2));
+        KNOWN_TYPES.put("vsdx", new KnownType("application/vnd.ms-visio.drawing", Family.OOXML));
+        KNOWN_TYPES.put("odg", new KnownType("application/vnd.oasis.opendocument.graphics", Family.ODF));
+        KNOWN_TYPES.put("tsv", new KnownType("text/tab-separated-values", Family.TEXT));
+        KNOWN_TYPES.put("md", new KnownType("text/markdown", Family.TEXT));
+        KNOWN_TYPES.put("xml", new KnownType("application/xml", Family.XML));
+        KNOWN_TYPES.put("json", new KnownType("application/json", Family.JSON));
+        KNOWN_TYPES.put("gif", new KnownType("image/gif", Family.GIF));
+        KNOWN_TYPES.put("bmp", new KnownType("image/bmp", Family.BMP));
+        KNOWN_TYPES.put("webp", new KnownType("image/webp", Family.WEBP));
+        KNOWN_TYPES.put("heic", new KnownType("image/heic", Family.HEIF));
+        KNOWN_TYPES.put("heif", new KnownType("image/heif", Family.HEIF));
+        KNOWN_TYPES.put("dwg", new KnownType("image/vnd.dwg", Family.DWG));
     }
 
     private final Set<String> allowedExtensions;
@@ -144,7 +173,36 @@ public class FileTypeInspector {
             case JPEG -> startsWith(head, JPEG);
             case TIFF -> startsWith(head, TIFF_LE) || startsWith(head, TIFF_BE);
             case TEXT -> isText(head);
+            case GIF -> startsWith(head, GIF87) || startsWith(head, GIF89);
+            case BMP -> startsWith(head, BMP) && head.length >= 26;
+            case WEBP -> startsWith(head, RIFF) && head.length >= 12 && Arrays.equals(head, 8, 12, WEBP, 0, 4);
+            case HEIF -> head.length >= 12 && Arrays.equals(head, 4, 8, FTYP, 0, 4)
+                    && HEIF_BRANDS.contains(new String(head, 8, 4, StandardCharsets.US_ASCII));
+            case DWG -> startsWith(head, DWG) && head.length >= 6
+                    && Character.isDigit(head[4]) && Character.isDigit(head[5]);
+            // An email is text whose first line is a header ("Received:", "From:", ...).
+            case EMAIL -> isText(head) && firstLine(head).matches("[!-9;-~]+:.*");
+            case XML -> isText(head) && firstNonBlank(head) == '<';
+            case JSON -> isText(head) && (firstNonBlank(head) == '{' || firstNonBlank(head) == '[');
         };
+    }
+
+    /** The first non-whitespace character after an optional UTF-8 BOM, or 0. */
+    private static char firstNonBlank(byte[] head) {
+        int i = head.length >= 3 && (head[0] & 0xFF) == 0xEF && (head[1] & 0xFF) == 0xBB && (head[2] & 0xFF) == 0xBF ? 3 : 0;
+        for (; i < head.length; i++) {
+            char c = (char) (head[i] & 0xFF);
+            if (!Character.isWhitespace(c)) {
+                return c;
+            }
+        }
+        return 0;
+    }
+
+    private static String firstLine(byte[] head) {
+        String text = new String(head, StandardCharsets.ISO_8859_1).stripLeading();
+        int end = text.indexOf('\n');
+        return (end >= 0 ? text.substring(0, end) : text).strip();
     }
 
     private static boolean isText(byte[] head) {

@@ -71,6 +71,21 @@ public class DocumentServiceImpl implements DocumentService {
         return documentMapper.toResponse(findOwnedByCallerTenant(documentId));
     }
 
+    /**
+     * FOLLOW-UP (found 2026-10-01 while building bulk export): the
+     * DOCUMENT_DOWNLOADED audit event below is never recorded. This method
+     * is {@code readOnly = true}; {@code AuditService#persist} joins that
+     * transaction (plain {@code @Transactional}), so Hibernate never flushes
+     * the AuditEvent insert. Evidence: {@code select count(*) from
+     * audit_events where action = 'DOCUMENT_DOWNLOADED'} is 0 on the local
+     * DB after single downloads and a 3-document export, while every other
+     * event (EXPORT_*, BULK_IMPORT_*) is written. Not fixed here because it
+     * changes the core download path's transaction for every caller, outside
+     * the import/export change. A fix must make this method read-write (or
+     * have AuditService write in its own transaction - a wider decision,
+     * since it would also keep audit rows when the business change rolls
+     * back) and add a test that a download leaves one DOCUMENT_DOWNLOADED row.
+     */
     @Override
     @Transactional(readOnly = true)
     public DownloadedDocument downloadDocument(UUID documentId) {

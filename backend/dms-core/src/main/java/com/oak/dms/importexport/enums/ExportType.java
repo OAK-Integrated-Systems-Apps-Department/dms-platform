@@ -5,10 +5,12 @@ import com.oak.dms.importexport.exception.InvalidExportJobValueException;
 /**
  * What an export job produces (export_jobs.export_type). Constant names are
  * the stored values, lowercase like every other enum column in this schema
- * (see ck_export_jobs_export_type in V41).
+ * (see ck_export_jobs_export_type in V41, widened in V48).
  */
 public enum ExportType {
     single_document,
+    /** Several documents, chosen or matched by a filter (V48). */
+    bulk_selection,
     bulk_folder,
     report_data;
 
