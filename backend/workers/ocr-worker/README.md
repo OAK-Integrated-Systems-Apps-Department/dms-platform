@@ -917,6 +917,35 @@ presented with the internal token. The tenant check happens in dms-core
 ever leaves it. `GET /api/v1/documents/{documentId}/pages/{page}/image`
 and `POST /api/v1/documents/{documentId}/read-region` are the
 Keycloak-authenticated, tenant-scoped faces of these two routes.
+
+## Evaluation labels
+
+The synthetic corpus labels itself. Real documents are labelled by hand,
+in `eval/labels/real/`, and the exact format is
+**[`eval/LABEL_FORMAT.md`](eval/LABEL_FORMAT.md)** -- dates ISO, amounts
+digits-only with the currency in its own field as a code, multi_select as
+JSON lists, and a field the document does not contain **deleted** rather
+than set to null or "".
+
+```bash
+python -m eval.draft_labels    # pre-fill a label per unlabelled document
+python -m eval.check_labels    # report malformed values; never edits anything
+```
+
+A label is the ruler the pipeline is measured against, so a malformed one
+does not fail loudly -- it scores the pipeline wrong in the direction of
+"the pipeline is broken". That has happened once already (`metrics.py`'s
+docstring: `amount` read 0% across the corpus and it was the ruler that
+was wrong), which is what `check_labels` exists to prevent.
+
+`check_labels` exits 1 on an ERROR, 0 otherwise. Every ERROR it reports is
+a value `metrics.field_matches` would score as a mismatch even when the
+pipeline read the document correctly; everything that still scores is a
+WARN. `tests/test_check_labels.py` asserts that relationship directly
+against `field_matches`, so the checker cannot start disagreeing with the
+scorer it speaks for -- it already caught one rule of its own that was
+too strict.
+
 ## Configuration
 
 See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:

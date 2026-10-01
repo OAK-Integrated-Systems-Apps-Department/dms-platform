@@ -126,6 +126,14 @@ def write_draft_label(
             "",
             "reference_text is optional. Leave it empty unless you want CER/WER for",
             "this document, in which case paste the document's full text.",
+            "",
+            "Formats: dates YYYY-MM-DD; amounts digits only (1234.50, no symbol, no",
+            "commas) with the currency in its own field as a code; multi_select fields",
+            "(tags, keywords) are JSON lists. Run `python -m eval.check_labels` when",
+            "you are done -- it reports malformed values and never edits anything.",
+            "",
+            "line_items is optional and not scored yet. Delete the key if the document",
+            "has none.",
         ],
         "reviewed": False,
         "doc_id": doc_id_for(path),
@@ -138,6 +146,13 @@ def write_draft_label(
         "degraded": None,
         "reference_text": "",
         "fields": fields,
+        # Optional, and nothing scores it yet. Present because a reviewer
+        # typing an invoice's lines while the document is already open in
+        # front of them is far cheaper than a second pass over every
+        # document later, and `eval.check_labels` validates them now, so
+        # what gets captured is at least well-formed. Delete the key
+        # entirely for a document with no line items.
+        "line_items": [],
         "_draft_notes": field_notes,
     }
     target.write_text(json.dumps(label, indent=2, ensure_ascii=False), encoding="utf-8")

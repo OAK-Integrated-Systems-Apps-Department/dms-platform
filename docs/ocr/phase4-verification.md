@@ -267,7 +267,7 @@ promise — a format we cannot read will never succeed on a retry.
 
 ---
 
-## Two defects found while wiring this, both silent
+## Three defects found while wiring this, all silent
 
 Neither would have failed a test or logged anything; both would have
 produced a screen that looked right.
@@ -298,12 +298,85 @@ cannot read one.
 
 ---
 
+
+### A reviewer's correction was stored with its field rules unchecked
+
+`saveReview` calls `saveValues(..., enforceMandatory=false)`, because a
+reviewer fixing three of four missing fields must be able to save the
+three. But that flag gates the **whole** `MetadataValidationService.validate()`
+call inside `DocumentMetadataServiceImpl#writeValues`, not just its
+mandatory arm — the name says one thing and the code does another. So a
+corrected value went in without its configured rules (option membership,
+max length, patterns, ranges) ever running. Type coercion still applied
+(`buildRow` throws on an unparseable date or number, and `source="manual"`
+means `bestEffort` is false so it propagates), which is why nothing looked
+broken.
+
+Fixed with `DocumentServiceImpl#validateCorrections`, which runs
+`validate()` explicitly on the submitted values before anything is
+written, and drops exactly two classes of result: `MANDATORY_FIELD_MISSING`
+(because `validate` walks the whole schema, so a partial submission always
+reports every mandatory field the reviewer did not touch — the situation
+this endpoint exists to work through), and errors about fields not in this
+submission (the reviewer is answerable for what they typed).
+
+Rejecting before any write, rather than per field, is deliberate: the save
+is one transaction, so a mid-batch failure would roll back corrections
+already recorded and the reviewer would not know which survived.
+
+---
+
+## Tenant isolation on the review endpoints
+
+`ReviewEndpointTenantIsolationTest` — one test per endpoint, tenant B
+asking for tenant A's document:
+
+| endpoint | result |
+|---|---|
+| `GET /{documentId}/review` | 404 |
+| `GET /{documentId}/pages/{page}/image` | 404, **and ocr-worker is never called** |
+| `POST /{documentId}/read-region` | 404, **and ocr-worker is never called** |
+| `POST /{documentId}/review` | 404, and no correction row, no metadata write, no version save |
+| `GET /review-queue` | scoped to the caller's tenant; empty page, never another tenant's rows |
+
+The "never called" assertions are the ones that matter. `getPageImage`
+and `readRegion` forward a version id to ocr-worker, which has no notion
+of who is asking — it answers for **any** version id presented with the
+internal token. The check in `DocumentServiceImpl` is the only thing
+between one tenant and another tenant's page images, so the test asserts
+the worker was not reached at all rather than merely that the caller got
+an error.
+
+404 rather than 403, identically to "no such document": a 403 would
+confirm the id exists in some other tenant. Two further tests pin that —
+an unknown id fails identically, and the message names neither the owning
+tenant nor the document title.
+
+## Corrections are `manual`, and OCR cannot overwrite them
+
+`ReviewCorrectionsAreManualTest`, plus the existing
+`DocumentMetadataServiceApplyOcrFieldsTest#manualOverrideIsNeverOverwrittenByAFreshOcrResult`.
+
+- A correction is written through `saveValues`, which is
+  `writeValues(..., source="manual", ...)`.
+- `applyOcrFields` skips any field whose stored source is `manual`.
+- All three OCR write paths go through that one method —
+  `OcrEventsConsumer` (the event), `OcrFieldsReconciler` (the backstop),
+  and `DocumentServiceImpl`'s poll-time re-apply. There is no fourth.
+- An **acceptance** is deliberately not written back at all: re-saving an
+  unchanged value would touch `document_metadata_values` and its audit
+  trail on every review, and would flip an OCR-sourced value to `manual`
+  that nobody actually changed. An edit that changed nothing is treated
+  the same way.
+
+---
+
 ## Test counts
 
 | suite | tests |
 |---|---|
-| ocr-worker (`pytest`) | 696 passed, 2 deselected |
-| dms-core (`mvn test`) | 87 passed |
+| ocr-worker (`pytest`) | 746 passed, 2 deselected |
+| dms-core (`mvn test`) | 109 passed |
 | frontend (`vitest`) | 45 passed |
 
 New in Phase 4b–4e: `ReviewQueueMapperTest` (7),

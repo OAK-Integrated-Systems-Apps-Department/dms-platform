@@ -833,10 +833,17 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         if (!valuesToApply.isEmpty()) {
+            validateCorrections(document, valuesToApply);
             // enforceMandatory=false: a reviewer fixing three of four
             // missing fields must be able to save the three. The document
             // stays in the queue for the fourth, which is the honest
             // outcome -- refusing the save would lose their work instead.
+            //
+            // That flag also suppresses MetadataValidationService entirely
+            // (see writeValues), not just its mandatory arm -- which is why
+            // validateCorrections above runs it explicitly first. Without
+            // that, a reviewer could type anything into a field with
+            // configured rules and it would be stored unchecked.
             documentMetadataService.saveValues(documentId, valuesToApply, false);
         }
 
@@ -852,6 +859,47 @@ public class DocumentServiceImpl implements DocumentService {
                 documentId, version.getVersionId(), accepted, corrected, stillNeedsReview, remaining);
     }
 
+
+
+    /**
+     * Runs the reviewer's corrected values through
+     * {@link MetadataValidationService}, the same rules an ordinary manual
+     * save is held to -- option membership, max length, patterns, ranges.
+     * <p>
+     * It cannot simply be left to {@code saveValues}: that validates only
+     * when {@code enforceMandatory} is true, and the review path passes
+     * false so a reviewer can fix three of four missing fields without the
+     * fourth rejecting the save. The flag gates the WHOLE validate() call,
+     * not just its mandatory arm, so without this a corrected value would
+     * be stored with its rules unchecked.
+     * <p>
+     * Two filters on the result, both necessary:
+     * <ul>
+     *   <li>{@code MANDATORY_FIELD_MISSING} is dropped. {@code validate}
+     *       walks every field in the schema, so a partial submission would
+     *       otherwise fail on every mandatory field the reviewer did not
+     *       touch -- which is the situation this endpoint exists to work
+     *       through, not an error.</li>
+     *   <li>Errors about fields not in this submission are dropped. The
+     *       reviewer is answerable for what they typed, not for what was
+     *       already on the document.</li>
+     * </ul>
+     * Rejecting before anything is written, rather than per field, is
+     * deliberate: the whole save is one transaction, so a mid-batch
+     * failure would roll back the corrections already recorded and the
+     * reviewer would not know which ones survived.
+     */
+    private void validateCorrections(Document document, Map<String, Object> corrections) {
+        List<ValidationError> blocking = metadataValidationService
+                .validate(document.getDocumentTypeId(), null, corrections).stream()
+                .filter(error -> "error".equals(error.severity()))
+                .filter(error -> !"MANDATORY_FIELD_MISSING".equals(error.errorCode()))
+                .filter(error -> corrections.containsKey(error.fieldKey()))
+                .toList();
+        if (!blocking.isEmpty()) {
+            throw new MetadataValidationFailedException(blocking);
+        }
+    }
 
     /** See the comment at its call site in {@code saveReview}. */
     static Object splitIfMultiSelect(ReviewFieldResponse field, String value) {
