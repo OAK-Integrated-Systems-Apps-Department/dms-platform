@@ -233,6 +233,14 @@ dms:
       region: ${SCAN_QUARANTINE_REGION:}
       path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
       credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+  import-export:
+    # Bulk import intake limits - see ImportExportProperties.
+    max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
+    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
+    max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
+    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
+    # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
+    worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's

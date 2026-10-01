@@ -3,6 +3,7 @@ import {
   Download,
   FileStack,
   FileText,
+  FileUp,
   Grid3x3,
   KeyRound,
   LayoutDashboard,
@@ -35,6 +36,12 @@ export const navSections: NavSection[] = [
       { label: "Workflows", icon: Workflow, badge: 3 },
       { label: "Search", icon: Search },
       { label: "Reports", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Documents",
+    items: [
+      { label: "Bulk Import", icon: FileUp, href: "/documents/bulk-import", permission: PermissionCodes.FIE_BULK_IMPORT_UPLOAD_FILE },
     ],
   },
   {
