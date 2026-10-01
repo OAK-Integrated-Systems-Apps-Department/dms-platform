@@ -5,6 +5,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field, replace
+from typing import Callable
 
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -343,8 +344,16 @@ class OcrPipeline:
         layout_engine: LayoutEngine,
         ocr_engine: OcrEngine,
         orientation_classifier: OrientationClassifier | None = None,
+        # tenant_id -> vendor names this tenant has already CONFIRMED (a
+        # human accepted or corrected them in the review screen). Injected
+        # rather than read inline so the eval can stand a seeded list in
+        # for a review history it does not have, and so this stays
+        # testable without a corrections table. None means "no list",
+        # which is what a tenant that has filed nothing yet has.
+        known_vendors_loader: "Callable[[uuid.UUID], list[str]] | None" = None,
     ):
         self._settings = settings
+        self._known_vendors_loader = known_vendors_loader
         self._session_factory = session_factory
         self._storage = storage
         self._layout_engine = layout_engine
@@ -355,6 +364,17 @@ class OcrPipeline:
         # -- see orientation.NullOrientationClassifier.
         self._orientation = orientation_classifier or NullOrientationClassifier()
         self._confidence = ConfidenceEvaluator(settings.min_confidence_threshold)
+
+    def _known_vendors_for(self, tenant_id) -> list[str]:
+        """Never fails a document. A missing or broken vendor list costs
+        one tier of one field; raising here would cost the whole run."""
+        if self._known_vendors_loader is None or tenant_id is None:
+            return []
+        try:
+            return list(self._known_vendors_loader(tenant_id) or [])
+        except Exception:  # noqa: BLE001
+            logger.warning("could not load known vendors for tenant %s", tenant_id, exc_info=True)
+            return []
 
     # ------------------------------------------------------------------
     # Per-document timeout (see deadline.py)
@@ -501,6 +521,7 @@ class OcrPipeline:
                 )
                 return ProcessingOutcome(status="skipped", version_id=version_id)
             job_id = job.job_id
+            tenant_id = ctx.version.tenant_id
             mime_type = ctx.version.mime_type
             storage_object_key = ctx.version.storage_object_key
             original_filename = ctx.version.original_filename
@@ -520,6 +541,7 @@ class OcrPipeline:
                 mime_type=mime_type,
                 storage_object_key=storage_object_key,
                 original_filename=original_filename,
+                tenant_id=tenant_id,
                 zone_regions=zone_regions,
                 requested_fields=requested_fields,
                 deadline=deadline,
@@ -568,6 +590,7 @@ class OcrPipeline:
         original_filename: str,
         zone_regions: list,
         requested_fields: list[FieldSpec] | None,
+        tenant_id: uuid.UUID | None = None,
         deadline: DocumentDeadline | None = None,
     ) -> tuple[list[PageResult], dict, list | None, bool]:
         """Phase 2 of process_version -- no DB transaction open. Raises a
@@ -672,6 +695,8 @@ class OcrPipeline:
                 page_heights_px=_upright_page_heights(geometry_by_page, orientation_by_page),
                 field_confidence_threshold=self._settings.field_low_confidence_threshold,
                 line_confidences=line_confidences_by_page,
+                default_currency=self._settings.ocr_default_currency,
+                known_vendors=self._known_vendors_for(tenant_id),
             )
             # `lines_by_page` was in the corrected reading space, so a
             # spatially-matched field's bbox comes back in it too. Put it

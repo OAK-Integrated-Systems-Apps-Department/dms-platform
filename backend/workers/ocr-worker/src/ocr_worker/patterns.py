@@ -56,6 +56,73 @@ _CURRENCY_TOKENS: tuple[tuple[str, str], ...] = (
 # either breaks the match or lands inside the captured value.
 _TRAILING_SUFFIX_RE = re.compile(r"\s*/[=\-]\s*$")
 
+
+# ----------------------------------------------------------------------
+# Finding the currency in a page of text
+# ----------------------------------------------------------------------
+# ISO 4217 codes only -- deliberately a fixed whitelist rather than "any
+# three capitals", which would match VAT, PVT and LTD on every invoice
+# here.
+_ISO_CODES: tuple[str, ...] = (
+    "USD", "EUR", "GBP", "LKR", "INR", "AUD", "CAD", "JPY", "CNY", "SGD",
+    "AED", "SAR", "PKR", "BDT", "NPR", "ZAR", "NZD", "CHF", "HKD", "MYR",
+    "THB", "PHP", "IDR", "VND", "KRW", "EGP", "QAR", "KWD", "BHD", "OMR",
+)
+_ISO_CODE_RE = re.compile(r"\b(" + "|".join(_ISO_CODES) + r")\b")
+
+# `Rs` is how a Sri Lankan document almost always writes its currency, and
+# it needs more care than a word-boundary match.
+#
+#   (?<![A-Za-z])Rs   a standalone "Rs." / "Rs 1,200"
+#   (?<=[a-z])Rs      OCR glues a column header to its neighbour: a real
+#                     Santa Dora receipt came back as "Pay Type AmountRs",
+#                     with no space, on two separate documents
+#
+# Both arms are CASE SENSITIVE on "Rs" and forbid a following lowercase
+# letter, which is what keeps the false positives out. On this corpus the
+# words that would otherwise match are "Mrs." (on a handwritten form whose
+# currency label was removed precisely because nothing is printed),
+# "HOURS", "Others" and "yrs" -- "Mrs" is excluded by the uppercase-M
+# lookbehind, the rest by case.
+_RUPEE_RE = re.compile(r"(?:(?<![A-Za-z])|(?<=[a-z]))Rs\.?(?![a-z])")
+
+# "1100/=" and "1100/-", the Sri Lankan terminator, used here as a
+# currency signal rather than as punctuation to strip. Anchored to a digit
+# so a bare "/=" or a date like "1/2-3" cannot trigger it.
+_RUPEE_SUFFIX_RE = re.compile(r"\d\s*/[=\-]")
+
+_SYMBOLS: tuple[tuple[str, str], ...] = (
+    ("₨", "LKR"), ("₹", "INR"), ("€", "EUR"), ("£", "GBP"), ("$", "USD"),
+)
+
+
+def detect_currency(text: str) -> str | None:
+    """The currency this page is denominated in, or None.
+
+    Ordered by how unambiguous each signal is: an explicit ISO code beats
+    a symbol, and a symbol beats the `Rs`/`/=` conventions, which are the
+    loosest. First match wins, mirroring the "first mention wins"
+    behaviour a reader has.
+
+    `extraction.py` previously had its own ISO-codes-only copy of this and
+    never consulted this module -- so `Rs.` printed as a column header at
+    confidence 1.00, and the `/=` terminator, were simply not currency as
+    far as the `currency` field was concerned.
+    """
+    if not text:
+        return None
+    normalized = unicodedata.normalize("NFKC", text)
+
+    iso = _ISO_CODE_RE.search(normalized)
+    if iso:
+        return iso.group(1)
+    for symbol, code in _SYMBOLS:
+        if symbol in normalized:
+            return code
+    if _RUPEE_RE.search(normalized) or _RUPEE_SUFFIX_RE.search(normalized):
+        return "LKR"
+    return None
+
 # Separators a real document uses between thousands groups. The space
 # variants matter: SI style and many European locales use a space or a
 # non-breaking space, and OCR renders both as ordinary whitespace or as

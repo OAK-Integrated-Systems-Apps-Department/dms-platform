@@ -199,6 +199,19 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
     by_id = {doc.doc_id: doc for doc in documents}
 
     field_counts: dict[str, metrics.FieldCounts] = {}
+    # Real set only: the same field-weighted tally, kept separately for
+    # handwritten and printed documents.
+    #
+    # Field-weighted and not an average of the per-document exact-match
+    # rates in `per_condition` below, because the headline is
+    # field-weighted -- averaging document means would give a 3-field
+    # receipt the same weight as a 10-field invoice and the split would
+    # not reconcile with the combined number it is splitting.
+    field_counts_by_population: dict[str, dict[str, metrics.FieldCounts]] = {
+        "printed": {},
+        "handwritten": {},
+    }
+    docs_by_population: dict[str, int] = {"printed": 0, "handwritten": 0}
     doc_latency = metrics.LatencySummary()
     page_latency = metrics.LatencySummary()
     quality_flag = metrics.BinaryCounts()
@@ -219,6 +232,10 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
     rows: list[dict] = []
     status_totals: dict[str, int] = {}
     scored_text = 0
+    # Labels whose `reference_text` is present but unusable. Reported in
+    # the summary so a dropped CER is visible as a label to fix, not as a
+    # document that quietly never had one.
+    unusable_references: list[str] = []
     # Preprocessing accounting (section 3.4: "every preprocessing toggle
     # must be justified by a before/after eval report"). For orientation
     # the justifying number is not how many rotated pages were fixed --
@@ -239,7 +256,14 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
         # A real document only has CER/WER if someone pasted its text into
         # the label. Scoring an empty reference as 0.0 would silently
         # report a perfect character error rate for every unlabelled one.
-        has_reference = bool(doc.reference_text.strip())
+        #
+        # A reference that is present but is not the page's text is worse
+        # than an absent one: it produces a confident number that measures
+        # the label rather than the engine. Those are skipped and named.
+        reference_problem = metrics.reference_text_problem(doc.reference_text)
+        has_reference = bool(doc.reference_text.strip()) and reference_problem is None
+        if reference_problem:
+            unusable_references.append(f"{doc.doc_id}: {reference_problem}")
         cer = metrics.character_error_rate(doc.reference_text, text) if has_reference else None
         wer = metrics.word_error_rate(doc.reference_text, text) if has_reference else None
         if has_reference:
@@ -247,6 +271,15 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
 
         accumulate_orientation(orientation, doc, output)
         metrics.accumulate_field_counts(field_counts, doc.fields, fields, result.field_statuses)
+        if set_name == REAL:
+            population = "handwritten" if doc.handwritten else "printed"
+            docs_by_population[population] += 1
+            metrics.accumulate_field_counts(
+                field_counts_by_population[population],
+                doc.fields,
+                fields,
+                result.field_statuses,
+            )
         doc_latency.add(result.elapsed_s)
         if result.page_count:
             page_latency.add(result.elapsed_s / result.page_count)
@@ -274,12 +307,24 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
 
         status_totals[result.status] = status_totals.get(result.status, 0) + 1
 
+        # Same exclusion `accumulate_field_counts` applies, for the same
+        # reason and so the two cannot disagree. Without it a document
+        # whose every OCR field was right scored 6/10 purely because four
+        # of its labels name fields OCR is not asked to read -- and
+        # `requires_review`'s recall then reported a missed flag on a
+        # document that had nothing wrong with it.
+        statuses = result.field_statuses or {}
+        scoreable = {
+            key: expected
+            for key, expected in doc.fields.items()
+            if statuses.get(key) != "not_extractable"
+        }
         correct = sum(
             1
-            for key, expected in doc.fields.items()
+            for key, expected in scoreable.items()
             if key in fields and metrics.field_matches(expected, (fields[key] or {}).get("value"))
         )
-        exact = correct / len(doc.fields) if doc.fields else 0.0
+        exact = correct / len(scoreable) if scoreable else 0.0
 
         for bucket, key in ((per_condition, result.condition), (per_type, result.type_code)):
             entry = bucket.setdefault(
@@ -306,10 +351,12 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
                 "elapsed_s": round(result.elapsed_s, 3),
                 "cer": round(cer, 4) if cer is not None else None,
                 "wer": round(wer, 4) if wer is not None else None,
-                "fields_expected": len(doc.fields),
+                "fields_expected": len(scoreable),
                 "fields_correct": correct,
                 "field_exact_match": round(exact, 4),
                 "requires_review": bool(flags.get("requires_review")),
+                "review_reasons": list(flags.get("reasons") or []),
+                "missing_mandatory": list(flags.get("missing_mandatory") or []),
                 # Per-page routing decision, so "which way did THIS
                 # fixture go, and on what numbers" is answerable from the
                 # committed report rather than by re-running.
@@ -365,11 +412,28 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
     overall_extracted = sum(c.status_extracted for c in field_counts.values())
     overall_extracted_correct = sum(c.status_extracted_correct for c in field_counts.values())
 
+    def population_summary(name: str) -> dict:
+        counts = field_counts_by_population[name]
+        expected = sum(c.expected for c in counts.values())
+        correct = sum(c.correct for c in counts.values())
+        extracted = sum(c.status_extracted for c in counts.values())
+        extracted_correct = sum(c.status_extracted_correct for c in counts.values())
+        return {
+            "documents": docs_by_population[name],
+            "fields_expected": expected,
+            "fields_correct": correct,
+            "field_accuracy": round(correct / expected, 4) if expected else None,
+            "extracted_precision": (
+                round(extracted_correct / extracted, 4) if extracted else None
+            ),
+        }
+
     summary = {
         "set": set_name,
         "synthetic": set_name == SYNTHETIC,
         "documents": len(rows),
         "documents_with_reference_text": scored_text,
+        "unusable_reference_text": unusable_references,
         "types": sorted({r["type"] for r in rows}),
         "conditions": sorted({r["condition"] for r in rows}),
         "status_totals": status_totals,
@@ -394,6 +458,43 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
         "by_condition": summarize(per_condition),
         "by_type": summarize(per_type),
     }
+    if set_name == REAL:
+        # `requires_review` is a ROUTING decision, so the question it has
+        # to answer is not "how confident was the model" but "did sending
+        # this document to a human turn out to be the right call".
+        # Precision = of those flagged, how many really had a wrong or
+        # missing field. Recall = of those that did, how many were caught.
+        #
+        # Recall is the one that matters: a missed flag is a wrong value
+        # filed as correct. Precision only costs reviewer time -- but a
+        # flag that fires on everything carries no information at all, and
+        # that is the failure mode to watch for here.
+        review_flag = metrics.BinaryCounts()
+        reason_totals: dict[str, int] = {}
+        missing_totals: dict[str, int] = {}
+        for row in rows:
+            had_error = row["fields_correct"] < row["fields_expected"]
+            review_flag.add(row["requires_review"], had_error)
+            for reason in row.get("review_reasons") or []:
+                reason_totals[reason] = reason_totals.get(reason, 0) + 1
+            for key in row.get("missing_mandatory") or []:
+                missing_totals[key] = missing_totals.get(key, 0) + 1
+        summary["review_flag"] = {
+            **review_flag.to_dict(),
+            "flagged": review_flag.tp + review_flag.fp,
+            "documents_with_an_error": review_flag.tp + review_flag.fn,
+            "reasons": dict(sorted(reason_totals.items(), key=lambda kv: -kv[1])),
+            "missing_mandatory": dict(sorted(missing_totals.items(), key=lambda kv: -kv[1])),
+        }
+        # Printed is the population OS-NFR-001's "standard document
+        # layouts" actually refers to. Handwritten is reported beside it
+        # rather than dropped, because the bar being inapplicable is not a
+        # reason to stop measuring -- the right outcome for a handwritten
+        # value is a review flag, and that has to be observable.
+        summary["by_population"] = {
+            "printed": population_summary("printed"),
+            "handwritten": population_summary("handwritten"),
+        }
     if set_name == SYNTHETIC:
         summary["quality_flag"] = quality_flag.to_dict()
     attempted = rendition_ok + rendition_failed
@@ -418,6 +519,13 @@ def _pct(value) -> str:
 
 def _num(value, places: int = 4) -> str:
     return "n/a" if value is None else f"{value:.{places}f}"
+
+
+def _n_of(summary: dict) -> str:
+    """`(n=K)` for the text metrics, so a mean over one document cannot
+    be read as a mean over the set."""
+    scored = summary.get("documents_with_reference_text") or 0
+    return f"(n={scored})" if scored else ""
 
 
 def render_markdown(report: dict) -> str:
@@ -477,9 +585,14 @@ def render_markdown(report: dict) -> str:
             f"| documents | {summary['documents']} |",
             f"| field accuracy (OS-NFR-001) | **{_pct(head['field_accuracy'])}** |",
             f"| `extracted`-status precision | {_pct(head['extracted_precision'])} |",
-            f"| CER (mean) | {_num(head['cer_mean'])} |",
-            f"| CER (p95) | {_num(head['cer_p95'])} |",
-            f"| WER (mean) | {_num(head['wer_mean'])} |",
+            # The sample count rides along with each text metric. The real
+            # set once printed "CER (mean) 55.0000" from exactly one
+            # document, in a table whose other rows were over 22 -- the
+            # count was two rows further down and nothing tied them
+            # together.
+            f"| CER (mean) | {_num(head['cer_mean'])} {_n_of(summary)} |",
+            f"| CER (p95) | {_num(head['cer_p95'])} {_n_of(summary)} |",
+            f"| WER (mean) | {_num(head['wer_mean'])} {_n_of(summary)} |",
             f"| documents with reference text | {summary['documents_with_reference_text']} / {summary['documents']} |",
             f"| latency p50 / p95 per document | {summary['latency']['per_document_s']['p50']}s / "
             f"{summary['latency']['per_document_s']['p95']}s |",
@@ -488,6 +601,65 @@ def render_markdown(report: dict) -> str:
             f"| statuses | {json.dumps(summary['status_totals'])} |",
             "",
         ]
+
+        pops = summary.get("by_population") or {}
+        if pops:
+            lines += [
+                "### Printed vs handwritten",
+                "",
+                "OS-NFR-001's 95% is for *standard document layouts*. A form "
+                "filled in by pen is not one, so the two populations are "
+                "reported separately and never averaged into the headline "
+                "above.",
+                "",
+                "| population | docs | fields | correct | field accuracy | `extracted` precision |",
+                "|---|---|---|---|---|---|",
+            ]
+            for name in ("printed", "handwritten"):
+                p = pops[name]
+                lines += [
+                    f"| {name} | {p['documents']} | {p['fields_expected']} | "
+                    f"{p['fields_correct']} | **{_pct(p['field_accuracy'])}** | "
+                    f"{_pct(p['extracted_precision'])} |"
+                ]
+            lines += [""]
+
+        rf = summary.get("review_flag")
+        if rf:
+            lines += [
+                "### `requires_review` as a routing decision",
+                "",
+                "| metric | value |",
+                "|---|---|",
+                f"| documents flagged | {rf['flagged']} / {summary['documents']} |",
+                f"| documents that really had a wrong or missing field | "
+                f"{rf['documents_with_an_error']} / {summary['documents']} |",
+                f"| precision (flagged and really wrong) | {_pct(rf['precision'])} |",
+                f"| **recall (really wrong and caught)** | **{_pct(rf['recall'])}** |",
+                f"| missed -- wrong but not flagged | {rf['fn']} |",
+                "",
+                f"Reasons fired: `{json.dumps(rf['reasons'])}`",
+                "",
+            ]
+            if rf["missing_mandatory"]:
+                lines += [
+                    f"Mandatory fields reported missing: "
+                    f"`{json.dumps(rf['missing_mandatory'])}`",
+                    "",
+                ]
+
+        # A reference that was thrown out is a label to fix, and it has to
+        # say so here -- otherwise the only trace is a CER count one lower
+        # than the reader expects, which nobody chases.
+        unusable = summary.get("unusable_reference_text") or []
+        if unusable:
+            lines += [
+                f"**{len(unusable)} label(s) have an unusable `reference_text`** "
+                "-- excluded from CER/WER:",
+                "",
+            ]
+            lines += [f"- {u}" for u in unusable]
+            lines += [""]
 
         ori = (summary.get("preprocessing") or {}).get("orientation") or {}
         if ori.get("pages_classified"):
@@ -593,6 +765,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--only", default="", help="comma-separated synthetic condition names")
     parser.add_argument("--types", default="", help="comma-separated type codes")
     parser.add_argument("--report-name", default="", help="output basename (default: the variant)")
+    parser.add_argument(
+        "--no-vendor-seed", action="store_true",
+        help="run with an EMPTY known-vendor list -- what a tenant that has "
+             "filed nothing yet sees",
+    )
     parser.add_argument("--rss-interval-s", type=float, default=2.0)
     args = parser.parse_args(argv)
 
@@ -645,8 +822,25 @@ def main(argv: list[str] | None = None) -> int:
     session_factory = harness.make_session_factory()
     storage = harness.InMemoryStorage()
 
+    # The tenant's known-vendor list. In production it is built from
+    # values a human confirmed in the review screen; the eval has no
+    # review history, so it stands in the real set's own labels -- which
+    # ARE human-confirmed values, and is also exactly why `--no-vendor-
+    # seed` exists. A seeded run measures recognising a vendor already on
+    # file; an unseeded one measures a vendor nobody has filed before, and
+    # that is the number for a new tenant.
+    real_documents = [d for d in documents if d.set_name == REAL]
+    known_vendors = [] if args.no_vendor_seed else harness.seed_known_vendors(real_documents)
+    if known_vendors:
+        print(f"[eval] known-vendor list seeded with {len(known_vendors)} confirmed vendor(s)", flush=True)
+    else:
+        print("[eval] known-vendor list EMPTY (--no-vendor-seed or no real set)", flush=True)
+
     print("[eval] warming up models...", flush=True)
-    pipeline = harness.build_pipeline(settings, session_factory, storage)
+    pipeline = harness.build_pipeline(
+        settings, session_factory, storage,
+        known_vendors_loader=(lambda _tenant_id: known_vendors) if known_vendors else None,
+    )
 
     results = []
     started = time.monotonic()

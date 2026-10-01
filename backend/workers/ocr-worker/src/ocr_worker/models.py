@@ -193,6 +193,10 @@ class MetadataField(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     field_key: Mapped[str] = mapped_column(String(100))
     data_type: Mapped[str] = mapped_column(String(30))
+    # Whether this field is something a document STATES, as opposed to
+    # something this organisation assigns at filing time. Seeded by V44;
+    # see `extraction.FieldSpec.ocr_extractable`.
+    is_ocr_extractable: Mapped[bool] = mapped_column(default=True)
     is_deleted: Mapped[bool] = mapped_column(default=False)
 
 

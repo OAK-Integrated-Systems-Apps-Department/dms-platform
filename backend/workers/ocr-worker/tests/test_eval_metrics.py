@@ -60,6 +60,46 @@ def test_wer_counts_whole_tokens():
 
 
 # ----------------------------------------------------------------------
+# CER/WER are rates, and a reference that is not page text is refused
+#
+# The real set reported "CER (mean) 55.0000" and "WER (mean) 76.0000" --
+# arithmetically correct for `edits / len(reference)`, meaningless as
+# rates, and produced from a single label whose `reference_text` held a
+# receipt number instead of the page's text.
+# ----------------------------------------------------------------------
+def test_a_hypothesis_longer_than_its_reference_reports_a_rate_not_a_ratio():
+    ref, hyp = "RCP04269792", "MEDIHELP HOSPITALS Payment Receipt " * 20
+
+    # The uncapped ratio is kept, because how far past 1.0 a document went
+    # is the signal that the label, not the engine, is at fault.
+    assert metrics.character_error_ratio(ref, hyp) > 1.0
+    assert metrics.word_error_ratio(ref, hyp) > 1.0
+
+    assert metrics.character_error_rate(ref, hyp) == 1.0
+    assert metrics.word_error_rate(ref, hyp) == 1.0
+
+
+def test_capping_does_not_hide_a_real_recognition_failure():
+    # A blank page the engine covered in invented text is still the worst
+    # possible result, and must keep saying so.
+    assert metrics.character_error_rate("", "hallucinated") == 1.0
+    assert metrics.word_error_rate("", "hallucinated") == 1.0
+
+
+def test_a_reference_too_short_to_be_page_text_is_refused_by_name():
+    problem = metrics.reference_text_problem("RCP04269792")
+    assert problem is not None
+    assert "11 characters" in problem
+
+
+def test_absent_and_full_length_references_are_both_fine():
+    # Empty is an opt-out, not a defect; a real page's text passes.
+    assert metrics.reference_text_problem("") is None
+    assert metrics.reference_text_problem("   \n ") is None
+    assert metrics.reference_text_problem("x" * metrics.MIN_REFERENCE_CHARS) is None
+
+
+# ----------------------------------------------------------------------
 # Field comparison
 # ----------------------------------------------------------------------
 def test_field_match_folds_case_and_whitespace():

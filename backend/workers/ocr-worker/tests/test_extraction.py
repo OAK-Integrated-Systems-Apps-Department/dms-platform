@@ -5,6 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from decimal import Decimal  # noqa: E402
+
+from ocr_worker import extraction  # noqa: E402
 from ocr_worker.extraction import (  # noqa: E402
     FieldSpec,
     extract_requested_fields,
@@ -698,7 +701,12 @@ def test_currency_pattern_fallback_finds_lkr_with_no_currency_label():
         zone_fields={},
     )
     assert results[0].value == "LKR"
-    assert results[0].status == "low_confidence"  # pattern-rule guess, not a labeled match
+    # Calibrated: this tier was forced to low_confidence on the reasoning
+    # that an unlabelled currency is a guess, and measured 8/8 correct on
+    # the real printed set. Keeping it below the line marked `currency` --
+    # mandatory for INVOICE -- as missing on 8 documents that had it
+    # right, and sent every one of them to the review queue.
+    assert results[0].status == "extracted"
 
 
 def test_currency_pattern_fallback_never_returns_a_value_outside_configured_options():
@@ -821,7 +829,9 @@ def test_amount_prefers_net_total_over_an_amount_column_header():
         zone_fields={},
         lines_by_page={1: _REAL_RECEIPT_LINES_PAGE_1},
     )
-    assert results[0].value == "15,979.90"
+    # `value` is the number; `raw_value` is how the page printed it.
+    assert results[0].value == "15979.90"
+    assert results[0].raw_value == "15,979.90"
 
 
 def test_invoice_date_reads_ambiguous_numeric_dates_day_first():
@@ -839,3 +849,226 @@ def test_invoice_date_reads_ambiguous_numeric_dates_day_first():
         lines_by_page={1: _REAL_RECEIPT_LINES_PAGE_1},
     )
     assert results[0].value == "2026-01-03"
+
+
+# ----------------------------------------------------------------------
+# Type-gated spatial matching
+#
+# Real per-line geometry from `Thanuja_Channelling` in the real eval set
+# (a Medihelp payment receipt photographed with the consultant's rubber
+# stamp overprinted across the Total row). Every bbox and every string
+# below is what PaddleOCR actually returned for that page.
+# ----------------------------------------------------------------------
+_REAL_STAMPED_TOTAL_LINES_PAGE_1 = [
+    ("Dr. Poorna Weerasinghe", (129, 394, 530, 461)),
+    ("Consultation Practitioner Fee", (120, 712, 650, 770)),
+    ("2,000.00", (902, 724, 1022, 762)),
+    ("Consultation Hospital Fee", (124, 764, 620, 820)),
+    ("1,000.00", (910, 774, 1029, 813)),
+    ("MBBS,MD", (520, 787, 701, 836)),
+    ("Total", (108, 806, 223, 856)),
+    ("Consultant Dermatologist", (383, 823, 839, 886)),
+    ("3,000.00", (867, 826, 1029, 874)),
+    ("-SLMC-Ro0 No:12562", (418, 872, 788, 923)),
+]
+
+
+def test_a_stamp_overprinted_on_the_total_row_is_not_returned_as_the_amount():
+    """Three documents in the real set failed exactly this way.
+
+    "Consultant Dermatologist" starts at x=383 and "3,000.00" at x=867,
+    both on the Total row, both to the right of the "Total" label. The
+    nearest-line rule therefore picked the stamp -- and `amount` came
+    back as a dermatologist's job title, marked `extracted`.
+
+    Nothing about the stamp looks like a label, and it has real content,
+    so the only property that separates it from the right answer is that
+    it cannot be a decimal.
+    """
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="Consultation Practitioner Fee 2,000.00 Consultation Hospital Fee 1,000.00 Total 3,000.00",
+        zone_fields={},
+        lines_by_page={1: _REAL_STAMPED_TOTAL_LINES_PAGE_1},
+    )
+    assert results[0].value == "3000.00"
+    assert results[0].raw_value == "3,000.00"
+    assert results[0].bbox == (867, 826, 1029, 874)
+
+
+def test_the_gate_only_applies_to_decimals_not_to_free_text():
+    """A vendor name has no shape to check, and gating it would reject
+    legitimate values. The stamp line IS a valid vendor-name-shaped
+    string, so this asserts the gate is not quietly global."""
+    lines = [
+        ("Vendor", (108, 806, 223, 856)),
+        ("Consultant Dermatologist", (383, 823, 839, 886)),
+    ]
+    results = extract_requested_fields(
+        specs=[FieldSpec("vendor_supplier_name", "text")],
+        text="Vendor Consultant Dermatologist",
+        zone_fields={},
+        lines_by_page={1: lines},
+    )
+    assert results[0].value == "Consultant Dermatologist"
+
+
+def test_a_label_whose_neighbours_are_all_the_wrong_type_does_not_abandon_the_field():
+    """Before the gate, every matched label produced *some* string, so
+    giving up after the first match cost nothing. With the gate, "the
+    label matched but nothing near it was a number" became an ordinary
+    outcome -- and stopping there would throw the field away on the first
+    near-miss. Here the first "Total" has only prose beside it."""
+    lines = [
+        ("Total", (100, 100, 200, 130)),
+        ("Qty 7", (300, 100, 400, 130)),
+        ("Net Total", (100, 300, 260, 330)),
+        ("30,288.00", (800, 300, 980, 330)),
+    ]
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="Total Qty 7 Net Total 30,288.00",
+        zone_fields={},
+        lines_by_page={1: lines},
+    )
+    assert results[0].value == "30288.00"
+
+
+# ----------------------------------------------------------------------
+# A `decimal` field comes back as a number (production prompt 3.8)
+# ----------------------------------------------------------------------
+def test_a_currency_prefix_is_moved_out_of_the_amount_and_kept_as_raw_value():
+    """Real: two OAK-template invoices returned "LKR 188,500.00" and
+    "LKR 220,000.00" -- the right figure to the last digit, and unusable,
+    because the currency belongs in `currency` and dms-core's
+    `parseNumber` was being handed a string with letters in it."""
+    lines = [
+        ("INVOICE TOTAL", (740, 630, 875, 645)),
+        ("LKR 188,500.00", (995, 630, 1125, 645)),
+    ]
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="INVOICE TOTAL LKR 188,500.00",
+        zone_fields={},
+        lines_by_page={1: lines},
+    )
+    assert results[0].value == "188500.00"
+    assert results[0].raw_value == "LKR 188,500.00"
+
+
+def test_a_trailing_annotation_after_the_figure_does_not_lose_the_amount():
+    """Real, Asiri Surgical Hospital: "TOTAL FEE : 4,100.00 (LKR) CS".
+    The strict money parser rejects the whole token, so the field came
+    back `not_found` even though the figure was read at confidence 1.00
+    and the label was right there."""
+    lines = [
+        ("TOTAL FEE", (660, 838, 800, 858)),
+        ("4,100.00 (LKR) CS", (1165, 845, 1420, 866)),
+    ]
+    results = extract_requested_fields(
+        specs=[FieldSpec("amount", "decimal")],
+        text="TOTAL FEE : 4,100.00 (LKR) CS",
+        zone_fields={},
+        lines_by_page={1: lines},
+    )
+    assert results[0].value == "4100.00"
+    assert results[0].raw_value == "4,100.00 (LKR) CS"
+
+
+def test_stripping_a_trailing_annotation_never_eats_an_accounting_negative():
+    """"(1,234.50)" is a negative, not a figure with an annotation after
+    it. The retry only runs when the strict parse has already failed, and
+    this one does not fail -- which is the whole reason it is ordered that
+    way."""
+    assert extraction.parse_decimal_candidate("(1,234.50)").value == Decimal("-1234.50")
+    assert not extraction.parse_decimal_candidate("(LKR) CS").ok
+    # The merged qty/price/total run from a real thermal receipt must
+    # stay rejected: no annotation to strip, and it is not a number.
+    assert not extraction.parse_decimal_candidate("2 3,934.007,868.00").ok
+
+
+# ----------------------------------------------------------------------
+# ocr_extractable (V44) and the tenant default currency
+# ----------------------------------------------------------------------
+def test_a_field_that_is_not_ocr_extractable_is_never_attempted():
+    """`classification_level` is mandatory for INVOICE and is chosen by us
+    at filing time, so OCR reporting it "missing" put 20 of 21 real
+    documents in the review queue. Not attempted, and the status says
+    which kind of nothing this is."""
+    spec = FieldSpec("classification_level", "dropdown", ["public", "internal"],
+                     ocr_extractable=False)
+    results = extract_requested_fields(
+        specs=[spec],
+        # The word is right there in the text; it must still not be read.
+        text="CONFIDENTIAL - Internal use only. Invoice Total 100.00",
+        zone_fields={},
+    )
+    assert results[0].value is None
+    assert results[0].status == "not_extractable"
+
+
+def test_not_extractable_beats_even_a_zone_template():
+    """A zone template is the highest-priority tier, so if the flag did not
+    short-circuit before it, a configured zone would be a way back in."""
+    from ocr_worker.extraction import field_for_zone_name
+
+    zone = field_for_zone_name("department", "Finance", 0.99, "dept_zone", bbox=(1, 2, 3, 4))
+    results = extract_requested_fields(
+        specs=[FieldSpec("department", "text", ocr_extractable=False)],
+        text="Department: Finance",
+        zone_fields={"department": zone},
+    )
+    assert results[0].status == "not_extractable"
+    assert results[0].value is None
+
+
+def test_a_page_with_no_currency_signal_gets_the_tenant_default():
+    """Six real receipts print "Total 3,000.00" and name no currency at
+    all. `defaulted` is deliberately not `extracted`: it is a real value,
+    it is not something OCR read."""
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", ["USD", "LKR"])],
+        text="Consultation Hospital Fee 1,000.00 Total 3,000.00",
+        zone_fields={},
+        default_currency="LKR",
+    )
+    assert results[0].value == "LKR"
+    assert results[0].status == "defaulted"
+    # No confidence at all, rather than a number that would be
+    # indistinguishable from a real low-confidence reading.
+    assert results[0].confidence is None
+
+
+def test_a_printed_currency_always_beats_the_default():
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", ["USD", "LKR"])],
+        text="Sub Total (USD) 1,200.00",
+        zone_fields={},
+        default_currency="LKR",
+    )
+    assert results[0].value == "USD"
+    assert results[0].status != "defaulted"
+
+
+def test_no_default_configured_still_reports_not_found():
+    """The honest setting for a tenant that genuinely bills in several
+    currencies."""
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", ["USD", "LKR"])],
+        text="Total 3,000.00",
+        zone_fields={},
+        default_currency="",
+    )
+    assert results[0].status == "not_found"
+
+
+def test_a_default_outside_the_fields_options_is_not_applied():
+    """`_match_enum` never returns a value outside the caller's list, and
+    a misconfigured default must not be the exception."""
+    results = extract_requested_fields(
+        specs=[FieldSpec("currency", "dropdown", ["USD", "EUR"])],
+        text="Total 3,000.00",
+        zone_fields={},
+        default_currency="LKR",
+    )
+    assert results[0].status == "not_found"

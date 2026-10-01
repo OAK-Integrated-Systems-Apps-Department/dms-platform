@@ -333,6 +333,23 @@ class Settings(BaseSettings):
     # A comma-decimal tenant's `1.234` stays flagged ambiguous until then.
     ocr_locale: str = "day_first"
 
+    # The currency to assume when the page carries NO signal at all -- no
+    # ISO code, no symbol, no `Rs`, no `/=`. Six of the real corpus's
+    # receipts are like this: a Sri Lankan hospital prints "Total 3,000.00"
+    # and every human reading it knows the unit, because there is only one
+    # currency in the building.
+    #
+    # Applied with `status="defaulted"`, which is deliberately not
+    # `extracted`: it is a real value a consumer may use, it is NOT
+    # something OCR read, so it is excluded from OCR accuracy and is never
+    # a reason to send a document to review. A tenant that genuinely bills
+    # in several currencies should set this empty and take `not_found`,
+    # which is the honest answer there.
+    #
+    # Process-wide for the same reason `ocr_locale` is: per-tenant needs
+    # dms-core to send it on `document.version.ocr.requested`.
+    ocr_default_currency: str = "LKR"
+
     # -- Searchable PDF rendition (production prompt 3.11, Phase 4a) --
     # The page raster plus an invisible OCR text layer, written to the OCR
     # output bucket and recorded in `renditions`. Off makes the whole step

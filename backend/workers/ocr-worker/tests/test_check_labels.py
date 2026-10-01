@@ -370,6 +370,37 @@ class TestItNeverWrites:
         assert check_labels.main([]) == 0
 
 
+class TestReferenceText:
+    """`reference_text` is the ruler for CER/WER, and the real set shipped
+    one holding `"RCP04269792"` -- a receipt number, not the page's text.
+    Nothing refused it, so the run reported CER 55.0 as though it were a
+    rate. The scorer now skips such a reference; this checker has to say
+    so first, while the reviewer still has the document open."""
+
+    def test_a_field_value_pasted_into_reference_text_is_an_error(self):
+        findings = errors(findings_for(reference_text="RCP04269792"))
+
+        assert [f.field for f in findings] == ["reference_text"]
+        assert "11 characters" in findings[0].message
+
+    def test_empty_reference_text_is_an_opt_out_not_a_defect(self):
+        assert errors(findings_for(reference_text="")) == []
+        assert errors(findings_for()) == []
+
+    def test_a_real_page_of_text_passes(self):
+        page = "MEDIHELP HOSPITALS Payment Receipt Total 3,050.00 Paid By Credit Card"
+        assert errors(findings_for(reference_text=page)) == []
+
+    def test_the_checker_and_the_scorer_agree(self):
+        """The rule here must be the scorer's own, not a second copy of
+        it: a checker that passed what `run.py` then silently drops would
+        hide the dropped document instead of naming it."""
+        from eval import metrics
+
+        assert metrics.reference_text_problem("RCP04269792") is not None
+        assert errors(findings_for(reference_text="RCP04269792"))
+
+
 @pytest.mark.parametrize("field", ["invoice_date", "amount", "currency", "classification_level"])
 def test_every_checked_field_actually_belongs_to_the_type(field):
     """Guards the fixture itself: a test suite built on a label the real

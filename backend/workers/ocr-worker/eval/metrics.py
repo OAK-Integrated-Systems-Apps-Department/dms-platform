@@ -67,6 +67,26 @@ def normalize_text_for_cer(text: str) -> str:
 
 
 def character_error_rate(reference: str, hypothesis: str) -> float:
+    """Character edit distance as a **rate in [0, 1]**.
+
+    `edits / len(reference)` is the standard definition and it is
+    unbounded above: a hypothesis longer than its reference scores
+    arbitrarily high. The real set produced **55.0** from an 11-character
+    reference against a full page, printed under a column headed
+    "CER (mean)" as though it were a rate. Past 1.0 the number carries no
+    further information a reader can act on -- "every character is wrong"
+    is already the worst a recognition result can be -- so what is
+    reported as a rate is capped at one.
+
+    The uncapped value stays available as `character_error_ratio`,
+    because *how far* past 1.0 a document went is the signal that the
+    reference, not the recognition, is at fault.
+    """
+    return min(1.0, character_error_ratio(reference, hypothesis))
+
+
+def character_error_ratio(reference: str, hypothesis: str) -> float:
+    """The uncapped `edits / len(reference)`. May exceed 1.0."""
     ref = normalize_text_for_cer(reference)
     hyp = normalize_text_for_cer(hypothesis)
     if not ref:
@@ -78,11 +98,53 @@ def character_error_rate(reference: str, hypothesis: str) -> float:
 
 
 def word_error_rate(reference: str, hypothesis: str) -> float:
+    """Word edit distance as a **rate in [0, 1]**. Capped for the same
+    reason as `character_error_rate`; `word_error_ratio` is uncapped."""
+    return min(1.0, word_error_ratio(reference, hypothesis))
+
+
+def word_error_ratio(reference: str, hypothesis: str) -> float:
+    """The uncapped `edits / len(reference words)`. May exceed 1.0."""
     ref = normalize_text_for_cer(reference).split()
     hyp = normalize_text_for_cer(hypothesis).split()
     if not ref:
         return 0.0 if not hyp else 1.0
     return levenshtein(ref, hyp) / len(ref)
+
+
+# A page's full text is never this short. A `reference_text` below this
+# is a single field value somebody pasted into the wrong key -- the real
+# set carried `"RCP04269792"`, a receipt number, where the page text
+# belongs. Scoring against it does not measure recognition; it measures
+# how much MORE than that one token the engine read, which on a full page
+# is all of it. That is where 55.0 came from.
+#
+# Deliberately an absolute floor rather than a ratio against the
+# hypothesis. A ratio would also suppress the case this metric must keep
+# reporting -- a nearly-blank page the engine covered in invented text --
+# because from the reference side the two look identical.
+MIN_REFERENCE_CHARS = 40
+
+
+def reference_text_problem(reference: str) -> str | None:
+    """Why this `reference_text` cannot be scored, or None if it can.
+
+    Called before CER/WER so an unusable reference is reported by name
+    instead of silently producing a number. The label is the ruler; a
+    bad ruler that still prints a measurement is worse than one that
+    refuses to.
+    """
+    text = normalize_text_for_cer(reference or "")
+    if not text:
+        return None  # absent, not broken -- this document opts out of CER
+    if len(text) < MIN_REFERENCE_CHARS:
+        return (
+            f"reference_text is {len(text)} characters -- too short to be a "
+            f"page's text (minimum {MIN_REFERENCE_CHARS}). It looks like one "
+            f"field value pasted into the wrong key. Leave reference_text empty "
+            f"to opt out of CER/WER, or paste the document's full text"
+        )
+    return None
 
 
 # ----------------------------------------------------------------------
@@ -242,10 +304,16 @@ def accumulate_field_counts(
     claimed that confidence, and scoring it as though it had would
     flatter the extracted-precision number.
     """
+    statuses = field_statuses or {}
     for key in expected_fields:
+        # A field OCR was never meant to read is not a field OCR failed to
+        # read. `classification_level` is mandatory for INVOICE and is
+        # chosen by us at filing time; counting it as an expected
+        # extraction measured the schema, not the engine.
+        if statuses.get(key) == "not_extractable":
+            continue
         counts.setdefault(key, FieldCounts()).expected += 1
 
-    statuses = field_statuses or {}
     for key, entry in (actual_fields or {}).items():
         bucket = counts.setdefault(key, FieldCounts())
         value = entry.get("value") if isinstance(entry, dict) else entry
@@ -256,6 +324,13 @@ def accumulate_field_counts(
         if status is None and isinstance(entry, dict):
             status = entry.get("status")
         if value is None or normalize_field_value(value) == "":
+            continue
+        # A tenant default is a real value and a legitimate output -- it
+        # is simply not evidence about OCR, so it scores neither for nor
+        # against. Counting it correct would credit the engine for a
+        # configuration constant; counting it wrong would penalise it for
+        # a page that genuinely says nothing.
+        if status == "defaulted":
             continue
         bucket.produced += 1
         ok = key in expected_fields and field_matches(expected_fields[key], value)

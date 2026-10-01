@@ -30,6 +30,7 @@ from ocr_worker.patterns import (  # noqa: E402
     DAY_FIRST,
     MONTH_FIRST,
     amount_in_words,
+    detect_currency,
     parse_amount,
     parse_date,
 )
@@ -295,3 +296,75 @@ def test_an_explicit_separator_wins_over_the_locale():
 def test_no_locale_at_all_behaves_exactly_as_before():
     assert parse_amount("1.234", locale=None).ambiguous is True
     assert parse_amount("1.234").ambiguous is True
+
+
+# ----------------------------------------------------------------------
+# detect_currency
+#
+# Every "found" case below is a string PaddleOCR actually returned for a
+# document in eval/corpus/real/, and every "not found" case is a string
+# from the same corpus that a looser rule would have matched.
+# ----------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # ISO code, the unambiguous case -- Tax Invoice, image1
+        ("Sub Total (LKR)", "LKR"),
+        ("Amount (LKR)", "LKR"),
+        ("Invoice Total USD 1,200.00", "USD"),
+        # "Rs" standalone -- George Gooneratne cash memo's column header,
+        # read at confidence 1.00 and previously discarded
+        ("Rs.", "LKR"),
+        ("Rs 1,200", "LKR"),
+        ("Cts. Rs. 38,000", "LKR"),
+        # "Rs" glued to its neighbour by OCR -- two Santa Dora receipts
+        # came back exactly like this
+        ("Pay Type JAmountRs Sub Total", "LKR"),
+        ("Pay Type AmountRs", "LKR"),
+        # The Sri Lankan terminator, which is how a handwritten price is
+        # written on an Ayurveda clinic's form
+        ("1100/=", "LKR"),
+        ("5000/-", "LKR"),
+        # Symbols
+        ("Total $1,234.50", "USD"),
+        ("Total ₨ 500", "LKR"),
+    ],
+)
+def test_detect_currency_finds_what_the_page_prints(text, expected):
+    assert detect_currency(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # "Mrs" is on a handwritten clinic form in the corpus whose
+        # currency label was removed precisely because nothing is printed.
+        # An LKR here would be right by accident and wrong by rule.
+        "Name : (Mr/Mrs.)",
+        "Mrs Thanuja Kodithuwakku",
+        # Uppercase "RS" inside an ordinary word
+        "TOTAL HOURS WORKED",
+        "NO REFUNDS / NO CANCELLATIONS",
+        # Lowercase "rs"
+        "Others :......",
+        "3 yrs",
+        "Goods Cannot be Returned or Exchanged",
+        # Three-letter acronyms that are not ISO codes -- the reason the
+        # whitelist is fixed rather than "any three capitals"
+        "OAK Integrated Systems (PVT) LTD VAT Reg",
+        # A bare terminator with no figure in front of it
+        "Invoice Date: 1/2-3",
+        "/=",
+        "",
+    ],
+)
+def test_detect_currency_does_not_invent_one(text):
+    assert detect_currency(text) is None
+
+
+def test_an_iso_code_outranks_a_looser_signal_on_the_same_page():
+    """First-mention-wins is per signal CLASS, not per character offset:
+    the Tax Invoice prints "Rs" nowhere but does print both LKR and USD
+    bank account lines, and a page that printed "Rs." in a column header
+    AND "USD" as the invoice currency means USD."""
+    assert detect_currency("Rs. 1,200 ... Invoice currency: USD") == "USD"

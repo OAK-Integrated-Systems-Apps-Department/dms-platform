@@ -267,7 +267,10 @@ def stage_version(session_factory, storage: InMemoryStorage, doc: corpus_mod.Cor
     return version_id
 
 
-def build_pipeline(settings: Settings, session_factory, storage: InMemoryStorage) -> OcrPipeline:
+def build_pipeline(
+    settings: Settings, session_factory, storage: InMemoryStorage,
+    known_vendors_loader=None,
+) -> OcrPipeline:
     layout_engine = LayoutEngine()
     ocr_engine = PaddleOcrEngine()
     layout_engine.warm_up()
@@ -290,6 +293,7 @@ def build_pipeline(settings: Settings, session_factory, storage: InMemoryStorage
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
         orientation_classifier=orientation_classifier,
+        known_vendors_loader=known_vendors_loader,
     )
 
 
@@ -330,10 +334,46 @@ def run_document(
     doc: corpus_mod.CorpusDocument,
 ) -> RunResult:
     specs = [
-        FieldSpec(field_key=s.field_key, data_type=s.data_type, options=s.options)
+        # `is_mandatory` is carried, not dropped. Without it `pipeline`'s
+        # `mandatory_keys` is empty, which silently disables the FIRST of
+        # `requires_review`'s three arms ("any mandatory field not
+        # extracted") for every eval run -- so the review flag was being
+        # scored with a third of its inputs switched off, and a document
+        # with no amount, no currency and no invoice number came back
+        # `requires_review: false`. `eval/schema.py` has carried the flag
+        # all along for exactly this; only this call site dropped it.
+        FieldSpec(
+            field_key=s.field_key,
+            data_type=s.data_type,
+            options=s.options,
+            is_mandatory=s.is_mandatory,
+            ocr_extractable=s.ocr_extractable,
+        )
         for s in schema_mod.field_specs_for(doc.type_code)
     ]
     return _run(pipeline, session_factory, storage, doc, specs)
+
+
+def seed_known_vendors(documents) -> list[str]:
+    """The confirmed vendor names for the real set, as the tenant's
+    known-vendor list would hold them.
+
+    In production this list is built from values a human accepted or
+    corrected in the review screen (`document_ocr_corrections` plus
+    manually-sourced metadata values). The eval has no review history, so
+    it stands in the labels -- which is legitimate, because the labels ARE
+    human-confirmed values, and is also exactly why `eval.run --no-vendor-
+    seed` exists: a run seeded from the set it is scored against is
+    measuring recognition of a known vendor, not discovery of a new one.
+    Both numbers are reported, and the unseeded one is the one that says
+    what happens to a vendor nobody has filed before.
+    """
+    seen: dict[str, str] = {}
+    for doc in documents:
+        name = (doc.fields or {}).get("vendor_supplier_name")
+        if isinstance(name, str) and name.strip():
+            seen.setdefault(name.strip().casefold(), name.strip())
+    return sorted(seen.values())
 
 
 def _run(

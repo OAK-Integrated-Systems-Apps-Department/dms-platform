@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime
+from difflib import SequenceMatcher
+from typing import Callable
 
 from . import field_confidence
 from . import field_confidence as fc
+# The money grammar this deployment actually needs -- `Rs.`/`Rs`/`LKR`,
+# the `/=` and `/-` terminators, comma decimals, accounting parentheses --
+# already lives here and is already used by line_items.py and
+# validation.py. extraction.py had its own, narrower ideas about what a
+# number looks like and never consulted it.
+from .patterns import detect_currency, parse_amount
 
 try:
     from langdetect import detect_langs
@@ -199,18 +209,11 @@ def fields_to_dict(fields: list[ExtractedField], geometry_by_page: dict | None =
 
 _REFERENCE_NUMBER_RE = re.compile(r"\b([A-Z]{2,6}[-/][A-Z0-9]{2,4}[-/][A-Z0-9]{2,10}|[A-Z]{2,6}[-/][A-Z0-9]{3,12})\b")
 
-# Pattern-rule fallback for `currency`: real invoice found live with no
-# "Currency:" label anywhere on the page at all -- LKR only ever appeared
-# as a "(LKR)" column-header annotation and inline before amounts ("LKR
-# 4,100,000.00"), never as a labeled field. A fixed ISO 4217 whitelist
-# (not a generic "any 3 uppercase letters" pattern) avoids false-positives
-# on common invoice acronyms that are also 3 letters (VAT, PVT, LTD).
-_CURRENCY_CODES = (
-    "USD", "EUR", "GBP", "LKR", "INR", "AUD", "CAD", "JPY", "CNY", "SGD",
-    "AED", "SAR", "PKR", "BDT", "NPR", "ZAR", "NZD", "CHF", "HKD", "MYR",
-    "THB", "PHP", "IDR", "VND", "KRW", "EGP", "QAR", "KWD", "BHD", "OMR",
-)
-_CURRENCY_CODE_RE = re.compile(r"\b(" + "|".join(_CURRENCY_CODES) + r")\b")
+# The currency vocabulary moved to `patterns.detect_currency`, which this
+# module now calls (see `_currency_pattern_fallback`). The ISO whitelist
+# that used to live here -- deliberately a fixed list rather than "any 3
+# uppercase letters", so VAT/PVT/LTD never matched -- went with it, along
+# with the `Rs`/`₨`/`/=` forms it was missing.
 
 # Fallback for `vendor_supplier_name` when no "Vendor:"/"Supplier:" label
 # exists at all -- real invoice found live: the vendor was only ever
@@ -222,7 +225,31 @@ _DOCUMENT_TITLE_LINES = {
     "invoice", "tax invoice", "sales invoice", "commercial invoice",
     "proforma invoice", "receipt", "payment receipt", "purchase order",
     "credit note", "debit note", "quotation", "quote", "statement",
+    # Found live on real Sri Lankan receipts, each of which printed its
+    # document title ABOVE the letterhead and so won the "first usable
+    # line" race against the vendor's own name.
+    "cash memo", "bill", "consultation receipt", "channel receipt",
+    "channel receipt (walk in)", "sales order", "delivery note",
 }
+
+# Words that mark a line as an organisation's NAME rather than a stray
+# glyph, an address or a document title. Not a whitelist -- a company with
+# none of these is still perfectly valid and reaches the same fallback by
+# position; this only decides which of several plausible lines wins.
+#
+# Every entry is here because a real document in eval/corpus/real/ needed
+# it: "(PVT) LTD" and "Hospital" (Santa Dora), "PLC" (Asiri), "Pharmacy"
+# (Healthguard), "Eye Care" (George Gooneratne), "Ayurveda"
+# (Edirisinghe).
+_COMPANY_MARKERS: tuple[str, ...] = (
+    "pvt ltd", "(pvt) ltd", "pvt. ltd", "private limited", "plc",
+    "limited", "ltd", "inc", "incorporated", "corp", "corporation",
+    "company", "& co", "holdings", "enterprises", "group",
+    "hospital", "hospitals", "clinic", "medical", "medicare", "pharmacy",
+    "ayurveda", "laboratories", "labs", "eye care", "health",
+    "stores", "supplies", "services", "solutions", "systems", "technologies",
+    "centre", "center", "institute", "academy", "school", "bank",
+)
 
 # Short, explicit label variants per field -- matches this module's own
 # "best-effort, not a general NLP extractor" ethos (see the module
@@ -253,7 +280,28 @@ _LABEL_ALIASES: dict[str, list[str]] = {
     # table's "Net Amount"/"Unit Price" column header -- the first (and
     # therefore wrong) occurrence on a typical invoice, well before the
     # real total.
-    "invoice_number": ["invoice number", "invoice no", "inv no", "inv#", "inv #", "invoice#"],
+    # Each addition past the first six is a label a real document in
+    # eval/corpus/real/ actually prints. Deliberately NOT added: a bare
+    # "no" or "no." -- the same pages carry "No. 208, Galle Road",
+    # "No ITEM" and "No Refunds / No Cancellations", and a wrong invoice
+    # number is worse than none.
+    "invoice_number": [
+        "invoice number", "invoice no", "inv no", "inv#", "inv #", "invoice#",
+        "bill no", "bill number", "receipt no", "receipt number",
+        "memo no", "pi no", "proforma no",
+        "document no", "doc no",
+    ],
+    # Deliberately NOT in `invoice_number` above: "order no" and "order
+    # number" name a DIFFERENT identifier, and they cost a real document
+    # when they were there. A cash memo prints "Order No.." near its
+    # footer with the number written by hand beside it, and the alias
+    # matched that label and returned the next thing on the row --
+    # "0452LDeveryDate22703/2025" -- as the invoice number, replacing an
+    # honest `not_found`. A wrong invoice number is worse than none, which
+    # is the whole reason this list is conservative.
+    #
+    # `purchase_order_number` is where an order number belongs, and it
+    # already claims these.
     "invoice_date": ["invoice date"],
     "purchase_order_number": ["purchase order number", "po number", "po no", "po#", "order number"],
     "currency": ["currency"],
@@ -299,23 +347,55 @@ _LABEL_ALIASES: dict[str, list[str]] = {
     ],
     "vendor_supplier_name": ["vendor / supplier", "vendor/supplier", "vendor", "supplier", "billed by", "seller"],
     "cost_centre": ["cost centre", "cost center"],
-    # "total" (bare) is deliberately LAST: a hospital/receipt-style
-    # document routinely labels its grand total as just "TOTAL", with no
-    # "Amount"/"Due" qualifier at all (verified live: a real channel
-    # receipt's "TOTAL : 4900.00" line) -- but tried only after every more
-    # specific alias above has already failed, since a document with
-    # several "Total ___" lines (Total Discount, Subtotal, Grand Total)
-    # should resolve via one of those first. "\btotal\b" does not match
-    # inside "Subtotal" (no word boundary between "Sub" and "total" -- it's
-    # one unbroken token), so that common false-positive is already safe.
-    # "net total" added after a real pharmacy receipt found live: its
-    # table had an "AMOUNT" *column header* (the per-line-item price),
-    # and since "amount" sat earlier in this list than the generic "total"
-    # fallback, it matched that column header first and grabbed the FIRST
-    # line item's amount instead of the real "NET TOTAL" a few rows below
-    # -- more specific total-labels must always be tried before "amount"
-    # itself, which is really a last-resort fallback, not a preference.
-    "amount": ["total amount", "total due", "grand total", "net total", "amount due", "net amount due", "amount", "total"],
+    # Ordered by how specifically each phrase names "the figure this
+    # invoice is settled at", most specific first. Four tiers:
+    #
+    #  1. The document's own GRAND TOTAL -- what the invoice is for.
+    #  2. Net/gross figures: after discount and tax, before payment.
+    #  3. What is still OWED, reached only when the document names no
+    #     total at all.
+    #  4. Bare "total", then bare "amount", as last resorts.
+    #
+    # Tiers 1 and 3 are in this order because the ground truth says so,
+    # not on principle. `cc90b3ca` prints INVOICE TOTAL 220,000.00, PAID
+    # AMOUNT 120,000.00 and DUE AMOUNT 100,000.00, and its reviewed label
+    # is **220,000.00** -- so `amount` is what the invoice is FOR, not
+    # what is left to pay on it. That is a business decision this list now
+    # encodes; if it is ever revisited, this is the line to move, and
+    # `8b75ddd3` (where the two figures coincide at 188,500.00) will not
+    # notice either way, so it cannot be used to confirm the choice.
+    #
+    # Everything in tiers 1-3 exists because a real document in
+    # `eval/corpus/real/` labels its total that way and nothing earlier in
+    # this list matched it. "net amount" (Healthguard), "invoice total"
+    # and "due amount" (the OAK template), "total fee" (Asiri) were all
+    # absent, so the bare "amount" at the end matched first -- against
+    # "PAID AMOUNT", "Gross Amount", "Change Amount" and an "Amount"
+    # COLUMN HEADER, returning a line item or a paid-to-date figure as the
+    # invoice total on four separate documents.
+    #
+    # Deliberately NOT here: "sub total" and "subtotal" (that is the
+    # pre-tax figure, and `_LABEL_ALIASES["subtotal"]` claims it so
+    # 3.9's `subtotal + tax = total` rule has both sides to check), and a
+    # bare "fee" (it would match "DOCTOR'S FEE" and "HOSPITAL FEE" line
+    # items on every channelling receipt in the corpus).
+    #
+    # "\btotal\b" does not match inside "Subtotal" (no word boundary
+    # between "Sub" and "total" -- it is one unbroken token), so that
+    # false positive is already safe.
+    "amount": [
+        # 1. the grand total -- what the invoice is for
+        "grand total", "invoice total", "total payable", "amount payable",
+        "total amount",
+        # 2. net / gross -- after discount and tax
+        "net total", "net amount", "net value", "total fee",
+        "gross amount", "gross total",
+        # 3. what is still owed -- only if no total above was named
+        "total amount due", "amount due", "due amount", "balance due",
+        "total due",
+        # 4. last resorts
+        "total", "amount",
+    ],
 }
 
 # Extra clip-only stop labels: real header labels that commonly sit right
@@ -366,6 +446,23 @@ class FieldSpec:
     # endpoint, eval -- keeps working and simply contributes nothing to
     # the review decision, which is the safe direction.
     is_mandatory: bool = False
+    # Whether OCR is expected to read this field OFF the document, as
+    # opposed to it being something this organisation assigns at filing
+    # time (`metadata_fields.is_ocr_extractable`, seeded by V44).
+    #
+    # A field with this false is skipped entirely: no value is produced,
+    # no row is written, and `requires_review`'s mandatory-missing arm
+    # ignores it. That last part is the point. `classification_level` is
+    # mandatory for INVOICE and no supplier invoice carries one, so before
+    # this flag it was reported missing on 20 of 21 real documents and put
+    # every one of them in the review queue.
+    #
+    # Defaults True so an existing construction site that does not know
+    # about the flag keeps behaving exactly as it did. That is the opposite
+    # default to `is_mandatory` above, and deliberately so: there the safe
+    # direction is "contributes nothing to the review decision", here it is
+    # "keeps extracting what it used to".
+    ocr_extractable: bool = True
 
 
 @dataclass(frozen=True)
@@ -380,7 +477,16 @@ class RequestedFieldResult:
     field_key: str
     value: str | list[str] | None
     confidence: float | None
-    status: str  # "extracted" | "not_found" | "low_confidence"
+    # "extracted" | "low_confidence" | "not_found" | "defaulted"
+    #              | "not_extractable"
+    #
+    # `defaulted`  -- no signal on the page; a tenant default was applied.
+    #                 A real value a consumer may use, but not something
+    #                 OCR read, so it is never counted as OCR accuracy and
+    #                 never a reason to review.
+    # `not_extractable` -- this field is not something a document states
+    #                 (`FieldSpec.ocr_extractable`); it was never attempted.
+    status: str
     # The string as it was read off the page, before any normalisation
     # (production prompt 3.8). Equal to `value` for every field that is
     # not normalized; differs for dates, where `value` is ISO and this is
@@ -589,14 +695,21 @@ def _has_real_content(text: str) -> bool:
 
 def _currency_pattern_fallback(text: str) -> str | None:
     """Last-resort pattern-rule match for `currency` when no "Currency:"
-    label exists anywhere on the page (see _CURRENCY_CODE_RE's own
-    comment) -- takes the first recognized ISO code found anywhere in the
-    flattened text, which is the same "first mention wins" behavior a
+    label exists anywhere on the page -- the first recognized signal in
+    the flattened text, which is the same "first mention wins" behavior a
     human skimming the page would use, and matches this module's existing
     priority order (label match, then pattern rule, before giving up).
+
+    Delegates to `patterns.detect_currency`, which knows `Rs`/`Rs.`, the
+    `₨` sign and the `/=` terminator as well as the ISO codes. This
+    function used to carry its own ISO-codes-only regex, so on three real
+    documents a printed currency was read at confidence 1.00 and then
+    discarded: two Santa Dora receipts whose "Amount Rs" column header
+    OCR returned glued as "AmountRs", and a cash memo with a clean "Rs."
+    column header. `patterns.py` already had the whole vocabulary and
+    this module simply never imported it.
     """
-    match = _CURRENCY_CODE_RE.search(text)
-    return match.group(1) if match else None
+    return detect_currency(text)
 
 
 def _looks_like_contact_or_address_line(text: str) -> bool:
@@ -640,18 +753,246 @@ def _vendor_letterhead_fallback(
     lines = lines_by_page.get(1)
     if not lines:
         return None
+
+    # Collect every plausible line first, instead of returning the first
+    # one. "First in reading order" is what this did, and on a
+    # photographed receipt reading order opens with whatever fragment the
+    # detector found in the margin: measured on the real corpus it
+    # returned "492", "la Dore", "E" and "h202/90" as vendor names, while
+    # "Santa Dora Hospital", "MEDIHELP" and "Edirisinghe Ayurveda" sat a
+    # line or two below.
+    candidates: list[tuple[str, tuple[int, int, int, int]]] = []
     for raw_text, bbox in lines:
         candidate = raw_text.strip()
         if not candidate:
             continue
         if candidate.lower() in _DOCUMENT_TITLE_LINES:
+            # A document title ENDS the letterhead -- but only once the
+            # letterhead has actually started. Both orders occur in the
+            # real corpus: a cash memo prints "Cash Memo" above its own
+            # name (so breaking here would return nothing), while a
+            # payment receipt prints "Payment Receipt" below the logo and
+            # then repeats the company as a branch sub-title
+            # ("Medihelp Hospital - Piliyandala"), which outscored the
+            # logo itself on markers until this stopped the search.
+            if candidates:
+                break
             continue
         if _looks_like_a_label(candidate):
-            return None
+            # The letterhead block has ended and the label/value section
+            # has begun; anything past here is a different field's value.
+            break
         if not _has_real_content(candidate) or _looks_like_contact_or_address_line(candidate):
             continue
-        return candidate, bbox
-    return None
+        if not _could_be_an_organisation_name(candidate):
+            continue
+        candidates.append((candidate, bbox))
+
+    if not candidates:
+        return None
+    # A line carrying a company marker beats one without, whatever the
+    # reading order; among equals the first still wins, which is the old
+    # behaviour and is right for a letterhead.
+    for candidate, bbox in candidates:
+        if _has_company_marker(candidate):
+            return candidate, bbox
+    return candidates[0]
+
+
+def _has_company_marker(text: str) -> bool:
+    """True when the line carries a company marker AND something else.
+
+    The "and something else" is load-bearing. Medihelp's letterhead sets
+    its name on two lines, "MEDIHELP" above "HOSPITALS", and a bare marker
+    test preferred "HOSPITALS" -- picking the generic half of a name over
+    the half that identifies the company, on two real documents. A line
+    that is ONLY a marker word is a fragment, not a better candidate than
+    a line without one.
+    """
+    lowered = f" {re.sub(r'[^a-z0-9&() ]+', ' ', text.lower())} "
+    lowered = re.sub(r"\s+", " ", lowered)
+    matched = [m for m in _COMPANY_MARKERS if f" {m} " in lowered]
+    if not matched:
+        return False
+    remainder = lowered
+    for marker in sorted(matched, key=len, reverse=True):
+        remainder = remainder.replace(f" {marker} ", " ")
+    return sum(1 for ch in remainder if ch.isalpha()) >= 3
+
+
+def _could_be_an_organisation_name(text: str) -> bool:
+    """Reject what an organisation name cannot be.
+
+    Each rule is one real failure from the corpus, and the point of
+    writing them as rejections rather than as a positive pattern is that a
+    company with an unusual name must still pass:
+
+    - `"E"`, `"IN"`      -- a logo glyph the detector found on its own.
+    - `"492"`, `"0420764"` -- a pre-printed serial number.
+    - `"h202/90"`, `"1551APASO3P"` -- a perforation mark or scanner
+      artefact: one unbroken token mixing letters and digits.
+
+    The last one is the only rule that could plausibly reject a real name,
+    so it is narrowed to single-token strings -- "3M Lanka (Pvt) Ltd" has
+    a space in it and survives.
+    """
+    stripped = text.strip()
+    letters = sum(1 for ch in stripped if ch.isalpha())
+    if letters < 3:
+        return False
+    # Mostly punctuation or digits: an address fragment or a serial.
+    if letters < len(stripped) * 0.5:
+        return False
+    if " " not in stripped and any(ch.isdigit() for ch in stripped):
+        return False
+    return True
+
+
+_PROMINENT_NUMBER_RE = re.compile(r"^[0-9]{5,12}$")
+# How much taller than the page's typical line a number has to be before
+# it counts as "printed prominently". 1.5x, measured: on the real corpus
+# the pre-printed serials run 1.7-2.1x the median line, and nothing else
+# numeric on those pages clears 1.5x in a horizontal box.
+_PROMINENT_MIN_HEIGHT_RATIO = 1.5
+# A letterhead serial is near the top. Bounding it keeps a total, a phone
+# number or an account number further down from qualifying.
+_PROMINENT_TOP_FRACTION = 0.40
+
+
+def _prominent_document_number(
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    page_height_px: float | None,
+) -> tuple[str, tuple[int, int, int, int]] | None:
+    """The large pre-printed serial a receipt carries instead of a label.
+
+    Four documents in the real corpus print their number this way: a
+    7-digit figure set about twice the body size at the top of the page,
+    with no "Invoice No" anywhere to anchor a label match. Only tried
+    after every label alias has failed.
+
+    Three conditions, and the third is the one that makes this safe to
+    ship. Measured over the whole real set:
+
+    | rule | correct | wrong | precision |
+    |---|---|---|---|
+    | prominent + near the top | 4 | 2 | 67% |
+    | **+ wider than it is tall** | **4** | **0** | **100%** |
+
+    The two false positives were both the perforation code printed down
+    the page MARGIN of a continuous-stationery receipt -- read as a tall,
+    narrow vertical strip, which is prominent by height and is not a line
+    of text. Requiring a horizontal box removes them and costs nothing.
+
+    Ambiguity is refused outright: two different prominent numbers mean we
+    cannot tell which is the document's, and a wrong invoice number is
+    worse than none.
+    """
+    if not lines_by_page or not page_height_px:
+        return None
+    lines = lines_by_page.get(1)
+    if not lines:
+        return None
+
+    heights = [bbox[3] - bbox[1] for text, bbox in lines if text.strip()]
+    if not heights:
+        return None
+    median_height = statistics.median(heights)
+    if median_height <= 0:
+        return None
+
+    found: dict[str, tuple[int, int, int, int]] = {}
+    for text, bbox in lines:
+        candidate = text.strip()
+        if not _PROMINENT_NUMBER_RE.match(candidate):
+            continue
+        x0, y0, x1, y1 = bbox
+        if y0 > page_height_px * _PROMINENT_TOP_FRACTION:
+            continue
+        if (y1 - y0) < median_height * _PROMINENT_MIN_HEIGHT_RATIO:
+            continue
+        if (x1 - x0) <= (y1 - y0):
+            continue  # a vertical strip: margin code, not a line of text
+        found.setdefault(candidate, bbox)
+
+    if len(found) != 1:
+        return None
+    value, bbox = next(iter(found.items()))
+    return value, bbox
+
+
+def _vendor_key(text: str) -> str:
+    """Fold a company name to what survives OCR noise and house style.
+
+    Everything that is not a letter or digit goes, including spaces. That
+    is deliberate and it is the whole reason this works on real pages:
+    Asiri's letterhead came back as `"ASIRISURGICAL HOSPITAL PLC"` -- one
+    missing space -- which no string comparison forgives and which folds
+    to exactly the same key as `"ASIRI SURGICAL HOSPITAL PLC"`.
+    """
+    return re.sub(r"[^a-z0-9]+", "", unicodedata.normalize("NFKC", text).lower())
+
+
+# How close a page line has to fold to a known vendor before we call it a
+# match. 0.82 on the folded forms, measured against the real corpus: it
+# admits "Dora Hospital (PVT) Ltd" -> "Santa Dora Hospital (PVT) Ltd"
+# (0.86, the logo's "Santa" lost to a script font) and rejects the
+# closest unrelated pair in the set, "MEDIHELP" against "Medihelp
+# Hospital (Pvt) Ltd" being the nearest genuine near-miss. Provisional --
+# it has only ever been set against 21 documents.
+_KNOWN_VENDOR_MIN_RATIO = 0.82
+
+
+def _known_vendor_match(
+    lines_by_page: dict[int, list[LineBlock]] | None,
+    known_vendors: list[str],
+) -> tuple[str, tuple[int, int, int, int]] | None:
+    """The first page-1 line that matches a vendor this tenant has already
+    confirmed, returned as the CONFIRMED spelling.
+
+    Returning the stored spelling rather than the OCR text is the point.
+    A letterhead set in a script face comes back in fragments -- the real
+    corpus has "la Dore" and "anta" where the page says "Santa Dora" --
+    and no amount of cleaning turns the fragments back into the name. What
+    does work is recognising that this is a vendor we have seen before and
+    writing down what we already know it is called.
+
+    The list is built from values a human confirmed (accepted or corrected
+    in the review screen), never from OCR output, so this cannot teach
+    itself its own mistakes.
+    """
+    if not known_vendors or not lines_by_page:
+        return None
+    lines = lines_by_page.get(1)
+    if not lines:
+        return None
+
+    by_key = {}
+    for vendor in known_vendors:
+        key = _vendor_key(vendor)
+        if len(key) >= 6:  # too short to match on without inviting collisions
+            by_key.setdefault(key, vendor)
+    if not by_key:
+        return None
+
+    best: tuple[float, str, tuple[int, int, int, int]] | None = None
+    for raw_text, bbox in lines[:_VENDOR_SEARCH_LINES]:
+        candidate_key = _vendor_key(raw_text)
+        if len(candidate_key) < 6:
+            continue
+        for key, vendor in by_key.items():
+            if candidate_key == key or key in candidate_key or candidate_key in key:
+                ratio = 1.0
+            else:
+                ratio = SequenceMatcher(None, candidate_key, key).ratio()
+            if ratio >= _KNOWN_VENDOR_MIN_RATIO and (best is None or ratio > best[0]):
+                best = (ratio, vendor, bbox)
+    return (best[1], best[2]) if best else None
+
+
+# A letterhead lives at the top of page 1. Bounding the search stops a
+# known vendor's name mentioned in the body ("payable to ...", a bank
+# line) from being read as the issuer.
+_VENDOR_SEARCH_LINES = 15
 
 
 def _strip_leading_marker(text: str) -> str:
@@ -688,6 +1029,7 @@ def _spatial_value_on_page(
     lines: list[LineBlock],
     aliases: list[str],
     page_height_px: float | None = None,
+    accepts: "Callable[[str], bool] | None" = None,
 ) -> tuple[str | None, tuple[int, int, int, int] | None]:
     """Finds a label among REAL per-visual-line text+bbox (see layout.py's
     native_text_lines_for_page / ocr_engine.py's PaddleOCR line results,
@@ -710,6 +1052,7 @@ def _spatial_value_on_page(
     correctly from the exact same document, because the real per-line
     bboxes it works from were never merged in the first place.
     """
+    accepts = accepts or (lambda _text: True)
     for alias in aliases:
         pattern = _label_pattern(alias)
         for i, (text, bbox) in enumerate(lines):
@@ -718,7 +1061,9 @@ def _spatial_value_on_page(
                 continue
             same_line_rest = match.group(1).strip()
             if same_line_rest and _has_real_content(same_line_rest):
-                return _clip_at_next_label(same_line_rest, aliases), bbox
+                clipped = _clip_at_next_label(same_line_rest, aliases)
+                if accepts(clipped):
+                    return clipped, bbox
 
             x0, y0, x1, y1 = bbox
             same_row = [
@@ -738,6 +1083,15 @@ def _spatial_value_on_page(
                 and _ranges_overlap(y0, y1, other_bbox[1], other_bbox[3])
                 and not _looks_like_a_label(other_text)
                 and _has_real_content(other_text)
+                # The candidate must be able to BE this field's value.
+                # Without this the nearest line wins outright, and on a
+                # real receipt the nearest line to the right of "Total"
+                # was a doctor's rubber stamp overprinted across the
+                # total row -- so `amount` came back
+                # "Dr. Poorna Weerasinghe" while "3,050.00" sat further
+                # right on the same row, read at 0.98 confidence. Three
+                # documents in the real set failed exactly that way.
+                and accepts(_strip_leading_marker(other_text))
             ]
             if same_row:
                 other_text, other_bbox = min(same_row, key=lambda item: item[1][0])
@@ -758,12 +1112,21 @@ def _spatial_value_on_page(
                 and _ranges_overlap(x0, x1, other_bbox[0], other_bbox[2], min_overlap_ratio=0.2)
                 and not _looks_like_a_label(other_text)
                 and _has_real_content(other_text)
+                and accepts(_strip_leading_marker(other_text))
             ]
             if below:
                 other_text, other_bbox = min(below, key=lambda item: item[1][1])
                 return _strip_leading_marker(other_text), other_bbox
 
-            return None, None
+            # This label had no usable value. Keep looking rather than
+            # giving up on the field: with a type gate in play, "the
+            # label matched but everything near it was the wrong kind of
+            # thing" is now an ordinary outcome, and a later alias (or a
+            # later occurrence of the same one) may still be the real
+            # one. Before the gate existed every match produced SOME
+            # string, so stopping here cost nothing; now it would throw
+            # the field away on the first near-miss.
+            continue
     return None, None
 
 
@@ -771,6 +1134,7 @@ def _spatial_label_value(
     lines_by_page: dict[int, list[LineBlock]] | None,
     aliases: list[str],
     page_heights_px: dict[int, float] | None = None,
+    accepts: "Callable[[str], bool] | None" = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Page-ordered wrapper over _spatial_value_on_page -- `lines_by_page`
     is 1-indexed (matching this whole module's page numbering elsewhere),
@@ -781,7 +1145,7 @@ def _spatial_label_value(
         return None, None, None
     for page in sorted(lines_by_page):
         value, bbox = _spatial_value_on_page(
-            lines_by_page[page], aliases, (page_heights_px or {}).get(page)
+            lines_by_page[page], aliases, (page_heights_px or {}).get(page), accepts
         )
         if value:
             return value, page, bbox
@@ -793,17 +1157,78 @@ def _find_value(
     lines_by_page: dict[int, list[LineBlock]] | None,
     aliases: list[str],
     page_heights_px: dict[int, float] | None = None,
+    accepts: "Callable[[str], bool] | None" = None,
 ) -> tuple[str | None, int | None, tuple[int, int, int, int] | None]:
     """Tries real per-line spatial matching first (_spatial_label_value --
     far more precise when page position data is available), falling back
     to the flattened-text heuristic (_label_proximity_value) only when
     line-level data isn't available at all or the spatial pass found
     nothing on it.
+
+    `accepts` filters candidates to those that could actually BE this
+    field's value (see `_acceptor_for`). It is applied to the flattened
+    fallback too: a gate that only guards the precise path would let the
+    imprecise one through unchecked, which is backwards.
     """
-    value, page, bbox = _spatial_label_value(lines_by_page, aliases, page_heights_px)
+    value, page, bbox = _spatial_label_value(lines_by_page, aliases, page_heights_px, accepts)
     if value:
         return value, page, bbox
-    return _label_proximity_value(text, aliases), None, None
+    flattened = _label_proximity_value(text, aliases)
+    if flattened is not None and accepts is not None and not accepts(flattened):
+        return None, None, None
+    return flattened, None, None
+
+
+def _acceptor_for(data_type: str) -> "Callable[[str], bool] | None":
+    """What a value of this type is allowed to look like, or None for
+    "anything" (the previous behaviour, kept for every free-text field).
+
+    Only `decimal` is gated today. A date already has its own candidate
+    extractor (`_extract_date_candidate`) which parses before accepting,
+    and gating free text would reject legitimate values -- a vendor name
+    or a description has no shape to check against.
+    """
+    if data_type != "decimal":
+        return None
+
+    def accepts_decimal(candidate: str) -> bool:
+        return parse_decimal_candidate(candidate).ok
+
+    return accepts_decimal
+
+
+# A trailing annotation printed after the figure itself: a bracketed
+# currency or unit, optionally followed by a short code. Real example,
+# Asiri Surgical Hospital: "TOTAL FEE : 4,100.00 (LKR) CS" -- the value
+# is 4,100.00 and "(LKR) CS" is the hospital's own payment-mode marker.
+_TRAILING_ANNOTATION_RE = re.compile(r"\s*\([^()]*\)\s*[A-Za-z]{0,4}\s*$")
+
+
+def parse_decimal_candidate(candidate: str):
+    """`patterns.parse_amount`, retried once without a trailing annotation.
+
+    `parse_amount` is the module that already knows what money looks like
+    in this deployment -- `Rs.`/`LKR` prefixes, `/=` terminators, comma
+    decimals, accounting parentheses -- and extraction.py had its own,
+    narrower ideas while never calling it. This is the one place that
+    decides whether a string can be a `decimal` field, so the gate in
+    `_acceptor_for` and the normalisation in `_finalize_result` cannot
+    disagree about it.
+
+    The retry is deliberately only attempted when the strict parse has
+    already failed, which is what keeps it from eating an accounting
+    negative: "(1,234.50)" parses first time, so the annotation stripper
+    -- which would otherwise reduce it to nothing -- never sees it.
+    """
+    parsed = parse_amount(candidate)
+    if parsed.ok or not candidate:
+        return parsed
+    trimmed = _TRAILING_ANNOTATION_RE.sub("", candidate).strip()
+    if trimmed and trimmed != candidate.strip() and any(ch.isdigit() for ch in trimmed):
+        retried = parse_amount(trimmed)
+        if retried.ok:
+            return retried
+    return parsed
 
 
 def _match_enum(candidate: str | None, options: list[str], field_key: str) -> str | None:
@@ -888,6 +1313,8 @@ def _extract_field_value(
     text: str,
     lines_by_page: dict[int, list[LineBlock]] | None = None,
     page_heights_px: dict[int, float] | None = None,
+    default_currency: str = "",
+    known_vendors: list[str] | None = None,
 ) -> tuple[str | list[str] | None, float | None, bool, int | None, tuple[int, int, int, int] | None]:
     """Dispatches ONE requested field (no zone match) through, in order:
     spatial label matching (when lines_by_page is available -- see
@@ -922,16 +1349,37 @@ def _extract_field_value(
             # _match_enum never returns a value outside that list.
             fallback_matched = _match_enum(_currency_pattern_fallback(text), options, field_key)
             if fallback_matched:
-                # forced low_confidence, like the letterhead and free-text
-                # fallbacks below: this is a guess from a bare currency
-                # code in running text, with no label anchoring it, and it
-                # must always be reviewed regardless of where the caller
-                # set its threshold. It used to reach that status by
-                # scoring 0.55 against a 0.6 default -- which quietly
-                # depended on two unrelated numbers staying in that order,
-                # and stopped being true the moment the score became
-                # computed. Saying so outright is what was meant.
-                return fallback_matched, fc.TIER_FALLBACK, True, None, None
+                # CALIBRATED, not asserted. This was a forced
+                # low_confidence on the reasoning that a currency read out
+                # of running text with no label is a guess. Measured on
+                # the real printed set it is **8 of 8 correct**, and
+                # keeping it below the line had a cost: `currency` is
+                # mandatory for INVOICE, so every one of those 8 documents
+                # was reported as missing a mandatory field and sent to
+                # the review queue for a value that was right.
+                #
+                # A pattern tier, therefore, and subject to the ordinary
+                # threshold like every other. 8 documents is a thin basis
+                # -- re-measure when the corpus grows, and note that the
+                # vendor letterhead fallback below was measured the same
+                # way, came back 15/18 (83%), and is STILL forced low: the
+                # rule is the measurement, not a preference for
+                # promotion.
+                return fallback_matched, fc.TIER_PATTERN, False, None, None
+            # Nothing on the page names a currency -- not a code, not a
+            # symbol, not `Rs`, not a `/=` terminator. Six real receipts in
+            # the corpus are exactly this: a Sri Lankan hospital prints
+            # "Total 3,000.00" and the unit is understood from context.
+            #
+            # The tenant default fills it in, and says so: `defaulted` is
+            # not `extracted`, so this never counts as OCR accuracy and
+            # never sends the document to review. Still routed through
+            # `_match_enum`, so a configured default that is not one of
+            # this field's allowed options produces nothing rather than an
+            # invalid value.
+            default_matched = _match_enum(default_currency, options, field_key)
+            if default_matched:
+                return default_matched, fc.TIER_DEFAULTED, False, None, None
         return None, None, False, None, None
 
     if data_type in ("date", "datetime"):
@@ -988,6 +1436,14 @@ def _extract_field_value(
         candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
         if candidate:
             return candidate.strip(), fc.TIER_SPATIAL, False, page, bbox
+        # A vendor this tenant has already confirmed, recognised on the
+        # page. Above the letterhead fallback because it is evidence
+        # rather than position: a human has previously said "this page's
+        # issuer is called exactly this".
+        known = _known_vendor_match(lines_by_page, known_vendors or [])
+        if known:
+            name, bbox = known
+            return name, fc.TIER_PATTERN, False, 1, bbox
         # Letterhead fallback: real invoice found live with no "Vendor:"/
         # "Supplier:" label anywhere on the page (see
         # _vendor_letterhead_fallback's own comment) -- lower confidence
@@ -1002,9 +1458,31 @@ def _extract_field_value(
             return name, fc.TIER_FALLBACK, True, 1, bbox
         return None, None, False, None, None
 
-    # Generic single-line text field (author, department, and anything else
-    # with no more specific handling above).
-    candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
+    if field_key == "invoice_number":
+        candidate, page, bbox = _find_value(text, lines_by_page, aliases, page_heights_px)
+        if candidate:
+            return candidate.strip(), fc.TIER_SPATIAL, False, page, bbox
+        # No label anywhere: four real receipts print the number large at
+        # the top of the page and nothing else. See
+        # `_prominent_document_number` for why this is safe to reach.
+        prominent = _prominent_document_number(
+            lines_by_page, (page_heights_px or {}).get(1)
+        )
+        if prominent:
+            value, bbox = prominent
+            return value, fc.TIER_PATTERN, False, 1, bbox
+        return None, None, False, None, None
+
+    # Generic single-line text field (author, department, amount, and
+    # anything else with no more specific handling above).
+    #
+    # `amount` reaches here: there has never been a `decimal` branch, so a
+    # money field was resolved by the same unchecked "nearest line to the
+    # right of the label" rule as a free-text one. `_acceptor_for` is what
+    # makes that rule type-aware.
+    candidate, page, bbox = _find_value(
+        text, lines_by_page, aliases, page_heights_px, _acceptor_for(data_type)
+    )
     return (candidate.strip(), fc.TIER_SPATIAL, False, page, bbox) if candidate else (None, None, False, None, None)
 
 
@@ -1028,6 +1506,16 @@ def _finalize_result(
     if is_empty:
         return RequestedFieldResult(field_key=spec.field_key, value=None, confidence=None, status="not_found")
 
+    # A tenant default, not a reading. It carries no OCR evidence, so it
+    # gets no confidence rather than a made-up one -- a number here would
+    # be indistinguishable from a real low-confidence match, which is
+    # exactly the confusion `status` exists to prevent.
+    if tier_or_confidence == field_confidence.TIER_DEFAULTED:
+        return RequestedFieldResult(
+            field_key=spec.field_key, value=value, raw_value=None,
+            confidence=None, status="defaulted",
+        )
+
     # The raw string as it was read off the page, kept alongside the
     # normalized value (production prompt 3.8). Normalisation happens
     # HERE rather than in the per-field resolver so that both forms exist
@@ -1040,6 +1528,24 @@ def _finalize_result(
     raw_value = value if isinstance(value, str) else None
     if isinstance(value, str) and spec.data_type in ("date", "datetime"):
         value = _normalize_date(value)
+    elif isinstance(value, str) and spec.data_type == "decimal":
+        # A `decimal` field must come back as a number, not as the page's
+        # rendering of one. Two real OAK invoices returned the right
+        # figure as "LKR 188,500.00" and "LKR 220,000.00" -- correct to
+        # the last digit and still unusable, because the currency belongs
+        # in the `currency` field and dms-core's `parseNumber` is handed a
+        # string with letters in it. The printed form is not lost: it is
+        # `raw_value`, captured two lines above.
+        parsed = parse_decimal_candidate(value)
+        if parsed.ok:
+            value = str(parsed.value)
+            # "1.234" is either 1234 with a European thousands separator
+            # or 1.234 with a decimal point, and the token does not say
+            # which. `parse_amount` returns the commoner reading and flags
+            # it rather than guessing silently; a wrong guess is a 1000x
+            # error on an invoice total, so the value is kept and the
+            # claim of confidence is not.
+            forced_low_confidence = forced_low_confidence or parsed.ambiguous
 
     # Production prompt 3.10: the score is COMPUTED, not asserted.
     # `tier_or_confidence` is a tier name from the resolver above; a zone
@@ -1109,6 +1615,14 @@ def extract_requested_fields(
     # page, where there is no character-level uncertainty and the OCR term
     # is 1.0 by definition.
     line_confidences: dict[int, list] | None = None,
+    # The tenant's currency when the page names none at all. Empty means
+    # "no default" -- the honest setting for a tenant that genuinely bills
+    # in more than one. See `Settings.ocr_default_currency`.
+    default_currency: str = "",
+    # Vendor names this tenant has already CONFIRMED -- accepted or
+    # corrected by a human in the review screen, never OCR output, so the
+    # list cannot teach itself its own mistakes. See `_known_vendor_match`.
+    known_vendors: list[str] | None = None,
 ) -> list[RequestedFieldResult]:
     """The selectable-field entry point: attempts ONLY `specs` (never a
     field outside that list, even one a zone template or the legacy regex
@@ -1125,13 +1639,27 @@ def extract_requested_fields(
     """
     results: list[RequestedFieldResult] = []
     for spec in specs:
+        if not spec.ocr_extractable:
+            # Not attempted at all -- not even a zone template, which would
+            # otherwise be a way for a field this flag excludes to come
+            # back anyway. `status="not_extractable"` rather than
+            # `not_found`, because the two mean different things to a
+            # reviewer and to `requires_review`: "we looked and it is not
+            # there" versus "this is not something a document tells us".
+            results.append(RequestedFieldResult(
+                field_key=spec.field_key, value=None, confidence=None,
+                status="not_extractable",
+            ))
+            continue
         zone_hit = zone_fields.get(spec.field_key)
         if zone_hit is not None:
             results.append(
                 _finalize_result(spec, zone_hit.value, zone_hit.confidence, zone_hit.page, zone_hit.bbox, field_confidence_threshold)
             )
             continue
-        value, tier, forced_low_confidence, page, bbox = _extract_field_value(spec, text, lines_by_page, page_heights_px)
+        value, tier, forced_low_confidence, page, bbox = _extract_field_value(
+            spec, text, lines_by_page, page_heights_px, default_currency, known_vendors
+        )
         results.append(_finalize_result(
             spec, value, tier, page, bbox, field_confidence_threshold,
             forced_low_confidence, line_confidences,

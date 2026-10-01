@@ -144,6 +144,12 @@ def write_draft_label(
         # Real documents carry no known degradation, so they never feed
         # the quality-flag calibration the synthetic conditions do.
         "degraded": None,
+        # Set true when the document's VALUES are written by hand (a
+        # printed form filled in with a pen), not when it merely carries a
+        # handwritten margin note. It splits the report, because
+        # OS-NFR-001's bar is for standard layouts; see
+        # `corpus.CorpusDocument.handwritten`.
+        "handwritten": False,
         "reference_text": "",
         "fields": fields,
         # Optional, and nothing scores it yet. Present because a reviewer
@@ -215,6 +221,7 @@ def load_real_documents() -> tuple[list[corpus_mod.CorpusDocument], list[str], l
                 degraded=bool(label.get("degraded")),
                 expected_page_count=int(label.get("expected_page_count") or 1),
                 set_name="real",
+                handwritten=bool(label.get("handwritten")),
             )
         )
 

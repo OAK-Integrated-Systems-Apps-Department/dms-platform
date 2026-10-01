@@ -105,6 +105,22 @@ TYPE_FIELDS: dict[str, list[tuple[str, bool]]] = {
 }
 
 
+# metadata_fields.is_ocr_extractable, V44: is this value PRINTED on the
+# document somebody sent us, or is it something this organisation assigns
+# at filing time? Anything not listed here is extractable.
+#
+# Kept as its own copy for the same reason TYPE_FIELDS is: this file is
+# the harness's statement of what the production schema says, so a drift
+# between the two is something a reader can see rather than a silent
+# disagreement. See V44__seed_ocr_extractable_flags.sql for the reasoning
+# behind each entry.
+NOT_OCR_EXTRACTABLE: frozenset[str] = frozenset({
+    "classification_level", "retention_class", "department",
+    "cost_centre", "project_code",
+    "description", "tags", "keywords",
+})
+
+
 @dataclass(frozen=True)
 class EvalFieldSpec:
     """Mirrors extraction.FieldSpec, but carries `is_mandatory` too.
@@ -118,6 +134,7 @@ class EvalFieldSpec:
     data_type: str
     options: list[str] | None
     is_mandatory: bool
+    ocr_extractable: bool = True
 
 
 def field_specs_for(type_code: str) -> list[EvalFieldSpec]:
@@ -127,6 +144,7 @@ def field_specs_for(type_code: str) -> list[EvalFieldSpec]:
             data_type=DATA_TYPES[key],
             options=OPTIONS.get(key),
             is_mandatory=mandatory,
+            ocr_extractable=key not in NOT_OCR_EXTRACTABLE,
         )
         for key, mandatory in TYPE_FIELDS[type_code]
     ]

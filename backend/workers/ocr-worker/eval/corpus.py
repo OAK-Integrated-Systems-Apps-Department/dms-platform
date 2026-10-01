@@ -138,6 +138,17 @@ class CorpusDocument:
     # it with real documents would produce a figure that means neither
     # thing. See `realset.py`.
     set_name: str = "synthetic"
+    # Real set only: the document's VALUES are handwritten (a printed form
+    # filled in by pen), not merely annotated in the margin.
+    #
+    # OS-NFR-001's 95% bar is for "standard document layouts", which a
+    # handwritten entry is not, so the two populations are reported
+    # separately and never averaged into the headline. It is a label, not
+    # a measurement: PaddleOCR has no handwritten-English model and does
+    # not misread these -- it does not detect them at all, so page
+    # confidence reads HIGHER on them than on some printed pages and
+    # cannot be used to infer this.
+    handwritten: bool = False
 
     def read(self) -> bytes:
         if self.path is None:

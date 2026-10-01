@@ -36,6 +36,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from . import metrics
 from . import realset
 from . import schema as schema_mod
 
@@ -381,9 +382,29 @@ def check_label(label: dict, *, source: str) -> list[Finding]:
             f"still carries {', '.join(leftover)} from the draft -- usually means the review is unfinished",
         ))
 
+    # Splits the real-set report, so a string "true" or a missing key
+    # would silently move a document into the printed population and
+    # count it against OS-NFR-001's 95% bar.
+    handwritten = label.get("handwritten")
+    if handwritten is not None and not isinstance(handwritten, bool):
+        findings.append(Finding(
+            doc_id, ERROR, "handwritten",
+            f"must be true or false, got {handwritten!r}",
+        ))
+
     reference_text = label.get("reference_text")
     if reference_text is not None and not isinstance(reference_text, str):
         findings.append(Finding(doc_id, ERROR, "reference_text", "must be a string (empty is fine)"))
+    elif isinstance(reference_text, str):
+        # Same floor `run.py` applies, for the same reason and from the
+        # same function: a short reference is one field value in the wrong
+        # key, and scoring against it reports the engine's CER as the
+        # ratio of a whole page to that one token. The real set produced
+        # 55.0 this way. ERROR, not WARN -- a label that silently distorts
+        # the metric is exactly what this checker exists to stop.
+        problem = metrics.reference_text_problem(reference_text)
+        if problem:
+            findings.append(Finding(doc_id, ERROR, "reference_text", problem))
 
     return findings
 

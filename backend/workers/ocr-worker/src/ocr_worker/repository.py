@@ -163,7 +163,7 @@ class OcrRepository:
 
         rows = self.session.execute(
             select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type,
-                   DocumentTypeField.is_mandatory)
+                   MetadataField.is_ocr_extractable, DocumentTypeField.is_mandatory)
             .join(DocumentTypeField, DocumentTypeField.field_id == MetadataField.field_id)
             .join(DocumentType, DocumentType.document_type_id == DocumentTypeField.document_type_id)
             .where(
@@ -207,6 +207,7 @@ class OcrRepository:
                     data_type=row.data_type,
                     options=options_by_field_id.get(row.field_id) if row.data_type in OPTION_BACKED_DATA_TYPES else None,
                     is_mandatory=bool(row.is_mandatory),
+                    ocr_extractable=bool(row.is_ocr_extractable),
                 )
             )
         if unresolved:

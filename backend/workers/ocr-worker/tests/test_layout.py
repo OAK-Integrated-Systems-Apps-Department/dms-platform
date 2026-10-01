@@ -713,3 +713,69 @@ def test_a_bare_raster_uses_the_path_that_actually_works_for_it():
         assert native_pixel_size(doc[0], raster_source=True) == (2300, 3000)
     finally:
         doc.close()
+
+
+# ----------------------------------------------------------------------
+# PageGeometry must describe the raster that actually gets rendered
+#
+# Every `bbox_norm` divides by these numbers while every bbox is measured
+# in the pixmap's space, so a disagreement between the two is a box that
+# normalizes outside [0, 1]. Both defects below were found by probing a
+# real `/Rotate 90` scan in eval/corpus/real/.
+# ----------------------------------------------------------------------
+def test_geometry_pixel_size_matches_the_pixmap_exactly():
+    """`round(width_pt * scale)` disagreed with PyMuPDF by a pixel on an
+    ordinary A4 page -- 1131x1600 reported against a real 1132x1601 --
+    because the rasterizer takes the integer rect of the transformed page
+    rather than rounding each side independently."""
+    source = _pdf_bytes(595.08, 841.68)  # A4 in points, the shape that broke
+    doc = DoclingLayoutDocument(source, "application/pdf", "a4.pdf", _FakeDoclingConverter())
+
+    geometry = doc.page_geometry(0, dpi=200)
+    rendered = doc.render_page(0, dpi=200)
+
+    assert (geometry.width_px, geometry.height_px) == (rendered.image.width, rendered.image.height)
+
+
+@pytest.mark.parametrize("width_pt, height_pt", [(595.08, 841.68), (841.68, 595.08), (612, 792)])
+def test_geometry_and_pixmap_agree_whatever_the_page_shape(width_pt, height_pt):
+    doc = DoclingLayoutDocument(
+        _pdf_bytes(width_pt, height_pt), "application/pdf", "p.pdf", _FakeDoclingConverter()
+    )
+    geometry = doc.page_geometry(0, dpi=200)
+    rendered = doc.render_page(0, dpi=200)
+    assert (geometry.width_px, geometry.height_px) == (rendered.image.width, rendered.image.height)
+
+
+def test_downsampled_from_is_reported_in_the_rendered_pages_orientation():
+    """A real corpus scan (SCAN0002) is a landscape 2338x1653 raster on a
+    page that renders portrait, and `downsampled_from` came back
+    (2338, 1653) against a 1132x1601 render -- a width compared against a
+    height. The whole point of the field is to say what resolution was
+    discarded, so a transposed answer is worse than none.
+
+    Keyed on the two aspects disagreeing, NOT on `page.rotation`: the
+    load path normalizes `/Rotate` away, so that page arrives reporting
+    rotation 0 and a rotation-based swap would never fire.
+    """
+    import fitz
+
+    # A portrait page carrying a landscape raster -- the real shape.
+    pdf = fitz.open()
+    page = pdf.new_page(width=595.08, height=841.68)
+    page.insert_image(page.rect, stream=_jpeg_bytes(2338, 1653))
+    buf = io.BytesIO()
+    pdf.save(buf)
+    pdf.close()
+
+    doc = DoclingLayoutDocument(buf.getvalue(), "application/pdf", "rot.pdf", _FakeDoclingConverter())
+    geometry = doc.page_geometry(0, dpi=200)
+
+    assert geometry.height_px > geometry.width_px, "fixture must render portrait"
+    assert geometry.downsampled_from == (1653, 2338)
+
+
+def test_a_raster_already_matching_the_page_orientation_is_not_swapped():
+    source = _jpeg_bytes(2480, 3508)  # portrait scan, portrait page
+    doc = DoclingLayoutDocument(source, "image/jpeg", "scan.jpg", _FakeDoclingConverter())
+    assert doc.page_geometry(0, dpi=200).downsampled_from == (2480, 3508)

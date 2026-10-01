@@ -103,7 +103,18 @@ def decide(
             result = by_key.get(key)
             if result is None:
                 continue  # never asked for -- see docstring
-            if result.status != "extracted":
+            # A field a document does not state cannot be "missing" from
+            # it. `classification_level` is mandatory for INVOICE and is
+            # chosen by us at filing time, so counting it here reported it
+            # missing on 20 of 21 real documents and flagged every one.
+            # It is still mandatory -- the manual save enforces it -- but
+            # OCR is not the thing that was supposed to supply it.
+            if result.status == "not_extractable":
+                continue
+            # `defaulted` is a real value (a tenant default applied where
+            # the page carried no signal), so the field is not missing.
+            # It is excluded from accuracy, not from completeness.
+            if result.status not in ("extracted", "defaulted"):
                 missing.append(key)
 
     for page in pages or []:

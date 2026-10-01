@@ -35,6 +35,13 @@ TIER_ANCHOR = "anchor"        # anchor-relative match (Phase 3, behind a flag)
 TIER_SPATIAL = "spatial"      # label found, value taken from its line/below it
 TIER_PATTERN = "pattern"      # a regex/pattern tier matched, no label
 TIER_FALLBACK = "fallback"    # positional or derived guess (letterhead, summary)
+# Not a tier at all: the page said nothing and a tenant default was
+# applied. It carries no OCR evidence, so it gets no weight and no
+# confidence -- `_finalize_result` turns it into `status="defaulted"`
+# before any scoring happens, and it is deliberately absent from
+# DEFAULT_TIER_WEIGHTS below so that reaching the weight lookup with it
+# would be a KeyError rather than a silently invented score.
+TIER_DEFAULTED = "defaulted"
 
 # PROVISIONAL. Ordering is the claim; the exact values are not.
 DEFAULT_TIER_WEIGHTS: dict[str, float] = {

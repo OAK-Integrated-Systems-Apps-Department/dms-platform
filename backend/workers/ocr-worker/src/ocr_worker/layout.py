@@ -530,14 +530,43 @@ class DoclingLayoutDocument:
         width_pt = float(page.rect.width)
         height_pt = float(page.rect.height)
         scale = render_scale_for(dpi, width_pt, height_pt, self._max_megapixels)
-        width_px = round(width_pt * scale)
-        height_px = round(height_pt * scale)
+        # The pixmap's OWN dimensions, asked of PyMuPDF rather than
+        # recomputed. `round(width_pt * scale)` disagreed with the real
+        # pixmap by a pixel on an ordinary A4 page (1131 against 1132,
+        # 1600 against 1601) because PyMuPDF takes the integer rect of the
+        # transformed page rather than rounding each side. Every
+        # `bbox_norm` divides by these numbers while every bbox is
+        # measured in the pixmap's space, so the two must be the same
+        # space or a box on the far edge normalizes past 1.0. Costs
+        # nothing: no rendering happens, only a rect transform.
+        width_px, height_px = _pixmap_size(page, scale)
 
         # Only a page that carries a real raster can lose detail, and only
         # when we rendered it smaller than that raster actually is. A
         # vector page has nothing to lose; a small image rendered at or
         # above its own size has lost nothing either.
+        #
+        # The embedded raster's dimensions are in the IMAGE's own space,
+        # which need not share the page's orientation. A real scan in the
+        # corpus (SCAN0002) is a landscape 2338x1653 image on a page that
+        # renders portrait, so comparing the two unswapped compared a
+        # width against a height and reported `downsampled_from` as
+        # (2338, 1653) for a 1132x1601 render -- reporting that actively
+        # misleads, since the field exists to say what resolution was
+        # discarded.
+        #
+        # Keyed on the two aspects disagreeing rather than on
+        # `page.rotation`, which is NOT available here: `/Rotate` is
+        # normalized away during load, so that page arrives reporting
+        # rotation 0 with an already-portrait mediabox. A rotation-based
+        # swap would silently never fire -- it was written that way first
+        # and measured as a no-op.
         native = native_pixel_size(page, raster_source=self._raster_source)
+        if native is not None:
+            native_is_landscape = native[0] > native[1]
+            page_is_landscape = width_px > height_px
+            if native_is_landscape != page_is_landscape:
+                native = (native[1], native[0])
         downsampled_from = None
         if native is not None and (native[0] > width_px or native[1] > height_px):
             downsampled_from = native
@@ -878,6 +907,22 @@ def _matrix(zoom: float):
     import fitz
 
     return fitz.Matrix(zoom, zoom)
+
+
+def _pixmap_size(page, zoom: float) -> tuple[int, int]:
+    """The size `page.get_pixmap(matrix=_matrix(zoom))` will produce.
+
+    Derived from the same transform the rasterizer uses, so `PageGeometry`
+    and the pixmap can never disagree about the page's pixel size. Falls
+    back to the old arithmetic if PyMuPDF cannot be asked, because page
+    geometry is needed even on a page nothing will rasterize.
+    """
+    try:
+        rect = page.rect * _matrix(zoom)
+        irect = rect.irect
+        return int(irect.width), int(irect.height)
+    except Exception:  # noqa: BLE001 -- geometry must never fail a document
+        return round(page.rect.width * zoom), round(page.rect.height * zoom)
 
 
 # See render_page's own docstring: matches PaddleX's internal max_side_limit.

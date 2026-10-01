@@ -1227,6 +1227,61 @@ no `ports:` (internal-only, see "Auth & service exposure"), its own
 (`~/.paddlex`, `~/.cache/huggingface`) so they survive container restarts
 instead of re-downloading from Hugging Face every time.
 
+## Handwriting detection — deferred, and why
+
+**A handwritten entry is not detected, and nothing in this worker claims
+to detect one.** The two handwritten documents in the real evaluation set
+are labelled by hand (`"handwritten": true` in their label files) so the
+report can split the populations, and that label is the only thing that
+knows.
+
+This matters because OS-NFR-001's ≥95% is for *standard document
+layouts*. A pre-printed form filled in with a pen is not one, and the
+right outcome for a handwritten value is a review flag, not a confident
+guess. Splitting the two populations needs something that can tell them
+apart, and the obvious candidate was measured and does not work.
+
+**What was tried.** PaddleOCR has no handwritten-English model and does
+not *misread* handwriting — it does not detect it at all, returning
+confident reads of the printed letterhead and form labels while the pen
+strokes produce nothing. So page-mean recognition confidence cannot
+separate the populations, and measured on the real set it inverts: the
+handwritten `SCAN0002` reads 0.909 against the printed
+`Ayushi_channelling` at 0.893.
+
+The next idea was the ink those misses leave behind: Otsu-binarise the
+page and measure the fraction of ink mass falling outside every
+recognised text box. Measured over all 21 real documents, the two
+handwritten ones land at ranks 3 and 9 of 21:
+
+```
+0.0027  cc90b3ca (printed)      0.3838  Doc4 (printed)
+0.1696  SCAN0011  <-- HANDWRITTEN
+0.2427  Tax-Invoice (printed)   0.4596  benjamin-inv (printed)
+0.3810  SCAN0002  <-- HANDWRITTEN
+0.3316  Sales-Order (printed)   0.7157  Benjamin-receipt (printed)
+```
+
+No threshold separates them, and `SCAN0011` scores *lower* than most
+printed pages. A page-global Otsu counts page-edge shadow, the dark
+surround of a photographed receipt, table rules, borders, logos and
+stamps as uncovered ink, and that swamps the signal — `image1`, a clean
+printed scan, reads 0.63 from its table borders alone.
+
+**What would be needed.** The idea is not dead, the specification is
+wrong. A working detector has to measure stroke-shaped connected
+components inside the page's *content* region, excluding long thin runs
+(rules, underlines, borders), or restrict the question to form value
+cells, which is where a filled-in form actually puts handwriting. The
+hard negatives it must survive are already in the corpus: the three
+Medihelp channelling receipts all carry signature ink and a rubber stamp
+over the total row, and a detector that fires on those is worse than
+none.
+
+That is its own measured cycle. Until it runs, `handwritten` stays a
+human label, the split stays reportable, and no code claims otherwise.
+Do not ship a flag calibrated on two documents.
+
 ## No LLM, by design
 
 **There is no LLM tier in this pipeline, and there will not be one.**
