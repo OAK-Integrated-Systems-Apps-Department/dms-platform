@@ -162,6 +162,21 @@ dms:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
+  export:
+    # How long a generated export is kept before the Phase 4 auto-purge
+    # (sets export_jobs.expires_at). PLACEHOLDER - the real value is Phase 0
+    # Key Decision #10, still open. See ExportJobProperties.
+    job-ttl: ${EXPORT_JOB_TTL:PT24H}
+  import:
+    # Template-based bulk import - see BulkImportProperties. Staged files
+    # live on this node's local disk until their batch has run.
+    staging-dir: ${IMPORT_STAGING_DIR:${java.io.tmpdir}/dms-import}
+    max-rows: ${IMPORT_MAX_ROWS:5000}
+    max-archive-bytes: ${IMPORT_MAX_ARCHIVE_BYTES:2147483648}
+    max-chunk-bytes: ${IMPORT_MAX_CHUNK_BYTES:67108864}
+    session-ttl: ${IMPORT_SESSION_TTL:PT24H}
+    staging-retention: ${IMPORT_STAGING_RETENTION:PT24H}
+    concurrency: ${IMPORT_CONCURRENCY:2}
   storage:
     # Backs the single platform-default StorageLocation (tenant_id NULL)
     # that StorageLocationBootstrap creates on startup if none exists yet -

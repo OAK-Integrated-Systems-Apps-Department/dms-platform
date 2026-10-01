@@ -110,6 +110,9 @@ public final class AuditActionCatalog {
     public static final String QUARANTINE_RELEASE_REFUSED = "QUARANTINE_RELEASE_REFUSED";
     public static final String QUARANTINE_OVERRIDE_RELEASED = "QUARANTINE_OVERRIDE_RELEASED";
     public static final String QUARANTINE_DELETED = "QUARANTINE_DELETED";
+    public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
+    public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
+    public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -291,7 +294,14 @@ public final class AuditActionCatalog {
             Map.entry(QUARANTINE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_RELEASE_REFUSED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_OVERRIDE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
-            Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true))
+            Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
+
+            // Template-based bulk import (BulkImportService) - module FIE.
+            // One event per batch, not per row: each created document is
+            // already audited as DOCUMENT_UPLOADED by the scan gate.
+            Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

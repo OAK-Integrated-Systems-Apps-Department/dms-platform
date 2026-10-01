@@ -132,39 +132,27 @@
             <version>26.0.12</version>
             <scope>compile</scope>
         </dependency>
-
-        <!--
-          Object storage: AWS SDK v2's S3 client, used by S3ObjectStorageAdapter.
-          Its endpointOverride()/forcePathStyle() support is what lets one adapter
-          talk to real AWS S3, MinIO, and the SeaweedFS S3 gateway - see
-          com.oak.dms.storage and docs/storage-architecture.md.
-        -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.55.1</version>
         </dependency>
-
-        <!--
-          Object storage: Azure Blob Storage client, used by
-          AzureBlobStorageAdapter - see com.oak.dms.storage and
-          docs/storage-architecture.md.
-        -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-blob</artifactId>
             <version>12.30.0</version>
         </dependency>
 
-        <!--
-          Spreadsheet read/write for bulk import templates (Module 2.1):
-          generates the .xlsx template for a document type's schema and
-          parses the filled-in manifest - see com.oak.dms.importexport.
-        -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.5.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
         </dependency>
 
         <dependency>

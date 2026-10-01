@@ -1,5 +1,7 @@
 package com.oak.dms.importexport.entity;
 
+import com.oak.dms.importexport.enums.ExportJobStatus;
+import com.oak.dms.importexport.enums.ExportType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,16 +16,12 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/**
- * One queued export request. {@code requestParams} records what to export and
- * is read by the export worker; the generated file is kept at
- * {@code fileObjectKey} until {@code expiresAt}. There is no requested-by
- * column - {@code createdBy} records the requester.
- */
+
 @Entity
 @Table(name = "export_jobs")
 @Getter
@@ -52,6 +50,15 @@ public class ExportJob {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "request_params", nullable = false, columnDefinition = "jsonb")
     private String requestParams;
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private UUID tenantId;
+
+    @Column(name = "requested_by", nullable = false, updatable = false)
+    private UUID requestedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "export_type", nullable = false, updatable = false)
+    private ExportType exportType;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -89,6 +96,17 @@ public class ExportJob {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    /** e.g. /{tenant_id}/tmp/exports/{export_id}/batch.zip - set once the export is generated (Phase 4). */
+    @Column(name = "file_object_key")
+    private String fileObjectKey;
+
+    /** Auto-purge deadline (Phase 4); the TTL behind it is {@code dms.export.job-ttl}. */
+    @Column(name = "expires_at")
+    private OffsetDateTime expiresAt;
+
+    @Column(name = "correlation_id")
+    private UUID correlationId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
@@ -117,4 +135,9 @@ public class ExportJob {
     public enum ExportJobStatus {
         pending, processing, completed, failed, expired
     }
+
+    @Column(name = "updated_at", nullable = false)
+    @Builder.Default
+    private OffsetDateTime updatedAt = OffsetDateTime.now();
+
 }

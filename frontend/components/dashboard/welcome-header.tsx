@@ -67,10 +67,13 @@ export function WelcomeHeader({ firstName, dateLabel, isLoadingName, onUpload, o
           <FolderPlus size={16} />
           Create folder
         </button>
-        <button type="button" className={btnPrimaryClass} onClick={handleUploadClick}>
-          <Upload size={16} />
-          Upload document
-        </button>
+        {/* Only offered when the page wires it up (the caller may upload). */}
+        {onUpload && (
+          <button type="button" className={btnPrimaryClass} onClick={handleUploadClick}>
+            <Upload size={16} />
+            Upload documents
+          </button>
+        )}
         <input
           ref={fileInputRef}
           type="file"
