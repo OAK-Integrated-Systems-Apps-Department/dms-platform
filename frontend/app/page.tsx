@@ -8,24 +8,14 @@ import {
   RecentActivityPanel,
   RecentDocumentsPanel,
 } from "@/components/dashboard/panels"
+import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { StatsRow } from "@/components/dashboard/stats-row"
 import { WelcomeHeader } from "@/components/dashboard/welcome-header"
 import { recentDocuments } from "@/components/dashboard/data"
-import type { DocumentFileType, RecentDocument } from "@/components/dashboard/types"
+import type { RecentDocument } from "@/components/dashboard/types"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
-
-function extensionToType(name: string): DocumentFileType {
-  const ext = name.split(".").pop()?.toLowerCase()
-  if (ext === "xlsx" || ext === "xls" || ext === "csv") return "xlsx"
-  if (ext === "docx" || ext === "doc") return "docx"
-  return "pdf"
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { usePermissions } from "@/lib/auth/use-permissions"
 
 /**
  * Home dashboard. The page itself only decides which panels appear and
@@ -35,18 +25,15 @@ function formatSize(bytes: number): string {
 export default function Page() {
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
   const [documents, setDocuments] = useState<RecentDocument[]>(recentDocuments)
+  const { hasPermission } = usePermissions()
+  const canUpload = hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
+  // Each opening gets a fresh sheet (new key) seeded with the picked files.
+  const [upload, setUpload] = useState<{ key: number; files: File[] } | null>(null)
 
+  // Real upload now: the picked files go to the bulk upload panel, which
+  // sends each one through the malware-scanned POST /api/v1/documents.
   function handleUpload(files: FileList) {
-    const uploaded: RecentDocument[] = Array.from(files).map((file, index) => ({
-      id: `upload-${Date.now()}-${index}`,
-      name: file.name,
-      type: extensionToType(file.name),
-      owner: "You",
-      modified: "Just now",
-      size: formatSize(file.size),
-      status: "Pending",
-    }))
-    setDocuments((current) => [...uploaded, ...current])
+    setUpload({ key: Date.now(), files: Array.from(files) })
   }
 
   function handleCreateFolder(name: string) {
@@ -68,7 +55,7 @@ export default function Page() {
         firstName={user?.displayName.split(" ")[0] ?? ""}
         dateLabel="Tuesday, August 18, 2026"
         isLoadingName={isUserLoading}
-        onUpload={handleUpload}
+        onUpload={canUpload ? handleUpload : undefined}
         onCreateFolder={handleCreateFolder}
       />
 
@@ -80,6 +67,17 @@ export default function Page() {
       </div>
 
       <RecentActivityPanel />
+
+      {upload && (
+        <BulkUploadSheet
+          key={upload.key}
+          open
+          initialFiles={upload.files}
+          onOpenChange={(open) => {
+            if (!open) setUpload(null)
+          }}
+        />
+      )}
     </DashboardShell>
   )
 }

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Download,
   FileStack,
   FileText,
   Grid3x3,
@@ -28,6 +29,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/" },
       { label: "My Documents", icon: FileText },
+      { label: "My Exports", icon: Download, href: "/exports" },
       { label: "Shared With Me", icon: Users },
       { label: "Recent Pins", icon: Pin },
       { label: "Workflows", icon: Workflow, badge: 3 },

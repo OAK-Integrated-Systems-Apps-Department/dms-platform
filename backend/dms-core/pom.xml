@@ -156,6 +156,23 @@
             <version>12.30.0</version>
         </dependency>
 
+        <!--
+          Bulk import/export (Module 2.1): Excel templates and failed-row
+          reports (.xlsx) via Apache POI, CSV templates via Commons CSV
+          (correct quoting/escaping rather than hand-rolled splitting). See
+          com.oak.dms.importexport.
+        -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>

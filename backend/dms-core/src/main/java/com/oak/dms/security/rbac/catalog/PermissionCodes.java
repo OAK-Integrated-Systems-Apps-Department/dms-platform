@@ -95,6 +95,13 @@ public final class PermissionCodes {
     public static final String DOCM_QUARANTINE_DELETE = "docm.quarantine.delete";
     public static final String DOCM_QUARANTINE_OVERRIDE = "docm.quarantine.override";
 
+    // File Import/Export - FIE, template-based bulk import. Seeded by V10;
+    // map-fields is unused so far (templates are generated from the
+    // document type's schema, so columns never need mapping).
+    public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";
+    public static final String FIE_BULK_IMPORT_VALIDATE_PREVIEW = "fie.bulk-import-documents.validate-preview";
+    public static final String FIE_BULK_IMPORT_EXECUTE = "fie.bulk-import-documents.execute-import";
+
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
     // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail

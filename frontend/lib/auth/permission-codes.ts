@@ -77,4 +77,7 @@ export const PermissionCodes = {
   DOCM_QUARANTINE_RELEASE: "docm.quarantine.release",
   DOCM_QUARANTINE_DELETE: "docm.quarantine.delete",
   DOCM_QUARANTINE_OVERRIDE: "docm.quarantine.override",
+  // Uploading documents (POST /api/v1/documents) - also what the upload
+  // panel's document-type picker (/document-types/selectable) requires.
+  DOCM_DOCUMENTS_CREATE: "docm.documents.create",
 } as const
