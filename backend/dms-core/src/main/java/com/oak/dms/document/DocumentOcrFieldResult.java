@@ -72,7 +72,19 @@ public class DocumentOcrFieldResult {
     @Column(name = "confidence")
     private BigDecimal confidence;
 
-    /** 'extracted' | 'not_found' | 'low_confidence' -- see V35's CHECK constraint. */
+    /**
+     * 'extracted' | 'not_found' | 'low_confidence' | 'not_extractable' |
+     * 'defaulted' -- see V45's CHECK constraint, which carries what each
+     * one means and why the last two exist.
+     * <p>
+     * The distinction that matters to every consumer here: {@code
+     * not_found} means OCR looked and the value was not on the page,
+     * {@code not_extractable} means it never looked because the field is
+     * not something a document states (V44's
+     * {@code metadata_fields.is_ocr_extractable}), and {@code defaulted}
+     * means the value is real but came from the tenant default rather
+     * than off the page.
+     */
     @Column(name = "status", nullable = false)
     private String status;
 

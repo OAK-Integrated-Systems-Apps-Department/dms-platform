@@ -88,6 +88,16 @@ public final class ReviewDecisionApplier {
      * ({@code not_found}). A decision settles it -- except a decision that
      * leaves a mandatory field empty, which settles nothing: the document
      * is still missing a value it is required to have.
+     * <p>
+     * Neither status V45 added belongs in {@link #needsAttention}, for
+     * opposite reasons. A {@code not_extractable} field was never looked
+     * for, so there is nothing for a reviewer to check -- and when it is
+     * mandatory the "mandatory and empty" rule above already catches it,
+     * which is the right reason to ask for it rather than a false claim
+     * that OCR missed it. A {@code defaulted} field has a real value the
+     * tenant default supplied, and the default existing is the decision;
+     * flagging every one of them would queue every document that does not
+     * print its currency.
      */
     public static List<String> unsettled(
             List<ReviewFieldResponse> fields, List<SaveReviewRequest.Decision> decisions) {

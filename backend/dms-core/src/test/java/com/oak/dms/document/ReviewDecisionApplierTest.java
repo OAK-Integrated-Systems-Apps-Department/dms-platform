@@ -137,6 +137,41 @@ class ReviewDecisionApplierTest {
     }
 
     @Test
+    void anOptionalFieldOcrWasNeverGoingToReadIsNotSomethingToReview() {
+        // `not_extractable` (V44/V45) means the field is not something a
+        // document states, so there is nothing for a reviewer to check.
+        // Treating it like `not_found` would queue every document for a
+        // field that was never on the page -- the exact over-flagging V44
+        // exists to stop.
+        List<ReviewFieldResponse> fields = List.of(
+                field("invoice_number", "INV-1", "extracted", false),
+                field("department", null, "not_extractable", false));
+
+        assertThat(ReviewDecisionApplier.unsettled(fields, List.of())).isEmpty();
+    }
+
+    @Test
+    void aMandatoryNotExtractableFieldIsStillAskedFor_butAsAMissingValue() {
+        // Still required, so it keeps the document queued -- via the
+        // "mandatory and empty" rule, which asks the reviewer to supply
+        // it, rather than via a claim that OCR looked and missed.
+        List<ReviewFieldResponse> fields = List.of(field("classification_level", null, "not_extractable", true));
+
+        assertThat(ReviewDecisionApplier.unsettled(fields, List.of()))
+                .containsExactly("classification_level");
+    }
+
+    @Test
+    void aDefaultedValueNeedsNoDecision() {
+        // The tenant default supplied a real value where the page carried
+        // no signal. Flagging these would queue every document that does
+        // not print its currency.
+        List<ReviewFieldResponse> fields = List.of(field("currency", "LKR", "defaulted", true));
+
+        assertThat(ReviewDecisionApplier.unsettled(fields, List.of())).isEmpty();
+    }
+
+    @Test
     void anEmptyReviewLeavesEveryProblemOutstanding() {
         List<ReviewFieldResponse> fields = List.of(
                 field("total_amount", null, "not_found", true),

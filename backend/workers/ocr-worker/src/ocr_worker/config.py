@@ -50,12 +50,22 @@ class Settings(BaseSettings):
     # full conversion under `docker run --network none`, which succeeds
     # from the mounted cache alone.
     #
-    # Default false because the model caches are named volumes populated
-    # on first use, NOT baked into the image -- turning this on before the
-    # first successful warm-up would leave a fresh deployment unable to
-    # fetch weights at all. Turn it on once the volumes are warm, or in
-    # any environment where egress is actually restricted.
-    ocr_offline_models: bool = False
+    # **Default TRUE since the weights were baked into the image.** The
+    # reason it used to default false no longer holds: the caches were
+    # named volumes populated on first use, so enabling this before the
+    # first warm-up left a fresh deployment unable to fetch weights at
+    # all. The Dockerfile's prefetch stage now bakes all ~653 MB, so a
+    # fresh container already has them and the revalidation call buys
+    # nothing.
+    #
+    # Verified on an `--internal` Docker network with no model volumes:
+    # `/readyz` 503 -> 200 in 5s, and a 21-document real-set run matched
+    # the networked baseline field for field.
+    #
+    # Set it false only when deliberately running a language that was NOT
+    # baked (see the Dockerfile's `OCR_PREFETCH_LANGS`), which needs the
+    # outbound fetch this flag suppresses.
+    ocr_offline_models: bool = True
 
     # -- /fingerprint (development aid) --
     # Reports md5s of the source this process actually loaded, so a

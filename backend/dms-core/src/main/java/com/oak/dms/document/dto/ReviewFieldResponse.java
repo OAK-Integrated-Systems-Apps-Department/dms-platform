@@ -34,7 +34,17 @@ public record ReviewFieldResponse(
 
         Double confidence,
 
-        /** "extracted" | "low_confidence" | "not_found". */
+        /**
+         * "extracted" | "low_confidence" | "not_found" |
+         * "not_extractable" | "defaulted" -- see
+         * {@link com.oak.dms.document.DocumentOcrFieldResult#getStatus()}.
+         * <p>
+         * The review screen renders each one differently, so the two newer
+         * values must reach it as themselves rather than being collapsed
+         * into "not_found": telling a reviewer OCR "did not find"
+         * a classification level it was never going to look for sends them
+         * hunting the page for something that was never printed on it.
+         */
         String status,
 
         /** Page (1-based) and normalized bbox, or null when the value has no single location. */

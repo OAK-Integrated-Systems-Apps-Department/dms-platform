@@ -13,6 +13,7 @@ from typing import Callable
 
 from . import field_confidence
 from . import field_confidence as fc
+from .layout import normalize_bbox_for_page
 # The money grammar this deployment actually needs -- `Rs.`/`Rs`/`LKR`,
 # the `/=` and `/-` terminators, comma decimals, accounting parentheses --
 # already lives here and is already used by line_items.py and
@@ -166,21 +167,11 @@ def field_for_zone_name(
     return ExtractedField(field=zone_field, value=text.strip(), confidence=confidence, source=f"zone:{zone_name}", bbox=bbox, page=page)
 
 
-def _normalize_for_page(geometry_by_page, page: int | None, bbox):
-    """Schema v2 `bbox_norm` for a field value.
-
-    `geometry_by_page` is keyed by 1-indexed page number, matching
-    `ExtractedField.page` / `RequestedFieldResult.page`. A regex match
-    over the whole document's concatenated text has no single page and
-    therefore no bbox at all, so this returns None for it -- as it does
-    for a .docx, which has no page geometry to normalize against.
-    """
-    if not geometry_by_page or page is None or bbox is None:
-        return None
-    geometry = geometry_by_page.get(page)
-    if geometry is None:
-        return None
-    return geometry.normalize(tuple(bbox))
+# Schema v2 `bbox_norm` used to be computed by a private helper here.
+# It now lives in layout.py beside `PageGeometry.normalize`, because the
+# DB writers in repository.py need the same conversion -- see
+# `normalize_bbox_for_page`'s own comment for the bug a second copy of it
+# would have re-created.
 
 
 def fields_to_dict(fields: list[ExtractedField], geometry_by_page: dict | None = None) -> dict[str, dict]:
@@ -193,7 +184,7 @@ def fields_to_dict(fields: list[ExtractedField], geometry_by_page: dict | None =
             "value": f.value,
             "confidence": f.confidence,
             "bbox": list(f.bbox) if f.bbox else None,
-            "bbox_norm": _normalize_for_page(geometry_by_page, f.page, f.bbox),
+            "bbox_norm": normalize_bbox_for_page(geometry_by_page, f.page, f.bbox),
         }
         for f in fields
     }
@@ -1749,6 +1740,6 @@ def requested_fields_to_output_dict(
             "value": value,
             "confidence": result.confidence,
             "bbox": list(result.bbox) if result.bbox else None,
-            "bbox_norm": _normalize_for_page(geometry_by_page, result.page, result.bbox),
+            "bbox_norm": normalize_bbox_for_page(geometry_by_page, result.page, result.bbox),
         }
     return output

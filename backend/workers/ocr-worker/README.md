@@ -1063,7 +1063,8 @@ See `src/ocr_worker/config.py` for the full list; the ones worth knowing about:
 | `OCR_PREVIEW_TIMEOUT_S` | `90.0` | pool timeout for a preview render or a one-box OCR. Far below the per-document budget on purpose: a reviewer is waiting, and a request that has not answered in 90s is not going to |
 | `OCR_SEARCHABLE_PDF_ENABLED` | `true` | write a searchable PDF rendition per OCR'd document (production prompt 3.11). Off makes the step a no-op; a failure is recorded in `flags.searchable_pdf_failed`, never silent |
 | `OCR_FINGERPRINT_ENABLED` | `true` | serve `GET /fingerprint` (md5 per source file), so a harness can refuse to measure a stale container. Authenticated like every other /ocr route. **Turn OFF in production** -- it is a dev aid and enumerates internal module names; disabled returns 404, not 403 |
-| `OCR_OFFLINE_MODELS` | `false` | pin model loaders to the local cache, removing the one outbound call this worker makes. Default off because model caches are volumes populated on first use, not baked into the image — see "No LLM, by design" |
+| `OCR_OFFLINE_MODELS` | `true` | pin model loaders to the local cache, removing the one outbound call this worker makes. Default ON since the weights are baked into the image — see "Model weights are baked into the image" |
+| `OCR_PREFETCH_LANGS` | `""` | **build arg, not runtime.** Languages to bake into the image; empty means whatever `OCR_LANGUAGES` defaults to |
 | `INTERNAL_SERVICE_TOKEN` | (see `infra/secrets/ocr-worker.secrets.env`) | required `X-Internal-Token` header value on every `/ocr/*` request |
 | `DB_URL` | points at `dms_core_db` | see "Database access" below |
 
@@ -1436,11 +1437,71 @@ It is not required. Verified by running a full Docling conversion under
 mounted cache alone. `OCR_OFFLINE_MODELS=true` makes that the running
 configuration and removes the call entirely.
 
-It defaults to **false** because the model caches are named volumes
-populated on first use, not baked into the image -- enabling it before the
-first successful warm-up would leave a fresh deployment unable to fetch
-weights at all. Turn it on once the volumes are warm, or anywhere egress
-is actually restricted.
+It defaults to **true** since the weights were baked into the image. The
+reason it used to default false is gone: the caches were named volumes
+populated on first use, so enabling it before the first warm-up left a
+fresh deployment unable to fetch weights at all. The Dockerfile's
+prefetch stage now bakes all of them, so a fresh container already has
+what it needs and the revalidation call buys nothing.
+
+Set it false only when deliberately running a language that was **not**
+baked (see `OCR_PREFETCH_LANGS` below), which needs the outbound fetch
+this flag suppresses.
+
+## Model weights are baked into the image
+
+~653 MB of weights ship inside the image, fetched once at build time by
+`scripts/prefetch_models.py` (production prompt 3.1: "Pre-download all
+model weights at image build time and warm them up at process start" --
+the second half was built first; this is the first half).
+
+| cache | size | contents |
+|---|---|---|
+| `~/.paddlex/official_models` | 147 MB | `PP-OCRv6_medium_det`, `PP-OCRv6_medium_rec`, `PP-LCNet_x1_0_doc_ori`, `PP-LCNet_x1_0_textline_ori` |
+| `~/.cache/huggingface/hub` | 506 MB | `docling-project/docling-layout-heron`, `docling-project/docling-models`, and the HF mirrors of the four above |
+
+The prefetch **calls the worker's own `warm_up()` methods** rather than
+downloading a list of model names. A curated list is a second source of
+truth that drifts the moment someone adds a model, and it drifts
+silently: the image still builds, and the failure only shows up on a
+restricted-egress deployment much later. Driving the real warm-up path
+makes the baked set the set the runtime asks for, by construction.
+`LayoutEngine.warm_up()` matters most here -- it runs a real Docling
+conversion, because the layout and table-structure sub-models are
+lazily initialised inside `.convert()`, so a constructor-only prefetch
+would miss them.
+
+**Verified empirically, not by inspection.** The built image was run on
+an `--internal` Docker network (container-to-container only, no egress,
+confirmed by failing to reach `huggingface.co` and the PaddleX model
+server) with **no model volumes mounted**:
+
+- `/readyz` returned 503 `"ocr process pool still warming up"` and then
+  200 after **5 s** -- against a cold start that previously downloaded
+  ~653 MB first.
+- A full 21-document real-set evaluation produced results **identical to
+  the networked baseline, field for field** (95.1% printed, 21/21
+  searchable PDFs, zero drift).
+
+**Baking another language:**
+
+```bash
+docker build --build-arg OCR_PREFETCH_LANGS="en,ta" -t ocr-worker .
+```
+
+A language not baked still works, but only where egress is permitted --
+which is the assumption this removes. The build arg is applied only when
+non-empty: exporting `OCR_LANGUAGES` unconditionally passes an empty
+string that overrides `Settings`' own default rather than falling back to
+it, and the prefetch then silently bakes only the orientation model
+(6.7 MB where 147 MB was expected). The empty-string case is the one that
+looks like it works.
+
+**On upgrade, delete the old `ocr_worker_models` and
+`ocr_worker_hf_cache` volumes.** Compose still mounts them, and Docker
+only seeds a volume from the image when the volume is *fresh* -- a
+pre-existing one **shadows** the baked weights with whatever it already
+holds.
 
 ## What's out of scope here
 

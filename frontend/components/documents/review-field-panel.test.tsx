@@ -52,6 +52,13 @@ describe("ReviewFieldPanel", () => {
     expect(screen.getByText("no confidence recorded")).toBeInTheDocument()
   })
 
+  it("does not call an unread field's blank value 'nothing found'", () => {
+    renderPanel([field({ value: null, status: "not_extractable", confidence: null, source: null })])
+
+    expect(screen.getByText("not read from the document")).toBeInTheDocument()
+    expect(screen.queryByText("nothing found")).not.toBeInTheDocument()
+  })
+
   it("shows what OCR read before parsing, when the parse changed it", () => {
     renderPanel([field({ value: "11", rawValue: "1 1" })])
 
@@ -142,5 +149,26 @@ describe("statusBadge", () => {
   it("stops saying 'needs checking' once a human has checked it", () => {
     expect(statusBadge(field({ status: "low_confidence" }), "accepted").text).toBe("Accepted")
     expect(statusBadge(field({ status: "low_confidence" }), "corrected").text).toBe("Corrected")
+  })
+
+  it("never tells the reviewer OCR missed a field it was never going to read", () => {
+    // `not_extractable` is not a failed search (V44/V45): the field is
+    // not something a document states. Saying "Not found" would send the
+    // reviewer hunting the page for something nobody printed on it.
+    const mandatory = statusBadge(field({ mandatory: true, status: "not_extractable" }))
+    expect(mandatory).toEqual({ text: "Enter manually", variant: "rust" })
+
+    const optional = statusBadge(field({ mandatory: false, status: "not_extractable" }))
+    expect(optional).toEqual({ text: "Not applicable", variant: "muted" })
+  })
+
+  it("says a defaulted value came from the default, not off the page", () => {
+    // A tenant default applied where the page named no currency. Real
+    // enough to file, so never gold -- but calling it "Extracted" would
+    // be a claim about this document that isn't true.
+    expect(statusBadge(field({ status: "defaulted", value: "LKR" }))).toEqual({
+      text: "Default applied",
+      variant: "muted",
+    })
   })
 })

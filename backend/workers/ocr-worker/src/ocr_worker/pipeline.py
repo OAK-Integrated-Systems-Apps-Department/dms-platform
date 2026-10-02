@@ -1541,12 +1541,20 @@ class OcrPipeline:
             review=review.to_dict(),
             page_count=page_count,
         )
+        # Rebuilt from `pages` rather than threaded through the inference
+        # tuple: it is the same one-line expression `_run_inference` uses,
+        # and `pages` is already here. It must be the page's OWN geometry,
+        # matching `_restore_field_bboxes` having already mapped every
+        # bbox back out of the corrected reading space -- the same pairing
+        # `requested_fields_to_output_dict` relies on for `bbox_norm`.
+        geometry_by_page = {p.page_number: p.geometry for p in pages if p.geometry is not None}
         if field_results is not None:
             repo.upsert_field_results(
                 tenant_id=ctx.version.tenant_id,
                 document_id=ctx.document.document_id,
                 version_id=ctx.version.version_id,
                 results=field_results,
+                geometry_by_page=geometry_by_page,
             )
         # Always called, including with an empty list: a re-run that finds
         # NO line items must clear the previous run's, or a document whose
@@ -1557,6 +1565,7 @@ class OcrPipeline:
                 document_id=ctx.document.document_id,
                 version_id=ctx.version.version_id,
                 items=line_items,
+                geometry_by_page=geometry_by_page,
             )
         return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
 

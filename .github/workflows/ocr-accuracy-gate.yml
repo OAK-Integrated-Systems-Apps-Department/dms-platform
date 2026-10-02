@@ -30,8 +30,8 @@
 #   | resource    | this job needs                      | runner has |
 #   |-------------|-------------------------------------|------------|
 #   | peak memory | 3.76 GiB (one inference process)    | 16 GB      |
-#   | disk        | ~4.4 GB image + ~0.65 GB model      | 14 GB      |
-#   |             |   weights + ~0.7 GB generated corpus|            |
+#   | disk        | ~5.7 GB image (model weights baked  | 14 GB      |
+#   |             |   in) + ~0.7 GB generated corpus    |            |
 #   | wall clock  | 2962 s of inference alone, measured | 6 h limit  |
 #
 # Memory and disk are comfortable. **Time is why this does not run on
@@ -87,34 +87,35 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
           df -h /
 
-      - name: Cache model weights
-        # ~650 MB of PaddleOCR and orientation weights, fetched from the
-        # PaddleX model server and the HF Hub on first use. They are NOT
-        # baked into the image (see the Dockerfile's note on the two
-        # mounts), so without this every run re-downloads them -- slower,
-        # and a third-party outage becomes a red build on a change that
-        # is fine.
-        #
-        # Keyed on the Dockerfile and requirements: a model version only
-        # ever changes through one of those.
-        uses: actions/cache@v4
-        with:
-          path: ocr-model-cache
-          key: ocr-models-${{ runner.os }}-${{ hashFiles('backend/workers/ocr-worker/Dockerfile', 'backend/workers/ocr-worker/pyproject.toml') }}
-
-      - name: Prepare the cache directories
-        # Created with the image's own uid so the container can write
-        # through the bind mount on a cache miss.
-        run: |
-          mkdir -p ocr-model-cache/paddlex ocr-model-cache/huggingface
-          sudo chown -R 1000:1000 ocr-model-cache
+      # No model cache step. The ~650 MB of PaddleOCR, orientation and
+      # Docling weights are baked into the image by the Dockerfile's
+      # prefetch stage, so there is nothing to restore and nothing to
+      # download -- the build fetches them once, inside a layer Docker
+      # caches on its own terms.
 
       - name: Build the worker image
-        # The same Dockerfile production ships. Building it here is also
-        # the only thing that proves the image still builds.
+        # The default target: the same production image that ships.
+        # Building it here is also the only thing that proves it still
+        # builds, model prefetch included.
         run: |
           docker build \
             -t ocr-worker-ci:${{ github.sha }} \
+            backend/workers/ocr-worker
+
+      - name: Build the test image
+        # Production plus pytest, from the same Dockerfile and the same
+        # base stage -- so the tests run against the image that ships,
+        # not a separately assembled environment that can disagree with
+        # it. Every layer but the last is already cached from the step
+        # above.
+        #
+        # This step exists because the first version of this workflow ran
+        # pytest inside the production image and failed with "No module
+        # named pytest". The production image not having pytest is
+        # correct; the workflow assuming otherwise was not.
+        run: |
+          docker build --target test \
+            -t ocr-worker-ci-test:${{ github.sha }} \
             backend/workers/ocr-worker
 
       - name: Unit tests
@@ -122,7 +123,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" -w /repo/backend/workers/ocr-worker \
             -e PYTHONPATH=/repo/backend/workers/ocr-worker/src:/repo/backend/workers/ocr-worker \
-            ocr-worker-ci:${{ github.sha }} \
+            ocr-worker-ci-test:${{ github.sha }} \
             python -m pytest tests -q
 
       - name: Label sanity check
@@ -147,10 +148,11 @@ jobs:
           # about which checks ran.
           OCR_SKIP_STALENESS_CHECK: '1'
         run: |
+          # No model volumes mounted, deliberately: the weights come from
+          # the image. If that ever stops being true this step is where
+          # it surfaces, as a download in the log.
           docker run --rm \
             -v "$PWD:/repo" -w /repo/backend/workers/ocr-worker \
-            -v "$PWD/ocr-model-cache/paddlex:/home/oakdms/.paddlex" \
-            -v "$PWD/ocr-model-cache/huggingface:/home/oakdms/.cache/huggingface" \
             -e PYTHONPATH=/repo/backend/workers/ocr-worker/src:/repo/backend/workers/ocr-worker \
             -e OCR_SKIP_STALENESS_CHECK \
             ocr-worker-ci:${{ github.sha }} \

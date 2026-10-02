@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { DocumentTypeSchemaResponseDto } from "@/lib/document-type-fields/api"
 
-import { FieldChips, defaultRequestedFields, mandatoryRequestedFields, reconcileRequestedFields } from "./document-fields-form"
+import { DocumentFieldsForm, FieldChips, defaultRequestedFields, mandatoryRequestedFields, reconcileRequestedFields } from "./document-fields-form"
 
 function field(overrides: Partial<DocumentTypeSchemaResponseDto["fields"][number]>): DocumentTypeSchemaResponseDto["fields"][number] {
   return {
@@ -142,5 +142,53 @@ describe("reconcileRequestedFields (reset on document-type change)", () => {
   it("never drops a mandatory field even if it wasn't in the previous selection", () => {
     const result = reconcileRequestedFields(new Set(), schemaWith([CLASSIFICATION]))
     expect(result).toEqual(new Set(["classification_level"]))
+  })
+})
+
+describe("DocumentFieldsForm OCR badges", () => {
+  function renderForm(ocrResults: Record<string, { value: string | null; confidence: number | null; source: null; status: "extracted" | "not_found" | "low_confidence" | "not_extractable" | "defaulted" }>) {
+    render(
+      <TooltipProvider>
+        <DocumentFieldsForm
+          schema={schemaWith([CLASSIFICATION, AUTHOR])}
+          loading={false}
+          values={{}}
+          onChange={vi.fn()}
+          disabled={false}
+          ocrResults={ocrResults}
+          onRerunField={vi.fn()}
+        />
+      </TooltipProvider>
+    )
+  }
+
+  it("puts no OCR badge on a field OCR was never going to read", () => {
+    // `not_extractable` means the field is not something a document
+    // states (V44), so any OCR badge on it is a claim about an attempt
+    // that never happened -- and the chip picker already renders these
+    // without the "OCR" tag, so a badge here would contradict it.
+    renderForm({ classification_level: { value: null, confidence: null, source: null, status: "not_extractable" } })
+
+    expect(screen.queryByText("Not found")).not.toBeInTheDocument()
+    expect(screen.queryByText("Low confidence")).not.toBeInTheDocument()
+    expect(screen.queryByText("OCR")).not.toBeInTheDocument()
+  })
+
+  it("offers no Re-run on a field OCR skips by design", () => {
+    // Re-running runs the same skip and returns the same row, so the
+    // link could only waste a round trip and suggest the value is one
+    // more attempt away.
+    renderForm({ classification_level: { value: null, confidence: null, source: null, status: "not_extractable" } })
+    expect(screen.queryByTitle("Re-run OCR for Classification Level")).not.toBeInTheDocument()
+
+    cleanup()
+    renderForm({ classification_level: { value: null, confidence: null, source: null, status: "not_found" } })
+    expect(screen.getByTitle("Re-run OCR for Classification Level")).toBeInTheDocument()
+  })
+
+  it("says a defaulted value came from the default rather than the page", () => {
+    renderForm({ author: { value: "LKR", confidence: null, source: null, status: "defaulted" } })
+
+    expect(screen.getByText("Default applied")).toBeInTheDocument()
   })
 })

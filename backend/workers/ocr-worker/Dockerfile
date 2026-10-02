@@ -52,7 +52,7 @@ COPY pyproject.toml .
 COPY src src
 RUN pip install --no-cache-dir --prefix=/install .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim AS runtime-base
 # libgomp1: paddlepaddle's native libpaddle.so dlopen()s libgomp.so.1 for
 # its OpenMP kernels and doesn't declare it as a package dependency. It
 # only appeared to work without this because numpy's wheel bundles its own
@@ -71,23 +71,59 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /home/oakdms/.paddlex /home/oakdms/.cache/huggingface \
     && chown -R oakdms:oakdms /home/oakdms
 
-# /home/oakdms/.paddlex and /home/oakdms/.cache/huggingface are mounted as
-# named volumes in docker-compose.yml (model weights are tens of MB, not
-# worth re-downloading on every restart) -- pre-creating them with oakdms
+# /home/oakdms/.paddlex and /home/oakdms/.cache/huggingface hold the model
+# weights, baked in by the prefetch step below. docker-compose.yml also
+# mounts named volumes over them -- pre-creating them with oakdms
 # ownership here matters because Docker only copies an image path's
-# existing permissions into a *fresh* named volume on first mount; a path
-# that doesn't exist yet in the image gets an empty root-owned directory
-# instead, which the oakdms process can't write to.
+# existing permissions and CONTENTS into a *fresh* named volume on first
+# mount; a path that doesn't exist yet in the image gets an empty
+# root-owned directory instead, which the oakdms process can't write to.
 # Verified: without this, first use after adding the volume failed with
 # "PermissionError: [Errno 13] Permission denied: '/home/oakdms/.paddlex/temp'".
 WORKDIR /app
 COPY --from=build /install /usr/local
 COPY src src
+COPY scripts/prefetch_models.py scripts/prefetch_models.py
 
 ENV PYTHONPATH=/app/src \
     HOME=/home/oakdms
 
 USER oakdms
+
+# Model weights, baked in (production prompt 3.1: "Pre-download all model
+# weights at image build time and warm them up at process start"). Without
+# this a cold start fetches ~650 MB from the PaddleX model server and the
+# HuggingFace Hub before it can read its first document -- which makes a
+# restricted-egress deployment impossible and a third-party outage into a
+# failed rollout.
+#
+# Runs AS oakdms and after HOME is set, deliberately: the caches land
+# under /home/oakdms owned by the user that will read them. Running it as
+# root and chowning afterwards works too, and doubles the layer size by
+# copying every file.
+#
+# `scripts/prefetch_models.py` drives the worker's own `warm_up()`
+# methods rather than a list of model names, so the baked set cannot
+# drift from the set the runtime asks for. Verified empirically by
+# running the built image with `--network none` and no volumes -- see the
+# README.
+#
+# `OCR_LANGUAGES` is set only when the build arg is non-empty. Exporting
+# it unconditionally passes an EMPTY string when the arg is unset, which
+# overrides `Settings.ocr_languages`' own default rather than falling back
+# to it -- the prefetch then reported "all weights cached for languages:"
+# with nothing after the colon and baked only the orientation model, 6.7M
+# where 146M was expected. The empty-string case is the one that looks
+# like it works.
+ARG OCR_PREFETCH_LANGS=""
+RUN if [ -n "$OCR_PREFETCH_LANGS" ]; then export OCR_LANGUAGES="$OCR_PREFETCH_LANGS"; fi \
+    && python scripts/prefetch_models.py \
+    # The prefetch's own scratch space, not weights. `temp` is recreated
+    # at runtime; `func_ret` is a memoisation cache keyed on absolute
+    # paths that means nothing in a fresh container.
+    && rm -rf /home/oakdms/.paddlex/temp /home/oakdms/.paddlex/func_ret \
+    && du -sh /home/oakdms/.paddlex /home/oakdms/.cache/huggingface
+
 EXPOSE 8090
 
 # /readyz (not /healthz) -- gated on every OCR process-pool worker having
@@ -102,3 +138,37 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/readyz').read()" || exit 1
 
 CMD ["python", "-m", "uvicorn", "ocr_worker.main:app", "--host", "0.0.0.0", "--port", "8090"]
+
+
+# ----------------------------------------------------------------------
+# test -- `docker build --target test -t ocr-worker-test:latest .`
+# ----------------------------------------------------------------------
+# The production image deliberately has no pytest, which is right for a
+# runtime image and is also why the CI gate's unit-test step failed the
+# first time it was run against it: "No module named pytest". The dev
+# scripts under scripts/dev/ all invoke `ocr-worker-test:latest`, which
+# until now existed only on whichever machine had built it by hand and
+# was reproducible from nothing in this repo.
+#
+# Built FROM runtime-base, so it is the production image plus test
+# dependencies -- same Python, same native libs, same baked model
+# weights. A test image assembled separately would be a second
+# environment that can disagree with the one that ships.
+FROM runtime-base AS test
+USER root
+COPY pyproject.toml .
+RUN pip install --no-cache-dir "pytest>=8.3" "pytest-asyncio>=0.24" \
+        "pytest-mock>=3.14" "httpx>=0.27" "pypdf>=5.0" \
+    && chown -R oakdms:oakdms /home/oakdms
+USER oakdms
+CMD ["python", "-m", "pytest", "tests", "-q"]
+
+
+# ----------------------------------------------------------------------
+# runtime -- the default target
+# ----------------------------------------------------------------------
+# Last stage wins when `docker build` is run with no --target, so this
+# has to come after `test` for a plain build to produce the PRODUCTION
+# image. It adds nothing: ENV, USER, WORKDIR, EXPOSE, HEALTHCHECK and CMD
+# are all inherited from runtime-base.
+FROM runtime-base AS runtime

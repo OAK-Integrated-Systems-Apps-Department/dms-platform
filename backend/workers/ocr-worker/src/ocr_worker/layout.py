@@ -113,6 +113,35 @@ class PageGeometry:
         return out
 
 
+def normalize_bbox_for_page(geometry_by_page: dict | None, page: int | None, bbox):
+    """Schema v2 normalized bbox for a value found on `page`.
+
+    `geometry_by_page` is keyed by 1-indexed page number, matching
+    `ExtractedField.page` / `RequestedFieldResult.page`. A regex match
+    over the whole document's concatenated text has no single page and
+    therefore no bbox at all, so this returns None for it -- as it does
+    for a .docx, which has no page geometry to normalize against.
+
+    It lives here, beside {@link PageGeometry.normalize}, and not next to
+    one of its callers, because there are now three of them: the HTTP
+    output builders in extraction.py and -- since the review screen's
+    highlights were found landing ~830,000 px off the page -- the
+    `document_ocr_field_results` / `document_ocr_line_items` writers in
+    repository.py. The DB writers used to persist the raw PIXEL bbox into
+    a column every consumer reads as a 0..1 fraction
+    (`review-page-viewer.tsx` renders `left: ${x0 * 100}%`), so no
+    highlight ever appeared and clicking a field scrolled the preview out
+    of the document. Two definitions of "normalized for this page" is how
+    that happened; one definition is the fix.
+    """
+    if not geometry_by_page or page is None or bbox is None:
+        return None
+    geometry = geometry_by_page.get(page)
+    if geometry is None:
+        return None
+    return geometry.normalize(tuple(bbox))
+
+
 def render_scale_for(dpi: int, width_pt: float, height_pt: float, max_megapixels: float | None = None) -> float:
     """The single zoom factor used for both rasterization and bbox scaling.
 

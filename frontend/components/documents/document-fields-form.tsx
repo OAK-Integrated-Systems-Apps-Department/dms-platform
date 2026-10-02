@@ -66,7 +66,7 @@ export function reconcileRequestedFields(
 /** One field's latest OCR extraction attempt -- see `lib/documents/api.ts#OcrFieldResult`. Kept as a narrow local shape so this component doesn't need to import the full `lib/documents/api.ts` module just for a type. */
 export interface FieldOcrBadgeInfo {
   confidence: number | null
-  status: "extracted" | "not_found" | "low_confidence"
+  status: "extracted" | "not_found" | "low_confidence" | "not_extractable" | "defaulted"
 }
 
 export function DocumentFieldsForm({
@@ -115,7 +115,11 @@ export function DocumentFieldsForm({
                 </span>
               )}
               {ocrResult && <OcrResultBadge result={ocrResult} />}
-              {ocrResult && onRerunField && (
+              {/* No "Re-run" on a `not_extractable` field: re-running it
+                  runs the same skip and returns the same row, so the link
+                  can only ever waste a round trip and suggest the value is
+                  one more attempt away. */}
+              {ocrResult && ocrResult.status !== "not_extractable" && onRerunField && (
                 <button
                   type="button"
                   disabled={disabled}
@@ -136,8 +140,31 @@ export function DocumentFieldsForm({
   )
 }
 
-/** Small status badge for one field's latest OCR attempt -- `not_found` and `low_confidence` are visually distinguished from a plain successful `extracted` so the user knows what to double-check. */
+/**
+ * Small status badge for one field's latest OCR attempt -- `not_found` and
+ * `low_confidence` are visually distinguished from a plain successful
+ * `extracted` so the user knows what to double-check.
+ *
+ * `not_extractable` gets no badge at all, deliberately: the field was never
+ * sent to OCR (V44 says a document does not state it), so an OCR badge of
+ * any colour on it is noise at best and a claim OCR tried and failed at
+ * worst. The chip picker already renders these fields without the "OCR"
+ * tag, so a badge appearing afterwards would contradict it.
+ */
 function OcrResultBadge({ result }: { result: FieldOcrBadgeInfo }) {
+  if (result.status === "not_extractable") {
+    return null
+  }
+  if (result.status === "defaulted") {
+    // Not an accuracy claim: nothing on the page said this, the tenant
+    // default did. Said plainly so a reviewer who disagrees knows it is a
+    // setting they can change rather than a misread they must correct.
+    return (
+      <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground">
+        Default applied
+      </span>
+    )
+  }
   if (result.status === "not_found") {
     return (
       <span className="rounded-full border border-[var(--rust)]/40 bg-[var(--rust-tint)] px-1.5 py-0.5 text-[10px] font-semibold normal-case text-[var(--rust-foreground)]">

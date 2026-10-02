@@ -32,6 +32,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from ocr_worker.layout import PageGeometry  # noqa: E402
 from ocr_worker.orientation import (  # noqa: E402
     NullOrientationClassifier,
     OrientationResult,
@@ -419,7 +420,22 @@ def test_a_spatially_matched_fields_bbox_is_stored_in_the_pages_own_space(
     label_bbox = (30, 20, 90, 50)
     value_bbox = (110, 20, 200, 50)  # to the RIGHT of the label, in reading space
 
-    layout_doc = FakeLayoutDocument(page_count=1, native_text_by_page={}, rendered_image=received)
+    # Real geometry, unlike most tests in this file: `source_bbox` is
+    # stored NORMALIZED, so without a page to normalize against the
+    # writer correctly stores nothing and there is no mapped box left to
+    # assert. `render_scale=1.0` makes `exact_*_px` the received image's
+    # own pixel size, so the fractions below are the pixel box over it.
+    geometry = PageGeometry(
+        page_no=0,
+        width_pt=float(received.size[0]),
+        height_pt=float(received.size[1]),
+        render_scale=1.0,
+        width_px=received.size[0],
+        height_px=received.size[1],
+    )
+    layout_doc = FakeLayoutDocument(
+        page_count=1, native_text_by_page={}, rendered_image=received, geometry=geometry
+    )
     pipeline, _, _ = make_pipeline(
         session_factory,
         layout_doc=layout_doc,
@@ -455,7 +471,10 @@ def test_a_spatially_matched_fields_bbox_is_stored_in_the_pages_own_space(
             original_width_px=received.size[0],
             original_height_px=received.size[1],
         ).to_original(value_bbox)
-        assert tuple(row.source_bbox) == tuple(expected)
+        # Compared after normalization, because that is the space the
+        # column is in -- see tests/test_persisted_bbox_is_normalized.py.
+        # The mapping being asserted is unchanged; only the units are.
+        assert row.source_bbox == pytest.approx(geometry.normalize(tuple(expected)))
 
 
 # ----------------------------------------------------------------------

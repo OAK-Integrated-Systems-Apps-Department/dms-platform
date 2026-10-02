@@ -250,13 +250,25 @@ kernel picking a victim.
       only way to produce another. Back them up wherever customer data is
       permitted to live, with the same handling as the documents
       themselves, and make sure more than one person has a copy.
-- [ ] **Model weights.** ~650 MB of PaddleOCR and orientation weights are
-      **not baked into the image**; they download on first use into the
-      `ocr_worker_models` and `ocr_worker_hf_cache` volumes. A cold
-      production start needs outbound access to the PaddleX model server
-      and the HF Hub, or those volumes pre-seeded. Pre-seed them if
-      egress is restricted.
-- [ ] **`/readyz` returns 503 until models are loaded.** Make sure the
+- [ ] **Model weights are baked into the image** — ~653 MB of PaddleOCR
+      detection/recognition, the orientation and textline classifiers,
+      and Docling's layout and table-structure models. **No egress is
+      needed at runtime.** Verified by running the built image on an
+      `--internal` Docker network with no model volumes: `/readyz` went
+      503 → 200 in 5 s and a full 21-document real-set run produced
+      results identical to the networked baseline, field for field.
+      - **On upgrade, delete the old `ocr_worker_models` and
+        `ocr_worker_hf_cache` volumes.** Compose still mounts them, and a
+        pre-existing volume **shadows** the baked weights with whatever it
+        already holds. Docker only seeds a volume from the image when the
+        volume is *fresh*. Identical content is harmless; a stale or
+        partial volume reintroduces the download this change removed.
+      - Changing `OCR_LANGUAGES` to a language that was not baked means
+        that language downloads on first use. Rebuild with
+        `--build-arg OCR_PREFETCH_LANGS="en,ta"` to bake more.
+- [ ] **`/readyz` returns 503 until models are loaded** — re-verified
+      after the weights were baked in (503 `"ocr process pool still
+      warming up"` → 200 after ~11 s, air-gapped). Make sure the
       orchestrator's readiness probe uses it, or the first document after
       a deploy pays model construction inside its own deadline.
 

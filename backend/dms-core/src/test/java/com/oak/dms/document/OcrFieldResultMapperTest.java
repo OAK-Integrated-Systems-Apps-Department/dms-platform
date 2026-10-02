@@ -98,6 +98,38 @@ class OcrFieldResultMapperTest {
     }
 
     /**
+     * The two statuses V45 added need no case of their own in the mapper,
+     * and these two tests are what makes that a decision rather than an
+     * oversight -- a later "handle the new statuses" patch that special-
+     * cases either one has to delete a test that says why not to.
+     */
+    @Test
+    void skipsNotExtractableRowsBecauseTheyNeverCarryAValue() {
+        /* OCR never looked: the field is not something a document states
+         * (V44). The row exists so the review screen can say so, but there
+         * is nothing to file -- and it falls out on the null-value clause,
+         * not on a status check. */
+        assertThat(OcrFieldResultMapper.toOcrFieldsRaw(
+                List.of(row("classification_level", null, "not_extractable", null))))
+                .isEmpty();
+    }
+
+    @Test
+    void filesADefaultedValueExactlyLikeAnExtractedOne() {
+        /* A tenant default applied where the page named no currency. It is
+         * excluded from accuracy and from review reasons -- neither of
+         * which is decided here -- but it IS the value the document gets
+         * filed with, so dropping it would leave the field blank. */
+        Map<String, Object> out = OcrFieldResultMapper.toOcrFieldsRaw(
+                List.of(row("currency", "LKR", "defaulted", null)));
+
+        assertThat(out).containsOnlyKeys("currency");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> entry = (Map<String, Object>) out.get("currency");
+        assertThat(entry).containsEntry("value", "LKR");
+    }
+
+    /**
      * V39 added {@code raw_value}. The metadata value must stay the NORMALISED
      * one: a {@code date} field handed "10/08/2026" instead of "2026-08-10"
      * fails to parse in DocumentMetadataServiceImpl and the field silently

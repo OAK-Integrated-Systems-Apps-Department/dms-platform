@@ -91,8 +91,26 @@ export interface OcrFieldResult {
   value: string | string[] | null
   confidence: number | null
   source: { page: number; bbox: [number, number, number, number] } | null
-  status: "extracted" | "not_found" | "low_confidence"
+  status: OcrFieldStatus
 }
+
+/**
+ * Every status `document_ocr_field_results.status` can hold -- see V45's
+ * CHECK constraint, which is the authority on what each one means.
+ *
+ * `not_extractable` and `defaulted` are NOT variants of the other three:
+ * the first means OCR never looked (the field is not something a document
+ * states -- V44), the second means the value is real but came from the
+ * tenant's default currency rather than off the page. Both get their own
+ * badge, because collapsing either into "not found" tells the reviewer
+ * something untrue about the document in front of them.
+ */
+export type OcrFieldStatus =
+  | "extracted"
+  | "not_found"
+  | "low_confidence"
+  | "not_extractable"
+  | "defaulted"
 
 export interface OcrStatusResponse {
   id: string
@@ -205,7 +223,7 @@ export interface ReviewField {
   /** What OCR read before parsing, when that differed from `value`. */
   rawValue: string | null
   confidence: number | null
-  status: "extracted" | "low_confidence" | "not_found"
+  status: OcrFieldStatus
   source: { page: number; bbox: [number, number, number, number] } | null
 }
 

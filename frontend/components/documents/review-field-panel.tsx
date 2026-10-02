@@ -86,6 +86,20 @@ export function statusBadge(
 ): { text: string; variant: "default" | "muted" | "gold" | "rust" } {
   if (decision === "corrected") return { text: "Corrected", variant: "default" }
   if (decision === "accepted") return { text: "Accepted", variant: "default" }
+  if (field.status === "not_extractable") {
+    // OCR never looked at this one -- it is not something a document
+    // states (V44). "Not found" would send the reviewer hunting the page
+    // for a classification level nobody ever printed on it. A mandatory
+    // one still has to be filled in, so it stays rust; the difference is
+    // that it asks the reviewer for the value rather than blaming OCR.
+    return { text: field.mandatory ? "Enter manually" : "Not applicable", variant: field.mandatory ? "rust" : "muted" }
+  }
+  if (field.status === "defaulted") {
+    // The value is real and will be filed; it just did not come off the
+    // page. Never a review reason, so never gold -- but say where it came
+    // from, because "Extracted" would be a lie about this document.
+    return { text: "Default applied", variant: "muted" }
+  }
   if (field.status === "not_found") {
     // A missing optional field is ordinary; a missing mandatory one is
     // the reason this document is in the queue.
@@ -172,7 +186,11 @@ function FieldRow({
         </div>
       ) : (
         <p className={cn("text-[13.5px]", currentValue ? "text-foreground" : "text-muted-foreground italic")}>
-          {currentValue || "nothing found"}
+          {/* "nothing found" is a claim about the document, and it is
+              false for a field OCR never read -- this one is empty
+              because nobody prints it, not because the page was
+              searched and came up short. */}
+          {currentValue || (field.status === "not_extractable" ? "not read from the document" : "nothing found")}
         </p>
       )}
 

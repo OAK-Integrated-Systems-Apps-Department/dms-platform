@@ -32,6 +32,15 @@ public final class OcrFieldResultMapper {
      * never become a metadata value. A {@code low_confidence} row is NOT
      * skipped: the value is returned either way and flagged for review,
      * never dropped.
+     * <p>
+     * The two statuses V45 added need no case of their own, and that is
+     * worth stating rather than leaving to be rediscovered:
+     * {@code not_extractable} rows always carry a null {@code value} and
+     * so fall out on the first clause, and a {@code defaulted} row is a
+     * real value the tenant default supplied -- it is meant to be filed,
+     * exactly like an extracted one. (What it must NOT do is count as OCR
+     * accuracy or trigger review; neither of those decisions is made
+     * here.)
      */
     public static Map<String, Object> toOcrFieldsRaw(List<DocumentOcrFieldResult> rows) {
         Map<String, Object> ocrFieldsRaw = new LinkedHashMap<>();

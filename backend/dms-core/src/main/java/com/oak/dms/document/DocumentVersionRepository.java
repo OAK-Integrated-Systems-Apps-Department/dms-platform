@@ -35,9 +35,12 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
      * OCR-completion timestamp of its own, and {@code created_at} is the
      * upload time, which says nothing about when OCR finished.</li>
      * <li>at least one applicable field result exists -- a version whose
-     * every field came back {@code not_found} has genuinely nothing to
-     * apply, and flagging it would produce a warning nobody can act on.
-     * The predicate matches {@code OcrFieldResultMapper}'s own skip rule.</li>
+     * every field came back {@code not_found} (or {@code not_extractable},
+     * which is also valueless) has genuinely nothing to apply, and
+     * flagging it would produce a warning nobody can act on. The
+     * predicate matches {@code OcrFieldResultMapper}'s own skip rule: the
+     * {@code value IS NOT NULL} half is what covers
+     * {@code not_extractable} in both places.</li>
      * </ul>
      * Tenant-agnostic on purpose: this is a background job with no ambient
      * tenant, and the caller binds {@code TenantContext} per row from the

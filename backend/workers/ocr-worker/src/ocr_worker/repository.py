@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED, ROUTING_KEY_OCR_REQUESTED
 from .extraction import FieldSpec, RequestedFieldResult
+from .layout import normalize_bbox_for_page
 from .models import (
     Document,
     DocumentOcrCorrection,
@@ -696,6 +697,7 @@ class OcrRepository:
         document_id: uuid.UUID,
         version_id: uuid.UUID,
         results: list[RequestedFieldResult],
+        geometry_by_page: dict | None = None,
     ) -> None:
         """One row per (document_id, field_key) -- a re-run replaces the
         row for that field rather than accumulating history, matching
@@ -703,11 +705,29 @@ class OcrRepository:
         comment). Runs inside the same session/transaction as
         ocr_outputs/processing_jobs/outbox_events (see session_scope) --
         one atomic commit for the whole pipeline run.
+
+        `source_bbox` is stored NORMALIZED (0..1 fractions of the page),
+        not in pixels, which is why `geometry_by_page` has to come this
+        far down. Every consumer of the column reads it that way --
+        dms-core's `Source(int page, double[] bbox)`, and
+        `review-page-viewer.tsx` positioning a highlight with
+        `left: ${x0 * 100}%`. This used to persist `result.bbox`, the raw
+        pixel tuple, so a box at x=917 on a 906px-wide preview was placed
+        at `left: 91700%` -- off-screen for every field on every document
+        since the review screen shipped, and clicking a field card
+        scrolled the preview ~830,000 px away. Found by driving the real
+        review screen in a browser; it is invisible from the JSON, which
+        has carried a correct `bbox_norm` the whole time.
+
+        Omitting `geometry_by_page` stores no bbox rather than a wrong
+        one: a highlight that does not appear is a missing feature, a
+        highlight over the wrong words is a reviewer confirming the wrong
+        value.
         """
         now = datetime.now(timezone.utc)
         for result in results:
             value = json.dumps(result.value) if isinstance(result.value, list) else result.value
-            bbox = list(result.bbox) if result.bbox else None
+            bbox = normalize_bbox_for_page(geometry_by_page, result.page, result.bbox)
             existing = self.session.execute(
                 select(DocumentOcrFieldResult).where(
                     DocumentOcrFieldResult.document_id == document_id,
@@ -740,7 +760,8 @@ class OcrRepository:
                 )
         self.session.flush()
 
-    def replace_line_items(self, *, tenant_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID, items) -> int:
+    def replace_line_items(self, *, tenant_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID, items,
+                           geometry_by_page: dict | None = None) -> int:
         """This version's line items, replacing whatever was there.
 
         Delete-then-insert rather than an upsert keyed on line_number,
@@ -754,6 +775,9 @@ class OcrRepository:
         Runs in the caller's transaction, so the delete and the inserts
         commit with the rest of the outcome -- there is no window where a
         version has no line items because a re-run was interrupted.
+
+        `source_bbox` is normalized here for the same reason, and by the
+        same helper, as in `upsert_field_results` -- see its docstring.
         """
         self.session.query(DocumentOcrLineItem).filter(
             DocumentOcrLineItem.version_id == version_id
@@ -773,7 +797,7 @@ class OcrRepository:
                     raw_cells=item.raw_cells or None,
                     confidence=item.confidence,
                     source_page=item.page,
-                    source_bbox=list(item.bbox) if item.bbox else None,
+                    source_bbox=normalize_bbox_for_page(geometry_by_page, item.page, item.bbox),
                 )
             )
         self.session.flush()
