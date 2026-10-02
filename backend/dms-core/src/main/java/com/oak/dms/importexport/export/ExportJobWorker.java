@@ -10,7 +10,12 @@ import com.oak.dms.importexport.config.ExportJobProperties;
 import com.oak.dms.importexport.dto.CreateExportRequest;
 import com.oak.dms.importexport.entity.ExportJob;
 import com.oak.dms.importexport.enums.ExportJobStatus;
+import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessLevel;
+import com.oak.dms.folder.FolderAccessService;
 import com.oak.dms.importexport.repository.ExportJobRepository;
+import com.oak.dms.security.auth.JobIdentity;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
@@ -31,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +72,9 @@ public class ExportJobWorker {
     private final ObjectMapper objectMapper;
     private final TaskExecutor taskExecutor;
     private final TransactionTemplate transactionTemplate;
+    private final JobIdentity jobIdentity;
+    private final FolderAccessService folderAccess;
+    private final DocumentAccessService documentAccess;
     private final Set<UUID> running = ConcurrentHashMap.newKeySet();
 
     public ExportJobWorker(ExportJobRepository repository,
@@ -77,7 +86,10 @@ public class ExportJobWorker {
                            ExportJobProperties properties,
                            ObjectMapper objectMapper,
                            @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
-                           PlatformTransactionManager transactionManager) {
+                           PlatformTransactionManager transactionManager,
+                           JobIdentity jobIdentity,
+                           FolderAccessService folderAccess,
+                           DocumentAccessService documentAccess) {
         this.repository = repository;
         this.selector = selector;
         this.builder = builder;
@@ -88,6 +100,9 @@ public class ExportJobWorker {
         this.objectMapper = objectMapper;
         this.taskExecutor = taskExecutor;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.jobIdentity = jobIdentity;
+        this.folderAccess = folderAccess;
+        this.documentAccess = documentAccess;
     }
 
     /** Queues the job; returns at once. Call only once the job row is committed. */
@@ -126,10 +141,19 @@ public class ExportJobWorker {
         if (job == null) {
             return;
         }
-        TenantContext.set(job.getTenantId(), job.getRequestedBy());
+        // As the requester, with their access as it is now - not as it was when they asked.
+        if (!jobIdentity.bind(job.getTenantId(), job.getRequestedBy())) {
+            fail(jobId, "The person who requested this export is no longer an active user.");
+            return;
+        }
         Path temp = null;
         try {
-            CreateExportRequest request = objectMapper.readValue(job.getRequestParams(), CreateExportRequest.class);
+            CreateExportRequest request = withAccessNow(
+                    objectMapper.readValue(job.getRequestParams(), CreateExportRequest.class));
+            if (request == null) {
+                fail(jobId, "You no longer have access to that folder, or it was deleted.");
+                return;
+            }
             List<UUID> documentIds = selector.select(job.getTenantId(), request, properties.getMaxDocuments() + 1);
             if (documentIds.isEmpty()) {
                 fail(jobId, "None of the requested documents exist any more.");
@@ -149,7 +173,7 @@ public class ExportJobWorker {
             try (InputStream content = Files.newInputStream(temp)) {
                 objectStorageServiceFactory.resolve(location).upload(location, objectKey, content, size, "application/zip");
             }
-            complete(jobId, location, objectKey, size, result);
+            complete(jobId, location, objectKey, size, result, documentIds);
         } catch (ExportArchiveBuilder.ExportTooLargeException e) {
             fail(jobId, e.getMessage());
         } catch (JsonProcessingException e) {
@@ -170,6 +194,27 @@ public class ExportJobWorker {
         }
     }
 
+    /**
+     * The request with access applied again, as the requester now: what was hidden from them when they
+     * asked stays out, and so does anything hidden from them since. Null when the folder being
+     * exported is now out of their reach (or gone).
+     */
+    private CreateExportRequest withAccessNow(CreateExportRequest request) {
+        if (request.byFolder()) {
+            try {
+                folderAccess.require(request.folderId(), FolderAccessLevel.view);
+            } catch (ResourceNotFoundException e) {
+                return null;
+            }
+        }
+        DocumentAccessService.DocumentAccessView now = documentAccess.forCaller();
+        Set<UUID> hiddenFolders = new HashSet<>(request.hiddenFolders());
+        hiddenFolders.addAll(now.folders().hiddenFolderIds());
+        Set<UUID> hiddenDocuments = new HashSet<>(request.hiddenDocuments());
+        hiddenDocuments.addAll(documentAccess.hiddenRestrictedIds(now));
+        return request.withHidden(hiddenFolders, hiddenDocuments);
+    }
+
     /** pending -> processing (or picks a processing one back up after a restart); null if there's nothing to do. */
     private ExportJob claim(UUID jobId) {
         return transactionTemplate.execute(status -> repository.lockById(jobId)
@@ -185,7 +230,7 @@ public class ExportJobWorker {
     }
 
     private void complete(UUID jobId, StorageLocation location, String objectKey, long size,
-                          ExportArchiveBuilder.Result result) {
+                          ExportArchiveBuilder.Result result, List<UUID> documentIds) {
         ExportJob done = transactionTemplate.execute(status -> {
             ExportJob job = repository.lockById(jobId).orElseThrow();
             OffsetDateTime now = OffsetDateTime.now();
@@ -194,6 +239,7 @@ public class ExportJobWorker {
             job.setFileObjectKey(objectKey);
             job.setFileSizeBytes(size);
             job.setDocumentCount(result.documentCount());
+            job.setDocumentIds(documentIds.toArray(UUID[]::new));
             job.setCompletedAt(now);
             job.setExpiresAt(now.plus(properties.getJobTtl()));
             job.setFailureReason(result.filesSkipped() > 0

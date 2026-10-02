@@ -1,5 +1,6 @@
 package com.oak.dms.importexport.storage;
 
+import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -51,12 +52,15 @@ public class IntakeVirusScanner {
     private final ScanEngineFactory scanEngineFactory;
     private final AuditService auditService;
     private final TransactionTemplate newTransaction;
+    private final ImportItemRepository importItemRepository;
 
     public IntakeVirusScanner(ScanEngineResolver scanEngineResolver, ScanEngineFactory scanEngineFactory,
-                              AuditService auditService, PlatformTransactionManager transactionManager) {
+                              AuditService auditService, PlatformTransactionManager transactionManager,
+                              ImportItemRepository importItemRepository) {
         this.scanEngineResolver = scanEngineResolver;
         this.scanEngineFactory = scanEngineFactory;
         this.auditService = auditService;
+        this.importItemRepository = importItemRepository;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -80,19 +84,27 @@ public class IntakeVirusScanner {
             return;
         }
         if (verdict.status() == ScanVerdictStatus.INFECTED) {
-            blocked(tenantId, batchId, filename, verdict, "infected");
+            blocked(tenantId, batchId, itemId, filename, verdict, "infected",
+                    "The uploaded file was blocked by the virus scan (" + verdict.threatName()
+                            + ") - upload a clean copy");
             throw new ImportFileBlockedException("'" + filename + "' was blocked by the virus scan ("
                     + verdict.threatName() + ") and has not been stored.");
         }
         if (verdict.status() == ScanVerdictStatus.UNSCANNABLE) {
-            blocked(tenantId, batchId, filename, verdict, "unscannable");
+            blocked(tenantId, batchId, itemId, filename, verdict, "unscannable",
+                    "The uploaded file can't be scanned for viruses (it is encrypted or password-protected) - "
+                            + "remove the password and upload it again");
             throw new ImportFileBlockedException("'" + filename + "' can't be scanned for viruses (it is encrypted or "
                     + "password-protected). Remove the password and upload it again.");
         }
     }
 
-    /** Audited in its own transaction: the upload's own transaction is about to roll back. */
-    private void blocked(UUID tenantId, UUID batchId, String filename, ScanVerdict verdict, String reason) {
+    /**
+     * Audited - and the reason kept on the row (V63), so its results say a virus was found rather
+     * than "no file" - in a transaction of its own: the upload's own transaction is about to roll back.
+     */
+    private void blocked(UUID tenantId, UUID batchId, UUID itemId, String filename, ScanVerdict verdict,
+                         String reason, String rowMessage) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("filename", filename);
         details.put("reason", reason);
@@ -100,14 +112,20 @@ public class IntakeVirusScanner {
         details.put("engine", verdict.engineName());
         details.put("signatureVersion", verdict.signatureVersion());
         try {
-            newTransaction.executeWithoutResult(status -> auditService.event(AuditActionCatalog.IMPORT_FILE_BLOCKED)
-                    .tenantId(tenantId)
-                    .objectType(AuditObjectTypes.IMPORT_BATCH)
-                    .objectId(batchId)
-                    .resourceName(filename)
-                    .outcome(AuditOutcome.DENIED)
-                    .newValue(details)
-                    .log());
+            newTransaction.executeWithoutResult(status -> {
+                auditService.event(AuditActionCatalog.IMPORT_FILE_BLOCKED)
+                        .tenantId(tenantId)
+                        .objectType(AuditObjectTypes.IMPORT_BATCH)
+                        .objectId(batchId)
+                        .resourceName(filename)
+                        .outcome(AuditOutcome.DENIED)
+                        .newValue(details)
+                        .log();
+                importItemRepository.findById(itemId).ifPresent(item -> {
+                    item.setIntakeBlockedReason(rowMessage.length() > 500 ? rowMessage.substring(0, 500) : rowMessage);
+                    importItemRepository.save(item);
+                });
+            });
         } catch (RuntimeException e) {
             log.error("Could not audit blocked import file '{}' (batch {})", filename, batchId, e);
         }

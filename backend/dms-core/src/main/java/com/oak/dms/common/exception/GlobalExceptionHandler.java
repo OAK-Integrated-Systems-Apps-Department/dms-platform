@@ -10,9 +10,15 @@ import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
@@ -130,24 +136,71 @@ public class GlobalExceptionHandler {
     }
 
     /*
-     * FOLLOW-UP (found 2026-10-01 while testing folders): a request parameter
-     * or path variable that can't be converted - e.g. folderId=undefined, or
-     * any malformed UUID - lands in handleUnexpected below and is answered
-     * 500 "Unhandled exception" (logged at ERROR with a stack trace), when it
-     * is a client mistake that should be a 400. Seen live:
-     * POST /api/v1/documents?folderId=undefined -> 500,
-     * MethodArgumentTypeMismatchException "Invalid UUID string: undefined".
-     * Affects every endpoint, not just folders, so not changed in the folders
-     * work. A fix adds an @ExceptionHandler for
-     * MethodArgumentTypeMismatchException (and MissingServletRequestParameterException)
-     * returning 400 with the parameter's name, plus a test.
-     * <p>
-     * Same root cause, seen 2026-10-01 while testing folder access: a request
-     * to a path no controller maps (POST /api/v1/exports/preview instead of
-     * /api/v1/export-jobs/preview) throws NoResourceFoundException, which also
-     * lands here and answers 500 instead of 404. The same fix should add a
-     * handler for NoResourceFoundException returning 404.
+     * Client mistakes the framework raises before (or instead of) a
+     * controller: answered 4xx with a plain message, never the 500 the
+     * catch-all below would give. They used to land there - e.g.
+     * POST /api/v1/documents?folderId=undefined answered 500 for an
+     * unparseable UUID, and a path no controller maps answered 500 instead
+     * of 404.
      */
+
+    /** A path variable or request parameter that can't be converted - folderId=undefined, a malformed UUID. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+                                                            HttpServletRequest request) {
+        Class<?> type = ex.getRequiredType();
+        String expected = type == null ? "a valid value"
+                : type == java.util.UUID.class ? "a valid ID"
+                : type == Boolean.class || type == boolean.class ? "true or false"
+                : Number.class.isAssignableFrom(type) || type.isPrimitive() ? "a number"
+                : type.isEnum() ? "one of " + java.util.Arrays.toString(type.getEnumConstants())
+                : "a valid value";
+        return badRequest("'" + ex.getName() + "' must be " + expected + ".", request);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException ex,
+                                                                HttpServletRequest request) {
+        return badRequest("'" + ex.getParameterName() + "' is required.", request);
+    }
+
+    /** No body, or one that isn't valid JSON for the endpoint. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex,
+                                                              HttpServletRequest request) {
+        return badRequest("The request body is missing or isn't valid.", request);
+    }
+
+    /** A path no controller maps - e.g. /api/v1/exports/preview instead of /api/v1/export-jobs/preview. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of(HttpStatus.NOT_FOUND.value(), "Not Found",
+                        "There is nothing at this address.", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                                  HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ErrorResponse.of(HttpStatus.METHOD_NOT_ALLOWED.value(), "Method Not Allowed",
+                        ex.getMethod() + " isn't supported here.", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMediaType(HttpMediaTypeNotSupportedException ex,
+                                                         HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ErrorResponse.of(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value(), "Unsupported Media Type",
+                        "This endpoint doesn't accept that content type.", request.getRequestURI()));
+    }
+
+    private static ResponseEntity<ErrorResponse> badRequest(String message, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", message,
+                        request.getRequestURI()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception on {}", request.getRequestURI(), ex);

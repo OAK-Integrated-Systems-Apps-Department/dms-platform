@@ -15,6 +15,7 @@ import com.oak.dms.importexport.validation.ImportRowError;
 import com.oak.dms.importexport.validation.ImportRowValidator;
 import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
+import com.oak.dms.security.auth.JobIdentity;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
@@ -86,6 +87,7 @@ public class BulkImportWorker {
     private final ImportBatchFinaliser finaliser;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final JobIdentity jobIdentity;
 
     public BulkImportWorker(ImportBatchRepository importBatchRepository,
                             ImportItemRepository importItemRepository,
@@ -94,7 +96,8 @@ public class BulkImportWorker {
                             ImportRecordCreator recordCreator,
                             ImportBatchFinaliser finaliser,
                             ObjectMapper objectMapper,
-                            PlatformTransactionManager transactionManager) {
+                            PlatformTransactionManager transactionManager,
+                            JobIdentity jobIdentity) {
         this.importBatchRepository = importBatchRepository;
         this.importItemRepository = importItemRepository;
         this.importSchemaFields = importSchemaFields;
@@ -103,6 +106,7 @@ public class BulkImportWorker {
         this.finaliser = finaliser;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.jobIdentity = jobIdentity;
     }
 
     /** What processing needs from the claimed batch, read while it was locked. */
@@ -189,7 +193,17 @@ public class BulkImportWorker {
      * finalises the batch, as the batch's creator in the batch's tenant.
      */
     void process(ClaimedBatch batch) {
-        TenantContext.set(batch.tenantId(), batch.createdBy());
+        // As the creator, with their access as it is now - each row re-checks the target folder.
+        if (!jobIdentity.bind(batch.tenantId(), batch.createdBy())) {
+            log.warn("Bulk import batch {}: its creator is no longer an active user - failing its rows",
+                    batch.importBatchId());
+            for (ImportItem item : importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.importBatchId())) {
+                recordCreator.failAccessRevoked(item.getImportItemId(),
+                        "The person who started this import is no longer an active user");
+            }
+            finaliser.finalise(batch.importBatchId());
+            return;
+        }
         try {
             Map<String, ImportField> fields = importSchemaFields.load(batch.tenantId(), batch.documentTypeId(),
                     batch.schemaVersion());

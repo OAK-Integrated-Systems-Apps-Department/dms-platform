@@ -85,11 +85,13 @@ class ImportRecordCreatorTest {
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final com.oak.dms.folder.FolderAccessService folderAccess = mock(com.oak.dms.folder.FolderAccessService.class);
 
     private final ImportRecordCreator creator = new ImportRecordCreator(documentService, ingestionGate,
             documentMetadataRepository, importItemRepository,
             new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
-            new ImportValueConverter(), new ImportUsers(mock(UserRepository.class)), objectMapper, transactionManager);
+            new ImportValueConverter(), new ImportUsers(mock(UserRepository.class)), objectMapper, transactionManager,
+            folderAccess);
 
     @BeforeEach
     void setUp() {
@@ -199,6 +201,45 @@ class ImportRecordCreatorTest {
             assertThat(errors.get(1).get("message").asText()).as(entry.getKey().name()).isEqualTo(entry.getValue());
         }
         verify(documentMetadataRepository, never()).save(any());
+    }
+
+    @Test
+    void createRecord_creatorLostEditAccessToTheFolder_failsTheRowWithoutUploadingIt() throws Exception {
+        UUID folderId = UUID.randomUUID();
+        BulkImportWorker.ClaimedBatch intoFolder = new BulkImportWorker.ClaimedBatch(batch.importBatchId(),
+                tenantId, userId, documentTypeId, 3, folderId);
+        ImportItem item = stagedItem();
+        stub(item);
+        // Checked when the batch was created; taken away while it ran.
+        when(folderAccess.require(folderId, com.oak.dms.folder.FolderAccessLevel.edit))
+                .thenThrow(new com.oak.dms.folder.FolderException(org.springframework.http.HttpStatus.FORBIDDEN,
+                        "FOLDER_ACCESS_DENIED", "no"));
+
+        creator.createRecord(intoFolder, item.getImportItemId(), fields);
+
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
+        JsonNode error = objectMapper.readTree(item.getValidationErrors()).get(0);
+        assertThat(error.get("code").asText()).isEqualTo("ACCESS_REVOKED");
+        assertThat(error.get("message").asText()).contains("no longer have edit access");
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void createRecord_folderDeletedMeanwhile_failsTheRow() throws Exception {
+        UUID folderId = UUID.randomUUID();
+        BulkImportWorker.ClaimedBatch intoFolder = new BulkImportWorker.ClaimedBatch(batch.importBatchId(),
+                tenantId, userId, documentTypeId, 3, folderId);
+        ImportItem item = stagedItem();
+        stub(item);
+        when(folderAccess.require(folderId, com.oak.dms.folder.FolderAccessLevel.edit))
+                .thenThrow(new com.oak.dms.common.exception.ResourceNotFoundException("Folder", folderId));
+
+        creator.createRecord(intoFolder, item.getImportItemId(), fields);
+
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
+        assertThat(objectMapper.readTree(item.getValidationErrors()).get(0).get("message").asText())
+                .contains("target folder was deleted");
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
     }
 
     @Test

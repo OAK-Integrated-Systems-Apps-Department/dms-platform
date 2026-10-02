@@ -92,6 +92,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                 .fileHash(cleanResult.getFileHash())
                 .sizeBytes(cleanResult.getSizeBytes())
                 .createdReason(cleanResult.getCreatedReason())
+                .versionComment(cleanResult.getVersionComment())
                 // 'overridden' only for a quarantine override release (V40) -
                 // the gate trigger pairs it with the released_override result
                 // and the reviewed quarantine record behind it.
@@ -110,7 +111,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .ownerUserId(uploadedBy)
                     .createdBy(uploadedBy)
                     .build());
-            version.majorVersion(1).minorVersion(0);
+            version.majorVersion(1).minorVersion(0).versionLabel("1.0");
         } else {
             Document document = findDocument(plan.documentId(), tenantId);
             DocumentVersion latest = documentVersionRepository
@@ -118,9 +119,13 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .orElse(null);
             // Minor increment on the latest version; publishing/major-version
             // rules belong to the versioning module once it exists.
-            version.majorVersion(latest != null ? latest.getMajorVersion() : 1)
-                    .minorVersion(latest != null ? latest.getMinorVersion() + 1 : 0);
+            int major = latest != null ? latest.getMajorVersion() : 1;
+            int minor = latest != null ? latest.getMinorVersion() + 1 : 0;
+            version.majorVersion(major).minorVersion(minor).versionLabel(major + "." + minor);
+            // The newest clean version is the one opened and downloaded - there's no approval step that
+            // could hold it back yet (a restore arrives here too, as a new 'rollback' version).
             document.setLatestVersionId(plan.versionId());
+            document.setCurrentVersionId(plan.versionId());
             document.setUpdatedBy(uploadedBy);
             document.setUpdatedAt(OffsetDateTime.now());
             documentRepository.save(document);

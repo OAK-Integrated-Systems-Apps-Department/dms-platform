@@ -62,10 +62,11 @@ import java.util.zip.ZipOutputStream;
  * </pre>
  * Files are read through {@link DocumentService#downloadDocumentFromJob} -
  * the same tenant, scan-gate and servability checks and DOCUMENT_DOWNLOADED
- * audit as a single download. Access was applied when the export was
- * requested (its selection leaves out what was hidden from the requester),
- * so an export never contains a file the requester couldn't download one by
- * one. A document whose file can't be
+ * audit as a single download. Access is applied when the export is
+ * requested and again when it runs (its selection leaves out what was hidden
+ * from the requester at either point - see ExportJobWorker), so an export
+ * never contains a file the requester couldn't download one by one; and its
+ * download is refused once they lose access to any of its documents. A document whose file can't be
  * served (not scanned clean, for one) is still listed, with a note, and
  * its file left out. Needs {@code TenantContext} bound to the requester.
  */

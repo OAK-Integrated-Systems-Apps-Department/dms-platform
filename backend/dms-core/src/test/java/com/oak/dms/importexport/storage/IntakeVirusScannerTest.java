@@ -42,6 +42,9 @@ class IntakeVirusScannerTest {
     private final ScanService scanner = mock(ScanService.class);
     private final ScanEngine engine = mock(ScanEngine.class);
     private final StorageLocation staging = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
+    private final com.oak.dms.importexport.repository.ImportItemRepository items =
+            mock(com.oak.dms.importexport.repository.ImportItemRepository.class);
+    private final UUID itemId = UUID.randomUUID();
     private IntakeVirusScanner intake;
 
     @BeforeEach
@@ -51,7 +54,7 @@ class IntakeVirusScannerTest {
         when(resolver.resolveForTenant(TENANT)).thenReturn(engine);
         when(factory.resolveCompatible(engine, staging)).thenReturn(scanner);
         when(scanner.scanMode()).thenReturn(ScanMode.pre_store_stream);
-        intake = new IntakeVirusScanner(resolver, factory, audit, tx);
+        intake = new IntakeVirusScanner(resolver, factory, audit, tx, items);
     }
 
     @Test
@@ -63,6 +66,20 @@ class IntakeVirusScannerTest {
                 .hasMessageContaining("Eicar-Test-Signature")
                 .hasMessageContaining("has not been stored");
         verify(audit).event("IMPORT_FILE_BLOCKED");
+    }
+
+    @Test
+    void infected_keepsTheReasonOnTheRow_soItsResultsSayAVirusWasFound() {
+        com.oak.dms.importexport.entity.ImportItem row = com.oak.dms.importexport.entity.ImportItem.builder()
+                .importItemId(itemId).build();
+        when(items.findById(itemId)).thenReturn(java.util.Optional.of(row));
+        when(scanner.scan(any(), any())).thenReturn(verdict(ScanVerdictStatus.INFECTED, "Eicar-Test-Signature"));
+
+        assertThatThrownBy(() -> scan()).isInstanceOf(ImportFileBlockedException.class);
+
+        org.assertj.core.api.Assertions.assertThat(row.getIntakeBlockedReason())
+                .contains("blocked by the virus scan (Eicar-Test-Signature)");
+        verify(items).save(row);
     }
 
     @Test
@@ -86,7 +103,7 @@ class IntakeVirusScannerTest {
     }
 
     private void scan() {
-        intake.scan(TENANT, UUID.randomUUID(), UUID.randomUUID(), "a.pdf", staging, "imports/k", 10, "application/pdf");
+        intake.scan(TENANT, UUID.randomUUID(), itemId, "a.pdf", staging, "imports/k", 10, "application/pdf");
     }
 
     private static ScanVerdict verdict(ScanVerdictStatus status, String threat) {

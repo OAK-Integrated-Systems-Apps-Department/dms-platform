@@ -27,6 +27,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.folder.FolderAccessLevel;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderException;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
@@ -64,6 +69,7 @@ public class ImportRecordCreator {
     static final String SCAN_REJECTED = "SCAN_REJECTED";
     static final String FILE_MISSING = "FILE_MISSING";
     static final String VALUE_NOT_SAVED = "VALUE_NOT_SAVED";
+    static final String ACCESS_REVOKED = "ACCESS_REVOKED";
     private static final String FILE = "file";
     private static final TypeReference<List<ImportRowError>> ERRORS = new TypeReference<>() {
     };
@@ -77,6 +83,7 @@ public class ImportRecordCreator {
     private final ImportUsers importUsers;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final FolderAccessService folderAccess;
 
     public ImportRecordCreator(DocumentService documentService,
                                IngestionGate ingestionGate,
@@ -86,7 +93,8 @@ public class ImportRecordCreator {
                                ImportValueConverter converter,
                                ImportUsers importUsers,
                                ObjectMapper objectMapper,
-                               PlatformTransactionManager transactionManager) {
+                               PlatformTransactionManager transactionManager,
+                               FolderAccessService folderAccess) {
         this.documentService = documentService;
         this.ingestionGate = ingestionGate;
         this.documentMetadataRepository = documentMetadataRepository;
@@ -96,6 +104,7 @@ public class ImportRecordCreator {
         this.importUsers = importUsers;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.folderAccess = folderAccess;
     }
 
     /**
@@ -143,6 +152,13 @@ public class ImportRecordCreator {
 
     /** The gate's ticket, or empty if the gate rejected the file (the row is then failed). */
     private Optional<IngestionTicketResponse> submit(BulkImportWorker.ClaimedBatch batch, ImportItem item) {
+        // Access again, as the creator now: edit access to the folder was checked when the batch was
+        // created, but it can be taken away (or the folder deleted) while a long batch runs.
+        Optional<String> denied = folderDenied(batch.folderId());
+        if (denied.isPresent()) {
+            failAccessRevoked(item.getImportItemId(), denied.get());
+            return Optional.empty();
+        }
         String title = ImportTitles.resolve(rowValues(item).title(), item.getFilenameReference());
 
         InputStream content;
@@ -294,6 +310,28 @@ public class ImportRecordCreator {
                         .createdBy(batch.createdBy())
                         .build());
         documentMetadataRepository.save(metadata);
+    }
+
+    /** Why the batch's creator can't add to its folder any more - empty when they still can (or no folder). */
+    private Optional<String> folderDenied(UUID folderId) {
+        if (folderId == null) {
+            return Optional.empty();
+        }
+        try {
+            folderAccess.require(folderId, FolderAccessLevel.edit);
+            return Optional.empty();
+        } catch (ResourceNotFoundException e) {
+            return Optional.of("The target folder was deleted, or you no longer have access to it");
+        } catch (FolderException e) {
+            return Optional.of("You no longer have edit access to the target folder");
+        }
+    }
+
+    /** Fails a row that may no longer be imported; finalisation removes its staged file, as for any failed row. */
+    void failAccessRevoked(UUID itemId, String message) {
+        transactionTemplate.executeWithoutResult(status -> importItemRepository.findById(itemId)
+                .filter(item -> item.getStatus() == ImportItemStatus.pending)
+                .ifPresent(item -> markFailed(item, ACCESS_REVOKED, message)));
     }
 
     private void fail(UUID itemId, String code, String message) {

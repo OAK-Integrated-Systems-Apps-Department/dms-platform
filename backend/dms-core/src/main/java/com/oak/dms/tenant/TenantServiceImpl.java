@@ -129,6 +129,17 @@ public class TenantServiceImpl implements TenantService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
         String tenantName = tenant.getTenantName();
 
+        /*
+         * FOLLOW-UP (found 2026-10-02 while building crypto-shredding): a
+         * tenant's status (suspended / archived / deleted) isn't checked at
+         * sign-in or per request - nothing in security/ reads it - so the
+         * users of a deactivated tenant keep working with a valid session.
+         * After its keys are shredded (TenantKeyShredder), a new upload from
+         * such a session would even be encrypted under a freshly created key.
+         * Fix: refuse sign-in and reject requests (403, "organisation is not
+         * active") for a tenant that isn't active, e.g. where TenantContext is
+         * bound from the token, and end its sessions on deactivation.
+         */
         tenant.setDeleted(true);
         tenant.setDeletedAt(OffsetDateTime.now());
         tenant.setStatus(Tenant.TenantStatus.archived);

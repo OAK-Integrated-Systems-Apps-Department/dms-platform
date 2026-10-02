@@ -131,8 +131,10 @@ class OpenBaoSessionTest {
         String a = java.util.Base64.getEncoder().encodeToString(new byte[]{1});
         server.expect(requestTo(BASE + "/transit/decrypt/dms-documents"))
                 .andExpect(content().json("{\"batch_input\":[{\"ciphertext\":\"vault:v1:a\"},{\"ciphertext\":\"vault:v1:b\"}]}"))
-                .andRespond(withSuccess("{\"data\":{\"batch_results\":[{\"plaintext\":\"" + a + "\"},"
-                        + "{\"error\":\"cipher: message authentication failed\"}]}}", MediaType.APPLICATION_JSON));
+                // As real OpenBao does: HTTP 400 when any item fails, with every item's result.
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"data\":{\"batch_results\":[{\"plaintext\":\"" + a + "\"},"
+                                + "{\"error\":\"cipher: message authentication failed\"}]}}"));
         OpenBaoTransitKeyService keys = keys();
 
         var unwrapped = keys.unwrapAll(PLATFORM, java.util.List.of("vault:v1:a", "vault:v1:b"));

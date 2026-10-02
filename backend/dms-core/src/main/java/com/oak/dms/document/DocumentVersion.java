@@ -128,4 +128,12 @@ public class DocumentVersion {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
+
+    /** Set when its document was permanently deleted (V62): the file and its key are destroyed. */
+    @Column(name = "purged_at")
+    private OffsetDateTime purgedAt;
+
+    /** The PDF it is previewed as, when it is an Office file (V64) - beside the original, same location. */
+    @Column(name = "rendition_object_key")
+    private String renditionObjectKey;
 }

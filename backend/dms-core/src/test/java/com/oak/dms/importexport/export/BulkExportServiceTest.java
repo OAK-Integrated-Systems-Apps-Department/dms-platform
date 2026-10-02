@@ -59,7 +59,8 @@ class BulkExportServiceTest {
             mock(com.oak.dms.folder.DocumentAccessService.class);
     private final BulkExportService service = new BulkExportService(repository, selector, worker, types,
             mock(StorageLocationRepository.class), mock(ObjectStorageServiceFactory.class), auditService, properties,
-            new ObjectMapper().findAndRegisterModules(), access, documentAccess);
+            new ObjectMapper().findAndRegisterModules(), access, documentAccess,
+            mock(com.oak.dms.document.DocumentRepository.class));
 
     @BeforeEach
     void setUp() {

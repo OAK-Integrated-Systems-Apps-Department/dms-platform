@@ -24,12 +24,13 @@ public interface StorageObjectKeyRepository extends JpaRepository<StorageObjectK
 
     /** One wrapped key per (scope, version) a provider has made, as [scope, wrappedKey] - the startup check. */
     @Query(value = "select distinct on (key_scope, key_version) key_scope, wrapped_key from storage_object_keys "
-            + "where key_provider = :provider order by key_scope, key_version, created_at", nativeQuery = true)
+            + "where key_provider = :provider and shredded_at is null order by key_scope, key_version, created_at",
+            nativeQuery = true)
     List<Object[]> sampleWrappedKeys(@Param("provider") String provider);
 
     /** A tenant's objects already on its own key with the primary service, as [keyVersion, count]. */
     @Query("select k.keyVersion, count(k) from StorageObjectKey k where k.tenantId = :tenantId "
-            + "and k.keyProvider = :provider and k.keyScope = :scope group by k.keyVersion order by k.keyVersion")
+            + "and k.shreddedAt is null and k.keyProvider = :provider and k.keyScope = :scope group by k.keyVersion order by k.keyVersion")
     List<Object[]> countByVersion(@Param("tenantId") UUID tenantId, @Param("provider") String provider,
                                   @Param("scope") String scope);
 
@@ -39,13 +40,15 @@ public interface StorageObjectKeyRepository extends JpaRepository<StorageObjectK
      * A tenant's keys that aren't yet on its own latest master key with the primary service - older
      * version, another scope (the pre-V57 platform key) or another service. Oldest first.
      */
-    @Query("select k from StorageObjectKey k where k.tenantId = :tenantId and (k.keyProvider <> :provider "
+    @Query("select k from StorageObjectKey k where k.tenantId = :tenantId and k.shreddedAt is null "
+            + "and (k.keyProvider <> :provider "
             + "or k.keyScope <> :scope or k.keyVersion < :version) order by k.createdAt, k.storageObjectKeyId")
     List<StorageObjectKey> findToRewrap(@Param("tenantId") UUID tenantId, @Param("provider") String provider,
                                         @Param("scope") String scope, @Param("version") int version,
                                         Pageable batch);
 
-    @Query("select count(k) from StorageObjectKey k where k.tenantId = :tenantId and (k.keyProvider <> :provider "
+    @Query("select count(k) from StorageObjectKey k where k.tenantId = :tenantId and k.shreddedAt is null "
+            + "and (k.keyProvider <> :provider "
             + "or k.keyScope <> :scope or k.keyVersion < :version)")
     long countToRewrap(@Param("tenantId") UUID tenantId, @Param("provider") String provider,
                        @Param("scope") String scope, @Param("version") int version);

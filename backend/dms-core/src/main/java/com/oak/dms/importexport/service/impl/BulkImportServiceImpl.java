@@ -168,7 +168,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
                                                  UUID folderId) {
         if (folderId != null) {
-            folderService.requireEditable(folderId); // 404/403 now - the worker doesn't check access again
+            folderService.requireEditable(folderId); // 404/403 now; the worker checks again for every row
         }
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
@@ -434,6 +434,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         item.setStagedObjectKey(objectKey);
         item.setStagedStorageLocationId(location.getStorageLocationId());
         item.setStagedSizeBytes(stored.sizeBytes());
+        item.setIntakeBlockedReason(null); // a clean file replaced one that was refused
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
 

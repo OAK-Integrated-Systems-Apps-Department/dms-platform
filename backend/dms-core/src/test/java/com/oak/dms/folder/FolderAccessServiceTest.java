@@ -48,7 +48,8 @@ class FolderAccessServiceTest {
     private final AuthorizationService authz = mock(AuthorizationService.class);
     private final AuditService audit = mock(AuditService.class);
     private final FolderAccessService service =
-            new FolderAccessService(folders, entries, new AccessPrincipals(userRoles, users, roles), authz, audit);
+            new FolderAccessService(folders, entries, new AccessPrincipals(userRoles, users, roles), authz, audit,
+                    new AccessCache(mock(org.springframework.jdbc.core.JdbcTemplate.class), java.time.Duration.ZERO, 10));
 
     private final Folder finance = Folder.builder().folderId(UUID.randomUUID()).tenantId(TENANT)
             .folderName("Finance").accessMode(FolderAccessMode.restricted).build();
@@ -74,7 +75,9 @@ class FolderAccessServiceTest {
 
         when(entries.findForPrincipals(eq(TENANT), eq(ME), anyCollection()))
                 .thenReturn(List.of(entry(PrincipalType.user, ME, FolderAccessLevel.view)));
-        assertThat(service.require(finance.getFolderId(), FolderAccessLevel.view)).isSameAs(finance);
+        // A copy (AccessCache never hands out what it holds), of the same folder.
+        assertThat(service.require(finance.getFolderId(), FolderAccessLevel.view).getFolderId())
+                .isEqualTo(finance.getFolderId());
         assertThatThrownBy(() -> service.require(finance.getFolderId(), FolderAccessLevel.edit))
                 .isInstanceOf(FolderException.class).hasMessageContaining("can view \"Finance\" but not change");
     }
@@ -94,7 +97,7 @@ class FolderAccessServiceTest {
         service.updateAccess(open.getFolderId(), new UpdateFolderAccessRequest("restricted",
                 List.of(new FolderAccessEntryRequest("user", COLLEAGUE, "view"))));
 
-        assertThat(open.getAccessMode()).isEqualTo(FolderAccessMode.restricted);
+        assertThat(savedFolder().getAccessMode()).isEqualTo(FolderAccessMode.restricted);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<FolderAccessEntry>> saved = ArgumentCaptor.forClass(Collection.class);
         verify(entries).saveAll(saved.capture());
@@ -112,7 +115,7 @@ class FolderAccessServiceTest {
         service.updateAccess(finance.getFolderId(), new UpdateFolderAccessRequest("everyone",
                 List.of(new FolderAccessEntryRequest("user", COLLEAGUE, "edit"))));
 
-        assertThat(finance.getAccessMode()).isEqualTo(FolderAccessMode.everyone);
+        assertThat(savedFolder().getAccessMode()).isEqualTo(FolderAccessMode.everyone);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<FolderAccessEntry>> saved = ArgumentCaptor.forClass(Collection.class);
         verify(entries).saveAll(saved.capture());
@@ -121,6 +124,13 @@ class FolderAccessServiceTest {
         assertThatThrownBy(() -> service.updateAccess(finance.getFolderId(),
                 new UpdateFolderAccessRequest("secret", List.of())))
                 .isInstanceOf(FolderException.class).hasMessageContaining("Unknown access mode");
+    }
+
+    /** The folder as saved - the service changes a copy of it, not the repository's own object. */
+    private Folder savedFolder() {
+        ArgumentCaptor<Folder> saved = ArgumentCaptor.forClass(Folder.class);
+        verify(folders).save(saved.capture());
+        return saved.getValue();
     }
 
     @Test

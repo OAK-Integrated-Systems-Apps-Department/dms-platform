@@ -12,6 +12,7 @@ import {
   Search,
   Shield,
   ShieldAlert,
+  Trash2,
   Users,
   Workflow,
 } from "lucide-react"
@@ -33,6 +34,16 @@ export const navSections: NavSection[] = [
         icon: Users,
         href: "/shared",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
+      {
+        label: "Recycle Bin",
+        icon: Trash2,
+        href: "/recycle-bin",
+        permission: [
+          PermissionCodes.RBR_RESTORE,
+          PermissionCodes.RBR_PURGE,
+          PermissionCodes.RBR_RETENTION,
+        ],
       },
       { label: "Recent Pins", icon: Pin },
       { label: "Workflows", icon: Workflow, badge: 3 },

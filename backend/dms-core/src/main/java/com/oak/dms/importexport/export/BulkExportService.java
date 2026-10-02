@@ -7,6 +7,8 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.document.Document;
+import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.folder.FolderAccessService;
@@ -41,6 +43,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -68,6 +71,7 @@ public class BulkExportService {
     private final ObjectMapper objectMapper;
     private final FolderAccessService folderAccessService;
     private final DocumentAccessService documentAccessService;
+    private final DocumentRepository documentRepository;
 
     /** A finished export ready to stream. */
     public record DownloadedExport(String filename, long sizeBytes, java.io.InputStream content) {
@@ -172,6 +176,7 @@ public class BulkExportService {
         if (job.getStatus() != ExportJobStatus.completed || job.getFileObjectKey() == null) {
             throw BulkImportException.conflict("EXPORT_NOT_READY", "This export isn't ready to download yet.");
         }
+        requireStillAccessible(job);
         StorageLocation location = storageLocationRepository
                 .findByStorageLocationIdAndDeletedFalse(job.getStorageLocationId())
                 .orElseThrow(() -> new ResourceNotFoundException("ExportJob file", jobId));
@@ -187,6 +192,28 @@ public class BulkExportService {
         String filename = "export-" + job.getCreatedAt().toLocalDate() + "-" + jobId.toString().substring(0, 8) + ".zip";
         long size = job.getFileSizeBytes() != null ? job.getFileSizeBytes() : object.sizeBytes();
         return new DownloadedExport(filename, size, object.content());
+    }
+
+    /**
+     * A finished ZIP must not outlive the access it was made with: refused once the requester can't
+     * open one of its documents any more (moved into a restricted folder, taken off a list, a role
+     * removed) or one was deleted - they can run the export again for what they can see now. An
+     * export from before V61 has no list and is served as it is until it expires.
+     */
+    private void requireStillAccessible(ExportJob job) {
+        if (job.getDocumentIds() == null || job.getDocumentIds().length == 0) {
+            return;
+        }
+        Set<UUID> ids = Set.of(job.getDocumentIds());
+        List<Document> live = documentRepository.findAllByDocumentIdInAndTenantIdAndDeletedFalse(ids,
+                TenantContext.getTenantId());
+        DocumentAccessService.DocumentAccessView access = documentAccessService.forCaller();
+        long readable = live.stream().filter(access::canSee).count();
+        if (readable < ids.size()) {
+            throw new BulkImportException(HttpStatus.GONE, "EXPORT_ACCESS_CHANGED", (ids.size() - readable)
+                    + " of the documents in this export were deleted or are no longer open to you, so it can't be"
+                    + " downloaded any more. Start a new export.");
+        }
     }
 
     /**

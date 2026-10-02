@@ -22,6 +22,7 @@ import {
   StepCard,
 } from "@/components/bulk-import/step-card"
 import { FriendlyDate } from "@/components/documents/browser-items"
+import { RotationScheduleCard } from "@/components/encryption/rotation-schedule-card"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -237,6 +238,12 @@ function EncryptionKeys() {
           />
         </StepCard>
       </div>
+
+      <RotationScheduleCard
+        policy={s.rotation}
+        canEdit={canRotate}
+        onSaved={refresh}
+      />
 
       {Object.keys(s.objectsByKeyVersion).length > 0 && (
         <StepCard icon={KeyRound} title="Objects per key version">

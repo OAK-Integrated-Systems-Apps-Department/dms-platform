@@ -9,8 +9,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -56,5 +61,19 @@ public class EncryptionController {
     @Operation(summary = "Encrypt documents stored before encryption was turned on (background)")
     public ResponseEntity<JobStatus> encryptExisting() {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.startEncryptExisting());
+    }
+
+    /**
+     * @param intervalDays null turns the schedule off; otherwise 30 to 3650 days
+     * @param autoRotate   rotate (and re-wrap) by itself when due, instead of only reminding
+     */
+    public record RotationPolicyRequest(@Min(30) @Max(3650) Integer intervalDays, boolean autoRotate) {
+    }
+
+    @PutMapping("/rotation-policy")
+    @PreAuthorize("@authz.hasPermission(" + P + "DE_KEYS_ROTATE)")
+    @Operation(summary = "How often the master key should be rotated, and whether it happens by itself")
+    public KeyRotationPolicyStore.RotationPolicy saveRotationPolicy(@Valid @RequestBody RotationPolicyRequest request) {
+        return service.saveRotationPolicy(request.intervalDays(), request.autoRotate());
     }
 }

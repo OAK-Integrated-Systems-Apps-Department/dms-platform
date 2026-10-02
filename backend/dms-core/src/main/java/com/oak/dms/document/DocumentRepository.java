@@ -99,6 +99,15 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** Chosen documents that exist in the tenant - an export by id. */
     List<Document> findAllByDocumentIdInAndTenantIdAndDeletedFalse(Collection<UUID> documentIds, UUID tenantId);
 
+    /** The recycle bin: deleted, not yet purged (V62), most recently deleted first. */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = true and d.purgedAt is null "
+            + "order by d.deletedAt desc nulls last")
+    List<Document> findRecycleBin(@Param("tenantId") UUID tenantId, org.springframework.data.domain.Pageable page);
+
+    @Query("select d from Document d where d.documentId = :documentId and d.tenantId = :tenantId "
+            + "and d.deleted = true and d.purgedAt is null")
+    java.util.Optional<Document> findInRecycleBin(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId);
+
     /** Ids of one type's documents created in [from, to), outside the hidden folders, oldest first - an export by filter. */
     @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
             + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to "

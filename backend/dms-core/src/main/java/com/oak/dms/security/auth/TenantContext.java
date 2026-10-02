@@ -45,6 +45,14 @@ public final class TenantContext {
      */
     private static final ThreadLocal<List<String>> CURRENT_TARGET_PLATFORM_ROLES_CACHE = new ThreadLocal<>();
 
+    /**
+     * Set by {@link #markBackgroundJob()}: a worker (bulk import, export) acting as the user who
+     * started the job, with no request and so no token. AuthorizationService then resolves the
+     * user's realm roles (TENANT_ADMIN) live from Keycloak, as it does for an impersonation target,
+     * so the job's access checks are the user's own as of now - not as of when they started it.
+     */
+    private static final ThreadLocal<Boolean> CURRENT_BACKGROUND_JOB = new ThreadLocal<>();
+
     private TenantContext() {
     }
 
@@ -69,6 +77,16 @@ public final class TenantContext {
         // relevant when ImpersonationContextFilter calls this a second time
         // (real admin -> target) within the same request/thread.
         CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
+    }
+
+    /** After {@link #set(UUID, UUID, String, UUID)}, in a worker acting as that user - see {@link #CURRENT_BACKGROUND_JOB}. */
+    public static void markBackgroundJob() {
+        CURRENT_BACKGROUND_JOB.set(Boolean.TRUE);
+        CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
+    }
+
+    public static boolean isBackgroundJob() {
+        return Boolean.TRUE.equals(CURRENT_BACKGROUND_JOB.get());
     }
 
     /** Called only by {@code ImpersonationContextFilter}, once per impersonated request, after re-binding the fields above to the target. */
@@ -135,5 +153,6 @@ public final class TenantContext {
         CURRENT_IMPERSONATOR_ID.remove();
         CURRENT_IMPERSONATOR_DISPLAY_NAME.remove();
         CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
+        CURRENT_BACKGROUND_JOB.remove();
     }
 }

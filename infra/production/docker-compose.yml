@@ -218,10 +218,40 @@ services:
       retries: 10
       start_period: 10s
 
+  # Office previews: converts Word/PowerPoint/OpenDocument/RTF/Visio files to
+  # PDF (LibreOffice inside Gotenberg) so they can be shown in the browser -
+  # see dms-core's DocumentRenditionService. Internal only: no ports, and the
+  # Chromium routes (which fetch URLs) are switched off; only dms-core calls it.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oakdms-gotenberg
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-disable-routes=true
+      - --api-timeout=90s
+      - --libreoffice-auto-start=true
+      - --log-level=warn
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Only on the internal "previews" network: LibreOffice can follow links
+    # embedded in a document (remote images, OLE links), so the converter
+    # must not reach the internet or anything else on the server.
+    networks:
+      - previews
+
   dms-core:
     image: ${DMS_CORE_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-core}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
     container_name: oakdms-core
     restart: unless-stopped
+    # default: every other service; previews: the Office converter (Gotenberg) only.
+    networks:
+      - default
+      - previews
     # Optional extra variables that can't be listed as fixed keys here, e.g.
     # the per-StorageLocation STORAGE_CRED_<REF>_* pairs or STORAGE_PROVIDER /
     # S3_* / AZURE_STORAGE_* - see .env.example at the repo root for names.
@@ -237,6 +267,8 @@ services:
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
       REDIS_HOST: redis
+      # Office files are converted to PDF for the preview (DocumentRenditionService).
+      PREVIEW_CONVERTER_URL: http://gotenberg:3000
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
@@ -306,6 +338,11 @@ services:
     # Health: the image's own HEALTHCHECK (frontend/Dockerfile).
     depends_on:
       - dms-core
+
+networks:
+  # internal: true - no gateway out. Only dms-core and the converter are on it.
+  previews:
+    internal: true
 
 volumes:
   # Same volume keys as infra/local, so a server that was started from the

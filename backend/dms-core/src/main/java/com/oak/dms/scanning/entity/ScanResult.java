@@ -156,6 +156,10 @@ public class ScanResult {
     @Column(name = "title", updatable = false)
     private String title;
 
+    /** A new version's "what changed" (V62), copied onto the version it becomes. */
+    @Column(name = "version_comment", updatable = false)
+    private String versionComment;
+
     /** The folder a new document lands in once clean (V51); null = not in a folder. */
     @Column(name = "folder_id", updatable = false)
     private UUID folderId;

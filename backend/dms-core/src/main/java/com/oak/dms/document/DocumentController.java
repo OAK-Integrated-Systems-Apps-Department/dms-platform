@@ -56,6 +56,8 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final DocumentAccessService documentAccessService;
+    private final DocumentVersionService versionService;
+    private final DocumentRenditionService renditionService;
 
     /**
      * Returns an ingestion ticket, uniformly across scan providers - the
@@ -154,6 +156,77 @@ public class DocumentController {
     public ResponseEntity<Void> deleteDocument(@PathVariable("id") UUID id) {
         documentService.deleteDocument(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Office files the browser can't show - Word .doc, PowerPoint, OpenDocument, RTF, Visio - as a PDF. */
+    @GetMapping("/{id}/preview.pdf")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Preview an Office document as a PDF - converted on first use, then kept")
+    public ResponseEntity<StreamingResponseBody> previewPdf(@PathVariable("id") UUID id) {
+        DownloadedDocument pdf = renditionService.preview(id);
+        StreamingResponseBody body = outputStream -> {
+            try (InputStream content = pdf.content()) {
+                content.transferTo(outputStream);
+            }
+        };
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PDF_VALUE)
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.sizeBytes()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(pdf.filename()) + "\"")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
+    @GetMapping("/{id}/versions")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "A document's version history, newest first")
+    public List<DocumentVersionService.VersionItem> versions(@PathVariable("id") UUID id) {
+        return versionService.list(id);
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/content")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Download one version of a document")
+    public ResponseEntity<StreamingResponseBody> downloadVersion(@PathVariable("id") UUID id,
+                                                                 @PathVariable("versionId") UUID versionId) {
+        DownloadedDocument downloaded = versionService.download(id, versionId);
+        StreamingResponseBody body = outputStream -> {
+            try (InputStream content = downloaded.content()) {
+                content.transferTo(outputStream);
+            }
+        };
+        String contentType = downloaded.contentType() != null && !downloaded.contentType().isBlank()
+                ? downloaded.contentType()
+                : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
+    /** Same ticket and status codes as {@link #uploadDocument} - the version exists once the file is clean. */
+    @PostMapping(value = "/{id}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
+    @Operation(summary = "Upload a new version - scanned for malware, then it becomes the current version")
+    public ResponseEntity<IngestionTicketResponse> uploadVersion(@PathVariable("id") UUID id,
+                                                                 @RequestPart("file") MultipartFile file,
+                                                                 @RequestParam(value = "comment", required = false)
+                                                                 String comment) throws IOException {
+        try (InputStream content = file.getInputStream()) {
+            return IngestionTicketResponses.toResponseEntity(versionService.upload(id, file.getOriginalFilename(),
+                    file.getSize(), content, comment));
+        }
+    }
+
+    @PostMapping("/{id}/versions/{versionId}/restore")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_RESTORE)")
+    @Operation(summary = "Make an older version current again - added as a new version with its content")
+    public ResponseEntity<IngestionTicketResponse> restoreVersion(@PathVariable("id") UUID id,
+                                                                  @PathVariable("versionId") UUID versionId) {
+        return IngestionTicketResponses.toResponseEntity(versionService.restore(id, versionId));
     }
 
     @GetMapping("/{id}/access")

@@ -93,6 +93,10 @@ public class Document {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    /** Set when it was permanently deleted from the recycle bin (V62) - its files and keys are gone. */
+    @Column(name = "purged_at")
+    private OffsetDateTime purgedAt;
+
     /** The folder the document is filed in (V51); null = not in a folder. */
     @Column(name = "folder_id")
     private UUID folderId;

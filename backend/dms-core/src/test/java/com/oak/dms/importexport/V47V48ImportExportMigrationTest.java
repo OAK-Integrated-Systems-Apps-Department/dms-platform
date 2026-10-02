@@ -1,6 +1,8 @@
 package com.oak.dms.importexport;
 
 import com.oak.dms.encryption.EncryptionJobStore;
+import com.oak.dms.encryption.EncryptionProperties;
+import com.oak.dms.encryption.KeyRotationPolicyStore;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,6 +13,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -266,6 +269,146 @@ class V47V48ImportExportMigrationTest {
                         .hasMessageContaining("ck_encryption_jobs_job");
             }
         });
+    }
+
+    @Test
+    void v59_aKeyIsDueAfterItsInterval_remindedOnce_andOnlyLiveTenantsWithKeysAreChecked() throws Exception {
+        withScratchDatabase(url -> {
+            migrate(url, "59");
+            String tenant = UUID.randomUUID().toString();
+            String location = UUID.randomUUID().toString();
+            try (Connection c = connect(url)) {
+                exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('"
+                        + tenant + "', 'V59', 'v59-" + tenant + "', 'standard', 'active')");
+                exec(c, "insert into storage_locations (storage_location_id, name, provider, purpose) values ('"
+                        + location + "', 'V59', 'FILE_SYSTEM', 'document')");
+            }
+            UUID tenantId = UUID.fromString(tenant);
+            EncryptionProperties properties = new EncryptionProperties();
+            properties.getRotation().setDefaultIntervalDays(365);
+            KeyRotationPolicyStore store = new KeyRotationPolicyStore(
+                    new JdbcTemplate(new DriverManagerDataSource(url, DB_USERNAME, DB_PASSWORD)), properties);
+
+            // No keys yet: nothing to rotate, and not checked.
+            assertThat(store.get(tenantId).nextDueAt()).isNull();
+            assertThat(store.tenantsToCheck()).doesNotContain(tenantId);
+
+            try (Connection c = connect(url)) {
+                // Its first key was stored 400 days ago, on the 365-day default.
+                exec(c, "insert into storage_object_keys (storage_location_id, object_key, wrapped_key, key_provider, "
+                        + "key_version, algorithm, plaintext_size, tenant_id, key_scope, created_at) values ('"
+                        + location + "', 'a.pdf', 'vault:v1:x', 'openbao', 1, 'A', 1, '" + tenant + "', '" + tenant
+                        + "', now() - interval '400 days')");
+            }
+            var policy = store.get(tenantId);
+            assertThat(policy.custom()).isFalse();
+            assertThat(policy.intervalDays()).isEqualTo(365);
+            assertThat(policy.due()).isTrue();
+            assertThat(store.tenantsToCheck()).contains(tenantId);
+
+            // Reminded once per remind-every, however many instances ask.
+            assertThat(store.claimReminder(tenantId, Duration.ofDays(7))).isTrue();
+            assertThat(store.claimReminder(tenantId, Duration.ofDays(7))).isFalse();
+
+            // A rotation restarts the clock and clears the reminder.
+            store.recordRotation(tenantId);
+            assertThat(store.get(tenantId).due()).isFalse();
+            assertThat(store.get(tenantId).lastRemindedAt()).isNull();
+
+            // Its own setting; null turns the schedule off; the range is checked.
+            assertThat(store.save(tenantId, 90, true, null).autoRotate()).isTrue();
+            assertThat(store.save(tenantId, null, false, null).nextDueAt()).isNull();
+            assertThatThrownBy(() -> store.save(tenantId, 5, false, null))
+                    .hasMessageContaining("ck_encryption_key_policies_interval");
+
+            // A removed tenant, or one whose keys were shredded, is never checked again.
+            try (Connection c = connect(url)) {
+                exec(c, "update tenants set keys_shredded_at = now() where tenant_id = '" + tenant + "'");
+            }
+            assertThat(store.tenantsToCheck()).doesNotContain(tenantId);
+        });
+    }
+
+    @Test
+    void v61_accessChangesMoveTheGeneration_andStaleEntriesGoWithWhatTheyName() throws Exception {
+        withScratchDatabase(url -> {
+            migrate(url, "61");
+            String tenant = UUID.randomUUID().toString();
+            String user = UUID.randomUUID().toString();
+            String role = UUID.randomUUID().toString();
+            String folder = UUID.randomUUID().toString();
+            try (Connection c = connect(url)) {
+                exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('"
+                        + tenant + "', 'V61', 'v61-" + tenant + "', 'standard', 'active')");
+                exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, display_name, first_name, status, "
+                        + "username) values ('" + user + "', '" + tenant + "', '" + UUID.randomUUID() + "', "
+                        + "'v61@x.invalid', 'V61', 'V61', 'active', 'v61-" + user + "')");
+                exec(c, "insert into roles (role_id, tenant_id, role_name, status) values ('" + role + "', '"
+                        + tenant + "', 'V61 role', 'active')");
+
+                exec(c, "insert into folders (folder_id, tenant_id, folder_name, access_mode) values ('" + folder
+                        + "', '" + tenant + "', 'Finance', 'restricted')");
+                long afterFolder = generation(c, tenant);
+                assertThat(afterFolder).isPositive();
+
+                // An access entry moves it on.
+                exec(c, "insert into folder_access (tenant_id, folder_id, principal_type, principal_id, access_level) "
+                        + "values ('" + tenant + "', '" + folder + "', 'role', '" + role + "', 'view')");
+                exec(c, "insert into folder_access (tenant_id, folder_id, principal_type, principal_id, access_level) "
+                        + "values ('" + tenant + "', '" + folder + "', 'user', '" + user + "', 'edit')");
+                long afterEntries = generation(c, tenant);
+                assertThat(afterEntries).isGreaterThan(afterFolder);
+
+                // A deleted role's entries go with it; a deleted user's too.
+                exec(c, "update roles set is_deleted = true where role_id = '" + role + "'");
+                assertThat(strings(c, "select principal_type from folder_access where folder_id = '" + folder + "'"))
+                        .containsExactly("user");
+                exec(c, "delete from users where user_id = '" + user + "'");
+                assertThat(strings(c, "select principal_id from folder_access where folder_id = '" + folder + "'"))
+                        .isEmpty();
+                assertThat(generation(c, tenant)).isGreaterThan(afterEntries);
+
+                // A deleted folder's entries go with it.
+                exec(c, "insert into folder_access (tenant_id, folder_id, principal_type, principal_id, access_level) "
+                        + "values ('" + tenant + "', '" + folder + "', 'role', '" + UUID.randomUUID() + "', 'view')");
+                exec(c, "update folders set is_deleted = true where folder_id = '" + folder + "'");
+                assertThat(strings(c, "select principal_id from folder_access where folder_id = '" + folder + "'"))
+                        .isEmpty();
+                assertThat(tableExists(c, "export_jobs")).isTrue();
+                assertThat(strings(c, "select data_type from information_schema.columns where table_name = "
+                        + "'export_jobs' and column_name = 'document_ids'")).containsExactly("ARRAY");
+            }
+        });
+    }
+
+    @Test
+    void v62_aDeletedDocumentKeepsItsAccessList_andRetentionIsBounded() throws Exception {
+        withScratchDatabase(url -> {
+            migrate(url, "62");
+            try (Connection c = connect(url)) {
+                // The soft-delete trigger from V61 is gone: a document in the recycle bin keeps its list.
+                assertThat(strings(c, "select tgname from pg_trigger where tgname = "
+                        + "'trg_documents_drop_access_entries'")).isEmpty();
+                String tenant = UUID.randomUUID().toString();
+                exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('"
+                        + tenant + "', 'V62', 'v62-" + tenant + "', 'standard', 'active')");
+                assertThatThrownBy(() -> exec(c, "insert into recycle_bin_settings (tenant_id, retention_days) "
+                        + "values ('" + tenant + "', 0)")).hasMessageContaining("ck_recycle_bin_settings_retention");
+                exec(c, "insert into recycle_bin_settings (tenant_id, retention_days) values ('" + tenant + "', 90)");
+                assertThat(strings(c, "select column_name from information_schema.columns where column_name = "
+                        + "'purged_at' and table_name in ('documents', 'document_versions')")).hasSize(1);
+                assertThat(strings(c, "select table_name from information_schema.columns where column_name = "
+                        + "'purged_at' and table_name in ('documents', 'document_versions')"))
+                        .containsExactlyInAnyOrder("documents", "document_versions");
+            }
+        });
+    }
+
+    private static long generation(Connection c, String tenant) throws SQLException {
+        try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                "select generation from access_generations where tenant_id = '" + tenant + "'")) {
+            return rs.next() ? rs.getLong(1) : 0;
+        }
     }
 
     // ---------------------------------------------------------------- helpers

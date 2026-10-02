@@ -72,6 +72,7 @@ public class EncryptionAdminService {
     private final AuditService auditService;
     private final StorageEncryption encryption;
     private final EncryptionJobStore jobs;
+    private final KeyRotationPolicyStore rotationPolicies;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "encryption-admin");
         thread.setDaemon(true);
@@ -86,7 +87,8 @@ public class EncryptionAdminService {
     public EncryptionAdminService(KeyServices keys, StorageObjectKeyRepository keyRepository,
                                   StorageLocationRepository locations, ObjectStorageServiceFactory storage,
                                   EncryptionProperties properties, JdbcTemplate jdbc, AuditService auditService,
-                                  StorageEncryption encryption, EncryptionJobStore jobs) {
+                                  StorageEncryption encryption, EncryptionJobStore jobs,
+                                  KeyRotationPolicyStore rotationPolicies) {
         this.keys = keys;
         this.keyRepository = keyRepository;
         this.locations = locations;
@@ -96,6 +98,7 @@ public class EncryptionAdminService {
         this.auditService = auditService;
         this.encryption = encryption;
         this.jobs = jobs;
+        this.rotationPolicies = rotationPolicies;
     }
 
     /** One background job's progress. */
@@ -112,11 +115,12 @@ public class EncryptionAdminService {
      * @param objectsOnOlderVersions the tenant's objects not yet on its latest master key - an older
      *                               version, the pre-V57 platform key, or another key service
      * @param unencryptedOtherFiles  quarantined files and downloadable export ZIPs stored before encryption
+     * @param rotation               the tenant's rotation schedule and whether a rotation is due
      */
     public record EncryptionStatus(boolean enabled, KeyInfo key, String keyError, long encryptedObjects,
                                    Map<Integer, Long> objectsByKeyVersion, long objectsOnOlderVersions,
                                    long unencryptedDocuments, long unencryptedOtherFiles, JobStatus rewrap,
-                                   JobStatus encryptExisting) {
+                                   JobStatus encryptExisting, KeyRotationPolicyStore.RotationPolicy rotation) {
     }
 
     public EncryptionStatus status() {
@@ -139,29 +143,75 @@ public class EncryptionAdminService {
         long other = count(UNENCRYPTED_QUARANTINE, tenantId) + count(UNENCRYPTED_EXPORTS, tenantId);
         return new EncryptionStatus(properties.isEnabled(), key, keyError, keyRepository.countByTenantId(tenantId),
                 byVersion, toRewrap, count(UNENCRYPTED_VERSIONS, tenantId), other, jobs.get(tenantId, REWRAP),
-                jobs.get(tenantId, ENCRYPT_EXISTING));
+                jobs.get(tenantId, ENCRYPT_EXISTING), rotationPolicies.get(tenantId));
+    }
+
+    /** Every file of a tenant still stored as it was uploaded - not protected by its master key. */
+    public long unencryptedFiles(UUID tenantId) {
+        return count(UNENCRYPTED_VERSIONS, tenantId) + count(UNENCRYPTED_QUARANTINE, tenantId)
+                + count(UNENCRYPTED_EXPORTS, tenantId);
     }
 
     /** A new version of the caller's tenant's master key; returns the key afterwards. */
     public KeyInfo rotate() {
-        String scope = KeyEncryptionService.scopeOf(TenantContext.getTenantId());
+        return rotate(TenantContext.getTenantId(), "manual");
+    }
+
+    /** @param trigger "manual" or "schedule" - recorded in the audit event */
+    KeyInfo rotate(UUID tenantId, String trigger) {
+        String scope = KeyEncryptionService.scopeOf(tenantId);
         KeyEncryptionService primary = keys.primary();
         int before = primary.info(scope).latestVersion();
         KeyInfo after = primary.rotate(scope);
-        audit(AuditActionCatalog.ENCRYPTION_KEY_ROTATED, AuditOutcome.SUCCESS, after.keyName(),
-                Map.of("fromVersion", before, "toVersion", after.latestVersion(), "key", after.keyName()));
+        rotationPolicies.recordRotation(tenantId);
+        audit(tenantId, AuditActionCatalog.ENCRYPTION_KEY_ROTATED, AuditOutcome.SUCCESS, after.keyName(),
+                Map.of("fromVersion", before, "toVersion", after.latestVersion(), "key", after.keyName(),
+                        "trigger", trigger));
         return after;
     }
 
     public JobStatus startRewrap() {
-        return start(REWRAP, this::runRewrap);
+        return start(TenantContext.getTenantId(), TenantContext.getUserId(), REWRAP, this::runRewrap);
+    }
+
+    /** For the schedule, after it rotated a key; false when a re-wrap is already running. */
+    boolean startRewrapFor(UUID tenantId) {
+        if (!jobs.claim(tenantId, REWRAP, null)) {
+            return false;
+        }
+        submit(tenantId, null, REWRAP, this::runRewrap);
+        return true;
+    }
+
+    /** @param intervalDays null turns the schedule off */
+    public KeyRotationPolicyStore.RotationPolicy saveRotationPolicy(Integer intervalDays, boolean autoRotate) {
+        UUID tenantId = TenantContext.getTenantId();
+        KeyRotationPolicyStore.RotationPolicy before = rotationPolicies.get(tenantId);
+        KeyRotationPolicyStore.RotationPolicy after = rotationPolicies.save(tenantId, intervalDays, autoRotate,
+                TenantContext.getUserId());
+        auditService.event(AuditActionCatalog.ENCRYPTION_ROTATION_POLICY_CHANGED)
+                .tenantId(tenantId)
+                .objectType(AuditObjectTypes.ENCRYPTION_KEY)
+                .resourceName(keys.primary().provider() + ":" + safeKeyName(KeyEncryptionService.scopeOf(tenantId)))
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(policyDetails(before))
+                .newValue(policyDetails(after))
+                .log();
+        return after;
+    }
+
+    private static Map<String, Object> policyDetails(KeyRotationPolicyStore.RotationPolicy policy) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("intervalDays", policy.intervalDays());
+        details.put("autoRotate", policy.autoRotate());
+        return details;
     }
 
     public JobStatus startEncryptExisting() {
         if (!properties.isEnabled()) {
             throw new EncryptionException(HttpStatus.CONFLICT, "ENCRYPTION_DISABLED", "Encryption at rest is turned off.");
         }
-        return start(ENCRYPT_EXISTING, this::runBackfill);
+        return start(TenantContext.getTenantId(), TenantContext.getUserId(), ENCRYPT_EXISTING, this::runBackfill);
     }
 
     @PreDestroy
@@ -177,15 +227,21 @@ public class EncryptionAdminService {
         String run(UUID tenantId);
     }
 
-    private JobStatus start(String name, Job job) {
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
+    private JobStatus start(UUID tenantId, UUID userId, String name, Job job) {
         if (!jobs.claim(tenantId, name, userId)) {
             throw new EncryptionException(HttpStatus.CONFLICT, "ENCRYPTION_JOB_RUNNING",
                     "That job is already running - wait for it to finish.");
         }
+        submit(tenantId, userId, name, job);
+        return jobs.get(tenantId, name);
+    }
+
+    /** @param userId who started it, named by the completion audit event; null = the schedule (system) */
+    private void submit(UUID tenantId, UUID userId, String name, Job job) {
         executor.submit(() -> {
-            TenantContext.set(tenantId, userId); // the completion audit event names who started it
+            if (userId != null) {
+                TenantContext.set(tenantId, userId);
+            }
             ScheduledFuture<?> beat = heartbeats.scheduleWithFixedDelay(() -> jobs.heartbeat(tenantId, name),
                     30, 30, TimeUnit.SECONDS);
             try {
@@ -198,7 +254,6 @@ public class EncryptionAdminService {
                 TenantContext.clear();
             }
         });
-        return jobs.get(tenantId, name);
     }
 
     /**
@@ -256,7 +311,7 @@ public class EncryptionAdminService {
             }
         }
         JobStatus end = jobs.finish(tenantId, REWRAP, false, null);
-        audit(AuditActionCatalog.ENCRYPTION_KEYS_REWRAPPED, end.failed() == 0 ? AuditOutcome.SUCCESS : AuditOutcome.FAILURE,
+        audit(tenantId, AuditActionCatalog.ENCRYPTION_KEYS_REWRAPPED, end.failed() == 0 ? AuditOutcome.SUCCESS : AuditOutcome.FAILURE,
                 safeKeyName(scope), Map.of("toVersion", latest, "rewrapped", end.processed(), "failed", end.failed()));
         return lastError;
     }
@@ -327,7 +382,7 @@ public class EncryptionAdminService {
             }
         }
         JobStatus end = jobs.finish(tenantId, ENCRYPT_EXISTING, false, null);
-        audit(AuditActionCatalog.ENCRYPTION_BACKFILL_COMPLETED,
+        audit(tenantId, AuditActionCatalog.ENCRYPTION_BACKFILL_COMPLETED,
                 end.failed() == 0 ? AuditOutcome.SUCCESS : AuditOutcome.FAILURE,
                 safeKeyName(KeyEncryptionService.scopeOf(tenantId)),
                 Map.of("encrypted", end.processed(), "failed", end.failed()));
@@ -376,8 +431,10 @@ public class EncryptionAdminService {
         return count == null ? 0 : count;
     }
 
-    private void audit(String action, AuditOutcome outcome, String keyName, Map<String, Object> details) {
+    private void audit(UUID tenantId, String action, AuditOutcome outcome, String keyName,
+                       Map<String, Object> details) {
         auditService.event(action)
+                .tenantId(tenantId)
                 .objectType(AuditObjectTypes.ENCRYPTION_KEY)
                 .resourceName(keys.primary().provider() + ":" + keyName)
                 .outcome(outcome)

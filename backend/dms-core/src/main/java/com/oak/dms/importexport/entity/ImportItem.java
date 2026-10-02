@@ -77,6 +77,10 @@ public class ImportItem {
     @Column(name = "staged_size_bytes")
     private Long stagedSizeBytes;
 
+    /** Why the file uploaded for this row was refused at intake - a virus, say (V63); null otherwise. */
+    @Column(name = "intake_blocked_reason")
+    private String intakeBlockedReason;
+
     /**
      * The scan gate's ticket for this row's file, saved as soon as the gate
      * accepts it; null until then. See {@code ImportRecordCreator}.

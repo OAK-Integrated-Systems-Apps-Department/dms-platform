@@ -304,6 +304,35 @@ on its own therefore never holds readable content (DE-FR-006).
   the latest version inside the key service; **no object is rewritten**.
   Rotation, re-wrap and backfill runs are audited (`ENCRYPTION_*`, module DE).
   Keys on the same tenant key are re-wrapped with batch requests.
+- **Rotation schedule (V59):** each organisation sets how often its key should
+  be rotated (off, 90 days, 6 months or a year) on the key screen. The default
+  is `ENCRYPTION_ROTATION_DEFAULT_DAYS`, 365. Every
+  `ENCRYPTION_ROTATION_CHECK_INTERVAL` (6 hours), one instance (it holds a
+  Postgres advisory lock) checks every active tenant with encrypted objects. A
+  key is due once the interval has passed since its last rotation, or since its
+  first stored key if it was never rotated. With "rotate automatically" on, a
+  due key is rotated and its data keys re-wrapped (audited as
+  `ENCRYPTION_KEY_ROTATED`, trigger `schedule`). Otherwise an
+  `ENCRYPTION_KEY_ROTATION_DUE` audit event is the reminder, repeated every
+  `ENCRYPTION_ROTATION_REMIND_EVERY` (7 days), and the key screen shows the key
+  as due.
+- **Crypto-shredding a removed organisation:** after a platform admin has
+  deactivated a tenant, `POST /api/v1/tenants/{tenantId}/shred-keys`
+  (PLATFORM_ADMIN; body `confirmTenantName`, `reason`,
+  `acknowledgeUnencrypted`) makes everything it stored encrypted unreadable for
+  good. It overwrites the tenant's wrapped data keys (each row kept as a tombstone, V60, so
+  a read fails plainly instead of serving ciphertext), destroys its master key in
+  every key service holding one (OpenBao: `deletion_allowed`, then delete the
+  Transit key; the development key file and its backup: the tenant's entry
+  removed), and sets `tenants.keys_shredded_at`. That also covers copies of the
+  storage and database backups that still hold the wrapped keys, as long as no
+  OpenBao backup from before the shred is restored. Files stored before
+  encryption aren't protected by the key: the call refuses while any remain
+  unless `acknowledgeUnencrypted` is true. If a key service can't be reached
+  part-way, the call answers 502 and can be repeated. Audited as
+  `ENCRYPTION_TENANT_KEYS_SHREDDED` (platform level, reason required). The
+  OpenBao policy needs `update` on `transit/keys/dms-documents*/config` and
+  `delete` on `transit/keys/dms-documents*` for this.
   Every unwrap is also an authenticated request in OpenBao's own audit log
   (DE-NFR-006).
 
@@ -383,10 +412,12 @@ key (DE-NFR-006).
 2. Create a policy limited to the document keys - `transit/datakey/plaintext/dms-documents*`,
    `transit/encrypt/dms-documents*`, `transit/decrypt/dms-documents*`,
    `transit/rewrap/dms-documents*` (update), `transit/keys/dms-documents*`
-   (read, create) and `transit/keys/dms-documents*/rotate` (update) - the `*`
+   (read, create, delete), `transit/keys/dms-documents*/config` (update - for
+   crypto-shredding) and `transit/keys/dms-documents*/rotate` (update) - the `*`
    covers each tenant's own key - plus `sys/audit` (read, sudo) for the
-   audit-device check. Enable an audit device first
-   (`bao audit enable file file_path=/openbao/logs/audit.log`).
+   audit-device check. OpenBao 2.x only accepts audit devices declared in its
+   config (`audit "file" "file" { ... }` in `config.hcl`, which
+   `infra/openbao/bao-ops.sh` already checks for), not through the API.
 3. Create the AppRole: `bao auth enable approle`, then
    `bao write auth/approle/role/dms-core token_policies=dms-documents token_ttl=1h token_max_ttl=24h secret_id_ttl=0`.
    Read the role ID (`bao read auth/approle/role/dms-core/role-id`) and issue a
@@ -435,11 +466,37 @@ and FILE_SYSTEM were the only providers this application started with.
   section above) given this application has no runtime secrets-fetching
   client to build on yet; building one is future work, not part of this
   change.
-- **No physical-object purge on document delete** - `deleteDocument` is a
-  soft delete only, matching every other entity's `is_deleted` convention in
-  this codebase. The physical object is deliberately left in place (audit-
-  trail/legal-hold concerns argue against purging it automatically); a
-  separate administrative purge capability is future work.
+- **Deleting is two-step (V62).** `deleteDocument` is a soft delete: the
+  document goes to the recycle bin (`/api/v1/recycle-bin`, module RBR), where
+  it can be restored for the tenant's retention period
+  (`recycle_bin_settings`; default `RECYCLE_BIN_RETENTION_DAYS`, 30). After
+  that the hourly sweep (`RecycleBinService#purgeExpired`, one instance at a
+  time) purges it, or someone with `rbr.permanently-purge-documents` does it
+  straight away. A purge deletes every version's object, its encrypted copy and
+  its key row, so no copy of the bytes can be decrypted again. It also removes
+  the metadata values and access entries, and keeps the `documents` and
+  `document_versions` rows as tombstones (`purged_at`), because scan results,
+  import rows and audit events refer to them. A document with a protected
+  version (`is_protected`) is never purged.
+- **Versions (V62).** `POST /documents/{id}/versions` adds a version through
+  the scan gate. Once clean it becomes the current version (`1.0`, `1.1`, …).
+  Restoring an older version submits its bytes again as a new `rollback`
+  version, so the history only grows.
+- **Previews (V64).** Every uploadable type can be previewed in the browser
+  except AutoCAD `.dwg`, which needs a commercial converter.
+  - The browser renders these itself: PDF, `.docx`, spreadsheets (`xlsx`,
+    `xls`, `ods`, `csv`, `tsv`), email (`eml`, `msg`), images (HEIC and TIFF
+    included) and text.
+  - Office files it can't read (`doc`, `ppt`, `pptx`, `odt`, `odp`, `odg`,
+    `rtf`, `vsd`, `vsdx`) are converted to PDF on their first preview by the
+    Gotenberg container (`PREVIEW_CONVERTER_URL`; LibreOffice inside).
+    `DocumentRenditionService` keeps that PDF beside the original
+    (`document_versions.rendition_object_key`), encrypted the same way, and a
+    purge deletes it together with the original.
+  - With `PREVIEW_CONVERTER_URL` blank, those types are download-only.
+  - In production the converter sits on an internal-only Docker network
+    (`previews`), because LibreOffice can follow links embedded in a document.
+    Its Chromium (URL-fetching) routes are switched off.
 - **No `publishedVersionId` workflow is wired up** in this pass - no publish
   endpoint exists yet to drive it.
 - **No live-server test coverage for S3/MinIO/SeaweedFS/Azure Blob.** This

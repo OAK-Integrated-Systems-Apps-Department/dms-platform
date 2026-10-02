@@ -42,20 +42,31 @@ public class FolderAccessService {
     private final AccessPrincipals principals;
     private final AuthorizationService authorizationService;
     private final AuditService auditService;
+    private final AccessCache cache;
 
-    /** The caller's access to every folder of their tenant. */
+    /**
+     * The caller's access to every folder of their tenant. The folder tree and the caller's entries
+     * come from {@link AccessCache} while nothing access-related has changed; admin status is always
+     * the caller's own, from their token.
+     */
     @Transactional(readOnly = true)
     public FolderAccessView forCaller() {
         UUID tenantId = TenantContext.getTenantId();
-        List<Folder> folders = folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId);
+        UUID userId = TenantContext.getUserId();
+        List<Folder> folders = cache.folders(tenantId,
+                () -> folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId));
         boolean admin = authorizationService.isTenantAdmin();
-        Map<UUID, FolderAccessLevel> granted = new HashMap<>();
+        Map<UUID, FolderAccessLevel> granted = Map.of();
         // Only look the caller's entries up when something is actually restricted.
         if (!admin && folders.stream().anyMatch(f -> f.getAccessMode() == FolderAccessMode.restricted)) {
-            for (FolderAccessEntry entry : accessRepository.findForPrincipals(tenantId, TenantContext.getUserId(),
-                    principals.callerRoleIds())) {
-                granted.merge(entry.getFolderId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
-            }
+            granted = cache.folderGrants(tenantId, userId, () -> {
+                Map<UUID, FolderAccessLevel> best = new HashMap<>();
+                for (FolderAccessEntry entry : accessRepository.findForPrincipals(tenantId, userId,
+                        principals.callerRoleIds())) {
+                    best.merge(entry.getFolderId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
+                }
+                return best;
+            });
         }
         return new FolderAccessView(folders, granted, admin);
     }

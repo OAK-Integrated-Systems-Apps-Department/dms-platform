@@ -10,6 +10,7 @@ import {
   FolderInput,
   FolderOpen,
   FolderPlus,
+  History,
   LayoutGrid,
   List,
   Pencil,
@@ -29,6 +30,7 @@ import {
 } from "@/components/documents/browser-items"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { DocumentPreview } from "@/components/documents/document-preview"
+import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
 import { FolderPath } from "@/components/documents/folder-path"
 import {
   ActionDialog,
@@ -81,6 +83,7 @@ type Dialog =
   | { kind: "move-documents"; ids: string[]; key: number }
   | { kind: "access"; target: AccessTarget; key: number }
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
+  | { kind: "versions"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -113,6 +116,8 @@ function FolderView({ folderId }: { folderId: string | null }) {
     upload: hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE),
     moveDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_MOVE),
     export: hasPermission(PermissionCodes.FIE_BULK_EXPORT_EXECUTE),
+    versions: hasPermission(PermissionCodes.DVC_VERSIONS_VIEW),
+    restoreVersion: hasPermission(PermissionCodes.DVC_VERSIONS_RESTORE),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
@@ -269,6 +274,12 @@ function FolderView({ folderId }: { folderId: string | null }) {
       { label: "Open", icon: Eye, onSelect: () => setPreview(row) },
       { label: "Download", icon: Download, onSelect: () => void download(row) },
     ]
+    if (can.versions)
+      actions.push({
+        label: "Version history",
+        icon: History,
+        onSelect: () => setDialog({ kind: "versions", row, key: Date.now() }),
+      })
     if (can.moveDocuments && hasAccess(row.myAccess, "edit"))
       actions.push({
         label: "Move to",
@@ -717,8 +728,8 @@ function FolderView({ folderId }: { folderId: string | null }) {
         }
         description={
           dialog?.kind === "delete-documents" && dialog.rows.length > 1
-            ? "They disappear from My Documents for everyone. The audit trail keeps a record of them."
-            : "It disappears from My Documents for everyone. The audit trail keeps a record of it."
+            ? "They move to the recycle bin, where they can be restored until they're deleted for good."
+            : "It moves to the recycle bin, where it can be restored until it's deleted for good."
         }
         confirmLabel="Delete"
         pendingLabel="Deleting…"
@@ -745,6 +756,20 @@ function FolderView({ folderId }: { folderId: string | null }) {
           return failed.length ? failed.join(" ") : null
         }}
       />
+
+      {dialog?.kind === "versions" && (
+        <VersionHistorySheet
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          title={dialog.row.title}
+          canUpload={can.upload && hasAccess(dialog.row.myAccess, "edit")}
+          canRestore={
+            can.restoreVersion && hasAccess(dialog.row.myAccess, "edit")
+          }
+          onOpenChange={(open) => !open && setDialog(null)}
+          onChanged={refresh}
+        />
+      )}
 
       {preview && (
         <DocumentPreview

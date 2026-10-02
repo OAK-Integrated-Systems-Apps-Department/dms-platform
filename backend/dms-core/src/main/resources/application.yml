@@ -158,6 +158,26 @@ app:
     session-minutes: ${IMPERSONATION_SESSION_MINUTES:30}
 
 dms:
+  # Folder/document access (V53/V54): each tenant's folder tree and each
+  # user's access entries, kept between requests until anything that decides
+  # access changes (an access generation moved on by database triggers, V61).
+  # The TTL is only a backstop; 0 turns the cache off.
+  # Office previews (DocumentRenditionService): Word .doc, PowerPoint,
+  # OpenDocument, RTF and Visio files are converted to PDF by the Gotenberg
+  # container on their first preview. Blank = such files are download-only.
+  preview:
+    converter-url: ${PREVIEW_CONVERTER_URL:}
+    timeout: ${PREVIEW_TIMEOUT:PT90S}
+    max-bytes: ${PREVIEW_MAX_BYTES:52428800}
+  # Deleted documents stay in the recycle bin this long (each tenant can set
+  # its own), then the sweep purges them: files and keys destroyed for good.
+  documents:
+    recycle-bin:
+      retention-days: ${RECYCLE_BIN_RETENTION_DAYS:30}
+      purge-interval: ${RECYCLE_BIN_PURGE_INTERVAL:PT1H}
+  access:
+    cache-ttl: ${ACCESS_CACHE_TTL:PT5M}
+    cache-max-entries: ${ACCESS_CACHE_MAX_ENTRIES:10000}
   outbox:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
@@ -267,6 +287,12 @@ dms:
       app-role-mount: ${ENCRYPTION_OPENBAO_APPROLE_MOUNT:approle}
       mount: ${ENCRYPTION_OPENBAO_MOUNT:transit}
       key-name: ${ENCRYPTION_OPENBAO_KEY:dms-documents}
+    # Master-key rotation schedule. Each tenant sets its own interval and
+    # auto-rotate on the key screen; these are the defaults and the checker.
+    rotation:
+      default-interval-days: ${ENCRYPTION_ROTATION_DEFAULT_DAYS:365}
+      check-interval: ${ENCRYPTION_ROTATION_CHECK_INTERVAL:PT6H}
+      remind-every: ${ENCRYPTION_ROTATION_REMIND_EVERY:P7D}
   import-export:
     # Bulk import intake limits - see ImportExportProperties.
     max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}

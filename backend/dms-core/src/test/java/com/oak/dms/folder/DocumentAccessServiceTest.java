@@ -52,7 +52,7 @@ class DocumentAccessServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final AuditService audit = mock(AuditService.class);
     private final DocumentAccessService service = new DocumentAccessService(folderAccess, entries, documents,
-            new AccessPrincipals(userRoles, users, mock(RoleRepository.class)), audit);
+            new AccessPrincipals(userRoles, users, mock(RoleRepository.class)), audit, new AccessCache(mock(org.springframework.jdbc.core.JdbcTemplate.class), java.time.Duration.ZERO, 10));
 
     private final Folder open = Folder.builder().folderId(UUID.randomUUID()).tenantId(TENANT).folderName("Open")
             .accessMode(FolderAccessMode.inherit).build();

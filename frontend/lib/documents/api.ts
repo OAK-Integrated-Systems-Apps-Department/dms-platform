@@ -217,6 +217,19 @@ export async function previewDocumentFile(
   }
 }
 
+/**
+ * Office files the browser can't show (Word .doc, PowerPoint, OpenDocument,
+ * RTF, Visio) as a PDF - converted on the server the first time, then kept.
+ */
+export async function previewConvertedPdf(documentId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/preview.pdf`,
+    undefined,
+    "Could not prepare the preview."
+  )
+  return response.blob()
+}
+
 /** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
 export async function moveDocuments(
   documentIds: string[],
@@ -230,6 +243,87 @@ export async function moveDocuments(
       body: JSON.stringify({ documentIds, folderId }),
     },
     "Could not move the documents."
+  )
+}
+
+/** Mirrors DocumentVersionService.VersionItem - one row of a document's history. */
+export interface DocumentVersionDto {
+  versionId: string
+  versionNumber: number
+  /** "1.2" */
+  versionLabel: string
+  originalFilename: string
+  mimeType: string
+  sizeBytes: number
+  versionComment: string | null
+  /** initial_upload, replacement_upload, rollback, ... */
+  createdReason: string
+  scanStatus: string
+  servable: boolean
+  createdAt: string
+  createdBy: string | null
+  createdByName: string | null
+  /** the version that opens and downloads */
+  current: boolean
+}
+
+/** `GET /api/v1/documents/{id}/versions` - newest first. */
+export async function fetchDocumentVersions(
+  documentId: string
+): Promise<DocumentVersionDto[]> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions`,
+    undefined,
+    "Could not load the version history."
+  )
+}
+
+/** `GET /api/v1/documents/{id}/versions/{versionId}/content` - one version's file. */
+export async function downloadDocumentVersion(
+  documentId: string,
+  versionId: string
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/content`,
+    undefined,
+    "Could not download that version."
+  )
+  const blob = await response.blob()
+  const header = response.headers.get("Content-Disposition") ?? ""
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+  return { blob, filename: match ? decodeURIComponent(match[1]) : "document" }
+}
+
+/**
+ * `POST /api/v1/documents/{id}/versions` - a new version, scanned first; it
+ * becomes the current version once clean (201) or when the scan finishes (202).
+ */
+export async function uploadDocumentVersion(
+  documentId: string,
+  file: File,
+  comment?: string
+): Promise<IngestionTicketDto> {
+  const form = new FormData()
+  form.append("file", file)
+  const params = new URLSearchParams()
+  if (comment?.trim()) params.set("comment", comment.trim())
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions?${params.toString()}`,
+    { method: "POST", body: form },
+    "Could not upload the new version."
+  )
+  return response.json() as Promise<IngestionTicketDto>
+}
+
+/** `POST .../versions/{versionId}/restore` - adds a new version with that version's content. */
+export async function restoreDocumentVersion(
+  documentId: string,
+  versionId: string
+): Promise<IngestionTicketDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/restore`,
+    { method: "POST" },
+    "Could not restore that version."
   )
 }
 

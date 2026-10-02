@@ -107,4 +107,12 @@ public class ExportJob {
     /** Where {@link #fileObjectKey} is stored - never returned to clients. */
     @Column(name = "storage_location_id")
     private UUID storageLocationId;
+
+    /**
+     * The documents the finished file holds (V61) - its download is refused once the requester can't
+     * open one of them any more, or one was deleted. Never returned to clients.
+     */
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "document_ids", columnDefinition = "uuid[]")
+    private UUID[] documentIds;
 }

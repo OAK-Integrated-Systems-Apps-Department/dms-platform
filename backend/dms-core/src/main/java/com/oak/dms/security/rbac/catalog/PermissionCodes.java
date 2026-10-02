@@ -90,6 +90,13 @@ public final class PermissionCodes {
     // Filing documents into folders / moving them between folders (V51).
     public static final String DOCM_DOCUMENTS_MOVE = "docm.documents.move";
 
+    // Version history and the recycle bin - seeded by V10.
+    public static final String DVC_VERSIONS_VIEW = "dvc.view-version-history.view";
+    public static final String DVC_VERSIONS_RESTORE = "dvc.restore-prior-version";
+    public static final String RBR_RESTORE = "rbr.restore-deleted-documents";
+    public static final String RBR_PURGE = "rbr.permanently-purge-documents";
+    public static final String RBR_RETENTION = "rbr.manage-recycle-bin-retention";
+
     // Folders - DSC (Document Storage & Categorization) / Manage Folder
     // Structure, seeded by V10. Browsing the tree needs DOCM_DOCUMENTS_VIEW.
     public static final String DSC_FOLDERS_CREATE = "dsc.manage-folder-structure.create-folder";

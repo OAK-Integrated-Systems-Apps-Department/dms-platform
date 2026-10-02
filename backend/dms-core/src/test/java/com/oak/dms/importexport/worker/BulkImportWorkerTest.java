@@ -61,12 +61,18 @@ class BulkImportWorkerTest {
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private final com.oak.dms.security.auth.JobIdentity jobIdentity = mock(com.oak.dms.security.auth.JobIdentity.class);
     private final BulkImportWorker worker = new BulkImportWorker(importBatchRepository, importItemRepository,
-            importSchemaFields, rowValidator, recordCreator, finaliser, objectMapper, transactionManager);
+            importSchemaFields, rowValidator, recordCreator, finaliser, objectMapper, transactionManager, jobIdentity);
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        // The batch's creator is still an active user: bound as them, as JobIdentity does.
+        when(jobIdentity.bind(any(), any())).thenAnswer(call -> {
+            com.oak.dms.security.auth.TenantContext.set(call.getArgument(0), call.getArgument(1));
+            return true;
+        });
     }
 
     @AfterEach
@@ -215,6 +221,21 @@ class BulkImportWorkerTest {
         inOrder.verify(recordCreator).createRecord(eq(claimed), eq(items.get(1).getImportItemId()), any());
         inOrder.verify(finaliser).finalise(batch.getImportBatchId());
         assertThat(userDuringCreation.get()).isEqualTo(userId);
+    }
+
+    @Test
+    void onMessage_creatorNoLongerActive_failsTheRowsWithoutCreatingAnything_andFinalises() throws Exception {
+        ImportBatch batch = batch(ImportBatchStatus.queued);
+        List<ImportItem> items = List.of(item(batch, 2, "a.pdf"), item(batch, 3, "b.pdf"));
+        stubBatch(batch, items);
+        when(jobIdentity.bind(any(), any())).thenReturn(false); // deactivated since they started it
+
+        worker.onMessage(message(batch.getImportBatchId()));
+
+        verify(recordCreator).failAccessRevoked(eq(items.get(0).getImportItemId()), any());
+        verify(recordCreator).failAccessRevoked(eq(items.get(1).getImportItemId()), any());
+        verify(recordCreator, never()).createRecord(any(), any(), any());
+        verify(finaliser).finalise(batch.getImportBatchId());
     }
 
     @Test

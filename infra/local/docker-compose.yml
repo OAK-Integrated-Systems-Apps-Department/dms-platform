@@ -280,6 +280,26 @@ services:
       # listens - several minutes on a fresh volume.
       start_period: 600s
 
+  # Office previews: converts Word/PowerPoint/OpenDocument/RTF/Visio files to
+  # PDF (LibreOffice inside Gotenberg) so they can be shown in the browser -
+  # see dms-core's DocumentRenditionService. Internal only: no ports, and the
+  # Chromium routes (which fetch URLs) are switched off; only dms-core calls it.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oakdms-gotenberg
+    command:
+      - gotenberg
+      - --chromium-disable-routes=true
+      - --api-timeout=90s
+      - --libreoffice-auto-start=true
+      - --log-level=warn
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   dms-core:
     build:
       context: ../../backend
@@ -306,6 +326,8 @@ services:
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
       REDIS_HOST: redis
+      # Office files are converted to PDF for the preview (DocumentRenditionService).
+      PREVIEW_CONVERTER_URL: http://gotenberg:3000
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms

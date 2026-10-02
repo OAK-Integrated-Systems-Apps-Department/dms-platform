@@ -185,9 +185,11 @@ public class OpenBaoSession implements AutoCloseable {
             String response = request.retrieve().body(String.class);
             return mapper.readTree(response == null ? "{}" : response);
         } catch (RestClientException e) {
-            String status = e instanceof org.springframework.web.client.RestClientResponseException r
-                    ? " (HTTP " + r.getStatusCode().value() + ")" : "";
-            throw new KeyServiceException("OpenBao refused " + path + status, e);
+            // An HTTP error isn't kept as the cause: its message carries the body, which can hold a token.
+            if (e instanceof org.springframework.web.client.RestClientResponseException r) {
+                throw new KeyServiceException("OpenBao refused " + path + " (HTTP " + r.getStatusCode().value() + ")");
+            }
+            throw new KeyServiceException("OpenBao refused " + path, e);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new KeyServiceException("OpenBao returned an unreadable answer for " + path, e);
         }

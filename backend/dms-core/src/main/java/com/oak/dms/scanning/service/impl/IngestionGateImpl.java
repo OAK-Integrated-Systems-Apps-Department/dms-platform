@@ -208,6 +208,7 @@ public class IngestionGateImpl implements IngestionGate {
                     .folderId(request.folderId())
                     .targetDocumentId(request.targetDocumentId())
                     .title(request.title())
+                    .versionComment(request.versionComment())
                     .createdBy(userId)
                     .createdAt(now)
                     .build());

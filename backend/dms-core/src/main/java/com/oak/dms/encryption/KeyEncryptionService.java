@@ -67,6 +67,21 @@ public interface KeyEncryptionService {
     /** Adds a new master-key version; new data keys use it, older ones stay unwrappable until re-wrapped. */
     KeyInfo rotate(String scope);
 
+    /**
+     * Crypto-shredding: destroys every version of a tenant's master key, so no
+     * data key it wrapped can ever be unwrapped again. Irreversible. A scope
+     * whose key is already gone is fine (it can be retried); the platform key
+     * is never destroyed.
+     */
+    void destroy(String scope);
+
+    /** Refuses to destroy the shared platform key - it isn't any one tenant's. */
+    static void requireTenantScope(String scope) {
+        if (PLATFORM.equals(scope)) {
+            throw new IllegalArgumentException("The platform key is shared and is never destroyed");
+        }
+    }
+
     /** @param plaintext never logged or stored */
     record DataKey(byte[] plaintext, String wrapped, int version) {
     }

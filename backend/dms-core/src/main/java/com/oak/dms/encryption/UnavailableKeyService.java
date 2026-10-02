@@ -51,4 +51,9 @@ class UnavailableKeyService implements KeyEncryptionService {
     public KeyInfo rotate(String scope) {
         throw new KeyServiceException(reason);
     }
+
+    @Override
+    public void destroy(String scope) {
+        throw new KeyServiceException(reason);
+    }
 }

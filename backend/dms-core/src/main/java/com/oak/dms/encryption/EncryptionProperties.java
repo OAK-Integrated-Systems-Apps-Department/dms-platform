@@ -46,6 +46,19 @@ public class EncryptionProperties {
 
     private final LocalDev localDev = new LocalDev();
     private final OpenBao openbao = new OpenBao();
+    private final Rotation rotation = new Rotation();
+
+    /** The master-key rotation schedule (DE-FR-005) - each tenant can change its own on the key screen. */
+    @Getter
+    @Setter
+    public static class Rotation {
+        /** A tenant without its own setting is due this many days after its last rotation. 0 = no schedule. */
+        private int defaultIntervalDays = 365;
+        /** How often the schedule is checked (once across all instances). */
+        private java.time.Duration checkInterval = java.time.Duration.ofHours(6);
+        /** A key that is due but not auto-rotated is reminded about again after this long. */
+        private java.time.Duration remindEvery = java.time.Duration.ofDays(7);
+    }
 
     @Getter
     @Setter

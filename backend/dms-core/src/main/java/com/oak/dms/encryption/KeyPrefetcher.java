@@ -44,7 +44,7 @@ public class KeyPrefetcher {
                     join document_versions v on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
                     join storage_object_keys k on k.storage_location_id = v.storage_location_id
                                               and k.object_key = v.storage_object_key
-                    where d.document_id in (:ids)
+                    where d.document_id in (:ids) and k.shredded_at is null
                     """, Map.of("ids", chunk));
             Map<String, List<String>> byKey = new LinkedHashMap<>();
             for (Map<String, Object> row : rows) {

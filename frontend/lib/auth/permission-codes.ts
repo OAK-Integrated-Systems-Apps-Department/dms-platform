@@ -112,4 +112,10 @@ export const PermissionCodes = {
   DE_KEYS_VIEW: "de.manage-encryption-keys.view-key-metadata",
   DE_KEYS_ROTATE: "de.manage-encryption-keys.rotate-key",
   DE_KEYS_GENERATE: "de.manage-encryption-keys.generate-key",
+  // Version history (DVC) and the recycle bin (RBR), seeded by V10.
+  DVC_VERSIONS_VIEW: "dvc.view-version-history.view",
+  DVC_VERSIONS_RESTORE: "dvc.restore-prior-version",
+  RBR_RESTORE: "rbr.restore-deleted-documents",
+  RBR_PURGE: "rbr.permanently-purge-documents",
+  RBR_RETENTION: "rbr.manage-recycle-bin-retention",
 } as const

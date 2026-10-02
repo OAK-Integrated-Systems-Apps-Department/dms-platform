@@ -73,7 +73,9 @@ public class AuthorizationService {
      * TENANT_ADMIN despite the role being correctly granted in Keycloak).
      */
     private boolean hasFullAccess() {
-        if (TenantContext.getImpersonatorIdOrNull() != null) {
+        // A background job has no token either: it acts as the user who started it, whose realm
+        // roles are looked up the same way - live, so a job never runs with access they've lost.
+        if (TenantContext.getImpersonatorIdOrNull() != null || TenantContext.isBackgroundJob()) {
             // Deliberately NOT the real admin's own JWT authorities here -
             // those never change for the duration of an impersonation
             // session and would let a TENANT_ADMIN's own full access leak
@@ -138,8 +140,14 @@ public class AuthorizationService {
         try {
             roles = keycloakUserService.getPlatformRealmRoles(keycloakId);
         } catch (KeycloakIntegrationException e) {
-            log.warn("Could not resolve impersonation target {}'s platform roles from Keycloak - " +
-                    "treating as no elevated role for this request", keycloakId, e);
+            if (TenantContext.isBackgroundJob()) {
+                // Not "no elevated role" for a job: an admin's import would fail its rows for good, or
+                // their export quietly leave things out, over a passing outage. The job fails and is
+                // retried instead (an import batch is redelivered; an export can be run again).
+                throw new IllegalStateException("Could not check the job user's roles in Keycloak - try again", e);
+            }
+            log.warn("Could not resolve impersonation target {}'s platform roles from Keycloak - "
+                    + "treating as no elevated role for this request", keycloakId, e);
             return List.of();
         }
         TenantContext.cacheTargetPlatformRoles(roles);

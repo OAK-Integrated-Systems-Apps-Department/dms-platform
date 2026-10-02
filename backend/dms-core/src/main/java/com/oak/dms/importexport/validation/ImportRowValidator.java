@@ -73,7 +73,10 @@ public class ImportRowValidator {
                                          int schemaVersion, UUID tenantId) {
         List<ImportRowError> errors = new ArrayList<>();
 
-        if (item.getStagedObjectKey() == null) {
+        if (item.getStagedObjectKey() == null && item.getIntakeBlockedReason() != null) {
+            // A file was uploaded, and refused - say why, not just that there's no file.
+            errors.add(ImportRowError.error(FILE, "FILE_BLOCKED", item.getIntakeBlockedReason()));
+        } else if (item.getStagedObjectKey() == null) {
             errors.add(ImportRowError.error(FILE, "FILE_MISSING", "No file was uploaded for this row"));
         }
 

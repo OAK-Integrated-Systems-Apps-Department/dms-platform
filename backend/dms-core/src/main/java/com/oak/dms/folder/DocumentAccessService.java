@@ -45,6 +45,7 @@ public class DocumentAccessService {
     private final DocumentRepository documentRepository;
     private final AccessPrincipals principals;
     private final AuditService auditService;
+    private final AccessCache cache;
 
     /**
      * The caller's access to folders and to restricted documents, worked out once per request.
@@ -83,16 +84,21 @@ public class DocumentAccessService {
     @Transactional(readOnly = true)
     public DocumentAccessView forCaller() {
         UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
         FolderAccessView folders = folderAccess.forCaller();
         boolean admin = folderAccess.callerIsAdmin();
-        boolean anyRestricted = documentRepository.existsByTenantIdAndAccessModeAndDeletedFalse(tenantId,
-                FolderAccessMode.restricted);
-        Map<UUID, FolderAccessLevel> granted = new HashMap<>();
+        boolean anyRestricted = cache.anyRestrictedDocuments(tenantId, () ->
+                documentRepository.existsByTenantIdAndAccessModeAndDeletedFalse(tenantId, FolderAccessMode.restricted));
+        Map<UUID, FolderAccessLevel> granted = Map.of();
         if (!admin && anyRestricted) {
-            for (DocumentAccessEntry entry : accessRepository.findForPrincipals(tenantId, TenantContext.getUserId(),
-                    principals.callerRoleIds())) {
-                granted.merge(entry.getDocumentId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
-            }
+            granted = cache.documentGrants(tenantId, userId, () -> {
+                Map<UUID, FolderAccessLevel> best = new HashMap<>();
+                for (DocumentAccessEntry entry : accessRepository.findForPrincipals(tenantId, userId,
+                        principals.callerRoleIds())) {
+                    best.merge(entry.getDocumentId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
+                }
+                return best;
+            });
         }
         return new DocumentAccessView(folders, granted, admin, anyRestricted);
     }

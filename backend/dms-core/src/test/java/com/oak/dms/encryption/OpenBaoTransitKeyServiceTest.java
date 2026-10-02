@@ -120,7 +120,28 @@ class OpenBaoTransitKeyServiceTest {
         assertThatThrownBy(() -> keys.unwrap(PLATFORM, "vault:v1:x"))
                 .isInstanceOf(KeyServiceException.class)
                 .hasMessageContaining("HTTP 403")
-                .hasMessageNotContaining("SECRET");
+                .hasMessageNotContaining("SECRET")
+                // nor its cause: a logged stack trace would print the body
+                .satisfies(e -> assertThat(String.valueOf(e.getCause())).doesNotContain("SECRET"));
+    }
+
+    @Test
+    void destroy_marksTheTenantsKeyDeletable_thenDeletesIt_andAMissingKeyIsFine() {
+        String tenantKey = BASE + "/keys/dms-documents-" + TENANT;
+        server.expect(requestTo(tenantKey)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(KEY_OK, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(tenantKey + "/config")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"deletion_allowed\":true}")).andRespond(withSuccess());
+        server.expect(requestTo(tenantKey)).andExpect(method(HttpMethod.DELETE)).andRespond(withSuccess());
+        // The retry: the read finds no key (as real OpenBao answers it), so there is nothing to do.
+        server.expect(requestTo(tenantKey)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        OpenBaoTransitKeyService keys = keys();
+
+        keys.destroy(TENANT);
+        keys.destroy(TENANT); // a retry after it's gone
+        assertThatThrownBy(() -> keys.destroy(PLATFORM)).isInstanceOf(IllegalArgumentException.class);
+        server.verify();
     }
 
     @Test

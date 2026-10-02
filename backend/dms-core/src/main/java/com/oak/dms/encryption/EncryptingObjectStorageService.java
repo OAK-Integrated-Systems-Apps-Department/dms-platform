@@ -140,6 +140,10 @@ public class EncryptingObjectStorageService implements ObjectStorageService {
         if (row.isEmpty()) {
             return delegate.download(location, objectKey); // not encrypted (stored before, or deliberately plain)
         }
+        if (row.get().getShreddedAt() != null) {
+            throw new KeyEncryptionService.KeyServiceException("This file's encryption key was destroyed when its "
+                    + "organisation was removed - it can never be read again");
+        }
         DownloadedObject stored = delegate.download(location, physicalKey(row.get()));
         // Unwrapped by whichever service wrapped it, with the master key of its own scope - or taken
         // from the short-lived cache when the same key was just used (a bulk export, repeated previews).

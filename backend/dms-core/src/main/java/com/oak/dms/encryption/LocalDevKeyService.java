@@ -155,6 +155,14 @@ public class LocalDevKeyService implements KeyEncryptionService {
         return info(scope);
     }
 
+    @Override
+    public synchronized void destroy(String scope) {
+        KeyEncryptionService.requireTenantScope(scope);
+        if (scopes.remove(scope) != null) {
+            save(); // the backup copy too - otherwise a restore would bring the key back
+        }
+    }
+
     /** Whether the file has keys for a scope - for the startup check against stored objects. */
     synchronized boolean hasScope(String scope) {
         return scopes.containsKey(scope);

@@ -124,7 +124,14 @@ public final class AuditActionCatalog {
     public static final String ENCRYPTION_KEY_ROTATED = "ENCRYPTION_KEY_ROTATED";
     public static final String ENCRYPTION_KEYS_REWRAPPED = "ENCRYPTION_KEYS_REWRAPPED";
     public static final String ENCRYPTION_BACKFILL_COMPLETED = "ENCRYPTION_BACKFILL_COMPLETED";
+    public static final String ENCRYPTION_ROTATION_POLICY_CHANGED = "ENCRYPTION_ROTATION_POLICY_CHANGED";
+    public static final String ENCRYPTION_KEY_ROTATION_DUE = "ENCRYPTION_KEY_ROTATION_DUE";
+    public static final String ENCRYPTION_TENANT_KEYS_SHREDDED = "ENCRYPTION_TENANT_KEYS_SHREDDED";
     public static final String DOCUMENT_MOVED = "DOCUMENT_MOVED";
+    public static final String DOCUMENT_VERSION_RESTORED = "DOCUMENT_VERSION_RESTORED";
+    public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
+    public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
+    public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
@@ -339,7 +346,18 @@ public final class AuditActionCatalog {
             Map.entry(ENCRYPTION_KEY_ROTATED, new AuditActionSpec("DE", AuditSeverity.HIGH, false)),
             Map.entry(ENCRYPTION_KEYS_REWRAPPED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
             Map.entry(ENCRYPTION_BACKFILL_COMPLETED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            Map.entry(ENCRYPTION_ROTATION_POLICY_CHANGED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            // The schedule's reminder that a key is due for rotation (not auto-rotated) - system actor.
+            Map.entry(ENCRYPTION_KEY_ROTATION_DUE, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            // Crypto-shredding a removed tenant's keys: irreversible, so a reason is required.
+            Map.entry(ENCRYPTION_TENANT_KEYS_SHREDDED, new AuditActionSpec("DE", AuditSeverity.HIGH, true)),
             Map.entry(DOCUMENT_MOVED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            // Version history (DocumentVersionService) - module DVC; a new version itself is DOCUMENT_UPLOADED.
+            Map.entry(DOCUMENT_VERSION_RESTORED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
+            // The recycle bin (RecycleBinService) - module RBR. A purge destroys the files for good.
+            Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
+            Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),

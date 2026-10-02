@@ -11,12 +11,6 @@ import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.storage.dto.DownloadedObject;
-import com.oak.dms.storage.entity.StorageLocation;
-import com.oak.dms.storage.enums.StoragePurpose;
-import com.oak.dms.storage.exception.StorageConfigurationException;
-import com.oak.dms.storage.repository.StorageLocationRepository;
-import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -61,8 +55,6 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
-    private final StorageLocationRepository storageLocationRepository;
-    private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
     private final AuditService auditService;
     private final FolderService folderService;
@@ -70,6 +62,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentAccessService documentAccessService;
     private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
     private final DocumentTypeRepository documentTypeRepository;
+    private final VersionContent versionContent;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -256,32 +249,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, documentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("DocumentVersion", versionId));
 
-        StorageLocation location = storageLocationRepository
-                .findByStorageLocationIdAndDeletedFalse(version.getStorageLocationId())
-                .orElseThrow(() -> new StorageConfigurationException(
-                        "Storage location " + version.getStorageLocationId() + " referenced by version "
-                                + versionId + " no longer exists"));
-        // Defense in depth - the object key is never the sole tenant-isolation
-        // boundary. A platform-default location (tenantId null) is fine for
-        // any tenant; a tenant-owned location must match the caller's own.
-        if (location.getTenantId() != null && !location.getTenantId().equals(tenantId)) {
-            throw new ResourceNotFoundException("Document", documentId);
-        }
-        // Scan gate, read side. Only document-purpose locations ever back a
-        // version (the V39 trigger guarantees it; checked again here), so
-        // staging and quarantine are unreachable through this path. And only
-        // scanned-clean bytes are served - legacy versions uploaded before
-        // the gate existed are refused. An administrator's quarantine
-        // override ('overridden', V40) is servable by design.
-        if (location.getPurpose() != StoragePurpose.document) {
-            throw new ResourceNotFoundException("Document", documentId);
-        }
-        if (!version.isServable()) {
-            throw new DocumentNotScannedException(documentId);
-        }
-
-        DownloadedObject downloaded = objectStorageServiceFactory.resolve(location)
-                .download(location, version.getStorageObjectKey());
+        DownloadedDocument downloaded = versionContent.open(version);
 
         var event = auditService.event(action)
                 .objectType(AuditObjectTypes.DOCUMENT)
@@ -292,12 +260,7 @@ public class DocumentServiceImpl implements DocumentService {
             event.newValue(Map.of("via", job));
         }
         event.log();
-
-        // mimeType/sizeBytes come from DocumentVersion (the authoritative
-        // record), not downloaded's own best-effort values - see
-        // DownloadedDocument's own doc comment.
-        return new DownloadedDocument(downloaded.content(), version.getSizeBytes(), version.getMimeType(),
-                version.getOriginalFilename());
+        return downloaded;
     }
 
     @Override
@@ -312,10 +275,9 @@ public class DocumentServiceImpl implements DocumentService {
 
         log.info("Deleted document {}", documentId);
 
-        // Soft delete only - the physical object is deliberately left in
-        // place (audit-trail/legal-hold concerns argue against purging it
-        // on every soft delete). Physical purge is a documented limitation,
-        // not wired up in this pass - see docs/storage-architecture.md.
+        // Soft delete: it goes to the recycle bin, restorable until its tenant's
+        // retention period ends, then RecycleBinService purges it - every
+        // version's file and key destroyed.
         auditService.event(AuditActionCatalog.DOCUMENT_DELETED)
                 .objectType(AuditObjectTypes.DOCUMENT)
                 .objectId(documentId)

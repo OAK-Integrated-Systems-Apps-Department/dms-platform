@@ -86,6 +86,28 @@ class LocalDevKeyServiceTest {
     }
 
     @Test
+    void destroyingATenantsKey_removesItFromTheFileAndItsBackup_forGood() throws Exception {
+        Path keyFile = dir.resolve("keys.json");
+        Path backup = dir.resolve("backup/keys.json");
+        LocalDevKeyService keys = new LocalDevKeyService(keyFile, backup, mapper, true);
+        var forA = keys.generateDataKey("tenant-a");
+        var forB = keys.generateDataKey("tenant-b");
+
+        keys.destroy("tenant-a");
+        keys.destroy("tenant-a"); // already gone: fine, so a failed shred can be retried
+
+        assertThatThrownBy(() -> keys.unwrap("tenant-a", forA.wrapped()))
+                .isInstanceOf(KeyEncryptionService.KeyServiceException.class);
+        assertThat(keys.unwrap("tenant-b", forB.wrapped())).isEqualTo(forB.plaintext());
+        // Neither copy can bring it back.
+        assertThat(Files.readString(keyFile)).doesNotContain("tenant-a");
+        assertThat(Files.readString(backup)).doesNotContain("tenant-a");
+        assertThat(new LocalDevKeyService(keyFile, backup, mapper, false).hasScope("tenant-a")).isFalse();
+        assertThatThrownBy(() -> keys.destroy(KeyEncryptionService.PLATFORM))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void theOriginalSingleKeyFile_isStillReadAsThePlatformKey() throws Exception {
         Path keyFile = dir.resolve("old.json");
         LocalDevKeyService original = new LocalDevKeyService(keyFile, mapper, true);

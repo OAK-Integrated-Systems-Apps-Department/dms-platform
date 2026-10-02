@@ -22,12 +22,14 @@ public record IngestionRequest(
         String originalFilename,
         long contentLength,
         InputStream content,
-        UUID folderId
+        UUID folderId,
+        String versionComment
 ) {
 
     public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,
                             String title, String originalFilename, long contentLength, InputStream content) {
-        this(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename, contentLength, content, null);
+        this(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename, contentLength, content,
+                null, null);
     }
 
     public static IngestionRequest newDocument(UUID documentTypeId, String title, String originalFilename,
@@ -39,13 +41,19 @@ public record IngestionRequest(
     public static IngestionRequest newDocument(UUID documentTypeId, String title, String originalFilename,
                                                long contentLength, InputStream content, UUID folderId) {
         return new IngestionRequest(IngestionKind.new_document, "initial_upload", documentTypeId, null, title,
-                originalFilename, contentLength, content, folderId);
+                originalFilename, contentLength, content, folderId, null);
     }
 
     /** @param createdReason one of {@code replacement_upload}, {@code workflow_update}, {@code signed_copy}, {@code migration}, {@code rollback} */
     public static IngestionRequest newVersion(UUID documentId, String createdReason, String originalFilename,
                                               long contentLength, InputStream content) {
+        return newVersion(documentId, createdReason, originalFilename, contentLength, content, null);
+    }
+
+    /** @param versionComment what changed, shown in the version history; may be null */
+    public static IngestionRequest newVersion(UUID documentId, String createdReason, String originalFilename,
+                                              long contentLength, InputStream content, String versionComment) {
         return new IngestionRequest(IngestionKind.new_version, createdReason, null, documentId, null,
-                originalFilename, contentLength, content);
+                originalFilename, contentLength, content, null, versionComment);
     }
 }

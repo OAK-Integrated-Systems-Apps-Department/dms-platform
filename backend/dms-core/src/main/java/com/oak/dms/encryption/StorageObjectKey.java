@@ -72,4 +72,8 @@ public class StorageObjectKey {
 
     @Column(name = "rewrapped_at")
     private OffsetDateTime rewrappedAt;
+
+    /** Set when the tenant's keys were crypto-shredded (V60): the wrapped key is gone, the object unreadable. */
+    @Column(name = "shredded_at")
+    private OffsetDateTime shreddedAt;
 }

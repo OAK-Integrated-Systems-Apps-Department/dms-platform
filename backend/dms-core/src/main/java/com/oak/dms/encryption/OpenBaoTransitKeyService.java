@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -185,6 +186,36 @@ public class OpenBaoTransitKeyService implements KeyEncryptionService, AutoClose
         return info(scope);
     }
 
+    /**
+     * Transit keys can't be deleted until they're marked deletable, so: mark
+     * it, then delete it. Needs update on transit/keys/&lt;name&gt;/config and
+     * delete on transit/keys/&lt;name&gt;. Already gone (404 on the read) counts as done.
+     */
+    @Override
+    public void destroy(String scope) {
+        KeyEncryptionService.requireTenantScope(scope);
+        String name = keyNameFor(scope);
+        knownKeys.remove(name);
+        try {
+            // Read first: OpenBao answers a missing key with 404 here, but with 400 on config and delete.
+            authorised(token -> client.get().uri("/{mount}/keys/{name}", mount, name)
+                    .header("X-Vault-Token", token).retrieve().toBodilessEntity());
+            authorised(token -> client.post().uri("/{mount}/keys/{name}/config", mount, name)
+                    .header("X-Vault-Token", token).contentType(MediaType.APPLICATION_JSON)
+                    .body(json(Map.of("deletion_allowed", true))).retrieve().toBodilessEntity());
+            authorised(token -> client.delete().uri("/{mount}/keys/{name}", mount, name)
+                    .header("X-Vault-Token", token).retrieve().toBodilessEntity());
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() != 404) {
+                throw failure("destroy the transit key", e);
+            }
+        } catch (RestClientException e) {
+            throw failure("reach OpenBao", e);
+        }
+        knownKeys.remove(name);
+        log.warn("Destroyed OpenBao transit key {}/{} - everything it wrapped is now unreadable", mount, name);
+    }
+
     @Override
     public void close() {
         session.close();
@@ -198,9 +229,19 @@ public class OpenBaoTransitKeyService implements KeyEncryptionService, AutoClose
         for (int from = 0; from < ciphertexts.size(); from += BATCH) {
             List<String> chunk = ciphertexts.subList(from, Math.min(ciphertexts.size(), from + BATCH));
             List<Map<String, String>> input = chunk.stream().map(c -> Map.of("ciphertext", c)).toList();
+            // OpenBao answers 400 when any item fails, but still returns every item's result.
             String response = call(what, token -> client.post().uri(path, mount, name).header("X-Vault-Token", token)
                     .contentType(MediaType.APPLICATION_JSON).body(json(Map.of("batch_input", input)))
-                    .retrieve().body(String.class));
+                    .exchange((request, res) -> {
+                        String body = new String(res.getBody().readAllBytes(), StandardCharsets.UTF_8);
+                        int status = res.getStatusCode().value();
+                        if (res.getStatusCode().is2xxSuccessful() || status == 400 && body.contains("\"batch_results\"")) {
+                            return body;
+                        }
+                        // The body is left out: it could hold key material.
+                        throw new RestClientResponseException(res.getStatusText(), res.getStatusCode(),
+                                res.getStatusText(), null, null, null);
+                    }));
             JsonNode results = data(what, response).path("batch_results");
             for (int i = 0; i < chunk.size(); i++) {
                 JsonNode result = results.path(i);
@@ -260,9 +301,15 @@ public class OpenBaoTransitKeyService implements KeyEncryptionService, AutoClose
         }
     }
 
-    /** Never includes the response body - it could echo key material. */
+    /**
+     * Never includes the response body - it could echo key material. An HTTP
+     * error is therefore not kept as the cause (its message carries the body,
+     * and a logged stack trace would print it); only its status is named.
+     */
     private static KeyServiceException failure(String what, RestClientException e) {
-        String status = e instanceof RestClientResponseException r ? " (HTTP " + r.getStatusCode().value() + ")" : "";
-        return new KeyServiceException("OpenBao could not " + what + status, e);
+        if (e instanceof RestClientResponseException r) {
+            return new KeyServiceException("OpenBao could not " + what + " (HTTP " + r.getStatusCode().value() + ")");
+        }
+        return new KeyServiceException("OpenBao could not " + what, e);
     }
 }

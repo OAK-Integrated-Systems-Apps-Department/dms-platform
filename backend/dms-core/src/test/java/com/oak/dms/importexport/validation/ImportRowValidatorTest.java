@@ -63,6 +63,19 @@ class ImportRowValidatorTest {
     }
 
     @Test
+    void validate_fileRefusedAtIntake_saysWhy_notJustThatThereIsNoFile() {
+        var row = item(2, "contract.pdf", null);
+        row.setIntakeBlockedReason("The uploaded file was blocked by the virus scan (Eicar-Test-Signature) - "
+                + "upload a clean copy");
+
+        List<ImportRowError> errors = validate(row, new RowValues(null, Map.of()));
+
+        assertThat(errors).containsExactly(ImportRowError.error("file", "FILE_BLOCKED",
+                "The uploaded file was blocked by the virus scan (Eicar-Test-Signature) - upload a clean copy"));
+        assertThat(ImportRowValidator.hasErrors(errors)).isTrue();
+    }
+
+    @Test
     void validate_noStagedFile_failsFileMissing() {
         List<ImportRowError> errors = validate(item(2, "contract.pdf", null), new RowValues(null, Map.of()));
 
