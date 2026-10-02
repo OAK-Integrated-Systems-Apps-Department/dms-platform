@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import statistics
 import unicodedata
@@ -18,6 +19,8 @@ from . import field_confidence as fc
 # validation.py. extraction.py had its own, narrower ideas about what a
 # number looks like and never consulted it.
 from .patterns import detect_currency, parse_amount
+
+logger = logging.getLogger(__name__)
 
 try:
     from langdetect import detect_langs
@@ -975,18 +978,73 @@ def _known_vendor_match(
         return None
 
     best: tuple[float, str, tuple[int, int, int, int]] | None = None
+    tied_with: set[str] = set()
     for raw_text, bbox in lines[:_VENDOR_SEARCH_LINES]:
         candidate_key = _vendor_key(raw_text)
         if len(candidate_key) < 6:
             continue
         for key, vendor in by_key.items():
-            if candidate_key == key or key in candidate_key or candidate_key in key:
-                ratio = 1.0
-            else:
-                ratio = SequenceMatcher(None, candidate_key, key).ratio()
-            if ratio >= _KNOWN_VENDOR_MIN_RATIO and (best is None or ratio > best[0]):
+            ratio = _vendor_similarity(candidate_key, key)
+            if ratio < _KNOWN_VENDOR_MIN_RATIO:
+                continue
+            if best is None or ratio > best[0]:
                 best = (ratio, vendor, bbox)
-    return (best[1], best[2]) if best else None
+                tied_with = {vendor}
+            elif ratio == best[0]:
+                tied_with.add(vendor)
+    if best is None:
+        return None
+    if len(tied_with) > 1:
+        # The same text matched two different confirmed vendors equally
+        # well, so it cannot identify either. Real case: an Asiri
+        # letterhead sets its name stacked, and OCR returned the word
+        # "HOSPITAL" on a line of its own -- which is a substring of both
+        # "MEDIHELP HOSPITAL (PVT) LTD" and "Santa Dora Hospital (PVT)
+        # Ltd". It was returned as the vendor, marked `extracted`, and was
+        # a different company entirely. A confident wrong vendor is worse
+        # than falling through to the letterhead fallback.
+        logger.debug(
+            "known-vendor match refused: %d vendors tie at %.3f (%s)",
+            len(tied_with), best[0], ", ".join(sorted(tied_with)),
+        )
+        return None
+    return best[1], best[2]
+
+
+# Words that identify no company on their own, folded the same way
+# `_vendor_key` folds a name. A fragment that is only one of these cannot
+# support a containment match however long it is.
+_GENERIC_VENDOR_KEYS = frozenset(_vendor_key(m) for m in _COMPANY_MARKERS)
+
+
+def _vendor_similarity(candidate_key: str, known_key: str) -> float:
+    """How strongly a page line identifies a known vendor, in [0, 1].
+
+    Containment counts as a full match, because that is the case the list
+    exists for: a script letterhead loses its logo word and comes back as
+    "Dora Hospital (PVT) Ltd" for "Santa Dora Hospital (PVT) Ltd", and no
+    cleaning recovers the missing word.
+
+    **Unless the fragment identifies nothing.** An Asiri letterhead sets
+    its name stacked and OCR returned the word "HOSPITAL" alone -- a
+    substring of two different confirmed vendors, which was returned as
+    one of them, marked `extracted`, and was a different company. A
+    generic marker is exactly the fragment that carries no identity, and
+    `_COMPANY_MARKERS` already enumerates them for the letterhead scorer.
+
+    Length is deliberately NOT the test. It was tried: requiring the
+    fragment to be 70% of the name rejected "hospital" (36%) and also
+    rejected "MEDIHELP" (36%) on three real receipts, trading three
+    correct matches for one wrong one. "medihelp" is short and
+    distinctive; "hospital" is short and generic, and the difference is
+    the word, not the length.
+    """
+    if candidate_key == known_key:
+        return 1.0
+    shorter, longer = sorted((candidate_key, known_key), key=len)
+    if shorter in longer and shorter not in _GENERIC_VENDOR_KEYS:
+        return 1.0
+    return SequenceMatcher(None, candidate_key, known_key).ratio()
 
 
 # A letterhead lives at the top of page 1. Bounding the search stops a

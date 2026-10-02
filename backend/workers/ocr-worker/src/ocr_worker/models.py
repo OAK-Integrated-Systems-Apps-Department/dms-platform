@@ -200,6 +200,23 @@ class MetadataField(Base):
     is_deleted: Mapped[bool] = mapped_column(default=False)
 
 
+class DocumentOcrCorrection(Base):
+    """What a reviewer settled on, per field (V43). Read-only here.
+
+    `corrected_value` is populated for an acceptance too -- equal to the
+    original -- so "the true value of this field, as a human confirmed
+    it" is one column with no branch on `action`. That is what makes this
+    table usable as the source of the known-vendor list.
+    """
+
+    __tablename__ = "document_ocr_corrections"
+
+    correction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    field_key: Mapped[str] = mapped_column(String(100))
+    corrected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class MetadataFieldOption(Base):
     """Allowed values for a `dropdown`/`multi_select` field. Read-only
     here: extraction.py matches OCR'd text against this list rather than

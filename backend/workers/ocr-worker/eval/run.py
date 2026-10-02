@@ -322,7 +322,7 @@ def score_set(set_name: str, results, documents) -> tuple[dict, list[dict]]:
         correct = sum(
             1
             for key, expected in scoreable.items()
-            if key in fields and metrics.field_matches(expected, (fields[key] or {}).get("value"))
+            if key in fields and metrics.field_matches(expected, (fields[key] or {}).get("value"), key)
         )
         exact = correct / len(scoreable) if scoreable else 0.0
 
@@ -822,24 +822,38 @@ def main(argv: list[str] | None = None) -> int:
     session_factory = harness.make_session_factory()
     storage = harness.InMemoryStorage()
 
-    # The tenant's known-vendor list. In production it is built from
-    # values a human confirmed in the review screen; the eval has no
-    # review history, so it stands in the real set's own labels -- which
-    # ARE human-confirmed values, and is also exactly why `--no-vendor-
-    # seed` exists. A seeded run measures recognising a vendor already on
-    # file; an unseeded one measures a vendor nobody has filed before, and
-    # that is the number for a new tenant.
+    # The tenant's known-vendor list, LEAVE-ONE-OUT: each document is
+    # scored against a list built from every other document's confirmed
+    # vendor, never its own. That mirrors production, where the list comes
+    # from vendors a reviewer confirmed on documents that arrived earlier.
+    # See `harness.seed_known_vendors` for why whole-set seeding is not an
+    # option.
+    #
+    # The loader is called per document, so `current_doc_id` is rebound in
+    # the run loop below rather than captured once.
     real_documents = [d for d in documents if d.set_name == REAL]
-    known_vendors = [] if args.no_vendor_seed else harness.seed_known_vendors(real_documents)
-    if known_vendors:
-        print(f"[eval] known-vendor list seeded with {len(known_vendors)} confirmed vendor(s)", flush=True)
+    current_doc_id: dict[str, str | None] = {"value": None}
+
+    def known_vendors_loader(_tenant_id) -> list[str]:
+        if args.no_vendor_seed:
+            return []
+        return harness.seed_known_vendors(
+            real_documents, exclude_doc_id=current_doc_id["value"]
+        )
+
+    if args.no_vendor_seed:
+        print("[eval] known-vendor list DISABLED (--no-vendor-seed)", flush=True)
     else:
-        print("[eval] known-vendor list EMPTY (--no-vendor-seed or no real set)", flush=True)
+        print(
+            f"[eval] known-vendor list: leave-one-out over "
+            f"{len(harness.seed_known_vendors(real_documents))} confirmed vendor(s)",
+            flush=True,
+        )
 
     print("[eval] warming up models...", flush=True)
     pipeline = harness.build_pipeline(
         settings, session_factory, storage,
-        known_vendors_loader=(lambda _tenant_id: known_vendors) if known_vendors else None,
+        known_vendors_loader=known_vendors_loader,
     )
 
     results = []
@@ -861,6 +875,10 @@ def main(argv: list[str] | None = None) -> int:
     # the one-off cost of loading models.
     with rss.MemorySampler(interval_s=args.rss_interval_s) as sampler:
         for n, doc in enumerate(documents, start=1):
+            # Leave-one-out: the loader reads this on every call, so this
+            # document's own confirmed vendor is held out of the list it
+            # is about to be scored against.
+            current_doc_id["value"] = doc.doc_id
             result = harness.run_document(pipeline, session_factory, storage, doc)
             results.append(result)
             with progress_path.open("a", encoding="utf-8") as fh:

@@ -1072,3 +1072,78 @@ def test_a_default_outside_the_fields_options_is_not_applied():
         default_currency="LKR",
     )
     assert results[0].status == "not_found"
+
+
+# ----------------------------------------------------------------------
+# The known-vendor list must never name the wrong company
+# ----------------------------------------------------------------------
+_KNOWN = [
+    "MEDIHELP HOSPITAL (PVT) LTD",
+    "Santa Dora Hospital (PVT) Ltd",
+    "HEALTHGUARD PHARMACY LTD",
+]
+
+
+def _vendor_from(lines, known=_KNOWN):
+    results = extract_requested_fields(
+        specs=[FieldSpec("vendor_supplier_name", "text")],
+        text=" ".join(t for t, _ in lines),
+        zone_fields={},
+        lines_by_page={1: lines},
+        known_vendors=known,
+    )
+    return results[0]
+
+
+def test_a_known_vendor_is_recognised_through_a_lost_logo_word():
+    """The case the list exists for: a script letterhead came back as
+    "Dora Hospital (PVT) Ltd" with "Santa" lost to the font, and no
+    amount of cleaning turns the fragment back into the name."""
+    lines = [("Dora Hospital (PVT) Ltd", (100, 100, 600, 130))]
+    assert _vendor_from(lines).value == "Santa Dora Hospital (PVT) Ltd"
+
+
+def test_a_generic_word_shared_by_two_vendors_is_refused():
+    """Real: an Asiri letterhead sets its name stacked and OCR returned
+    "HOSPITAL" alone, which is a substring of two different confirmed
+    vendors. It was returned as the vendor, marked `extracted`, and was a
+    different company entirely."""
+    lines = [
+        ("ASIRI", (100, 40, 200, 70)),
+        ("HOSPITAL", (100, 100, 300, 130)),
+        ("ASIRI SURGICAL HOSPITAL PLC", (100, 160, 700, 190)),
+    ]
+    result = _vendor_from(lines)
+    assert result.value != "MEDIHELP HOSPITAL (PVT) LTD"
+    assert result.value != "Santa Dora Hospital (PVT) Ltd"
+    # Falls through to the letterhead fallback, which reads the page.
+    assert result.value == "ASIRI SURGICAL HOSPITAL PLC"
+
+
+def test_containment_turns_on_the_word_not_its_length():
+    """Length was tried as the test and was wrong: requiring the fragment
+    to be 70%% of the name rejected "hospital" (36%%) and also rejected
+    "MEDIHELP" (36%%) on three real receipts -- three correct matches
+    traded for one wrong one. Short and distinctive is not short and
+    generic."""
+    from ocr_worker.extraction import _KNOWN_VENDOR_MIN_RATIO, _vendor_key, _vendor_similarity
+
+    # Distinctive fragments: the case the list exists for.
+    assert _vendor_similarity(
+        _vendor_key("Dora Hospital (PVT) Ltd"), _vendor_key("Santa Dora Hospital (PVT) Ltd")
+    ) == 1.0
+    assert _vendor_similarity(
+        _vendor_key("MEDIHELP"), _vendor_key("MEDIHELP HOSPITAL (PVT) LTD")
+    ) == 1.0
+    # A generic marker identifies no company, whatever it is inside.
+    assert _vendor_similarity(
+        _vendor_key("HOSPITAL"), _vendor_key("MEDIHELP HOSPITAL (PVT) LTD")
+    ) < _KNOWN_VENDOR_MIN_RATIO
+    assert _vendor_similarity(
+        _vendor_key("PHARMACY"), _vendor_key("HEALTHGUARD PHARMACY LTD")
+    ) < _KNOWN_VENDOR_MIN_RATIO
+
+
+def test_an_unknown_vendor_is_not_forced_onto_the_nearest_entry():
+    lines = [("Northwind Trading Company", (100, 100, 700, 130))]
+    assert _vendor_from(lines).value == "Northwind Trading Company"

@@ -73,13 +73,31 @@ def _pool_worker_init(settings: Settings, threads_per_process: int, ready_counte
         if settings.ocr_orientation_enabled
         else NullOrientationClassifier()
     )
+    session_factory = make_session_factory(settings)
+
+    def load_known_vendors(tenant_id):
+        """Vendors this tenant's reviewers have already confirmed.
+
+        Its own short session, opened and closed per document: the
+        pipeline calls this during inference, which by design runs with no
+        transaction held (claim / run / commit, Phase 1). Reusing the
+        claim's session would reopen one for the whole inference and undo
+        that.
+        """
+        from .db import session_scope
+        from .repository import OcrRepository
+
+        with session_scope(session_factory) as session:
+            return OcrRepository(session).known_vendor_names(tenant_id)
+
     _pipeline = OcrPipeline(
         settings=settings,
-        session_factory=make_session_factory(settings),
+        session_factory=session_factory,
         storage=ObjectStorage(settings),
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
         orientation_classifier=orientation_classifier,
+        known_vendors_loader=load_known_vendors,
     )
 
     # Eager warm-up: pay the real model-construction cost now, once, not on

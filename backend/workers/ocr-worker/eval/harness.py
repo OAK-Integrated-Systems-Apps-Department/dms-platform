@@ -354,22 +354,32 @@ def run_document(
     return _run(pipeline, session_factory, storage, doc, specs)
 
 
-def seed_known_vendors(documents) -> list[str]:
-    """The confirmed vendor names for the real set, as the tenant's
-    known-vendor list would hold them.
+def seed_known_vendors(documents, *, exclude_doc_id: str | None = None) -> list[str]:
+    """The tenant's known-vendor list as it would stand when `exclude_doc_id`
+    arrives -- i.e. built from every OTHER document's confirmed vendor.
 
-    In production this list is built from values a human accepted or
-    corrected in the review screen (`document_ocr_corrections` plus
-    manually-sourced metadata values). The eval has no review history, so
-    it stands in the labels -- which is legitimate, because the labels ARE
-    human-confirmed values, and is also exactly why `eval.run --no-vendor-
-    seed` exists: a run seeded from the set it is scored against is
-    measuring recognition of a known vendor, not discovery of a new one.
-    Both numbers are reported, and the unseeded one is the one that says
-    what happens to a vendor nobody has filed before.
+    **Leave-one-out, and it has to be.** In production the list is built
+    from vendors a human already accepted or corrected in the review
+    screen, so a document is always scored against a list that does not
+    contain its own answer. Seeding from the whole set instead would hand
+    the matcher the very label it is about to be graded on, and the number
+    that came back would be "can it recognise a string it was just given",
+    which is not a question anyone needs answered.
+
+    It is not a theoretical concern. Whole-set seeding scored 83.9% here
+    against 86.0% unseeded, and both figures were meaningless: the gains
+    were self-matches and the losses were one vendor spelled two ways
+    across different documents.
+
+    A document whose vendor appears nowhere else is therefore scored with
+    that vendor absent from the list -- which is exactly right, because
+    the first invoice from a new supplier really does arrive before anyone
+    has confirmed its name.
     """
     seen: dict[str, str] = {}
     for doc in documents:
+        if exclude_doc_id is not None and doc.doc_id == exclude_doc_id:
+            continue
         name = (doc.fields or {}).get("vendor_supplier_name")
         if isinstance(name, str) and name.strip():
             seen.setdefault(name.strip().casefold(), name.strip())

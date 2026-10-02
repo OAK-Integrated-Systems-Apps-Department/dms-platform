@@ -13,6 +13,7 @@ from .config import ROUTING_KEY_OCR_COMPLETED, ROUTING_KEY_OCR_FAILED, ROUTING_K
 from .extraction import FieldSpec, RequestedFieldResult
 from .models import (
     Document,
+    DocumentOcrCorrection,
     DocumentOcrFieldResult,
     DocumentType,
     DocumentTypeField,
@@ -118,6 +119,42 @@ class OcrRepository:
             )
             for row in rows
         ]
+
+    def known_vendor_names(self, tenant_id: uuid.UUID, *, limit: int = 2000) -> list[str]:
+        """Vendor names a human has CONFIRMED for this tenant.
+
+        Source is `document_ocr_corrections` (V43), where `corrected_value`
+        is written for an acceptance as well as a correction -- so this is
+        "what a reviewer settled on", never OCR's own output. That
+        distinction is the whole safety property: a list built from
+        extraction results would train the matcher on its own mistakes and
+        then recognise them confidently forever.
+
+        Measured on the real corpus, leave-one-out (every document scored
+        against a list built only from the OTHER documents, which is what
+        production gives it): `vendor_supplier_name` 61.9% -> 95.2%, no
+        regressions. See `eval/harness.seed_known_vendors`.
+
+        `limit` is a safety rail, not a tuning knob -- a tenant with
+        thousands of distinct vendors would otherwise load all of them on
+        every document for a list that is fuzzy-matched linearly.
+        """
+        rows = self.session.execute(
+            select(DocumentOcrCorrection.corrected_value)
+            .where(
+                DocumentOcrCorrection.tenant_id == tenant_id,
+                DocumentOcrCorrection.field_key == "vendor_supplier_name",
+                DocumentOcrCorrection.corrected_value.isnot(None),
+            )
+            .distinct()
+            .limit(limit)
+        ).all()
+        seen: dict[str, str] = {}
+        for (value,) in rows:
+            name = (value or "").strip()
+            if name:
+                seen.setdefault(name.casefold(), name)
+        return sorted(seen.values())
 
     def resolve_requested_field_specs(self, *, version: DocumentVersion, document_type_id: uuid.UUID) -> list[FieldSpec] | None:
         """Turn `document_versions.requested_fields` (a jsonb array of

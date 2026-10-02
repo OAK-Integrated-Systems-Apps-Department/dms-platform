@@ -199,7 +199,7 @@ def _as_decimal(text: str):
         return None
 
 
-def field_matches(expected, actual) -> bool:
+def field_matches(expected, actual, field_key: str = "") -> bool:
     """Exact match after folding, with one deliberate exception.
 
     **Numeric values compare numerically.** The pipeline emits a decimal
@@ -223,7 +223,39 @@ def field_matches(expected, actual) -> bool:
     actual_number = _as_decimal(actual_text)
     if expected_number is not None and actual_number is not None:
         return expected_number == actual_number
+
+    if field_key in _PUNCTUATION_INSENSITIVE_FIELDS:
+        return _fold_trailing_punctuation(expected_text) == _fold_trailing_punctuation(actual_text)
     return False
+
+
+# Fields compared ignoring a trailing full stop and runs of whitespace,
+# on top of the case/whitespace folding `normalize_field_value` already
+# does. A company writes itself "Oak Integrated Systems (Pvt) Ltd" on one
+# invoice and "...Ltd." on the next, and scoring that as a different
+# vendor measures house style, not recognition.
+#
+# Only `vendor_supplier_name` today, and only `vendor_supplier_name`
+# should be added lightly: an identifier like `PO-74300.` would be a
+# genuinely different value with a stray character, not the same one
+# punctuated differently.
+_PUNCTUATION_INSENSITIVE_FIELDS = frozenset({"vendor_supplier_name"})
+
+
+def _fold_trailing_punctuation(text: str) -> str:
+    """Strip trailing `.`/`,`/`;`/`:` and collapse whitespace.
+
+    Deliberately NOT a general punctuation fold, and deliberately not a
+    word fold. `"Santa Dora Hospital"` and
+    `"Santa Dora Hospital (PVT) Ltd"` are different strings and stay
+    different here: a legal suffix is part of the name a reviewer typed,
+    and treating it as noise would let the pipeline score a correct
+    half-name as a full match. That distinction cost real accuracy once
+    already -- the corpus carried both spellings for one vendor and a
+    canonical known-vendor list could not satisfy both -- and the fix was
+    to normalise the LABELS, not to loosen the ruler until they agreed.
+    """
+    return re.sub(r"\s+", " ", text).strip().rstrip(".,;:").strip()
 
 
 @dataclass
@@ -333,7 +365,7 @@ def accumulate_field_counts(
         if status == "defaulted":
             continue
         bucket.produced += 1
-        ok = key in expected_fields and field_matches(expected_fields[key], value)
+        ok = key in expected_fields and field_matches(expected_fields[key], value, key)
         if ok:
             bucket.correct += 1
         if status == "extracted":

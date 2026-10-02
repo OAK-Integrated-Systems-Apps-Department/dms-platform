@@ -622,3 +622,43 @@ def test_a_real_regression_still_outranks_a_rendition_failure():
     ))
     assert (name, code) == ("FAILED", 1)
     assert "real set" in why
+
+
+# ----------------------------------------------------------------------
+# Vendor comparison: punctuation and case, never words
+# ----------------------------------------------------------------------
+def test_vendor_comparison_ignores_case_whitespace_and_a_trailing_stop():
+    """One company writes itself "...Ltd" on one invoice and "...Ltd." on
+    the next. Scoring that as a different vendor measures house style."""
+    assert metrics.field_matches(
+        "Oak Integrated Systems (Pvt) Ltd",
+        "OAK Integrated Systems (Pvt) Ltd.",
+        "vendor_supplier_name",
+    )
+    assert metrics.field_matches(
+        "ASIRI SURGICAL HOSPITAL PLC",
+        "  asiri   surgical hospital plc  ",
+        "vendor_supplier_name",
+    )
+
+
+def test_vendor_comparison_never_folds_away_a_legal_suffix():
+    """The load-bearing half of the rule. A half-name is a different
+    value, and loosening the ruler until two inconsistent labels agreed
+    was the alternative that was rejected -- the labels were normalised
+    instead."""
+    assert not metrics.field_matches(
+        "Santa Dora Hospital (PVT) Ltd", "Santa Dora Hospital", "vendor_supplier_name"
+    )
+    assert not metrics.field_matches(
+        "MEDIHELP HOSPITAL (PVT) LTD", "MEDIHELP", "vendor_supplier_name"
+    )
+
+
+def test_the_punctuation_fold_applies_to_no_other_field():
+    """`PO-74300.` is an identifier with a stray character, not the same
+    identifier punctuated differently."""
+    assert not metrics.field_matches("PO-74300", "PO-74300.", "purchase_order_number")
+    assert not metrics.field_matches("INV-001", "INV-001.", "invoice_number")
+    # And the default (no field_key) stays strict.
+    assert not metrics.field_matches("Acme Ltd", "Acme Ltd.")

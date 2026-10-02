@@ -918,6 +918,83 @@ ever leaves it. `GET /api/v1/documents/{documentId}/pages/{page}/image`
 and `POST /api/v1/documents/{documentId}/read-region` are the
 Keycloak-authenticated, tenant-scoped faces of these two routes.
 
+## The accuracy gate
+
+Two gates, and they answer different questions. Both are
+`python -m eval.compare BASELINE CANDIDATE`, so there is one rule and one
+implementation; what differs is which set is run and who runs it.
+
+### In CI, automatically — the synthetic veto
+
+`.github/workflows/ocr-accuracy-gate.yml` runs on any pull request
+touching this worker. It builds the image, runs the unit tests, runs the
+**synthetic** set, and fails the build when either:
+
+1. synthetic field accuracy drops below `eval/reports/synthetic-baseline.json`
+   beyond `compare.py`'s tolerance, or
+2. **any** document fails to produce a searchable PDF rendition.
+
+The second is not compared against a baseline at all. A rendition either
+happened or it did not, and that check exists because a real bug once
+produced no rendition for *every image upload* while every other number
+in the report stayed flat — accuracy, CER and latency are all blind to it.
+
+**The synthetic set can only veto.** It is generated and labelled by the
+same process it measures, so an improvement on it justifies nothing; a
+regression on it means something structural broke. CI never sees the real
+set: those documents are customer invoices carrying names, bank details
+and amounts, and they are gitignored.
+
+**Updating the baseline** is a deliberate act. When a change legitimately
+moves the synthetic numbers, re-run `--set synthetic --report-name
+synthetic-baseline`, commit the new file, and say in the commit message
+what moved and why. A baseline quietly refreshed to make a gate pass is
+the gate not existing.
+
+### Before a release, by hand — the real-set gate
+
+This is the one that answers OS-NFR-001, and it has to be run by someone
+with the real corpus on their machine.
+
+```bash
+# 1. The ruler first. Exits 1 on anything that would score the pipeline
+#    against a malformed label.
+docker run --rm -v "$PWD/../../..:/repo" \
+  -w /repo/backend/workers/ocr-worker \
+  -e PYTHONPATH=/repo/backend/workers/ocr-worker/src:/repo/backend/workers/ocr-worker \
+  local-ocr-worker:latest python -m eval.check_labels
+
+# 2. The run. Leave-one-out vendor seeding is the default and is what
+#    production does; add --no-vendor-seed only to measure a brand-new
+#    tenant with no review history.
+docker run --rm \
+  -v ocr_worker_hf_cache:/home/oakdms/.cache/huggingface \
+  -v ocr_worker_models:/home/oakdms/.paddlex \
+  -v "$PWD/../../..:/repo" -w /repo/backend/workers/ocr-worker \
+  -e PYTHONPATH=/repo/backend/workers/ocr-worker/src \
+  local-ocr-worker:latest \
+  python -m eval.run --set real --report-name release-candidate
+
+# 3. The gate, against the last release's report.
+docker run --rm -v "$PWD/../../..:/repo" \
+  -w /repo/backend/workers/ocr-worker \
+  -e PYTHONPATH=/repo/backend/workers/ocr-worker/src:/repo/backend/workers/ocr-worker \
+  local-ocr-worker:latest python -m eval.compare \
+    eval/reports/release-previous.json \
+    eval/reports/release-candidate.json
+```
+
+**Read the printed/handwritten split, not the headline.** OS-NFR-001's
+≥95% is for standard layouts; a form filled in by pen is not one and is
+reported separately. The release question is the **printed** figure and
+the **`extracted`-status precision** beside it — "when we said we were
+sure, were we right" is what decides whether a value can be filed without
+a human looking at it.
+
+Do not commit `release-candidate-real-detail.json`. It is per-document
+output from customer documents and is gitignored for that reason; the
+aggregate `.json`/`.md` redact values and are safe to keep.
+
 ## Evaluation labels
 
 The synthetic corpus labels itself. Real documents are labelled by hand,
@@ -1226,6 +1303,35 @@ no `ports:` (internal-only, see "Auth & service exposure"), its own
 `env_file`, and named volumes for the PaddleOCR/Docling model caches
 (`~/.paddlex`, `~/.cache/huggingface`) so they survive container restarts
 instead of re-downloading from Hugging Face every time.
+
+## Suggested `description` / `tags` — possible future work
+
+`description`, `tags` and `keywords` are `is_ocr_extractable = false`
+(V44), so the free-text fallback that used to write a summary and a
+keyword list no longer runs and those fields come back
+`not_extractable`.
+
+That fallback was never extraction. It *generated* a value from the
+document rather than reading one off it, and scoring it as extraction
+produced the most misleading number this project has had: `description`
+and `tags` were 42 of 136 labelled fields and scored **42/42**, because
+the labels had been pre-filled with the pipeline's own output and never
+corrected. Against corrected labels the same code scores 0/21 and 1/21.
+
+The generated value may still be *useful* — a reviewer offered a draft
+summary beats a reviewer typing one. Bringing it back should mean a
+**`suggested` status**, alongside `extracted` / `low_confidence` /
+`defaulted` / `not_extractable`: a value the UI offers and a human
+accepts, written to `document_metadata_values` only on acceptance and as
+`source="manual"` like any other reviewer action.
+
+What it must NOT be is an OCR field result, which is what it was. A
+suggestion that lands in `document_ocr_field_results` is counted as
+accuracy by the eval, and there is no honest label to score it against —
+nobody can say what the "correct" summary of an invoice is. Keeping it
+out of that table is what stops the 42/42 happening again.
+
+Not scheduled. Nothing in the worker is waiting on it.
 
 ## Handwriting detection — deferred, and why
 
