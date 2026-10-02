@@ -81,11 +81,13 @@ public class BulkImportController {
     @PostMapping(value = "/bulk-imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
     @Operation(summary = "Upload a filled-in import template (.xlsx or .csv) to start a bulk import")
-    public ResponseEntity<BulkImportCreatedResponse> createBatch(@RequestPart("template") MultipartFile template)
+    public ResponseEntity<BulkImportCreatedResponse> createBatch(@RequestPart("template") MultipartFile template,
+                                                                 @RequestParam(value = "folderId", required = false)
+                                                                 UUID folderId)
             throws IOException {
         try (InputStream content = template.getInputStream()) {
             BulkImportCreatedResponse response = bulkImportService.createBatch(template.getOriginalFilename(),
-                    template.getSize(), content);
+                    template.getSize(), content, folderId);
             return ResponseEntity.created(URI.create("/api/v1/bulk-imports/" + response.batchId())).body(response);
         }
     }

@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
 
-import { StepCard } from "./step-card"
+import { FriendlyDate } from "@/components/documents/browser-items"
+
+import { ProgressBar, StatTile, StepCard } from "./step-card"
 import { CancelImportDialog } from "./upload-files-step"
 
 interface BatchStatusCardProps {
@@ -23,31 +25,47 @@ interface BatchStatusCardProps {
  * or cancel an `uploading` batch, cancel a `queued` one, or just watch a
  * `running` one - the server refuses to cancel that.
  */
-export function BatchStatusCard({ batch, documentTypeName, onContinue, onCancel }: BatchStatusCardProps) {
+export function BatchStatusCard({
+  batch,
+  documentTypeName,
+  onContinue,
+  onCancel,
+}: BatchStatusCardProps) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const canCancel = batch.status === "uploading" || batch.status === "queued"
 
-  const { title, description, badge } = describe(batch)
+  const { title, description, badge, icon } = describe(batch)
 
   return (
-    <StepCard title={title} description={description}>
-      <dl className="mb-5 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Document type</dt>
-          <dd className="font-medium">{documentTypeName ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Started</dt>
-          <dd className="font-medium">{formatDateTime(batch.createdAt)}</dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Files</dt>
-          <dd className="flex items-center gap-2 font-medium">
-            {batch.filesReceived} of {batch.totalRecords} received
-            {badge}
-          </dd>
-        </div>
+    <StepCard icon={icon} title={title} description={description}>
+      <dl className="mb-4 grid gap-3 sm:grid-cols-3">
+        <StatTile label="Document type">{documentTypeName ?? "—"}</StatTile>
+        <StatTile label="Started">
+          <span title={formatDateTime(batch.createdAt)}>
+            <FriendlyDate iso={batch.createdAt} />
+          </span>
+        </StatTile>
+        <StatTile label="Files">
+          {batch.filesReceived} of {batch.totalRecords} received
+          {badge}
+        </StatTile>
       </dl>
+      <div className="mb-5">
+        {batch.status === "running" ? (
+          <ProgressBar
+            value={batch.successCount + batch.failureCount}
+            max={batch.totalRecords}
+            label="Rows processed"
+          />
+        ) : (
+          <ProgressBar
+            value={batch.filesReceived}
+            max={batch.totalRecords}
+            label="Files received"
+            tone={batch.status === "queued" ? "gold" : "primary"}
+          />
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2.5">
         {batch.status === "uploading" && onContinue && (
@@ -64,7 +82,11 @@ export function BatchStatusCard({ batch, documentTypeName, onContinue, onCancel 
         )}
       </div>
 
-      <CancelImportDialog open={cancelOpen} onOpenChange={setCancelOpen} onConfirm={onCancel} />
+      <CancelImportDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        onConfirm={onCancel}
+      />
     </StepCard>
   )
 }
@@ -74,8 +96,10 @@ function describe(batch: BulkImportStatusResponseDto) {
     case "uploading":
       return {
         title: "You have an import in progress",
-        description: "Pick up where you left off, or cancel it to start a new one.",
+        description:
+          "Pick up where you left off, or cancel it to start a new one.",
         badge: null,
+        icon: Upload,
       }
     case "queued":
       return {
@@ -90,17 +114,20 @@ function describe(batch: BulkImportStatusResponseDto) {
             Queued
           </Badge>
         ),
+        icon: Clock,
       }
     default:
       return {
         title: "Processing your import",
-        description: "Documents are being created. It can no longer be cancelled.",
+        description:
+          "Documents are being created. It can no longer be cancelled.",
         badge: (
           <Badge variant="outline">
             <Loader2 className="animate-spin" aria-hidden="true" />
             Processing
           </Badge>
         ),
+        icon: Loader2,
       }
   }
 }
@@ -109,5 +136,8 @@ function formatDateTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
 }

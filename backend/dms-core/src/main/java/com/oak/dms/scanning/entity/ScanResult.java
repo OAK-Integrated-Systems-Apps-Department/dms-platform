@@ -156,6 +156,10 @@ public class ScanResult {
     @Column(name = "title", updatable = false)
     private String title;
 
+    /** The folder a new document lands in once clean (V51); null = not in a folder. */
+    @Column(name = "folder_id", updatable = false)
+    private UUID folderId;
+
     /**
      * Set only on a quarantine release attempt (V40): the original,
      * quarantined scan result this row re-scans (or force-releases).

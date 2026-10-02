@@ -12,7 +12,11 @@ export type BulkImportStatus =
   | "cancelled"
 
 /** Statuses the worker has finished with - record creation is over. */
-export const FINISHED_STATUSES: readonly BulkImportStatus[] = ["completed", "completed_with_errors", "failed"]
+export const FINISHED_STATUSES: readonly BulkImportStatus[] = [
+  "completed",
+  "completed_with_errors",
+  "failed",
+]
 
 /** Submitted and not yet finished - worth polling for progress. */
 export function isInFlight(status: BulkImportStatus | undefined): boolean {
@@ -94,7 +98,9 @@ const BASE = `${API_BASE_URL}/api/v1/bulk-imports`
  * downloaded for. Gated on the import permission, unlike the full
  * /document-types list (which needs metadata-management access).
  */
-export async function fetchImportDocumentTypes(): Promise<ImportDocumentTypeOptionDto[]> {
+export async function fetchImportDocumentTypes(): Promise<
+  ImportDocumentTypeOptionDto[]
+> {
   return apiFetchJson<ImportDocumentTypeOptionDto[]>(
     `${API_BASE_URL}/api/v1/import-templates/document-types`,
     undefined,
@@ -118,7 +124,10 @@ export async function downloadImportTemplate(
 }
 
 /** GET /bulk-imports/{batchId}/failures/template - the failed rows as a template to fix and import again. */
-export async function downloadFailedRowsTemplate(batchId: string, format: TemplateFormat): Promise<DownloadedFile> {
+export async function downloadFailedRowsTemplate(
+  batchId: string,
+  format: TemplateFormat
+): Promise<DownloadedFile> {
   return downloadFile(
     `${BASE}/${batchId}/failures/template?format=${format}`,
     "Could not download the failed rows.",
@@ -126,10 +135,17 @@ export async function downloadFailedRowsTemplate(batchId: string, format: Templa
   )
 }
 
-async function downloadFile(url: string, fallbackMessage: string, fallbackName: string): Promise<DownloadedFile> {
+async function downloadFile(
+  url: string,
+  fallbackMessage: string,
+  fallbackName: string
+): Promise<DownloadedFile> {
   const response = await apiFetch(url, undefined, fallbackMessage)
   const blob = await response.blob()
-  const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? fallbackName
+  const filename =
+    filenameFromContentDisposition(
+      response.headers.get("Content-Disposition")
+    ) ?? fallbackName
   return { blob, filename }
 }
 
@@ -154,7 +170,10 @@ export const MAX_DIRECT_ARCHIVE_BYTES = 95 * 1024 * 1024
 export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 
 /** POST /bulk-imports/{batchId}/archive - one ZIP holding the template's files. */
-export async function uploadBulkImportArchive(batchId: string, archive: File): Promise<ImportArchiveReceivedResponseDto> {
+export async function uploadBulkImportArchive(
+  batchId: string,
+  archive: File
+): Promise<ImportArchiveReceivedResponseDto> {
   const body = new FormData()
   body.append("archive", archive)
   return apiFetchJson<ImportArchiveReceivedResponseDto>(
@@ -177,7 +196,9 @@ export interface UploadSessionDto {
 
 const SESSIONS = `${API_BASE_URL}/api/v1/upload-sessions`
 
-export async function createUploadSession(file: File): Promise<UploadSessionDto> {
+export async function createUploadSession(
+  file: File
+): Promise<UploadSessionDto> {
   return apiFetchJson<UploadSessionDto>(
     SESSIONS,
     {
@@ -189,21 +210,38 @@ export async function createUploadSession(file: File): Promise<UploadSessionDto>
   )
 }
 
-export async function fetchUploadSession(sessionId: string): Promise<UploadSessionDto> {
-  return apiFetchJson<UploadSessionDto>(`${SESSIONS}/${sessionId}`, undefined, "Could not check the upload.")
+export async function fetchUploadSession(
+  sessionId: string
+): Promise<UploadSessionDto> {
+  return apiFetchJson<UploadSessionDto>(
+    `${SESSIONS}/${sessionId}`,
+    undefined,
+    "Could not check the upload."
+  )
 }
 
 /** PUT one chunk at `offset` (must equal the bytes received so far). */
-export async function uploadSessionChunk(sessionId: string, offset: number, chunk: Blob): Promise<UploadSessionDto> {
+export async function uploadSessionChunk(
+  sessionId: string,
+  offset: number,
+  chunk: Blob
+): Promise<UploadSessionDto> {
   return apiFetchJson<UploadSessionDto>(
     `${SESSIONS}/${sessionId}/content?offset=${offset}`,
-    { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: chunk },
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: chunk,
+    },
     "A part of the upload failed."
   )
 }
 
 /** POST .../archive/from-upload-session - unpacks a completed resumable upload into the batch. */
-export async function unpackUploadSession(batchId: string, sessionId: string): Promise<ImportArchiveReceivedResponseDto> {
+export async function unpackUploadSession(
+  batchId: string,
+  sessionId: string
+): Promise<ImportArchiveReceivedResponseDto> {
   return apiFetchJson<ImportArchiveReceivedResponseDto>(
     `${BASE}/${batchId}/archive/from-upload-session?uploadSessionId=${encodeURIComponent(sessionId)}`,
     { method: "POST" },
@@ -212,16 +250,25 @@ export async function unpackUploadSession(batchId: string, sessionId: string): P
 }
 
 /** GET /bulk-imports/{batchId}/row-check - the template's rows with problems, checked now (before submit). */
-export async function fetchBulkImportRowCheck(batchId: string): Promise<ImportRowFailureDto[]> {
-  return apiFetchJson<ImportRowFailureDto[]>(`${BASE}/${batchId}/row-check`, undefined, "Could not check the rows.")
+export async function fetchBulkImportRowCheck(
+  batchId: string
+): Promise<ImportRowFailureDto[]> {
+  return apiFetchJson<ImportRowFailureDto[]>(
+    `${BASE}/${batchId}/row-check`,
+    undefined,
+    "Could not check the rows."
+  )
 }
 
 /** POST /bulk-imports - uploads the filled-in template (.xlsx or .csv) and opens a batch. */
-export async function createBulkImport(template: File): Promise<BulkImportCreatedResponseDto> {
+export async function createBulkImport(
+  template: File,
+  folderId?: string | null
+): Promise<BulkImportCreatedResponseDto> {
   const body = new FormData()
   body.append("template", template)
   return apiFetchJson<BulkImportCreatedResponseDto>(
-    BASE,
+    folderId ? `${BASE}?folderId=${encodeURIComponent(folderId)}` : BASE,
     { method: "POST", body },
     "Could not upload the template."
   )
@@ -232,7 +279,10 @@ export async function createBulkImport(template: File): Promise<BulkImportCreate
  * the batch for the duration of the request, so callers should send these
  * one at a time.
  */
-export async function uploadBulkImportFile(batchId: string, file: File): Promise<ImportFileReceivedResponseDto> {
+export async function uploadBulkImportFile(
+  batchId: string,
+  file: File
+): Promise<ImportFileReceivedResponseDto> {
   const body = new FormData()
   body.append("file", file)
   return apiFetchJson<ImportFileReceivedResponseDto>(
@@ -244,11 +294,17 @@ export async function uploadBulkImportFile(batchId: string, file: File): Promise
 
 /** POST /bulk-imports/{batchId}/submit - queues the batch (202, no body). */
 export async function submitBulkImport(batchId: string): Promise<void> {
-  await apiFetch(`${BASE}/${batchId}/submit`, { method: "POST" }, "Could not submit this import.")
+  await apiFetch(
+    `${BASE}/${batchId}/submit`,
+    { method: "POST" },
+    "Could not submit this import."
+  )
 }
 
 /** POST /bulk-imports/{batchId}/cancel - allowed while uploading or queued. */
-export async function cancelBulkImport(batchId: string): Promise<BulkImportStatusResponseDto> {
+export async function cancelBulkImport(
+  batchId: string
+): Promise<BulkImportStatusResponseDto> {
   return apiFetchJson<BulkImportStatusResponseDto>(
     `${BASE}/${batchId}/cancel`,
     { method: "POST" },
@@ -256,12 +312,20 @@ export async function cancelBulkImport(batchId: string): Promise<BulkImportStatu
   )
 }
 
-export async function fetchBulkImportStatus(batchId: string): Promise<BulkImportStatusResponseDto> {
-  return apiFetchJson<BulkImportStatusResponseDto>(`${BASE}/${batchId}`, undefined, "Could not load this import.")
+export async function fetchBulkImportStatus(
+  batchId: string
+): Promise<BulkImportStatusResponseDto> {
+  return apiFetchJson<BulkImportStatusResponseDto>(
+    `${BASE}/${batchId}`,
+    undefined,
+    "Could not load this import."
+  )
 }
 
 /** GET /bulk-imports/{batchId}/failures - the rows that failed and why. */
-export async function fetchBulkImportFailures(batchId: string): Promise<ImportRowFailureDto[]> {
+export async function fetchBulkImportFailures(
+  batchId: string
+): Promise<ImportRowFailureDto[]> {
   return apiFetchJson<ImportRowFailureDto[]>(
     `${BASE}/${batchId}/failures`,
     undefined,
@@ -280,7 +344,10 @@ export interface BulkImportPageDto {
 }
 
 /** GET /bulk-imports - the caller's own imports, newest first, finished ones included. `page` is 0-indexed. */
-export async function fetchMyBulkImports(page: number, size: number): Promise<BulkImportPageDto> {
+export async function fetchMyBulkImports(
+  page: number,
+  size: number
+): Promise<BulkImportPageDto> {
   return apiFetchJson<BulkImportPageDto>(
     `${BASE}?page=${page}&size=${size}&sort=createdAt,desc`,
     undefined,
@@ -290,7 +357,11 @@ export async function fetchMyBulkImports(page: number, size: number): Promise<Bu
 
 /** GET /bulk-imports/active - the caller's in-progress batch, or `null` (204) when there is none. */
 export async function fetchActiveBulkImport(): Promise<BulkImportStatusResponseDto | null> {
-  const response = await apiFetch(`${BASE}/active`, undefined, "Could not check for an import in progress.")
+  const response = await apiFetch(
+    `${BASE}/active`,
+    undefined,
+    "Could not check for an import in progress."
+  )
   if (response.status === 204) return null
   return (await response.json()) as BulkImportStatusResponseDto
 }

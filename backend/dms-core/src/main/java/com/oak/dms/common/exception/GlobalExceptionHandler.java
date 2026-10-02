@@ -129,6 +129,25 @@ public class GlobalExceptionHandler {
                         request.getRequestURI()));
     }
 
+    /*
+     * FOLLOW-UP (found 2026-10-01 while testing folders): a request parameter
+     * or path variable that can't be converted - e.g. folderId=undefined, or
+     * any malformed UUID - lands in handleUnexpected below and is answered
+     * 500 "Unhandled exception" (logged at ERROR with a stack trace), when it
+     * is a client mistake that should be a 400. Seen live:
+     * POST /api/v1/documents?folderId=undefined -> 500,
+     * MethodArgumentTypeMismatchException "Invalid UUID string: undefined".
+     * Affects every endpoint, not just folders, so not changed in the folders
+     * work. A fix adds an @ExceptionHandler for
+     * MethodArgumentTypeMismatchException (and MissingServletRequestParameterException)
+     * returning 400 with the parameter's name, plus a test.
+     * <p>
+     * Same root cause, seen 2026-10-01 while testing folder access: a request
+     * to a path no controller maps (POST /api/v1/exports/preview instead of
+     * /api/v1/export-jobs/preview) throws NoResourceFoundException, which also
+     * lands here and answers 500 instead of 404. The same fix should add a
+     * handler for NoResourceFoundException returning 404.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception on {}", request.getRequestURI(), ex);

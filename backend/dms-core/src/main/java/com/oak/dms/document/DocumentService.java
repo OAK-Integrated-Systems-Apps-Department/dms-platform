@@ -25,13 +25,65 @@ public interface DocumentService {
      * is {@code pending} and the caller polls the ticket. The client's
      * Content-Type is not used - the gate derives the type from content.
      */
+    default IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                   long contentLength, InputStream content) {
+        return uploadDocument(documentTypeId, title, originalFilename, contentLength, content, null);
+    }
+
+    /**
+     * @param folderId the folder to file the document in - checked now to exist and to let the caller
+     *                 upload into it (V53 folder access); null = the top level
+     */
     IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
-                                           long contentLength, InputStream content);
+                                           long contentLength, InputStream content, UUID folderId);
+
+    /**
+     * {@link #uploadDocument} for a background job (a Bulk Import batch) whose
+     * folder access was checked when the person requested it. The folder must
+     * still exist, but access isn't checked again: the job runs without the
+     * requester's login, so an admin's full access can't be re-established here.
+     */
+    IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId);
+
+    /**
+     * A page of the tenant's documents, newest first.
+     *
+     * @param folderId only that folder's documents; ignored when {@code allFolders}
+     * @param unfiled  with no folderId: only documents not in any folder
+     * @param query    optional case-insensitive title search
+     */
+    org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
+            UUID folderId, boolean allFolders, String query, org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * "Shared with me": restricted documents whose own list names the caller
+     * or one of their roles (not ones they own), wherever they're filed -
+     * even in a folder the caller can't open.
+     */
+    org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listSharedWithMe(
+            String query, org.springframework.data.domain.Pageable pageable);
+
+    /** Files the documents in {@code folderId} (null = out of any folder). Returns how many moved. */
+    int moveDocuments(java.util.List<UUID> documentIds, UUID folderId);
 
     DocumentResponse getDocument(UUID documentId);
 
     /** Streams the document's current version (falling back to its latest version if none is current yet). */
     DownloadedDocument downloadDocument(UUID documentId);
+
+    /** {@link #downloadDocument} for showing it in the browser - audited as DOCUMENT_VIEWED, not DOCUMENT_DOWNLOADED. */
+    DownloadedDocument previewDocument(UUID documentId);
+
+    /**
+     * {@link #downloadDocument} for a background job (a Bulk Export) whose
+     * selection was already limited, when requested, to what the requester
+     * could see. Every check but access is applied, and it's audited as a
+     * download through that job. Access isn't re-checked: the job runs
+     * without the requester's login, so an admin's full access can't be
+     * re-established here.
+     */
+    DownloadedDocument downloadDocumentFromJob(UUID documentId, String job);
 
     /** Soft-delete only - see this interface's implementation for why no physical object is purged. */
     void deleteDocument(UUID documentId);

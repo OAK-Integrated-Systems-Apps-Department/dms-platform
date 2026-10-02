@@ -26,6 +26,27 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
 
     long countByImportBatchIdAndStatus(UUID importBatchId, ImportItem.ImportItemStatus status);
 
+    // Intake reads that touch only the rows they need (ix_import_items_batch_filename,
+    // V52), instead of loading the whole batch for every uploaded file.
+
+    /** The rows listing this filename - trimmed, ignoring case, as ImportFilenameMatcher compares. */
+    @Query("select i from ImportItem i where i.importBatchId = :batchId "
+            + "and lower(trim(i.filenameReference)) = lower(:filename) order by i.rowNumber")
+    List<ImportItem> findAllByBatchAndFilename(@Param("batchId") UUID importBatchId, @Param("filename") String filename);
+
+    @Query("select coalesce(sum(i.stagedSizeBytes), 0) from ImportItem i where i.importBatchId = :batchId")
+    long sumStagedBytes(@Param("batchId") UUID importBatchId);
+
+    /** Rows whose file has arrived - staged, or already handed on to the scan gate. */
+    @Query("select count(i) from ImportItem i where i.importBatchId = :batchId "
+            + "and (i.stagedObjectKey is not null or i.scanResultId is not null)")
+    long countReceived(@Param("batchId") UUID importBatchId);
+
+    /** Filenames of the rows still waiting for their file, in row order. */
+    @Query("select i.filenameReference from ImportItem i where i.importBatchId = :batchId "
+            + "and i.stagedObjectKey is null and i.scanResultId is null order by i.rowNumber")
+    List<String> findMissingFilenames(@Param("batchId") UUID importBatchId);
+
     /**
      * Row-locks an item whose file the scan gate has accepted and which is
      * still waiting on the verdict - empty if it has been resolved already

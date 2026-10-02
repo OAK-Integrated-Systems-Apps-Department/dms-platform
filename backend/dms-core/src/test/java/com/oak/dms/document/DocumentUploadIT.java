@@ -67,6 +67,10 @@ class DocumentUploadIT {
     private StorageLocationRepository storageLocationRepository;
     @Autowired
     private WebApplicationContext context;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired
+    private com.oak.dms.storage.service.ObjectStorageServiceFactory objectStorageServiceFactory;
 
     @TempDir
     Path tempDir;
@@ -105,6 +109,14 @@ class DocumentUploadIT {
         assertThat(downloaded.filename()).isEqualTo("hello.txt");
         assertThat(downloaded.contentType()).isEqualTo("text/plain");
         assertThat(downloaded.sizeBytes()).isEqualTo(content.length);
+        // Encrypted at rest: what storage itself holds is not the file (Module DE).
+        assertThat(storedBytes(uploaded.documentId())).isNotEqualTo(content);
+        // The download is audited - it used to be dropped by a read-only transaction.
+        assertThat(auditCount("DOCUMENT_DOWNLOADED", uploaded.documentId())).isEqualTo(1);
+        try (var in = documentService.previewDocument(uploaded.documentId()).content()) {
+            assertThat(in.readAllBytes()).isEqualTo(content);
+        }
+        assertThat(auditCount("DOCUMENT_VIEWED", uploaded.documentId())).isEqualTo(1);
 
         documentService.deleteDocument(uploaded.documentId());
         assertThatThrownBy(() -> documentService.getDocument(uploaded.documentId()))
@@ -236,5 +248,22 @@ class DocumentUploadIT {
     }
 
     private record TenantFixture(UUID tenantId, UUID userId) {
+    }
+
+    /** The document's current version exactly as stored, without decryption. */
+    private byte[] storedBytes(UUID documentId) throws java.io.IOException {
+        var row = jdbc.queryForMap("select v.storage_location_id, v.storage_object_key from documents d "
+                + "join document_versions v on v.version_id = d.current_version_id where d.document_id = ?", documentId);
+        StorageLocation location = storageLocationRepository.findById((UUID) row.get("storage_location_id")).orElseThrow();
+        try (var in = objectStorageServiceFactory.resolveUnencrypted(location)
+                .download(location, (String) row.get("storage_object_key")).content()) {
+            return in.readAllBytes();
+        }
+    }
+
+    private int auditCount(String action, UUID objectId) {
+        Integer count = jdbc.queryForObject("select count(*) from audit_events where action = ? and object_id = ?",
+                Integer.class, action, objectId);
+        return count == null ? 0 : count;
     }
 }

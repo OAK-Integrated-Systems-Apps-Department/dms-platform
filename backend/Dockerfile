@@ -23,6 +23,10 @@ COPY --from=build /build/dms-core/target/dms-core.jar app.jar
 # the non-root oakdms user, so a named volume mounted at /data in
 # docker-compose.yml inherits this ownership instead of root:root.
 RUN mkdir -p /data/dms/documents && chown -R oakdms:oakdms /data
+# Development key file for encryption at rest (dms.encryption.provider=local-dev),
+# owned by oakdms so the named volume mounted here starts out writable. Production
+# uses OpenBao and never writes here.
+RUN mkdir -p /var/lib/dms-encryption && chown oakdms:oakdms /var/lib/dms-encryption && chmod 700 /var/lib/dms-encryption
 USER oakdms
 
 EXPOSE 8080

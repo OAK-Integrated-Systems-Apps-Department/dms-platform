@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, RotateCcw } from "lucide-react"
+import { AlertTriangle, Ban, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,9 @@ import { useUploadQueue } from "@/lib/bulk-imports/use-upload-queue"
 
 import { BatchStatusCard } from "./batch-status-card"
 import { ImportResultsCard } from "./import-results-card"
+import { ImportStepper } from "./import-stepper"
+import { MethodPicker, type ImportMethod } from "./method-picker"
+import { QuickUploadCard } from "./quick-upload-card"
 import { RecentImports } from "./recent-imports"
 import { StartImportSteps } from "./start-import-steps"
 import { StepCard } from "./step-card"
@@ -31,9 +34,14 @@ import { UploadFilesStep } from "./upload-files-step"
 export function BulkImportWizard() {
   const [batchId, setBatchId] = useState<string | null>(null)
   const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+  const [mode, setMode] = useState<ImportMethod>("quick")
 
   const bulkImport = useBulkImport(batchId)
-  const { documentTypes, isLoading: documentTypesLoading, error: documentTypesError } = useImportDocumentTypes()
+  const {
+    documentTypes,
+    isLoading: documentTypesLoading,
+    error: documentTypesError,
+  } = useImportDocumentTypes()
   const queue = useUploadQueue(() => {
     void bulkImport.refetchStatus()
   })
@@ -42,11 +50,14 @@ export function BulkImportWizard() {
   })
 
   function documentTypeName(documentTypeId: string): string | null {
-    return documentTypes.find((type) => type.documentTypeId === documentTypeId)?.name ?? null
+    return (
+      documentTypes.find((type) => type.documentTypeId === documentTypeId)
+        ?.name ?? null
+    )
   }
 
-  async function handleCreate(template: File) {
-    const result = await bulkImport.create(template)
+  async function handleCreate(template: File, folderId: string | null) {
+    const result = await bulkImport.create(template, folderId)
     if (result.batch) {
       const { batchId: createdId, totalRecords } = result.batch
       setCreatedNotice(
@@ -106,42 +117,52 @@ export function BulkImportWizard() {
     }
     if (status.status === "uploading") {
       return (
-        <UploadFilesStep
-          status={status}
-          createdNotice={createdNotice}
-          entries={queue.entries}
-          uploading={queue.busy}
-          onFiles={(files) => queue.addFiles(status.batchId, files)}
-          archive={archive.state}
-          archiveBusy={archive.busy}
-          onArchive={(file) => void archive.upload(status.batchId, file)}
-          onResumeArchive={() => void archive.resume()}
-          onSubmit={() => handleSubmit(status.batchId)}
-          onCancel={() => handleCancel(status.batchId)}
-        />
+        <>
+          <ImportStepper current={2} />
+          <UploadFilesStep
+            status={status}
+            createdNotice={createdNotice}
+            entries={queue.entries}
+            uploading={queue.busy}
+            onFiles={(files) => queue.addFiles(status.batchId, files)}
+            archive={archive.state}
+            archiveBusy={archive.busy}
+            onArchive={(file) => void archive.upload(status.batchId, file)}
+            onResumeArchive={() => void archive.resume()}
+            onSubmit={() => handleSubmit(status.batchId)}
+            onCancel={() => handleCancel(status.batchId)}
+          />
+        </>
       )
     }
     if (status.status === "queued" || status.status === "running") {
       return (
-        <BatchStatusCard
-          batch={status}
-          documentTypeName={documentTypeName(status.documentTypeId)}
-          onCancel={() => handleCancel(status.batchId)}
-        />
+        <>
+          <ImportStepper current={3} />
+          <BatchStatusCard
+            batch={status}
+            documentTypeName={documentTypeName(status.documentTypeId)}
+            onCancel={() => handleCancel(status.batchId)}
+          />
+        </>
       )
     }
     if (isFinished(status.status)) {
       return (
-        <ImportResultsCard
-          batch={status}
-          documentTypeName={documentTypeName(status.documentTypeId)}
-          onStartOver={handleStartOver}
-        />
+        <>
+          <ImportStepper current={4} complete />
+          <ImportResultsCard
+            batch={status}
+            documentTypeName={documentTypeName(status.documentTypeId)}
+            onStartOver={handleStartOver}
+          />
+        </>
       )
     }
     // Cancelled elsewhere (another tab) - it no longer blocks a new import.
     return (
       <StepCard
+        icon={Ban}
         title="This import was cancelled"
         description="Start a new import to upload more documents."
       >
@@ -157,33 +178,59 @@ export function BulkImportWizard() {
     return <LoadingState message="Checking for an import in progress…" />
   }
   if (bulkImport.activeError) {
-    return <ErrorPanel message={friendlyMessage(bulkImport.activeError, "Could not check for an import in progress.")} />
+    return (
+      <ErrorPanel
+        message={friendlyMessage(
+          bulkImport.activeError,
+          "Could not check for an import in progress."
+        )}
+      />
+    )
   }
 
   const active = bulkImport.active
   if (active) {
     return (
-      <BatchStatusCard
-        batch={active}
-        documentTypeName={documentTypeName(active.documentTypeId)}
-        onContinue={() => handleContinue(active.batchId)}
-        onCancel={() => handleCancel(active.batchId)}
-      />
+      <>
+        <ImportStepper current={active.status === "uploading" ? 2 : 3} />
+        <BatchStatusCard
+          batch={active}
+          documentTypeName={documentTypeName(active.documentTypeId)}
+          onContinue={() => handleContinue(active.batchId)}
+          onCancel={() => handleCancel(active.batchId)}
+        />
+      </>
     )
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <StartImportSteps
-        documentTypes={documentTypes}
-        documentTypesLoading={documentTypesLoading}
-        documentTypesError={
-          documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
-        }
-        creating={bulkImport.creating}
-        onCreate={handleCreate}
+      <MethodPicker value={mode} onChange={setMode} />
+      {mode === "quick" ? (
+        <QuickUploadCard />
+      ) : (
+        <div>
+          <ImportStepper current={1} />
+          <StartImportSteps
+            documentTypes={documentTypes}
+            documentTypesLoading={documentTypesLoading}
+            documentTypesError={
+              documentTypesError
+                ? friendlyMessage(
+                    documentTypesError,
+                    "Could not load document types."
+                  )
+                : null
+            }
+            creating={bulkImport.creating}
+            onCreate={handleCreate}
+          />
+        </div>
+      )}
+      <RecentImports
+        documentTypeName={documentTypeName}
+        onOpen={handleContinue}
       />
-      <RecentImports documentTypeName={documentTypeName} onOpen={handleContinue} />
     </div>
   )
 }
@@ -192,7 +239,7 @@ function ErrorPanel({ message }: { message: string }) {
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]"
+      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]"
     >
       <AlertTriangle size={20} className="text-[var(--rust)]" />
       <p className="text-[13.5px] text-muted-foreground">{message}</p>

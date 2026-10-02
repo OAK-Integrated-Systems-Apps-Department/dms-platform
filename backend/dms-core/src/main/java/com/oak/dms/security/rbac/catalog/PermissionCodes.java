@@ -87,6 +87,21 @@ public final class PermissionCodes {
     public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
     public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
     public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
+    // Filing documents into folders / moving them between folders (V51).
+    public static final String DOCM_DOCUMENTS_MOVE = "docm.documents.move";
+
+    // Folders - DSC (Document Storage & Categorization) / Manage Folder
+    // Structure, seeded by V10. Browsing the tree needs DOCM_DOCUMENTS_VIEW.
+    public static final String DSC_FOLDERS_CREATE = "dsc.manage-folder-structure.create-folder";
+    public static final String DSC_FOLDERS_RENAME_MOVE = "dsc.manage-folder-structure.rename-move-folder";
+    public static final String DSC_FOLDERS_DELETE = "dsc.manage-folder-structure.delete-folder";
+    // Folder access control (V10 codes, used from V53): who may get into a folder.
+    public static final String DSC_FOLDER_ACCESS_ASSIGN = "dsc.configure-folder-access-control.assign-permissions";
+    public static final String DSC_FOLDER_ACCESS_VIEW = "dsc.configure-folder-access-control.view-access-list";
+    // Encryption at rest (V10 codes, used from V55).
+    public static final String DE_KEYS_VIEW = "de.manage-encryption-keys.view-key-metadata";
+    public static final String DE_KEYS_ROTATE = "de.manage-encryption-keys.rotate-key";
+    public static final String DE_KEYS_GENERATE = "de.manage-encryption-keys.generate-key";
     // Quarantine review (V40) - granted to no role by default.
     // DOCM_QUARANTINE_OVERRIDE is deliberately separate from _RELEASE: it
     // force-releases a file the scanner still flags.

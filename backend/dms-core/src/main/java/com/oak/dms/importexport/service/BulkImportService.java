@@ -52,7 +52,13 @@ public interface BulkImportService {
      * picks the parser - {@code .csv} for a CSV template, anything else
      * (or null) for .xlsx.
      */
-    BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template);
+    default BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template) {
+        return createBatch(templateFilename, templateSize, template, null);
+    }
+
+    /** @param folderId the folder every document of the batch is filed in; null = not in a folder */
+    BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
+                                          UUID folderId);
 
     /**
      * Checks a still-uploading batch's rows now - data types, mandatory

@@ -60,11 +60,12 @@ import java.util.zip.ZipOutputStream;
  *   files/0001_&lt;original file name&gt;    each document's current version
  *   metadata.xlsx | metadata.csv            one row per document
  * </pre>
- * Files are read through {@link DocumentService#downloadDocument} - the
- * same tenant, scan-gate and servability checks (and DOCUMENT_DOWNLOADED
- * audit, once the FOLLOW-UP on DocumentServiceImpl#downloadDocument is
- * fixed) as a single download - so an export can never contain a file the
- * requester couldn't download one by one. A document whose file can't be
+ * Files are read through {@link DocumentService#downloadDocumentFromJob} -
+ * the same tenant, scan-gate and servability checks and DOCUMENT_DOWNLOADED
+ * audit as a single download. Access was applied when the export was
+ * requested (its selection leaves out what was hidden from the requester),
+ * so an export never contains a file the requester couldn't download one by
+ * one. A document whose file can't be
  * served (not scanned clean, for one) is still listed, with a note, and
  * its file left out. Needs {@code TenantContext} bound to the requester.
  */
@@ -85,6 +86,8 @@ public class ExportArchiveBuilder {
     private final MetadataFieldRepository metadataFieldRepository;
     private final DocumentService documentService;
     private final DocumentTypeFieldService documentTypeFieldService;
+    /** Unwraps a chunk's file keys in bulk first, instead of one key-service request per file. */
+    private final com.oak.dms.encryption.KeyPrefetcher keyPrefetcher;
 
     /** @param filesSkipped documents listed whose file couldn't be included */
     public record Result(int documentCount, long filesBytes, int filesSkipped) {
@@ -114,6 +117,9 @@ public class ExportArchiveBuilder {
                         .findAllByDocumentIdInAndTenantIdAndDeletedFalse(chunk, tenantId).stream()
                         .collect(Collectors.toMap(Document::getDocumentId, d -> d));
                 loadTypeNames(documents.values(), typeNames);
+                if (includeFiles) {
+                    keyPrefetcher.prefetchDocuments(documents.keySet());
+                }
                 for (UUID documentId : chunk) {
                     Document document = documents.get(documentId);
                     if (document == null) {
@@ -169,7 +175,7 @@ public class ExportArchiveBuilder {
     private String addFile(ZipOutputStream zip, UUID documentId, String entryName) throws IOException {
         DownloadedDocument downloaded;
         try {
-            downloaded = documentService.downloadDocument(documentId);
+            downloaded = documentService.downloadDocumentFromJob(documentId, "bulk_export");
         } catch (ApiException e) {
             return "File not included: " + e.getMessage();
         }

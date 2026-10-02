@@ -5,10 +5,12 @@ import { type DownloadedFile } from "@/lib/bulk-imports/api"
 const BASE = `${API_BASE_URL}/api/v1/export-jobs`
 
 /** Mirrors backend/dms-core's ExportType (export_jobs.export_type). */
-export type ExportType = "single_document" | "bulk_selection" | "bulk_folder" | "report_data"
+export type ExportType =
+  "single_document" | "bulk_selection" | "bulk_folder" | "report_data"
 
 /** Mirrors backend/dms-core's ExportJobStatus (export_jobs.status). */
-export type ExportJobStatus = "pending" | "processing" | "completed" | "failed" | "expired"
+export type ExportJobStatus =
+  "pending" | "processing" | "completed" | "failed" | "expired"
 
 /** The metadata sheet's format inside the export ZIP. */
 export type ExportMetadataFormat = "xlsx" | "csv"
@@ -47,6 +49,9 @@ export interface ExportJobPageDto {
 /** Mirrors CreateExportRequest. Dates are yyyy-MM-dd, inclusive. */
 export interface CreateExportRequestDto {
   documentIds?: string[]
+  /** A folder's documents - with its subfolders unless includeSubfolders is false. */
+  folderId?: string
+  includeSubfolders?: boolean
   documentTypeId?: string
   createdFrom?: string
   createdTo?: string
@@ -84,17 +89,29 @@ export async function fetchMyExportJobs(
   params.set("page", String(page))
   params.set("size", String(size))
   params.set("sort", "createdAt,desc")
-  return apiFetchJson(`${BASE}?${params.toString()}`, undefined, "Could not load your exports.")
+  return apiFetchJson(
+    `${BASE}?${params.toString()}`,
+    undefined,
+    "Could not load your exports."
+  )
 }
 
-export async function fetchExportDocumentTypes(): Promise<ExportDocumentTypeOptionDto[]> {
-  return apiFetchJson(`${BASE}/document-types`, undefined, "Could not load document types.")
+export async function fetchExportDocumentTypes(): Promise<
+  ExportDocumentTypeOptionDto[]
+> {
+  return apiFetchJson(
+    `${BASE}/document-types`,
+    undefined,
+    "Could not load document types."
+  )
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" }
 
 /** POST /export-jobs/preview - how many documents the export would hold; nothing is started. */
-export async function previewExport(request: CreateExportRequestDto): Promise<ExportPreviewDto> {
+export async function previewExport(
+  request: CreateExportRequestDto
+): Promise<ExportPreviewDto> {
   return apiFetchJson(
     `${BASE}/preview`,
     { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(request) },
@@ -103,7 +120,9 @@ export async function previewExport(request: CreateExportRequestDto): Promise<Ex
 }
 
 /** POST /export-jobs - starts the export in the background. */
-export async function requestExport(request: CreateExportRequestDto): Promise<ExportJobDto> {
+export async function requestExport(
+  request: CreateExportRequestDto
+): Promise<ExportJobDto> {
   return apiFetchJson(
     BASE,
     { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(request) },
@@ -112,8 +131,14 @@ export async function requestExport(request: CreateExportRequestDto): Promise<Ex
 }
 
 /** GET /export-jobs/{id}/download - the finished ZIP. */
-export async function downloadExport(exportJobId: string): Promise<DownloadedFile> {
-  const response = await apiFetch(`${BASE}/${exportJobId}/download`, undefined, "Could not download the export.")
+export async function downloadExport(
+  exportJobId: string
+): Promise<DownloadedFile> {
+  const response = await apiFetch(
+    `${BASE}/${exportJobId}/download`,
+    undefined,
+    "Could not download the export."
+  )
   const blob = await response.blob()
   const header = response.headers.get("Content-Disposition") ?? ""
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)

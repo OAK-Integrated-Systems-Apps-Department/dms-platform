@@ -11,7 +11,8 @@ interface WelcomeHeaderProps {
   /** Called with the files the user picked from the OS file dialog. */
   onUpload?: (files: FileList) => void
   /** Called with a trimmed, non-empty folder name once the user confirms one. */
-  onCreateFolder?: (name: string) => void
+  /** Opens the new-folder dialog; the button only shows when this is passed (the caller may create folders). */
+  onCreateFolder?: () => void
 }
 
 const btnGhostClass =
@@ -21,16 +22,14 @@ const btnPrimaryClass =
   "flex items-center gap-[7px] rounded-btn border border-primary bg-primary px-[15px] py-[9px] text-[13px] font-semibold text-primary-foreground"
 
 /** Date eyebrow + greeting + the two primary quick actions. */
-export function WelcomeHeader({ firstName, dateLabel, isLoadingName, onUpload, onCreateFolder }: WelcomeHeaderProps) {
+export function WelcomeHeader({
+  firstName,
+  dateLabel,
+  isLoadingName,
+  onUpload,
+  onCreateFolder,
+}: WelcomeHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  function handleCreateFolderClick() {
-    const name = window.prompt("Name this folder")
-    const trimmed = name?.trim()
-    if (trimmed) {
-      onCreateFolder?.(trimmed)
-    }
-  }
 
   function handleUploadClick() {
     fileInputRef.current?.click()
@@ -55,7 +54,10 @@ export function WelcomeHeader({ firstName, dateLabel, isLoadingName, onUpload, o
           {isLoadingName ? (
             <>
               Welcome back
-              <Loader2 size={20} className="animate-spin text-muted-foreground" />
+              <Loader2
+                size={20}
+                className="animate-spin text-muted-foreground"
+              />
             </>
           ) : (
             `Welcome back, ${firstName}`
@@ -63,13 +65,23 @@ export function WelcomeHeader({ firstName, dateLabel, isLoadingName, onUpload, o
         </h1>
       </div>
       <div className="flex gap-2.5">
-        <button type="button" className={btnGhostClass} onClick={handleCreateFolderClick}>
-          <FolderPlus size={16} />
-          Create folder
-        </button>
+        {onCreateFolder && (
+          <button
+            type="button"
+            className={btnGhostClass}
+            onClick={onCreateFolder}
+          >
+            <FolderPlus size={16} />
+            Create folder
+          </button>
+        )}
         {/* Only offered when the page wires it up (the caller may upload). */}
         {onUpload && (
-          <button type="button" className={btnPrimaryClass} onClick={handleUploadClick}>
+          <button
+            type="button"
+            className={btnPrimaryClass}
+            onClick={handleUploadClick}
+          >
             <Upload size={16} />
             Upload documents
           </button>

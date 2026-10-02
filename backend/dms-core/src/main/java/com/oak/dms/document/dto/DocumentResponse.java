@@ -14,6 +14,7 @@ public record DocumentResponse(
         UUID ownerUserId,
         String status,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        UUID folderId
 ) {
 }

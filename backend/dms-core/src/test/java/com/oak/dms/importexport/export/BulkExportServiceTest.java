@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.audit.helper.AuditEventBuilder;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderAccessView;
 import com.oak.dms.importexport.config.ExportJobProperties;
 import com.oak.dms.importexport.dto.CreateExportRequest;
 import com.oak.dms.importexport.dto.ExportJobResponse;
@@ -52,13 +54,20 @@ class BulkExportServiceTest {
     private final DocumentTypeRepository types = mock(DocumentTypeRepository.class);
     private final AuditService auditService = mock(AuditService.class);
     private final ExportJobProperties properties = new ExportJobProperties();
+    private final FolderAccessService access = mock(FolderAccessService.class);
+    private final com.oak.dms.folder.DocumentAccessService documentAccess =
+            mock(com.oak.dms.folder.DocumentAccessService.class);
     private final BulkExportService service = new BulkExportService(repository, selector, worker, types,
             mock(StorageLocationRepository.class), mock(ObjectStorageServiceFactory.class), auditService, properties,
-            new ObjectMapper().findAndRegisterModules());
+            new ObjectMapper().findAndRegisterModules(), access, documentAccess);
 
     @BeforeEach
     void setUp() {
         TenantContext.set(TENANT, USER);
+        // No folder is hidden from the requester.
+        when(access.forCaller()).thenReturn(new FolderAccessView(java.util.List.of(), java.util.Map.of(), false));
+        when(documentAccess.forCaller()).thenReturn(new com.oak.dms.folder.DocumentAccessService.DocumentAccessView(
+                new FolderAccessView(java.util.List.of(), java.util.Map.of(), false), java.util.Map.of(), false, false));
         when(auditService.event(anyString())).thenReturn(mock(AuditEventBuilder.class, Answers.RETURNS_SELF));
         when(types.findByDocumentTypeIdAndTenantIdAndDeletedFalse(TYPE, TENANT))
                 .thenReturn(Optional.of(DocumentType.builder().documentTypeId(TYPE).tenantId(TENANT).build()));
@@ -78,7 +87,7 @@ class BulkExportServiceTest {
     void request_byFilter_savesAPendingBulkSelectionForTheCaller_andStartsIt() throws Exception {
         CreateExportRequest request = new CreateExportRequest(null, TYPE, LocalDate.of(2026, 1, 1),
                 LocalDate.of(2026, 9, 30), "csv", true);
-        when(selector.count(TENANT, request)).thenReturn(12L);
+        when(selector.count(TENANT, request.withHidden(java.util.Set.of(), java.util.Set.of()))).thenReturn(12L);
 
         ExportJobResponse response = service.request(request);
 
@@ -88,9 +97,10 @@ class BulkExportServiceTest {
         verify(repository).save(org.mockito.ArgumentMatchers.argThat(job -> job.getRequestedBy().equals(USER)
                 && job.getTenantId().equals(TENANT) && job.getRequestParams().contains(TYPE.toString())));
         verify(worker).start(response.exportJobId()); // no transaction in a unit test: started at once
-        // What was stored round-trips into the same request for the worker.
+        // What was stored round-trips into the same request for the worker - with the
+        // requester's hidden folders (none here) fixed by the server.
         assertThat(new ObjectMapper().findAndRegisterModules().readValue(
-                captureParams(), CreateExportRequest.class)).isEqualTo(request);
+                captureParams(), CreateExportRequest.class)).isEqualTo(request.withHidden(java.util.Set.of(), java.util.Set.of()));
     }
 
     @Test
@@ -117,10 +127,10 @@ class BulkExportServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
 
         CreateExportRequest everything = new CreateExportRequest(null, TYPE, null, null, null, null);
-        when(selector.count(TENANT, everything)).thenReturn(5000L);
+        when(selector.count(TENANT, everything.withHidden(java.util.Set.of(), java.util.Set.of()))).thenReturn(5000L);
         assertThatThrownBy(() -> service.request(everything))
                 .isInstanceOf(BulkImportException.class).hasMessageContaining("at most 1000");
-        when(selector.count(TENANT, everything)).thenReturn(0L);
+        when(selector.count(TENANT, everything.withHidden(java.util.Set.of(), java.util.Set.of()))).thenReturn(0L);
         assertThatThrownBy(() -> service.request(everything))
                 .isInstanceOf(BulkImportException.class).hasMessageContaining("No documents match");
 

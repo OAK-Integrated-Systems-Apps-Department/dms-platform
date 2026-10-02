@@ -52,6 +52,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -110,8 +111,8 @@ class ImportRecordCreatorTest {
         ImportItem item = stagedItem();
         stub(item);
         UUID documentId = UUID.randomUUID();
-        when(documentService.uploadDocument(eq(documentTypeId), eq("Q3 report"), eq("Q3 report.pdf"), eq(1024L),
-                any())).thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
+        when(documentService.uploadDocumentFromJob(eq(documentTypeId), eq("Q3 report"), eq("Q3 report.pdf"), eq(1024L),
+                any(), isNull())).thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
 
         creator.createRecord(batch, item.getImportItemId(), fields);
 
@@ -137,7 +138,7 @@ class ImportRecordCreatorTest {
         stub(item);
         InputStream[] handedOver = new InputStream[1];
         IngestionTicketResponse pending = ticket(ScanResultStatus.pending, null, null, null);
-        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any())).thenAnswer(invocation -> {
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any())).thenAnswer(invocation -> {
             handedOver[0] = invocation.getArgument(4);
             return pending;
         });
@@ -161,7 +162,7 @@ class ImportRecordCreatorTest {
         ImportItem item = stagedItem();
         stub(item);
         IngestionTicketResponse pending = ticket(ScanResultStatus.pending, null, null, null);
-        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any())).thenReturn(pending);
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any())).thenReturn(pending);
 
         creator.createRecord(batch, item.getImportItemId(), fields);
 
@@ -204,7 +205,7 @@ class ImportRecordCreatorTest {
     void createRecord_gateRejectsFile_failsItemWithoutScanResult() throws Exception {
         ImportItem item = stagedItem();
         stub(item);
-        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
                 .thenThrow(new FileTooLargeException(100));
 
         creator.createRecord(batch, item.getImportItemId(), fields);
@@ -222,7 +223,7 @@ class ImportRecordCreatorTest {
     void createRecord_gatePlatformFailure_propagatesAndLeavesItemPending() {
         ImportItem item = stagedItem();
         stub(item);
-        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "Storage unavailable") { });
 
         assertThatThrownBy(() -> creator.createRecord(batch, item.getImportItemId(), fields))

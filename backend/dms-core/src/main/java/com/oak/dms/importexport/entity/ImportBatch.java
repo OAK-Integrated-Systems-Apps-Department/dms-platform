@@ -78,6 +78,10 @@ public class ImportBatch {
     @Column(name = "import_template_id", updatable = false)
     private UUID importTemplateId;
 
+    /** The folder the batch's documents are filed in (V51); null = not in a folder. */
+    @Column(name = "folder_id", updatable = false)
+    private UUID folderId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

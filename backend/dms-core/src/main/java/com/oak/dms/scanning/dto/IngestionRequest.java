@@ -21,13 +21,25 @@ public record IngestionRequest(
         String title,
         String originalFilename,
         long contentLength,
-        InputStream content
+        InputStream content,
+        UUID folderId
 ) {
+
+    public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,
+                            String title, String originalFilename, long contentLength, InputStream content) {
+        this(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename, contentLength, content, null);
+    }
 
     public static IngestionRequest newDocument(UUID documentTypeId, String title, String originalFilename,
                                                long contentLength, InputStream content) {
+        return newDocument(documentTypeId, title, originalFilename, contentLength, content, null);
+    }
+
+    /** @param folderId the folder the document is filed in once clean; null = not in a folder */
+    public static IngestionRequest newDocument(UUID documentTypeId, String title, String originalFilename,
+                                               long contentLength, InputStream content, UUID folderId) {
         return new IngestionRequest(IngestionKind.new_document, "initial_upload", documentTypeId, null, title,
-                originalFilename, contentLength, content);
+                originalFilename, contentLength, content, folderId);
     }
 
     /** @param createdReason one of {@code replacement_upload}, {@code workflow_update}, {@code signed_copy}, {@code migration}, {@code rollback} */

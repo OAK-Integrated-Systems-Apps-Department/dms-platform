@@ -259,6 +259,23 @@ services:
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       S3_ENDPOINT: http://seaweedfs:8333
+      # Encryption at rest (com.oak.dms.encryption, Module DE) - data keys wrapped
+      # by OpenBao Transit; the app refuses to start with anything less.
+      # OFF until OpenBao is provisioned for it - see the "Encryption at rest"
+      # runbook in docs/storage-architecture.md (Transit key + token policy,
+      # ENCRYPTION_OPENBAO_TOKEN in the secret store and secret-keys.txt, ENCRYPTION_OPENBAO_ADDR
+      # reachable from this container). Then set ENCRYPTION_ENABLED=true in
+      # .env and run "Encrypt existing documents" on the key management screen.
+      ENCRYPTION_ENABLED: ${ENCRYPTION_ENABLED:-false}
+      ENCRYPTION_PROVIDER: openbao
+      ENCRYPTION_REQUIRE_MANAGED_KEYS: "true"
+      # Every unwrap must be logged by OpenBao's audit device (DE-NFR-006).
+      ENCRYPTION_REQUIRE_AUDIT_DEVICE: "true"
+      ENCRYPTION_OPENBAO_ADDR: ${ENCRYPTION_OPENBAO_ADDR:-}
+      # AppRole: dms-core signs in, renews its token and signs in again itself.
+      ENCRYPTION_OPENBAO_AUTH: approle
+      ENCRYPTION_OPENBAO_ROLE_ID: ${ENCRYPTION_OPENBAO_ROLE_ID:-}
+      ENCRYPTION_OPENBAO_SECRET_ID: ${ENCRYPTION_OPENBAO_SECRET_ID:-}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

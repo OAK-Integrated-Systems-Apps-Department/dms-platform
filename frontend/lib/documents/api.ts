@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
 export interface SelectableDocumentTypeDto {
@@ -38,8 +39,14 @@ export interface IngestionTicketDto {
 }
 
 /** Active document types the caller may upload as (needs only docm.documents.create). */
-export async function fetchSelectableDocumentTypes(): Promise<SelectableDocumentTypeDto[]> {
-  return apiFetchJson(`${API_BASE_URL}/api/v1/document-types/selectable`, undefined, "Could not load document types.")
+export async function fetchSelectableDocumentTypes(): Promise<
+  SelectableDocumentTypeDto[]
+> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/document-types/selectable`,
+    undefined,
+    "Could not load document types."
+  )
 }
 
 /**
@@ -47,15 +54,196 @@ export async function fetchSelectableDocumentTypes(): Promise<SelectableDocument
  * 413 (too large), 415 (type not allowed), 422 (blocked by the malware scan)
  * and any other failure - `status` tells them apart.
  */
-export async function uploadDocument(file: File, documentTypeId: string, title: string): Promise<IngestionTicketDto> {
+export async function uploadDocument(
+  file: File,
+  documentTypeId: string,
+  title: string,
+  folderId?: string | null
+): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
   // No Content-Type header: the browser must set the multipart boundary itself.
   const params = new URLSearchParams({ documentTypeId, title })
+  if (folderId) params.set("folderId", folderId)
   const response = await apiFetch(
     `${API_BASE_URL}/api/v1/documents?${params.toString()}`,
     { method: "POST", body: form },
     "Upload failed."
   )
   return response.json() as Promise<IngestionTicketDto>
+}
+
+/** Mirrors DocumentListItem - one row of the document browser. */
+export interface DocumentListItemDto {
+  documentId: string
+  title: string
+  documentTypeId: string
+  documentTypeName: string | null
+  folderId: string | null
+  fileName: string | null
+  sizeBytes: number | null
+  mimeType: string | null
+  versionNumber: number | null
+  ownerUserId: string
+  createdAt: string
+  /** Has its own access list (V54) instead of following its folder. */
+  restricted: boolean
+  /** What the caller may do with it. */
+  myAccess: FolderAccessLevel
+}
+
+/** Mirrors DocumentAccessResponse - who can open a document. */
+export interface DocumentAccessDto {
+  documentId: string
+  /** inherit = follows its folder; restricted = its own list. */
+  mode: "inherit" | "restricted"
+  effectiveMode: "everyone" | "restricted"
+  folderId: string | null
+  inheritedFromFolderId: string | null
+  inheritedFromName: string | null
+  entries: FolderAccessEntryDto[]
+  myAccess: FolderAccessLevel
+  canManage: boolean
+}
+
+export async function fetchDocumentAccess(
+  documentId: string
+): Promise<DocumentAccessDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/access`,
+    undefined,
+    "Could not load who can open this document."
+  )
+}
+
+export async function saveDocumentAccess(
+  documentId: string,
+  mode: "inherit" | "restricted",
+  entries: Pick<
+    FolderAccessEntryDto,
+    "principalType" | "principalId" | "level"
+  >[]
+): Promise<DocumentAccessDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/access`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, entries }),
+    },
+    "Could not save who can open this document."
+  )
+}
+
+export interface DocumentPageDto {
+  content: DocumentListItemDto[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  last: boolean
+}
+
+/**
+ * `GET /api/v1/documents`. `folderId` = that folder; null = documents not in
+ * any folder; `all` = every document (with `q`, a title search). `page` is 0-indexed.
+ */
+export async function fetchDocuments(params: {
+  folderId: string | null
+  all?: boolean
+  q?: string
+  page: number
+  size: number
+}): Promise<DocumentPageDto> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size),
+    sort: "createdAt,desc",
+  })
+  if (params.folderId) search.set("folderId", params.folderId)
+  if (params.all) search.set("all", "true")
+  if (params.q?.trim()) search.set("q", params.q.trim())
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
+    undefined,
+    "Could not load documents."
+  )
+}
+
+/** Documents shared with the caller by name or role (restricted documents they don't own), newest first. */
+export async function fetchSharedWithMe(params: {
+  q?: string
+  page: number
+  size: number
+}): Promise<DocumentPageDto> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size),
+    sort: "createdAt,desc",
+  })
+  if (params.q?.trim()) search.set("q", params.q.trim())
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/shared-with-me?${search.toString()}`,
+    undefined,
+    "Could not load what's shared with you."
+  )
+}
+
+/** Soft-deletes a document (`DELETE /api/v1/documents/{id}`). */
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}`,
+    { method: "DELETE" },
+    "Could not delete the document."
+  )
+}
+
+/** The file for the in-app preview - audited as viewed, not downloaded. */
+export async function previewDocumentFile(
+  documentId: string
+): Promise<{ blob: Blob; contentType: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/content?inline=true`,
+    undefined,
+    "Could not open the document."
+  )
+  const blob = await response.blob()
+  return {
+    blob,
+    contentType: (response.headers.get("Content-Type") ?? blob.type ?? "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase(),
+  }
+}
+
+/** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
+export async function moveDocuments(
+  documentIds: string[],
+  folderId: string | null
+): Promise<{ moved: number }> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/move`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentIds, folderId }),
+    },
+    "Could not move the documents."
+  )
+}
+
+/** `GET /api/v1/documents/{id}/content` - the current version's file. */
+export async function downloadDocumentFile(
+  documentId: string
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/content`,
+    undefined,
+    "Could not download the document."
+  )
+  const blob = await response.blob()
+  const header = response.headers.get("Content-Disposition") ?? ""
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+  return { blob, filename: match ? decodeURIComponent(match[1]) : "document" }
 }

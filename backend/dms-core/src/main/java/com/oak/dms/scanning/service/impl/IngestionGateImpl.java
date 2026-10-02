@@ -1,6 +1,7 @@
 package com.oak.dms.scanning.service.impl;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.scanning.enums.ScanMode;
 import com.oak.dms.scanning.dto.DetectedFileType;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
@@ -142,7 +143,12 @@ public class IngestionGateImpl implements IngestionGate {
         EncryptionMarkerInputStream encryptionWatch = detected.pdf() ? new EncryptionMarkerInputStream(hashing) : null;
         StoredObjectMetadata stored;
         try {
-            stored = objectStorageServiceFactory.resolve(staging).upload(staging, row.getStagingObjectKey(),
+            // Encrypted at rest like everything else. A cloud scanner (GuardDuty / Defender) reads the staged
+            // object in place, so there the storage's own server-side encryption protects it instead - the
+            // upload is refused if the staging location doesn't have it.
+            stored = (engine.getScanMode() == ScanMode.post_store_object
+                    ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
+                    : objectStorageServiceFactory.resolve(staging)).upload(staging, row.getStagingObjectKey(),
                     encryptionWatch != null ? encryptionWatch : hashing, request.contentLength(), detected.mimeType());
         } catch (StorageException e) {
             storageObjectMover.deleteQuietly(staging, row.getStagingObjectKey());
@@ -199,6 +205,7 @@ public class IngestionGateImpl implements IngestionGate {
                     .ingestionKind(request.kind())
                     .createdReason(request.createdReason())
                     .documentTypeId(request.documentTypeId())
+                    .folderId(request.folderId())
                     .targetDocumentId(request.targetDocumentId())
                     .title(request.title())
                     .createdBy(userId)

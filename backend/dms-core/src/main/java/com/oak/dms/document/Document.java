@@ -2,6 +2,8 @@ package com.oak.dms.document;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -90,4 +92,18 @@ public class Document {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
+
+    /** The folder the document is filed in (V51); null = not in a folder. */
+    @Column(name = "folder_id")
+    private UUID folderId;
+
+    /**
+     * inherit = follow the folder (top level: everyone); restricted = only the
+     * people and roles in document_access (V54) - see
+     * {@link com.oak.dms.folder.DocumentAccessService}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "access_mode", nullable = false)
+    @Builder.Default
+    private com.oak.dms.folder.FolderAccessMode accessMode = com.oak.dms.folder.FolderAccessMode.inherit;
 }

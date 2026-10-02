@@ -41,7 +41,7 @@ public class ImportFilenameMatcher {
     }
 
     /** Drops any client-supplied directory prefix and surrounding whitespace. */
-    static String normalize(String originalFilename) {
+    public static String normalize(String originalFilename) {
         if (originalFilename == null) {
             return "";
         }

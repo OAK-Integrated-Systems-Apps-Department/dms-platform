@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, RotateCcw, Send, X } from "lucide-react"
+import { FileUp, ListChecks, Loader2, RotateCcw, Send, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -69,7 +69,12 @@ export function UploadFilesStep({
   }
 
   const cancelButton = (
-    <Button variant="outline" size="sm" onClick={() => setCancelOpen(true)} disabled={submitting}>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setCancelOpen(true)}
+      disabled={submitting}
+    >
       <X />
       Cancel import
     </Button>
@@ -78,19 +83,27 @@ export function UploadFilesStep({
   return (
     <div className="flex flex-col gap-4">
       <StepCard
-        step={3}
+        icon={FileUp}
         title="Upload the files"
-        description="Drop the files named in your template. They're matched to rows by filename and uploaded one at a time."
+        description="Drop the files named in your template - one by one or as a ZIP. They're matched to rows by filename, and each one is virus-scanned as it arrives: an infected file is refused straight away and never stored."
         action={cancelButton}
       >
         {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
 
         <div className="grid gap-3 md:grid-cols-2">
-          <FileDropzone multiple onFiles={onFiles} disabled={archiveBusy} label="Upload import files">
-            <span className="font-semibold text-foreground">Drag files here</span> or click to browse
+          <FileDropzone
+            multiple
+            onFiles={onFiles}
+            disabled={archiveBusy}
+            label="Upload import files"
+          >
+            <span className="font-semibold text-foreground">
+              Drag files here
+            </span>{" "}
+            or click to browse
             <span className="mt-0.5 block text-[12px]">
-              Up to 100 MB per file - PDF, Office and OpenDocument files, images (incl. HEIC), email (.msg/.eml),
-              Visio, DWG, text/CSV/XML/JSON
+              Up to 100 MB per file - PDF, Office and OpenDocument files, images
+              (incl. HEIC), email (.msg/.eml), Visio, DWG, text/CSV/XML/JSON
             </span>
           </FileDropzone>
           <FileDropzone
@@ -99,8 +112,13 @@ export function UploadFilesStep({
             onFiles={(files) => files[0] && onArchive(files[0])}
             label="Upload the files as one ZIP"
           >
-            <span className="font-semibold text-foreground">Or drop one .zip</span> with all the files
-            <span className="mt-0.5 block text-[12px]">Up to 2 GB - large ZIPs resume if the connection drops</span>
+            <span className="font-semibold text-foreground">
+              Or drop one .zip
+            </span>{" "}
+            with all the files
+            <span className="mt-0.5 block text-[12px]">
+              Up to 2 GB - large ZIPs resume if the connection drops
+            </span>
           </FileDropzone>
         </div>
         <ArchiveStatus state={archive} onResume={onResumeArchive} />
@@ -109,9 +127,14 @@ export function UploadFilesStep({
           <div>
             <div className="mb-2 flex items-baseline justify-between gap-2">
               <h3 className="text-[13px] font-semibold">Uploads</h3>
-              <p className="text-[12.5px] text-muted-foreground" aria-live="polite">
-                <span className="font-semibold text-foreground">{status.filesReceived}</span> of{" "}
-                {status.totalRecords} received
+              <p
+                className="text-[12.5px] text-muted-foreground"
+                aria-live="polite"
+              >
+                <span className="font-semibold text-foreground">
+                  {status.filesReceived}
+                </span>{" "}
+                of {status.totalRecords} received
               </p>
             </div>
             {entries.length === 0 ? (
@@ -129,7 +152,10 @@ export function UploadFilesStep({
 
           <div>
             <h3 className="mb-2 text-[13px] font-semibold">
-              Still missing {missingCount > 0 && <span className="text-muted-foreground">({missingCount})</span>}
+              Still missing{" "}
+              {missingCount > 0 && (
+                <span className="text-muted-foreground">({missingCount})</span>
+              )}
             </h3>
             {allReceived ? (
               <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[12.5px] text-muted-foreground">
@@ -138,7 +164,11 @@ export function UploadFilesStep({
             ) : (
               <ul className="max-h-[320px] overflow-y-auto rounded-md border border-border px-3.5 py-2 text-[12.5px]">
                 {status.missingFilenames.map((filename, index) => (
-                  <li key={`${filename}-${index}`} className="truncate py-0.5 font-mono" title={filename}>
+                  <li
+                    key={`${filename}-${index}`}
+                    className="truncate py-0.5 font-mono"
+                    title={filename}
+                  >
                     {filename}
                   </li>
                 ))}
@@ -149,14 +179,18 @@ export function UploadFilesStep({
       </StepCard>
 
       <StepCard
+        icon={ListChecks}
         title="Check the rows"
         description="The template's values checked against the document type's fields now, so problems can be fixed before anything is imported."
       >
-        <RowCheckPanel batchId={status.batchId} totalRecords={status.totalRecords} />
+        <RowCheckPanel
+          batchId={status.batchId}
+          totalRecords={status.totalRecords}
+        />
       </StepCard>
 
       <StepCard
-        step={4}
+        icon={Send}
         title="Submit for processing"
         description={
           allReceived
@@ -165,12 +199,17 @@ export function UploadFilesStep({
         }
         action={cancelButton}
       >
-        <Button onClick={handleSubmitClick} disabled={uploading || archiveBusy || submitting}>
+        <Button
+          onClick={handleSubmitClick}
+          disabled={uploading || archiveBusy || submitting}
+        >
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
           {submitting ? "Submitting…" : "Submit import"}
         </Button>
         {(uploading || archiveBusy) && (
-          <p className="mt-2 text-[12.5px] text-muted-foreground">Wait for the uploads in progress to finish.</p>
+          <p className="mt-2 text-[12.5px] text-muted-foreground">
+            Wait for the uploads in progress to finish.
+          </p>
         )}
         {submitError && <InlineError>{submitError}</InlineError>}
       </StepCard>
@@ -184,7 +223,11 @@ export function UploadFilesStep({
         pendingLabel="Submitting…"
         onConfirm={onSubmit}
       />
-      <CancelImportDialog open={cancelOpen} onOpenChange={setCancelOpen} onConfirm={onCancel} />
+      <CancelImportDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        onConfirm={onCancel}
+      />
     </div>
   )
 }
@@ -220,7 +263,9 @@ function UploadRow({ entry }: { entry: UploadQueueEntry }) {
           {entry.file.name}
         </p>
         {entry.state === "error" && entry.error && (
-          <p className="mt-0.5 text-[12px] leading-[1.5] text-[var(--rust)]">{entry.error}</p>
+          <p className="mt-0.5 text-[12px] leading-[1.5] text-[var(--rust)]">
+            {entry.error}
+          </p>
         )}
       </div>
       <UploadStateBadge entry={entry} />
@@ -246,28 +291,44 @@ function UploadStateBadge({ entry }: { entry: UploadQueueEntry }) {
   }
 }
 
-function ArchiveStatus({ state, onResume }: { state: ArchiveUploadState; onResume: () => void }) {
+function ArchiveStatus({
+  state,
+  onResume,
+}: {
+  state: ArchiveUploadState
+  onResume: () => void
+}) {
   switch (state.kind) {
     case "idle":
       return null
     case "sending":
       return (
-        <div className="mt-3 rounded-md border border-border px-3.5 py-2.5 text-[12.5px]" aria-live="polite">
+        <div
+          className="mt-3 rounded-md border border-border px-3.5 py-2.5 text-[12.5px]"
+          aria-live="polite"
+        >
           <p className="mb-1.5 flex items-center gap-2">
             <Loader2 size={13} className="animate-spin" aria-hidden="true" />
             Uploading {state.fileName}
-            {state.progress !== null && ` - ${Math.floor(state.progress * 100)}%`}
+            {state.progress !== null &&
+              ` - ${Math.floor(state.progress * 100)}%`}
           </p>
           {state.progress !== null && (
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-primary transition-[width]" style={{ width: `${state.progress * 100}%` }} />
+              <div
+                className="h-full bg-primary transition-[width]"
+                style={{ width: `${state.progress * 100}%` }}
+              />
             </div>
           )}
         </div>
       )
     case "unpacking":
       return (
-        <p className="mt-3 inline-flex items-center gap-2 text-[12.5px] text-muted-foreground" aria-live="polite">
+        <p
+          className="mt-3 inline-flex items-center gap-2 text-[12.5px] text-muted-foreground"
+          aria-live="polite"
+        >
           <Loader2 size={13} className="animate-spin" aria-hidden="true" />
           Unpacking {state.fileName} and matching its files to rows…
         </p>
@@ -285,12 +346,16 @@ function ArchiveStatus({ state, onResume }: { state: ArchiveUploadState; onResum
               {result.problems.map((problem, i) => (
                 <li key={`${problem.entry}-${i}`} className="py-0.5">
                   <span className="font-mono break-all">{problem.entry}</span>
-                  <span className="text-muted-foreground"> - {problem.message}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    - {problem.message}
+                  </span>
                 </li>
               ))}
               {result.problemCount > result.problems.length && (
                 <li className="py-0.5 text-muted-foreground">
-                  …and {result.problemCount - result.problems.length} more not listed.
+                  …and {result.problemCount - result.problems.length} more not
+                  listed.
                 </li>
               )}
             </ul>
@@ -306,7 +371,12 @@ function ArchiveStatus({ state, onResume }: { state: ArchiveUploadState; onResum
             {state.message}
           </InlineError>
           {state.resumable && (
-            <Button variant="outline" size="sm" className="mt-2" onClick={onResume}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={onResume}
+            >
               <RotateCcw />
               Resume upload
             </Button>

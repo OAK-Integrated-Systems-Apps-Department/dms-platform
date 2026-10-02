@@ -37,7 +37,8 @@ export const PermissionCodes = {
   ASM_ROLES_UPDATE_ROLE: "asm.manage-roles-permissions.update-role",
   ASM_ROLES_DELETE_ROLE: "asm.manage-roles-permissions.delete-role",
   ASM_ROLES_VIEW_ROLE: "asm.manage-roles-permissions.view-role",
-  ASM_ROLES_ASSIGN_PERMISSIONS: "asm.manage-roles-permissions.assign-permissions",
+  ASM_ROLES_ASSIGN_PERMISSIONS:
+    "asm.manage-roles-permissions.assign-permissions",
 
   // Legacy - Permission Catalog screens only (PermissionController), see doc comment above.
   LEGACY_ROLE_VIEW: "role.view",
@@ -52,15 +53,19 @@ export const PermissionCodes = {
   MDTM_CONTENT_TYPES_UPDATE: "mdtm.manage-content-types.update",
   MDTM_CONTENT_TYPES_DELETE: "mdtm.manage-content-types.delete",
   MDTM_CONTENT_TYPES_VIEW: "mdtm.manage-content-types.view",
-  MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE: "mdtm.manage-content-types.activate-deactivate",
+  MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE:
+    "mdtm.manage-content-types.activate-deactivate",
 
   MDTM_METADATA_SCHEMA_CREATE_FIELD: "mdtm.manage-metadata-schema.create-field",
   MDTM_METADATA_SCHEMA_UPDATE_FIELD: "mdtm.manage-metadata-schema.update-field",
   MDTM_METADATA_SCHEMA_DELETE_FIELD: "mdtm.manage-metadata-schema.delete-field",
   MDTM_METADATA_SCHEMA_VIEW_FIELD: "mdtm.manage-metadata-schema.view-field",
-  MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD: "mdtm.manage-metadata-schema.activate-deactivate-field",
-  MDTM_METADATA_SCHEMA_DEPRECATE_FIELD: "mdtm.manage-metadata-schema.deprecate-field",
-  MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES: "mdtm.manage-metadata-schema.set-validation-rules",
+  MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD:
+    "mdtm.manage-metadata-schema.activate-deactivate-field",
+  MDTM_METADATA_SCHEMA_DEPRECATE_FIELD:
+    "mdtm.manage-metadata-schema.deprecate-field",
+  MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES:
+    "mdtm.manage-metadata-schema.set-validation-rules",
 
   MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
   MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
@@ -91,4 +96,20 @@ export const PermissionCodes = {
   // panel's document-type picker (/document-types/selectable) requires.
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
   DOCM_DOCUMENTS_VIEW: "docm.documents.view",
+  DOCM_DOCUMENTS_DELETE: "docm.documents.delete",
+  // Moving documents between folders (V51).
+  DOCM_DOCUMENTS_MOVE: "docm.documents.move",
+  // Folders - DSC / Manage Folder Structure (V10). Browsing needs DOCM_DOCUMENTS_VIEW.
+  DSC_FOLDERS_CREATE: "dsc.manage-folder-structure.create-folder",
+  DSC_FOLDERS_RENAME_MOVE: "dsc.manage-folder-structure.rename-move-folder",
+  DSC_FOLDERS_DELETE: "dsc.manage-folder-structure.delete-folder",
+  // Folder access control (V53) - who can get into a folder.
+  DSC_FOLDER_ACCESS_ASSIGN:
+    "dsc.configure-folder-access-control.assign-permissions",
+  DSC_FOLDER_ACCESS_VIEW:
+    "dsc.configure-folder-access-control.view-access-list",
+  // Encryption at rest (V55) - the key management screen.
+  DE_KEYS_VIEW: "de.manage-encryption-keys.view-key-metadata",
+  DE_KEYS_ROTATE: "de.manage-encryption-keys.rotate-key",
+  DE_KEYS_GENERATE: "de.manage-encryption-keys.generate-key",
 } as const

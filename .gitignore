@@ -20,3 +20,6 @@ infra/production/.deploy.lock
 
 # Python bytecode (e.g. from infra/production/render-secrets.py)
 __pycache__/
+
+# Development encryption key backup (infra/local) - never commit keys.
+.dms-dev-keys/

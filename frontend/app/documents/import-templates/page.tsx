@@ -5,10 +5,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Download, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
 import { ImportTemplateEditor } from "@/components/import-templates/import-template-editor"
+import { DocumentsHub } from "@/components/documents/documents-hub"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -26,7 +26,8 @@ import {
 import { usePageTitle } from "@/lib/use-page-title"
 import { formatDateTime } from "@/lib/utils"
 
-const TH = "px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
+const TH =
+  "px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
 const MANAGE = [
   PermissionCodes.FIE_IMPORT_TEMPLATES_CREATE,
   PermissionCodes.FIE_IMPORT_TEMPLATES_UPDATE,
@@ -44,20 +45,14 @@ export default function ImportTemplatesPage() {
   usePageTitle("Import Templates")
 
   return (
-    <DashboardShell initialActiveLabel="Import Templates">
-      <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Import Templates" }]} />
-      <div className="mb-[22px] max-w-[680px]">
-        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Import Templates</h1>
-        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          Saved Bulk Import templates for your organisation: the columns people fill in, their names and order, and
-          default values for everything else. Downloads always use each document type&apos;s current fields.
-        </p>
-      </div>
-      <PermissionGate permission={MANAGE}>
-        <div className="max-w-[1040px]">
-          <TemplatesList />
-        </div>
-      </PermissionGate>
+    <DashboardShell initialActiveLabel="My Documents">
+      <DocumentsHub active="import-templates">
+        <PermissionGate permission={MANAGE}>
+          <div className="max-w-[1040px]">
+            <TemplatesList />
+          </div>
+        </PermissionGate>
+      </DocumentsHub>
     </DashboardShell>
   )
 }
@@ -69,14 +64,22 @@ function TemplatesList() {
   const canUpdate = hasPermission(PermissionCodes.FIE_IMPORT_TEMPLATES_UPDATE)
   const canDelete = hasPermission(PermissionCodes.FIE_IMPORT_TEMPLATES_DELETE)
 
-  const templates = useQuery({ queryKey: ["import-templates", "all"], queryFn: () => fetchImportTemplates() })
+  const templates = useQuery({
+    queryKey: ["import-templates", "all"],
+    queryFn: () => fetchImportTemplates(),
+  })
   const { documentTypes } = useImportDocumentTypes()
-  const [editing, setEditing] = useState<{ template: ImportTemplateDto | null; key: number } | null>(null)
+  const [editing, setEditing] = useState<{
+    template: ImportTemplateDto | null
+    key: number
+  } | null>(null)
   const [deleting, setDeleting] = useState<ImportTemplateDto | null>(null)
 
   async function download(template: ImportTemplateDto) {
     try {
-      saveDownloadedFile(await downloadSavedImportTemplate(template.importTemplateId, "xlsx"))
+      saveDownloadedFile(
+        await downloadSavedImportTemplate(template.importTemplateId, "xlsx")
+      )
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not download the template."))
     }
@@ -101,7 +104,9 @@ function TemplatesList() {
     <>
       <div className="mb-3 flex justify-end">
         {canCreate && (
-          <Button onClick={() => setEditing({ template: null, key: Date.now() })}>
+          <Button
+            onClick={() => setEditing({ template: null, key: Date.now() })}
+          >
             <Plus />
             New template
           </Button>
@@ -111,7 +116,9 @@ function TemplatesList() {
       {templates.isPending ? (
         <LoadingState message="Loading templates…" />
       ) : templates.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">{friendlyMessage(templates.error, "Could not load the templates.")}</p>
+        <p className="text-[13px] text-[var(--rust)]">
+          {friendlyMessage(templates.error, "Could not load the templates.")}
+        </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
           <table className="w-full min-w-[760px] border-collapse">
@@ -130,47 +137,79 @@ function TemplatesList() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
-                    No saved templates yet. Bulk Import offers each document type&apos;s standard template until you
-                    add one.
+                  <td
+                    colSpan={6}
+                    className="px-3 py-10 text-center text-[13px] text-muted-foreground"
+                  >
+                    No saved templates yet. Bulk Import offers each document
+                    type&apos;s standard template until you add one.
                   </td>
                 </tr>
               )}
               {rows.map((t) => (
-                <tr key={t.importTemplateId} className="border-b border-border align-top last:border-b-0">
+                <tr
+                  key={t.importTemplateId}
+                  className="border-b border-border align-top last:border-b-0"
+                >
                   <td className="px-3 py-3">
                     <p className="text-[13.5px] font-semibold">{t.name}</p>
-                    {t.description && <p className="text-[12px] text-muted-foreground">{t.description}</p>}
+                    {t.description && (
+                      <p className="text-[12px] text-muted-foreground">
+                        {t.description}
+                      </p>
+                    )}
                     {t.missingFields.length > 0 && (
                       <p className="mt-1 text-[12px] text-[var(--gold-foreground)]">
-                        Uses fields no longer on the form: {t.missingFields.join(", ")} - edit to tidy up.
+                        Uses fields no longer on the form:{" "}
+                        {t.missingFields.join(", ")} - edit to tidy up.
                       </p>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-[13px]">{t.documentTypeName ?? "—"}</td>
-                  <td className="px-3 py-3 text-[13px]">{t.columns.length + 2}</td>
+                  <td className="px-3 py-3 text-[13px]">
+                    {t.documentTypeName ?? "—"}
+                  </td>
+                  <td className="px-3 py-3 text-[13px]">
+                    {t.columns.length + 2}
+                  </td>
                   <td className="px-3 py-3 text-[12.5px] text-muted-foreground">
                     {Object.keys(t.defaults).length === 0
                       ? "—"
-                      : Object.entries(t.defaults).map(([key, value]) => `${key} = ${value}`).join(", ")}
+                      : Object.entries(t.defaults)
+                          .map(([key, value]) => `${key} = ${value}`)
+                          .join(", ")}
                   </td>
                   <td className="px-3 py-3 font-mono text-[12.5px] text-muted-foreground">
                     {formatDateTime(t.updatedAt ?? t.createdAt)}
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex justify-end gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => void download(t)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void download(t)}
+                      >
                         <Download />
                         Download
                       </Button>
                       {canUpdate && (
-                        <Button variant="outline" size="sm" onClick={() => setEditing({ template: t, key: Date.now() })}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setEditing({ template: t, key: Date.now() })
+                          }
+                        >
                           <Pencil />
                           Edit
                         </Button>
                       )}
                       {canDelete && (
-                        <Button variant="outline" size="sm" aria-label={`Delete ${t.name}`} onClick={() => setDeleting(t)}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={`Delete ${t.name}`}
+                          onClick={() => setDeleting(t)}
+                        >
                           <Trash2 />
                         </Button>
                       )}

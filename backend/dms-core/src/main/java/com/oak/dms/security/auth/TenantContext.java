@@ -92,6 +92,11 @@ public final class TenantContext {
         return CURRENT_USER_KEYCLOAK_ID.get();
     }
 
+    /** The bound tenant, or null outside a request/job (callers that work either way). */
+    public static UUID getTenantIdOrNull() {
+        return CURRENT_TENANT.get();
+    }
+
     public static UUID getTenantId() {
         UUID tenantId = CURRENT_TENANT.get();
         if (tenantId == null) {

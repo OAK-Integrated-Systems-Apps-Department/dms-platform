@@ -10,8 +10,10 @@ function ThemeProvider({
   return (
     <NextThemesProvider
       attribute="class"
-      defaultTheme="system"
-      enableSystem
+      // Everyone starts in light mode (not the OS setting); switching to
+      // dark in Settings (or the "d" hotkey) is remembered per browser.
+      defaultTheme="light"
+      enableSystem={false}
       disableTransitionOnChange
       {...props}
     >

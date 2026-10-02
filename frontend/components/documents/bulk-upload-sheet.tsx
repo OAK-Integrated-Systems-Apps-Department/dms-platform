@@ -6,8 +6,16 @@ import { Loader2, RotateCcw, Upload, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FolderSelect } from "@/components/folders/folder-select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { ApiError } from "@/lib/api-error"
 import { uploadDocument } from "@/lib/documents/api"
 import { useSelectableDocumentTypes } from "@/lib/documents/use-selectable-document-types"
@@ -42,7 +50,10 @@ const STATE_LABEL: Record<ItemState["kind"], string> = {
   failed: "Failed",
 }
 
-const STATE_VARIANT: Record<ItemState["kind"], "default" | "muted" | "gold" | "rust" | "outline"> = {
+const STATE_VARIANT: Record<
+  ItemState["kind"],
+  "default" | "muted" | "gold" | "rust" | "outline"
+> = {
   queued: "outline",
   uploading: "muted",
   uploaded: "default",
@@ -72,10 +83,20 @@ function titleFromFilename(name: string): string {
 function outcomeOf(error: unknown): ItemState {
   if (error instanceof ApiError) {
     if (error.status === 422) return { kind: "blocked", message: error.message }
-    if (error.status === 413) return { kind: "rejected", message: "File is larger than the upload limit." }
-    if (error.status === 415) return { kind: "rejected", message: "This file type is not allowed." }
-    if (error.status === 403) return { kind: "rejected", message: "You don't have permission to upload documents." }
-    if (error.status === 0) return { kind: "failed", message: "Could not reach the server." }
+    if (error.status === 413)
+      return {
+        kind: "rejected",
+        message: "File is larger than the upload limit.",
+      }
+    if (error.status === 415)
+      return { kind: "rejected", message: "This file type is not allowed." }
+    if (error.status === 403)
+      return {
+        kind: "rejected",
+        message: "You don't have permission to upload documents.",
+      }
+    if (error.status === 0)
+      return { kind: "failed", message: "Could not reach the server." }
     return { kind: "failed", message: error.message }
   }
   return { kind: "failed", message: "Upload failed." }
@@ -90,6 +111,10 @@ interface BulkUploadSheetProps {
    * opens so it starts fresh.
    */
   initialFiles?: File[]
+  /** Folder preselected (e.g. the one being browsed); "" or absent = the top level of My Documents. Read once on mount. */
+  initialFolderId?: string
+  /** Called after each upload batch finishes, e.g. to refresh a document list. */
+  onUploaded?: () => void
 }
 
 /**
@@ -99,9 +124,18 @@ interface BulkUploadSheetProps {
  * its own result - one bad file never stops the others. Per-file metadata
  * and template-based import are the separate Bulk Import feature (Module 2.1).
  */
-export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUploadSheetProps) {
+export function BulkUploadSheet({
+  open,
+  onOpenChange,
+  initialFiles,
+  initialFolderId,
+  onUploaded,
+}: BulkUploadSheetProps) {
   const [documentTypeId, setDocumentTypeId] = useState("")
-  const [items, setItems] = useState<UploadItem[]>(() => toItems(initialFiles ?? []))
+  const [folderId, setFolderId] = useState(initialFolderId ?? "")
+  const [items, setItems] = useState<UploadItem[]>(() =>
+    toItems(initialFiles ?? [])
+  )
   const [running, setRunning] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -112,7 +146,9 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
   }
 
   function update(id: string, patch: Partial<UploadItem>) {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    )
   }
 
   async function runUploads(targets: UploadItem[]) {
@@ -122,21 +158,38 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
       for (let next = queue.shift(); next; next = queue.shift()) {
         update(next.id, { state: { kind: "uploading" } })
         try {
-          const ticket = await uploadDocument(next.file, documentTypeId, next.title.trim() || titleFromFilename(next.file.name))
-          update(next.id, { state: ticket.status === "pending" ? { kind: "scanning" } : { kind: "uploaded" } })
+          const ticket = await uploadDocument(
+            next.file,
+            documentTypeId,
+            next.title.trim() || titleFromFilename(next.file.name),
+            folderId || null
+          )
+          update(next.id, {
+            state:
+              ticket.status === "pending"
+                ? { kind: "scanning" }
+                : { kind: "uploaded" },
+          })
         } catch (error) {
           update(next.id, { state: outcomeOf(error) })
         }
       }
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker))
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker)
+    )
     setRunning(false)
+    onUploaded?.()
   }
 
   const queued = items.filter((i) => i.state.kind === "queued")
   const retryable = items.filter((i) => i.state.kind === "failed")
-  const done = items.filter((i) => i.state.kind === "uploaded" || i.state.kind === "scanning").length
-  const problems = items.filter((i) => ["blocked", "rejected", "failed"].includes(i.state.kind)).length
+  const done = items.filter(
+    (i) => i.state.kind === "uploaded" || i.state.kind === "scanning"
+  ).length
+  const problems = items.filter((i) =>
+    ["blocked", "rejected", "failed"].includes(i.state.kind)
+  ).length
   const canUpload = Boolean(documentTypeId) && queued.length > 0 && !running
 
   function handleOpenChange(next: boolean) {
@@ -146,12 +199,15 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-[560px]">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 data-[side=right]:sm:max-w-[560px]"
+      >
         <SheetHeader className="border-b border-border">
           <SheetTitle>Upload documents</SheetTitle>
           <SheetDescription>
-            Upload many files at once as one document type. Every file is scanned for malware before it becomes a
-            document.
+            Upload many files at once as one document type. Every file is
+            scanned for malware before it becomes a document.
           </SheetDescription>
         </SheetHeader>
 
@@ -164,17 +220,36 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
               allLabel={types.isPending ? "Loading…" : "Choose a document type"}
               selected={documentTypeId}
               onChange={setDocumentTypeId}
-              options={(types.data ?? []).map((t) => ({ value: t.documentTypeId, label: t.typeName }))}
+              options={(types.data ?? []).map((t) => ({
+                value: t.documentTypeId,
+                label: t.typeName,
+              }))}
               className="w-full"
             />
             {types.isError && (
               <p className="mt-1.5 text-[12.5px] text-[var(--rust)]">
-                {types.error instanceof Error ? types.error.message : "Could not load document types."}
+                {types.error instanceof Error
+                  ? types.error.message
+                  : "Could not load document types."}
               </p>
             )}
             {types.data && types.data.length === 0 && (
-              <p className="mt-1.5 text-[12.5px] text-muted-foreground">No active document types exist yet.</p>
+              <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+                No active document types exist yet.
+              </p>
             )}
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+              Folder
+            </p>
+            <FolderSelect
+              value={folderId}
+              onChange={setFolderId}
+              className="w-full"
+              disabled={running}
+            />
           </div>
 
           <div
@@ -189,7 +264,9 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
               if (!running) addFiles(Array.from(e.dataTransfer.files))
             }}
             className={`rounded-lg border border-dashed p-6 text-center transition-colors ${
-              dragOver ? "border-primary bg-primary/5" : "border-[var(--border-strong)]"
+              dragOver
+                ? "border-primary bg-primary/5"
+                : "border-[var(--border-strong)]"
             }`}
           >
             <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
@@ -224,29 +301,44 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
                     {item.state.kind === "queued" ? (
                       <Input
                         value={item.title}
-                        onChange={(e) => update(item.id, { title: e.target.value })}
+                        onChange={(e) =>
+                          update(item.id, { title: e.target.value })
+                        }
                         aria-label={`Title for ${item.file.name}`}
                         className="h-8 text-[13px]"
                       />
                     ) : (
-                      <p className="truncate text-[13.5px] font-semibold text-foreground">{item.title}</p>
+                      <p className="truncate text-[13.5px] font-semibold text-foreground">
+                        {item.title}
+                      </p>
                     )}
                     <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground">
                       {item.file.name} · {formatBytes(item.file.size)}
                     </p>
                     {"message" in item.state && (
-                      <p className="mt-1 text-[12px] text-[var(--rust)]">{item.state.message}</p>
+                      <p className="mt-1 text-[12px] text-[var(--rust)]">
+                        {item.state.message}
+                      </p>
                     )}
                   </div>
-                  <Badge variant={STATE_VARIANT[item.state.kind]} className="shrink-0 gap-1.5 rounded-md">
-                    {item.state.kind === "uploading" && <Loader2 className="size-3 animate-spin" />}
+                  <Badge
+                    variant={STATE_VARIANT[item.state.kind]}
+                    className="shrink-0 gap-1.5 rounded-md"
+                  >
+                    {item.state.kind === "uploading" && (
+                      <Loader2 className="size-3 animate-spin" />
+                    )}
                     {STATE_LABEL[item.state.kind]}
                   </Badge>
                   {item.state.kind === "queued" && !running && (
                     <button
                       type="button"
                       aria-label={`Remove ${item.file.name}`}
-                      onClick={() => setItems((current) => current.filter((i) => i.id !== item.id))}
+                      onClick={() =>
+                        setItems((current) =>
+                          current.filter((i) => i.id !== item.id)
+                        )
+                      }
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <X className="size-4" />
@@ -271,20 +363,31 @@ export function BulkUploadSheet({ open, onOpenChange, initialFiles }: BulkUpload
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  retryable.forEach((i) => update(i.id, { state: { kind: "queued" } }))
+                  retryable.forEach((i) =>
+                    update(i.id, { state: { kind: "queued" } })
+                  )
                   void runUploads(retryable)
                 }}
               >
                 <RotateCcw /> Retry failed ({retryable.length})
               </Button>
             )}
-            <Button type="button" disabled={!canUpload} onClick={() => void runUploads(queued)} className="flex-1">
+            <Button
+              type="button"
+              disabled={!canUpload}
+              onClick={() => void runUploads(queued)}
+              className="flex-1"
+            >
               {running ? <Loader2 className="animate-spin" /> : <Upload />}
-              {running ? "Uploading…" : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
+              {running
+                ? "Uploading…"
+                : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
             </Button>
           </div>
           {!documentTypeId && queued.length > 0 && (
-            <p className="text-[12px] text-muted-foreground">Choose a document type to upload.</p>
+            <p className="text-[12px] text-muted-foreground">
+              Choose a document type to upload.
+            </p>
           )}
         </SheetFooter>
       </SheetContent>

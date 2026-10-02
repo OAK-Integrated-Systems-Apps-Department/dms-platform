@@ -27,6 +27,8 @@ import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.oak.dms.importexport.service.BulkImportService;
 import com.oak.dms.importexport.service.ImportTemplateService;
+import com.oak.dms.folder.FolderService;
+import com.oak.dms.importexport.storage.IntakeVirusScanner;
 import com.oak.dms.importexport.entity.ImportTemplate;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.TemplateLayout;
 import com.oak.dms.importexport.storage.StagedImportFiles;
@@ -131,6 +133,8 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ImportTemplateCsv templateCsv;
     private final ImportRowValidator rowValidator;
     private final ImportTemplateService importTemplateService;
+    private final FolderService folderService;
+    private final IntakeVirusScanner intakeVirusScanner;
 
     @Override
     @Transactional(readOnly = true)
@@ -161,7 +165,11 @@ public class BulkImportServiceImpl implements BulkImportService {
     }
 
     @Override
-    public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template) {
+    public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
+                                                 UUID folderId) {
+        if (folderId != null) {
+            folderService.requireEditable(folderId); // 404/403 now - the worker doesn't check access again
+        }
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
 
@@ -214,6 +222,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .totalRecords(rows.size())
                 .correlationId(UUID.randomUUID())
                 .importTemplateId(parsed.importTemplateId())
+                .folderId(folderId)
                 .createdBy(userId)
                 .build());
 
@@ -380,14 +389,14 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
         requireUploading(batch);
 
-        List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
-        ImportItem item = filenameMatcher.match(items, originalFilename);
+        // Only the rows naming this file, and the size so far as one aggregate -
+        // not the whole batch per upload (a 500-file import would otherwise
+        // read 500 rows 500 times).
+        List<ImportItem> candidates = importItemRepository.findAllByBatchAndFilename(batchId,
+                ImportFilenameMatcher.normalize(originalFilename));
+        ImportItem item = filenameMatcher.match(candidates, originalFilename);
 
-        long stagedBytes = items.stream()
-                .map(ImportItem::getStagedSizeBytes)
-                .filter(Objects::nonNull)
-                .mapToLong(Long::longValue)
-                .sum();
+        long stagedBytes = importItemRepository.sumStagedBytes(batchId);
         if (stagedBytes + contentLength > properties.getMaxBatchSize().toBytes()) {
             throw new ImportBatchSizeException("IMPORT_BATCH_SIZE_EXCEEDED",
                     "Adding this file would take the import over its " + properties.getMaxBatchSize().toMegabytes()
@@ -416,13 +425,19 @@ public class BulkImportServiceImpl implements BulkImportService {
                 detected.mimeType());
         deleteOnRollback(storage, location, objectKey);
 
+        // Virus scan now, before the file counts as received: an infected
+        // file is refused while the user is still uploading (the rollback
+        // deletes the staged object). Scanned again when its document is made.
+        intakeVirusScanner.scan(tenantId, batchId, item.getImportItemId(), originalFilename, location, objectKey,
+                stored.sizeBytes(), detected.mimeType());
+
         item.setStagedObjectKey(objectKey);
         item.setStagedStorageLocationId(location.getStorageLocationId());
         item.setStagedSizeBytes(stored.sizeBytes());
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
 
-        int filesReceived = (int) items.stream().filter(i -> i.getStagedObjectKey() != null).count();
+        int filesReceived = (int) importItemRepository.countReceived(batchId);
         log.info("Staged file for row {} of bulk import batch {} ({}/{} files)",
                 item.getRowNumber(), batchId, filesReceived, batch.getTotalRecords());
         return new ImportFileReceivedResponse(item.getRowNumber(), filesReceived, batch.getTotalRecords());
@@ -450,8 +465,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         // this event, and skip the batch otherwise.
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, batchId, SUBMITTED_EVENT_TYPE,
                 Map.of("importBatchId", batchId, "correlationId", batch.getCorrelationId()));
-        auditor.submitted(batch, (int) importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId).stream()
-                .filter(item -> item.getStagedObjectKey() != null).count());
+        auditor.submitted(batch, (int) importItemRepository.countReceived(batchId));
 
         log.info("Submitted bulk import batch {} for tenant {}", batchId, tenantId);
     }
@@ -465,7 +479,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         ImportBatch batch = importBatchRepository
                 .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
-        return toStatusResponse(batch, importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId));
+        return statusOf(batch);
     }
 
     @Override
@@ -502,8 +516,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     public Page<BulkImportStatusResponse> listMine(Pageable pageable) {
         return importBatchRepository
                 .findByTenantIdAndCreatedByAndDeletedFalse(TenantContext.getTenantId(), TenantContext.getUserId(), pageable)
-                .map(batch -> toStatusResponse(batch,
-                        importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId())));
+                .map(this::statusOf);
     }
 
     @Override
@@ -515,8 +528,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         return importBatchRepository
                 .findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(tenantId, userId,
                         ACTIVE_STATUSES)
-                .map(batch -> toStatusResponse(batch,
-                        importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId())));
+                .map(this::statusOf);
     }
 
     @Override
@@ -543,6 +555,14 @@ public class BulkImportServiceImpl implements BulkImportService {
         log.info("Cancelled bulk import batch {} for tenant {} ({} staged files to delete)",
                 batchId, tenantId, toDelete);
         return toStatusResponse(batch, items);
+    }
+
+    /** The batch's status from two small queries rather than every row. */
+    private BulkImportStatusResponse statusOf(ImportBatch batch) {
+        List<String> missing = importItemRepository.findMissingFilenames(batch.getImportBatchId());
+        return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
+                batch.getStatus().name(), batch.getTotalRecords(), batch.getTotalRecords() - missing.size(),
+                batch.getSuccessCount(), batch.getFailureCount(), missing, batch.getCreatedAt());
     }
 
     private static BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {

@@ -106,7 +106,13 @@ public class BulkImportWorker {
     }
 
     /** What processing needs from the claimed batch, read while it was locked. */
-    record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
+    /** @param folderId where the batch's documents are filed; null = not in a folder */
+    record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
+                        UUID folderId) {
+
+        ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, null);
+        }
     }
 
     @RabbitListener(queues = BulkImportMessagingConfig.QUEUE,
@@ -174,7 +180,7 @@ public class BulkImportWorker {
                 }
             }
             return Optional.of(new ClaimedBatch(batch.getImportBatchId(), batch.getTenantId(), batch.getCreatedBy(),
-                    batch.getDocumentTypeId(), batch.getSchemaVersion()));
+                    batch.getDocumentTypeId(), batch.getSchemaVersion(), batch.getFolderId()));
         });
     }
 

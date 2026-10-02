@@ -1,7 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, CheckCircle2, Download, Loader2, RotateCcw, XCircle } from "lucide-react"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Loader2,
+  RotateCcw,
+  XCircle,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +22,7 @@ import {
 } from "@/lib/bulk-imports/api"
 
 import { FailedRowsTable } from "./failed-rows-table"
-import { InlineError, StepCard } from "./step-card"
+import { InlineError, ProgressBar, StatTile, StepCard } from "./step-card"
 
 interface ImportResultsCardProps {
   batch: BulkImportStatusResponseDto
@@ -24,29 +31,41 @@ interface ImportResultsCardProps {
 }
 
 /** Summary of a finished import: how many documents were created, how many rows failed, and which ones. */
-export function ImportResultsCard({ batch, documentTypeName, onStartOver }: ImportResultsCardProps) {
+export function ImportResultsCard({
+  batch,
+  documentTypeName,
+  onStartOver,
+}: ImportResultsCardProps) {
   const { title, badge } = describe(batch)
   const created = `${batch.successCount} ${batch.successCount === 1 ? "document" : "documents"} created`
   const failed = `${batch.failureCount} ${batch.failureCount === 1 ? "row" : "rows"} failed`
 
   return (
-    <StepCard title={title} description={`${created}, ${failed}.`}>
-      <dl className="mb-5 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Document type</dt>
-          <dd className="font-medium">{documentTypeName ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Documents created</dt>
-          <dd className="font-medium">
-            {batch.successCount} of {batch.totalRecords}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[12px] text-muted-foreground">Status</dt>
-          <dd className="font-medium">{badge}</dd>
-        </div>
+    <StepCard
+      icon={
+        batch.status === "completed"
+          ? CheckCircle2
+          : batch.status === "failed"
+            ? XCircle
+            : AlertTriangle
+      }
+      title={title}
+      description={`${created}, ${failed}.`}
+    >
+      <dl className="mb-4 grid gap-3 sm:grid-cols-3">
+        <StatTile label="Document type">{documentTypeName ?? "—"}</StatTile>
+        <StatTile label="Documents created">
+          {batch.successCount} of {batch.totalRecords}
+        </StatTile>
+        <StatTile label="Status">{badge}</StatTile>
       </dl>
+      <div className="mb-5">
+        <ProgressBar
+          value={batch.successCount}
+          max={batch.totalRecords}
+          label="Documents created"
+        />
+      </div>
 
       {hasFailedRows(batch.status) && (
         <>
@@ -121,10 +140,13 @@ function FixFailedRows({ batchId }: { batchId: string }) {
 
   return (
     <section className="mb-5 rounded-md border border-dashed border-border px-4 py-3">
-      <h3 className="mb-1 text-[13px] font-semibold">Fix and import the failed rows again</h3>
+      <h3 className="mb-1 text-[13px] font-semibold">
+        Fix and import the failed rows again
+      </h3>
       <p className="mb-3 text-[12.5px] leading-[1.6] text-muted-foreground">
-        Download the failed rows as a template - each row as you uploaded it, with what went wrong in its last
-        column. Correct them, then start a new import with that file and the files those rows list.
+        Download the failed rows as a template - each row as you uploaded it,
+        with what went wrong in its last column. Correct them, then start a new
+        import with that file and the files those rows list.
       </p>
       <div className="flex flex-wrap gap-2">
         {(["xlsx", "csv"] as const).map((format) => (
@@ -135,7 +157,11 @@ function FixFailedRows({ batchId }: { batchId: string }) {
             onClick={() => void download(format)}
             disabled={downloading !== null}
           >
-            {downloading === format ? <Loader2 className="animate-spin" /> : <Download />}
+            {downloading === format ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Download />
+            )}
             {format === "xlsx" ? "Failed rows (Excel)" : "Failed rows (CSV)"}
           </Button>
         ))}

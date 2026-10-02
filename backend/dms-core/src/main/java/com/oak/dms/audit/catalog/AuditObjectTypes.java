@@ -39,6 +39,8 @@ public final class AuditObjectTypes {
     public static final String METADATA_FIELD_OPTION = "METADATA_FIELD_OPTION";
     public static final String METADATA_FIELD_VALIDATION = "METADATA_FIELD_VALIDATION";
     public static final String DOCUMENT = "DOCUMENT";
+    /** A folder of the shared folder tree (folders) - the object of every FOLDER_* event. */
+    public static final String FOLDER = "FOLDER";
     public static final String DOCUMENT_VERSION = "DOCUMENT_VERSION";
     public static final String STORAGE_LOCATION = "STORAGE_LOCATION";
     /** A malware scan of one upload (scan_results) - the object of every DOCUMENT_SCAN_* event. */
@@ -51,6 +53,8 @@ public final class AuditObjectTypes {
     public static final String IMPORT_TEMPLATE = "IMPORT_TEMPLATE";
     /** One bulk export (export_jobs) - the object of every EXPORT_* event. */
     public static final String EXPORT_JOB = "EXPORT_JOB";
+    /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
+    public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

@@ -188,6 +188,10 @@ dms:
       # MinIO/SeaweedFS typically need path-style bucket addressing; real
       # AWS S3 does not (though it still accepts it).
       path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+      # Server-side encryption, on top of the application's own encryption at
+      # rest: blank, AES256 (SSE-S3) or aws:kms (SSE-KMS). MinIO needs KES for either.
+      server-side-encryption: ${S3_SSE:}
+      kms-key-id: ${S3_SSE_KMS_KEY_ID:}
     filesystem:
       base-path: ${STORAGE_FILESYSTEM_BASE_PATH:/data/dms/documents}
     azure-blob:
@@ -218,6 +222,11 @@ dms:
       region: ${SCAN_STAGING_REGION:}
       path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
       credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
+      # REQUIRED with a cloud scan engine (GuardDuty / Defender reads staged
+      # files in place, so the app can't encrypt them): AES256 or aws:kms.
+      # Azure Blob is always encrypted at rest. Blank = the s3.* setting.
+      server-side-encryption: ${SCAN_STAGING_SSE:}
+      kms-key-id: ${SCAN_STAGING_SSE_KMS_KEY_ID:}
     quarantine:
       provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
       base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
@@ -226,6 +235,38 @@ dms:
       region: ${SCAN_QUARANTINE_REGION:}
       path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
       credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+      server-side-encryption: ${SCAN_QUARANTINE_SSE:}
+      kms-key-id: ${SCAN_QUARANTINE_SSE_KMS_KEY_ID:}
+  # Encryption at rest (Module DE) - see EncryptionProperties and
+  # docs/storage-architecture.md. Every stored object is encrypted with its
+  # own AES-256-GCM data key, wrapped by the key service.
+  encryption:
+    enabled: ${ENCRYPTION_ENABLED:true}
+    # openbao in production; local-dev = a key file, for development only.
+    provider: ${ENCRYPTION_PROVIDER:local-dev}
+    # Production: true - refuses to start unless OpenBao holds the keys.
+    require-managed-keys: ${ENCRYPTION_REQUIRE_MANAGED_KEYS:false}
+    # Production: true - refuses to start unless OpenBao logs every key access
+    # in an audit device (DE-NFR-006). The policy needs read+sudo on sys/audit.
+    require-audit-device: ${ENCRYPTION_REQUIRE_AUDIT_DEVICE:false}
+    # Unwrapped data keys reused from memory for this long (0 = off), so a bulk
+    # export asks the key service once per key, not per file.
+    key-cache-ttl: ${ENCRYPTION_KEY_CACHE_TTL:PT5M}
+    key-cache-max-entries: ${ENCRYPTION_KEY_CACHE_MAX_ENTRIES:10000}
+    local-dev:
+      key-file: ${ENCRYPTION_LOCAL_DEV_KEY_FILE:${java.io.tmpdir}/dms-encryption/local-dev-keys.json}
+      # A second copy kept in step, restored if the key file is lost. Blank = none.
+      backup-file: ${ENCRYPTION_LOCAL_DEV_BACKUP_FILE:}
+    openbao:
+      address: ${ENCRYPTION_OPENBAO_ADDR:}
+      # approle (production - renewed and re-issued automatically) or token.
+      auth: ${ENCRYPTION_OPENBAO_AUTH:token}
+      token: ${ENCRYPTION_OPENBAO_TOKEN:}
+      role-id: ${ENCRYPTION_OPENBAO_ROLE_ID:}
+      secret-id: ${ENCRYPTION_OPENBAO_SECRET_ID:}
+      app-role-mount: ${ENCRYPTION_OPENBAO_APPROLE_MOUNT:approle}
+      mount: ${ENCRYPTION_OPENBAO_MOUNT:transit}
+      key-name: ${ENCRYPTION_OPENBAO_KEY:dms-documents}
   import-export:
     # Bulk import intake limits - see ImportExportProperties.
     max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}

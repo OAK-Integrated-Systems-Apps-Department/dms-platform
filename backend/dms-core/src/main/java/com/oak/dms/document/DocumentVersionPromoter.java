@@ -103,6 +103,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .documentId(plan.documentId())
                     .tenantId(tenantId)
                     .documentTypeId(cleanResult.getDocumentTypeId())
+                    .folderId(cleanResult.getFolderId())
                     .title(cleanResult.getTitle())
                     .currentVersionId(plan.versionId())
                     .latestVersionId(plan.versionId())

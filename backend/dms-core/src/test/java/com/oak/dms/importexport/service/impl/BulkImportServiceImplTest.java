@@ -19,6 +19,9 @@ import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.service.BulkImportAuditor;
 import com.oak.dms.importexport.service.ImportTemplateService;
+import com.oak.dms.folder.FolderService;
+import com.oak.dms.importexport.storage.IntakeVirusScanner;
+import com.oak.dms.importexport.exception.ImportFileBlockedException;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateCsv;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
@@ -93,6 +96,7 @@ class BulkImportServiceImplTest {
     private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
     private final ImportRowValidator rowValidator = mock(ImportRowValidator.class);
     private final ImportTemplateService importTemplateService = mock(ImportTemplateService.class);
+    private final IntakeVirusScanner intakeScanner = mock(IntakeVirusScanner.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
 
     @BeforeEach
@@ -258,9 +262,7 @@ class BulkImportServiceImplTest {
                 tenantId, userId, List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued,
                         ImportBatchStatus.running)))
                 .thenReturn(Optional.of(batch));
-        when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
-                .thenReturn(List.of(item(batch, 1, "a.pdf", UUID.randomUUID(), "imports/key-1"),
-                        item(batch, 2, "b.pdf", null, null)));
+        when(importItemRepository.findMissingFilenames(batch.getImportBatchId())).thenReturn(List.of("b.pdf"));
 
         Optional<BulkImportStatusResponse> active = service(realWorkbook).getActive();
 
@@ -280,8 +282,7 @@ class BulkImportServiceImplTest {
         PageRequest page = PageRequest.of(0, 10);
         when(importBatchRepository.findByTenantIdAndCreatedByAndDeletedFalse(tenantId, userId, page))
                 .thenReturn(new PageImpl<>(List.of(finished), page, 1));
-        when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(finished.getImportBatchId()))
-                .thenReturn(List.of(item(finished, 1, "a.pdf", UUID.randomUUID(), null)));
+        when(importItemRepository.findMissingFilenames(finished.getImportBatchId())).thenReturn(List.of());
 
         Page<BulkImportStatusResponse> mine = service(realWorkbook).listMine(page);
 
@@ -299,6 +300,32 @@ class BulkImportServiceImplTest {
 
         assertThat(service(realWorkbook).getActive()).isEmpty();
         verifyNoInteractions(importItemRepository);
+    }
+
+    @Test
+    void receiveFile_virusFoundAtIntake_isRefusedAndTheRowStaysWithoutAFile() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "a.pdf", null, null);
+        stubLockedBatch(batch, List.of(item));
+        StorageLocation staging = StorageLocation.builder()
+                .storageLocationId(UUID.randomUUID())
+                .purpose(StoragePurpose.staging)
+                .build();
+        when(storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging)).thenReturn(staging);
+        when(objectStorageServiceFactory.resolve(staging)).thenReturn(storage);
+        byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+        when(storage.upload(eq(staging), any(), any(), anyLong(), eq("application/pdf")))
+                .thenReturn(new StoredObjectMetadata("k", content.length, "application/pdf", null, null));
+        org.mockito.Mockito.doThrow(new ImportFileBlockedException("'a.pdf' was blocked by the virus scan"))
+                .when(intakeScanner).scan(eq(tenantId), eq(batch.getImportBatchId()), eq(item.getImportItemId()),
+                        eq("a.pdf"), eq(staging), any(), anyLong(), eq("application/pdf"));
+
+        assertThatThrownBy(() -> service(realWorkbook).receiveFile(batch.getImportBatchId(), "a.pdf",
+                "application/pdf", content.length, new ByteArrayInputStream(content)))
+                .isInstanceOf(ImportFileBlockedException.class).hasMessageContaining("virus scan");
+
+        assertThat(item.getStagedObjectKey()).isNull();
+        verify(importItemRepository, never()).save(item);
     }
 
     @Test
@@ -471,6 +498,11 @@ class BulkImportServiceImplTest {
                 userId)).thenReturn(Optional.of(batch));
         when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
                 .thenReturn(items);
+        // Intake looks up only the rows naming the file (trimmed, ignoring case).
+        when(importItemRepository.findAllByBatchAndFilename(eq(batch.getImportBatchId()), any()))
+                .thenAnswer(call -> items.stream()
+                        .filter(i -> i.getFilenameReference().trim().equalsIgnoreCase(call.getArgument(1)))
+                        .toList());
     }
 
     private ImportBatch batch(ImportBatchStatus status) {
@@ -508,7 +540,8 @@ class BulkImportServiceImplTest {
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
                 new FileTypeInspector(new IngestionProperties()), importSchemaFields, mock(BulkImportAuditor.class),
-                new ImportTemplateCsv(), rowValidator, importTemplateService);
+                new ImportTemplateCsv(), rowValidator, importTemplateService, mock(FolderService.class),
+                intakeScanner);
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

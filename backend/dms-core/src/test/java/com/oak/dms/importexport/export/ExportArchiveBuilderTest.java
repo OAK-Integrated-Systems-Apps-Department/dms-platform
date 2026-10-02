@@ -58,7 +58,8 @@ class ExportArchiveBuilderTest {
     private final DocumentService documentService = mock(DocumentService.class);
     private final DocumentTypeFieldService schemas = mock(DocumentTypeFieldService.class);
     private final ExportArchiveBuilder builder =
-            new ExportArchiveBuilder(documents, versions, types, metadata, fields, documentService, schemas);
+            new ExportArchiveBuilder(documents, versions, types, metadata, fields, documentService, schemas,
+                    org.mockito.Mockito.mock(com.oak.dms.encryption.KeyPrefetcher.class));
     private final Map<UUID, Document> stored = new LinkedHashMap<>();
 
     @TempDir
@@ -85,10 +86,10 @@ class ExportArchiveBuilderTest {
         when(metadata.findById(any())).thenReturn(Optional.of(DocumentMetadata.builder().fieldValues(values).build()));
         when(schemas.getSchema(TYPE)).thenReturn(new DocumentTypeSchemaResponse(TYPE, "INV", "Invoice", 1, List.of(
                 schemaField(TAGS_FIELD, "tags", 10), schemaField(AMOUNT_FIELD, "amount", 20))));
-        when(documentService.downloadDocument(clean)).thenAnswer(call ->
+        when(documentService.downloadDocumentFromJob(clean, "bulk_export")).thenAnswer(call ->
                 new DownloadedDocument(new ByteArrayInputStream("PDF".getBytes(StandardCharsets.UTF_8)), 3,
                         "application/pdf", "inv-1.pdf"));
-        when(documentService.downloadDocument(unscanned)).thenThrow(new DocumentNotScannedException(unscanned));
+        when(documentService.downloadDocumentFromJob(unscanned, "bulk_export")).thenThrow(new DocumentNotScannedException(unscanned));
     }
 
     @Test

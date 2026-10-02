@@ -345,6 +345,15 @@ services:
       # default to FILE_SYSTEM on the same documents_data volume below, in
       # directories separate from /data/dms/documents.
       CLAMAV_HOST: clamav
+      # Encryption at rest (com.oak.dms.encryption) - see docs/storage-architecture.md.
+      # Locally the data keys are wrapped with a development key file on the
+      # encryption_dev_keys volume below; set ENCRYPTION_PROVIDER=openbao plus
+      # ENCRYPTION_OPENBAO_ADDR/ENCRYPTION_OPENBAO_TOKEN (root .env) to use a real OpenBao instead.
+      # Production sets ENCRYPTION_REQUIRE_MANAGED_KEYS=true.
+      ENCRYPTION_LOCAL_DEV_KEY_FILE: /var/lib/dms-encryption/local-dev-keys.json
+      # A second copy outside Docker (repo/.dms-dev-keys, gitignored): restored
+      # automatically if the encryption_dev_keys volume is ever lost.
+      ENCRYPTION_LOCAL_DEV_BACKUP_FILE: /var/lib/dms-encryption-backup/local-dev-keys.json
     ports:
       - "8080:8080"
     volumes:
@@ -356,6 +365,11 @@ services:
       # volume here makes uploaded objects persist across `docker compose
       # up`/restarts, same as postgres_data/redis_data/seaweedfs_data below.
       - documents_data:/data
+      # The development encryption key file. Losing this volume makes every
+      # locally encrypted object unreadable - dms-core refuses to start
+      # rather than quietly creating a new key once encrypted objects exist.
+      - encryption_dev_keys:/var/lib/dms-encryption
+      - ../../.dms-dev-keys:/var/lib/dms-encryption-backup
     depends_on:
       postgres:
         condition: service_healthy
@@ -403,6 +417,7 @@ services:
       - dms-core
 
 volumes:
+  encryption_dev_keys:
   postgres_data:
   redis_data:
   seaweedfs_data:

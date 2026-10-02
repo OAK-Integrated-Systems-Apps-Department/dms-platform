@@ -156,10 +156,26 @@ public class ImportRecordCreator {
             return Optional.empty();
         }
 
+        /*
+         * FOLLOW-UP (found 2026-10-01, bulk upload performance review): every
+         * imported file is written to object storage twice - once at intake
+         * (imports/{tenant}/{batch}/{item}, virus-scanned there by
+         * IntakeVirusScanner) and again here, when the ingestion gate stages
+         * its own copy (staging/{tenant}/{scanResult}) and scans it a second
+         * time before promotion. For a 2 GB import that is 4 GB of writes and
+         * two scans per file. Not changed here because the gate owns staging
+         * and its lease/retry/quarantine bookkeeping; a fix would let the gate
+         * adopt an already-staged object (IngestionRequest pointing at the
+         * existing key, re-scanned in place) instead of re-uploading it.
+         * Related: every DOCUMENT_UPLOADED/DOCUMENT_SCAN_* audit row takes the
+         * audit hash chain's single advisory lock (AuditService#persist), so
+         * audit writes are serialized across the whole system - the practical
+         * ceiling on bulk throughput, by design of the tamper-evident chain.
+         */
         IngestionTicketResponse ticket;
         try {
-            ticket = documentService.uploadDocument(batch.documentTypeId(), title, item.getFilenameReference(),
-                    item.getStagedSizeBytes(), content);
+            ticket = documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
+                    item.getStagedSizeBytes(), content, batch.folderId());
         } catch (ApiException e) {
             if (!isRejection(e)) {
                 throw e;

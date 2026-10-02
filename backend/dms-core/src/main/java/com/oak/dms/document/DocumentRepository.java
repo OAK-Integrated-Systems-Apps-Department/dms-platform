@@ -1,5 +1,6 @@
 package com.oak.dms.document;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -15,23 +16,111 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     Optional<Document> findByDocumentIdAndTenantIdAndDeletedFalse(UUID documentId, UUID tenantId);
 
+    // Document browser - every variant is tenant-scoped and skips deleted documents.
+    Page<Document> findByTenantIdAndDeletedFalse(UUID tenantId, Pageable pageable);
+
+    Page<Document> findByTenantIdAndDeletedFalseAndTitleContainingIgnoreCase(UUID tenantId, String title,
+                                                                            Pageable pageable);
+
+    Page<Document> findByTenantIdAndFolderIdAndDeletedFalse(UUID tenantId, UUID folderId, Pageable pageable);
+
+    Page<Document> findByTenantIdAndFolderIdAndDeletedFalseAndTitleContainingIgnoreCase(UUID tenantId, UUID folderId,
+                                                                                        String title, Pageable pageable);
+
+    Page<Document> findByTenantIdAndFolderIdIsNullAndDeletedFalse(UUID tenantId, Pageable pageable);
+
+    Page<Document> findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTitleContainingIgnoreCase(UUID tenantId,
+                                                                                             String title,
+                                                                                             Pageable pageable);
+
+    // Access-filtered browsing (V53/V54), for callers who can't see everything. A document is
+    // visible when it follows its folder and that folder isn't hidden, or it's restricted and the
+    // caller is on its list. :title '' matches every title.
+    String FOLLOWS_FOLDER = "d.accessMode = com.oak.dms.folder.FolderAccessMode.inherit";
+    String ON_ITS_LIST = "(d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted and d.documentId in :granted)";
+    String LIVE_TITLED = "d.tenantId = :tenantId and d.deleted = false and lower(d.title) like lower(concat('%', :title, '%')) ";
+
+    /** "All documents": the top level and every folder the caller can see. */
+    @Query("select d from Document d where " + LIVE_TITLED + "and ((" + FOLLOWS_FOLDER
+            + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + ")")
+    Page<Document> findVisible(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                               @Param("hidden") Collection<UUID> hiddenFolderIds,
+                               @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+
+    /** One folder the caller can see. */
+    @Query("select d from Document d where " + LIVE_TITLED + "and d.folderId = :folderId and (" + FOLLOWS_FOLDER
+            + " or " + ON_ITS_LIST + ")")
+    Page<Document> findVisibleInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                       @Param("folderId") UUID folderId,
+                                       @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+
+    /** The top level. */
+    @Query("select d from Document d where " + LIVE_TITLED + "and d.folderId is null and (" + FOLLOWS_FOLDER
+            + " or " + ON_ITS_LIST + ")")
+    Page<Document> findVisibleAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                         @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+
+    /**
+     * "Shared with me": restricted documents whose own list names the user or
+     * one of their roles - not ones they own (those are theirs, not shared).
+     */
+    @Query("select d from Document d where " + LIVE_TITLED
+            + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted "
+            + "and (d.ownerUserId is null or d.ownerUserId <> :userId) "
+            + "and d.documentId in (select e.documentId from com.oak.dms.folder.DocumentAccessEntry e "
+            + "where e.tenantId = :tenantId and ((e.principalType = com.oak.dms.folder.FolderAccessEntry.PrincipalType.user and e.principalId = :userId) "
+            + "or (e.principalType = com.oak.dms.folder.FolderAccessEntry.PrincipalType.role and e.principalId in :roleIds)))")
+    Page<Document> findSharedWith(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                  @Param("userId") UUID userId, @Param("roleIds") Collection<UUID> roleIds,
+                                  Pageable pageable);
+
+    boolean existsByTenantIdAndAccessModeAndDeletedFalse(UUID tenantId, com.oak.dms.folder.FolderAccessMode accessMode);
+
+    @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
+    List<UUID> findRestrictedIds(@Param("tenantId") UUID tenantId);
+
+    /** [documentId, folderId] of every restricted document. */
+    @Query("select d.documentId, d.folderId from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
+    List<Object[]> findRestrictedIdsWithFolder(@Param("tenantId") UUID tenantId);
+
+    /** Ids of the documents filed in any of the folders, oldest first - a folder export. */
+    @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.folderId in :folderIds and d.documentId not in :hiddenDocs order by d.createdAt, d.documentId")
+    List<UUID> findIdsInFolders(@Param("tenantId") UUID tenantId, @Param("folderIds") Collection<UUID> folderIds,
+                                @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds, Pageable limit);
+
+    @Query("select count(d) from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.folderId in :folderIds and d.documentId not in :hiddenDocs")
+    long countInFolders(@Param("tenantId") UUID tenantId, @Param("folderIds") Collection<UUID> folderIds,
+                        @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds);
+
     /** Chosen documents that exist in the tenant - an export by id. */
     List<Document> findAllByDocumentIdInAndTenantIdAndDeletedFalse(Collection<UUID> documentIds, UUID tenantId);
 
-    /** Ids of one type's documents created in [from, to), oldest first - an export by filter. */
+    /** Ids of one type's documents created in [from, to), outside the hidden folders, oldest first - an export by filter. */
     @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
             + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to "
+            + "and d.documentId not in :hiddenDocs and (d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted "
+            + "or d.folderId is null or d.folderId not in :hidden) "
             + "order by d.createdAt, d.documentId")
     List<UUID> findIdsByTypeCreatedBetween(@Param("tenantId") UUID tenantId,
                                            @Param("documentTypeId") UUID documentTypeId,
                                            @Param("from") OffsetDateTime from,
                                            @Param("to") OffsetDateTime to,
+                                           @Param("hidden") Collection<UUID> hiddenFolderIds,
+                                           @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds,
                                            Pageable limit);
 
     @Query("select count(d) from Document d where d.tenantId = :tenantId and d.deleted = false "
-            + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to")
+            + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to "
+            + "and d.documentId not in :hiddenDocs and (d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted "
+            + "or d.folderId is null or d.folderId not in :hidden)")
     long countByTypeCreatedBetween(@Param("tenantId") UUID tenantId,
                                    @Param("documentTypeId") UUID documentTypeId,
                                    @Param("from") OffsetDateTime from,
-                                   @Param("to") OffsetDateTime to);
+                                   @Param("to") OffsetDateTime to,
+                                   @Param("hidden") Collection<UUID> hiddenFolderIds,
+                                   @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds);
 }

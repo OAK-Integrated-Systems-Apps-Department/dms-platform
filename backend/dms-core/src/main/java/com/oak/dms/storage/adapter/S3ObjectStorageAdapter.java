@@ -29,6 +29,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -91,6 +92,13 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
             if (contentType != null && !contentType.isBlank()) {
                 request.contentType(contentType);
             }
+            ServerSideEncryptionSetting sse = serverSideEncryption(location);
+            if (sse != null) {
+                request.serverSideEncryption(ServerSideEncryption.fromValue(sse.algorithm()));
+                if (sse.kmsKeyId() != null) {
+                    request.ssekmsKeyId(sse.kmsKeyId());
+                }
+            }
             PutObjectResponse response = client(location).putObject(request.build(),
                     RequestBody.fromInputStream(content, contentLength));
             return new StoredObjectMetadata(objectKey, contentLength, contentType,
@@ -100,6 +108,65 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
             throw new StorageUploadException(objectKey, e);
         }
     }
+
+    @Override
+    public boolean encryptsAtRest(StorageLocation location) {
+        return serverSideEncryption(location) != null;
+    }
+
+    /** @param kmsKeyId null = the bucket's default KMS key (or SSE-S3) */
+    record ServerSideEncryptionSetting(String algorithm, String kmsKeyId) {
+    }
+
+    /**
+     * The location's own {@code configuration} ({"serverSideEncryption": "aws:kms", "kmsKeyId": "..."})
+     * wins; otherwise the deployment setting for its purpose (dms.storage.staging/quarantine.*), then
+     * dms.storage.s3.*. Null = no server-side encryption requested.
+     */
+    ServerSideEncryptionSetting serverSideEncryption(StorageLocation location) {
+        String algorithm = null;
+        String kmsKeyId = null;
+        if (location.getConfiguration() != null && !location.getConfiguration().isBlank()) {
+            try {
+                var config = CONFIG_MAPPER.readTree(location.getConfiguration());
+                algorithm = text(config.path("serverSideEncryption").asText(null));
+                kmsKeyId = text(config.path("kmsKeyId").asText(null));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new StorageConfigurationException("Storage location " + location.getStorageLocationId()
+                        + " has a configuration that isn't valid JSON");
+            }
+        }
+        if (algorithm == null && location.getPurpose() != null) {
+            StorageProperties.PurposeTarget target = switch (location.getPurpose()) {
+                case staging -> storageProperties.getStaging();
+                case quarantine -> storageProperties.getQuarantine();
+                default -> null;
+            };
+            if (target != null) {
+                algorithm = text(target.getServerSideEncryption());
+                kmsKeyId = text(target.getKmsKeyId());
+            }
+        }
+        if (algorithm == null) {
+            algorithm = text(storageProperties.getS3().getServerSideEncryption());
+            kmsKeyId = text(storageProperties.getS3().getKmsKeyId());
+        }
+        if (algorithm == null || "none".equalsIgnoreCase(algorithm)) {
+            return null;
+        }
+        if (!algorithm.equals("AES256") && !algorithm.equals("aws:kms")) {
+            throw new StorageConfigurationException("Unknown S3 server-side encryption '" + algorithm
+                    + "' - use AES256 or aws:kms");
+        }
+        return new ServerSideEncryptionSetting(algorithm, "aws:kms".equals(algorithm) ? kmsKeyId : null);
+    }
+
+    private static String text(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper CONFIG_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     @Override
     public DownloadedObject download(StorageLocation location, String objectKey) {

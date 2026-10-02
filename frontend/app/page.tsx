@@ -9,6 +9,10 @@ import {
   RecentDocumentsPanel,
 } from "@/components/dashboard/panels"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
+import { FolderNameDialog } from "@/components/folders/folder-dialogs"
+import { friendlyMessage } from "@/lib/api-error"
+import { createFolder } from "@/lib/folders/api"
+import { toast } from "sonner"
 import { StatsRow } from "@/components/dashboard/stats-row"
 import { WelcomeHeader } from "@/components/dashboard/welcome-header"
 import { recentDocuments } from "@/components/dashboard/data"
@@ -28,7 +32,9 @@ export default function Page() {
   const { hasPermission } = usePermissions()
   const canUpload = hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
   // Each opening gets a fresh sheet (new key) seeded with the picked files.
-  const [upload, setUpload] = useState<{ key: number; files: File[] } | null>(null)
+  const [upload, setUpload] = useState<{ key: number; files: File[] } | null>(
+    null
+  )
 
   // Real upload now: the picked files go to the bulk upload panel, which
   // sends each one through the malware-scanned POST /api/v1/documents.
@@ -36,17 +42,31 @@ export default function Page() {
     setUpload({ key: Date.now(), files: Array.from(files) })
   }
 
-  function handleCreateFolder(name: string) {
-    const folder: RecentDocument = {
-      id: `folder-${Date.now()}`,
-      name,
-      type: "folder",
-      owner: "You",
-      modified: "Just now",
-      size: "—",
-      status: "Draft",
+  const canCreateFolder = hasPermission(PermissionCodes.DSC_FOLDERS_CREATE)
+  const [newFolder, setNewFolder] = useState<number | null>(null)
+
+  // A real top-level folder in the shared tree; it also shows in the
+  // (sample) recent list so the dashboard reacts straight away.
+  async function handleCreateFolder(name: string): Promise<string | null> {
+    try {
+      const folder = await createFolder(name, null)
+      const row: RecentDocument = {
+        id: `folder-${folder.folderId}`,
+        name: folder.name,
+        type: "folder",
+        owner: "You",
+        modified: "Just now",
+        size: "—",
+        status: "Draft",
+      }
+      setDocuments((current) => [row, ...current])
+      toast.success(`Created "${folder.name}".`, {
+        description: "Open My Documents to add documents to it.",
+      })
+      return null
+    } catch (error) {
+      return friendlyMessage(error, "Could not create the folder.")
     }
-    setDocuments((current) => [folder, ...current])
   }
 
   return (
@@ -56,7 +76,9 @@ export default function Page() {
         dateLabel="Tuesday, August 18, 2026"
         isLoadingName={isUserLoading}
         onUpload={canUpload ? handleUpload : undefined}
-        onCreateFolder={handleCreateFolder}
+        onCreateFolder={
+          canCreateFolder ? () => setNewFolder(Date.now()) : undefined
+        }
       />
 
       <StatsRow />
@@ -76,6 +98,17 @@ export default function Page() {
           onOpenChange={(open) => {
             if (!open) setUpload(null)
           }}
+        />
+      )}
+      {newFolder !== null && (
+        <FolderNameDialog
+          key={newFolder}
+          open
+          onOpenChange={(open) => !open && setNewFolder(null)}
+          title="New folder"
+          description="A top-level folder in your organisation's shared folders."
+          confirmLabel="Create folder"
+          onSubmit={handleCreateFolder}
         />
       )}
     </DashboardShell>

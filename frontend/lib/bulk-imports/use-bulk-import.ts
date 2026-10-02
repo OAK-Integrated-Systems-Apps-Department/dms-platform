@@ -45,14 +45,16 @@ export function useBulkImport(batchId: string | null, enabled = true) {
   })
 
   const active = activeQuery.data ?? null
-  const watchedId = batchId ?? (active && isInFlight(active.status) ? active.batchId : null)
+  const watchedId =
+    batchId ?? (active && isInFlight(active.status) ? active.batchId : null)
 
   const statusQuery = useQuery({
     queryKey: statusKey(watchedId ?? ""),
     queryFn: () => fetchBulkImportStatus(watchedId as string),
     retry: false,
     enabled: enabled && Boolean(watchedId),
-    refetchInterval: (query) => (isInFlight(query.state.data?.status) ? POLL_INTERVAL_MS : false),
+    refetchInterval: (query) =>
+      isInFlight(query.state.data?.status) ? POLL_INTERVAL_MS : false,
   })
 
   function invalidate() {
@@ -60,7 +62,13 @@ export function useBulkImport(batchId: string | null, enabled = true) {
   }
 
   const createMutation = useMutation({
-    mutationFn: (template: File) => createBulkImport(template),
+    mutationFn: ({
+      template,
+      folderId,
+    }: {
+      template: File
+      folderId?: string | null
+    }) => createBulkImport(template, folderId),
     onSuccess: () => invalidate(),
   })
   const submitMutation = useMutation({
@@ -97,12 +105,22 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     submitting: submitMutation.isPending,
     cancelling: cancelMutation.isPending,
     create: async (
-      template: File
-    ): Promise<{ batch: BulkImportCreatedResponseDto; error: null } | { batch: null; error: string }> => {
+      template: File,
+      folderId?: string | null
+    ): Promise<
+      | { batch: BulkImportCreatedResponseDto; error: null }
+      | { batch: null; error: string }
+    > => {
       try {
-        return { batch: await createMutation.mutateAsync(template), error: null }
+        return {
+          batch: await createMutation.mutateAsync({ template, folderId }),
+          error: null,
+        }
       } catch (err) {
-        return { batch: null, error: errorMessage(err, "Could not upload the template.") }
+        return {
+          batch: null,
+          error: errorMessage(err, "Could not upload the template."),
+        }
       }
     },
     submit: async (id: string): Promise<string | null> => {

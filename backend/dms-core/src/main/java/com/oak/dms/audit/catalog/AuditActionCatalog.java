@@ -99,6 +99,7 @@ public final class AuditActionCatalog {
     public static final String METADATA_FIELD_VALIDATION_DELETED = "METADATA_FIELD_VALIDATION_DELETED";
     public static final String DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED";
     public static final String DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED";
+    public static final String DOCUMENT_VIEWED = "DOCUMENT_VIEWED";
     public static final String DOCUMENT_DELETED = "DOCUMENT_DELETED";
     public static final String STORAGE_LOCATION_CREATED = "STORAGE_LOCATION_CREATED";
     public static final String DOCUMENT_SCAN_CLEAN = "DOCUMENT_SCAN_CLEAN";
@@ -113,6 +114,17 @@ public final class AuditActionCatalog {
     public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
     public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
     public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
+    public static final String IMPORT_FILE_BLOCKED = "IMPORT_FILE_BLOCKED";
+    public static final String FOLDER_CREATED = "FOLDER_CREATED";
+    public static final String FOLDER_RENAMED = "FOLDER_RENAMED";
+    public static final String FOLDER_MOVED = "FOLDER_MOVED";
+    public static final String FOLDER_DELETED = "FOLDER_DELETED";
+    public static final String FOLDER_ACCESS_CHANGED = "FOLDER_ACCESS_CHANGED";
+    public static final String DOCUMENT_ACCESS_CHANGED = "DOCUMENT_ACCESS_CHANGED";
+    public static final String ENCRYPTION_KEY_ROTATED = "ENCRYPTION_KEY_ROTATED";
+    public static final String ENCRYPTION_KEYS_REWRAPPED = "ENCRYPTION_KEYS_REWRAPPED";
+    public static final String ENCRYPTION_BACKFILL_COMPLETED = "ENCRYPTION_BACKFILL_COMPLETED";
+    public static final String DOCUMENT_MOVED = "DOCUMENT_MOVED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
@@ -268,6 +280,8 @@ public final class AuditActionCatalog {
             // state-changing action.
             Map.entry(DOCUMENT_UPLOADED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_DOWNLOADED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            // Opened in the in-app preview rather than saved as a file.
+            Map.entry(DOCUMENT_VIEWED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
 
             // Storage locations (StorageLocationController) - also module
@@ -308,6 +322,24 @@ public final class AuditActionCatalog {
             Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            // A file refused at intake by the virus scan - a security event, HIGH.
+            Map.entry(IMPORT_FILE_BLOCKED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false)),
+
+            // Folders (FolderService) - module DSC; moving documents - DOCM.
+            Map.entry(FOLDER_CREATED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_RENAMED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_MOVED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_DELETED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            // Who can get into a folder changed - security relevant, so HIGH.
+            Map.entry(FOLDER_ACCESS_CHANGED, new AuditActionSpec("DSC", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_ACCESS_CHANGED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+
+            // Encryption at rest (EncryptionAdminService) - module DE (DE-NFR-006). Every unwrap is
+            // additionally an authenticated request in OpenBao's own audit log.
+            Map.entry(ENCRYPTION_KEY_ROTATED, new AuditActionSpec("DE", AuditSeverity.HIGH, false)),
+            Map.entry(ENCRYPTION_KEYS_REWRAPPED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            Map.entry(ENCRYPTION_BACKFILL_COMPLETED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_MOVED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
@@ -316,9 +348,8 @@ public final class AuditActionCatalog {
 
             // Bulk export (ExportJobService / ExportJobWorker) - module FIE.
             // DOWNLOADED is HIGH: it is the moment a bulk copy of documents
-            // leaves the system. Each document read into the ZIP should also
-            // be DOCUMENT_DOWNLOADED - see the FOLLOW-UP on
-            // DocumentServiceImpl#downloadDocument for why it isn't yet.
+            // leaves the system. Each document read into the ZIP is also a
+            // DOCUMENT_DOWNLOADED, with {"via": "bulk_export"}.
             Map.entry(EXPORT_REQUESTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false))

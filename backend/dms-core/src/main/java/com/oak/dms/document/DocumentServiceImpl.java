@@ -23,7 +23,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.oak.dms.document.dto.DocumentListItem;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
+import com.oak.dms.folder.FolderAccessLevel;
+import com.oak.dms.folder.FolderAccessMode;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderService;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -49,6 +65,11 @@ public class DocumentServiceImpl implements DocumentService {
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
     private final AuditService auditService;
+    private final FolderService folderService;
+    private final FolderAccessService folderAccessService;
+    private final DocumentAccessService documentAccessService;
+    private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
+    private final DocumentTypeRepository documentTypeRepository;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -60,37 +81,173 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
-                                                  long contentLength, InputStream content) {
+                                                  long contentLength, InputStream content, UUID folderId) {
+        if (folderId != null) {
+            // 404/403 now, rather than a document landing nowhere (or somewhere it mustn't) later
+            folderService.requireEditable(folderId);
+        }
         return ingestionGate.submit(
-                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content));
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                         long contentLength, InputStream content, UUID folderId) {
+        if (folderId != null) {
+            folderService.requireLive(folderId);
+        }
+        return ingestionGate.submit(
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentListItem> listDocuments(UUID folderId, boolean allFolders, String query, Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        String q = query == null || query.isBlank() ? null : query.strip();
+        DocumentAccessView access = documentAccessService.forCaller();
+        if (folderId != null && !allFolders) {
+            folderAccessService.require(access.folders(), folderId, FolderAccessLevel.view);
+        }
+        Page<Document> page;
+        if (!access.seesEverything()) {
+            // Folder access (V53) and document access (V54) both apply.
+            String title = q == null ? "" : q;
+            page = allFolders
+                    ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
+                    access.grantedIds(), pageable)
+                    : folderId != null
+                    ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(), pageable)
+                    : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(), pageable);
+        } else if (allFolders) {
+            page = q == null ? documentRepository.findByTenantIdAndDeletedFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId, q, pageable);
+        } else if (folderId != null) {
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalse(tenantId, folderId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId,
+                    folderId, q, pageable);
+        } else {
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTitleContainingIgnoreCase(
+                    tenantId, q, pageable);
+        }
+
+        return toItems(page, access);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentListItem> listSharedWithMe(String query, Pageable pageable) {
+        DocumentAccessView access = documentAccessService.forCaller();
+        String title = query == null ? "" : query.strip();
+        Page<Document> page = documentRepository.findSharedWith(TenantContext.getTenantId(), title,
+                TenantContext.getUserId(), accessPrincipals.callerRoleIds(), pageable);
+        return toItems(page, access);
+    }
+
+    /** List rows for a page of documents: current version, type name, and the caller's access. */
+    private Page<DocumentListItem> toItems(Page<Document> page, DocumentAccessView access) {
+        UUID tenantId = TenantContext.getTenantId();
+        List<UUID> versionIds = page.getContent().stream()
+                .map(d -> d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId())
+                .toList();
+        Map<UUID, DocumentVersion> versions = new HashMap<>();
+        documentVersionRepository.findAllById(versionIds).stream()
+                .filter(v -> tenantId.equals(v.getTenantId()))
+                .forEach(v -> versions.put(v.getVersionId(), v));
+        Map<UUID, String> typeNames = new HashMap<>();
+        documentTypeRepository.findAllById(page.getContent().stream().map(Document::getDocumentTypeId).distinct().toList())
+                .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
+
+        return page.map(d -> {
+            DocumentVersion v = versions.get(d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId());
+            return new DocumentListItem(d.getDocumentId(), d.getTitle(), d.getDocumentTypeId(),
+                    typeNames.get(d.getDocumentTypeId()), d.getFolderId(),
+                    v != null ? v.getOriginalFilename() : null, v != null ? v.getSizeBytes() : null,
+                    v != null ? v.getMimeType() : null, v != null ? v.getVersionNumber() : null,
+                    d.getOwnerUserId(), d.getCreatedAt(), d.getAccessMode() == FolderAccessMode.restricted,
+                    access.level(d).name());
+        });
+    }
+
+    @Override
+    public int moveDocuments(List<UUID> documentIds, UUID folderId) {
+        UUID tenantId = TenantContext.getTenantId();
+        DocumentAccessView access = documentAccessService.forCaller();
+        String folderName = folderId == null ? null
+                : folderAccessService.require(access.folders(), folderId, FolderAccessLevel.edit).getFolderName();
+        Set<UUID> wanted = new LinkedHashSet<>(documentIds);
+        List<Document> documents = documentRepository.findAllByDocumentIdInAndTenantIdAndDeletedFalse(wanted, tenantId);
+        // A document hidden from the caller counts as not found, like any other.
+        if (documents.size() != wanted.size() || documents.stream().anyMatch(d -> !access.canSee(d))) {
+            throw new ResourceNotFoundException("Document", "one or more of the selected documents");
+        }
+        // Moving needs edit on the document - for one that follows its folder, edit in that folder.
+        for (Document document : documents) {
+            documentAccessService.require(access, document, FolderAccessLevel.edit);
+        }
+        int moved = 0;
+        for (Document document : documents) {
+            if (Objects.equals(document.getFolderId(), folderId)) {
+                continue;
+            }
+            UUID from = document.getFolderId();
+            document.setFolderId(folderId);
+            document.setUpdatedBy(TenantContext.getUserId());
+            document.setUpdatedAt(OffsetDateTime.now());
+            documentRepository.save(document);
+            moved++;
+            Map<String, Object> before = new HashMap<>();
+            before.put("folderId", from);
+            Map<String, Object> after = new HashMap<>();
+            after.put("folderId", folderId);
+            after.put("folderName", folderName);
+            auditService.event(AuditActionCatalog.DOCUMENT_MOVED)
+                    .objectType(AuditObjectTypes.DOCUMENT)
+                    .objectId(document.getDocumentId())
+                    .resourceName(document.getTitle())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .previousValue(before)
+                    .newValue(after)
+                    .log();
+        }
+        return moved;
     }
 
     @Override
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
-        return documentMapper.toResponse(findOwnedByCallerTenant(documentId));
+        return documentMapper.toResponse(findVisible(documentId, FolderAccessLevel.view));
     }
 
     /**
-     * FOLLOW-UP (found 2026-10-01 while building bulk export): the
-     * DOCUMENT_DOWNLOADED audit event below is never recorded. This method
-     * is {@code readOnly = true}; {@code AuditService#persist} joins that
-     * transaction (plain {@code @Transactional}), so Hibernate never flushes
-     * the AuditEvent insert. Evidence: {@code select count(*) from
-     * audit_events where action = 'DOCUMENT_DOWNLOADED'} is 0 on the local
-     * DB after single downloads and a 3-document export, while every other
-     * event (EXPORT_*, BULK_IMPORT_*) is written. Not fixed here because it
-     * changes the core download path's transaction for every caller, outside
-     * the import/export change. A fix must make this method read-write (or
-     * have AuditService write in its own transaction - a wider decision,
-     * since it would also keep audit rows when the business change rolls
-     * back) and add a test that a download leaves one DOCUMENT_DOWNLOADED row.
+     * Read-write on purpose: the DOCUMENT_DOWNLOADED (or DOCUMENT_VIEWED) audit
+     * row joins this transaction and is only written when it commits - a
+     * read-only transaction silently dropped it.
      */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
+    }
+
+    @Override
+    @Transactional
+    public DownloadedDocument previewDocument(UUID documentId) {
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_VIEWED, null);
+    }
+
+    @Override
+    @Transactional
+    public DownloadedDocument downloadDocumentFromJob(UUID documentId, String job) {
+        return serve(findOwnedByCallerTenant(documentId), AuditActionCatalog.DOCUMENT_DOWNLOADED, job);
+    }
+
+    /** The document's current (or latest) servable version, audited as {@code action}. */
+    private DownloadedDocument serve(Document document, String action, String job) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = findOwnedByCallerTenant(documentId);
+        UUID documentId = document.getDocumentId();
 
         UUID versionId = document.getCurrentVersionId() != null
                 ? document.getCurrentVersionId()
@@ -126,12 +283,15 @@ public class DocumentServiceImpl implements DocumentService {
         DownloadedObject downloaded = objectStorageServiceFactory.resolve(location)
                 .download(location, version.getStorageObjectKey());
 
-        auditService.event(AuditActionCatalog.DOCUMENT_DOWNLOADED)
+        var event = auditService.event(action)
                 .objectType(AuditObjectTypes.DOCUMENT)
                 .objectId(documentId)
                 .resourceName(document.getTitle())
-                .outcome(AuditOutcome.SUCCESS)
-                .log();
+                .outcome(AuditOutcome.SUCCESS);
+        if (job != null) {
+            event.newValue(Map.of("via", job));
+        }
+        event.log();
 
         // mimeType/sizeBytes come from DocumentVersion (the authoritative
         // record), not downloaded's own best-effort values - see
@@ -142,7 +302,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void deleteDocument(UUID documentId) {
-        Document document = findOwnedByCallerTenant(documentId);
+        Document document = findVisible(documentId, FolderAccessLevel.edit);
 
         document.setDeleted(true);
         document.setDeletedAt(OffsetDateTime.now());
@@ -167,5 +327,19 @@ public class DocumentServiceImpl implements DocumentService {
     private Document findOwnedByCallerTenant(UUID documentId) {
         return documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, TenantContext.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+    }
+
+    /**
+     * The caller's tenant's document, if its folder lets them in at {@code needed}:
+     * a document hidden from them (its folder or its own list, V53/V54) is 404, like one that doesn't exist.
+     */
+    private Document findVisible(UUID documentId, FolderAccessLevel needed) {
+        return documentAccessService.require(documentAccessService.forCaller(), findOwnedByCallerTenant(documentId),
+                needed);
+    }
+
+    /** For a NOT IN clause, which must never be empty. */
+    private static Set<UUID> nonEmpty(Set<UUID> ids) {
+        return ids.isEmpty() ? Set.of(new UUID(0, 0)) : ids;
     }
 }

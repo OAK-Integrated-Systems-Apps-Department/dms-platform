@@ -7,6 +7,9 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessLevel;
+import com.oak.dms.folder.FolderAccessService;
 import com.oak.dms.importexport.config.ExportJobProperties;
 import com.oak.dms.importexport.dto.CreateExportRequest;
 import com.oak.dms.importexport.dto.ExportJobResponse;
@@ -63,6 +66,8 @@ public class BulkExportService {
     private final AuditService auditService;
     private final ExportJobProperties properties;
     private final ObjectMapper objectMapper;
+    private final FolderAccessService folderAccessService;
+    private final DocumentAccessService documentAccessService;
 
     /** A finished export ready to stream. */
     public record DownloadedExport(String filename, long sizeBytes, java.io.InputStream content) {
@@ -80,7 +85,8 @@ public class BulkExportService {
     @Transactional(readOnly = true)
     public ExportPreviewResponse preview(CreateExportRequest request) {
         validate(request);
-        return new ExportPreviewResponse(selector.count(TenantContext.getTenantId(), request), properties.getMaxDocuments());
+        return new ExportPreviewResponse(selector.count(TenantContext.getTenantId(), forCaller(request)),
+                properties.getMaxDocuments());
     }
 
     /** Saves the job and starts it once the transaction commits. */
@@ -89,6 +95,8 @@ public class BulkExportService {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
         TemplateFormat format = validate(request);
+        // Fix what the requester may see now - the worker runs without their login.
+        request = forCaller(request);
 
         if (repository.countByTenantIdAndRequestedByAndStatusIn(tenantId, userId, ACTIVE)
                 >= properties.getMaxActiveJobsPerUser()) {
@@ -106,6 +114,7 @@ public class BulkExportService {
 
         ExportType type = !request.filesIncluded() ? ExportType.report_data
                 : request.byIds() && request.documentIds().size() == 1 ? ExportType.single_document
+                : request.byFolder() ? ExportType.bulk_folder
                 : ExportType.bulk_selection;
         ExportJob job = repository.save(ExportJob.builder()
                 .tenantId(tenantId)
@@ -122,6 +131,7 @@ public class BulkExportService {
         details.put("metadataFormat", format.name());
         details.put("documentCount", count);
         details.put("documentTypeId", request.documentTypeId());
+        details.put("folderId", request.folderId());
         details.put("createdFrom", request.createdFrom() != null ? request.createdFrom().toString() : null);
         details.put("createdTo", request.createdTo() != null ? request.createdTo().toString() : null);
         details.put("includeFiles", request.filesIncluded());
@@ -219,8 +229,14 @@ public class BulkExportService {
             }
             return format;
         }
+        if (request.byFolder()) {
+            // 404 for a folder hidden from the caller, exactly as for one that doesn't exist.
+            folderAccessService.require(request.folderId(), FolderAccessLevel.view);
+            return format;
+        }
         if (request.documentTypeId() == null) {
-            throw BulkImportException.badRequest("EXPORT_INVALID", "Choose the documents, or a document type to export.");
+            throw BulkImportException.badRequest("EXPORT_INVALID",
+                    "Choose the documents, a folder, or a document type to export.");
         }
         documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(request.documentTypeId(),
                         TenantContext.getTenantId())
@@ -236,6 +252,12 @@ public class BulkExportService {
         return repository.findByExportJobIdAndTenantId(jobId, TenantContext.getTenantId())
                 .filter(job -> job.getRequestedBy().equals(TenantContext.getUserId()))
                 .orElseThrow(() -> new ResourceNotFoundException("ExportJob", jobId));
+    }
+
+    /** The request with what's hidden from the caller set (V53/V54), replacing anything the client sent. */
+    private CreateExportRequest forCaller(CreateExportRequest request) {
+        DocumentAccessService.DocumentAccessView access = documentAccessService.forCaller();
+        return request.withHidden(access.folders().hiddenFolderIds(), documentAccessService.hiddenRestrictedIds(access));
     }
 
     private String json(CreateExportRequest request) {

@@ -1,7 +1,14 @@
 "use client"
 
-import { useId, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react"
-import { Upload } from "lucide-react"
+import {
+  useId,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react"
+import { CloudUpload } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -44,7 +51,9 @@ export function FileDropzone({
 
   function emit(fileList: FileList | null) {
     if (!fileList || disabled) return
-    const files = Array.from(fileList).filter((file) => matchesAccept(file, accept))
+    const files = Array.from(fileList).filter((file) =>
+      matchesAccept(file, accept)
+    )
     if (files.length === 0) return
     onFiles(multiple ? files : files.slice(0, 1))
   }
@@ -101,17 +110,20 @@ export function FileDropzone({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={cn(
-        "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-9 text-center transition-colors outline-none",
+        "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-strong)] bg-card px-6 py-9 text-center transition-colors outline-none",
         "hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         "data-[dragging]:border-primary data-[dragging]:bg-primary/5",
         "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-card",
         className
       )}
     >
-      <span className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <Upload size={18} aria-hidden="true" />
+      <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <CloudUpload size={21} aria-hidden="true" />
       </span>
-      <div id={hintId} className="text-[13px] leading-[1.6] text-muted-foreground">
+      <div
+        id={hintId}
+        className="text-[13px] leading-[1.6] text-muted-foreground"
+      >
         {children ?? (
           <>
             <span className="font-semibold text-foreground">
