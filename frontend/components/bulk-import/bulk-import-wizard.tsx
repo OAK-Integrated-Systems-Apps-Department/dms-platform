@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { AlertTriangle, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
@@ -15,7 +15,7 @@ import { useUploadQueue } from "@/lib/bulk-imports/use-upload-queue"
 import { BatchStatusCard } from "./batch-status-card"
 import { ImportResultsCard } from "./import-results-card"
 import { StartImportSteps } from "./start-import-steps"
-import { StepCard } from "./step-card"
+import { InlineError, StepCard } from "./step-card"
 import { UploadFilesStep } from "./upload-files-step"
 
 /**
@@ -25,8 +25,13 @@ import { UploadFilesStep } from "./upload-files-step"
  * - a batch being worked on (or a submitted one found on load): steps 3-4
  *   while it's `uploading`, the submitted card - polled for progress -
  *   while it's `queued`/`running`, and the results once it's finished.
+ *
+ * Without document-create (`canCreateDocuments` false) a new import can't be
+ * started, and an existing one is shown under a banner with uploading and
+ * submitting disabled - status, results and Cancel stay available, matching
+ * the backend, which keeps those endpoints FIE-only.
  */
-export function BulkImportWizard() {
+export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: boolean }) {
   const [batchId, setBatchId] = useState<string | null>(null)
   const [createdNotice, setCreatedNotice] = useState<string | null>(null)
 
@@ -85,6 +90,18 @@ export function BulkImportWizard() {
     return error
   }
 
+  function withPermissionBanner(content: ReactNode) {
+    if (canCreateDocuments) return content
+    return (
+      <>
+        <div className="mb-4">
+          <InlineError>{NEEDS_DOCUMENT_CREATE}</InlineError>
+        </div>
+        {content}
+      </>
+    )
+  }
+
   // Working on a specific batch (just created, resumed, or already
   // submitted when the screen loaded).
   if (batchId ?? bulkImport.watchedId) {
@@ -97,12 +114,13 @@ export function BulkImportWizard() {
       )
     }
     if (status.status === "uploading") {
-      return (
+      return withPermissionBanner(
         <UploadFilesStep
           status={status}
           createdNotice={createdNotice}
           entries={queue.entries}
           uploading={queue.busy}
+          uploadsAllowed={canCreateDocuments}
           onFiles={(files) => queue.addFiles(status.batchId, files)}
           onSubmit={() => handleSubmit(status.batchId)}
           onCancel={() => handleCancel(status.batchId)}
@@ -110,7 +128,7 @@ export function BulkImportWizard() {
       )
     }
     if (status.status === "queued" || status.status === "running") {
-      return (
+      return withPermissionBanner(
         <BatchStatusCard
           batch={status}
           documentTypeName={documentTypeName(status.documentTypeId)}
@@ -119,7 +137,7 @@ export function BulkImportWizard() {
       )
     }
     if (isFinished(status.status)) {
-      return (
+      return withPermissionBanner(
         <ImportResultsCard
           batch={status}
           documentTypeName={documentTypeName(status.documentTypeId)}
@@ -150,7 +168,7 @@ export function BulkImportWizard() {
 
   const active = bulkImport.active
   if (active) {
-    return (
+    return withPermissionBanner(
       <BatchStatusCard
         batch={active}
         documentTypeName={documentTypeName(active.documentTypeId)}
@@ -158,6 +176,10 @@ export function BulkImportWizard() {
         onCancel={() => handleCancel(active.batchId)}
       />
     )
+  }
+
+  if (!canCreateDocuments) {
+    return <ErrorPanel message={NEEDS_DOCUMENT_CREATE} />
   }
 
   return (
@@ -172,6 +194,9 @@ export function BulkImportWizard() {
     />
   )
 }
+
+const NEEDS_DOCUMENT_CREATE =
+  "You also need permission to create documents to use bulk import. Ask your administrator."
 
 function ErrorPanel({ message }: { message: string }) {
   return (

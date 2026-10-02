@@ -34,6 +34,13 @@ import java.util.UUID;
  * Bulk import intake: download a template, upload the filled-in template
  * to open a batch, upload each file it lists, then submit (or cancel). Every byte goes
  * through {@link BulkImportService}.
+ * <p>
+ * An import creates documents, so it must not bypass document-create: starting
+ * a batch, uploading its files and submitting it also require
+ * {@code DOCM_DOCUMENTS_CREATE}. The worker later creates the documents with no
+ * request (and so no caller to check), which is why the check sits here, up to
+ * and including submit. Reading, failures and cancel stay FIE-only, so a user who
+ * loses document-create mid-import can still see and cancel it.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -66,7 +73,8 @@ public class BulkImportController {
     }
 
     @PostMapping(value = "/bulk-imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)"
+            + " and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
     @Operation(summary = "Upload a filled-in import template to start a bulk import")
     public ResponseEntity<BulkImportCreatedResponse> createBatch(@RequestPart("template") MultipartFile template)
             throws IOException {
@@ -77,7 +85,8 @@ public class BulkImportController {
     }
 
     @PostMapping(value = "/bulk-imports/{batchId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)"
+            + " and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
     @Operation(summary = "Upload one file listed in the bulk import's template")
     public ImportFileReceivedResponse uploadFile(@PathVariable("batchId") UUID batchId,
                                                  @RequestPart("file") MultipartFile file) throws IOException {
@@ -88,7 +97,8 @@ public class BulkImportController {
     }
 
     @PostMapping("/bulk-imports/{batchId}/submit")
-    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)"
+            + " and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
     @Operation(summary = "Queue the bulk import for processing (rows without a file will fail)")
     public ResponseEntity<Void> submit(@PathVariable("batchId") UUID batchId) {
         bulkImportService.submit(batchId);

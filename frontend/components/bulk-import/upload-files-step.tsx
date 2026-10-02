@@ -18,6 +18,8 @@ interface UploadFilesStepProps {
   createdNotice: string | null
   entries: UploadQueueEntry[]
   uploading: boolean
+  /** False when the caller lacks document-create: uploading and submitting are disabled, Cancel still works. */
+  uploadsAllowed: boolean
   onFiles: (files: File[]) => void
   onSubmit: () => Promise<string | null>
   onCancel: () => Promise<string | null>
@@ -29,6 +31,7 @@ export function UploadFilesStep({
   createdNotice,
   entries,
   uploading,
+  uploadsAllowed,
   onFiles,
   onSubmit,
   onCancel,
@@ -74,7 +77,7 @@ export function UploadFilesStep({
       >
         {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
 
-        <FileDropzone multiple onFiles={onFiles} label="Upload import files">
+        <FileDropzone multiple onFiles={onFiles} disabled={!uploadsAllowed} label="Upload import files">
           <span className="font-semibold text-foreground">Drag files here</span> or click to browse
           <span className="mt-0.5 block text-[12px]">Up to 100 MB per file</span>
         </FileDropzone>
@@ -132,7 +135,7 @@ export function UploadFilesStep({
         }
         action={cancelButton}
       >
-        <Button onClick={handleSubmitClick} disabled={uploading || submitting}>
+        <Button onClick={handleSubmitClick} disabled={!uploadsAllowed || uploading || submitting}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
           {submitting ? "Submitting…" : "Submit import"}
         </Button>
