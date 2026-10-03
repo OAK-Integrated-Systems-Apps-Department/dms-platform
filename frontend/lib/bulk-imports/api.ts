@@ -56,6 +56,31 @@ export interface BulkImportStatusResponseDto {
   createdAt: string
 }
 
+/** Item of GET /bulk-imports - one of the caller's batches, newest first. */
+export interface BulkImportSummaryDto {
+  batchId: string
+  documentTypeId: string
+  /** Null if the type can't be found any more. */
+  documentTypeName: string | null
+  status: BulkImportStatus
+  totalRecords: number
+  successCount: number
+  failureCount: number
+  createdAt: string
+  /** Set once the worker has finished the batch; null before (and for a cancelled batch). */
+  completedAt: string | null
+}
+
+/** Mirrors backend/dms-core's PageResponse<BulkImportSummary>. `page` is 0-indexed. */
+export interface BulkImportPageDto {
+  content: BulkImportSummaryDto[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  last: boolean
+}
+
 /** One problem with a failed row. `fieldLabel` is the column's display name (null if the problem isn't about one column). */
 export interface ImportRowProblemDto {
   field: string | null
@@ -167,6 +192,12 @@ export async function fetchBulkImportFailures(batchId: string): Promise<ImportRo
     undefined,
     "Could not load the rows that failed."
   )
+}
+
+/** GET /bulk-imports - one page of the caller's batches in every status, newest first. The server caps `size` at 50. */
+export async function fetchBulkImports(page: number, size: number): Promise<BulkImportPageDto> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) })
+  return apiFetchJson<BulkImportPageDto>(`${BASE}?${params}`, undefined, "Could not load your recent imports.")
 }
 
 /** GET /bulk-imports/active - the caller's in-progress batch, or `null` (204) when there is none. */

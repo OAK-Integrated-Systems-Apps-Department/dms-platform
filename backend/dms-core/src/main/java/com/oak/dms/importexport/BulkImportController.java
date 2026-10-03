@@ -1,7 +1,9 @@
 package com.oak.dms.importexport;
 
+import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
@@ -10,6 +12,7 @@ import com.oak.dms.importexport.service.BulkImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -39,7 +42,8 @@ import java.util.UUID;
  * a batch, uploading its files and submitting it also require
  * {@code DOCM_DOCUMENTS_CREATE}. The worker later creates the documents with no
  * request (and so no caller to check), which is why the check sits here, up to
- * and including submit. Reading, failures and cancel stay FIE-only, so a user who
+ * and including submit. Reading (including the recent-imports list), failures
+ * and cancel stay FIE-only, so a user who
  * loses document-create mid-import can still see and cancel it.
  */
 @RestController
@@ -103,6 +107,13 @@ public class BulkImportController {
     public ResponseEntity<Void> submit(@PathVariable("batchId") UUID batchId) {
         bulkImportService.submit(batchId);
         return ResponseEntity.accepted().build();
+    }
+
+    @GetMapping("/bulk-imports")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "List the caller's bulk imports in every status, newest first (page size capped at 50)")
+    public PageResponse<BulkImportSummary> listBatches(Pageable pageable) {
+        return PageResponse.from(bulkImportService.listBatches(pageable));
     }
 
     @GetMapping("/bulk-imports/active")

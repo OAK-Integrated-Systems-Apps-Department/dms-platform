@@ -105,7 +105,7 @@ function describe(batch: BulkImportStatusResponseDto) {
   }
 }
 
-function formatDateTime(value: string): string {
+export function formatDateTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? value

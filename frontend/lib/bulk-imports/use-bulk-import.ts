@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
@@ -7,13 +8,17 @@ import {
   createBulkImport,
   fetchActiveBulkImport,
   fetchBulkImportStatus,
+  isFinished,
   isInFlight,
   submitBulkImport,
   type BulkImportCreatedResponseDto,
+  type BulkImportStatus,
 } from "./api"
 
 export const BULK_IMPORTS_KEY = ["bulk-imports"] as const
 const ACTIVE_KEY = [...BULK_IMPORTS_KEY, "active"] as const
+/** The "Recent imports" list (see `useRecentBulkImports`). Under the prefix, so every batch mutation refreshes it. */
+export const RECENT_BULK_IMPORTS_KEY = [...BULK_IMPORTS_KEY, "recent"] as const
 /** How often a submitted batch is re-read while the worker processes it. */
 const POLL_INTERVAL_MS = 3000
 
@@ -54,6 +59,22 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     enabled: enabled && Boolean(watchedId),
     refetchInterval: (query) => (isInFlight(query.state.data?.status) ? POLL_INTERVAL_MS : false),
   })
+
+  // The poll doesn't invalidate anything, so when the watched batch finishes,
+  // refresh the recent-imports list. Only on that transition: a batch that
+  // was already finished when it was opened doesn't need it.
+  const watchedStatus = statusQuery.data?.status
+  const lastSeenRef = useRef<{ id: string | null; status: BulkImportStatus | undefined }>({
+    id: null,
+    status: undefined,
+  })
+  useEffect(() => {
+    const last = lastSeenRef.current
+    if (last.id === watchedId && isInFlight(last.status) && isFinished(watchedStatus)) {
+      void queryClient.invalidateQueries({ queryKey: RECENT_BULK_IMPORTS_KEY })
+    }
+    lastSeenRef.current = { id: watchedId, status: watchedStatus }
+  }, [watchedId, watchedStatus, queryClient])
 
   function invalidate() {
     return queryClient.invalidateQueries({ queryKey: BULK_IMPORTS_KEY })

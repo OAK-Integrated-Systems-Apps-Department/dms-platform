@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
@@ -41,6 +42,12 @@ import com.oak.dms.storage.service.StorageLocationResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -48,6 +55,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -62,11 +70,13 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class BulkImportServiceImplTest {
@@ -276,6 +286,121 @@ class BulkImportServiceImplTest {
     }
 
     @Test
+    void listBatches_queriesOnlyCallersBatchesInTenant() {
+        stubBatchPage(List.of());
+
+        service(realWorkbook).listBatches(PageRequest.of(0, 10));
+
+        verify(importBatchRepository).findAllByTenantIdAndCreatedByAndDeletedFalse(eq(tenantId), eq(userId),
+                any(Pageable.class));
+        verifyNoMoreInteractions(importBatchRepository);
+    }
+
+    @Test
+    void listBatches_sortsNewestFirstAndPassesPagingThrough() {
+        stubBatchPage(List.of());
+
+        service(realWorkbook).listBatches(PageRequest.of(3, 10, Sort.by("status").ascending()));
+
+        Pageable sent = capturedListPageable();
+        assertThat(sent.getPageNumber()).isEqualTo(3);
+        assertThat(sent.getPageSize()).isEqualTo(10);
+        // The client's sort is replaced, never merged.
+        assertThat(sent.getSort()).containsExactly(Sort.Order.desc("createdAt"), Sort.Order.desc("importBatchId"));
+    }
+
+    @Test
+    void listBatches_requestedSizeOver50_isCappedAt50() {
+        stubBatchPage(List.of());
+        BulkImportServiceImpl service = service(realWorkbook);
+
+        service.listBatches(PageRequest.of(2, 500));
+        Pageable capped = capturedListPageable();
+        assertThat(capped.getPageNumber()).isEqualTo(2);
+        assertThat(capped.getPageSize()).isEqualTo(50);
+
+        clearInvocations(importBatchRepository);
+        service.listBatches(PageRequest.of(0, 50));
+        assertThat(capturedListPageable().getPageSize()).isEqualTo(50);
+    }
+
+    @Test
+    void listBatches_includesEveryStatusInRepositoryOrder() {
+        List<ImportBatch> batches = Arrays.stream(ImportBatchStatus.values()).map(this::batch).toList();
+        stubBatchPage(batches);
+        when(documentTypeRepository.findAllById(any())).thenReturn(List.of(documentType(1,
+                DocumentType.DocumentTypeStatus.active)));
+
+        Page<BulkImportSummary> page = service(realWorkbook).listBatches(PageRequest.of(0, 10));
+
+        assertThat(page.getContent()).extracting(BulkImportSummary::status)
+                .containsExactly(Arrays.stream(ImportBatchStatus.values()).map(Enum::name).toArray(String[]::new));
+        assertThat(page.getContent()).extracting(BulkImportSummary::batchId)
+                .containsExactlyElementsOf(batches.stream().map(ImportBatch::getImportBatchId).toList());
+    }
+
+    @Test
+    void listBatches_mapsTypeNamesWithOneLookupForThePage() {
+        DocumentType invoice = documentType(1, DocumentType.DocumentTypeStatus.active);
+        DocumentType contract = option("CON", "Contract", DocumentType.DocumentTypeStatus.inactive);
+        DocumentType foreign = option("FOR", "Other tenant's type", DocumentType.DocumentTypeStatus.active);
+        foreign.setTenantId(UUID.randomUUID());
+
+        ImportBatch first = batch(ImportBatchStatus.completed);
+        ImportBatch second = batch(ImportBatchStatus.failed);
+        ImportBatch third = batch(ImportBatchStatus.cancelled);
+        third.setDocumentTypeId(contract.getDocumentTypeId());
+        ImportBatch fourth = batch(ImportBatchStatus.completed_with_errors);
+        fourth.setDocumentTypeId(foreign.getDocumentTypeId());
+        first.setSuccessCount(2);
+        first.setFailureCount(6);
+        first.setTotalRecords(8);
+        first.setCompletedAt(OffsetDateTime.now());
+        stubBatchPage(List.of(first, second, third, fourth));
+        when(documentTypeRepository.findAllById(any())).thenReturn(List.of(invoice, contract, foreign));
+
+        List<BulkImportSummary> rows = service(realWorkbook).listBatches(PageRequest.of(0, 10)).getContent();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Iterable<UUID>> ids = ArgumentCaptor.forClass(Iterable.class);
+        verify(documentTypeRepository).findAllById(ids.capture());
+        assertThat(ids.getValue()).containsExactlyInAnyOrder(documentTypeId, contract.getDocumentTypeId(),
+                foreign.getDocumentTypeId());
+        assertThat(rows).extracting(BulkImportSummary::documentTypeName)
+                .containsExactly("Invoice", "Invoice", "Contract", null);
+        BulkImportSummary summary = rows.get(0);
+        assertThat(summary.documentTypeId()).isEqualTo(documentTypeId);
+        assertThat(summary.totalRecords()).isEqualTo(8);
+        assertThat(summary.successCount()).isEqualTo(2);
+        assertThat(summary.failureCount()).isEqualTo(6);
+        assertThat(summary.createdAt()).isEqualTo(first.getCreatedAt());
+        assertThat(summary.completedAt()).isEqualTo(first.getCompletedAt());
+    }
+
+    @Test
+    void listBatches_keepsPageMetadata() {
+        ImportBatch batch = batch(ImportBatchStatus.completed);
+        when(importBatchRepository.findAllByTenantIdAndCreatedByAndDeletedFalse(any(), any(), any()))
+                .thenAnswer(call -> new PageImpl<>(List.of(batch), call.getArgument(2), 21));
+        when(documentTypeRepository.findAllById(any())).thenReturn(List.of());
+
+        Page<BulkImportSummary> page = service(realWorkbook).listBatches(PageRequest.of(2, 10));
+
+        assertThat(page.getNumber()).isEqualTo(2);
+        assertThat(page.getSize()).isEqualTo(10);
+        assertThat(page.getTotalElements()).isEqualTo(21);
+        assertThat(page.isLast()).isTrue();
+    }
+
+    @Test
+    void listBatches_emptyPage_skipsTypeLookup() {
+        stubBatchPage(List.of());
+
+        assertThat(service(realWorkbook).listBatches(PageRequest.of(0, 10)).getContent()).isEmpty();
+        verifyNoInteractions(documentTypeRepository);
+    }
+
+    @Test
     void receiveFile_stagesInTenantStagingLocation() {
         ImportBatch batch = batch(ImportBatchStatus.uploading);
         ImportItem item = item(batch, 2, "a.pdf", null, null);
@@ -407,6 +532,18 @@ class BulkImportServiceImplTest {
 
         assertThat(service(realWorkbook).getFailures(batch.getImportBatchId())).isEmpty();
         verifyNoInteractions(importSchemaFields);
+    }
+
+    private void stubBatchPage(List<ImportBatch> batches) {
+        when(importBatchRepository.findAllByTenantIdAndCreatedByAndDeletedFalse(any(), any(), any()))
+                .thenAnswer(call -> new PageImpl<>(batches, call.getArgument(2), batches.size()));
+    }
+
+    private Pageable capturedListPageable() {
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(importBatchRepository).findAllByTenantIdAndCreatedByAndDeletedFalse(eq(tenantId), eq(userId),
+                pageable.capture());
+        return pageable.getValue();
     }
 
     private void stubOwnBatch(ImportBatch batch) {

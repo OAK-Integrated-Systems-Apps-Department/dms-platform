@@ -2,6 +2,8 @@ package com.oak.dms.importexport.repository;
 
 import com.oak.dms.importexport.entity.ImportBatch;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -42,6 +44,9 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
     /** The caller's newest batch in one of {@code statuses} - the one counting toward the active-batch limit. */
     Optional<ImportBatch> findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(
             UUID tenantId, UUID createdBy, Collection<ImportBatch.ImportBatchStatus> statuses);
+
+    /** The caller's batches in every status - the "Recent imports" list. Ordering comes from {@code pageable}. */
+    Page<ImportBatch> findAllByTenantIdAndCreatedByAndDeletedFalse(UUID tenantId, UUID createdBy, Pageable pageable);
 
     long countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(UUID tenantId, UUID createdBy,
                                                                Collection<ImportBatch.ImportBatchStatus> statuses);

@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
+import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,14 +15,22 @@ interface ImportResultsCardProps {
   onStartOver: () => void
 }
 
-/** Summary of a finished import: how many documents were created, how many rows failed, and which ones. */
+/**
+ * Summary of a finished import: how many documents were created, how many
+ * rows failed, and which ones. A cancelled import gets the same card, minus
+ * the counts' wording - nothing was processed.
+ */
 export function ImportResultsCard({ batch, documentTypeName, onStartOver }: ImportResultsCardProps) {
   const { title, badge } = describe(batch)
   const created = `${batch.successCount} ${batch.successCount === 1 ? "document" : "documents"} created`
   const failed = `${batch.failureCount} ${batch.failureCount === 1 ? "row" : "rows"} failed`
+  const description =
+    batch.status === "cancelled"
+      ? "This import was cancelled before processing; no documents were created."
+      : `${created}, ${failed}.`
 
   return (
-    <StepCard title={title} description={`${created}, ${failed}.`}>
+    <StepCard title={title} description={description}>
       <dl className="mb-5 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-3">
         <div>
           <dt className="text-[12px] text-muted-foreground">Document type</dt>
@@ -69,6 +77,16 @@ function describe(batch: BulkImportStatusResponseDto) {
           <Badge variant="gold">
             <AlertTriangle aria-hidden="true" />
             Completed with errors
+          </Badge>
+        ),
+      }
+    case "cancelled":
+      return {
+        title: "Import cancelled",
+        badge: (
+          <Badge variant="outline">
+            <Ban aria-hidden="true" />
+            Cancelled
           </Badge>
         ),
       }

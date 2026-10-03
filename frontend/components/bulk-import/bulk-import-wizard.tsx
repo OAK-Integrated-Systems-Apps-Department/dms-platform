@@ -1,21 +1,21 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
-import { AlertTriangle, RotateCcw } from "lucide-react"
+import { useRef, useState, type ReactNode } from "react"
+import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
-import { isFinished } from "@/lib/bulk-imports/api"
+import type { BulkImportSummaryDto } from "@/lib/bulk-imports/api"
 import { useBulkImport } from "@/lib/bulk-imports/use-bulk-import"
 import { useImportDocumentTypes } from "@/lib/bulk-imports/use-import-document-types"
 import { useUploadQueue } from "@/lib/bulk-imports/use-upload-queue"
 
 import { BatchStatusCard } from "./batch-status-card"
 import { ImportResultsCard } from "./import-results-card"
+import { RecentImports } from "./recent-imports"
 import { StartImportSteps } from "./start-import-steps"
-import { InlineError, StepCard } from "./step-card"
+import { InlineError } from "./step-card"
 import { UploadFilesStep } from "./upload-files-step"
 
 /**
@@ -24,16 +24,24 @@ import { UploadFilesStep } from "./upload-files-step"
  *   running card), or steps 1-2 to start a new one;
  * - a batch being worked on (or a submitted one found on load): steps 3-4
  *   while it's `uploading`, the submitted card - polled for progress -
- *   while it's `queued`/`running`, and the results once it's finished.
+ *   while it's `queued`/`running`, and the results once it's finished (or
+ *   cancelled).
+ *
+ * Below it, always, the caller's recent imports. Opening one there makes it
+ * the batch being worked on, so it lands in the same views.
  *
  * Without document-create (`canCreateDocuments` false) a new import can't be
  * started, and an existing one is shown under a banner with uploading and
  * submitting disabled - status, results and Cancel stay available, matching
- * the backend, which keeps those endpoints FIE-only.
+ * the backend, which keeps those endpoints FIE-only. The recent-imports list
+ * is read-only, so it shows either way.
  */
 export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: boolean }) {
   const [batchId, setBatchId] = useState<string | null>(null)
   const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+  /** The list row last opened - its type name covers types that are no longer active. */
+  const [opened, setOpened] = useState<BulkImportSummaryDto | null>(null)
+  const topRef = useRef<HTMLDivElement>(null)
 
   const bulkImport = useBulkImport(batchId)
   const { documentTypes, isLoading: documentTypesLoading, error: documentTypesError } = useImportDocumentTypes()
@@ -41,8 +49,14 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     void bulkImport.refetchStatus()
   })
 
+  const openBatchId = batchId ?? bulkImport.watchedId
+
   function documentTypeName(documentTypeId: string): string | null {
-    return documentTypes.find((type) => type.documentTypeId === documentTypeId)?.name ?? null
+    // The picker's list only has active types; an older import's type may
+    // since have been deactivated or deleted.
+    const active = documentTypes.find((type) => type.documentTypeId === documentTypeId)
+    if (active) return active.name
+    return opened?.documentTypeId === documentTypeId ? opened.documentTypeName : null
   }
 
   async function handleCreate(template: File) {
@@ -60,6 +74,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   function handleStartOver() {
     queue.reset()
     setCreatedNotice(null)
+    setOpened(null)
     setBatchId(null)
     void bulkImport.clearActive()
   }
@@ -67,6 +82,14 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   function handleContinue(id: string) {
     setCreatedNotice(null)
     setBatchId(id)
+  }
+
+  function handleOpen(summary: BulkImportSummaryDto) {
+    queue.reset()
+    setCreatedNotice(null)
+    setOpened(summary)
+    setBatchId(summary.batchId)
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   async function handleSubmit(id: string) {
@@ -102,41 +125,43 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     )
   }
 
-  // Working on a specific batch (just created, resumed, or already
-  // submitted when the screen loaded).
-  if (batchId ?? bulkImport.watchedId) {
-    const status = bulkImport.status
-    if (!status) {
-      return bulkImport.statusLoading ? (
-        <LoadingState message="Loading import…" />
-      ) : (
-        <ErrorPanel message="Could not load this import." />
-      )
-    }
-    if (status.status === "uploading") {
-      return withPermissionBanner(
-        <UploadFilesStep
-          status={status}
-          createdNotice={createdNotice}
-          entries={queue.entries}
-          uploading={queue.busy}
-          uploadsAllowed={canCreateDocuments}
-          onFiles={(files) => queue.addFiles(status.batchId, files)}
-          onSubmit={() => handleSubmit(status.batchId)}
-          onCancel={() => handleCancel(status.batchId)}
-        />
-      )
-    }
-    if (status.status === "queued" || status.status === "running") {
-      return withPermissionBanner(
-        <BatchStatusCard
-          batch={status}
-          documentTypeName={documentTypeName(status.documentTypeId)}
-          onCancel={() => handleCancel(status.batchId)}
-        />
-      )
-    }
-    if (isFinished(status.status)) {
+  function renderMain(): ReactNode {
+    // Working on a specific batch (just created, resumed, opened from the
+    // list, or already submitted when the screen loaded).
+    if (openBatchId) {
+      const status = bulkImport.status
+      if (!status) {
+        return bulkImport.statusLoading ? (
+          <LoadingState message="Loading import…" />
+        ) : (
+          <ErrorPanel message="Could not load this import." />
+        )
+      }
+      if (status.status === "uploading") {
+        return withPermissionBanner(
+          <UploadFilesStep
+            status={status}
+            createdNotice={createdNotice}
+            entries={queue.entries}
+            uploading={queue.busy}
+            uploadsAllowed={canCreateDocuments}
+            onFiles={(files) => queue.addFiles(status.batchId, files)}
+            onSubmit={() => handleSubmit(status.batchId)}
+            onCancel={() => handleCancel(status.batchId)}
+          />
+        )
+      }
+      if (status.status === "queued" || status.status === "running") {
+        return withPermissionBanner(
+          <BatchStatusCard
+            batch={status}
+            documentTypeName={documentTypeName(status.documentTypeId)}
+            onCancel={() => handleCancel(status.batchId)}
+          />
+        )
+      }
+      // Finished, or cancelled (opened from the list, or cancelled in another
+      // tab) - either way it no longer blocks a new import.
       return withPermissionBanner(
         <ImportResultsCard
           batch={status}
@@ -145,53 +170,48 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
         />
       )
     }
-    // Cancelled elsewhere (another tab) - it no longer blocks a new import.
+
+    if (bulkImport.activeLoading) {
+      return <LoadingState message="Checking for an import in progress…" />
+    }
+    if (bulkImport.activeError) {
+      return <ErrorPanel message={friendlyMessage(bulkImport.activeError, "Could not check for an import in progress.")} />
+    }
+
+    const active = bulkImport.active
+    if (active) {
+      return withPermissionBanner(
+        <BatchStatusCard
+          batch={active}
+          documentTypeName={documentTypeName(active.documentTypeId)}
+          onContinue={() => handleContinue(active.batchId)}
+          onCancel={() => handleCancel(active.batchId)}
+        />
+      )
+    }
+
+    if (!canCreateDocuments) {
+      return <ErrorPanel message={NEEDS_DOCUMENT_CREATE} />
+    }
+
     return (
-      <StepCard
-        title="This import was cancelled"
-        description="Start a new import to upload more documents."
-      >
-        <Button onClick={() => handleStartOver()}>
-          <RotateCcw />
-          Start a new import
-        </Button>
-      </StepCard>
-    )
-  }
-
-  if (bulkImport.activeLoading) {
-    return <LoadingState message="Checking for an import in progress…" />
-  }
-  if (bulkImport.activeError) {
-    return <ErrorPanel message={friendlyMessage(bulkImport.activeError, "Could not check for an import in progress.")} />
-  }
-
-  const active = bulkImport.active
-  if (active) {
-    return withPermissionBanner(
-      <BatchStatusCard
-        batch={active}
-        documentTypeName={documentTypeName(active.documentTypeId)}
-        onContinue={() => handleContinue(active.batchId)}
-        onCancel={() => handleCancel(active.batchId)}
+      <StartImportSteps
+        documentTypes={documentTypes}
+        documentTypesLoading={documentTypesLoading}
+        documentTypesError={
+          documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
+        }
+        creating={bulkImport.creating}
+        onCreate={handleCreate}
       />
     )
   }
 
-  if (!canCreateDocuments) {
-    return <ErrorPanel message={NEEDS_DOCUMENT_CREATE} />
-  }
-
   return (
-    <StartImportSteps
-      documentTypes={documentTypes}
-      documentTypesLoading={documentTypesLoading}
-      documentTypesError={
-        documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
-      }
-      creating={bulkImport.creating}
-      onCreate={handleCreate}
-    />
+    <div ref={topRef} className="flex scroll-mt-6 flex-col gap-6">
+      {renderMain()}
+      <RecentImports selectedBatchId={openBatchId} onOpen={handleOpen} disabled={queue.busy} />
+    </div>
   )
 }
 

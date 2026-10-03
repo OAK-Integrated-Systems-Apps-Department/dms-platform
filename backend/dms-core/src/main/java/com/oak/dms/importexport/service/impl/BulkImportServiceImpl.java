@@ -7,6 +7,7 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
@@ -50,6 +51,10 @@ import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -60,12 +65,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * See {@link BulkImportService}. Staged files go through
@@ -91,6 +99,9 @@ public class BulkImportServiceImpl implements BulkImportService {
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued, ImportBatchStatus.running);
     private static final List<ImportBatchStatus> CANCELLABLE_STATUSES =
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued);
+    static final int MAX_LIST_PAGE_SIZE = 50;
+    private static final Sort NEWEST_FIRST =
+            Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("importBatchId"));
     private static final Map<String, String> OWN_FIELD_LABELS = Map.of(
             "file", "File",
             ImportTemplateWorkbook.FILENAME_KEY, "Filename",
@@ -351,6 +362,36 @@ public class BulkImportServiceImpl implements BulkImportService {
                         ACTIVE_STATUSES)
                 .map(batch -> toStatusResponse(batch,
                         importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<BulkImportSummary> listBatches(Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        // Always newest first, whatever sort the client asked for, and the
+        // size is capped so one request can't pull the whole history.
+        PageRequest request = PageRequest.of(pageable.getPageNumber(),
+                Math.min(pageable.getPageSize(), MAX_LIST_PAGE_SIZE), NEWEST_FIRST);
+        Page<ImportBatch> batches = importBatchRepository.findAllByTenantIdAndCreatedByAndDeletedFalse(tenantId,
+                userId, request);
+
+        // One lookup for the whole page. Inactive or deleted types keep their
+        // name here (this is history). The tenant filter keeps another
+        // tenant's type from being named, even though a batch can't point at
+        // one.
+        Map<UUID, String> typeNames = new HashMap<>();
+        Set<UUID> typeIds = batches.stream().map(ImportBatch::getDocumentTypeId).collect(Collectors.toSet());
+        if (!typeIds.isEmpty()) {
+            documentTypeRepository.findAllById(typeIds).stream()
+                    .filter(type -> tenantId.equals(type.getTenantId()))
+                    .forEach(type -> typeNames.put(type.getDocumentTypeId(), type.getTypeName()));
+        }
+
+        return batches.map(batch -> new BulkImportSummary(batch.getImportBatchId(), batch.getDocumentTypeId(),
+                typeNames.get(batch.getDocumentTypeId()), batch.getStatus().name(), batch.getTotalRecords(),
+                batch.getSuccessCount(), batch.getFailureCount(), batch.getCreatedAt(), batch.getCompletedAt()));
     }
 
     @Override

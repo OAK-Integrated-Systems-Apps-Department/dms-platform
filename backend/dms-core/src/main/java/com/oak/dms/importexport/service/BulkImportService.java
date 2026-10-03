@@ -2,10 +2,13 @@ package com.oak.dms.importexport.service;
 
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
+import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.io.InputStream;
 import java.util.List;
@@ -44,6 +47,13 @@ public interface BulkImportService {
      * the batch's own schema version).
      */
     List<ImportRowFailure> getFailures(UUID batchId);
+
+    /**
+     * The caller's own batches in their tenant, in every status (cancelled and
+     * failed included), newest first. The page number and size come from
+     * {@code pageable}, with the size capped at 50. Any sort it asks for is ignored.
+     */
+    Page<BulkImportSummary> listBatches(Pageable pageable);
 
     /** The caller's batch counting toward the active-batch limit (uploading, queued or running), if any. */
     Optional<BulkImportStatusResponse> getActive();
