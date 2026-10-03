@@ -25,16 +25,19 @@ interface ImportResultsCardProps {
 /**
  * Summary of a finished import: how many documents were created, how many
  * rows failed, and which ones. A cancelled import gets the same card, minus
- * the counts' wording - nothing was processed.
+ * the counts' wording - nothing was processed - and says whether it was
+ * cancelled by the user or expired after a period with no uploads.
  */
 export function ImportResultsCard({ batch, documentTypeName, onStartOver }: ImportResultsCardProps) {
   const { title, badge } = describe(batch)
   const created = `${batch.successCount} ${batch.successCount === 1 ? "document" : "documents"} created`
   const failed = `${batch.failureCount} ${batch.failureCount === 1 ? "row" : "rows"} failed`
   const description =
-    batch.status === "cancelled"
-      ? "This import was cancelled before processing; no documents were created."
-      : `${created}, ${failed}.`
+    batch.status !== "cancelled"
+      ? `${created}, ${failed}.`
+      : batch.cancelReason === "expired"
+        ? "This import expired after a period with no uploads and was cancelled automatically."
+        : "This import was cancelled before processing; no documents were created."
 
   return (
     <StepCard title={title} description={description}>

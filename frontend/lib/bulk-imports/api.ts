@@ -11,6 +11,12 @@ export type BulkImportStatus =
   | "failed"
   | "cancelled"
 
+/**
+ * Mirrors ImportBatch.CancelReason: `user` cancelled it, or it `expired` after a
+ * period with no uploads. Null on a cancelled batch means the user cancelled it.
+ */
+export type BulkImportCancelReason = "user" | "expired"
+
 /** Statuses the worker has finished with - record creation is over. */
 export const FINISHED_STATUSES: readonly BulkImportStatus[] = ["completed", "completed_with_errors", "failed"]
 
@@ -65,6 +71,8 @@ export interface BulkImportStatusResponseDto {
   /** Rows skipped at creation because of template errors. */
   skippedRows: number
   createdAt: string
+  /** Set on a cancelled batch; null otherwise. */
+  cancelReason: BulkImportCancelReason | null
 }
 
 /** Item of GET /bulk-imports - one of the caller's batches, newest first. */
@@ -80,6 +88,8 @@ export interface BulkImportSummaryDto {
   createdAt: string
   /** Set once the worker has finished the batch; null before (and for a cancelled batch). */
   completedAt: string | null
+  /** Set on a cancelled batch; null otherwise. */
+  cancelReason: BulkImportCancelReason | null
 }
 
 /** Mirrors backend/dms-core's PageResponse<BulkImportSummary>. `page` is 0-indexed. */

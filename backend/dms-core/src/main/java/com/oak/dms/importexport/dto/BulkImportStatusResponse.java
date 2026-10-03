@@ -12,6 +12,9 @@ import java.util.UUID;
  * @param missingFilenames one entry per row still waiting for its file;
  *                         skipped rows never wait for one
  * @param skippedRows      rows skipped at creation because of template errors
+ * @param cancelReason     {@code user} or {@code expired} for a cancelled
+ *                         batch; null otherwise - and null on a cancelled
+ *                         batch means its user cancelled it
  */
 public record BulkImportStatusResponse(
         UUID batchId,
@@ -23,6 +26,7 @@ public record BulkImportStatusResponse(
         int failureCount,
         List<String> missingFilenames,
         int skippedRows,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        String cancelReason
 ) {
 }

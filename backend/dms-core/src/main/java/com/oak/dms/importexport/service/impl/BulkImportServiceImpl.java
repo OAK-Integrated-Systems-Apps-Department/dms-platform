@@ -103,7 +103,7 @@ import java.util.stream.Collectors;
 @Transactional
 public class BulkImportServiceImpl implements BulkImportService {
 
-    static final String AGGREGATE_TYPE = "import_batch";
+    public static final String AGGREGATE_TYPE = "import_batch";
     public static final String SUBMITTED_EVENT_TYPE = "import_batch.submitted";
 
     private static final String XLSX_EXTENSION = ".xlsx";
@@ -447,9 +447,14 @@ public class BulkImportServiceImpl implements BulkImportService {
         // lockByImportBatchIdAndTenantIdAndCreatedBy before it processes
         // this event, and skip the batch otherwise.
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, batchId, SUBMITTED_EVENT_TYPE,
-                Map.of("importBatchId", batchId, "correlationId", batch.getCorrelationId()));
+                submittedPayload(batch));
 
         log.info("Submitted bulk import batch {} for tenant {}", batchId, tenantId);
+    }
+
+    /** Payload of {@value #SUBMITTED_EVENT_TYPE} - also re-published by {@code ImportBatchRecoveryJob}. */
+    public static Map<String, Object> submittedPayload(ImportBatch batch) {
+        return Map.of("importBatchId", batch.getImportBatchId(), "correlationId", batch.getCorrelationId());
     }
 
     @Override
@@ -529,7 +534,8 @@ public class BulkImportServiceImpl implements BulkImportService {
 
         return batches.map(batch -> new BulkImportSummary(batch.getImportBatchId(), batch.getDocumentTypeId(),
                 typeNames.get(batch.getDocumentTypeId()), batch.getStatus().name(), batch.getTotalRecords(),
-                batch.getSuccessCount(), batch.getFailureCount(), batch.getCreatedAt(), batch.getCompletedAt()));
+                batch.getSuccessCount(), batch.getFailureCount(), batch.getCreatedAt(), batch.getCompletedAt(),
+                cancelReason(batch)));
     }
 
     @Override
@@ -544,6 +550,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         requireCancellable(batch);
 
         batch.setStatus(ImportBatchStatus.cancelled);
+        batch.setCancelReason(ImportBatch.CancelReason.user);
         batch.setUpdatedBy(userId);
         batch.setUpdatedAt(OffsetDateTime.now());
         importBatchRepository.save(batch);
@@ -570,7 +577,11 @@ public class BulkImportServiceImpl implements BulkImportService {
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
                 batch.getStatus().name(), batch.getTotalRecords(),
                 items.size() - skippedRows - missingFilenames.size(), batch.getSuccessCount(),
-                batch.getFailureCount(), missingFilenames, skippedRows, batch.getCreatedAt());
+                batch.getFailureCount(), missingFilenames, skippedRows, batch.getCreatedAt(), cancelReason(batch));
+    }
+
+    private static String cancelReason(ImportBatch batch) {
+        return batch.getCancelReason() != null ? batch.getCancelReason().name() : null;
     }
 
     /**

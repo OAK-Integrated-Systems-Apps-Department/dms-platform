@@ -58,4 +58,27 @@ public class ImportExportProperties {
      * declared here so the key is documented with the rest.
      */
     private long retainedFilePurgeIntervalMs = 3600000;
+
+    /**
+     * How long a batch may sit in {@code uploading} with no activity (on the
+     * batch or any of its rows) before {@code ImportBatchRecoveryJob}
+     * cancels it as expired and deletes its staged files.
+     */
+    private int abandonedUploadHours = 24;
+
+    /**
+     * How long a {@code queued} or {@code running} batch may go with no
+     * activity before {@code ImportBatchRecoveryJob} treats it as stuck:
+     * the first time its submitted event is published again, the next time
+     * its unprocessed rows are failed and it is finalised. Set it above the
+     * longest expected wait in the import queue.
+     */
+    private int stuckBatchHours = 2;
+
+    /**
+     * How often {@code ImportBatchRecoveryJob} runs. Read by its
+     * {@code @Scheduled} placeholder, which carries the same default;
+     * declared here so the key is documented with the rest.
+     */
+    private long batchRecoveryIntervalMs = 900000;
 }

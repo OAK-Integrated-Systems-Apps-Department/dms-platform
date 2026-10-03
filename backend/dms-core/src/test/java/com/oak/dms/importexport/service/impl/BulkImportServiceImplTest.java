@@ -393,11 +393,13 @@ class BulkImportServiceImplTest {
                 () -> verifyNoInteractions(storage));
 
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.cancelled);
+        assertThat(batch.getCancelReason()).isEqualTo(ImportBatch.CancelReason.user);
         assertThat(batch.getUpdatedBy()).isEqualTo(userId);
         assertThat(staged.getStagedObjectKey()).isNull();
         assertThat(staged.getStagedStorageLocationId()).isNull();
         assertThat(staged.getStagedSizeBytes()).isNull();
         assertThat(response.status()).isEqualTo("cancelled");
+        assertThat(response.cancelReason()).isEqualTo("user");
         assertThat(response.filesReceived()).isZero();
         assertThat(response.missingFilenames()).containsExactly("a.pdf", "b.pdf");
         verify(importBatchRepository).save(batch);
@@ -412,7 +414,9 @@ class BulkImportServiceImplTest {
         BulkImportStatusResponse response = service(realWorkbook).cancel(batch.getImportBatchId());
 
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.cancelled);
+        assertThat(batch.getCancelReason()).isEqualTo(ImportBatch.CancelReason.user);
         assertThat(response.status()).isEqualTo("cancelled");
+        assertThat(response.cancelReason()).isEqualTo("user");
         verify(importBatchRepository).save(batch);
     }
 

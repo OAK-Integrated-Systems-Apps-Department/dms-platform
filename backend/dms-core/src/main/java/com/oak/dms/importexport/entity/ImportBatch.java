@@ -78,6 +78,23 @@ public class ImportBatch {
     @Column(name = "resubmit_of_batch_id")
     private UUID resubmitOfBatchId;
 
+    /**
+     * Who cancelled the batch; null unless it is {@code cancelled} - and for
+     * batches cancelled before this was recorded, which were all cancelled
+     * by their user.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancel_reason")
+    private CancelReason cancelReason;
+
+    /**
+     * How many times {@code ImportBatchRecoveryJob} has acted on this batch
+     * after it stalled while queued or running.
+     */
+    @Column(name = "recovery_attempts", nullable = false)
+    @Builder.Default
+    private int recoveryAttempts = 0;
+
     @Column(name = "correlation_id", nullable = false)
     private UUID correlationId;
 
@@ -107,5 +124,10 @@ public class ImportBatch {
 
     public enum ImportBatchStatus {
         uploading, queued, running, completed, completed_with_errors, failed, cancelled
+    }
+
+    /** {@code user}: the cancel endpoint; {@code expired}: no uploads for too long (the recovery job). */
+    public enum CancelReason {
+        user, expired
     }
 }

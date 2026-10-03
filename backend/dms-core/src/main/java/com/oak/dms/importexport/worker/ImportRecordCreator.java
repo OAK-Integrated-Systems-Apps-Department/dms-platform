@@ -293,6 +293,11 @@ public class ImportRecordCreator {
     }
 
     private String appendErrors(ImportItem item, List<ImportRowError> added) {
+        return appendErrors(objectMapper, item, added);
+    }
+
+    /** The item's validation_errors JSON with {@code added} after what is already there. */
+    static String appendErrors(ObjectMapper objectMapper, ImportItem item, List<ImportRowError> added) {
         List<ImportRowError> errors = new ArrayList<>();
         try {
             if (item.getValidationErrors() != null) {

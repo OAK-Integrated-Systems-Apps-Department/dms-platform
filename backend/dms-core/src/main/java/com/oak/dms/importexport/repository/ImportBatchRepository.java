@@ -77,6 +77,57 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
             """, nativeQuery = true)
     Optional<ImportBatch> lockForRetainedFilePurge(@Param("importBatchId") UUID importBatchId);
 
+    /**
+     * SQL for a batch's last activity: the latest of its own created_at /
+     * updated_at and its items' created_at / updated_at. Postgres
+     * {@code greatest} ignores NULLs, and created_at never is one. The item
+     * subquery uses the (import_batch_id, row_number) unique index. Expects
+     * the batch aliased {@code b}.
+     */
+    String LAST_ACTIVITY = " greatest(b.created_at, b.updated_at,"
+            + " (select max(greatest(i.created_at, i.updated_at)) from import_items i"
+            + " where i.import_batch_id = b.import_batch_id)) ";
+
+    /**
+     * Batches in one of {@code statuses} whose last activity (see
+     * {@link #LAST_ACTIVITY}) is before {@code cutoff}, least recently active
+     * first - the candidates of {@code ImportBatchRecoveryJob}. Not locked;
+     * {@link #lockForRecovery} claims each one.
+     */
+    @Query(value = "select c.import_batch_id from ("
+            + " select b.import_batch_id," + LAST_ACTIVITY + "as last_activity"
+            + " from import_batches b"
+            + " where b.status in (:statuses) and b.is_deleted = false) c"
+            + " where c.last_activity < :cutoff"
+            + " order by c.last_activity asc, c.import_batch_id asc"
+            + " limit :limit", nativeQuery = true)
+    List<UUID> findInactiveBatchIds(@Param("statuses") Collection<String> statuses,
+                                    @Param("cutoff") OffsetDateTime cutoff, @Param("limit") int limit);
+
+    /**
+     * Whether the batch's last activity (see {@link #LAST_ACTIVITY}) is
+     * before {@code cutoff} - {@code ImportBatchRecoveryJob}'s re-check once
+     * it holds the batch lock.
+     */
+    @Query(value = "select exists (select 1 from import_batches b"
+            + " where b.import_batch_id = :importBatchId"
+            + " and" + LAST_ACTIVITY + "< :cutoff)", nativeQuery = true)
+    boolean isInactiveSince(@Param("importBatchId") UUID importBatchId, @Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * Row-locks a batch for {@code ImportBatchRecoveryJob} - empty if it is
+     * deleted, or anything else holds it right now ({@code SKIP LOCKED}): an
+     * upload, a submit or cancel, the worker claiming it, the finaliser, or
+     * another instance of the job. The job tries again next pass.
+     */
+    @Query(value = """
+            select * from import_batches
+             where import_batch_id = :importBatchId
+               and is_deleted = false
+            for update skip locked
+            """, nativeQuery = true)
+    Optional<ImportBatch> lockForRecovery(@Param("importBatchId") UUID importBatchId);
+
     /** The caller's newest batch in one of {@code statuses} - the one counting toward the active-batch limit. */
     Optional<ImportBatch> findFirstByTenantIdAndCreatedByAndStatusInAndDeletedFalseOrderByCreatedAtDesc(
             UUID tenantId, UUID createdBy, Collection<ImportBatch.ImportBatchStatus> statuses);

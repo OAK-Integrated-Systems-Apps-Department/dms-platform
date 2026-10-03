@@ -37,9 +37,10 @@ import java.util.UUID;
  * both. Objects are deleted best-effort after commit, via
  * {@link StagedImportFiles}.
  *
- * <p>TODO(Key Decision #16): batches abandoned or stuck in uploading /
- * queued / running never complete, so their staged files are not purged
- * here - that cleanup is still to do.
+ * <p>Batches abandoned while uploading, or stuck queued / running, are
+ * handled by {@link ImportBatchRecoveryJob}: an abandoned batch's files go
+ * when it is cancelled, and a stuck batch is finalised, after which its
+ * kept files are purged here like any other's.
  */
 @Slf4j
 @Component
