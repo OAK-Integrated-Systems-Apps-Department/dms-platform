@@ -56,7 +56,8 @@ import java.util.UUID;
  *
  * <p>Idempotency: a redelivered message for a batch already {@code running}
  * (the previous attempt crashed, or two deliveries raced) processes it
- * again. Rows already {@code success} are skipped by both passes; rows with
+ * again. Rows already {@code success} or {@code failed} (including rows
+ * skipped at creation for template errors) are skipped by both passes; rows with
  * a {@code scan_result_id} are not re-validated and have their ticket
  * re-checked with {@code IngestionGate#getTicket}; only rows with neither
  * are submitted to the gate. Known limitation: the gate has no idempotency
@@ -219,6 +220,12 @@ public class BulkImportWorker {
             if (item.getStatus() == ImportItemStatus.success || item.getScanResultId() != null) {
                 // Already a record, or already handed to the scan gate (and
                 // its staged file gone) - never re-judge it.
+                continue;
+            }
+            if (item.getStatus() == ImportItemStatus.failed) {
+                // Already judged: skipped at creation for template errors
+                // (skippedAtPreview - it keeps those errors rather than
+                // gaining FILE_MISSING), or failed by an earlier attempt.
                 continue;
             }
             List<ImportRowError> errors = rowValidator.validate(item, rowValues(item), fields, duplicates,

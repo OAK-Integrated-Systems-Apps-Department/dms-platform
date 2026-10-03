@@ -72,10 +72,25 @@ public class ImportRowValidator {
                                          Map<String, List<Integer>> duplicates, UUID documentTypeId,
                                          int schemaVersion, UUID tenantId) {
         List<ImportRowError> errors = new ArrayList<>();
-
         if (item.getStagedObjectKey() == null) {
             errors.add(ImportRowError.error(FILE, "FILE_MISSING", "No file was uploaded for this row"));
         }
+        errors.addAll(validateWithoutFile(item, values, fields, duplicates, documentTypeId, schemaVersion,
+                tenantId));
+        return errors;
+    }
+
+    /**
+     * Every check {@link #validate} runs except the file-present one - for
+     * a template checked before any file is uploaded (the step 2 preview,
+     * and createBatch's own re-check). Same parameters and result as
+     * {@link #validate}.
+     */
+    public List<ImportRowError> validateWithoutFile(ImportItem item, RowValues values,
+                                                    Map<String, ImportField> fields,
+                                                    Map<String, List<Integer>> duplicates, UUID documentTypeId,
+                                                    int schemaVersion, UUID tenantId) {
+        List<ImportRowError> errors = new ArrayList<>();
 
         String filename = item.getFilenameReference();
         String normalisedName = normalise(filename);

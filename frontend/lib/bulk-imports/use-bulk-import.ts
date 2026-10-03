@@ -10,9 +10,11 @@ import {
   fetchBulkImportStatus,
   isFinished,
   isInFlight,
+  previewImportTemplate,
   submitBulkImport,
   type BulkImportCreatedResponseDto,
   type BulkImportStatus,
+  type ImportTemplatePreviewDto,
 } from "./api"
 
 export const BULK_IMPORTS_KEY = ["bulk-imports"] as const
@@ -80,6 +82,10 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     return queryClient.invalidateQueries({ queryKey: BULK_IMPORTS_KEY })
   }
 
+  // Read-only on the server, so nothing to invalidate.
+  const previewMutation = useMutation({
+    mutationFn: (template: File) => previewImportTemplate(template),
+  })
   const createMutation = useMutation({
     mutationFn: (template: File) => createBulkImport(template),
     onSuccess: () => invalidate(),
@@ -113,6 +119,16 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     clearActive: () => {
       queryClient.setQueryData(ACTIVE_KEY, null)
       return invalidate()
+    },
+    previewing: previewMutation.isPending,
+    preview: async (
+      template: File
+    ): Promise<{ preview: ImportTemplatePreviewDto; error: null } | { preview: null; error: string }> => {
+      try {
+        return { preview: await previewMutation.mutateAsync(template), error: null }
+      } catch (err) {
+        return { preview: null, error: errorMessage(err, "Could not check the template.") }
+      }
     },
     creating: createMutation.isPending,
     submitting: submitMutation.isPending,

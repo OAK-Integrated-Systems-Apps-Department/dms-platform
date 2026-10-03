@@ -1,18 +1,24 @@
 package com.oak.dms.importexport.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
+import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
+import com.oak.dms.importexport.dto.ImportTemplatePreview;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
+import com.oak.dms.importexport.exception.ActiveImportBatchLimitException;
 import com.oak.dms.importexport.exception.ImportBatchNotCancellableException;
 import com.oak.dms.importexport.exception.ImportBatchSizeException;
+import com.oak.dms.importexport.exception.ImportFileNotInBatchException;
 import com.oak.dms.importexport.exception.InactiveDocumentTypeException;
 import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.matching.ImportFilenameMatcher;
@@ -21,7 +27,17 @@ import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportRowError;
+import com.oak.dms.importexport.validation.ImportRowValidator;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
+import com.oak.dms.importexport.validation.ImportUsers;
+import com.oak.dms.importexport.validation.ImportValueConverter;
+import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.metadata.service.MetadataValidationService;
+import com.oak.dms.user.UserRepository;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.entity.DocumentType;
@@ -53,6 +69,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -65,8 +84,12 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -95,6 +118,8 @@ class BulkImportServiceImplTest {
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
+    private final MetadataValidationService metadataValidationService = mock(MetadataValidationService.class);
+    private final UserRepository userRepository = mock(UserRepository.class);
 
     @BeforeEach
     void setTenant() {
@@ -152,6 +177,166 @@ class BulkImportServiceImplTest {
         assertThatThrownBy(() -> service(realWorkbook).createBatch(template.length, new ByteArrayInputStream(template)))
                 .isInstanceOf(InactiveDocumentTypeException.class);
 
+        verify(importBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void previewTemplate_reportsProblemRowsWithLabelsInRowOrderAndWritesNothing() {
+        stubActiveTypeAndSchema();
+        stubReferenceRule();
+        byte[] template = filledTemplate(
+                new String[]{"a.pdf", "Invoice A", "OK-1"},
+                new String[]{"b.pdf", "Invoice B", "BAD"},
+                new String[]{null, "No file name", "OK-2"},
+                new String[]{"d.pdf", null, null});
+
+        ImportTemplatePreview preview = service(realWorkbook).previewTemplate(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(preview.documentTypeId()).isEqualTo(documentTypeId);
+        assertThat(preview.schemaVersion()).isEqualTo(3);
+        assertThat(preview.totalRows()).isEqualTo(4);
+        assertThat(preview.validRows()).isEqualTo(2);
+        assertThat(preview.invalidRows()).isEqualTo(2);
+        assertThat(preview.rows()).extracting(ImportRowFailure::rowNumber).containsExactly(3, 4);
+        assertThat(preview.rows().get(0)).isEqualTo(new ImportRowFailure(3, "b.pdf", "Invoice B", List.of(
+                new ImportRowProblem("reference", "Reference", "PATTERN", "Reference is not valid", "error"))));
+        assertThat(preview.rows().get(1).filename()).isEmpty();
+        assertThat(preview.rows().get(1).problems()).extracting(ImportRowProblem::fieldLabel, ImportRowProblem::code)
+                .containsExactly(tuple("Filename", "FILENAME_MISSING"));
+        // Never the file check - nothing has been uploaded yet.
+        assertThat(preview.rows()).flatExtracting(ImportRowFailure::problems).extracting(ImportRowProblem::code)
+                .doesNotContain("FILE_MISSING");
+
+        verifyNoInteractions(importBatchRepository, importItemRepository);
+    }
+
+    @Test
+    void previewTemplate_noProblems_returnsNoRows() {
+        stubActiveTypeAndSchema();
+        byte[] template = filledTemplate(new String[]{"a.pdf", null, "OK"}, new String[]{"b.pdf", null, null});
+
+        ImportTemplatePreview preview = service(realWorkbook).previewTemplate(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(preview.validRows()).isEqualTo(2);
+        assertThat(preview.invalidRows()).isZero();
+        assertThat(preview.rows()).isEmpty();
+    }
+
+    @Test
+    void previewTemplate_ignoresTheActiveBatchLimit() {
+        stubActiveTypeAndSchema();
+        when(importBatchRepository.countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(any(), any(), any()))
+                .thenReturn(5L);
+        byte[] template = filledTemplate(new String[]{"a.pdf", null, null});
+
+        assertThat(service(realWorkbook).previewTemplate(template.length, new ByteArrayInputStream(template))
+                .totalRows()).isEqualTo(1);
+    }
+
+    @Test
+    void previewAndCreate_templateLevelProblems_rejectIdentically() {
+        record Case(String name, Runnable stub, byte[] template, long size) {
+        }
+        byte[] blankV3 = realWorkbook.generate(schema(3), 500);
+        byte[] filledV2 = realWorkbook.generate(schema(2), 500);
+        List<Case> cases = List.of(
+                new Case("too large", () -> { }, new byte[0], 6L * 1024 * 1024),
+                new Case("not a workbook", () -> { }, "not xlsx".getBytes(StandardCharsets.US_ASCII), 8),
+                new Case("type not in tenant", () -> when(documentTypeRepository
+                        .findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                        .thenReturn(Optional.empty()), blankV3, blankV3.length),
+                new Case("inactive type", () -> when(documentTypeRepository
+                        .findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                        .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.inactive))),
+                        blankV3, blankV3.length),
+                new Case("outdated", () -> when(documentTypeRepository
+                        .findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                        .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.active))),
+                        filledV2, filledV2.length),
+                new Case("no rows", () -> when(documentTypeRepository
+                        .findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                        .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.active))),
+                        blankV3, blankV3.length));
+
+        for (Case c : cases) {
+            c.stub().run();
+            Throwable fromPreview = catchThrowable(() -> service(realWorkbook)
+                    .previewTemplate(c.size(), new ByteArrayInputStream(c.template())));
+            Throwable fromCreate = catchThrowable(() -> service(realWorkbook)
+                    .createBatch(c.size(), new ByteArrayInputStream(c.template())));
+
+            assertThat(fromPreview).as(c.name()).isNotNull();
+            assertThat(fromCreate).as(c.name())
+                    .isExactlyInstanceOf(fromPreview.getClass())
+                    .hasMessage(fromPreview.getMessage())
+                    .extracting("code").isEqualTo(((ApiException) fromPreview)
+                            .getCode());
+        }
+        verifyNoInteractions(importItemRepository);
+        verify(importBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void createBatch_invalidRows_savedFailedAndSkippedWithErrorsAndLeftOutOfExpectedFiles() throws Exception {
+        stubActiveTypeAndSchema();
+        stubReferenceRule();
+        stubBatchSave();
+        byte[] template = filledTemplate(
+                new String[]{"a.pdf", "A", "OK"},
+                new String[]{"b.pdf", "B", "BAD"},
+                new String[]{"c.pdf", "C", null});
+
+        BulkImportCreatedResponse created = service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(created.totalRecords()).isEqualTo(3);
+        assertThat(created.skippedRows()).isEqualTo(1);
+        assertThat(created.expectedFilenames()).containsExactly("a.pdf", "c.pdf");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ImportItem>> saved = ArgumentCaptor.forClass(List.class);
+        verify(importItemRepository).saveAll(saved.capture());
+        List<ImportItem> items = saved.getValue();
+        assertThat(items).extracting(ImportItem::getRowNumber).containsExactly(2, 3, 4);
+        assertThat(items).extracting(ImportItem::getImportBatchId).containsOnly(created.batchId());
+        assertThat(items).extracting(ImportItem::getStatus).containsExactly(ImportItem.ImportItemStatus.pending,
+                ImportItem.ImportItemStatus.failed, ImportItem.ImportItemStatus.pending);
+        assertThat(items).extracting(ImportItem::isSkippedAtPreview).containsExactly(false, true, false);
+        assertThat(items.get(0).getValidationErrors()).isNull();
+        List<ImportRowError> errors = new ObjectMapper().readValue(items.get(1).getValidationErrors(),
+                new TypeReference<List<ImportRowError>>() {
+                });
+        assertThat(errors).containsExactly(
+                new ImportRowError("reference", "PATTERN", "Reference is not valid", "error"));
+    }
+
+    @Test
+    void createBatch_everyRowInvalid_rejectsWithNoValidRowsAndSavesNothing() {
+        stubActiveTypeAndSchema();
+        stubReferenceRule();
+        byte[] template = filledTemplate(new String[]{"a.pdf", null, "BAD"}, new String[]{null, "x", null});
+
+        assertThatThrownBy(() -> service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template)))
+                .isInstanceOf(ImportBatchSizeException.class)
+                .extracting("code", "status").containsExactly("IMPORT_NO_VALID_ROWS", HttpStatus.BAD_REQUEST);
+
+        verify(importBatchRepository, never()).save(any());
+        verify(importItemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void createBatch_activeBatchLimitStillApplies() {
+        stubActiveTypeAndSchema();
+        when(importBatchRepository.countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(any(), any(), any()))
+                .thenReturn(5L);
+        byte[] template = filledTemplate(new String[]{"a.pdf", null, null});
+
+        assertThatThrownBy(() -> service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template)))
+                .isInstanceOf(ActiveImportBatchLimitException.class);
         verify(importBatchRepository, never()).save(any());
     }
 
@@ -426,6 +611,45 @@ class BulkImportServiceImplTest {
     }
 
     @Test
+    void receiveFile_fileForRowSkippedAtPreview_rejectsAndUploadsNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem skipped = skippedItem(batch, 5, "bad.pdf");
+        stubLockedBatch(batch, List.of(item(batch, 2, "a.pdf", null, null), skipped));
+        byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+
+        assertThatThrownBy(() -> service(realWorkbook).receiveFile(batch.getImportBatchId(), "bad.pdf",
+                "application/pdf", content.length, new ByteArrayInputStream(content)))
+                .isInstanceOf(ImportFileNotInBatchException.class)
+                .hasMessage("Row 5 was skipped because of template errors, so it doesn't need a file.")
+                .extracting("status").isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        verify(importItemRepository, never()).save(any());
+        assertThat(skipped.getStagedObjectKey()).isNull();
+    }
+
+    @Test
+    void getStatus_rowsSkippedAtPreviewNeitherMissingNorReceived_workerFailedRowStillMissing() {
+        ImportBatch batch = batch(ImportBatchStatus.running);
+        ImportItem received = item(batch, 2, "a.pdf", UUID.randomUUID(), "imports/key-1");
+        ImportItem waiting = item(batch, 3, "b.pdf", null, null);
+        ImportItem skipped = skippedItem(batch, 4, "c.pdf");
+        // Failed by the worker (no file arrived) - not skipped, so still missing.
+        ImportItem workerFailed = failedItem(batch, 5, "d.pdf", "{\"title\":null,\"fields\":{}}",
+                "[{\"field\":\"file\",\"code\":\"FILE_MISSING\",\"message\":\"No file\",\"severity\":\"error\"}]");
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
+                .thenReturn(List.of(received, waiting, skipped, workerFailed));
+
+        BulkImportStatusResponse status = service(realWorkbook).getStatus(batch.getImportBatchId());
+
+        assertThat(workerFailed.isSkippedAtPreview()).isFalse();
+        assertThat(status.skippedRows()).isEqualTo(1);
+        assertThat(status.filesReceived()).isEqualTo(1);
+        assertThat(status.missingFilenames()).containsExactly("b.pdf", "d.pdf");
+    }
+
+    @Test
     void receiveFile_contentNotMatchingExtension_rejects415AndUploadsNothing() {
         ImportBatch batch = batch(ImportBatchStatus.uploading);
         ImportItem item = item(batch, 2, "a.pdf", null, null);
@@ -560,6 +784,13 @@ class BulkImportServiceImplTest {
         return item;
     }
 
+    private ImportItem skippedItem(ImportBatch batch, int rowNumber, String filename) {
+        ImportItem item = failedItem(batch, rowNumber, filename, "{\"title\":null,\"fields\":{}}",
+                "[{\"field\":\"reference\",\"code\":\"PATTERN\",\"message\":\"Bad\",\"severity\":\"error\"}]");
+        item.setSkippedAtPreview(true);
+        return item;
+    }
+
     /**
      * Runs {@code action} with transaction synchronization active, runs
      * {@code beforeCommit} while the "transaction" is still open, then
@@ -618,7 +849,59 @@ class BulkImportServiceImplTest {
                 storageLocationResolver, objectStorageServiceFactory,
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
-                new FileTypeInspector(new IngestionProperties()), importSchemaFields);
+                new FileTypeInspector(new IngestionProperties()), importSchemaFields,
+                new ImportRowValidator(new ImportValueConverter(), metadataValidationService,
+                        new ImportUsers(userRepository)));
+    }
+
+    /** An active Invoice v3 whose template has one optional text field, "reference" (label "Reference"). */
+    private void stubActiveTypeAndSchema() {
+        when(documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.active)));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of("reference",
+                new ImportField(UUID.randomUUID(), "reference", "Reference", "text", false, false)));
+    }
+
+    /** Every reference value "BAD" fails the type's own metadata rules. */
+    private void stubReferenceRule() {
+        when(metadataValidationService.validate(eq(documentTypeId), anyInt(), anyMap())).thenAnswer(call -> {
+            Map<String, Object> values = call.getArgument(2);
+            return "BAD".equals(values.get("reference"))
+                    ? List.of(new ValidationError("reference", "PATTERN", "Reference is not valid", "error"))
+                    : List.of();
+        });
+    }
+
+    private void stubBatchSave() {
+        when(importBatchRepository.save(any())).thenAnswer(call -> {
+            ImportBatch saved = call.getArgument(0);
+            saved.setImportBatchId(UUID.randomUUID());
+            return saved;
+        });
+    }
+
+    /**
+     * A v3 template with the given data rows, each {filename, title,
+     * reference} - a null cell is left blank.
+     */
+    private byte[] filledTemplate(String[]... rows) {
+        byte[] blank = realWorkbook.generate(schema(3), 500);
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(blank));
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            for (int r = 0; r < rows.length; r++) {
+                Row row = sheet.getRow(r + 1) != null ? sheet.getRow(r + 1) : sheet.createRow(r + 1);
+                for (int c = 0; c < rows[r].length; c++) {
+                    if (rows[r][c] != null) {
+                        row.createCell(c).setCellValue(rows[r][c]);
+                    }
+                }
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

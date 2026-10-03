@@ -13,6 +13,7 @@ import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
+import com.oak.dms.importexport.dto.ImportTemplatePreview;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
@@ -32,6 +33,7 @@ import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportRowError;
+import com.oak.dms.importexport.validation.ImportRowValidator;
 import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
@@ -65,6 +67,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -123,6 +126,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final ObjectMapper objectMapper;
     private final FileTypeInspector fileTypeInspector;
     private final ImportSchemaFields importSchemaFields;
+    private final ImportRowValidator rowValidator;
 
     @Override
     @Transactional(readOnly = true)
@@ -155,31 +159,33 @@ public class BulkImportServiceImpl implements BulkImportService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public ImportTemplatePreview previewTemplate(long templateSize, InputStream template) {
+        UUID tenantId = TenantContext.getTenantId();
+
+        CheckedTemplate checked = readTemplate(templateSize, template, tenantId);
+        RowCheckResult result = checkRows(checked, tenantId);
+
+        // Read-only: nothing is saved, and the active-batch limit is left to
+        // createBatch - checking a template doesn't start an import.
+        List<ImportRowFailure> problemRows = result.rows().stream()
+                .filter(CheckedRow::hasErrors)
+                .map(row -> new ImportRowFailure(row.item().getRowNumber(), row.item().getFilenameReference(),
+                        row.title(), toProblems(row.errors(), result.fields())))
+                .toList();
+        int totalRows = result.rows().size();
+        return new ImportTemplatePreview(checked.documentType().getDocumentTypeId(), checked.parsed().schemaVersion(),
+                totalRows, totalRows - problemRows.size(), problemRows.size(), problemRows);
+    }
+
+    @Override
     public BulkImportCreatedResponse createBatch(long templateSize, InputStream template) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
 
-        // POI holds the whole workbook in memory, so an oversized upload is
-        // rejected before it's opened at all.
-        long maxTemplateBytes = properties.getMaxTemplateSize().toBytes();
-        if (templateSize > maxTemplateBytes) {
-            throw new ImportBatchSizeException("IMPORT_TEMPLATE_TOO_LARGE",
-                    "The template is larger than " + properties.getMaxTemplateSize().toMegabytes()
-                            + "MB; split it into smaller imports.");
-        }
-
-        int maxRows = properties.getMaxFilesPerBatch();
-        ParsedTemplate parsed = templateWorkbook.parse(template, maxRows);
-
-        DocumentType documentType = documentTypeRepository
-                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(parsed.documentTypeId(), tenantId)
-                .orElseThrow(ImportTemplateWorkbook::invalid);
-        requireActive(documentType);
-        if (parsed.schemaVersion() != documentType.getCurrentSchemaVersion()) {
-            throw new InvalidImportTemplateException("IMPORT_TEMPLATE_OUTDATED",
-                    "This template is for an older version of the '" + documentType.getTypeName()
-                            + "' fields. Download a fresh template and try again.");
-        }
+        CheckedTemplate checked = readTemplate(templateSize, template, tenantId);
+        DocumentType documentType = checked.documentType();
+        ParsedTemplate parsed = checked.parsed();
 
         long activeBatches = importBatchRepository
                 .countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(tenantId, userId, ACTIVE_STATUSES);
@@ -188,9 +194,13 @@ public class BulkImportServiceImpl implements BulkImportService {
                     "You already have a bulk import in progress. Wait for it to finish before starting another.");
         }
 
-        List<ParsedRow> rows = parsed.rows();
-        if (rows.isEmpty()) {
-            throw new ImportBatchSizeException("IMPORT_ROW_COUNT_INVALID", "The template has no data rows.");
+        // Always re-checked here, whatever the preview said: rows with
+        // errors are saved failed (and skipped from then on), the rest wait
+        // for their files as before.
+        List<CheckedRow> rows = checkRows(checked, tenantId).rows();
+        if (rows.stream().allMatch(CheckedRow::hasErrors)) {
+            throw new ImportBatchSizeException("IMPORT_NO_VALID_ROWS",
+                    "None of the template's rows can be imported. Fix the problems and upload it again.");
         }
 
         ImportBatch batch = importBatchRepository.save(ImportBatch.builder()
@@ -205,23 +215,30 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .build());
 
         List<ImportItem> items = rows.stream()
-                .map(row -> ImportItem.builder()
-                        .tenantId(tenantId)
-                        .importBatchId(batch.getImportBatchId())
-                        .rowNumber(row.rowNumber())
-                        .filenameReference(row.filename())
-                        .rowValues(toRowValuesJson(row))
-                        .status(ImportItem.ImportItemStatus.pending)
-                        .build())
+                .map(row -> {
+                    ImportItem item = row.item();
+                    item.setImportBatchId(batch.getImportBatchId());
+                    if (row.hasErrors()) {
+                        item.setStatus(ImportItem.ImportItemStatus.failed);
+                        item.setSkippedAtPreview(true);
+                        item.setValidationErrors(toJson(row.errors()));
+                    }
+                    return item;
+                })
                 .toList();
         importItemRepository.saveAll(items);
 
-        log.info("Created bulk import batch {} ({} rows) for document type {} v{} in tenant {}",
-                batch.getImportBatchId(), rows.size(), documentType.getDocumentTypeId(), parsed.schemaVersion(),
-                tenantId);
+        List<String> expectedFilenames = items.stream()
+                .filter(item -> !item.isSkippedAtPreview())
+                .map(ImportItem::getFilenameReference)
+                .toList();
+        int skippedRows = items.size() - expectedFilenames.size();
 
-        return new BulkImportCreatedResponse(batch.getImportBatchId(), rows.size(),
-                rows.stream().map(ParsedRow::filename).toList());
+        log.info("Created bulk import batch {} ({} rows, {} skipped for template errors) for document type {} v{}"
+                        + " in tenant {}", batch.getImportBatchId(), rows.size(), skippedRows,
+                documentType.getDocumentTypeId(), parsed.schemaVersion(), tenantId);
+
+        return new BulkImportCreatedResponse(batch.getImportBatchId(), rows.size(), expectedFilenames, skippedRows);
     }
 
     @Override
@@ -343,11 +360,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 batch.getSchemaVersion());
         return failed.stream()
                 .map(item -> new ImportRowFailure(item.getRowNumber(), item.getFilenameReference(), rowTitle(item),
-                        rowErrors(item).stream()
-                                .map(error -> new ImportRowProblem(error.field(),
-                                        fieldLabel(error.field(), schemaFields), error.code(), error.message(),
-                                        error.severity()))
-                                .toList()))
+                        toProblems(rowErrors(item), schemaFields)))
                 .toList();
     }
 
@@ -420,14 +433,98 @@ public class BulkImportServiceImpl implements BulkImportService {
     }
 
     private static BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {
-        // A file handed on to the scan gate has left staging but was received.
+        // Rows skipped for template errors never need a file, so they are
+        // neither missing nor received. A file handed on to the scan gate
+        // has left staging but was received.
+        int skippedRows = (int) items.stream().filter(ImportItem::isSkippedAtPreview).count();
         List<String> missingFilenames = items.stream()
+                .filter(item -> !item.isSkippedAtPreview())
                 .filter(item -> item.getStagedObjectKey() == null && item.getScanResultId() == null)
                 .map(ImportItem::getFilenameReference)
                 .toList();
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
-                batch.getStatus().name(), batch.getTotalRecords(), items.size() - missingFilenames.size(),
-                batch.getSuccessCount(), batch.getFailureCount(), missingFilenames, batch.getCreatedAt());
+                batch.getStatus().name(), batch.getTotalRecords(),
+                items.size() - skippedRows - missingFilenames.size(), batch.getSuccessCount(),
+                batch.getFailureCount(), missingFilenames, skippedRows, batch.getCreatedAt());
+    }
+
+    /**
+     * The template-level checks preview and createBatch share, in this
+     * order: size, parse (including the row limit), document type (in the
+     * caller's tenant, active), schema version, at least one row. Each
+     * failure is the same 400 from both endpoints.
+     */
+    private CheckedTemplate readTemplate(long templateSize, InputStream template, UUID tenantId) {
+        // POI holds the whole workbook in memory, so an oversized upload is
+        // rejected before it's opened at all.
+        long maxTemplateBytes = properties.getMaxTemplateSize().toBytes();
+        if (templateSize > maxTemplateBytes) {
+            throw new ImportBatchSizeException("IMPORT_TEMPLATE_TOO_LARGE",
+                    "The template is larger than " + properties.getMaxTemplateSize().toMegabytes()
+                            + "MB; split it into smaller imports.");
+        }
+
+        ParsedTemplate parsed = templateWorkbook.parse(template, properties.getMaxFilesPerBatch());
+
+        DocumentType documentType = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(parsed.documentTypeId(), tenantId)
+                .orElseThrow(ImportTemplateWorkbook::invalid);
+        requireActive(documentType);
+        if (parsed.schemaVersion() != documentType.getCurrentSchemaVersion()) {
+            throw new InvalidImportTemplateException("IMPORT_TEMPLATE_OUTDATED",
+                    "This template is for an older version of the '" + documentType.getTypeName()
+                            + "' fields. Download a fresh template and try again.");
+        }
+
+        if (parsed.rows().isEmpty()) {
+            throw new ImportBatchSizeException("IMPORT_ROW_COUNT_INVALID", "The template has no data rows.");
+        }
+        return new CheckedTemplate(documentType, parsed);
+    }
+
+    /**
+     * Runs {@link ImportRowValidator#validateWithoutFile} on every row - all
+     * the worker's checks except the file one - against the template's
+     * schema version. The items are built but not saved.
+     */
+    private RowCheckResult checkRows(CheckedTemplate checked, UUID tenantId) {
+        ParsedTemplate parsed = checked.parsed();
+        UUID documentTypeId = checked.documentType().getDocumentTypeId();
+        Map<String, ImportField> fields = importSchemaFields.load(tenantId, documentTypeId, parsed.schemaVersion());
+
+        List<ImportItem> items = parsed.rows().stream()
+                .map(row -> ImportItem.builder()
+                        .tenantId(tenantId)
+                        .rowNumber(row.rowNumber())
+                        .filenameReference(row.filename())
+                        .rowValues(toRowValuesJson(row))
+                        .status(ImportItem.ImportItemStatus.pending)
+                        .build())
+                .toList();
+        Map<String, List<Integer>> duplicates = ImportRowValidator.duplicateRows(items);
+
+        List<CheckedRow> rows = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            ParsedRow row = parsed.rows().get(i);
+            ImportItem item = items.get(i);
+            List<ImportRowError> errors = rowValidator.validateWithoutFile(item,
+                    new RowValues(row.title(), row.fields()), fields, duplicates, documentTypeId,
+                    parsed.schemaVersion(), tenantId);
+            rows.add(new CheckedRow(item, row.title(), errors));
+        }
+        return new RowCheckResult(fields, rows);
+    }
+
+    private record CheckedTemplate(DocumentType documentType, ParsedTemplate parsed) {
+    }
+
+    private record RowCheckResult(Map<String, ImportField> fields, List<CheckedRow> rows) {
+    }
+
+    private record CheckedRow(ImportItem item, String title, List<ImportRowError> errors) {
+        boolean hasErrors() {
+            return ImportRowValidator.hasErrors(errors);
+        }
     }
 
     private static void requireActive(DocumentType documentType) {
@@ -464,6 +561,15 @@ public class BulkImportServiceImpl implements BulkImportService {
         return schemaField != null && schemaField.label() != null ? schemaField.label() : field;
     }
 
+    /** A row's errors as the failures report and the preview show them, each with its column's label. */
+    private static List<ImportRowProblem> toProblems(List<ImportRowError> errors,
+                                                     Map<String, ImportField> schemaFields) {
+        return errors.stream()
+                .map(error -> new ImportRowProblem(error.field(), fieldLabel(error.field(), schemaFields),
+                        error.code(), error.message(), error.severity()))
+                .toList();
+    }
+
     // The failures report is read-only and best-effort: one unreadable row
     // is logged and shown with what's left, rather than failing the report.
 
@@ -485,6 +591,14 @@ public class BulkImportServiceImpl implements BulkImportService {
         } catch (JsonProcessingException e) {
             log.warn("Unreadable validation_errors on import item {}", item.getImportItemId(), e);
             return List.of();
+        }
+    }
+
+    private String toJson(List<ImportRowError> errors) {
+        try {
+            return objectMapper.writeValueAsString(errors);
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize import row errors", e);
         }
     }
 

@@ -62,10 +62,9 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   async function handleCreate(template: File) {
     const result = await bulkImport.create(template)
     if (result.batch) {
-      const { batchId: createdId, totalRecords } = result.batch
-      setCreatedNotice(
-        `Template accepted - ${totalRecords} ${totalRecords === 1 ? "file" : "files"} expected.`
-      )
+      const { batchId: createdId, expectedFilenames } = result.batch
+      const expected = expectedFilenames.length
+      setCreatedNotice(`Template accepted - ${expected} ${expected === 1 ? "file" : "files"} expected.`)
       setBatchId(createdId)
     }
     return result
@@ -201,7 +200,9 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
         documentTypesError={
           documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
         }
+        previewing={bulkImport.previewing}
         creating={bulkImport.creating}
+        onPreview={bulkImport.preview}
         onCreate={handleCreate}
       />
     )

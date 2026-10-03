@@ -43,6 +43,9 @@ export function UploadFilesStep({
 
   const missingCount = status.missingFilenames.length
   const allReceived = missingCount === 0
+  const skipped = status.skippedRows
+  /** Rows skipped for template errors never need a file. */
+  const filesExpected = status.totalRecords - skipped
 
   async function submitNow() {
     setSubmitting(true)
@@ -76,6 +79,12 @@ export function UploadFilesStep({
         action={cancelButton}
       >
         {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
+        {skipped > 0 && (
+          <p className="mb-3 text-[12.5px] text-muted-foreground">
+            {skipped} {skipped === 1 ? "row was" : "rows were"} skipped because of template errors -{" "}
+            {skipped === 1 ? "it'll" : "they'll"} appear in the results.
+          </p>
+        )}
 
         <FileDropzone multiple onFiles={onFiles} disabled={!uploadsAllowed} label="Upload import files">
           <span className="font-semibold text-foreground">Drag files here</span> or click to browse
@@ -88,7 +97,7 @@ export function UploadFilesStep({
               <h3 className="text-[13px] font-semibold">Uploads</h3>
               <p className="text-[12.5px] text-muted-foreground" aria-live="polite">
                 <span className="font-semibold text-foreground">{status.filesReceived}</span> of{" "}
-                {status.totalRecords} received
+                {filesExpected} received
               </p>
             </div>
             {entries.length === 0 ? (

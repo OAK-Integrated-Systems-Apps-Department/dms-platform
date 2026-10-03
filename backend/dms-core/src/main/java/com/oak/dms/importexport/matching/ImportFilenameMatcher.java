@@ -12,7 +12,8 @@ import java.util.List;
  * Matches an uploaded file to the manifest row it belongs to. Filenames
  * compare case-insensitively, and a filename listed on several rows fills
  * them in row order - each upload claims the lowest-numbered matching row
- * that has no staged file yet.
+ * that has no staged file yet. Rows skipped at creation because of template
+ * errors ({@link ImportItem#isSkippedAtPreview()}) are never matched.
  */
 @Component
 public class ImportFilenameMatcher {
@@ -33,11 +34,29 @@ public class ImportFilenameMatcher {
                     "'" + filename + "' is not listed in the Filename column of this import's template.");
         }
 
-        return candidates.stream()
+        // Rows that failed the template checks never take a file.
+        List<ImportItem> open = candidates.stream()
+                .filter(item -> !item.isSkippedAtPreview())
+                .toList();
+        if (open.isEmpty()) {
+            throw new ImportFileNotInBatchException(skippedMessage(candidates));
+        }
+
+        return open.stream()
                 .filter(item -> item.getStagedObjectKey() == null)
                 .findFirst()
                 .orElseThrow(() -> new ImportFileAlreadyReceivedException(
                         "'" + filename + "' has already been uploaded for every row that lists it."));
+    }
+
+    /** "Row 5 was skipped ..., so it doesn't ..." / "Rows 5 and 7 were skipped ..., so they don't ...". */
+    static String skippedMessage(List<ImportItem> skipped) {
+        List<String> rows = skipped.stream().map(item -> String.valueOf(item.getRowNumber())).toList();
+        if (rows.size() == 1) {
+            return "Row " + rows.get(0) + " was skipped because of template errors, so it doesn't need a file.";
+        }
+        String joined = String.join(", ", rows.subList(0, rows.size() - 1)) + " and " + rows.get(rows.size() - 1);
+        return "Rows " + joined + " were skipped because of template errors, so they don't need a file.";
     }
 
     /** Drops any client-supplied directory prefix and surrounding whitespace. */

@@ -93,6 +93,16 @@ public class ImportItem {
     @Column(name = "validation_errors", columnDefinition = "jsonb")
     private String validationErrors;
 
+    /**
+     * True for a row that failed the template checks when its batch was
+     * created: it was saved {@code failed} with those problems, never needs
+     * a file, and is left alone by the worker. False for every other row,
+     * including rows that fail later.
+     */
+    @Column(name = "skipped_at_preview", nullable = false)
+    @Builder.Default
+    private boolean skippedAtPreview = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();

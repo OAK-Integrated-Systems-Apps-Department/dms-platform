@@ -148,8 +148,6 @@ class BulkImportWorkerTest {
         ImportItem warned = item(batch, 3, "b.pdf");
         ImportItem clean = item(batch, 4, "c.pdf");
         failing.setStatus(ImportItemStatus.pending);
-        clean.setStatus(ImportItemStatus.failed); // failed on an earlier attempt, valid now
-        clean.setValidationErrors("[{\"code\":\"OLD\"}]");
         List<ImportItem> items = List.of(failing, warned, clean);
         stubBatch(batch, items);
 
@@ -174,6 +172,45 @@ class BulkImportWorkerTest {
 
         assertThat(tenantDuringValidation.get()).isEqualTo(tenantId);
         assertThatThrownBy(TenantContext::getTenantId).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void onMessage_rowSkippedAtPreview_isNotRevalidatedAndKeepsItsTemplateErrors() throws Exception {
+        ImportBatch batch = batch(ImportBatchStatus.queued);
+        ImportItem skipped = item(batch, 2, "a.pdf");
+        skipped.setStagedObjectKey(null); // never needed a file
+        skipped.setStatus(ImportItemStatus.failed);
+        skipped.setSkippedAtPreview(true);
+        String templateErrors = "[{\"field\":\"amount\",\"code\":\"INVALID_NUMBER\","
+                + "\"message\":\"Amount must be a number\",\"severity\":\"error\"}]";
+        skipped.setValidationErrors(templateErrors);
+        ImportItem fresh = item(batch, 3, "b.pdf");
+        stubBatch(batch, List.of(skipped, fresh));
+        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
+
+        worker.onMessage(message(batch.getImportBatchId()));
+
+        verify(rowValidator, never()).validate(eq(skipped), any(), any(), any(), any(), anyInt(), any());
+        verify(rowValidator).validate(eq(fresh), any(), any(), any(), any(), anyInt(), any());
+        assertThat(skipped.getStatus()).isEqualTo(ImportItemStatus.failed);
+        assertThat(skipped.isSkippedAtPreview()).isTrue();
+        assertThat(skipped.getValidationErrors()).isEqualTo(templateErrors);
+    }
+
+    @Test
+    void onMessage_redelivery_rowFailedOnEarlierAttempt_isNotRevalidated() throws Exception {
+        ImportBatch batch = batch(ImportBatchStatus.running);
+        ImportItem failedEarlier = item(batch, 2, "a.pdf");
+        failedEarlier.setStatus(ImportItemStatus.failed);
+        failedEarlier.setValidationErrors("[{\"code\":\"SCAN_REJECTED\"}]");
+        stubBatch(batch, List.of(failedEarlier));
+
+        worker.onMessage(message(batch.getImportBatchId()));
+
+        verify(rowValidator, never()).validate(any(), any(), any(), any(), any(), anyInt(), any());
+        assertThat(failedEarlier.getStatus()).isEqualTo(ImportItemStatus.failed);
+        assertThat(failedEarlier.isSkippedAtPreview()).isFalse();
+        assertThat(failedEarlier.getValidationErrors()).isEqualTo("[{\"code\":\"SCAN_REJECTED\"}]");
     }
 
     @Test

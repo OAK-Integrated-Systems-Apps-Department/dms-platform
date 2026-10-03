@@ -8,6 +8,7 @@ import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
+import com.oak.dms.importexport.dto.ImportTemplatePreview;
 import com.oak.dms.importexport.service.BulkImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -74,6 +75,18 @@ public class BulkImportController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(template.filename()).build().toString())
                 .body(template.content());
+    }
+
+    // Read-only, so FIE-only like the other template endpoints. Whether this
+    // should need fie.bulk-import-documents.validate-preview is a Phase 6
+    // decision.
+    @PostMapping(value = "/import-templates/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "Check a filled-in import template's rows without starting an import (saves nothing)")
+    public ImportTemplatePreview previewTemplate(@RequestPart("template") MultipartFile template) throws IOException {
+        try (InputStream content = template.getInputStream()) {
+            return bulkImportService.previewTemplate(template.getSize(), content);
+        }
     }
 
     @PostMapping(value = "/bulk-imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

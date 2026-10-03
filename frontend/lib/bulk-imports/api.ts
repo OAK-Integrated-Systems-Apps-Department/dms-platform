@@ -28,11 +28,17 @@ export function hasFailedRows(status: BulkImportStatus | undefined): boolean {
   return status === "completed_with_errors" || status === "failed"
 }
 
-/** Response of POST /bulk-imports. `expectedFilenames` has one entry per data row, in row order. */
+/**
+ * Response of POST /bulk-imports. `expectedFilenames` has one entry per row
+ * that needs a file, in row order; rows skipped for template errors are left
+ * out (`totalRecords` still counts them).
+ */
 export interface BulkImportCreatedResponseDto {
   batchId: string
   totalRecords: number
   expectedFilenames: string[]
+  /** Rows saved as failed because of template errors - they need no file and appear in the results. */
+  skippedRows: number
 }
 
 /** Response of POST /bulk-imports/{batchId}/files. */
@@ -48,11 +54,14 @@ export interface BulkImportStatusResponseDto {
   documentTypeId: string
   status: BulkImportStatus
   totalRecords: number
+  /** Rows that need a file and have one - skipped rows never count. */
   filesReceived: number
   successCount: number
   failureCount: number
-  /** One entry per row still waiting for its file. */
+  /** One entry per row still waiting for its file. Skipped rows never wait for one. */
   missingFilenames: string[]
+  /** Rows skipped at creation because of template errors. */
+  skippedRows: number
   createdAt: string
 }
 
@@ -100,6 +109,20 @@ export interface ImportRowFailureDto {
   problems: ImportRowProblemDto[]
 }
 
+/**
+ * Response of POST /import-templates/preview - the row checks the template
+ * would get on POST /bulk-imports (all but the file one), with nothing saved.
+ * `rows` lists only rows with errors, in row order.
+ */
+export interface ImportTemplatePreviewDto {
+  documentTypeId: string
+  schemaVersion: number
+  totalRows: number
+  validRows: number
+  invalidRows: number
+  rows: ImportRowFailureDto[]
+}
+
 /** Response item of GET /import-templates/document-types - active types only, in display order. */
 export interface ImportDocumentTypeOptionDto {
   documentTypeId: string
@@ -139,6 +162,17 @@ export async function downloadImportTemplate(documentTypeId: string): Promise<Do
   const filename =
     filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? TEMPLATE_FALLBACK_FILENAME
   return { blob, filename }
+}
+
+/** POST /import-templates/preview - checks a filled-in template's rows without starting an import. */
+export async function previewImportTemplate(template: File): Promise<ImportTemplatePreviewDto> {
+  const body = new FormData()
+  body.append("template", template)
+  return apiFetchJson<ImportTemplatePreviewDto>(
+    `${API_BASE_URL}/api/v1/import-templates/preview`,
+    { method: "POST", body },
+    "Could not check the template."
+  )
 }
 
 /** POST /bulk-imports - uploads the filled-in template and opens a batch. */

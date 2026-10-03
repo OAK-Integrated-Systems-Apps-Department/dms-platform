@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -93,6 +94,35 @@ class ImportBatchFinaliserTest {
         assertThat(batch.getSuccessCount()).isZero();
         assertThat(batch.getFailureCount()).isEqualTo(3);
         assertThat(batch.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void finalise_rowsSkippedAtPreview_countAsFailed() {
+        ImportBatch batch = runningBatch();
+        ImportItem created = ImportItem.builder().status(ImportItemStatus.success).build();
+        ImportItem skipped = ImportItem.builder().status(ImportItemStatus.failed).skippedAtPreview(true).build();
+        ImportItem failedLater = ImportItem.builder().status(ImportItemStatus.failed).build();
+        List<ImportItem> items = List.of(created, skipped, failedLater);
+        when(importBatchRepository.lockByImportBatchId(batch.getImportBatchId())).thenReturn(Optional.of(batch));
+        when(importItemRepository.countByImportBatchIdAndStatus(eq(batch.getImportBatchId()), any()))
+                .thenAnswer(invocation -> items.stream()
+                        .filter(item -> item.getStatus() == invocation.getArgument(1))
+                        .count());
+
+        assertThat(finaliser.finalise(batch.getImportBatchId())).contains(ImportBatchStatus.completed_with_errors);
+
+        assertThat(batch.getSuccessCount()).isEqualTo(1);
+        assertThat(batch.getFailureCount()).isEqualTo(2);
+    }
+
+    @Test
+    void finalise_onlyRowsSkippedAtPreviewFailed_stillCompletesWithErrors() {
+        ImportBatch batch = runningBatch();
+        // 2 created, 1 skipped at preview (failed) - nothing left pending.
+        stubCounts(batch, 2, 1, 0);
+
+        assertThat(finaliser.finalise(batch.getImportBatchId())).contains(ImportBatchStatus.completed_with_errors);
+        assertThat(batch.getFailureCount()).isEqualTo(1);
     }
 
     @Test

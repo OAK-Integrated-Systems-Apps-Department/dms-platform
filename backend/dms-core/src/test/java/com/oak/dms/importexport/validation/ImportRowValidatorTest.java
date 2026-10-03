@@ -72,6 +72,31 @@ class ImportRowValidatorTest {
     }
 
     @Test
+    void validateWithoutFile_noStagedFile_skipsFileCheckButKeepsTheOthers() {
+        List<ImportRowError> errors = validator.validateWithoutFile(item(2, " ", null),
+                new RowValues(null, Map.of("contract_value", "lots")), FIELDS, Map.of(), DOCUMENT_TYPE_ID, VERSION,
+                TENANT_ID);
+
+        assertThat(errors).extracting(ImportRowError::code)
+                .doesNotContain("FILE_MISSING")
+                .contains("FILENAME_MISSING");
+        assertThat(errors).extracting(ImportRowError::field).contains("contract_value");
+    }
+
+    @Test
+    void validate_isFileCheckThenValidateWithoutFile() {
+        ImportItem item = item(2, "", null);
+        RowValues values = new RowValues(null, Map.of("contract_value", "lots"));
+
+        List<ImportRowError> withoutFile = validator.validateWithoutFile(item, values, FIELDS, Map.of(),
+                DOCUMENT_TYPE_ID, VERSION, TENANT_ID);
+
+        assertThat(validate(item, values)).first().extracting(ImportRowError::code).isEqualTo("FILE_MISSING");
+        assertThat(validate(item, values)).hasSize(withoutFile.size() + 1).endsWith(
+                withoutFile.toArray(ImportRowError[]::new));
+    }
+
+    @Test
     void validate_blankFilename_failsFilenameMissing() {
         List<ImportRowError> errors = validate(item(2, "  ", "key"), new RowValues("A title", Map.of()));
 

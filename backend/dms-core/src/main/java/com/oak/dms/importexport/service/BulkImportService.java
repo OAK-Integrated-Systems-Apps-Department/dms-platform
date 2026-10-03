@@ -7,6 +7,7 @@ import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportTemplateFile;
+import com.oak.dms.importexport.dto.ImportTemplatePreview;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -18,7 +19,8 @@ import java.util.UUID;
 /**
  * Bulk import intake (Module 2.1): template download, manifest upload,
  * per-file staging, and submit. Everything here is scoped to the caller's
- * tenant, and a batch is only visible to the user who created it. Field
+ * tenant, and a batch is only visible to the user who created it. Rows are
+ * checked (all but their file) when the template is uploaded; full
  * validation and record creation happen later, in the import worker.
  */
 public interface BulkImportService {
@@ -29,7 +31,21 @@ public interface BulkImportService {
     /** An .xlsx template for the document type's current schema version. */
     ImportTemplateFile generateTemplate(UUID documentTypeId);
 
-    /** Creates a batch in {@code uploading} with one item per non-empty template row. */
+    /**
+     * Checks a filled-in template exactly as {@link #createBatch} would -
+     * the same template-level rejections, and every row check except the
+     * file-present one - and reports the rows with errors. Writes nothing,
+     * and doesn't check the active-batch limit.
+     */
+    ImportTemplatePreview previewTemplate(long templateSize, InputStream template);
+
+    /**
+     * Creates a batch in {@code uploading} with one item per non-empty
+     * template row. The rows are re-checked as {@link #previewTemplate}
+     * does: rows with errors are saved {@code failed} (skipped at preview)
+     * and need no file. If no row passes, nothing is saved and the template
+     * is rejected.
+     */
     BulkImportCreatedResponse createBatch(long templateSize, InputStream template);
 
     /** Stages one file against the lowest-numbered unfilled row that lists its filename. */

@@ -43,7 +43,7 @@ export function BatchStatusCard({ batch, documentTypeName, onContinue, onCancel 
         <div>
           <dt className="text-[12px] text-muted-foreground">Files</dt>
           <dd className="flex items-center gap-2 font-medium">
-            {batch.filesReceived} of {batch.totalRecords} received
+            {batch.filesReceived} of {batch.totalRecords - batch.skippedRows} received
             {badge}
           </dd>
         </div>

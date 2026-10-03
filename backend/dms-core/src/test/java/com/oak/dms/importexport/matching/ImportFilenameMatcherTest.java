@@ -52,6 +52,38 @@ class ImportFilenameMatcherTest {
     }
 
     @Test
+    void match_onlySkippedRowListsIt_rejectsSayingTheRowWasSkipped() {
+        List<ImportItem> items = List.of(skipped(item(5, "bad.pdf")), item(6, "good.pdf"));
+
+        assertThatThrownBy(() -> matcher.match(items, "BAD.pdf"))
+                .isInstanceOf(ImportFileNotInBatchException.class)
+                .hasMessage("Row 5 was skipped because of template errors, so it doesn't need a file.")
+                .extracting("code").isEqualTo("IMPORT_FILE_NOT_IN_BATCH");
+    }
+
+    @Test
+    void match_severalSkippedRowsListIt_namesEveryRow() {
+        List<ImportItem> items = List.of(skipped(item(7, "dup.pdf")), skipped(item(3, "dup.pdf")),
+                skipped(item(5, "Dup.pdf")));
+
+        assertThatThrownBy(() -> matcher.match(items, "dup.pdf"))
+                .isInstanceOf(ImportFileNotInBatchException.class)
+                .hasMessage("Rows 3, 5 and 7 were skipped because of template errors, so they don't need a file.");
+    }
+
+    @Test
+    void match_skippedAndOpenRowsListIt_claimsTheOpenRowEvenIfLater() {
+        ImportItem open = item(8, "scan.pdf");
+        List<ImportItem> items = List.of(skipped(item(2, "scan.pdf")), open);
+
+        assertThat(matcher.match(items, "scan.pdf")).isSameAs(open);
+        open.setStagedObjectKey("imports/t/b/" + open.getImportItemId());
+
+        assertThatThrownBy(() -> matcher.match(items, "scan.pdf"))
+                .isInstanceOf(ImportFileAlreadyReceivedException.class);
+    }
+
+    @Test
     void match_clientSuppliedPath_matchesOnFilenameOnly() {
         ImportItem item = item(2, "report.docx");
 
@@ -65,5 +97,11 @@ class ImportFilenameMatcherTest {
                 .rowNumber(rowNumber)
                 .filenameReference(filename)
                 .build();
+    }
+
+    private static ImportItem skipped(ImportItem item) {
+        item.setStatus(ImportItem.ImportItemStatus.failed);
+        item.setSkippedAtPreview(true);
+        return item;
     }
 }
