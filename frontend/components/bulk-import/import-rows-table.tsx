@@ -57,6 +57,11 @@ function ImportRow({ row }: { row: ImportRowFailureDto }) {
   )
 }
 
+/** "Label: message", or just the message when it already names its column (as the download's errors column does). */
 function describe(problem: ImportRowProblemDto): string {
-  return problem.fieldLabel ? `${problem.fieldLabel}: ${problem.message}` : problem.message
+  const label = problem.fieldLabel
+  if (!label || problem.message.toLowerCase().includes(label.toLowerCase())) {
+    return problem.message
+  }
+  return `${label}: ${problem.message}`
 }

@@ -281,6 +281,50 @@ class ImportTemplateWorkbookTest {
     }
 
     @Test
+    void generate_prefilledNumberValues_areNumericCellsThatParseBackUnchanged_andOthersStayText()
+            throws IOException {
+        DocumentTypeSchemaResponse schema = new DocumentTypeSchemaResponse(DOCUMENT_TYPE_ID, "CON", "Contract", 1,
+                List.of(field("copies", "Copies", null, "number", false, false, 10, List.of()),
+                        field("amount", "Amount", null, "decimal", false, false, 20, List.of()),
+                        field("reference", "Reference", null, "text", false, false, 30, List.of())));
+        TemplateContent content = new TemplateContent(UUID.randomUUID(), List.of(
+                new PrefilledRow("a.pdf", null, Map.of("copies", "1200000", "amount", "12.5",
+                        "reference", "42"), null),
+                new PrefilledRow("b.pdf", null, Map.of("copies", "-3", "amount", "0.000123"), null),
+                // Not numbers, or numbers that wouldn't read back as the same text.
+                new PrefilledRow("c.pdf", null, Map.of("copies", "twelve lakhs", "amount", "12.50"), null),
+                new PrefilledRow("d.pdf", null, Map.of("copies", "12345678901234567890", "amount", "1e5"), null),
+                new PrefilledRow("e.pdf", null, Map.of("copies", "007", "amount", "NaN"), null)), true);
+
+        byte[] template = templateWorkbook.generate(schema, 10, content);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            Cell copies = sheet.getRow(1).getCell(2);
+            assertThat(copies.getCellType()).isEqualTo(CellType.NUMERIC);
+            assertThat(DateUtil.isCellDateFormatted(copies)).isFalse();
+            assertThat(copies.getNumericCellValue()).isEqualTo(1_200_000d);
+            assertThat(sheet.getRow(1).getCell(3).getNumericCellValue()).isEqualTo(12.5d);
+            // A text field holding digits stays text.
+            assertThat(sheet.getRow(1).getCell(4).getCellType()).isEqualTo(CellType.STRING);
+            assertThat(sheet.getRow(2).getCell(2).getCellType()).isEqualTo(CellType.NUMERIC);
+            assertThat(sheet.getRow(2).getCell(3).getCellType()).isEqualTo(CellType.NUMERIC);
+            for (int r = 3; r <= 5; r++) {
+                assertThat(sheet.getRow(r).getCell(2).getCellType()).as("row %d", r).isEqualTo(CellType.STRING);
+                assertThat(sheet.getRow(r).getCell(3).getCellType()).as("row %d", r).isEqualTo(CellType.STRING);
+            }
+        }
+
+        List<ParsedRow> rows = templateWorkbook.parse(new ByteArrayInputStream(template), 10).rows();
+        assertThat(rows).extracting(ParsedRow::fields).containsExactly(
+                Map.of("copies", "1200000", "amount", "12.5", "reference", "42"),
+                Map.of("copies", "-3", "amount", "0.000123"),
+                Map.of("copies", "twelve lakhs", "amount", "12.50"),
+                Map.of("copies", "12345678901234567890", "amount", "1e5"),
+                Map.of("copies", "007", "amount", "NaN"));
+    }
+
+    @Test
     void parse_malformedResubmitOf_rejectsAsInvalidTemplate() {
         byte[] filled = fill(templateWorkbook.generate(schema(3), 500,
                 new TemplateContent(UUID.randomUUID(), List.of(new PrefilledRow("a.pdf", null, Map.of(), null)), true)),

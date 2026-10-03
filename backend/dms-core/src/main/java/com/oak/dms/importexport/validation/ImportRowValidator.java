@@ -20,8 +20,9 @@ import java.util.stream.Collectors;
 
 /**
  * Checks one bulk import row before any record is created: that its file
- * arrived, that its filename is present and unique in the batch, that its
- * title fits, that every cell converts to its field's data type, and then
+ * arrived (or why it was refused at upload), that its filename is present
+ * and unique in the batch, that its title fits, that every cell converts to
+ * its field's data type, and then
  * the document type's own metadata rules (mandatory fields, options,
  * per-field validations) at the batch's schema version.
  *
@@ -73,7 +74,11 @@ public class ImportRowValidator {
                                          int schemaVersion, UUID tenantId) {
         List<ImportRowError> errors = new ArrayList<>();
         if (item.getStagedObjectKey() == null) {
-            errors.add(ImportRowError.error(FILE, "FILE_MISSING", "No file was uploaded for this row"));
+            // A file that was matched to this row but refused at intake keeps
+            // its reason on the row; say that rather than "no file".
+            errors.add(item.getUploadRejectionMessage() != null
+                    ? ImportRowError.error(FILE, "FILE_REJECTED", item.getUploadRejectionMessage())
+                    : ImportRowError.error(FILE, "FILE_MISSING", "No file was uploaded for this row"));
         }
         errors.addAll(validateWithoutFile(item, values, fields, duplicates, documentTypeId, schemaVersion,
                 tenantId));

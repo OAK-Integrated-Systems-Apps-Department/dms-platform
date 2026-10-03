@@ -84,6 +84,18 @@ public class ImportItem {
     @Column(name = "scan_result_id")
     private UUID scanResultId;
 
+    /**
+     * Error code of the last file matched to this row and refused at intake
+     * (see {@code BulkImportServiceImpl.receiveFile}); null if none was, and
+     * cleared once a file is accepted.
+     */
+    @Column(name = "upload_rejection_code", length = 50)
+    private String uploadRejectionCode;
+
+    /** Why that file was refused, naming the uploaded file; null with {@link #uploadRejectionCode}. */
+    @Column(name = "upload_rejection_message", columnDefinition = "text")
+    private String uploadRejectionMessage;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default

@@ -3,6 +3,7 @@ package com.oak.dms.importexport.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
@@ -93,7 +94,8 @@ import java.util.stream.Collectors;
  * tenant's {@link StoragePurpose#staging} location, never the document
  * location - see docs/scanning-architecture.md. Each file's type is checked
  * by {@link FileTypeInspector} at intake, the same check the scan gate runs,
- * so a bad file is rejected before anything is stored.
+ * so a bad file is rejected before anything is stored - with the reason kept
+ * on its row for the worker to report.
  */
 @Slf4j
 @Service
@@ -343,7 +345,17 @@ public class BulkImportServiceImpl implements BulkImportService {
                 reuses.size());
     }
 
+    /*
+     * A file matched to a row but refused (type/content, empty,
+     * password-protected, batch size) is recorded on that row and the
+     * exception rethrown. Those two exceptions commit rather than roll back
+     * so the record survives the failed request. It's the same transaction
+     * that holds the batch lock, so it can't deadlock on it or wait for a
+     * second connection, and nothing else has been written by the time
+     * either is thrown. Every other failure still rolls back.
+     */
     @Override
+    @Transactional(noRollbackFor = {ImportBatchSizeException.class, FileTypeNotAllowedException.class})
     public ImportFileReceivedResponse receiveFile(UUID batchId, String originalFilename, String contentType,
                                                   long contentLength, InputStream content) {
         UUID tenantId = TenantContext.getTenantId();
@@ -358,27 +370,36 @@ public class BulkImportServiceImpl implements BulkImportService {
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
         ImportItem item = filenameMatcher.match(items, originalFilename);
 
-        long stagedBytes = items.stream()
-                .map(ImportItem::getStagedSizeBytes)
-                .filter(Objects::nonNull)
-                .mapToLong(Long::longValue)
-                .sum();
-        if (stagedBytes + contentLength > properties.getMaxBatchSize().toBytes()) {
-            throw new ImportBatchSizeException("IMPORT_BATCH_SIZE_EXCEEDED",
-                    "Adding this file would take the import over its " + properties.getMaxBatchSize().toMegabytes()
-                            + "MB limit.");
-        }
+        BufferedInputStream buffered;
+        DetectedFileType detected;
+        try {
+            long stagedBytes = items.stream()
+                    .map(ImportItem::getStagedSizeBytes)
+                    .filter(Objects::nonNull)
+                    .mapToLong(Long::longValue)
+                    .sum();
+            if (stagedBytes + contentLength > properties.getMaxBatchSize().toBytes()) {
+                throw new ImportBatchSizeException("IMPORT_BATCH_SIZE_EXCEEDED",
+                        "Adding this file would take the import over its "
+                                + properties.getMaxBatchSize().toMegabytes() + "MB limit.");
+            }
 
-        // Type check on the head of the stream, as the scan gate does - a
-        // rejected file stages nothing. The client's Content-Type is never
-        // trusted; the inspector's canonical MIME type is stored instead.
-        BufferedInputStream buffered = new BufferedInputStream(content, FileTypeInspector.HEAD_BYTES * 2);
-        byte[] head = peek(buffered);
-        DetectedFileType detected = fileTypeInspector.inspect(originalFilename, head, head.length);
-        if (detected.encrypted()) {
-            // The gate would mark it unscannable anyway - reject it now.
-            throw new FileTypeNotAllowedException("Password-protected files can't be scanned for malware. "
-                    + "Remove the password and upload the file again.");
+            // Type check on the head of the stream, as the scan gate does - a
+            // rejected file stages nothing. The client's Content-Type is never
+            // trusted; the inspector's canonical MIME type is stored instead.
+            buffered = new BufferedInputStream(content, FileTypeInspector.HEAD_BYTES * 2);
+            byte[] head = peek(buffered);
+            detected = fileTypeInspector.inspect(originalFilename, head, head.length);
+            if (detected.encrypted()) {
+                // The gate would mark it unscannable anyway - reject it now.
+                throw new FileTypeNotAllowedException("Password-protected files can't be scanned for malware. "
+                        + "Remove the password and upload the file again.");
+            }
+        } catch (ImportBatchSizeException | FileTypeNotAllowedException e) {
+            // Kept on the row (committed - see noRollbackFor above) so the
+            // worker can say why it has no file; the caller still gets e.
+            recordRejection(item, originalFilename, e);
+            throw e;
         }
 
         StorageLocation location = storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging);
@@ -394,6 +415,8 @@ public class BulkImportServiceImpl implements BulkImportService {
         item.setStagedObjectKey(objectKey);
         item.setStagedStorageLocationId(location.getStorageLocationId());
         item.setStagedSizeBytes(stored.sizeBytes());
+        item.setUploadRejectionCode(null);
+        item.setUploadRejectionMessage(null);
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
 
@@ -759,13 +782,24 @@ public class BulkImportServiceImpl implements BulkImportService {
         }
     }
 
-    /** A row's problems as the failed-rows template's "Import errors" cell: one "Label: message" line each. */
+    /**
+     * A row's problems as the failed-rows template's "Import errors" cell: one
+     * "Label: message" line each, or just the message when it already names
+     * its column (case-insensitive) or has none.
+     */
     static String errorLines(List<ImportRowProblem> problems) {
         return problems.stream()
-                .map(problem -> problem.fieldLabel() != null
-                        ? problem.fieldLabel() + ": " + problem.message()
-                        : problem.message())
+                .map(BulkImportServiceImpl::describe)
                 .collect(Collectors.joining("\n"));
+    }
+
+    private static String describe(ImportRowProblem problem) {
+        String label = problem.fieldLabel();
+        String message = problem.message() != null ? problem.message() : "";
+        if (label == null || message.toLowerCase(Locale.ROOT).contains(label.toLowerCase(Locale.ROOT))) {
+            return message;
+        }
+        return label + ": " + message;
     }
 
     private List<ImportRowError> rowErrors(ImportItem item) {
@@ -821,6 +855,17 @@ public class BulkImportServiceImpl implements BulkImportService {
                 }
             }
         });
+    }
+
+    /** Keeps why a file matched to {@code item} was refused, for the worker's FILE_REJECTED. Stages nothing. */
+    private void recordRejection(ImportItem item, String originalFilename, ApiException rejection) {
+        item.setUploadRejectionCode(rejection.getCode());
+        item.setUploadRejectionMessage("The file you uploaded ('" + originalFilename + "') was rejected: "
+                + rejection.getMessage());
+        item.setUpdatedAt(OffsetDateTime.now());
+        importItemRepository.save(item);
+        log.info("Rejected file for row {} of bulk import batch {} ({})", item.getRowNumber(),
+                item.getImportBatchId(), rejection.getCode());
     }
 
     /** Reads the head the inspector needs and rewinds, so the upload still sees every byte. */

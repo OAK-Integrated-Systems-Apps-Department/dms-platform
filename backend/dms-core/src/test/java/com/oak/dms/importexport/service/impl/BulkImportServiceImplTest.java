@@ -71,12 +71,16 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionAttribute;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.unit.DataSize;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -669,8 +673,107 @@ class BulkImportServiceImplTest {
                 .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
 
         verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
-        verify(importItemRepository, never()).save(any());
+        verify(importItemRepository).save(item);
         assertThat(item.getStagedObjectKey()).isNull();
+        assertThat(item.getUploadRejectionCode()).isEqualTo("FILE_TYPE_NOT_ALLOWED");
+        assertThat(item.getUploadRejectionMessage()).isEqualTo("The file you uploaded ('a.pdf') was rejected: "
+                + "The file's content does not match its .pdf extension");
+    }
+
+    @Test
+    void receiveFile_emptyFile_rejects415AndSavesRejectionOnRow() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "contract.pdf", null, null);
+        stubLockedBatch(batch, List.of(item));
+
+        assertThatThrownBy(() -> service(realWorkbook).receiveFile(batch.getImportBatchId(), "Contract.pdf",
+                "application/pdf", 0, new ByteArrayInputStream(new byte[0])))
+                .isInstanceOf(FileTypeNotAllowedException.class)
+                .hasMessage("The uploaded file is empty")
+                .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        verify(importItemRepository).save(item);
+        assertThat(item.getStagedObjectKey()).isNull();
+        assertThat(item.getUploadRejectionCode()).isEqualTo("FILE_TYPE_NOT_ALLOWED");
+        // Names the file as uploaded, not the row's filename.
+        assertThat(item.getUploadRejectionMessage())
+                .isEqualTo("The file you uploaded ('Contract.pdf') was rejected: The uploaded file is empty");
+    }
+
+    @Test
+    void receiveFile_overBatchSizeLimit_rejects400AndSavesRejectionOnRow() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem staged = item(batch, 2, "a.pdf", UUID.randomUUID(), "imports/key-1");
+        ImportItem item = item(batch, 3, "b.pdf", null, null);
+        stubLockedBatch(batch, List.of(staged, item));
+        ImportExportProperties properties = new ImportExportProperties();
+        properties.setMaxBatchSize(DataSize.ofBytes(1024 + 10));
+        byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+
+        assertThatThrownBy(() -> service(realWorkbook, properties).receiveFile(batch.getImportBatchId(), "b.pdf",
+                "application/pdf", content.length, new ByteArrayInputStream(content)))
+                .isInstanceOf(ImportBatchSizeException.class)
+                .hasFieldOrPropertyWithValue("code", "IMPORT_BATCH_SIZE_EXCEEDED")
+                .extracting("status").isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        verify(importItemRepository).save(item);
+        assertThat(item.getStagedObjectKey()).isNull();
+        assertThat(item.getUploadRejectionCode()).isEqualTo("IMPORT_BATCH_SIZE_EXCEEDED");
+        assertThat(item.getUploadRejectionMessage()).startsWith("The file you uploaded ('b.pdf') was rejected: "
+                + "Adding this file would take the import over its");
+        assertThat(staged.getUploadRejectionCode()).isNull();
+    }
+
+    @Test
+    void receiveFile_rejectionsCommitButEveryOtherFailureRollsBack() throws NoSuchMethodException {
+        // The rejection is saved in the request's own transaction, which is
+        // committed rather than rolled back for these two exceptions only.
+        TransactionAttribute receive = new AnnotationTransactionAttributeSource().getTransactionAttribute(
+                BulkImportServiceImpl.class.getMethod("receiveFile", UUID.class, String.class, String.class,
+                        long.class, InputStream.class), BulkImportServiceImpl.class);
+        assertThat(receive).isNotNull();
+        assertThat(receive.rollbackOn(new FileTypeNotAllowedException("x"))).isFalse();
+        assertThat(receive.rollbackOn(new ImportBatchSizeException("IMPORT_BATCH_SIZE_EXCEEDED", "x"))).isFalse();
+        assertThat(receive.rollbackOn(new ImportFileNotInBatchException("x"))).isTrue();
+        assertThat(receive.rollbackOn(new UncheckedIOException(new IOException("x")))).isTrue();
+
+        // Only on receiveFile: createBatch still rolls back on the same size exception.
+        TransactionAttribute create = new AnnotationTransactionAttributeSource().getTransactionAttribute(
+                BulkImportServiceImpl.class.getMethod("createBatch", long.class, InputStream.class),
+                BulkImportServiceImpl.class);
+        assertThat(create.rollbackOn(new ImportBatchSizeException("IMPORT_ROW_COUNT_INVALID", "x"))).isTrue();
+    }
+
+    @Test
+    void receiveFile_acceptedAfterRejection_clearsTheRejection() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem item = item(batch, 2, "a.pdf", null, null);
+        stubLockedBatch(batch, List.of(item));
+        BulkImportServiceImpl service = service(realWorkbook);
+        byte[] zip = {'P', 'K', 3, 4, 0, 0, 0, 0};
+        assertThatThrownBy(() -> service.receiveFile(batch.getImportBatchId(), "a.pdf", "application/pdf",
+                zip.length, new ByteArrayInputStream(zip))).isInstanceOf(FileTypeNotAllowedException.class);
+        assertThat(item.getUploadRejectionCode()).isNotNull();
+
+        StorageLocation staging = StorageLocation.builder()
+                .storageLocationId(UUID.randomUUID())
+                .purpose(StoragePurpose.staging)
+                .build();
+        when(storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging)).thenReturn(staging);
+        when(objectStorageServiceFactory.resolve(staging)).thenReturn(storage);
+        byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+        when(storage.upload(eq(staging), anyString(), any(), anyLong(), eq("application/pdf")))
+                .thenReturn(new StoredObjectMetadata("key", content.length, "application/pdf", null, null));
+
+        service.receiveFile(batch.getImportBatchId(), "a.pdf", "application/pdf", content.length,
+                new ByteArrayInputStream(content));
+
+        verify(importItemRepository, times(2)).save(item);
+        assertThat(item.getStagedObjectKey()).isNotNull();
+        assertThat(item.getUploadRejectionCode()).isNull();
+        assertThat(item.getUploadRejectionMessage()).isNull();
     }
 
     @Test
@@ -689,8 +792,11 @@ class BulkImportServiceImplTest {
                 .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
 
         verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
-        verify(importItemRepository, never()).save(any());
+        verify(importItemRepository).save(item);
         assertThat(item.getStagedObjectKey()).isNull();
+        assertThat(item.getUploadRejectionCode()).isEqualTo("FILE_TYPE_NOT_ALLOWED");
+        assertThat(item.getUploadRejectionMessage())
+                .startsWith("The file you uploaded ('a.docx') was rejected: Password-protected files");
     }
 
     @Test
@@ -771,7 +877,7 @@ class BulkImportServiceImplTest {
         ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
         ImportItem row2 = failedItem(batch, 2, "a.pdf",
                 "{\"title\":\"Invoice A\",\"fields\":{\"reference\":\"R-1\",\"gone_field\":\"x\"}}", """
-                        [{"field":"reference","code":"REQUIRED","message":"Reference is required","severity":"error"},
+                        [{"field":"reference","code":"REQUIRED","message":"This field is required","severity":"error"},
                          {"field":"file","code":"FILE_MISSING","message":"No file was uploaded","severity":"error"}]
                         """);
         ImportItem row5 = failedItem(batch, 5, "b.pdf", "{\"title\":null,\"fields\":{}}",
@@ -807,9 +913,29 @@ class BulkImportServiceImplTest {
             Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
             assertThat(sheet.getRow(0).getCell(4).getStringCellValue()).isEqualTo("Import errors");
             assertThat(sheet.getRow(1).getCell(4).getStringCellValue())
-                    .isEqualTo("Reference: Reference is required\nFile: No file was uploaded");
+                    // The file message already names its column, so it isn't repeated.
+                    .isEqualTo("Reference: This field is required\nNo file was uploaded");
             assertThat(sheet.getRow(2).getCell(4).getStringCellValue()).isEqualTo("Something else");
         }
+    }
+
+    @Test
+    void errorLines_dropsTheLabelOnlyWhenTheMessageAlreadyContainsIt() {
+        assertThat(BulkImportServiceImpl.errorLines(List.of(
+                // Label in the message, any case - not repeated.
+                new ImportRowProblem("file", "File", "FILE_REJECTED",
+                        "The file you uploaded ('contract-fake.pdf') was rejected: The uploaded file is empty",
+                        "error"),
+                new ImportRowProblem("reference", "Reference", "REQUIRED", "REFERENCE is required", "error"),
+                // Label not in the message - prefixed.
+                new ImportRowProblem("amount", "Amount", "INVALID_NUMBER", "Must be a number", "error"),
+                // No column - message alone.
+                new ImportRowProblem(null, null, "X", "Something else", "error"))))
+                .isEqualTo("""
+                        The file you uploaded ('contract-fake.pdf') was rejected: The uploaded file is empty
+                        REFERENCE is required
+                        Amount: Must be a number
+                        Something else""");
     }
 
     @Test
@@ -867,6 +993,8 @@ class BulkImportServiceImplTest {
         ImportItem keptB2 = keptItem(original, 4, "b.pdf", locationId, "imports/k-b2");
         ImportItem keptD = keptItem(original, 5, "d.pdf", locationId, "imports/k-d");
         stubLockedOriginal(original, List.of(keptA, keptB1, keptB2, keptD));
+        keptA.setUploadRejectionCode("FILE_TYPE_NOT_ALLOWED");
+        keptA.setUploadRejectionMessage("The file you uploaded ('a.pdf') was rejected: The uploaded file is empty");
         byte[] template = resubmitTemplate(original.getImportBatchId(),
                 new String[]{"a.pdf", null, "OK"},
                 new String[]{"b.pdf", null, "OK"},
@@ -893,6 +1021,9 @@ class BulkImportServiceImplTest {
         assertThat(items).extracting(ImportItem::getStagedStorageLocationId)
                 .containsExactly(locationId, locationId, null, null);
         assertThat(items).extracting(ImportItem::getStagedSizeBytes).containsExactly(1024L, 1024L, null, null);
+        // Only the staged file moves - an intake rejection stays with the original row.
+        assertThat(items).extracting(ImportItem::getUploadRejectionCode, ImportItem::getUploadRejectionMessage)
+                .containsOnly(tuple(null, null));
         assertThat(saved.getAllValues().get(1)).containsExactly(keptA, keptB1);
 
         assertThat(keptA.getStagedObjectKey()).isNull();
@@ -1142,11 +1273,15 @@ class BulkImportServiceImplTest {
     }
 
     private BulkImportServiceImpl service(ImportTemplateWorkbook workbook) {
+        return service(workbook, new ImportExportProperties());
+    }
+
+    private BulkImportServiceImpl service(ImportTemplateWorkbook workbook, ImportExportProperties properties) {
         return new BulkImportServiceImpl(importBatchRepository, importItemRepository, documentTypeRepository,
                 documentTypeFieldService, workbook, new ImportFilenameMatcher(),
                 storageLocationResolver, objectStorageServiceFactory,
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
-                mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
+                mock(OutboxEventPublisher.class), properties, new ObjectMapper(),
                 new FileTypeInspector(new IngestionProperties()), importSchemaFields,
                 new ImportRowValidator(new ImportValueConverter(), metadataValidationService,
                         new ImportUsers(userRepository)));

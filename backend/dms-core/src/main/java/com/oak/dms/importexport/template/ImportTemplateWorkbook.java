@@ -36,9 +36,11 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -92,6 +94,7 @@ public class ImportTemplateWorkbook {
     private static final String MULTI_SELECT = "multi_select";
     private static final String DATE = "date";
     private static final String DATETIME = "datetime";
+    private static final Set<String> NUMBER_TYPES = Set.of("number", "decimal");
 
     /** Excel number formats given to date/datetime data cells, so typed dates become real dates. */
     static final String DATE_FORMAT = "yyyy-mm-dd";
@@ -177,6 +180,7 @@ public class ImportTemplateWorkbook {
             CellStyle dateStyle = dataFormatStyle(workbook, DATE_FORMAT);
             CellStyle dateTimeStyle = dataFormatStyle(workbook, DATETIME_FORMAT);
             Map<Integer, CellStyle> dateColumns = new LinkedHashMap<>();
+            Set<Integer> numberColumns = new HashSet<>();
 
             int optionsColumn = 0;
             for (int i = 0; i < fields.size(); i++) {
@@ -194,6 +198,8 @@ public class ImportTemplateWorkbook {
                 } else if (DATETIME.equals(field.dataType())) {
                     help = (help.isEmpty() ? "" : help + "\n") + DATETIME_HINT;
                     dateColumns.put(column, dateTimeStyle);
+                } else if (NUMBER_TYPES.contains(field.dataType())) {
+                    numberColumns.add(column);
                 }
                 if (!help.isEmpty()) {
                     addComment(drawing, factory, header.getCell(column), help);
@@ -242,7 +248,8 @@ public class ImportTemplateWorkbook {
             }
 
             for (int i = 0; i < content.rows().size(); i++) {
-                writeRow(importSheet, i + 1, content.rows().get(i), columnKeys, dateColumns, wrapStyle);
+                writeRow(importSheet, i + 1, content.rows().get(i), columnKeys, dateColumns, numberColumns,
+                        wrapStyle);
             }
 
             for (int c = 0; c < columnKeys.size(); c++) {
@@ -390,10 +397,14 @@ public class ImportTemplateWorkbook {
     /**
      * Writes one pre-filled data row. Date and date-time values go in as
      * real dates, so they show and edit like typed ones; a value that isn't
-     * ISO is kept as text, so the user still sees what was wrong.
+     * ISO is kept as text, so the user still sees what was wrong. Number and
+     * decimal values go in as numbers the same way, but only when
+     * {@link #cellValue} reads the cell back as exactly the same string -
+     * anything else ("twelve lakhs", "12.50", too many digits) stays text.
      */
     private static void writeRow(Sheet importSheet, int rowIndex, PrefilledRow prefilled, List<String> columnKeys,
-                                 Map<Integer, CellStyle> dateColumns, CellStyle wrapStyle) {
+                                 Map<Integer, CellStyle> dateColumns, Set<Integer> numberColumns,
+                                 CellStyle wrapStyle) {
         Row row = importSheet.getRow(rowIndex) != null ? importSheet.getRow(rowIndex) : importSheet.createRow(rowIndex);
         writeText(row, 0, prefilled.filename());
         writeText(row, 1, prefilled.title());
@@ -409,7 +420,10 @@ public class ImportTemplateWorkbook {
             }
             String value = fields.get(key);
             CellStyle dateStyle = dateColumns.get(c);
-            if (value == null || dateStyle == null || !writeDate(row, c, value, dateStyle)) {
+            boolean written = value != null && (dateStyle != null
+                    ? writeDate(row, c, value, dateStyle)
+                    : numberColumns.contains(c) && writeNumber(row, c, value));
+            if (!written) {
                 writeText(row, c, value);
             }
         }
@@ -436,6 +450,24 @@ public class ImportTemplateWorkbook {
             }
         }
         cell.setCellStyle(style);
+        return true;
+    }
+
+    private static boolean writeNumber(Row row, int column, String value) {
+        String trimmed = value.trim();
+        double number;
+        try {
+            // BigDecimal first: Double.parseDouble also takes "NaN", "0x1p3", "12d".
+            new BigDecimal(trimmed);
+            number = Double.parseDouble(trimmed);
+        } catch (NumberFormatException notNumber) {
+            return false;
+        }
+        if (!numericText(number).equals(trimmed)) {
+            return false;
+        }
+        Cell cell = row.getCell(column) != null ? row.getCell(column) : row.createCell(column);
+        cell.setCellValue(number);
         return true;
     }
 
@@ -506,7 +538,7 @@ public class ImportTemplateWorkbook {
             case STRING -> cell.getStringCellValue();
             case NUMERIC -> DateUtil.isCellDateFormatted(cell)
                     ? dateCellValue(cell.getLocalDateTimeCellValue())
-                    : BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
+                    : numericText(cell.getNumericCellValue());
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
             default -> null;
         };
@@ -515,6 +547,10 @@ public class ImportTemplateWorkbook {
         }
         value = value.trim();
         return value.isEmpty() ? null : value;
+    }
+
+    private static String numericText(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 
     private static String dateCellValue(LocalDateTime value) {

@@ -72,6 +72,31 @@ class ImportRowValidatorTest {
     }
 
     @Test
+    void validate_noStagedFileButSavedRejection_failsFileRejectedWithTheSavedReason() {
+        ImportItem item = rejected(item(2, "contract.pdf", null));
+
+        List<ImportRowError> errors = validate(item, new RowValues(null, Map.of()));
+
+        assertThat(errors).containsExactly(ImportRowError.error("file", "FILE_REJECTED",
+                "The file you uploaded ('contract-fake.pdf') was rejected: The file's content does not match its"
+                        + " .pdf extension"));
+        assertThat(ImportRowValidator.hasErrors(errors)).isTrue();
+    }
+
+    @Test
+    void validate_stagedFileAndStaleRejection_noFileError() {
+        assertThat(validate(rejected(item(2, "contract.pdf", "key")), new RowValues(null, Map.of()))).isEmpty();
+    }
+
+    @Test
+    void validateWithoutFile_savedRejection_isIgnored() {
+        List<ImportRowError> errors = validator.validateWithoutFile(rejected(item(2, "contract.pdf", null)),
+                new RowValues(null, Map.of()), FIELDS, Map.of(), DOCUMENT_TYPE_ID, VERSION, TENANT_ID);
+
+        assertThat(errors).isEmpty();
+    }
+
+    @Test
     void validateWithoutFile_noStagedFile_skipsFileCheckButKeepsTheOthers() {
         List<ImportRowError> errors = validator.validateWithoutFile(item(2, " ", null),
                 new RowValues(null, Map.of("contract_value", "lots")), FIELDS, Map.of(), DOCUMENT_TYPE_ID, VERSION,
@@ -214,6 +239,13 @@ class ImportRowValidatorTest {
                 .stagedObjectKey(stagedObjectKey)
                 .rowValues("{}")
                 .build();
+    }
+
+    private static ImportItem rejected(ImportItem item) {
+        item.setUploadRejectionCode("FILE_TYPE_NOT_ALLOWED");
+        item.setUploadRejectionMessage("The file you uploaded ('contract-fake.pdf') was rejected: The file's content"
+                + " does not match its .pdf extension");
+        return item;
     }
 
     private static User user(UUID userId, User.UserStatus status) {
