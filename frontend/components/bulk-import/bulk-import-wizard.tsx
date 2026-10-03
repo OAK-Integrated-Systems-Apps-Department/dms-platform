@@ -39,6 +39,8 @@ import { UploadFilesStep } from "./upload-files-step"
 export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: boolean }) {
   const [batchId, setBatchId] = useState<string | null>(null)
   const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+  /** Files a resubmit took over from the previous import - known only from the create response. */
+  const [reusedFiles, setReusedFiles] = useState(0)
   /** The list row last opened - its type name covers types that are no longer active. */
   const [opened, setOpened] = useState<BulkImportSummaryDto | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
@@ -62,9 +64,10 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   async function handleCreate(template: File) {
     const result = await bulkImport.create(template)
     if (result.batch) {
-      const { batchId: createdId, expectedFilenames } = result.batch
+      const { batchId: createdId, expectedFilenames, reusedFiles: reused } = result.batch
       const expected = expectedFilenames.length
       setCreatedNotice(`Template accepted - ${expected} ${expected === 1 ? "file" : "files"} expected.`)
+      setReusedFiles(reused)
       setBatchId(createdId)
     }
     return result
@@ -73,6 +76,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   function handleStartOver() {
     queue.reset()
     setCreatedNotice(null)
+    setReusedFiles(0)
     setOpened(null)
     setBatchId(null)
     void bulkImport.clearActive()
@@ -80,12 +84,14 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
 
   function handleContinue(id: string) {
     setCreatedNotice(null)
+    setReusedFiles(0)
     setBatchId(id)
   }
 
   function handleOpen(summary: BulkImportSummaryDto) {
     queue.reset()
     setCreatedNotice(null)
+    setReusedFiles(0)
     setOpened(summary)
     setBatchId(summary.batchId)
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -95,6 +101,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     const error = await bulkImport.submit(id)
     if (!error) {
       setCreatedNotice(null)
+      setReusedFiles(0)
       queue.reset()
       toast.success("Import submitted.")
     }
@@ -106,6 +113,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     if (!error) {
       queue.reset()
       setCreatedNotice(null)
+      setReusedFiles(0)
       setBatchId(null)
       toast.success("Import cancelled.")
     }
@@ -141,6 +149,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
           <UploadFilesStep
             status={status}
             createdNotice={createdNotice}
+            reusedFiles={reusedFiles}
             entries={queue.entries}
             uploading={queue.busy}
             uploadsAllowed={canCreateDocuments}

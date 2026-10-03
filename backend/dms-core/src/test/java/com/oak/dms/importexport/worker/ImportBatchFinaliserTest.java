@@ -6,17 +6,11 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
-import com.oak.dms.importexport.storage.StagedImportFiles;
-import com.oak.dms.storage.entity.StorageLocation;
-import com.oak.dms.storage.repository.StorageLocationRepository;
-import com.oak.dms.storage.service.ObjectStorageService;
-import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
@@ -26,7 +20,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,14 +29,10 @@ class ImportBatchFinaliserTest {
 
     private final ImportBatchRepository importBatchRepository = mock(ImportBatchRepository.class);
     private final ImportItemRepository importItemRepository = mock(ImportItemRepository.class);
-    private final StorageLocationRepository storageLocationRepository = mock(StorageLocationRepository.class);
-    private final ObjectStorageServiceFactory objectStorageServiceFactory = mock(ObjectStorageServiceFactory.class);
-    private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
-            transactionManager);
+            importItemRepository, transactionManager);
 
     @BeforeEach
     void setUp() {
@@ -136,7 +125,6 @@ class ImportBatchFinaliserTest {
         assertThat(batch.getCompletedAt()).isNull();
         assertThat(batch.getSuccessCount()).isEqualTo(1);
         assertThat(batch.getFailureCount()).isEqualTo(1);
-        verify(importItemRepository, never()).findAllByImportBatchIdAndStagedObjectKeyIsNotNull(any());
     }
 
     @Test
@@ -152,35 +140,17 @@ class ImportBatchFinaliserTest {
     }
 
     @Test
-    void finalise_deletesLeftoverStagedFilesAfterCommit() {
+    void finalise_keepsStagedFilesForResubmit() {
         ImportBatch batch = runningBatch();
         stubCounts(batch, 1, 1, 0);
-        StorageLocation location = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
-        ImportItem leftover = ImportItem.builder()
-                .importItemId(UUID.randomUUID())
-                .importBatchId(batch.getImportBatchId())
-                .status(ImportItemStatus.failed)
-                .stagedObjectKey("imports/key-9")
-                .stagedStorageLocationId(location.getStorageLocationId())
-                .stagedSizeBytes(10L)
-                .build();
-        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batch.getImportBatchId()))
-                .thenReturn(List.of(leftover));
-        when(storageLocationRepository.findByStorageLocationIdAndDeletedFalse(location.getStorageLocationId()))
-                .thenReturn(Optional.of(location));
-        when(objectStorageServiceFactory.resolve(location)).thenReturn(storage);
 
-        finaliser.finalise(batch.getImportBatchId());
+        assertThat(finaliser.finalise(batch.getImportBatchId())).contains(ImportBatchStatus.completed_with_errors);
 
-        assertThat(leftover.getStagedObjectKey()).isNull();
-        assertThat(leftover.getStagedStorageLocationId()).isNull();
-        assertThat(leftover.getStagedSizeBytes()).isNull();
-        verify(importItemRepository).saveAll(List.of(leftover));
-        verify(storage, never()).delete(any(), anyString());
-
-        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-
-        verify(storage).delete(location, "imports/key-9");
+        // Rows that failed on their data keep their staged file - the purge
+        // job removes it once the retention window has passed.
+        verify(importItemRepository, never()).findAllByImportBatchIdAndStagedObjectKeyIsNotNull(any());
+        verify(importItemRepository, never()).saveAll(any());
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
     }
 
     private void stubCounts(ImportBatch batch, long succeeded, long failed, long pending) {

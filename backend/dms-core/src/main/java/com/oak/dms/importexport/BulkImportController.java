@@ -152,6 +152,18 @@ public class BulkImportController {
         return bulkImportService.getFailures(batchId);
     }
 
+    @GetMapping("/bulk-imports/{batchId}/failed-rows-template")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "Download a finished bulk import's failed rows as a fixable .xlsx template")
+    public ResponseEntity<byte[]> downloadFailedRowsTemplate(@PathVariable("batchId") UUID batchId) {
+        ImportTemplateFile template = bulkImportService.generateFailedRowsTemplate(batchId);
+        return ResponseEntity.ok()
+                .contentType(XLSX)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(template.filename()).build().toString())
+                .body(template.content());
+    }
+
     @GetMapping("/bulk-imports/{batchId}")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
     @Operation(summary = "Get a bulk import's progress and the files still missing")

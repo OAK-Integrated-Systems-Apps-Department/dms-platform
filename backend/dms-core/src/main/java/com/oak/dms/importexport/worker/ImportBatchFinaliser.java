@@ -2,18 +2,15 @@ package com.oak.dms.importexport.worker;
 
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
-import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
-import com.oak.dms.importexport.storage.StagedImportFiles;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,8 +18,13 @@ import java.util.UUID;
  * Brings a running batch's counters up to date and, once none of its rows
  * is still {@code pending}, gives it its final status - {@code completed}
  * if every row became a document, {@code completed_with_errors} if some
- * did, {@code failed} if none did - and deletes whatever staged files are
- * left (rows that failed before reaching the scan gate).
+ * did, {@code failed} if none did.
+ *
+ * <p>Staged files are left in place. By now the only rows that still have
+ * one failed on their data (rows the scan gate accepted or rejected had
+ * theirs cleared then), and a resubmit of the batch's failed rows reuses
+ * them. {@link RetainedImportFilePurger} deletes them once
+ * {@code dms.import-export.retained-file-hours} have passed.
  *
  * <p>Runs under the batch row lock, so the worker and the completion job
  * can both call it after their passes without racing.
@@ -33,16 +35,13 @@ public class ImportBatchFinaliser {
 
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
-    private final StagedImportFiles stagedImportFiles;
     private final TransactionTemplate transactionTemplate;
 
     public ImportBatchFinaliser(ImportBatchRepository importBatchRepository,
                                 ImportItemRepository importItemRepository,
-                                StagedImportFiles stagedImportFiles,
                                 PlatformTransactionManager transactionManager) {
         this.importBatchRepository = importBatchRepository;
         this.importItemRepository = importItemRepository;
-        this.stagedImportFiles = stagedImportFiles;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -77,12 +76,6 @@ public class ImportBatchFinaliser {
             batch.setStatus(finalStatus);
             batch.setCompletedAt(now);
             importBatchRepository.save(batch);
-
-            List<ImportItem> staged = importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batchId);
-            if (!staged.isEmpty()) {
-                stagedImportFiles.clearAndDeleteAfterCommit(staged);
-                importItemRepository.saveAll(staged);
-            }
 
             log.info("Finished bulk import batch {}: {} ({} created, {} failed)", batchId, finalStatus, succeeded,
                     failed);

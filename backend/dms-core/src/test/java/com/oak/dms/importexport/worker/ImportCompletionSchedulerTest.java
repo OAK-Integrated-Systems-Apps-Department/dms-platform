@@ -66,7 +66,7 @@ class ImportCompletionSchedulerTest {
             documentMetadataRepository, importItemRepository, stagedImportFiles, new ImportValueConverter(),
             new ImportUsers(mock(UserRepository.class)), new ObjectMapper(), transactionManager);
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, stagedImportFiles, transactionManager);
+            importItemRepository, transactionManager);
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,
             importSchemaFields, ingestionGate, recordCreator, finaliser);
 
@@ -150,7 +150,6 @@ class ImportCompletionSchedulerTest {
             when(importItemRepository.countByImportBatchIdAndStatus(eq(batchId), eq(status)))
                     .thenAnswer(invocation -> item.getStatus() == status ? 1L : 0L);
         }
-        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batchId)).thenReturn(List.of());
     }
 
     private ImportBatch runningBatch() {

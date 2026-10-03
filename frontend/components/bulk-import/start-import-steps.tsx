@@ -189,10 +189,16 @@ function TemplateProblems({
   onReupload: () => void
   onContinue: () => void
 }) {
-  const { invalidRows, totalRows, validRows } = preview
+  const { invalidRows, totalRows, validRows, resubmitOf, reusableFiles } = preview
 
   return (
     <section aria-live="polite">
+      {resubmitOf && (
+        <p className="mb-3 text-[12.5px] text-muted-foreground">
+          Resubmitting failed rows from a previous import - {reusableFiles}{" "}
+          {reusableFiles === 1 ? "file" : "files"} will be reused.
+        </p>
+      )}
       <h3 className="mb-1 text-[13px] font-semibold">
         {invalidRows} of {totalRows} {totalRows === 1 ? "row has" : "rows have"} problems
       </h3>

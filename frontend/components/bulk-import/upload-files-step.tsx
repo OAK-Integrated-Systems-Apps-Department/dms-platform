@@ -16,6 +16,8 @@ interface UploadFilesStepProps {
   status: BulkImportStatusResponseDto
   /** Shown once, right after the template was accepted. */
   createdNotice: string | null
+  /** Files a resubmit took over from the previous import (0 if none, or unknown after a resume). */
+  reusedFiles: number
   entries: UploadQueueEntry[]
   uploading: boolean
   /** False when the caller lacks document-create: uploading and submitting are disabled, Cancel still works. */
@@ -29,6 +31,7 @@ interface UploadFilesStepProps {
 export function UploadFilesStep({
   status,
   createdNotice,
+  reusedFiles,
   entries,
   uploading,
   uploadsAllowed,
@@ -79,6 +82,12 @@ export function UploadFilesStep({
         action={cancelButton}
       >
         {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
+        {reusedFiles > 0 && (
+          <p className="mb-3 text-[12.5px] text-muted-foreground">
+            {reusedFiles} {reusedFiles === 1 ? "file was" : "files were"} reused from your previous import, so you
+            don&apos;t need to upload {reusedFiles === 1 ? "it" : "them"} again.
+          </p>
+        )}
         {skipped > 0 && (
           <p className="mb-3 text-[12.5px] text-muted-foreground">
             {skipped} {skipped === 1 ? "row was" : "rows were"} skipped because of template errors -{" "}

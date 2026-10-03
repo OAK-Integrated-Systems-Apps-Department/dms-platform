@@ -1,13 +1,20 @@
 "use client"
 
-import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, Ban, CheckCircle2, Download, Loader2, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { hasFailedRows, type BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
+import { friendlyMessage } from "@/lib/api-error"
+import {
+  downloadFailedRowsTemplate,
+  hasFailedRows,
+  saveDownloadedFile,
+  type BulkImportStatusResponseDto,
+} from "@/lib/bulk-imports/api"
 
 import { FailedRowsTable } from "./failed-rows-table"
-import { StepCard } from "./step-card"
+import { InlineError, StepCard } from "./step-card"
 
 interface ImportResultsCardProps {
   batch: BulkImportStatusResponseDto
@@ -48,13 +55,50 @@ export function ImportResultsCard({ batch, documentTypeName, onStartOver }: Impo
         </div>
       </dl>
 
-      {hasFailedRows(batch.status) && <FailedRowsTable batchId={batch.batchId} />}
+      {hasFailedRows(batch.status) && (
+        <>
+          <DownloadFailedRows batchId={batch.batchId} />
+          <FailedRowsTable batchId={batch.batchId} />
+        </>
+      )}
 
       <Button onClick={onStartOver}>
         <RotateCcw />
         Start a new import
       </Button>
     </StepCard>
+  )
+}
+
+/** The failed rows as a fixable template - uploading it again starts a resubmit that reuses kept files. */
+function DownloadFailedRows({ batchId }: { batchId: string }) {
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDownload() {
+    setDownloading(true)
+    setError(null)
+    try {
+      saveDownloadedFile(await downloadFailedRowsTemplate(batchId))
+    } catch (err) {
+      setError(friendlyMessage(err, "Could not download the failed rows."))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <div className="mb-5">
+      <Button variant="outline" onClick={handleDownload} disabled={downloading}>
+        {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+        {downloading ? "Downloading…" : "Download failed rows"}
+      </Button>
+      <p className="mt-2 text-[12.5px] text-muted-foreground">
+        Fix the rows in this file and upload it as a new import. Files for rows that only had data problems are kept
+        for 24 hours, so you won&apos;t need to upload them again.
+      </p>
+      {error && <InlineError>{error}</InlineError>}
+    </div>
   )
 }
 

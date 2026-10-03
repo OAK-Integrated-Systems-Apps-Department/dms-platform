@@ -4,11 +4,16 @@ import com.oak.dms.importexport.exception.ImportBatchSizeException;
 import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.PrefilledRow;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.TemplateContent;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.dto.MetadataFieldOptionResponse;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataValidation;
+import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.SheetVisibility;
@@ -98,6 +103,7 @@ class ImportTemplateWorkbookTest {
 
         assertThat(parsed.documentTypeId()).isEqualTo(DOCUMENT_TYPE_ID);
         assertThat(parsed.schemaVersion()).isEqualTo(3);
+        assertThat(parsed.resubmitOf()).isNull();
         assertThat(parsed.columnKeys()).containsExactly(
                 "filename", "title", "invoice_date", "amount", "category", "tags", "reference");
 
@@ -173,6 +179,117 @@ class ImportTemplateWorkbookTest {
 
         assertThat(rows).extracting(row -> row.fields().get("received_at"))
                 .containsExactly("2026-09-30T14:30:00", "2026-09-30");
+    }
+
+    @Test
+    void generate_normalTemplate_hasNoErrorsColumnOrResubmitMeta() throws IOException {
+        byte[] template = templateWorkbook.generate(schema(3), 500);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            assertThat(workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET).getRow(0).getCell(7)).isNull();
+            Row metaFirst = workbook.getSheet(ImportTemplateWorkbook.META_SHEET).getRow(0);
+            assertThat(metaFirst.getCell(2)).isNull();
+            assertThat(metaFirst.getCell(3)).isNull();
+        }
+    }
+
+    @Test
+    void generate_failedRowsContent_roundTripsPrefilledRowsAndResubmitOf_ignoringErrorsColumn() throws IOException {
+        UUID originalBatchId = UUID.randomUUID();
+        TemplateContent content = new TemplateContent(originalBatchId, List.of(
+                new PrefilledRow("a.pdf", "Invoice A",
+                        Map.of("reference", "REF-1", "amount", "12.5", "category", "finance", "gone_field", "x"),
+                        "Reference: Too long\nAmount: Not a number"),
+                new PrefilledRow("b.pdf", null, Map.of("tags", "urgent;q3"), "File: The file was never uploaded")),
+                true);
+
+        byte[] template = templateWorkbook.generate(schema(3), 500, content);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            Row header = sheet.getRow(0);
+            assertThat(header.getCell(7).getStringCellValue()).isEqualTo(ImportTemplateWorkbook.ERRORS_HEADER);
+            assertThat(header.getCell(7).getCellComment().getString().getString())
+                    .isEqualTo(ImportTemplateWorkbook.ERRORS_COMMENT);
+            assertThat(sheet.getRow(1).getCell(7).getStringCellValue())
+                    .isEqualTo("Reference: Too long\nAmount: Not a number");
+            assertThat(sheet.getRow(1).getCell(7).getCellStyle().getWrapText()).isTrue();
+            // Dropdowns are the normal template's.
+            assertThat(sheet.getDataValidations()).hasSize(1);
+        }
+
+        ParsedTemplate parsed = templateWorkbook.parse(new ByteArrayInputStream(template), 500);
+
+        assertThat(parsed.resubmitOf()).isEqualTo(originalBatchId);
+        assertThat(parsed.columnKeys()).containsExactly(
+                "filename", "title", "invoice_date", "amount", "category", "tags", "reference");
+        assertThat(parsed.rows()).extracting(ParsedRow::rowNumber).containsExactly(2, 3);
+        ParsedRow first = parsed.rows().get(0);
+        assertThat(first.filename()).isEqualTo("a.pdf");
+        assertThat(first.title()).isEqualTo("Invoice A");
+        assertThat(first.fields()).containsExactly(
+                Map.entry("amount", "12.5"),
+                Map.entry("category", "finance"),
+                Map.entry("reference", "REF-1"));
+        ParsedRow second = parsed.rows().get(1);
+        assertThat(second.title()).isNull();
+        assertThat(second.fields()).containsExactly(Map.entry("tags", "urgent;q3"));
+    }
+
+    @Test
+    void parse_rowWithOnlyImportErrors_isAnEmptyRow() {
+        TemplateContent content = new TemplateContent(UUID.randomUUID(),
+                List.of(new PrefilledRow("a.pdf", null, Map.of(), "File: missing")), true);
+        byte[] filled = fill(templateWorkbook.generate(schema(3), 500, content), workbook -> workbook
+                .getSheet(ImportTemplateWorkbook.IMPORT_SHEET).createRow(2).createCell(7).setCellValue("left over"));
+
+        assertThat(templateWorkbook.parse(new ByteArrayInputStream(filled), 500).rows())
+                .extracting(ParsedRow::filename).containsExactly("a.pdf");
+    }
+
+    @Test
+    void generate_prefilledDateValues_areRealDateCells_andBadValuesStayText() throws IOException {
+        DocumentTypeSchemaResponse schema = new DocumentTypeSchemaResponse(DOCUMENT_TYPE_ID, "CON", "Contract", 1,
+                List.of(field("signed_on", "Signed On", null, "date", false, false, 10, List.of()),
+                        field("received_at", "Received At", null, "datetime", false, false, 20, List.of())));
+        TemplateContent content = new TemplateContent(UUID.randomUUID(), List.of(
+                new PrefilledRow("a.pdf", null, Map.of("signed_on", "2026-09-30",
+                        "received_at", "2026-09-30T14:30:00"), null),
+                new PrefilledRow("b.pdf", null, Map.of("signed_on", "30th Sept"), null)), true);
+
+        byte[] template = templateWorkbook.generate(schema, 10, content);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            Cell date = sheet.getRow(1).getCell(2);
+            assertThat(date.getCellType()).isEqualTo(CellType.NUMERIC);
+            assertThat(DateUtil.isCellDateFormatted(date)).isTrue();
+            assertThat(date.getCellStyle().getDataFormatString()).isEqualTo(ImportTemplateWorkbook.DATE_FORMAT);
+            assertThat(date.getLocalDateTimeCellValue()).isEqualTo(LocalDateTime.of(2026, 9, 30, 0, 0));
+            Cell dateTime = sheet.getRow(1).getCell(3);
+            assertThat(dateTime.getCellType()).isEqualTo(CellType.NUMERIC);
+            assertThat(dateTime.getCellStyle().getDataFormatString())
+                    .isEqualTo(ImportTemplateWorkbook.DATETIME_FORMAT);
+            assertThat(dateTime.getLocalDateTimeCellValue()).isEqualTo(LocalDateTime.of(2026, 9, 30, 14, 30));
+            assertThat(sheet.getRow(2).getCell(2).getCellType()).isEqualTo(CellType.STRING);
+        }
+
+        List<ParsedRow> rows = templateWorkbook.parse(new ByteArrayInputStream(template), 10).rows();
+        assertThat(rows.get(0).fields()).containsExactly(
+                Map.entry("signed_on", "2026-09-30"), Map.entry("received_at", "2026-09-30T14:30:00"));
+        assertThat(rows.get(1).fields()).containsExactly(Map.entry("signed_on", "30th Sept"));
+    }
+
+    @Test
+    void parse_malformedResubmitOf_rejectsAsInvalidTemplate() {
+        byte[] filled = fill(templateWorkbook.generate(schema(3), 500,
+                new TemplateContent(UUID.randomUUID(), List.of(new PrefilledRow("a.pdf", null, Map.of(), null)), true)),
+                workbook -> workbook.getSheet(ImportTemplateWorkbook.META_SHEET).getRow(0).getCell(3)
+                        .setCellValue("not-a-uuid"));
+
+        assertThatThrownBy(() -> templateWorkbook.parse(new ByteArrayInputStream(filled), 500))
+                .isInstanceOf(InvalidImportTemplateException.class)
+                .extracting("code").isEqualTo("IMPORT_TEMPLATE_INVALID");
     }
 
     @Test

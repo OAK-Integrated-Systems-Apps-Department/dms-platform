@@ -21,6 +21,7 @@ import com.oak.dms.importexport.exception.ActiveImportBatchLimitException;
 import com.oak.dms.importexport.exception.ImportBatchNotCancellableException;
 import com.oak.dms.importexport.exception.ImportBatchSizeException;
 import com.oak.dms.importexport.exception.ImportBatchStateException;
+import com.oak.dms.importexport.exception.ImportFailedRowsUnavailableException;
 import com.oak.dms.importexport.exception.InactiveDocumentTypeException;
 import com.oak.dms.importexport.exception.InvalidImportTemplateException;
 import com.oak.dms.importexport.matching.ImportFilenameMatcher;
@@ -31,6 +32,8 @@ import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.PrefilledRow;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.TemplateContent;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportRowError;
 import com.oak.dms.importexport.validation.ImportRowValidator;
@@ -66,11 +69,15 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -102,6 +109,11 @@ public class BulkImportServiceImpl implements BulkImportService {
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued, ImportBatchStatus.running);
     private static final List<ImportBatchStatus> CANCELLABLE_STATUSES =
             List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued);
+    /** Finished with failed rows - the batches whose failed rows can be downloaded and resubmitted. */
+    private static final List<ImportBatchStatus> RESUBMITTABLE_STATUSES =
+            List.of(ImportBatchStatus.completed_with_errors, ImportBatchStatus.failed);
+    private static final DateTimeFormatter FAILED_ROWS_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
+    private static final RowValues EMPTY_ROW_VALUES = new RowValues(null, Map.of());
     static final int MAX_LIST_PAGE_SIZE = 50;
     private static final Sort NEWEST_FIRST =
             Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("importBatchId"));
@@ -160,11 +172,73 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     @Transactional(readOnly = true)
+    public ImportTemplateFile generateFailedRowsTemplate(UUID batchId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        ImportBatch batch = importBatchRepository
+                .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        if (!RESUBMITTABLE_STATUSES.contains(batch.getStatus())) {
+            throw new ImportFailedRowsUnavailableException("Only an import that finished with failed rows has any to"
+                    + " download (status: " + batch.getStatus().name() + ").");
+        }
+        // No requireActive: this file is also the exportable failure report,
+        // so it stays downloadable after the type is deactivated. Uploading
+        // it is still refused for an inactive type by readTemplate.
+        DocumentType documentType = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(batch.getDocumentTypeId(), tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentType", batch.getDocumentTypeId()));
+
+        // Built at the type's CURRENT schema, exactly like a normal template,
+        // so the file is uploadable as it stands. Values carry over by field
+        // key: fields no longer in the schema are dropped, new ones stay
+        // blank. Error labels come from the batch's own version, as in
+        // getFailures.
+        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(batch.getDocumentTypeId());
+        Set<String> currentKeys = schema.fields().stream()
+                .filter(field -> !field.hidden())
+                .map(DocumentTypeSchemaResponse.SchemaField::fieldKey)
+                .collect(Collectors.toSet());
+        Map<String, ImportField> batchFields = importSchemaFields.load(tenantId, batch.getDocumentTypeId(),
+                batch.getSchemaVersion());
+
+        List<PrefilledRow> rows = importItemRepository
+                .findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batchId, ImportItem.ImportItemStatus.failed)
+                .stream()
+                .map(item -> {
+                    RowValues values = rowValues(item);
+                    Map<String, String> fields = new LinkedHashMap<>();
+                    if (values.fields() != null) {
+                        values.fields().forEach((key, value) -> {
+                            if (currentKeys.contains(key)) {
+                                fields.put(key, value);
+                            }
+                        });
+                    }
+                    return new PrefilledRow(item.getFilenameReference(), values.title(), fields,
+                            errorLines(toProblems(rowErrors(item), batchFields)));
+                })
+                .toList();
+
+        byte[] content = templateWorkbook.generate(schema, properties.getMaxFilesPerBatch(),
+                new TemplateContent(batchId, rows, true));
+        String filename = safeFilenamePart(documentType.getTypeCode()) + "-failed-rows-"
+                + LocalDateTime.now().format(FAILED_ROWS_TIMESTAMP) + XLSX_EXTENSION;
+        return new ImportTemplateFile(filename, content);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public ImportTemplatePreview previewTemplate(long templateSize, InputStream template) {
         UUID tenantId = TenantContext.getTenantId();
 
         CheckedTemplate checked = readTemplate(templateSize, template, tenantId);
+        // Same checks as createBatch, but no lock and nothing moved - the
+        // count is what a create right now would reuse.
+        ImportBatch original = resolveResubmit(checked, tenantId, TenantContext.getUserId(), false);
         RowCheckResult result = checkRows(checked, tenantId);
+        int reusableFiles = original != null ? planReuse(original, result.rows()).size() : 0;
 
         // Read-only: nothing is saved, and the active-batch limit is left to
         // createBatch - checking a template doesn't start an import.
@@ -175,7 +249,8 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .toList();
         int totalRows = result.rows().size();
         return new ImportTemplatePreview(checked.documentType().getDocumentTypeId(), checked.parsed().schemaVersion(),
-                totalRows, totalRows - problemRows.size(), problemRows.size(), problemRows);
+                totalRows, totalRows - problemRows.size(), problemRows.size(), problemRows,
+                original != null ? original.getImportBatchId() : null, reusableFiles);
     }
 
     @Override
@@ -186,6 +261,10 @@ public class BulkImportServiceImpl implements BulkImportService {
         CheckedTemplate checked = readTemplate(templateSize, template, tenantId);
         DocumentType documentType = checked.documentType();
         ParsedTemplate parsed = checked.parsed();
+        // Locked until commit, before its items are read: a second resubmit
+        // of the same batch waits here, then sees the files this one claimed
+        // as already gone - the first resubmit wins.
+        ImportBatch original = resolveResubmit(checked, tenantId, userId, true);
 
         long activeBatches = importBatchRepository
                 .countByTenantIdAndCreatedByAndStatusInAndDeletedFalse(tenantId, userId, ACTIVE_STATUSES);
@@ -211,6 +290,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .status(ImportBatchStatus.uploading)
                 .totalRecords(rows.size())
                 .correlationId(UUID.randomUUID())
+                .resubmitOfBatchId(original != null ? original.getImportBatchId() : null)
                 .createdBy(userId)
                 .build());
 
@@ -226,19 +306,41 @@ public class BulkImportServiceImpl implements BulkImportService {
                     return item;
                 })
                 .toList();
+
+        // The staged object keeps its key (under the original batch and
+        // item); nothing rebuilds a key from the row, so it is read and
+        // cleaned up from the new row like any other staged file.
+        List<FileReuse> reuses = original != null ? planReuse(original, rows) : List.of();
+        OffsetDateTime now = OffsetDateTime.now();
+        for (FileReuse reuse : reuses) {
+            ImportItem from = reuse.from();
+            ImportItem to = reuse.to();
+            to.setStagedObjectKey(from.getStagedObjectKey());
+            to.setStagedStorageLocationId(from.getStagedStorageLocationId());
+            to.setStagedSizeBytes(from.getStagedSizeBytes());
+            from.setStagedObjectKey(null);
+            from.setStagedStorageLocationId(null);
+            from.setStagedSizeBytes(null);
+            from.setUpdatedAt(now);
+        }
         importItemRepository.saveAll(items);
+        if (!reuses.isEmpty()) {
+            importItemRepository.saveAll(reuses.stream().map(FileReuse::from).toList());
+        }
 
         List<String> expectedFilenames = items.stream()
-                .filter(item -> !item.isSkippedAtPreview())
+                .filter(item -> !item.isSkippedAtPreview() && item.getStagedObjectKey() == null)
                 .map(ImportItem::getFilenameReference)
                 .toList();
-        int skippedRows = items.size() - expectedFilenames.size();
+        int skippedRows = (int) items.stream().filter(ImportItem::isSkippedAtPreview).count();
 
-        log.info("Created bulk import batch {} ({} rows, {} skipped for template errors) for document type {} v{}"
-                        + " in tenant {}", batch.getImportBatchId(), rows.size(), skippedRows,
-                documentType.getDocumentTypeId(), parsed.schemaVersion(), tenantId);
+        log.info("Created bulk import batch {} ({} rows, {} skipped for template errors, {} reusing files of {})"
+                        + " for document type {} v{} in tenant {}", batch.getImportBatchId(), rows.size(), skippedRows,
+                reuses.size(), batch.getResubmitOfBatchId(), documentType.getDocumentTypeId(), parsed.schemaVersion(),
+                tenantId);
 
-        return new BulkImportCreatedResponse(batch.getImportBatchId(), rows.size(), expectedFilenames, skippedRows);
+        return new BulkImportCreatedResponse(batch.getImportBatchId(), rows.size(), expectedFilenames, skippedRows,
+                reuses.size());
     }
 
     @Override
@@ -515,6 +617,75 @@ public class BulkImportServiceImpl implements BulkImportService {
         return new RowCheckResult(fields, rows);
     }
 
+    /**
+     * The original batch of a failed-rows template being uploaded again, or
+     * null for a normal template. It must be the caller's (same tenant and
+     * creator), have finished with failed rows, and be for the same document
+     * type; otherwise the upload is refused with one message whatever the
+     * reason, so it never tells whether someone else's batch exists.
+     *
+     * @param lock take the original's row lock until commit (createBatch,
+     *             which moves its files); preview only reads
+     */
+    private ImportBatch resolveResubmit(CheckedTemplate checked, UUID tenantId, UUID userId, boolean lock) {
+        UUID originalId = checked.parsed().resubmitOf();
+        if (originalId == null) {
+            return null;
+        }
+        Optional<ImportBatch> found = lock
+                ? importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(originalId, tenantId, userId)
+                : importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(originalId, tenantId,
+                userId);
+        return found
+                .filter(batch -> RESUBMITTABLE_STATUSES.contains(batch.getStatus()))
+                .filter(batch -> batch.getDocumentTypeId().equals(checked.documentType().getDocumentTypeId()))
+                .orElseThrow(() -> new InvalidImportTemplateException("IMPORT_RESUBMIT_INVALID",
+                        "This file came from an import that can't be resubmitted. Download a fresh template and"
+                                + " try again."));
+    }
+
+    /**
+     * Which new rows would take over a file kept from the original batch -
+     * computed only, nothing is changed. Each row without errors, in row
+     * order, takes the lowest-numbered failed original row with the same
+     * filename (trimmed, case-insensitive) whose staged file is still kept;
+     * each file goes to one row at most. Nothing is reusable once the
+     * original's retention window ({@code retained-file-hours} after it
+     * completed) has passed, even if the purge job hasn't run yet.
+     */
+    private List<FileReuse> planReuse(ImportBatch original, List<CheckedRow> rows) {
+        OffsetDateTime cutoff = OffsetDateTime.now().minusHours(properties.getRetainedFileHours());
+        if (original.getCompletedAt() == null || !original.getCompletedAt().isAfter(cutoff)) {
+            return List.of();
+        }
+        Map<String, ArrayDeque<ImportItem>> kept = new HashMap<>();
+        importItemRepository.findAllByImportBatchIdAndStatusAndStagedObjectKeyIsNotNullOrderByRowNumberAsc(
+                        original.getImportBatchId(), ImportItem.ImportItemStatus.failed)
+                .forEach(item -> kept.computeIfAbsent(filenameKey(item), key -> new ArrayDeque<>()).add(item));
+        if (kept.isEmpty()) {
+            return List.of();
+        }
+
+        List<FileReuse> reuses = new ArrayList<>();
+        for (CheckedRow row : rows) {
+            if (row.hasErrors()) {
+                continue;
+            }
+            ArrayDeque<ImportItem> candidates = kept.get(filenameKey(row.item()));
+            if (candidates != null && !candidates.isEmpty()) {
+                reuses.add(new FileReuse(candidates.poll(), row.item()));
+            }
+        }
+        return reuses;
+    }
+
+    private static String filenameKey(ImportItem item) {
+        return item.getFilenameReference() == null ? "" : item.getFilenameReference().trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record FileReuse(ImportItem from, ImportItem to) {
+    }
+
     private record CheckedTemplate(DocumentType documentType, ParsedTemplate parsed) {
     }
 
@@ -574,12 +745,27 @@ public class BulkImportServiceImpl implements BulkImportService {
     // is logged and shown with what's left, rather than failing the report.
 
     private String rowTitle(ImportItem item) {
+        return rowValues(item).title();
+    }
+
+    /** The row's raw title and field cells; empty if they can't be read. */
+    private RowValues rowValues(ImportItem item) {
         try {
-            return objectMapper.readValue(item.getRowValues(), RowValues.class).title();
+            RowValues values = objectMapper.readValue(item.getRowValues(), RowValues.class);
+            return values != null ? values : EMPTY_ROW_VALUES;
         } catch (JsonProcessingException | IllegalArgumentException e) {
             log.warn("Unreadable row_values on import item {}", item.getImportItemId(), e);
-            return null;
+            return EMPTY_ROW_VALUES;
         }
+    }
+
+    /** A row's problems as the failed-rows template's "Import errors" cell: one "Label: message" line each. */
+    static String errorLines(List<ImportRowProblem> problems) {
+        return problems.stream()
+                .map(problem -> problem.fieldLabel() != null
+                        ? problem.fieldLabel() + ": " + problem.message()
+                        : problem.message())
+                .collect(Collectors.joining("\n"));
     }
 
     private List<ImportRowError> rowErrors(ImportItem item) {

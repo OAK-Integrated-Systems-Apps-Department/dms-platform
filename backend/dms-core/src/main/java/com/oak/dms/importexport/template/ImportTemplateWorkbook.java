@@ -30,9 +30,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,10 +54,17 @@ import java.util.UUID;
  *   A1 documentTypeId   B1 &lt;uuid&gt;
  *   A2 schemaVersion    B2 &lt;int&gt;
  *   A3.. column keys: filename, title, then each field_key
+ *   C1 resubmitOf       D1 &lt;uuid&gt;   (failed-rows templates only)
  * </pre>
  * Dropdown option lists live on a separate very hidden {@code _options}
  * sheet (one column per dropdown field), since an inline list constraint
  * is capped at 255 characters.
+ *
+ * <p>A failed-rows template (see {@link TemplateContent}) is the same
+ * workbook with rows already filled in, a final "Import errors" column
+ * keyed {@link #ERRORS_KEY} that {@link #parse} always ignores, and the
+ * batch it came from in {@code _meta}. A normal template has none of these
+ * and parses exactly as before.
  */
 @Component
 public class ImportTemplateWorkbook {
@@ -66,9 +75,16 @@ public class ImportTemplateWorkbook {
 
     public static final String FILENAME_KEY = "filename";
     public static final String TITLE_KEY = "title";
+    /**
+     * Reserved key of the "Import errors" column. Field keys always start
+     * with a letter, so it can't collide with one.
+     */
+    public static final String ERRORS_KEY = "_import_errors";
 
     private static final String DOCUMENT_TYPE_ID_LABEL = "documentTypeId";
     private static final String SCHEMA_VERSION_LABEL = "schemaVersion";
+    private static final String RESUBMIT_OF_LABEL = "resubmitOf";
+    private static final int RESUBMIT_OF_LABEL_COLUMN = 2;
     private static final int FIRST_COLUMN_KEY_ROW = 2;
     private static final int COLUMN_WIDTH = 24 * 256;
 
@@ -84,11 +100,46 @@ public class ImportTemplateWorkbook {
     static final String TITLE_COMMENT = "Leave blank to use the file name (without its extension).";
     static final String DATE_HINT = "Enter as a date, e.g. 2026-09-30";
     static final String DATETIME_HINT = "Enter as a date and time, e.g. 2026-09-30 14:30";
+    static final String ERRORS_HEADER = "Import errors";
+    static final String ERRORS_COMMENT = "Why this row failed last time. Ignored when you upload the file - "
+            + "you can leave it or delete it.";
 
     public record ParsedRow(int rowNumber, String filename, String title, Map<String, String> fields) {
     }
 
-    public record ParsedTemplate(UUID documentTypeId, int schemaVersion, List<String> columnKeys, List<ParsedRow> rows) {
+    /**
+     * @param columnKeys the data columns in order - never {@link #ERRORS_KEY}
+     * @param resubmitOf the batch a failed-rows template came from; null for
+     *                   a normal template
+     */
+    public record ParsedTemplate(UUID documentTypeId, int schemaVersion, List<String> columnKeys, List<ParsedRow> rows,
+                                 UUID resubmitOf) {
+    }
+
+    /**
+     * A row written into the template. Field values are keyed by field_key;
+     * keys with no column in the template are dropped.
+     *
+     * @param errors the "Import errors" cell - only written when the
+     *               template has that column
+     */
+    public record PrefilledRow(String filename, String title, Map<String, String> fields, String errors) {
+    }
+
+    /**
+     * What goes into a template beyond its columns.
+     *
+     * @param resubmitOf   recorded in {@code _meta}; null for none
+     * @param rows         written from the first data row down, in order
+     * @param errorsColumn add the final "Import errors" column
+     */
+    public record TemplateContent(UUID resubmitOf, List<PrefilledRow> rows, boolean errorsColumn) {
+        public static final TemplateContent NONE = new TemplateContent(null, List.of(), false);
+    }
+
+    /** A normal, empty template. */
+    public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows) {
+        return generate(schema, maxRows, TemplateContent.NONE);
     }
 
     /**
@@ -96,7 +147,7 @@ public class ImportTemplateWorkbook {
      *                formats cover - the batch row limit, so every usable
      *                row gets them
      */
-    public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows) {
+    public byte[] generate(DocumentTypeSchemaResponse schema, int maxRows, TemplateContent content) {
         List<SchemaField> fields = schema.fields().stream()
                 .filter(f -> !f.hidden())
                 .sorted((a, b) -> Integer.compare(a.displayOrder(), b.displayOrder()))
@@ -170,6 +221,16 @@ public class ImportTemplateWorkbook {
                 }
             }
 
+            CellStyle wrapStyle = null;
+            if (content.errorsColumn()) {
+                int column = columnKeys.size();
+                writeHeader(header, column, ERRORS_HEADER, headerStyle);
+                addComment(drawing, factory, header.getCell(column), ERRORS_COMMENT);
+                columnKeys.add(ERRORS_KEY);
+                wrapStyle = workbook.createCellStyle();
+                wrapStyle.setWrapText(true);
+            }
+
             // Pre-formatted empty cells: Excel then stores what's typed into
             // them as a date rather than text. They stay blank, so parse
             // still skips any row nobody filled in.
@@ -180,12 +241,16 @@ public class ImportTemplateWorkbook {
                 }
             }
 
+            for (int i = 0; i < content.rows().size(); i++) {
+                writeRow(importSheet, i + 1, content.rows().get(i), columnKeys, dateColumns, wrapStyle);
+            }
+
             for (int c = 0; c < columnKeys.size(); c++) {
                 importSheet.setColumnWidth(c, COLUMN_WIDTH);
             }
             importSheet.createFreezePane(0, 1);
 
-            writeMeta(metaSheet, schema, columnKeys);
+            writeMeta(metaSheet, schema, columnKeys, content.resubmitOf());
             workbook.setSheetVisibility(workbook.getSheetIndex(metaSheet), SheetVisibility.VERY_HIDDEN);
             if (optionsSheet != null) {
                 workbook.setSheetVisibility(workbook.getSheetIndex(optionsSheet), SheetVisibility.VERY_HIDDEN);
@@ -222,7 +287,19 @@ public class ImportTemplateWorkbook {
             } catch (RuntimeException e) {
                 throw invalid();
             }
-            List<String> columnKeys = readColumnKeys(metaSheet);
+            UUID resubmitOf = readResubmitOf(metaSheet);
+
+            // The errors column is for people only: its key is dropped and its
+            // cells are never read, so it can't fill in or keep alive a row.
+            List<String> allKeys = readColumnKeys(metaSheet);
+            List<String> columnKeys = new ArrayList<>(allKeys.size());
+            List<Integer> columnIndexes = new ArrayList<>(allKeys.size());
+            for (int c = 0; c < allKeys.size(); c++) {
+                if (!ERRORS_KEY.equals(allKeys.get(c))) {
+                    columnKeys.add(allKeys.get(c));
+                    columnIndexes.add(c);
+                }
+            }
             if (columnKeys.size() < 2 || !FILENAME_KEY.equals(columnKeys.get(0))
                     || !TITLE_KEY.equals(columnKeys.get(1))) {
                 throw invalid();
@@ -236,8 +313,8 @@ public class ImportTemplateWorkbook {
                 }
                 List<String> values = new ArrayList<>(columnKeys.size());
                 boolean empty = true;
-                for (int c = 0; c < columnKeys.size(); c++) {
-                    String value = cellValue(row.getCell(c));
+                for (int column : columnIndexes) {
+                    String value = cellValue(row.getCell(column));
                     values.add(value);
                     empty &= value == null;
                 }
@@ -257,7 +334,8 @@ public class ImportTemplateWorkbook {
                 }
                 rows.add(new ParsedRow(r + 1, values.get(0) != null ? values.get(0) : "", values.get(1), fieldValues));
             }
-            return new ParsedTemplate(documentTypeId, schemaVersion, List.copyOf(columnKeys), List.copyOf(rows));
+            return new ParsedTemplate(documentTypeId, schemaVersion, List.copyOf(columnKeys), List.copyOf(rows),
+                    resubmitOf);
         } catch (IOException e) {
             throw invalid();
         }
@@ -309,10 +387,67 @@ public class ImportTemplateWorkbook {
         cell.setCellComment(comment);
     }
 
-    private static void writeMeta(Sheet metaSheet, DocumentTypeSchemaResponse schema, List<String> columnKeys) {
+    /**
+     * Writes one pre-filled data row. Date and date-time values go in as
+     * real dates, so they show and edit like typed ones; a value that isn't
+     * ISO is kept as text, so the user still sees what was wrong.
+     */
+    private static void writeRow(Sheet importSheet, int rowIndex, PrefilledRow prefilled, List<String> columnKeys,
+                                 Map<Integer, CellStyle> dateColumns, CellStyle wrapStyle) {
+        Row row = importSheet.getRow(rowIndex) != null ? importSheet.getRow(rowIndex) : importSheet.createRow(rowIndex);
+        writeText(row, 0, prefilled.filename());
+        writeText(row, 1, prefilled.title());
+        Map<String, String> fields = prefilled.fields() != null ? prefilled.fields() : Map.of();
+        for (int c = 2; c < columnKeys.size(); c++) {
+            String key = columnKeys.get(c);
+            if (ERRORS_KEY.equals(key)) {
+                Cell cell = writeText(row, c, prefilled.errors());
+                if (cell != null) {
+                    cell.setCellStyle(wrapStyle);
+                }
+                continue;
+            }
+            String value = fields.get(key);
+            CellStyle dateStyle = dateColumns.get(c);
+            if (value == null || dateStyle == null || !writeDate(row, c, value, dateStyle)) {
+                writeText(row, c, value);
+            }
+        }
+    }
+
+    private static Cell writeText(Row row, int column, String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        Cell cell = row.getCell(column) != null ? row.getCell(column) : row.createCell(column);
+        cell.setCellValue(value);
+        return cell;
+    }
+
+    private static boolean writeDate(Row row, int column, String value, CellStyle style) {
+        Cell cell = row.getCell(column) != null ? row.getCell(column) : row.createCell(column);
+        try {
+            cell.setCellValue(LocalDate.parse(value.trim()));
+        } catch (DateTimeParseException notDate) {
+            try {
+                cell.setCellValue(LocalDateTime.parse(value.trim()));
+            } catch (DateTimeParseException notDateTime) {
+                return false;
+            }
+        }
+        cell.setCellStyle(style);
+        return true;
+    }
+
+    private static void writeMeta(Sheet metaSheet, DocumentTypeSchemaResponse schema, List<String> columnKeys,
+                                  UUID resubmitOf) {
         Row typeRow = metaSheet.createRow(0);
         typeRow.createCell(0).setCellValue(DOCUMENT_TYPE_ID_LABEL);
         typeRow.createCell(1).setCellValue(schema.documentTypeId().toString());
+        if (resubmitOf != null) {
+            typeRow.createCell(RESUBMIT_OF_LABEL_COLUMN).setCellValue(RESUBMIT_OF_LABEL);
+            typeRow.createCell(RESUBMIT_OF_LABEL_COLUMN + 1).setCellValue(resubmitOf.toString());
+        }
         Row versionRow = metaSheet.createRow(1);
         versionRow.createCell(0).setCellValue(SCHEMA_VERSION_LABEL);
         versionRow.createCell(1).setCellValue(String.valueOf(schema.schemaVersion()));
@@ -332,6 +467,19 @@ public class ImportTemplateWorkbook {
             keys.add(key);
         }
         return keys;
+    }
+
+    /** The batch a failed-rows template came from, or null if {@code _meta} doesn't name one. */
+    private static UUID readResubmitOf(Sheet metaSheet) {
+        Row row = metaSheet.getRow(0);
+        if (row == null || !RESUBMIT_OF_LABEL.equals(cellValue(row.getCell(RESUBMIT_OF_LABEL_COLUMN)))) {
+            return null;
+        }
+        try {
+            return UUID.fromString(cellText(metaSheet, 0, RESUBMIT_OF_LABEL_COLUMN + 1));
+        } catch (RuntimeException e) {
+            throw invalid();
+        }
     }
 
     private static String cellText(Sheet sheet, int row, int column) {

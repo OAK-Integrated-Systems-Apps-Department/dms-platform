@@ -71,6 +71,13 @@ public class ImportBatch {
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
 
+    /**
+     * The finished import this batch resubmits the failed rows of (from its
+     * failed-rows template); null for a normal import.
+     */
+    @Column(name = "resubmit_of_batch_id")
+    private UUID resubmitOfBatchId;
+
     @Column(name = "correlation_id", nullable = false)
     private UUID correlationId;
 

@@ -44,4 +44,18 @@ public class ImportExportProperties {
      * key is documented with the rest.
      */
     private long completionIntervalMs = 30000;
+
+    /**
+     * How long, after a batch finishes, the staged files of rows that
+     * failed on their data are kept so a resubmit of its failed rows can
+     * reuse them. {@code RetainedImportFilePurger} deletes them after that.
+     */
+    private int retainedFileHours = 24;
+
+    /**
+     * How often {@code RetainedImportFilePurger} runs. Read by its
+     * {@code @Scheduled} placeholder, which carries the same default;
+     * declared here so the key is documented with the rest.
+     */
+    private long retainedFilePurgeIntervalMs = 3600000;
 }

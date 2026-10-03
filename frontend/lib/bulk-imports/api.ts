@@ -30,8 +30,8 @@ export function hasFailedRows(status: BulkImportStatus | undefined): boolean {
 
 /**
  * Response of POST /bulk-imports. `expectedFilenames` has one entry per row
- * that needs a file, in row order; rows skipped for template errors are left
- * out (`totalRecords` still counts them).
+ * that needs a file, in row order; rows skipped for template errors, and rows
+ * that reused a kept file, are left out (`totalRecords` still counts them).
  */
 export interface BulkImportCreatedResponseDto {
   batchId: string
@@ -39,6 +39,8 @@ export interface BulkImportCreatedResponseDto {
   expectedFilenames: string[]
   /** Rows saved as failed because of template errors - they need no file and appear in the results. */
   skippedRows: number
+  /** Rows of a resubmit that took over a file kept from the previous import - already received. */
+  reusedFiles: number
 }
 
 /** Response of POST /bulk-imports/{batchId}/files. */
@@ -121,6 +123,10 @@ export interface ImportTemplatePreviewDto {
   validRows: number
   invalidRows: number
   rows: ImportRowFailureDto[]
+  /** The import whose failed rows this template resubmits; null for a normal template. */
+  resubmitOf: string | null
+  /** Rows that would reuse a file kept from that import (nothing is moved by the preview). */
+  reusableFiles: number
 }
 
 /** Response item of GET /import-templates/document-types - active types only, in display order. */
@@ -137,6 +143,7 @@ export interface DownloadedFile {
 
 const BASE = `${API_BASE_URL}/api/v1/bulk-imports`
 const TEMPLATE_FALLBACK_FILENAME = "import-template.xlsx"
+const FAILED_ROWS_FALLBACK_FILENAME = "failed-rows.xlsx"
 
 /**
  * GET /import-templates/document-types - the types a template can be
@@ -161,6 +168,22 @@ export async function downloadImportTemplate(documentTypeId: string): Promise<Do
   const blob = await response.blob()
   const filename =
     filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? TEMPLATE_FALLBACK_FILENAME
+  return { blob, filename }
+}
+
+/**
+ * GET /bulk-imports/{batchId}/failed-rows-template - a finished import's failed
+ * rows as a fixable template; uploading it starts a resubmit.
+ */
+export async function downloadFailedRowsTemplate(batchId: string): Promise<DownloadedFile> {
+  const response = await apiFetch(
+    `${BASE}/${batchId}/failed-rows-template`,
+    undefined,
+    "Could not download the failed rows."
+  )
+  const blob = await response.blob()
+  const filename =
+    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? FAILED_ROWS_FALLBACK_FILENAME
   return { blob, filename }
 }
 

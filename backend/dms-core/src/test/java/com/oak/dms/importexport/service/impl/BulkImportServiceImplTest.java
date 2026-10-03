@@ -11,6 +11,7 @@ import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
+import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.dto.ImportTemplatePreview;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
@@ -18,6 +19,7 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.exception.ActiveImportBatchLimitException;
 import com.oak.dms.importexport.exception.ImportBatchNotCancellableException;
 import com.oak.dms.importexport.exception.ImportBatchSizeException;
+import com.oak.dms.importexport.exception.ImportFailedRowsUnavailableException;
 import com.oak.dms.importexport.exception.ImportFileNotInBatchException;
 import com.oak.dms.importexport.exception.InactiveDocumentTypeException;
 import com.oak.dms.importexport.exception.InvalidImportTemplateException;
@@ -26,6 +28,10 @@ import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.template.ImportTemplateWorkbook;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedRow;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.ParsedTemplate;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.PrefilledRow;
+import com.oak.dms.importexport.template.ImportTemplateWorkbook.TemplateContent;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportRowError;
 import com.oak.dms.importexport.validation.ImportRowValidator;
@@ -97,6 +103,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -756,6 +763,297 @@ class BulkImportServiceImplTest {
 
         assertThat(service(realWorkbook).getFailures(batch.getImportBatchId())).isEmpty();
         verifyNoInteractions(importSchemaFields);
+    }
+
+    @Test
+    void generateFailedRowsTemplate_currentSchema_carriesValuesByKeyDropsRemovedFieldsAndListsErrors()
+            throws IOException {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        ImportItem row2 = failedItem(batch, 2, "a.pdf",
+                "{\"title\":\"Invoice A\",\"fields\":{\"reference\":\"R-1\",\"gone_field\":\"x\"}}", """
+                        [{"field":"reference","code":"REQUIRED","message":"Reference is required","severity":"error"},
+                         {"field":"file","code":"FILE_MISSING","message":"No file was uploaded","severity":"error"}]
+                        """);
+        ImportItem row5 = failedItem(batch, 5, "b.pdf", "{\"title\":null,\"fields\":{}}",
+                "[{\"field\":null,\"code\":\"X\",\"message\":\"Something else\",\"severity\":\"error\"}]");
+        stubOwnBatch(batch);
+        when(documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                .thenReturn(Optional.of(documentType(4, DocumentType.DocumentTypeStatus.active)));
+        // v4: "reference" kept, "gone_field" removed, "notes" added.
+        when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(new DocumentTypeSchemaResponse(
+                documentTypeId, "INV", "Invoice", 4, List.of(
+                new SchemaField(UUID.randomUUID(), "reference", "Reference v4", null, "text", "active",
+                        false, false, 10, null, null, List.of(), List.of()),
+                new SchemaField(UUID.randomUUID(), "notes", "Notes", null, "text", "active",
+                        false, false, 20, null, null, List.of(), List.of()))));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of("reference",
+                new ImportField(UUID.randomUUID(), "reference", "Reference", "text", true, false)));
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(row2, row5));
+
+        ImportTemplateFile file = service(realWorkbook).generateFailedRowsTemplate(batch.getImportBatchId());
+
+        assertThat(file.filename()).matches("INV-failed-rows-\\d{8}-\\d{4}\\.xlsx");
+        ParsedTemplate parsed = realWorkbook.parse(new ByteArrayInputStream(file.content()), 500);
+        assertThat(parsed.schemaVersion()).isEqualTo(4);
+        assertThat(parsed.resubmitOf()).isEqualTo(batch.getImportBatchId());
+        assertThat(parsed.columnKeys()).containsExactly("filename", "title", "reference", "notes");
+        assertThat(parsed.rows()).extracting(ParsedRow::filename, ParsedRow::title)
+                .containsExactly(tuple("a.pdf", "Invoice A"), tuple("b.pdf", null));
+        assertThat(parsed.rows().get(0).fields()).containsExactly(Map.entry("reference", "R-1"));
+        assertThat(parsed.rows().get(1).fields()).isEmpty();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
+            Sheet sheet = workbook.getSheet(ImportTemplateWorkbook.IMPORT_SHEET);
+            assertThat(sheet.getRow(0).getCell(4).getStringCellValue()).isEqualTo("Import errors");
+            assertThat(sheet.getRow(1).getCell(4).getStringCellValue())
+                    .isEqualTo("Reference: Reference is required\nFile: No file was uploaded");
+            assertThat(sheet.getRow(2).getCell(4).getStringCellValue()).isEqualTo("Something else");
+        }
+    }
+
+    @Test
+    void generateFailedRowsTemplate_inactiveDocumentType_stillDownloads() {
+        ImportBatch batch = batch(ImportBatchStatus.failed);
+        stubOwnBatch(batch);
+        when(documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.inactive)));
+        when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(schema(3));
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(failedItem(batch, 2, "a.pdf",
+                "{\"title\":null,\"fields\":{}}", null)));
+
+        ImportTemplateFile file = service(realWorkbook).generateFailedRowsTemplate(batch.getImportBatchId());
+
+        assertThat(realWorkbook.parse(new ByteArrayInputStream(file.content()), 500).rows())
+                .extracting(ParsedRow::filename).containsExactly("a.pdf");
+    }
+
+    @Test
+    void generateFailedRowsTemplate_batchWithoutFailedRowsStatus_rejectsWith409() {
+        for (ImportBatchStatus status : List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued,
+                ImportBatchStatus.running, ImportBatchStatus.completed, ImportBatchStatus.cancelled)) {
+            ImportBatch batch = batch(status);
+            stubOwnBatch(batch);
+
+            assertThatThrownBy(() -> service(realWorkbook).generateFailedRowsTemplate(batch.getImportBatchId()))
+                    .as(status.name())
+                    .isInstanceOf(ImportFailedRowsUnavailableException.class)
+                    .extracting("status").isEqualTo(HttpStatus.CONFLICT);
+        }
+        verifyNoInteractions(importItemRepository, documentTypeFieldService);
+    }
+
+    @Test
+    void generateFailedRowsTemplate_batchOfAnotherUser_notFound() {
+        UUID foreignBatchId = UUID.randomUUID();
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(foreignBatchId,
+                tenantId, userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service(realWorkbook).generateFailedRowsTemplate(foreignBatchId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(importItemRepository, documentTypeFieldService);
+    }
+
+    @Test
+    void createBatch_resubmit_movesKeptFilesToMatchingRowsAndClearsThemOnOriginal() {
+        stubActiveTypeAndSchema();
+        stubReferenceRule();
+        stubBatchSave();
+        ImportBatch original = finishedOriginal(1);
+        UUID locationId = UUID.randomUUID();
+        ImportItem keptA = keptItem(original, 2, " A.PDF ", locationId, "imports/k-a");
+        ImportItem keptB1 = keptItem(original, 3, "b.pdf", locationId, "imports/k-b1");
+        ImportItem keptB2 = keptItem(original, 4, "b.pdf", locationId, "imports/k-b2");
+        ImportItem keptD = keptItem(original, 5, "d.pdf", locationId, "imports/k-d");
+        stubLockedOriginal(original, List.of(keptA, keptB1, keptB2, keptD));
+        byte[] template = resubmitTemplate(original.getImportBatchId(),
+                new String[]{"a.pdf", null, "OK"},
+                new String[]{"b.pdf", null, "OK"},
+                new String[]{"c.pdf", null, "OK"},
+                new String[]{"d.pdf", null, "BAD"});
+
+        BulkImportCreatedResponse created = service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(created.reusedFiles()).isEqualTo(2);
+        assertThat(created.skippedRows()).isEqualTo(1);
+        assertThat(created.expectedFilenames()).containsExactly("c.pdf");
+
+        ArgumentCaptor<ImportBatch> savedBatch = ArgumentCaptor.forClass(ImportBatch.class);
+        verify(importBatchRepository).save(savedBatch.capture());
+        assertThat(savedBatch.getValue().getResubmitOfBatchId()).isEqualTo(original.getImportBatchId());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ImportItem>> saved = ArgumentCaptor.forClass(List.class);
+        verify(importItemRepository, times(2)).saveAll(saved.capture());
+        List<ImportItem> items = saved.getAllValues().get(0);
+        assertThat(items).extracting(ImportItem::getStagedObjectKey)
+                .containsExactly("imports/k-a", "imports/k-b1", null, null);
+        assertThat(items).extracting(ImportItem::getStagedStorageLocationId)
+                .containsExactly(locationId, locationId, null, null);
+        assertThat(items).extracting(ImportItem::getStagedSizeBytes).containsExactly(1024L, 1024L, null, null);
+        assertThat(saved.getAllValues().get(1)).containsExactly(keptA, keptB1);
+
+        assertThat(keptA.getStagedObjectKey()).isNull();
+        assertThat(keptA.getStagedStorageLocationId()).isNull();
+        assertThat(keptA.getStagedSizeBytes()).isNull();
+        assertThat(keptB1.getStagedObjectKey()).isNull();
+        // One file per row (the lowest-numbered one), and a row skipped for
+        // template errors claims nothing.
+        assertThat(keptB2.getStagedObjectKey()).isEqualTo("imports/k-b2");
+        assertThat(keptD.getStagedObjectKey()).isEqualTo("imports/k-d");
+    }
+
+    @Test
+    void createBatch_secondResubmitOfSameBatch_findsFilesAlreadyClaimed() {
+        stubActiveTypeAndSchema();
+        stubBatchSave();
+        ImportBatch original = finishedOriginal(1);
+        ImportItem kept = keptItem(original, 2, "a.pdf", UUID.randomUUID(), "imports/k-a");
+        stubLockedOriginal(original, List.of(kept));
+        byte[] template = resubmitTemplate(original.getImportBatchId(), new String[]{"a.pdf", null, null});
+
+        BulkImportCreatedResponse first = service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template));
+        BulkImportCreatedResponse second = service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(first.reusedFiles()).isEqualTo(1);
+        assertThat(first.expectedFilenames()).isEmpty();
+        assertThat(second.reusedFiles()).isZero();
+        assertThat(second.expectedFilenames()).containsExactly("a.pdf");
+    }
+
+    @Test
+    void createBatch_resubmitAfterRetentionWindow_reusesNothing() {
+        stubActiveTypeAndSchema();
+        stubBatchSave();
+        ImportBatch original = finishedOriginal(25);
+        ImportItem kept = keptItem(original, 2, "a.pdf", UUID.randomUUID(), "imports/k-a");
+        stubLockedOriginal(original, List.of(kept));
+        byte[] template = resubmitTemplate(original.getImportBatchId(), new String[]{"a.pdf", null, null});
+
+        BulkImportCreatedResponse created = service(realWorkbook).createBatch(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(created.reusedFiles()).isZero();
+        assertThat(created.expectedFilenames()).containsExactly("a.pdf");
+        assertThat(kept.getStagedObjectKey()).isEqualTo("imports/k-a");
+        verify(importItemRepository).saveAll(anyList());
+    }
+
+    @Test
+    void createBatch_resubmitOfBatchThatCantBeResubmitted_rejects400AndSavesNothing() {
+        stubActiveTypeAndSchema();
+        record Case(String name, ImportBatch original, boolean visible) {
+        }
+        ImportBatch otherType = finishedOriginal(1);
+        otherType.setDocumentTypeId(UUID.randomUUID());
+        ImportBatch completed = finishedOriginal(1);
+        completed.setStatus(ImportBatchStatus.completed);
+        ImportBatch running = finishedOriginal(1);
+        running.setStatus(ImportBatchStatus.running);
+        List<Case> cases = List.of(
+                new Case("another user's batch", finishedOriginal(1), false),
+                new Case("another document type", otherType, true),
+                new Case("completed without errors", completed, true),
+                new Case("still running", running, true));
+
+        for (Case c : cases) {
+            UUID originalId = c.original().getImportBatchId();
+            Optional<ImportBatch> found = c.visible() ? Optional.of(c.original()) : Optional.empty();
+            when(importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(originalId, tenantId, userId))
+                    .thenReturn(found);
+            when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(originalId,
+                    tenantId, userId)).thenReturn(found);
+            byte[] template = resubmitTemplate(originalId, new String[]{"a.pdf", null, null});
+
+            for (Runnable call : List.<Runnable>of(
+                    () -> service(realWorkbook).createBatch(template.length, new ByteArrayInputStream(template)),
+                    () -> service(realWorkbook).previewTemplate(template.length,
+                            new ByteArrayInputStream(template)))) {
+                Throwable thrown = catchThrowable(call::run);
+                assertThat(thrown).as(c.name()).isInstanceOf(InvalidImportTemplateException.class);
+                assertThat(((ApiException) thrown).getCode()).as(c.name()).isEqualTo("IMPORT_RESUBMIT_INVALID");
+                assertThat(((ApiException) thrown).getStatus()).as(c.name()).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(thrown.getMessage()).as(c.name())
+                        .startsWith("This file came from an import that can't be resubmitted");
+            }
+        }
+        verify(importBatchRepository, never()).save(any());
+        verify(importItemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void previewTemplate_resubmit_reportsReusableFilesWithoutMovingAnything() {
+        stubActiveTypeAndSchema();
+        stubReferenceRule();
+        ImportBatch original = finishedOriginal(1);
+        ImportItem keptA = keptItem(original, 2, "a.pdf", UUID.randomUUID(), "imports/k-a");
+        ImportItem keptB = keptItem(original, 3, "B.pdf", UUID.randomUUID(), "imports/k-b");
+        stubOwnBatch(original);
+        when(importItemRepository.findAllByImportBatchIdAndStatusAndStagedObjectKeyIsNotNullOrderByRowNumberAsc(
+                original.getImportBatchId(), ImportItem.ImportItemStatus.failed)).thenReturn(List.of(keptA, keptB));
+        byte[] template = resubmitTemplate(original.getImportBatchId(),
+                new String[]{"a.pdf", null, null},
+                new String[]{"b.pdf", null, "BAD"},
+                new String[]{"c.pdf", null, null});
+
+        ImportTemplatePreview preview = service(realWorkbook).previewTemplate(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(preview.resubmitOf()).isEqualTo(original.getImportBatchId());
+        assertThat(preview.reusableFiles()).isEqualTo(1);
+        assertThat(keptA.getStagedObjectKey()).isEqualTo("imports/k-a");
+        assertThat(keptB.getStagedObjectKey()).isEqualTo("imports/k-b");
+        verify(importBatchRepository, never()).lockByImportBatchIdAndTenantIdAndCreatedBy(any(), any(), any());
+        verify(importBatchRepository, never()).save(any());
+        verify(importItemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void previewTemplate_normalTemplate_hasNoResubmit() {
+        stubActiveTypeAndSchema();
+        byte[] template = filledTemplate(new String[]{"a.pdf", null, null});
+
+        ImportTemplatePreview preview = service(realWorkbook).previewTemplate(template.length,
+                new ByteArrayInputStream(template));
+
+        assertThat(preview.resubmitOf()).isNull();
+        assertThat(preview.reusableFiles()).isZero();
+    }
+
+    /** A finished-with-errors batch of the caller's, for the same type, completed {@code hoursAgo} ago. */
+    private ImportBatch finishedOriginal(int hoursAgo) {
+        ImportBatch original = batch(ImportBatchStatus.completed_with_errors);
+        original.setCompletedAt(OffsetDateTime.now().minusHours(hoursAgo));
+        return original;
+    }
+
+    private ImportItem keptItem(ImportBatch original, int rowNumber, String filename, UUID locationId,
+                                String objectKey) {
+        ImportItem item = item(original, rowNumber, filename, locationId, objectKey);
+        item.setStatus(ImportItem.ImportItemStatus.failed);
+        return item;
+    }
+
+    /** The original batch under its lock; its kept files are read live, so a claimed one is gone next time. */
+    private void stubLockedOriginal(ImportBatch original, List<ImportItem> kept) {
+        when(importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(original.getImportBatchId(), tenantId,
+                userId)).thenReturn(Optional.of(original));
+        when(importItemRepository.findAllByImportBatchIdAndStatusAndStagedObjectKeyIsNotNullOrderByRowNumberAsc(
+                original.getImportBatchId(), ImportItem.ImportItemStatus.failed))
+                .thenAnswer(call -> kept.stream().filter(item -> item.getStagedObjectKey() != null).toList());
+    }
+
+    /** A v3 failed-rows template resubmitting {@code originalId}, each row {filename, title, reference}. */
+    private byte[] resubmitTemplate(UUID originalId, String[]... rows) {
+        List<PrefilledRow> prefilled = Arrays.stream(rows)
+                .map(row -> new PrefilledRow(row[0], row[1],
+                        row[2] != null ? Map.of("reference", row[2]) : Map.of(), "Reference: was wrong"))
+                .toList();
+        return realWorkbook.generate(schema(3), 500, new TemplateContent(originalId, prefilled, true));
     }
 
     private void stubBatchPage(List<ImportBatch> batches) {

@@ -32,6 +32,16 @@ public interface BulkImportService {
     ImportTemplateFile generateTemplate(UUID documentTypeId);
 
     /**
+     * The caller's {@code completed_with_errors} or {@code failed} batch's
+     * failed rows as a fixable template: the document type's current
+     * template with one pre-filled row per failed item, an "Import errors"
+     * column, and the batch recorded so an upload of it is a resubmit.
+     * Also the exportable failure report, so an inactive type doesn't block
+     * it.
+     */
+    ImportTemplateFile generateFailedRowsTemplate(UUID batchId);
+
+    /**
      * Checks a filled-in template exactly as {@link #createBatch} would -
      * the same template-level rejections, and every row check except the
      * file-present one - and reports the rows with errors. Writes nothing,

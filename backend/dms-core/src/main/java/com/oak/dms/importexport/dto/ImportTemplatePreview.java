@@ -9,6 +9,10 @@ import java.util.UUID;
  *
  * @param rows the rows with at least one error, in row order, with every
  *             problem found on them (warnings included)
+ * @param resubmitOf    the import whose failed rows this template resubmits;
+ *                      null for a normal template
+ * @param reusableFiles rows that would reuse a file kept from that import
+ *                      (computed only - nothing is moved)
  */
 public record ImportTemplatePreview(
         UUID documentTypeId,
@@ -16,6 +20,8 @@ public record ImportTemplatePreview(
         int totalRows,
         int validRows,
         int invalidRows,
-        List<ImportRowFailure> rows
+        List<ImportRowFailure> rows,
+        UUID resubmitOf,
+        int reusableFiles
 ) {
 }
