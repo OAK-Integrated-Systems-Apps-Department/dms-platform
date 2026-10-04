@@ -71,6 +71,10 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
   { action: "METADATA_FIELD_VALIDATION_CREATED", module: "MDTM", label: "Metadata field validation rule created" },
   { action: "METADATA_FIELD_VALIDATION_UPDATED", module: "MDTM", label: "Metadata field validation rule updated" },
   { action: "METADATA_FIELD_VALIDATION_DELETED", module: "MDTM", label: "Metadata field validation rule deleted" },
+  { action: "BULK_IMPORT_STARTED", module: "FIE", label: "Bulk import started" },
+  { action: "BULK_IMPORT_COMPLETED", module: "FIE", label: "Bulk import completed" },
+  { action: "BULK_IMPORT_CANCELLED", module: "FIE", label: "Bulk import cancelled" },
+  { action: "BULK_IMPORT_FAILED_ROWS_DOWNLOADED", module: "FIE", label: "Bulk import failed rows downloaded" },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
@@ -79,6 +83,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   ABDR: "Comprehensive Audit Management",
   SHAD: "System Health and Administration Dashboard",
   MDTM: "Metadata and Document-Type Management",
+  FIE: "File Import/Export",
 }
 
 export function auditModuleOptions(): string[] {

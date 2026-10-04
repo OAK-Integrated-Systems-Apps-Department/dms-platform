@@ -17,7 +17,9 @@ package com.oak.dms.audit.catalog;
  * always match it.
  *
  * DocumentServiceImpl/StorageLocationServiceImpl are also call sites now
- * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below).
+ * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below), as are
+ * BulkImportServiceImpl/ImportBatchFinaliser/ImportBatchRecoveryJob
+ * (IMPORT_BATCH).
  */
 public final class AuditObjectTypes {
 
@@ -45,6 +47,8 @@ public final class AuditObjectTypes {
     public static final String SCAN_RESULT = "SCAN_RESULT";
     /** A quarantined infected upload (quarantine_records) - the object of DOCUMENT_QUARANTINED. */
     public static final String QUARANTINE_RECORD = "QUARANTINE_RECORD";
+    /** A bulk import batch (import_batches) - the object of every BULK_IMPORT_* event. */
+    public static final String IMPORT_BATCH = "IMPORT_BATCH";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

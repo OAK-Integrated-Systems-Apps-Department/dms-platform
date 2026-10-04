@@ -19,6 +19,7 @@ import java.util.Map;
  *  - ABDR = Comprehensive Audit Management (the audit trail itself, e.g. exporting it)
  *  - SHAD = System Health and Administration Dashboard (platform infrastructure status, e.g. the outbox relay)
  *  - MDTM = Metadata and Document-Type Management (document types, the metadata field catalog, and the field-mapping matrix that ties them together)
+ *  - FIE  = File Import/Export (bulk document import, and later bulk export)
  *
  * reasonRequired would, per the spec's own example, be true for
  * destructive/access-revoking actions ("mandatory for legal hold /
@@ -110,6 +111,10 @@ public final class AuditActionCatalog {
     public static final String QUARANTINE_RELEASE_REFUSED = "QUARANTINE_RELEASE_REFUSED";
     public static final String QUARANTINE_OVERRIDE_RELEASED = "QUARANTINE_OVERRIDE_RELEASED";
     public static final String QUARANTINE_DELETED = "QUARANTINE_DELETED";
+    public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
+    public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
+    public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
+    public static final String BULK_IMPORT_FAILED_ROWS_DOWNLOADED = "BULK_IMPORT_FAILED_ROWS_DOWNLOADED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -291,7 +296,24 @@ public final class AuditActionCatalog {
             Map.entry(QUARANTINE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_RELEASE_REFUSED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_OVERRIDE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
-            Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true))
+            Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
+
+            // Bulk import (BulkImportServiceImpl, ImportBatchFinaliser,
+            // ImportBatchRecoveryJob) - module FIE. One event per batch
+            // lifecycle step, never one per row: each document a batch
+            // creates is already audited by the document module. STARTED is
+            // the submit; COMPLETED is the finaliser giving the batch its
+            // final status (system actor - it happens off the request);
+            // CANCELLED covers both a user's cancel and the recovery job
+            // expiring an abandoned upload (cancelReason in new_value says
+            // which). Re-publishing a stuck batch's submitted event is not
+            // audited - it changes nothing a reviewer would act on and is
+            // already logged. FAILED_ROWS_DOWNLOADED is LOW, the same tier
+            // as DOCUMENT_DOWNLOADED: a routine read of the user's own batch.
+            Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_IMPORT_FAILED_ROWS_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.LOW, false))
     );
 
     private AuditActionCatalog() {

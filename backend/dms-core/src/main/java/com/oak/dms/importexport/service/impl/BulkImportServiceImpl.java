@@ -3,6 +3,10 @@ package com.oak.dms.importexport.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
@@ -141,6 +145,7 @@ public class BulkImportServiceImpl implements BulkImportService {
     private final FileTypeInspector fileTypeInspector;
     private final ImportSchemaFields importSchemaFields;
     private final ImportRowValidator rowValidator;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
@@ -172,8 +177,11 @@ public class BulkImportServiceImpl implements BulkImportService {
         return new ImportTemplateFile(filename, content);
     }
 
+    // NOT readOnly: the BULK_IMPORT_FAILED_ROWS_DOWNLOADED write below joins
+    // this transaction (see AuditService#persist's @Transactional) - a
+    // readOnly transaction would make Postgres reject that insert.
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public ImportTemplateFile generateFailedRowsTemplate(UUID batchId) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
@@ -227,6 +235,15 @@ public class BulkImportServiceImpl implements BulkImportService {
                 new TemplateContent(batchId, rows, true));
         String filename = safeFilenamePart(documentType.getTypeCode()) + "-failed-rows-"
                 + LocalDateTime.now().format(FAILED_ROWS_TIMESTAMP) + XLSX_EXTENSION;
+
+        auditService.event(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED)
+                .tenantId(tenantId)
+                .actor(userId, TenantContext.getDisplayNameOrNull())
+                .objectType(AuditObjectTypes.IMPORT_BATCH)
+                .objectId(batchId)
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of("rowCount", rows.size()))
+                .log();
         return new ImportTemplateFile(filename, content);
     }
 
@@ -449,6 +466,19 @@ public class BulkImportServiceImpl implements BulkImportService {
         outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, batchId, SUBMITTED_EVENT_TYPE,
                 submittedPayload(batch));
 
+        long skippedRows = importItemRepository.countByImportBatchIdAndSkippedAtPreviewTrue(batchId);
+        auditService.event(AuditActionCatalog.BULK_IMPORT_STARTED)
+                .tenantId(tenantId)
+                .actor(userId, TenantContext.getDisplayNameOrNull())
+                .objectType(AuditObjectTypes.IMPORT_BATCH)
+                .objectId(batchId)
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "documentTypeId", batch.getDocumentTypeId(),
+                        "totalRecords", batch.getTotalRecords(),
+                        "skippedRows", skippedRows))
+                .log();
+
         log.info("Submitted bulk import batch {} for tenant {}", batchId, tenantId);
     }
 
@@ -549,6 +579,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
         requireCancellable(batch);
 
+        ImportBatchStatus previousStatus = batch.getStatus();
         batch.setStatus(ImportBatchStatus.cancelled);
         batch.setCancelReason(ImportBatch.CancelReason.user);
         batch.setUpdatedBy(userId);
@@ -558,6 +589,17 @@ public class BulkImportServiceImpl implements BulkImportService {
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
         int toDelete = stagedImportFiles.clearAndDeleteAfterCommit(items);
         importItemRepository.saveAll(items);
+
+        auditService.event(AuditActionCatalog.BULK_IMPORT_CANCELLED)
+                .tenantId(tenantId)
+                .actor(userId, TenantContext.getDisplayNameOrNull())
+                .objectType(AuditObjectTypes.IMPORT_BATCH)
+                .objectId(batchId)
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "cancelReason", ImportBatch.CancelReason.user.name(),
+                        "previousStatus", previousStatus.name()))
+                .log();
 
         log.info("Cancelled bulk import batch {} for tenant {} ({} staged files to delete)",
                 batchId, tenantId, toDelete);

@@ -2,6 +2,13 @@ package com.oak.dms.importexport.worker;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.helper.AuditEventBuilder;
+import com.oak.dms.audit.helper.SystemActor;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
@@ -16,6 +23,7 @@ import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +41,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
+import static com.oak.dms.importexport.AuditTestSupport.mockAuditService;
+import static com.oak.dms.importexport.AuditTestSupport.recorded;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,12 +70,13 @@ class ImportBatchRecoveryJobTest {
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final ImportExportProperties properties = new ImportExportProperties();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AuditService auditService = mockAuditService();
     private final StorageLocation location = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
 
     private final ImportBatchRecoveryJob job = new ImportBatchRecoveryJob(importBatchRepository, importItemRepository,
             new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory), outboxEventPublisher,
-            new ImportBatchFinaliser(importBatchRepository, importItemRepository, transactionManager), properties,
-            objectMapper, transactionManager);
+            new ImportBatchFinaliser(importBatchRepository, importItemRepository, auditService, transactionManager),
+            properties, objectMapper, auditService, transactionManager);
 
     @BeforeEach
     void setUp() {
@@ -187,6 +198,27 @@ class ImportBatchRecoveryJobTest {
     }
 
     @Test
+    void abandoned_recordsCancelledOnceAsSystemWithReasonExpired() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading, 0);
+        stubLocked(batch, true);
+
+        job.expireAbandoned(batch.getImportBatchId(), OffsetDateTime.now().minusHours(24));
+
+        List<AuditEventBuilder> events = recorded(auditService);
+        assertThat(events).hasSize(1);
+        AuditEventBuilder event = events.get(0);
+        assertThat(event.action()).isEqualTo(AuditActionCatalog.BULK_IMPORT_CANCELLED);
+        assertThat(event.actorType()).isEqualTo(AuditActorType.SYSTEM);
+        assertThat(event.actorId()).isEqualTo(SystemActor.SYSTEM_USER_ID);
+        assertThat(event.tenantId()).isEqualTo(batch.getTenantId());
+        assertThat(event.objectType()).isEqualTo(AuditObjectTypes.IMPORT_BATCH);
+        assertThat(event.objectId()).isEqualTo(batch.getImportBatchId());
+        assertThat(event.outcome()).isEqualTo(AuditOutcome.SUCCESS);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
+                Map.of("cancelReason", "expired", "initiatedBy", batch.getCreatedBy(), "abandonedUploadHours", 24));
+    }
+
+    @Test
     void abandoned_recentActivityOnRecheck_keepsItAlive() {
         // isInactiveSince covers activity on the batch and on any of its items.
         ImportBatch batch = batch(ImportBatchStatus.uploading, 0);
@@ -200,6 +232,7 @@ class ImportBatchRecoveryJobTest {
         assertThat(batch.getCancelReason()).isNull();
         verify(importBatchRepository, never()).save(any());
         verify(importItemRepository, never()).saveAll(any());
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     @Test
@@ -232,6 +265,8 @@ class ImportBatchRecoveryJobTest {
         verify(importBatchRepository).save(batch);
         verify(importItemRepository, never()).saveAll(any());
         verify(importBatchRepository, never()).lockByImportBatchId(any());
+        // Re-publishing is logged, not audited.
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     @Test
@@ -302,6 +337,11 @@ class ImportBatchRecoveryJobTest {
         assertThat(batch.getStartedAt()).isNotNull();
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.failed);
         assertThat(batch.getCompletedAt()).isNotNull();
+        // Only the finaliser's event - the give-up itself isn't a separate one.
+        assertThat(recorded(auditService)).singleElement().satisfies(event -> {
+            assertThat(event.action()).isEqualTo(AuditActionCatalog.BULK_IMPORT_COMPLETED);
+            assertThat(event.outcome()).isEqualTo(AuditOutcome.FAILURE);
+        });
     }
 
     @Test
@@ -333,6 +373,7 @@ class ImportBatchRecoveryJobTest {
         verify(importItemRepository, never()).saveAll(any());
         verify(outboxEventPublisher, never()).publish(any(), any(), any(), any(), any());
         verify(importBatchRepository, never()).lockByImportBatchId(any());
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     private static OffsetDateTime cutoffAround(int hoursAgo) {

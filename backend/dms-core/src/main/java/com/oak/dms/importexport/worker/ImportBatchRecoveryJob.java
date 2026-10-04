@@ -1,6 +1,10 @@
 package com.oak.dms.importexport.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
@@ -20,7 +24,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -35,11 +41,13 @@ import java.util.function.Predicate;
  *   <li>Abandoned - {@code uploading} with no activity for
  *       {@code abandoned-upload-hours} (default 24): cancelled with reason
  *       {@code expired}, and its staged files deleted after commit, as a
- *       manual cancel does.</li>
+ *       manual cancel does. Audited as BULK_IMPORT_CANCELLED by the system
+ *       actor.</li>
  *   <li>Stuck - {@code queued} or {@code running} with no activity for
  *       {@code stuck-batch-hours} (default 2). The first time, its
  *       {@code import_batch.submitted} event is published again; the worker
- *       resumes a batch safely on redelivery. The window then restarts. If
+ *       resumes a batch safely on redelivery (logged, not audited). The
+ *       window then restarts. If
  *       it is stuck again, the job gives up: rows still pending without a
  *       scan ticket fail with {@value #PROCESSING_ABANDONED}, and the batch
  *       is finalised the normal way. Rows waiting on a ticket are left for
@@ -79,6 +87,7 @@ public class ImportBatchRecoveryJob {
     private final ImportBatchFinaliser finaliser;
     private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
     private final TransactionTemplate transactionTemplate;
 
     public ImportBatchRecoveryJob(ImportBatchRepository importBatchRepository,
@@ -88,6 +97,7 @@ public class ImportBatchRecoveryJob {
                                   ImportBatchFinaliser finaliser,
                                   ImportExportProperties properties,
                                   ObjectMapper objectMapper,
+                                  AuditService auditService,
                                   PlatformTransactionManager transactionManager) {
         this.importBatchRepository = importBatchRepository;
         this.importItemRepository = importItemRepository;
@@ -96,6 +106,7 @@ public class ImportBatchRecoveryJob {
         this.finaliser = finaliser;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.auditService = auditService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -148,6 +159,20 @@ public class ImportBatchRecoveryJob {
             List<ImportItem> staged = importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batchId);
             int toDelete = stagedImportFiles.clearAndDeleteAfterCommit(staged);
             importItemRepository.saveAll(staged);
+
+            // created_by is nullable, hence not Map.of.
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("cancelReason", ImportBatch.CancelReason.expired.name());
+            details.put("initiatedBy", batch.getCreatedBy());
+            details.put("abandonedUploadHours", properties.getAbandonedUploadHours());
+            auditService.event(AuditActionCatalog.BULK_IMPORT_CANCELLED)
+                    .tenantId(batch.getTenantId())
+                    .systemActor()
+                    .objectType(AuditObjectTypes.IMPORT_BATCH)
+                    .objectId(batchId)
+                    .outcome(AuditOutcome.SUCCESS)
+                    .newValue(details)
+                    .log();
 
             log.info("Cancelled bulk import batch {} as expired: no uploads for {}h ({} staged files to delete)",
                     batchId, properties.getAbandonedUploadHours(), toDelete);

@@ -36,6 +36,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.oak.dms.importexport.AuditTestSupport.mockAuditService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -66,7 +67,7 @@ class ImportCompletionSchedulerTest {
             documentMetadataRepository, importItemRepository, stagedImportFiles, new ImportValueConverter(),
             new ImportUsers(mock(UserRepository.class)), new ObjectMapper(), transactionManager);
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, transactionManager);
+            importItemRepository, mockAuditService(), transactionManager);
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,
             importSchemaFields, ingestionGate, recordCreator, finaliser);
 

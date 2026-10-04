@@ -77,9 +77,9 @@ public class BulkImportController {
                 .body(template.content());
     }
 
-    // Read-only, so FIE-only like the other template endpoints. Whether this
-    // should need fie.bulk-import-documents.validate-preview is a Phase 6
-    // decision.
+    // Read-only, so FIE-only like the other template endpoints. The separate
+    // fie.bulk-import-documents.validate-preview code was never checked and
+    // is deprecated by V50.
     @PostMapping(value = "/import-templates/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
     @Operation(summary = "Check a filled-in import template's rows without starting an import (saves nothing)")

@@ -2,6 +2,12 @@ package com.oak.dms.importexport.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditActorType;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.helper.AuditEventBuilder;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
@@ -19,6 +25,7 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.exception.ActiveImportBatchLimitException;
 import com.oak.dms.importexport.exception.ImportBatchNotCancellableException;
 import com.oak.dms.importexport.exception.ImportBatchSizeException;
+import com.oak.dms.importexport.exception.ImportBatchStateException;
 import com.oak.dms.importexport.exception.ImportFailedRowsUnavailableException;
 import com.oak.dms.importexport.exception.ImportFileNotInBatchException;
 import com.oak.dms.importexport.exception.InactiveDocumentTypeException;
@@ -44,6 +51,7 @@ import com.oak.dms.user.UserRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.entity.DocumentType;
@@ -91,6 +99,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import static com.oak.dms.importexport.AuditTestSupport.mockAuditService;
+import static com.oak.dms.importexport.AuditTestSupport.recorded;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -131,6 +141,7 @@ class BulkImportServiceImplTest {
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
     private final MetadataValidationService metadataValidationService = mock(MetadataValidationService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final AuditService auditService = mockAuditService();
 
     @BeforeEach
     void setTenant() {
@@ -433,6 +444,7 @@ class BulkImportServiceImplTest {
         verify(importBatchRepository, never()).save(any());
         verify(importItemRepository, never()).saveAll(anyList());
         verifyNoInteractions(objectStorageServiceFactory);
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     @Test
@@ -450,6 +462,58 @@ class BulkImportServiceImplTest {
 
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.cancelled);
         verify(storage).delete(location, "imports/key-1");
+    }
+
+    @Test
+    void cancel_recordsCancelledOnceByTheUser() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        stubLockedBatch(batch, List.of(item(batch, 1, "a.pdf", null, null)));
+
+        service(realWorkbook).cancel(batch.getImportBatchId());
+
+        AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_CANCELLED, batch);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
+                Map.of("cancelReason", "user", "previousStatus", "uploading"));
+    }
+
+    @Test
+    void submit_uploadingBatch_queuesAndRecordsStartedOnceByTheUser() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        batch.setCorrelationId(UUID.randomUUID());
+        stubLockedBatch(batch, List.of());
+        when(importItemRepository.countByImportBatchIdAndSkippedAtPreviewTrue(batch.getImportBatchId()))
+                .thenReturn(1L);
+
+        service(realWorkbook).submit(batch.getImportBatchId());
+
+        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.queued);
+        AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_STARTED, batch);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
+                Map.of("documentTypeId", documentTypeId, "totalRecords", 2, "skippedRows", 1L));
+    }
+
+    @Test
+    void submit_alreadySubmitted_rejectsAndRecordsNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.queued);
+        stubLockedBatch(batch, List.of());
+
+        assertThatThrownBy(() -> service(realWorkbook).submit(batch.getImportBatchId()))
+                .isInstanceOf(ImportBatchStateException.class);
+
+        verify(importBatchRepository, never()).save(any());
+        assertThat(recorded(auditService)).isEmpty();
+    }
+
+    @Test
+    void submit_batchOfAnotherUser_notFoundAndRecordsNothing() {
+        UUID foreignBatchId = UUID.randomUUID();
+        when(importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(foreignBatchId, tenantId, userId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service(realWorkbook).submit(foreignBatchId))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     @Test
@@ -972,6 +1036,7 @@ class BulkImportServiceImplTest {
                     .extracting("status").isEqualTo(HttpStatus.CONFLICT);
         }
         verifyNoInteractions(importItemRepository, documentTypeFieldService);
+        assertThat(recorded(auditService)).isEmpty();
     }
 
     @Test
@@ -983,6 +1048,36 @@ class BulkImportServiceImplTest {
         assertThatThrownBy(() -> service(realWorkbook).generateFailedRowsTemplate(foreignBatchId))
                 .isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(importItemRepository, documentTypeFieldService);
+        assertThat(recorded(auditService)).isEmpty();
+    }
+
+    @Test
+    void generateFailedRowsTemplate_recordsDownloadOnceByTheUserWithRowCount() {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        stubOwnBatch(batch);
+        when(documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                .thenReturn(Optional.of(documentType(3, DocumentType.DocumentTypeStatus.active)));
+        when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(schema(3));
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(
+                failedItem(batch, 2, "a.pdf", "{\"title\":null,\"fields\":{}}", null),
+                failedItem(batch, 4, "b.pdf", "{\"title\":null,\"fields\":{}}", null)));
+
+        service(realWorkbook).generateFailedRowsTemplate(batch.getImportBatchId());
+
+        AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED, batch);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP)
+                .containsExactlyInAnyOrderEntriesOf(Map.of("rowCount", 2));
+    }
+
+    @Test
+    void generateFailedRowsTemplate_runsInAWritableTransactionForItsAuditEvent() throws NoSuchMethodException {
+        // A readOnly transaction would make Postgres reject the audit insert.
+        TransactionAttribute download = new AnnotationTransactionAttributeSource().getTransactionAttribute(
+                BulkImportServiceImpl.class.getMethod("generateFailedRowsTemplate", UUID.class),
+                BulkImportServiceImpl.class);
+        assertThat(download).isNotNull();
+        assertThat(download.isReadOnly()).isFalse();
     }
 
     @Test
@@ -1241,6 +1336,21 @@ class BulkImportServiceImplTest {
         }
     }
 
+    /** The one audit event recorded, checked as the caller's own action on {@code batch}. */
+    private AuditEventBuilder onlyUserEvent(String action, ImportBatch batch) {
+        List<AuditEventBuilder> events = recorded(auditService);
+        assertThat(events).hasSize(1);
+        AuditEventBuilder event = events.get(0);
+        assertThat(event.action()).isEqualTo(action);
+        assertThat(event.actorType()).isEqualTo(AuditActorType.USER);
+        assertThat(event.actorId()).isEqualTo(userId);
+        assertThat(event.tenantId()).isEqualTo(tenantId);
+        assertThat(event.objectType()).isEqualTo(AuditObjectTypes.IMPORT_BATCH);
+        assertThat(event.objectId()).isEqualTo(batch.getImportBatchId());
+        assertThat(event.outcome()).isEqualTo(AuditOutcome.SUCCESS);
+        return event;
+    }
+
     private void stubLockedBatch(ImportBatch batch, List<ImportItem> items) {
         when(importBatchRepository.lockByImportBatchIdAndTenantIdAndCreatedBy(batch.getImportBatchId(), tenantId,
                 userId)).thenReturn(Optional.of(batch));
@@ -1288,7 +1398,7 @@ class BulkImportServiceImplTest {
                 mock(OutboxEventPublisher.class), properties, new ObjectMapper(),
                 new FileTypeInspector(new IngestionProperties()), importSchemaFields,
                 new ImportRowValidator(new ImportValueConverter(), metadataValidationService,
-                        new ImportUsers(userRepository)));
+                        new ImportUsers(userRepository)), auditService);
     }
 
     /** An active Invoice v3 whose template has one optional text field, "reference" (label "Reference"). */

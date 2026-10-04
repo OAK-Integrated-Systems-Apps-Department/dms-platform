@@ -30,6 +30,8 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
 
     long countByImportBatchIdAndStatus(UUID importBatchId, ImportItem.ImportItemStatus status);
 
+    long countByImportBatchIdAndSkippedAtPreviewTrue(UUID importBatchId);
+
     /**
      * Row-locks an item whose file the scan gate has accepted and which is
      * still waiting on the verdict - empty if it has been resolved already
