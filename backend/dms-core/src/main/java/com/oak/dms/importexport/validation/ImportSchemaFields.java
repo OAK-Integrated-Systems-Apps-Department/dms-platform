@@ -18,12 +18,12 @@ import java.util.stream.Collectors;
 
 /**
  * Loads a document type's fields at one specific schema version - the
- * version a batch's template was generated from, which may no longer be
- * current. {@code DocumentTypeFieldService#getSchema} only covers the
+ * version a batch was created at, which may no longer be current. {@code DocumentTypeFieldService#getSchema} only covers the
  * current version, so this reads the same two repositories and joins them
  * the same way: the version's {@link FieldMapping}s in displayOrder order,
  * each matched to its (non-deleted) catalogue {@link MetadataField};
- * mappings whose field is gone are skipped.
+ * mappings whose field is gone are skipped. Each field's default comes from
+ * the version's override if set, else the field itself.
  */
 @Component
 @RequiredArgsConstructor
@@ -56,8 +56,12 @@ public class ImportSchemaFields {
         for (FieldMapping m : mapping) {
             MetadataField field = fieldsById.get(m.fieldId());
             if (field != null) {
+                // The same rule as DocumentTypeFieldService#getSchema: the
+                // version's per-type override wins over the field's default.
+                String defaultValue = m.defaultValueOverride() != null
+                        ? m.defaultValueOverride() : field.getDefaultValue();
                 fields.put(field.getFieldKey(), new ImportField(field.getFieldId(), field.getFieldKey(), field.getLabel(),
-                        field.getDataType(), m.mandatory(), m.hidden()));
+                        field.getDataType(), m.mandatory(), m.hidden(), defaultValue));
             }
         }
         return fields;

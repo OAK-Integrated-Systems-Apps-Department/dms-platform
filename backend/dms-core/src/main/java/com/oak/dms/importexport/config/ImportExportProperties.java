@@ -16,7 +16,7 @@ import org.springframework.util.unit.DataSize;
 @Setter
 public class ImportExportProperties {
 
-    /** Maximum non-empty manifest rows (and so files) in one batch. */
+    /** Maximum uploads (each one item, accepted or rejected) in one batch. */
     private int maxFilesPerBatch = 500;
 
     /** Maximum total size of all files staged for one batch. */
@@ -26,10 +26,14 @@ public class ImportExportProperties {
     private int maxActiveBatchesPerUser = 1;
 
     /**
-     * Maximum size of an uploaded template. POI loads the whole workbook
-     * into memory, so this is checked before the file is opened.
+     * Whether a document type's mandatory fields must all have a usable
+     * default value (an import's only metadata). False (the default): such
+     * fields are left empty and every row gets a MANDATORY_FIELD_DEFERRED
+     * warning naming them, so the documents can be found and backfilled
+     * later. True: starting an import into the type is refused with 400,
+     * listing the fields.
      */
-    private DataSize maxTemplateSize = DataSize.ofMegabytes(5);
+    private boolean enforceMandatoryFields = false;
 
     /**
      * Consumers on the bulk import queue - how many batches are validated
@@ -46,9 +50,10 @@ public class ImportExportProperties {
     private long completionIntervalMs = 30000;
 
     /**
-     * How long, after a batch finishes, the staged files of rows that
-     * failed on their data are kept so a resubmit of its failed rows can
-     * reuse them. {@code RetainedImportFilePurger} deletes them after that.
+     * How long after a batch finishes {@code RetainedImportFilePurger}
+     * waits before deleting any staged file still left on it. The finaliser
+     * already deletes them when the batch finishes; this is the backstop
+     * for a delete that didn't happen.
      */
     private int retainedFileHours = 24;
 

@@ -115,7 +115,7 @@ class ImportValueConverterTest {
     void convert_userRef_unknownOrCaseMismatchedEmail_isUnknownUserWithHint() {
         Map<String, UUID> users = Map.of("john@oak.lk", UUID.randomUUID());
         Function<String, Optional<UUID>> lookup = email -> Optional.ofNullable(users.get(email));
-        ImportField owner = new ImportField(UUID.randomUUID(), "owner", "Owner", "user_ref", false, false);
+        ImportField owner = new ImportField(UUID.randomUUID(), "owner", "Owner", "user_ref", false, false, null);
 
         ImportRowError error = converter.convert(owner, "John@oak.lk", lookup).error();
 
@@ -126,6 +126,6 @@ class ImportValueConverterTest {
     }
 
     private static ImportField field(String dataType) {
-        return new ImportField(UUID.randomUUID(), "contract_value", "Contract Value", dataType, false, false);
+        return new ImportField(UUID.randomUUID(), "contract_value", "Contract Value", dataType, false, false, null);
     }
 }

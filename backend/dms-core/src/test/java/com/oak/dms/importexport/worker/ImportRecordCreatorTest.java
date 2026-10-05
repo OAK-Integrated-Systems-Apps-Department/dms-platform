@@ -8,9 +8,8 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
+import com.oak.dms.importexport.validation.ImportDefaults;
 import com.oak.dms.importexport.validation.ImportField;
-import com.oak.dms.importexport.validation.ImportUsers;
-import com.oak.dms.importexport.validation.ImportValueConverter;
 import com.oak.dms.metadata.entity.DocumentMetadata;
 import com.oak.dms.metadata.entity.DocumentMetadata.FieldValue;
 import com.oak.dms.metadata.entity.DocumentMetadataId;
@@ -25,7 +24,6 @@ import com.oak.dms.storage.exception.StorageObjectNotFoundException;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
-import com.oak.dms.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,9 +68,14 @@ class ImportRecordCreatorTest {
     private final UUID noteFieldId = UUID.randomUUID();
     private final BulkImportWorker.ClaimedBatch batch =
             new BulkImportWorker.ClaimedBatch(UUID.randomUUID(), tenantId, userId, documentTypeId, 3);
-    private final Map<String, ImportField> fields = Map.of(
-            "amount", new ImportField(amountFieldId, "amount", "Amount", "decimal", false, false),
-            "note", new ImportField(noteFieldId, "note", "Note", "text", false, false));
+    private final ImportDefaults.Resolved defaults = new ImportDefaults.Resolved(List.of(
+            new ImportDefaults.AppliedDefault(
+                    new ImportField(amountFieldId, "amount", "Amount", "decimal", false, false, "12.50"),
+                    "12.50", new BigDecimal("12.50")),
+            new ImportDefaults.AppliedDefault(
+                    new ImportField(noteFieldId, "note", "Note", "text", false, false, "hello"),
+                    "hello", "hello")),
+            List.of(), List.of());
     private final StorageLocation location = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
 
     private final DocumentService documentService = mock(DocumentService.class);
@@ -87,8 +90,8 @@ class ImportRecordCreatorTest {
 
     private final ImportRecordCreator creator = new ImportRecordCreator(documentService, ingestionGate,
             documentMetadataRepository, importItemRepository,
-            new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
-            new ImportValueConverter(), new ImportUsers(mock(UserRepository.class)), objectMapper, transactionManager);
+            new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory), objectMapper,
+            transactionManager);
 
     @BeforeEach
     void setUp() {
@@ -106,14 +109,14 @@ class ImportRecordCreatorTest {
     }
 
     @Test
-    void createRecord_cleanTicket_writesMetadataKeyedByFieldIdAndMarksSuccess() {
+    void createRecord_cleanTicket_writesDefaultsKeyedByFieldIdWithSrcImportAndMarksSuccess() {
         ImportItem item = stagedItem();
         stub(item);
         UUID documentId = UUID.randomUUID();
         when(documentService.uploadDocument(eq(documentTypeId), eq("Q3 report"), eq("Q3 report.pdf"), eq(1024L),
                 any())).thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
 
-        creator.createRecord(batch, item.getImportItemId(), fields);
+        creator.createRecord(batch, item.getImportItemId(), defaults);
 
         ArgumentCaptor<DocumentMetadata> saved = ArgumentCaptor.forClass(DocumentMetadata.class);
         verify(documentMetadataRepository).save(saved.capture());
@@ -132,6 +135,37 @@ class ImportRecordCreatorTest {
     }
 
     @Test
+    void createRecord_filenameWithFolderPath_submitsBareNameTitledWithoutExtension() {
+        ImportItem item = stagedItem();
+        item.setFilenameReference("scans\\2026/Q3 report.final.pdf");
+        stub(item);
+        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
+                .thenReturn(ticket(ScanResultStatus.pending, null, null, null));
+
+        creator.createRecord(batch, item.getImportItemId(), defaults);
+
+        verify(documentService).uploadDocument(eq(documentTypeId), eq("Q3 report.final"), eq("Q3 report.final.pdf"),
+                eq(1024L), any());
+    }
+
+    @Test
+    void createRecord_noDefaults_createsTheDocumentWithEmptyMetadata() {
+        ImportItem item = stagedItem();
+        stub(item);
+        UUID documentId = UUID.randomUUID();
+        when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
+                .thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
+
+        creator.createRecord(batch, item.getImportItemId(),
+                new ImportDefaults.Resolved(List.of(), List.of(), List.of()));
+
+        ArgumentCaptor<DocumentMetadata> saved = ArgumentCaptor.forClass(DocumentMetadata.class);
+        verify(documentMetadataRepository).save(saved.capture());
+        assertThat(saved.getValue().getFieldValues()).isEmpty();
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.success);
+    }
+
+    @Test
     void createRecord_gateAccepts_recordsTicketClearsStagingAndDeletesFileAfterCommit() {
         ImportItem item = stagedItem();
         stub(item);
@@ -142,7 +176,7 @@ class ImportRecordCreatorTest {
             return pending;
         });
 
-        creator.createRecord(batch, item.getImportItemId(), fields);
+        creator.createRecord(batch, item.getImportItemId(), defaults);
 
         assertThat(item.getScanResultId()).isEqualTo(pending.scanResultId());
         assertThat(item.getStagedObjectKey()).isNull();
@@ -163,7 +197,7 @@ class ImportRecordCreatorTest {
         IngestionTicketResponse pending = ticket(ScanResultStatus.pending, null, null, null);
         when(documentService.uploadDocument(any(), any(), any(), anyLong(), any())).thenReturn(pending);
 
-        creator.createRecord(batch, item.getImportItemId(), fields);
+        creator.createRecord(batch, item.getImportItemId(), defaults);
 
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.pending);
         assertThat(item.getScanResultId()).isEqualTo(pending.scanResultId());
@@ -187,7 +221,7 @@ class ImportRecordCreatorTest {
             IngestionTicketResponse ticket = ticket(entry.getKey(), null,
                     malware ? "Eicar-Test-Signature" : null, "The file is password-protected");
 
-            creator.handleTicket(batch, item.getImportItemId(), ticket, fields);
+            creator.handleTicket(batch, item.getImportItemId(), ticket, defaults);
 
             assertThat(item.getStatus()).as(entry.getKey().name()).isEqualTo(ImportItemStatus.failed);
             JsonNode errors = objectMapper.readTree(item.getValidationErrors());
@@ -207,7 +241,7 @@ class ImportRecordCreatorTest {
         when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
                 .thenThrow(new FileTooLargeException(100));
 
-        creator.createRecord(batch, item.getImportItemId(), fields);
+        creator.createRecord(batch, item.getImportItemId(), defaults);
 
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
         assertThat(item.getScanResultId()).isNull();
@@ -225,7 +259,7 @@ class ImportRecordCreatorTest {
         when(documentService.uploadDocument(any(), any(), any(), anyLong(), any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "Storage unavailable") { });
 
-        assertThatThrownBy(() -> creator.createRecord(batch, item.getImportItemId(), fields))
+        assertThatThrownBy(() -> creator.createRecord(batch, item.getImportItemId(), defaults))
                 .isInstanceOf(ApiException.class);
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.pending);
         assertThat(item.getScanResultId()).isNull();
@@ -237,7 +271,7 @@ class ImportRecordCreatorTest {
         stub(item);
         when(storage.download(location, "imports/key-1")).thenThrow(new StorageObjectNotFoundException("imports/key-1"));
 
-        creator.createRecord(batch, item.getImportItemId(), fields);
+        creator.createRecord(batch, item.getImportItemId(), defaults);
 
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
         assertThat(objectMapper.readTree(item.getValidationErrors()).get(0).get("code").asText())
@@ -259,9 +293,9 @@ class ImportRecordCreatorTest {
         when(ingestionGate.getTicket(submitted.getScanResultId()))
                 .thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
 
-        creator.createRecord(batch, succeeded.getImportItemId(), fields);
-        creator.createRecord(batch, failed.getImportItemId(), fields);
-        creator.createRecord(batch, submitted.getImportItemId(), fields);
+        creator.createRecord(batch, succeeded.getImportItemId(), defaults);
+        creator.createRecord(batch, failed.getImportItemId(), defaults);
+        creator.createRecord(batch, submitted.getImportItemId(), defaults);
 
         verify(ingestionGate).getTicket(submitted.getScanResultId());
         verifyNoInteractions(documentService);
@@ -294,7 +328,7 @@ class ImportRecordCreatorTest {
                 .thenReturn(Optional.of(existing));
 
         creator.handleTicket(batch, item.getImportItemId(), ticket(ScanResultStatus.clean, documentId, null, null),
-                fields);
+                defaults);
 
         verify(documentMetadataRepository).save(existing);
         assertThat(existing.getFieldValues()).containsOnly(
@@ -313,7 +347,7 @@ class ImportRecordCreatorTest {
         when(importItemRepository.lockPendingForCompletion(item.getImportItemId())).thenReturn(Optional.empty());
 
         creator.handleTicket(batch, item.getImportItemId(),
-                ticket(ScanResultStatus.clean, UUID.randomUUID(), null, null), fields);
+                ticket(ScanResultStatus.clean, UUID.randomUUID(), null, null), defaults);
 
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.pending);
         verify(documentMetadataRepository, never()).save(any());
@@ -337,7 +371,7 @@ class ImportRecordCreatorTest {
                 .importBatchId(batch.importBatchId())
                 .rowNumber(2)
                 .filenameReference("Q3 report.pdf")
-                .rowValues("{\"title\":null,\"fields\":{\"amount\":\"12.50\",\"note\":\"hello\",\"gone\":\"x\"}}")
+                .rowValues("{}")
                 .stagedObjectKey("imports/key-1")
                 .stagedStorageLocationId(location.getStorageLocationId())
                 .stagedSizeBytes(1024L)

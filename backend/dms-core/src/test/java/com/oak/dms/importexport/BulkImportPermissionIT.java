@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
@@ -99,11 +100,10 @@ class BulkImportPermissionIT {
     }
 
     private List<RequestBuilder> batchWritingRequests(User user) {
-        MockMultipartFile template = new MockMultipartFile("template", "template.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new byte[] {1, 2, 3});
         MockMultipartFile file = new MockMultipartFile("file", "doc.pdf", "application/pdf", new byte[] {1, 2, 3});
         return List.of(
-                multipart("/api/v1/bulk-imports").file(template).with(jwtFor(user)),
+                post("/api/v1/bulk-imports").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"documentTypeId\":\"" + UUID.randomUUID() + "\"}").with(jwtFor(user)),
                 multipart("/api/v1/bulk-imports/" + UUID.randomUUID() + "/files").file(file).with(jwtFor(user)),
                 post("/api/v1/bulk-imports/" + UUID.randomUUID() + "/submit").with(jwtFor(user)));
     }

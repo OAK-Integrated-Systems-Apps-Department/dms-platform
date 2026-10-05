@@ -20,10 +20,11 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One manifest row of an {@link ImportBatch}: the raw values as uploaded, the
- * file it refers to, and the row's outcome. {@code filenameReference} is
- * deliberately not unique - a duplicate is reported as a validation failure
- * on the row rather than blocked by the database.
+ * One upload into an {@link ImportBatch} - one file, which becomes one
+ * document - and its outcome. {@code rowNumber} is the upload's place in
+ * the batch. {@code filenameReference} is the uploaded file's name without
+ * any folder path, and deliberately not unique: two files with the same
+ * name are two documents.
  */
 @Entity
 @Table(name = "import_items", uniqueConstraints = {
@@ -53,6 +54,11 @@ public class ImportItem {
     @Column(name = "filename_reference", nullable = false)
     private String filenameReference;
 
+    /**
+     * The template row's raw values, for template-based batches. Items are
+     * now one uploaded file each with no values of their own, so new items
+     * store {@code {}}.
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "row_values", nullable = false, columnDefinition = "jsonb")
     private String rowValues;
@@ -85,9 +91,9 @@ public class ImportItem {
     private UUID scanResultId;
 
     /**
-     * Error code of the last file matched to this row and refused at intake
-     * (see {@code BulkImportServiceImpl.receiveFile}); null if none was, and
-     * cleared once a file is accepted.
+     * Error code the upload was refused with at intake (see
+     * {@code BulkImportServiceImpl.receiveFile}) - the item is then
+     * {@code failed} with FILE_REJECTED; null for an accepted upload.
      */
     @Column(name = "upload_rejection_code", length = 50)
     private String uploadRejectionCode;
@@ -106,10 +112,9 @@ public class ImportItem {
     private String validationErrors;
 
     /**
-     * True for a row that failed the template checks when its batch was
-     * created: it was saved {@code failed} with those problems, never needs
-     * a file, and is left alone by the worker. False for every other row,
-     * including rows that fail later.
+     * True for a row of a template-based batch that failed the template
+     * checks when its batch was created. No longer set - the template flow
+     * was removed - but kept for the rows that have it.
      */
     @Column(name = "skipped_at_preview", nullable = false)
     @Builder.Default

@@ -44,6 +44,7 @@ import java.util.stream.IntStream;
 import static com.oak.dms.importexport.AuditTestSupport.mockAuditService;
 import static com.oak.dms.importexport.AuditTestSupport.recorded;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -73,9 +74,12 @@ class ImportBatchRecoveryJobTest {
     private final AuditService auditService = mockAuditService();
     private final StorageLocation location = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
 
+    private final StagedImportFiles stagedImportFiles =
+            new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory);
     private final ImportBatchRecoveryJob job = new ImportBatchRecoveryJob(importBatchRepository, importItemRepository,
-            new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory), outboxEventPublisher,
-            new ImportBatchFinaliser(importBatchRepository, importItemRepository, auditService, transactionManager),
+            stagedImportFiles, outboxEventPublisher,
+            new ImportBatchFinaliser(importBatchRepository, importItemRepository, stagedImportFiles, auditService,
+                    objectMapper, transactionManager),
             properties, objectMapper, auditService, transactionManager);
 
     @BeforeEach
@@ -279,6 +283,8 @@ class ImportBatchRecoveryJobTest {
         stubLocked(batch, true);
         when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
                 ImportItemStatus.pending)).thenReturn(List.of(unprocessed, noFile));
+        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batch.getImportBatchId()))
+                .thenReturn(List.of(unprocessed));
         stubFinaliserCounts(batch, 3, 2, 0);
 
         assertThat(job.recoverStuck(batch.getImportBatchId(), OffsetDateTime.now().minusHours(2))).isTrue();
@@ -287,10 +293,10 @@ class ImportBatchRecoveryJobTest {
         assertThat(errors(unprocessed)).extracting(ImportRowError::code)
                 .containsExactly("SOME_WARNING", "PROCESSING_ABANDONED");
         assertThat(errors(unprocessed).get(1).message())
-                .isEqualTo("Processing stopped unexpectedly. Try again by resubmitting these rows.");
+                .isEqualTo("Processing stopped unexpectedly. Upload these files again in a new import.");
         assertThat(errors(unprocessed).get(1).severity()).isEqualTo(ImportRowError.ERROR);
-        // Kept for a resubmit of the failed rows, like any data-failed row's.
-        assertThat(unprocessed.getStagedObjectKey()).isEqualTo("imports/t/b/i1");
+        // Finalising deletes it, like any failed row's.
+        assertThat(unprocessed.getStagedObjectKey()).isNull();
         assertThat(noFile.getStatus()).isEqualTo(ImportItemStatus.failed);
         assertThat(errors(noFile)).extracting(ImportRowError::code).containsExactly("PROCESSING_ABANDONED");
         verify(importItemRepository).saveAll(List.of(unprocessed, noFile));
@@ -342,6 +348,27 @@ class ImportBatchRecoveryJobTest {
             assertThat(event.action()).isEqualTo(AuditActionCatalog.BULK_IMPORT_COMPLETED);
             assertThat(event.outcome()).isEqualTo(AuditOutcome.FAILURE);
         });
+    }
+
+    @Test
+    void stuck_creatorDeleted_isNotRepublishedButFailedWithCreatorDeletedAndFinalised() throws Exception {
+        ImportBatch batch = batch(ImportBatchStatus.queued, 0);
+        batch.setCreatedBy(null);
+        ImportItem unprocessed = item(batch, ImportItemStatus.pending, "imports/t/b/i1", null, null);
+        stubLocked(batch, true);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItemStatus.pending)).thenReturn(List.of(unprocessed));
+        stubFinaliserCounts(batch, 0, 1, 0);
+
+        assertThat(job.recoverStuck(batch.getImportBatchId(), OffsetDateTime.now().minusHours(2))).isTrue();
+
+        verify(outboxEventPublisher, never()).publish(any(), any(), any(), any(), any());
+        assertThat(unprocessed.getStatus()).isEqualTo(ImportItemStatus.failed);
+        assertThat(errors(unprocessed)).extracting(ImportRowError::code, ImportRowError::message)
+                .containsExactly(tuple("CREATOR_DELETED", "The user who started this import no longer exists."));
+        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.failed);
+        assertThat(batch.getCompletedAt()).isNotNull();
+        assertThat(batch.getRecoveryAttempts()).isZero();
     }
 
     @Test

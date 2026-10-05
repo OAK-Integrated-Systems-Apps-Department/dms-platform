@@ -9,6 +9,7 @@ import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
+import com.oak.dms.importexport.validation.ImportDefaults;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.importexport.validation.ImportUsers;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -64,19 +66,21 @@ class ImportCompletionSchedulerTest {
             mock(ObjectStorageServiceFactory.class));
 
     private final ImportRecordCreator recordCreator = new ImportRecordCreator(documentService, ingestionGate,
-            documentMetadataRepository, importItemRepository, stagedImportFiles, new ImportValueConverter(),
-            new ImportUsers(mock(UserRepository.class)), new ObjectMapper(), transactionManager);
+            documentMetadataRepository, importItemRepository, stagedImportFiles, new ObjectMapper(),
+            transactionManager);
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, mockAuditService(), transactionManager);
+            importItemRepository, stagedImportFiles, mockAuditService(), new ObjectMapper(), transactionManager);
+    private final ImportDefaults importDefaults = new ImportDefaults(new ImportValueConverter(),
+            new ImportUsers(mock(UserRepository.class)));
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,
-            importSchemaFields, ingestionGate, recordCreator, finaliser);
+            importSchemaFields, importDefaults, ingestionGate, recordCreator, finaliser);
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         when(documentMetadataRepository.findById(any())).thenReturn(Optional.empty());
         when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of(
-                "amount", new ImportField(amountFieldId, "amount", "Amount", "decimal", false, false)));
+                "amount", new ImportField(amountFieldId, "amount", "Amount", "decimal", false, false, "12.50")));
     }
 
     @AfterEach
@@ -140,10 +144,31 @@ class ImportCompletionSchedulerTest {
         assertThatThrownBy(TenantContext::getTenantId).isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void completePendingItems_creatorDeleted_neverBindsANullUserAndFailsTheRestOfTheBatch() {
+        ImportBatch batch = runningBatch();
+        batch.setCreatedBy(null);
+        ImportItem item = submittedItem(batch);
+        stubPending(batch, item);
+
+        scheduler.completePendingItems();
+
+        // No user can fetch the ticket, so the row is left for the scan
+        // module; the batch is handed to finaliseWithoutCreator instead.
+        verifyNoInteractions(ingestionGate, documentService);
+        verify(importItemRepository, never()).lockPendingForCompletion(any());
+        verify(importItemRepository).findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItemStatus.pending);
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.pending);
+        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.running);
+        assertThatThrownBy(TenantContext::getTenantId).isInstanceOf(IllegalStateException.class);
+    }
+
     private void stubPending(ImportBatch batch, ImportItem item) {
         UUID batchId = batch.getImportBatchId();
         when(importItemRepository.findPendingCompletions(any())).thenReturn(List.of(new PendingCompletion(
-                item.getImportItemId(), item.getScanResultId(), batchId, tenantId, userId, documentTypeId, 3)));
+                item.getImportItemId(), item.getScanResultId(), batchId, tenantId, batch.getCreatedBy(),
+                documentTypeId, 3)));
         when(importItemRepository.lockPendingForCompletion(item.getImportItemId())).thenAnswer(invocation ->
                 item.getStatus() == ImportItemStatus.pending ? Optional.of(item) : Optional.empty());
         when(importBatchRepository.lockByImportBatchId(batchId)).thenReturn(Optional.of(batch));
@@ -174,7 +199,7 @@ class ImportCompletionSchedulerTest {
                 .importBatchId(batch.getImportBatchId())
                 .rowNumber(2)
                 .filenameReference("a.pdf")
-                .rowValues("{\"title\":null,\"fields\":{\"amount\":\"12.50\"}}")
+                .rowValues("{}")
                 .scanResultId(UUID.randomUUID())
                 .status(ImportItemStatus.pending)
                 .build();

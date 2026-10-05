@@ -3,6 +3,7 @@ package com.oak.dms.importexport.worker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
@@ -10,10 +11,9 @@ import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.messaging.BulkImportMessagingConfig;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
-import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportDefaults;
 import com.oak.dms.importexport.validation.ImportRowError;
 import com.oak.dms.importexport.validation.ImportRowValidator;
-import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
 import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,17 +34,21 @@ import java.util.UUID;
  * Consumes {@code import_batch.submitted} and processes the batch in two
  * passes:
  * <ol>
- *   <li>validation - every item is checked by {@link ImportRowValidator};
- *       failing rows are marked {@code failed} with their errors, passing
- *       rows stay {@code pending} (with any warnings);</li>
+ *   <li>validation - every item is checked by {@link ImportRowValidator}
+ *       against the batch's defaults (resolved once, by
+ *       {@link ImportDefaults}); failing rows are marked {@code failed}
+ *       with their errors, passing rows stay {@code pending} (with any
+ *       warnings);</li>
  *   <li>record creation - each passing row's file goes through the scan
- *       gate one at a time, and becomes a document with the row's metadata
- *       once clean (see {@link ImportRecordCreator}). Rows whose scan is
- *       still running stay {@code pending} for
+ *       gate one at a time, and becomes a document with the defaults as its
+ *       metadata once clean (see {@link ImportRecordCreator}). Rows whose
+ *       scan is still running stay {@code pending} for
  *       {@link ImportCompletionScheduler}.</li>
  * </ol>
  * The batch is then finalised by {@link ImportBatchFinaliser} if no row is
- * left pending; otherwise the completion job finalises it later.
+ * left pending; otherwise the completion job finalises it later. A batch
+ * whose creator has been deleted ({@code created_by} null) is never run as
+ * nobody: it goes straight to {@link ImportBatchFinaliser#finaliseWithoutCreator}.
  *
  * <p>Work runs outside any web request, the way scanning's background work
  * does: short {@link TransactionTemplate} transactions, the batch row
@@ -56,9 +59,9 @@ import java.util.UUID;
  *
  * <p>Idempotency: a redelivered message for a batch already {@code running}
  * (the previous attempt crashed, or two deliveries raced) processes it
- * again. Rows already {@code success} or {@code failed} (including rows
- * skipped at creation for template errors) are skipped by both passes; rows with
- * a {@code scan_result_id} are not re-validated and have their ticket
+ * again. Rows already {@code success} or {@code failed} (including uploads
+ * rejected at intake) are skipped by both passes; rows with a
+ * {@code scan_result_id} are not re-validated and have their ticket
  * re-checked with {@code IngestionGate#getTicket}; only rows with neither
  * are submitted to the gate. Known limitation: the gate has no idempotency
  * key, so a crash after the gate accepted a file but before its
@@ -69,9 +72,7 @@ import java.util.UUID;
  * few times, then dead-letters it (see {@link BulkImportMessagingConfig}).
  * A gate rejection of a file (too large, type not allowed) only fails its
  * row. A batch whose message ends up on the DLQ is left {@code running},
- * with whatever was done saved; its rows the gate already accepted are
- * still resolved by the completion job, but rows never submitted stay
- * pending and the batch is not finalised.
+ * with whatever was done saved, for {@link ImportBatchRecoveryJob}.
  */
 @Slf4j
 @Component
@@ -82,31 +83,41 @@ public class BulkImportWorker {
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
     private final ImportSchemaFields importSchemaFields;
+    private final ImportDefaults importDefaults;
     private final ImportRowValidator rowValidator;
     private final ImportRecordCreator recordCreator;
     private final ImportBatchFinaliser finaliser;
+    private final ImportExportProperties properties;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
     public BulkImportWorker(ImportBatchRepository importBatchRepository,
                             ImportItemRepository importItemRepository,
                             ImportSchemaFields importSchemaFields,
+                            ImportDefaults importDefaults,
                             ImportRowValidator rowValidator,
                             ImportRecordCreator recordCreator,
                             ImportBatchFinaliser finaliser,
+                            ImportExportProperties properties,
                             ObjectMapper objectMapper,
                             PlatformTransactionManager transactionManager) {
         this.importBatchRepository = importBatchRepository;
         this.importItemRepository = importItemRepository;
         this.importSchemaFields = importSchemaFields;
+        this.importDefaults = importDefaults;
         this.rowValidator = rowValidator;
         this.recordCreator = recordCreator;
         this.finaliser = finaliser;
+        this.properties = properties;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** What processing needs from the claimed batch, read while it was locked. */
+    /**
+     * What processing needs from the claimed batch, read while it was locked.
+     *
+     * @param createdBy null if the batch's creator has been deleted
+     */
     record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
     }
 
@@ -184,25 +195,32 @@ public class BulkImportWorker {
      * finalises the batch, as the batch's creator in the batch's tenant.
      */
     void process(ClaimedBatch batch) {
+        if (batch.createdBy() == null) {
+            // Never bind a null user: the gate records the uploader, and
+            // TenantContext refuses one anyway.
+            log.warn("Creator of bulk import batch {} no longer exists; failing its rows", batch.importBatchId());
+            finaliser.finaliseWithoutCreator(batch.importBatchId());
+            return;
+        }
         TenantContext.set(batch.tenantId(), batch.createdBy());
         try {
-            Map<String, ImportField> fields = importSchemaFields.load(batch.tenantId(), batch.documentTypeId(),
-                    batch.schemaVersion());
-            List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(
-                    batch.importBatchId());
-            // Filenames never change after the batch is created, so the
-            // duplicate check can be worked out once for the whole batch.
-            Map<String, List<Integer>> duplicates = ImportRowValidator.duplicateRows(items);
-            List<UUID> itemIds = items.stream().map(ImportItem::getImportItemId).toList();
+            // Same for every row of the batch, so worked out once.
+            ImportDefaults.Resolved defaults = importDefaults.resolve(
+                    importSchemaFields.load(batch.tenantId(), batch.documentTypeId(), batch.schemaVersion()),
+                    batch.tenantId());
+            List<UUID> itemIds = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.importBatchId())
+                    .stream()
+                    .map(ImportItem::getImportItemId)
+                    .toList();
 
             for (int from = 0; from < itemIds.size(); from += CHUNK_SIZE) {
                 List<UUID> chunk = itemIds.subList(from, Math.min(from + CHUNK_SIZE, itemIds.size()));
-                transactionTemplate.executeWithoutResult(status -> validateChunk(batch, chunk, fields, duplicates));
+                transactionTemplate.executeWithoutResult(status -> validateChunk(batch, chunk, defaults));
             }
 
             // One row at a time, in row order, outside any transaction.
             for (UUID itemId : itemIds) {
-                recordCreator.createRecord(batch, itemId, fields);
+                recordCreator.createRecord(batch, itemId, defaults);
             }
 
             finaliser.finalise(batch.importBatchId());
@@ -211,8 +229,7 @@ public class BulkImportWorker {
         }
     }
 
-    private void validateChunk(ClaimedBatch batch, List<UUID> itemIds, Map<String, ImportField> fields,
-                               Map<String, List<Integer>> duplicates) {
+    private void validateChunk(ClaimedBatch batch, List<UUID> itemIds, ImportDefaults.Resolved defaults) {
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdAndImportItemIdIn(
                 batch.importBatchId(), itemIds);
         OffsetDateTime now = OffsetDateTime.now();
@@ -223,33 +240,22 @@ public class BulkImportWorker {
                 continue;
             }
             if (item.getStatus() == ImportItemStatus.failed) {
-                // Already judged: skipped at creation for template errors
-                // (skippedAtPreview - it keeps those errors rather than
-                // gaining FILE_MISSING), or failed by an earlier attempt.
+                // Already judged: rejected at upload (it keeps its
+                // FILE_REJECTED), or failed by an earlier attempt.
                 continue;
             }
-            List<ImportRowError> errors = rowValidator.validate(item, rowValues(item), fields, duplicates,
-                    batch.documentTypeId(), batch.schemaVersion(), batch.tenantId());
+            List<ImportRowError> errors = rowValidator.validate(item, defaults,
+                    properties.isEnforceMandatoryFields());
             if (ImportRowValidator.hasErrors(errors)) {
                 item.setStatus(ImportItemStatus.failed);
                 item.setValidationErrors(toJson(errors));
             } else {
-                // Converted values aren't kept: record creation reconverts
-                // row_values with the same converter.
                 item.setStatus(ImportItemStatus.pending);
                 item.setValidationErrors(errors.isEmpty() ? null : toJson(errors));
             }
             item.setUpdatedAt(now);
         }
         importItemRepository.saveAll(items);
-    }
-
-    private RowValues rowValues(ImportItem item) {
-        try {
-            return objectMapper.readValue(item.getRowValues(), RowValues.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Unreadable row_values on import item " + item.getImportItemId(), e);
-        }
     }
 
     private String toJson(List<ImportRowError> errors) {

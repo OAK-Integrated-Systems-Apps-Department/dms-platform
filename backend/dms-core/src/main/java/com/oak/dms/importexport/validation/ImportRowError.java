@@ -4,8 +4,8 @@ package com.oak.dms.importexport.validation;
  * One problem found with an import row, as stored in
  * {@code import_items.validation_errors} (a JSON array of these).
  *
- * @param field    the column it's about - {@code file}, {@code filename},
- *                 {@code title}, or a field_key
+ * @param field    what it's about - {@code file}, {@code title}, a field_key,
+ *                 or null
  * @param severity {@code error} fails the row; {@code warning} is only reported
  */
 public record ImportRowError(String field, String code, String message, String severity) {

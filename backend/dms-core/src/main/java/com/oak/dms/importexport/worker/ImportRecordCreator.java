@@ -9,12 +9,10 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
-import com.oak.dms.importexport.validation.ImportField;
+import com.oak.dms.importexport.validation.ImportDefaults;
+import com.oak.dms.importexport.validation.ImportFilenames;
 import com.oak.dms.importexport.validation.ImportRowError;
-import com.oak.dms.importexport.validation.ImportRowValidator.RowValues;
 import com.oak.dms.importexport.validation.ImportTitles;
-import com.oak.dms.importexport.validation.ImportUsers;
-import com.oak.dms.importexport.validation.ImportValueConverter;
 import com.oak.dms.metadata.entity.DocumentMetadata;
 import com.oak.dms.metadata.entity.DocumentMetadata.FieldValue;
 import com.oak.dms.metadata.entity.DocumentMetadataId;
@@ -37,13 +35,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
 
 /**
  * Turns one validated import row into a document: its staged file goes
  * through the malware scan gate ({@link DocumentService#uploadDocument}),
- * and once the gate reports the document created, the row's values are
- * written as the document's metadata and the row is marked {@code success}.
+ * titled after its filename, and once the gate reports the document
+ * created, the batch's defaults (see {@link ImportDefaults}) are written as
+ * the document's metadata, with src {@value #SOURCE}, and the row is marked
+ * {@code success}.
  * Used by {@link BulkImportWorker} straight after validation and by
  * {@link ImportCompletionScheduler} for scans that finish later.
  *
@@ -63,7 +62,6 @@ public class ImportRecordCreator {
     static final String SOURCE = "import";
     static final String SCAN_REJECTED = "SCAN_REJECTED";
     static final String FILE_MISSING = "FILE_MISSING";
-    static final String VALUE_NOT_SAVED = "VALUE_NOT_SAVED";
     private static final String FILE = "file";
     private static final TypeReference<List<ImportRowError>> ERRORS = new TypeReference<>() {
     };
@@ -73,8 +71,6 @@ public class ImportRecordCreator {
     private final DocumentMetadataRepository documentMetadataRepository;
     private final ImportItemRepository importItemRepository;
     private final StagedImportFiles stagedImportFiles;
-    private final ImportValueConverter converter;
-    private final ImportUsers importUsers;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -83,8 +79,6 @@ public class ImportRecordCreator {
                                DocumentMetadataRepository documentMetadataRepository,
                                ImportItemRepository importItemRepository,
                                StagedImportFiles stagedImportFiles,
-                               ImportValueConverter converter,
-                               ImportUsers importUsers,
                                ObjectMapper objectMapper,
                                PlatformTransactionManager transactionManager) {
         this.documentService = documentService;
@@ -92,8 +86,6 @@ public class ImportRecordCreator {
         this.documentMetadataRepository = documentMetadataRepository;
         this.importItemRepository = importItemRepository;
         this.stagedImportFiles = stagedImportFiles;
-        this.converter = converter;
-        this.importUsers = importUsers;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -105,11 +97,11 @@ public class ImportRecordCreator {
      * is submitted. A scan that is still running leaves the row
      * {@code pending} for {@link ImportCompletionScheduler}.
      *
-     * @param fields the batch's schema version, keyed by field_key
+     * @param defaults the batch's defaults - the metadata every document gets
      * @throws RuntimeException anything other than the gate rejecting the
      *                          file - the caller retries the whole batch
      */
-    public void createRecord(BulkImportWorker.ClaimedBatch batch, UUID itemId, Map<String, ImportField> fields) {
+    public void createRecord(BulkImportWorker.ClaimedBatch batch, UUID itemId, ImportDefaults.Resolved defaults) {
         Optional<ImportItem> found = importItemRepository.findById(itemId);
         if (found.isEmpty() || found.get().getStatus() != ImportItemStatus.pending) {
             return;
@@ -127,7 +119,7 @@ public class ImportRecordCreator {
             }
             ticket = submitted.get();
         }
-        handleTicket(batch, itemId, ticket, fields);
+        handleTicket(batch, itemId, ticket, defaults);
     }
 
     /**
@@ -136,14 +128,15 @@ public class ImportRecordCreator {
      * nothing happens.
      */
     public void handleTicket(BulkImportWorker.ClaimedBatch batch, UUID itemId, IngestionTicketResponse ticket,
-                             Map<String, ImportField> fields) {
+                             ImportDefaults.Resolved defaults) {
         transactionTemplate.executeWithoutResult(status -> importItemRepository.lockPendingForCompletion(itemId)
-                .ifPresent(item -> apply(batch, item, ticket, fields)));
+                .ifPresent(item -> apply(batch, item, ticket, defaults)));
     }
 
     /** The gate's ticket, or empty if the gate rejected the file (the row is then failed). */
     private Optional<IngestionTicketResponse> submit(BulkImportWorker.ClaimedBatch batch, ImportItem item) {
-        String title = ImportTitles.resolve(rowValues(item).title(), item.getFilenameReference());
+        String filename = ImportFilenames.strip(item.getFilenameReference());
+        String title = ImportTitles.fromFilename(filename);
 
         InputStream content;
         try {
@@ -158,7 +151,7 @@ public class ImportRecordCreator {
 
         IngestionTicketResponse ticket;
         try {
-            ticket = documentService.uploadDocument(batch.documentTypeId(), title, item.getFilenameReference(),
+            ticket = documentService.uploadDocument(batch.documentTypeId(), title, filename,
                     item.getStagedSizeBytes(), content);
         } catch (ApiException e) {
             if (!isRejection(e)) {
@@ -196,14 +189,14 @@ public class ImportRecordCreator {
     }
 
     private void apply(BulkImportWorker.ClaimedBatch batch, ImportItem item, IngestionTicketResponse ticket,
-                       Map<String, ImportField> fields) {
+                       ImportDefaults.Resolved defaults) {
         switch (ticket.status()) {
             case clean, released_override -> {
                 if (ticket.documentId() == null) {
                     // Not promoted yet - check again on the next pass.
                     return;
                 }
-                complete(batch, item, ticket.documentId(), fields);
+                complete(batch, item, ticket.documentId(), defaults);
             }
             case pending -> {
                 // Still scanning (or waiting to retry) - the completion job
@@ -219,35 +212,17 @@ public class ImportRecordCreator {
     }
 
     private void complete(BulkImportWorker.ClaimedBatch batch, ImportItem item, UUID documentId,
-                          Map<String, ImportField> fields) {
-        Function<String, Optional<UUID>> activeUserByEmail = importUsers.activeUserByEmail(batch.tenantId());
+                          ImportDefaults.Resolved defaults) {
+        // Defaults that didn't convert were already reported on the row
+        // (DEFAULT_VALUE_INVALID) when it was validated.
         Map<String, FieldValue> values = new LinkedHashMap<>();
-        List<ImportRowError> notSaved = new ArrayList<>();
-        RowValues row = rowValues(item);
-        Map<String, String> cells = row.fields() != null ? row.fields() : Map.of();
-        for (Map.Entry<String, String> cell : cells.entrySet()) {
-            ImportField field = fields.get(cell.getKey());
-            if (field == null) {
-                continue;
-            }
-            ImportValueConverter.Result result = converter.convert(field, cell.getValue(), activeUserByEmail);
-            if (result.error() != null) {
-                // Passed validation but not now (e.g. the user was since
-                // deactivated). The document exists already, so keep it and
-                // say which value was left out.
-                notSaved.add(new ImportRowError(field.fieldKey(), VALUE_NOT_SAVED, result.error().message()
-                        + " - the document was created without this value", ImportRowError.WARNING));
-            } else if (!result.isAbsent()) {
-                values.put(field.fieldId().toString(), new FieldValue(result.value(), SOURCE, null));
-            }
+        for (ImportDefaults.AppliedDefault applied : defaults.applied()) {
+            values.put(applied.field().fieldId().toString(), new FieldValue(applied.value(), SOURCE, null));
         }
         writeMetadata(batch, documentId, values);
 
         item.setStatus(ImportItemStatus.success);
         item.setDocumentId(documentId);
-        if (!notSaved.isEmpty()) {
-            item.setValidationErrors(appendErrors(item, notSaved));
-        }
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
     }
@@ -307,14 +282,6 @@ public class ImportRecordCreator {
             return objectMapper.writeValueAsString(errors);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Unreadable validation_errors on import item " + item.getImportItemId(), e);
-        }
-    }
-
-    private RowValues rowValues(ImportItem item) {
-        try {
-            return objectMapper.readValue(item.getRowValues(), RowValues.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Unreadable row_values on import item " + item.getImportItemId(), e);
         }
     }
 

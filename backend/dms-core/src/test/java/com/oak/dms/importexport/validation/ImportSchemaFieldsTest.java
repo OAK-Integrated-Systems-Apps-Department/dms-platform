@@ -47,11 +47,33 @@ class ImportSchemaFieldsTest {
 
         assertThat(fields.keySet()).containsExactly("amount", "note", "owner");
         assertThat(fields.get("amount"))
-                .isEqualTo(new ImportField(amount.getFieldId(), "amount", "Amount", "decimal", true, false));
+                .isEqualTo(new ImportField(amount.getFieldId(), "amount", "Amount", "decimal", true, false, null));
         assertThat(fields.get("note"))
-                .isEqualTo(new ImportField(note.getFieldId(), "note", "Note", "text", false, true));
+                .isEqualTo(new ImportField(note.getFieldId(), "note", "Note", "text", false, true, null));
         assertThat(fields.get("owner"))
-                .isEqualTo(new ImportField(owner.getFieldId(), "owner", "Owner", "user_ref", false, false));
+                .isEqualTo(new ImportField(owner.getFieldId(), "owner", "Owner", "user_ref", false, false, null));
+    }
+
+    @Test
+    void load_defaultValue_versionOverrideWinsOverFieldDefault() {
+        MetadataField region = field("region", "Region", "text");
+        region.setDefaultValue("EMEA");
+        MetadataField status = field("status", "Status", "text");
+        status.setDefaultValue("Draft");
+        MetadataField note = field("note", "Note", "text");
+        when(schemaRepository.findByDocumentTypeIdAndTenantIdAndSchemaVersion(DOCUMENT_TYPE_ID, TENANT_ID, 1))
+                .thenReturn(Optional.of(schema(1,
+                        mapping(region, false, false, 10, null),
+                        mapping(status, true, false, 20, "Final"),
+                        mapping(note, false, false, 30, null))));
+        when(fieldRepository.findAllByFieldIdInAndTenantIdAndDeletedFalse(anyList(), eq(TENANT_ID)))
+                .thenReturn(List.of(region, status, note));
+
+        Map<String, ImportField> fields = schemaFields.load(TENANT_ID, DOCUMENT_TYPE_ID, 1);
+
+        assertThat(fields.get("region").defaultValue()).isEqualTo("EMEA");
+        assertThat(fields.get("status").defaultValue()).isEqualTo("Final");
+        assertThat(fields.get("note").defaultValue()).isNull();
     }
 
     @Test
@@ -75,8 +97,13 @@ class ImportSchemaFieldsTest {
     }
 
     private static FieldMapping mapping(MetadataField field, boolean mandatory, boolean hidden, int displayOrder) {
+        return mapping(field, mandatory, hidden, displayOrder, null);
+    }
+
+    private static FieldMapping mapping(MetadataField field, boolean mandatory, boolean hidden, int displayOrder,
+                                        String defaultValueOverride) {
         return new FieldMapping(UUID.randomUUID(), field.getFieldId(), mandatory, hidden, false, displayOrder, null,
-                null);
+                defaultValueOverride);
     }
 
     private static MetadataField field(String key, String label, String dataType) {

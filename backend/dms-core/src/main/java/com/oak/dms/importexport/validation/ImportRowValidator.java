@@ -1,143 +1,77 @@
 package com.oak.dms.importexport.validation;
 
 import com.oak.dms.importexport.entity.ImportItem;
-import com.oak.dms.metadata.dto.ValidationError;
-import com.oak.dms.metadata.service.MetadataValidationService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
- * Checks one bulk import row before any record is created: that its file
- * arrived (or why it was refused at upload), that its filename is present
- * and unique in the batch, that its title fits, that every cell converts to
- * its field's data type, and then
- * the document type's own metadata rules (mandatory fields, options,
- * per-field validations) at the batch's schema version.
+ * Checks one bulk import item before its document is created. Each item is
+ * one uploaded file and its metadata is the document type's defaults (see
+ * {@link ImportDefaults}), so there is little left to check: that its file
+ * was accepted at upload, that the title taken from its filename fits, and
+ * what the defaults mean for it.
+ * <ul>
+ *   <li>A default that didn't convert: a {@code DEFAULT_VALUE_INVALID}
+ *       warning; the field is left empty.</li>
+ *   <li>Mandatory fields with no usable default: with
+ *       {@code enforce-mandatory-fields} off, one
+ *       {@value #MANDATORY_FIELD_DEFERRED} warning naming them, so documents
+ *       that need backfilling can be found later; with it on, a
+ *       {@value #MANDATORY_FIELD_MISSING} error each. Batch creation
+ *       already refuses such a type when enforcing; this catches a default
+ *       that changed after the batch was created.</li>
+ * </ul>
  *
- * <p>Deterministic for a given row, batch and schema, so re-validating an
- * item (a redelivered batch) gives the same result.
+ * <p>Deterministic for a given item and defaults, so re-validating an item
+ * (a redelivered batch) gives the same result.
  */
 @Component
-@RequiredArgsConstructor
 public class ImportRowValidator {
 
     static final String FILE = "file";
-    static final String FILENAME = "filename";
     static final String TITLE = "title";
-
-    private final ImportValueConverter converter;
-    private final MetadataValidationService metadataValidationService;
-    private final ImportUsers importUsers;
-
-    /** An item's {@code row_values} JSON: the raw title and field cells, keyed by field_key. */
-    public record RowValues(String title, Map<String, String> fields) {
-    }
+    static final String MANDATORY_FIELD_DEFERRED = "MANDATORY_FIELD_DEFERRED";
+    static final String MANDATORY_FIELD_MISSING = "MANDATORY_FIELD_MISSING";
 
     /**
-     * Normalised filename (trimmed, lower-cased) to the row numbers using
-     * it, for every filename that appears on more than one row. Blank
-     * filenames are left out - those rows fail as missing instead.
-     */
-    public static Map<String, List<Integer>> duplicateRows(List<ImportItem> items) {
-        Map<String, List<Integer>> rowsByName = new LinkedHashMap<>();
-        for (ImportItem item : items) {
-            String name = normalise(item.getFilenameReference());
-            if (name != null) {
-                rowsByName.computeIfAbsent(name, k -> new ArrayList<>()).add(item.getRowNumber());
-            }
-        }
-        rowsByName.values().removeIf(rows -> rows.size() < 2);
-        rowsByName.values().forEach(rows -> rows.sort(Integer::compare));
-        return rowsByName;
-    }
-
-    /**
-     * @param fields     the batch's schema version, keyed by field_key (see {@link ImportSchemaFields})
-     * @param duplicates see {@link #duplicateRows}, computed once over the whole batch
-     * @return every problem found, errors and warnings; the row fails if
+     * @param defaults         the batch's defaults, resolved once for the batch
+     * @param enforceMandatory {@code dms.import-export.enforce-mandatory-fields}
+     * @return every problem found, errors and warnings; the item fails if
      *         {@link #hasErrors} is true for it
      */
-    public List<ImportRowError> validate(ImportItem item, RowValues values, Map<String, ImportField> fields,
-                                         Map<String, List<Integer>> duplicates, UUID documentTypeId,
-                                         int schemaVersion, UUID tenantId) {
+    public List<ImportRowError> validate(ImportItem item, ImportDefaults.Resolved defaults,
+                                         boolean enforceMandatory) {
         List<ImportRowError> errors = new ArrayList<>();
         if (item.getStagedObjectKey() == null) {
-            // A file that was matched to this row but refused at intake keeps
-            // its reason on the row; say that rather than "no file".
+            // A refused upload keeps its reason on the item; say that rather
+            // than "no file".
             errors.add(item.getUploadRejectionMessage() != null
                     ? ImportRowError.error(FILE, "FILE_REJECTED", item.getUploadRejectionMessage())
-                    : ImportRowError.error(FILE, "FILE_MISSING", "No file was uploaded for this row"));
-        }
-        errors.addAll(validateWithoutFile(item, values, fields, duplicates, documentTypeId, schemaVersion,
-                tenantId));
-        return errors;
-    }
-
-    /**
-     * Every check {@link #validate} runs except the file-present one - for
-     * a template checked before any file is uploaded (the step 2 preview,
-     * and createBatch's own re-check). Same parameters and result as
-     * {@link #validate}.
-     */
-    public List<ImportRowError> validateWithoutFile(ImportItem item, RowValues values,
-                                                    Map<String, ImportField> fields,
-                                                    Map<String, List<Integer>> duplicates, UUID documentTypeId,
-                                                    int schemaVersion, UUID tenantId) {
-        List<ImportRowError> errors = new ArrayList<>();
-
-        String filename = item.getFilenameReference();
-        String normalisedName = normalise(filename);
-        if (normalisedName == null) {
-            errors.add(ImportRowError.error(FILENAME, "FILENAME_MISSING", "Enter the file name for this row"));
-        } else if (duplicates.containsKey(normalisedName)) {
-            errors.add(ImportRowError.error(FILENAME, "DUPLICATE_FILENAME", "'" + filename.trim() + "' appears on rows "
-                    + joinRows(duplicates.get(normalisedName)) + " - each file needs a unique name"));
+                    : ImportRowError.error(FILE, "FILE_MISSING", "The uploaded file could not be found"));
         }
 
-        String title = ImportTitles.resolve(values.title(), filename);
+        String title = ImportTitles.fromFilename(item.getFilenameReference());
         if (title != null && title.length() > ImportTitles.MAX_LENGTH) {
-            errors.add(ImportRowError.error(TITLE, "TITLE_TOO_LONG", "Title is " + title.length()
-                    + " characters long - it can be at most " + ImportTitles.MAX_LENGTH));
+            errors.add(ImportRowError.error(TITLE, "TITLE_TOO_LONG", "The title taken from the file name is "
+                    + title.length() + " characters long - it can be at most " + ImportTitles.MAX_LENGTH
+                    + ". Rename the file and upload it again."));
         }
 
-        Function<String, Optional<UUID>> activeUserByEmail = importUsers.activeUserByEmail(tenantId);
+        errors.addAll(defaults.invalid());
 
-        Map<String, Object> converted = new LinkedHashMap<>();
-        Set<String> unconvertible = new HashSet<>();
-        Map<String, String> cells = values.fields() != null ? values.fields() : Map.of();
-        for (Map.Entry<String, String> cell : cells.entrySet()) {
-            ImportField field = fields.get(cell.getKey());
-            if (field == null) {
-                // Not in this schema version - nothing to store it against.
-                continue;
-            }
-            ImportValueConverter.Result result = converter.convert(field, cell.getValue(), activeUserByEmail);
-            if (result.error() != null) {
-                errors.add(result.error());
-                unconvertible.add(field.fieldKey());
-            } else if (!result.isAbsent()) {
-                converted.put(field.fieldKey(), result.value());
-            }
-        }
-
-        // A field that didn't convert is absent from `converted`, so the
-        // validator would also call it missing (if mandatory) - one error
-        // per field is enough, and the conversion one says what's wrong.
-        for (ValidationError error : metadataValidationService.validate(documentTypeId, schemaVersion, converted)) {
-            if (!unconvertible.contains(error.fieldKey())) {
-                errors.add(new ImportRowError(error.fieldKey(), error.errorCode(), error.message(), error.severity()));
+        List<ImportField> missing = defaults.missingMandatory();
+        if (!missing.isEmpty()) {
+            if (enforceMandatory) {
+                for (ImportField field : missing) {
+                    errors.add(ImportRowError.error(field.fieldKey(), MANDATORY_FIELD_MISSING,
+                            field.label() + " is required and has no usable default value"));
+                }
+            } else {
+                errors.add(new ImportRowError(null, MANDATORY_FIELD_DEFERRED,
+                        "Required fields left empty, to be filled in later: " + ImportDefaults.labels(missing),
+                        ImportRowError.WARNING));
             }
         }
         return errors;
@@ -145,22 +79,5 @@ public class ImportRowValidator {
 
     public static boolean hasErrors(List<ImportRowError> errors) {
         return errors.stream().anyMatch(e -> ImportRowError.ERROR.equals(e.severity()));
-    }
-
-    private static String normalise(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return null;
-        }
-        return filename.trim().toLowerCase(Locale.ROOT);
-    }
-
-    /** "3 and 7", "3, 5 and 7". */
-    private static String joinRows(List<Integer> rows) {
-        List<String> numbers = rows.stream().map(String::valueOf).toList();
-        if (numbers.size() == 1) {
-            return numbers.get(0);
-        }
-        return numbers.subList(0, numbers.size() - 1).stream().collect(Collectors.joining(", "))
-                + " and " + numbers.get(numbers.size() - 1);
     }
 }

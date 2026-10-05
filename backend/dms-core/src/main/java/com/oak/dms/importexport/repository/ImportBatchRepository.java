@@ -22,11 +22,9 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
 
     /**
      * Row-locked lookup used while a file is staged or a batch is
-     * submitted, so concurrent requests against the same batch can't both
-     * claim the same item or both pass the batch-size check (and a cancel
-     * can't race an upload or a submit). A resubmit takes it on the
-     * ORIGINAL batch while it claims that batch's kept files, so two
-     * resubmits (or a resubmit and the purge job) can't both take one.
+     * submitted, so concurrent uploads into the same batch can't take the
+     * same row number or both pass the batch-size and file-count checks
+     * (and a cancel can't race an upload or a submit).
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ImportBatch b where b.importBatchId = :importBatchId and b.tenantId = :tenantId"
@@ -65,8 +63,7 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
 
     /**
      * Row-locks a batch for {@code RetainedImportFilePurger} - empty if
-     * another instance of the job, or a resubmit claiming its files, holds
-     * it right now ({@code SKIP LOCKED}); the job tries again next pass.
+     * another instance of the job, or anything else, holds it right now ({@code SKIP LOCKED}); the job tries again next pass.
      * Deliberately ignores {@code is_deleted}: a deleted batch's files
      * still have to go.
      */

@@ -50,7 +50,9 @@ import java.util.function.Predicate;
  *       window then restarts. If
  *       it is stuck again, the job gives up: rows still pending without a
  *       scan ticket fail with {@value #PROCESSING_ABANDONED}, and the batch
- *       is finalised the normal way. Rows waiting on a ticket are left for
+ *       is finalised the normal way. A stuck batch whose creator has been
+ *       deleted is not re-published (it couldn't run as nobody): it goes
+ *       straight to {@link ImportBatchFinaliser#finaliseWithoutCreator}. Rows waiting on a ticket are left for
  *       {@link ImportCompletionScheduler} - the scan module still creates
  *       their document on a clean verdict - so a batch with any such row
  *       stays running until they resolve.</li>
@@ -76,7 +78,7 @@ public class ImportBatchRecoveryJob {
     static final int CHUNK_SIZE = 50;
     static final String PROCESSING_ABANDONED = "PROCESSING_ABANDONED";
     static final String PROCESSING_ABANDONED_MESSAGE =
-            "Processing stopped unexpectedly. Try again by resubmitting these rows.";
+            "Processing stopped unexpectedly. Upload these files again in a new import.";
     private static final List<ImportBatchStatus> STUCK_STATUSES =
             List.of(ImportBatchStatus.queued, ImportBatchStatus.running);
 
@@ -181,27 +183,36 @@ public class ImportBatchRecoveryJob {
         return Boolean.TRUE.equals(expired);
     }
 
+    /** What {@link #recoverStuck} did with a batch, inside its transaction. */
+    private enum StuckOutcome { REPUBLISHED, GAVE_UP, CREATOR_DELETED }
+
     /** @return whether the batch was acted on (re-published, or given up on) */
     boolean recoverStuck(UUID batchId, OffsetDateTime cutoff) {
-        Boolean gaveUp = transactionTemplate.execute(status -> {
+        StuckOutcome outcome = transactionTemplate.execute(status -> {
             Optional<ImportBatch> locked = lockIfInactive(batchId, STUCK_STATUSES, cutoff);
             if (locked.isEmpty()) {
                 return null;
             }
             ImportBatch batch = locked.get();
+            if (batch.getCreatedBy() == null) {
+                log.info("Stuck bulk import batch {} has no creator any more; failing its rows", batchId);
+                return StuckOutcome.CREATOR_DELETED;
+            }
             if (batch.getRecoveryAttempts() == 0) {
                 republish(batch);
-                return false;
+                return StuckOutcome.REPUBLISHED;
             }
             giveUp(batch);
-            return true;
+            return StuckOutcome.GAVE_UP;
         });
-        if (Boolean.TRUE.equals(gaveUp)) {
-            // After commit, as the completion job does; it holds off while
-            // rows still wait on a scan ticket.
+        // After commit, as the completion job does; finalising holds off
+        // while rows still wait on a scan ticket.
+        if (outcome == StuckOutcome.GAVE_UP) {
             finaliser.finalise(batchId);
+        } else if (outcome == StuckOutcome.CREATOR_DELETED) {
+            finaliser.finaliseWithoutCreator(batchId);
         }
-        return gaveUp != null;
+        return outcome != null;
     }
 
     private void republish(ImportBatch batch) {
@@ -240,8 +251,7 @@ public class ImportBatchRecoveryJob {
                 // verdict - left for the completion job.
                 continue;
             }
-            // Its staged file (if any) is kept like any failed row's, so a
-            // resubmit of the failed rows can reuse it.
+            // Its staged file (if any) is deleted when the batch is finalised.
             item.setStatus(ImportItemStatus.failed);
             item.setValidationErrors(ImportRecordCreator.appendErrors(objectMapper, item, abandoned));
             item.setUpdatedAt(now);

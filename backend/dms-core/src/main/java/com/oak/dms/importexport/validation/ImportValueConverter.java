@@ -16,25 +16,22 @@ import java.util.UUID;
 import java.util.function.Function;
 
 /**
- * Converts one raw template cell (always a string - see
- * {@code ImportTemplateWorkbook#cellValue}) to the value stored for its
- * field's data type, in the shapes {@code DocumentMetadata.FieldValue}
- * documents: strings, {@link Long} whole numbers, {@link BigDecimal}
- * decimals, {@link Boolean}s, ISO-8601 strings for dates and date-times,
- * and a list of strings for multi-select.
+ * Converts one raw value - a field's configured default, always a string
+ * (see {@link ImportDefaults}) - to the value stored for its field's data
+ * type, in the shapes {@code DocumentMetadata.FieldValue} documents:
+ * strings, {@link Long} whole numbers, {@link BigDecimal} decimals,
+ * {@link Boolean}s, ISO-8601 strings for dates and date-times, and a list
+ * of strings for multi-select.
  *
  * <p>Pure apart from the user lookup it is handed, so it can be unit tested
- * on its own; row validation and record creation both use it, which is why
- * converted values are never stored - record creation reconverts the same
- * raw cells.
+ * on its own.
  */
 @Component
 public class ImportValueConverter {
 
     /**
-     * The outcome for one cell: a converted value, a conversion error, or
-     * neither when the cell is blank (the field is then absent, and only
-     * the mandatory-field check can object).
+     * The outcome for one value: a converted value, a conversion error, or
+     * neither when the value is blank (the field is then absent).
      */
     public record Result(Object value, ImportRowError error) {
 

@@ -24,13 +24,7 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
 
     List<ImportItem> findAllByImportBatchIdAndStagedObjectKeyIsNotNull(UUID importBatchId);
 
-    /** A finished batch's kept files: its failed rows that still have a staged file, in row order. */
-    List<ImportItem> findAllByImportBatchIdAndStatusAndStagedObjectKeyIsNotNullOrderByRowNumberAsc(
-            UUID importBatchId, ImportItem.ImportItemStatus status);
-
     long countByImportBatchIdAndStatus(UUID importBatchId, ImportItem.ImportItemStatus status);
-
-    long countByImportBatchIdAndSkippedAtPreviewTrue(UUID importBatchId);
 
     /**
      * Row-locks an item whose file the scan gate has accepted and which is

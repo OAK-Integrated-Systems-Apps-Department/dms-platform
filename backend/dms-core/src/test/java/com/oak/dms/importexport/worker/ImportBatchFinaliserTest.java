@@ -1,5 +1,7 @@
 package com.oak.dms.importexport.worker;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditActorType;
@@ -13,12 +15,18 @@ import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.storage.StagedImportFiles;
+import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.repository.StorageLocationRepository;
+import com.oak.dms.storage.service.ObjectStorageService;
+import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
@@ -30,6 +38,7 @@ import static com.oak.dms.importexport.AuditTestSupport.mockAuditService;
 import static com.oak.dms.importexport.AuditTestSupport.recorded;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -42,13 +51,22 @@ class ImportBatchFinaliserTest {
     private final ImportItemRepository importItemRepository = mock(ImportItemRepository.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final AuditService auditService = mockAuditService();
+    private final StorageLocationRepository storageLocationRepository = mock(StorageLocationRepository.class);
+    private final ObjectStorageServiceFactory objectStorageServiceFactory = mock(ObjectStorageServiceFactory.class);
+    private final ObjectStorageService storage = mock(ObjectStorageService.class);
+    private final StorageLocation location = StorageLocation.builder().storageLocationId(UUID.randomUUID()).build();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
-            importItemRepository, auditService, transactionManager);
+            importItemRepository, new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
+            auditService, objectMapper, transactionManager);
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        when(storageLocationRepository.findByStorageLocationIdAndDeletedFalse(location.getStorageLocationId()))
+                .thenReturn(Optional.of(location));
+        when(objectStorageServiceFactory.resolve(location)).thenReturn(storage);
         TransactionSynchronizationManager.initSynchronization();
     }
 
@@ -98,10 +116,11 @@ class ImportBatchFinaliserTest {
     }
 
     @Test
-    void finalise_rowsSkippedAtPreview_countAsFailed() {
+    void finalise_uploadsRejectedAtIntake_countAsFailed() {
         ImportBatch batch = runningBatch();
         ImportItem created = ImportItem.builder().status(ImportItemStatus.success).build();
-        ImportItem skipped = ImportItem.builder().status(ImportItemStatus.failed).skippedAtPreview(true).build();
+        ImportItem skipped = ImportItem.builder().status(ImportItemStatus.failed)
+                .uploadRejectionCode("FILE_TYPE_NOT_ALLOWED").build();
         ImportItem failedLater = ImportItem.builder().status(ImportItemStatus.failed).build();
         List<ImportItem> items = List.of(created, skipped, failedLater);
         when(importBatchRepository.lockByImportBatchId(batch.getImportBatchId())).thenReturn(Optional.of(batch));
@@ -114,16 +133,6 @@ class ImportBatchFinaliserTest {
 
         assertThat(batch.getSuccessCount()).isEqualTo(1);
         assertThat(batch.getFailureCount()).isEqualTo(2);
-    }
-
-    @Test
-    void finalise_onlyRowsSkippedAtPreviewFailed_stillCompletesWithErrors() {
-        ImportBatch batch = runningBatch();
-        // 2 created, 1 skipped at preview (failed) - nothing left pending.
-        stubCounts(batch, 2, 1, 0);
-
-        assertThat(finaliser.finalise(batch.getImportBatchId())).contains(ImportBatchStatus.completed_with_errors);
-        assertThat(batch.getFailureCount()).isEqualTo(1);
     }
 
     @Test
@@ -224,17 +233,114 @@ class ImportBatchFinaliserTest {
     }
 
     @Test
-    void finalise_keepsStagedFilesForResubmit() {
+    void finalise_deletesStagedFilesStillLeftAfterCommit() {
         ImportBatch batch = runningBatch();
         stubCounts(batch, 1, 1, 0);
+        ImportItem failedOnData = stagedItem(batch, "imports/key-1");
+        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batch.getImportBatchId()))
+                .thenReturn(List.of(failedOnData));
 
         assertThat(finaliser.finalise(batch.getImportBatchId())).contains(ImportBatchStatus.completed_with_errors);
 
-        // Rows that failed on their data keep their staged file - the purge
-        // job removes it once the retention window has passed.
+        assertThat(failedOnData.getStagedObjectKey()).isNull();
+        assertThat(failedOnData.getStagedStorageLocationId()).isNull();
+        verify(importItemRepository).saveAll(List.of(failedOnData));
+        verify(storage, never()).delete(any(), anyString());
+
+        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+
+        verify(storage).delete(location, "imports/key-1");
+    }
+
+    @Test
+    void finalise_rowsStillPending_deletesNothing() {
+        ImportBatch batch = runningBatch();
+        stubCounts(batch, 1, 0, 1);
+
+        finaliser.finalise(batch.getImportBatchId());
+
         verify(importItemRepository, never()).findAllByImportBatchIdAndStagedObjectKeyIsNotNull(any());
-        verify(importItemRepository, never()).saveAll(any());
         assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+    }
+
+    @Test
+    void finaliseWithoutCreator_failsUnsubmittedRowsWithCreatorDeletedAndFinalises() throws Exception {
+        ImportBatch batch = runningBatch();
+        batch.setStatus(ImportBatchStatus.queued);
+        batch.setCreatedBy(null);
+        ImportItem unsubmitted = stagedItem(batch, "imports/key-1");
+        ImportItem waitingOnScan = stagedItem(batch, null);
+        waitingOnScan.setScanResultId(UUID.randomUUID());
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItemStatus.pending)).thenReturn(List.of(unsubmitted, waitingOnScan));
+        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batch.getImportBatchId()))
+                .thenReturn(List.of(unsubmitted));
+        stubCounts(batch, 0, 1, 1);
+
+        assertThat(finaliser.finaliseWithoutCreator(batch.getImportBatchId())).isEmpty();
+
+        assertThat(unsubmitted.getStatus()).isEqualTo(ImportItemStatus.failed);
+        JsonNode error = objectMapper.readTree(unsubmitted.getValidationErrors()).get(0);
+        assertThat(error.get("code").asText()).isEqualTo("CREATOR_DELETED");
+        assertThat(error.get("message").asText()).isEqualTo("The user who started this import no longer exists.");
+        assertThat(error.get("severity").asText()).isEqualTo("error");
+        // Left for the completion job: the scan module still decides it.
+        assertThat(waitingOnScan.getStatus()).isEqualTo(ImportItemStatus.pending);
+        // Never claimed, so moved to running to be finalised; still pending, so not final yet.
+        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.running);
+        assertThat(batch.getStartedAt()).isNotNull();
+    }
+
+    @Test
+    void finaliseWithoutCreator_nothingLeftPending_finalisesAndDeletesStagedFiles() {
+        ImportBatch batch = runningBatch();
+        batch.setCreatedBy(null);
+        ImportItem unsubmitted = stagedItem(batch, "imports/key-1");
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItemStatus.pending)).thenReturn(List.of(unsubmitted));
+        when(importItemRepository.findAllByImportBatchIdAndStagedObjectKeyIsNotNull(batch.getImportBatchId()))
+                .thenReturn(List.of(unsubmitted));
+        stubCounts(batch, 0, 1, 0);
+
+        assertThat(finaliser.finaliseWithoutCreator(batch.getImportBatchId())).contains(ImportBatchStatus.failed);
+
+        assertThat(unsubmitted.getStagedObjectKey()).isNull();
+        assertThat(onlyCompletedEvent(batch).newValue()).asInstanceOf(InstanceOfAssertFactories.MAP)
+                .containsEntry("initiatedBy", null);
+    }
+
+    @Test
+    void finaliseWithoutCreator_creatorStillThereOrBatchFinished_isLeftAlone() {
+        ImportBatch withCreator = runningBatch();
+        when(importBatchRepository.lockByImportBatchId(withCreator.getImportBatchId()))
+                .thenReturn(Optional.of(withCreator));
+        ImportBatch cancelled = runningBatch();
+        cancelled.setCreatedBy(null);
+        cancelled.setStatus(ImportBatchStatus.cancelled);
+        when(importBatchRepository.lockByImportBatchId(cancelled.getImportBatchId()))
+                .thenReturn(Optional.of(cancelled));
+
+        assertThat(finaliser.finaliseWithoutCreator(withCreator.getImportBatchId())).isEmpty();
+        assertThat(finaliser.finaliseWithoutCreator(cancelled.getImportBatchId())).isEmpty();
+
+        verify(importBatchRepository, never()).save(any());
+        verify(importItemRepository, never()).findAllByImportBatchIdAndStatusOrderByRowNumberAsc(any(), any());
+        assertThat(recorded(auditService)).isEmpty();
+    }
+
+    private ImportItem stagedItem(ImportBatch batch, String stagedObjectKey) {
+        return ImportItem.builder()
+                .importItemId(UUID.randomUUID())
+                .tenantId(batch.getTenantId())
+                .importBatchId(batch.getImportBatchId())
+                .rowNumber(1)
+                .filenameReference("a.pdf")
+                .rowValues("{}")
+                .stagedObjectKey(stagedObjectKey)
+                .stagedStorageLocationId(stagedObjectKey != null ? location.getStorageLocationId() : null)
+                .stagedSizeBytes(stagedObjectKey != null ? 10L : null)
+                .status(ImportItemStatus.pending)
+                .build();
     }
 
     private AuditEventBuilder onlyCompletedEvent(ImportBatch batch) {

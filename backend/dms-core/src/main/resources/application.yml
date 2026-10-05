@@ -223,7 +223,10 @@ dms:
     max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
     max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
     max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
-    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
+    # false: mandatory fields with no usable default are left empty, with a
+    # MANDATORY_FIELD_DEFERRED warning on each document's row; true: an
+    # import into such a type can't be started.
+    enforce-mandatory-fields: ${IMPORT_ENFORCE_MANDATORY_FIELDS:false}
     # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
     worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
   ingestion:

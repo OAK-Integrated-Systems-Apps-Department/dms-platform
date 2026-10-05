@@ -72,8 +72,9 @@ public class ImportBatch {
     private OffsetDateTime completedAt;
 
     /**
-     * The finished import this batch resubmits the failed rows of (from its
-     * failed-rows template); null for a normal import.
+     * The finished import this batch resubmitted the failed rows of. No
+     * longer set - resubmit was removed with the template flow - but kept
+     * for the batches that have it.
      */
     @Column(name = "resubmit_of_batch_id")
     private UUID resubmitOfBatchId;

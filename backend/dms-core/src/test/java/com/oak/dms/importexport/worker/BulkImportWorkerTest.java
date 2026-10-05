@@ -1,12 +1,14 @@
 package com.oak.dms.importexport.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.entity.ImportBatch;
 import com.oak.dms.importexport.entity.ImportBatch.ImportBatchStatus;
 import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
 import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
+import com.oak.dms.importexport.validation.ImportDefaults;
 import com.oak.dms.importexport.validation.ImportField;
 import com.oak.dms.importexport.validation.ImportRowError;
 import com.oak.dms.importexport.validation.ImportRowValidator;
@@ -35,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -55,14 +57,18 @@ class BulkImportWorkerTest {
     private final ImportBatchRepository importBatchRepository = mock(ImportBatchRepository.class);
     private final ImportItemRepository importItemRepository = mock(ImportItemRepository.class);
     private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
+    private final ImportDefaults importDefaults = mock(ImportDefaults.class);
     private final ImportRowValidator rowValidator = mock(ImportRowValidator.class);
+    private final ImportExportProperties properties = new ImportExportProperties();
+    private final ImportDefaults.Resolved resolved = new ImportDefaults.Resolved(List.of(), List.of(), List.of());
     private final ImportRecordCreator recordCreator = mock(ImportRecordCreator.class);
     private final ImportBatchFinaliser finaliser = mock(ImportBatchFinaliser.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final BulkImportWorker worker = new BulkImportWorker(importBatchRepository, importItemRepository,
-            importSchemaFields, rowValidator, recordCreator, finaliser, objectMapper, transactionManager);
+            importSchemaFields, importDefaults, rowValidator, recordCreator, finaliser, properties, objectMapper,
+            transactionManager);
 
     @BeforeEach
     void setUp() {
@@ -138,7 +144,8 @@ class BulkImportWorkerTest {
             assertThat(batch.getStatus()).isEqualTo(status);
         }
         verify(importBatchRepository, never()).save(any());
-        verifyNoInteractions(importItemRepository, importSchemaFields, rowValidator, recordCreator, finaliser);
+        verifyNoInteractions(importItemRepository, importSchemaFields, importDefaults, rowValidator, recordCreator,
+                finaliser);
     }
 
     @Test
@@ -154,7 +161,7 @@ class BulkImportWorkerTest {
         ImportRowError error = ImportRowError.error("file", "FILE_MISSING", "No file was uploaded for this row");
         ImportRowError warning = new ImportRowError("amount", "MAX_VALUE", "Large", "warning");
         AtomicReference<UUID> tenantDuringValidation = new AtomicReference<>();
-        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenAnswer(invocation -> {
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenAnswer(invocation -> {
             tenantDuringValidation.set(TenantContext.getTenantId());
             ImportItem item = invocation.getArgument(0);
             return item == failing ? List.of(error) : item == warned ? List.of(warning) : List.of();
@@ -175,25 +182,24 @@ class BulkImportWorkerTest {
     }
 
     @Test
-    void onMessage_rowSkippedAtPreview_isNotRevalidatedAndKeepsItsTemplateErrors() throws Exception {
+    void onMessage_uploadRejectedAtIntake_isNotRevalidatedAndKeepsFileRejected() throws Exception {
         ImportBatch batch = batch(ImportBatchStatus.queued);
         ImportItem skipped = item(batch, 2, "a.pdf");
-        skipped.setStagedObjectKey(null); // never needed a file
+        skipped.setStagedObjectKey(null); // refused, so nothing was staged
         skipped.setStatus(ImportItemStatus.failed);
-        skipped.setSkippedAtPreview(true);
-        String templateErrors = "[{\"field\":\"amount\",\"code\":\"INVALID_NUMBER\","
-                + "\"message\":\"Amount must be a number\",\"severity\":\"error\"}]";
+        skipped.setUploadRejectionCode("FILE_TYPE_NOT_ALLOWED");
+        String templateErrors = "[{\"field\":\"file\",\"code\":\"FILE_REJECTED\","
+                + "\"message\":\"The file you uploaded ('a.pdf') was rejected: nope\",\"severity\":\"error\"}]";
         skipped.setValidationErrors(templateErrors);
         ImportItem fresh = item(batch, 3, "b.pdf");
         stubBatch(batch, List.of(skipped, fresh));
-        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenReturn(List.of());
 
         worker.onMessage(message(batch.getImportBatchId()));
 
-        verify(rowValidator, never()).validate(eq(skipped), any(), any(), any(), any(), anyInt(), any());
-        verify(rowValidator).validate(eq(fresh), any(), any(), any(), any(), anyInt(), any());
+        verify(rowValidator, never()).validate(eq(skipped), any(), anyBoolean());
+        verify(rowValidator).validate(eq(fresh), any(), anyBoolean());
         assertThat(skipped.getStatus()).isEqualTo(ImportItemStatus.failed);
-        assertThat(skipped.isSkippedAtPreview()).isTrue();
         assertThat(skipped.getValidationErrors()).isEqualTo(templateErrors);
     }
 
@@ -207,9 +213,8 @@ class BulkImportWorkerTest {
 
         worker.onMessage(message(batch.getImportBatchId()));
 
-        verify(rowValidator, never()).validate(any(), any(), any(), any(), any(), anyInt(), any());
+        verify(rowValidator, never()).validate(any(), any(), anyBoolean());
         assertThat(failedEarlier.getStatus()).isEqualTo(ImportItemStatus.failed);
-        assertThat(failedEarlier.isSkippedAtPreview()).isFalse();
         assertThat(failedEarlier.getValidationErrors()).isEqualTo("[{\"code\":\"SCAN_REJECTED\"}]");
     }
 
@@ -222,12 +227,12 @@ class BulkImportWorkerTest {
         }
         items.get(0).setStatus(ImportItemStatus.success);
         stubBatch(batch, items);
-        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenReturn(List.of());
 
         worker.onMessage(message(batch.getImportBatchId()));
 
         verify(importItemRepository, times(3)).findAllByImportBatchIdAndImportItemIdIn(eq(batch.getImportBatchId()), any());
-        verify(rowValidator, times(119)).validate(any(), any(), any(), any(), any(), anyInt(), any());
+        verify(rowValidator, times(119)).validate(any(), any(), anyBoolean());
         assertThat(items.get(0).getStatus()).isEqualTo(ImportItemStatus.success);
     }
 
@@ -236,7 +241,7 @@ class BulkImportWorkerTest {
         ImportBatch batch = batch(ImportBatchStatus.queued);
         List<ImportItem> items = List.of(item(batch, 2, "a.pdf"), item(batch, 3, "b.pdf"));
         stubBatch(batch, items);
-        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenReturn(List.of());
         AtomicReference<UUID> userDuringCreation = new AtomicReference<>();
         doAnswer(invocation -> {
             userDuringCreation.set(TenantContext.getUserId());
@@ -248,8 +253,8 @@ class BulkImportWorkerTest {
         InOrder inOrder = inOrder(recordCreator, finaliser);
         BulkImportWorker.ClaimedBatch claimed = new BulkImportWorker.ClaimedBatch(batch.getImportBatchId(), tenantId,
                 userId, documentTypeId, 3);
-        inOrder.verify(recordCreator).createRecord(eq(claimed), eq(items.get(0).getImportItemId()), any());
-        inOrder.verify(recordCreator).createRecord(eq(claimed), eq(items.get(1).getImportItemId()), any());
+        inOrder.verify(recordCreator).createRecord(claimed, items.get(0).getImportItemId(), resolved);
+        inOrder.verify(recordCreator).createRecord(claimed, items.get(1).getImportItemId(), resolved);
         inOrder.verify(finaliser).finalise(batch.getImportBatchId());
         assertThat(userDuringCreation.get()).isEqualTo(userId);
     }
@@ -264,15 +269,49 @@ class BulkImportWorkerTest {
         submitted.setStagedObjectKey(null); // handed to the gate, staged copy gone
         ImportItem fresh = item(batch, 4, "c.pdf");
         stubBatch(batch, List.of(succeeded, submitted, fresh));
-        when(rowValidator.validate(any(), any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenReturn(List.of());
 
         worker.onMessage(message(batch.getImportBatchId()));
 
-        verify(rowValidator).validate(eq(fresh), any(), any(), any(), any(), anyInt(), any());
-        verify(rowValidator, times(1)).validate(any(), any(), any(), any(), any(), anyInt(), any());
+        verify(rowValidator).validate(eq(fresh), any(), anyBoolean());
+        verify(rowValidator, times(1)).validate(any(), any(), anyBoolean());
         assertThat(submitted.getStatus()).isEqualTo(ImportItemStatus.pending);
         // The creator decides per row (skip / getTicket / submit) - see ImportRecordCreatorTest.
         verify(recordCreator, times(3)).createRecord(any(), any(), any());
+    }
+
+    @Test
+    void onMessage_validatesAgainstTheBatchDefaultsResolvedOnceWithTheEnforceFlag() throws Exception {
+        properties.setEnforceMandatoryFields(true);
+        ImportBatch batch = batch(ImportBatchStatus.queued);
+        List<ImportItem> items = List.of(item(batch, 1, "a.pdf"), item(batch, 2, "b.pdf"));
+        stubBatch(batch, items);
+        when(rowValidator.validate(any(), any(), anyBoolean())).thenReturn(List.of());
+
+        worker.onMessage(message(batch.getImportBatchId()));
+
+        verify(importDefaults, times(1)).resolve(any(), eq(tenantId));
+        verify(rowValidator).validate(items.get(0), resolved, true);
+        verify(rowValidator).validate(items.get(1), resolved, true);
+    }
+
+    @Test
+    void onMessage_creatorDeleted_failsRowsWithoutEverBindingANullUser() throws Exception {
+        ImportBatch batch = batch(ImportBatchStatus.queued);
+        batch.setCreatedBy(null);
+        when(importBatchRepository.lockByImportBatchId(batch.getImportBatchId())).thenReturn(Optional.of(batch));
+        AtomicReference<Boolean> contextBound = new AtomicReference<>();
+        doAnswer(invocation -> {
+            contextBound.set(tenantBound());
+            return Optional.empty();
+        }).when(finaliser).finaliseWithoutCreator(batch.getImportBatchId());
+
+        worker.onMessage(message(batch.getImportBatchId()));
+
+        verify(finaliser).finaliseWithoutCreator(batch.getImportBatchId());
+        verify(finaliser, never()).finalise(any());
+        verifyNoInteractions(importSchemaFields, importDefaults, rowValidator, recordCreator);
+        assertThat(contextBound.get()).isFalse();
     }
 
     @Test
@@ -287,10 +326,21 @@ class BulkImportWorkerTest {
         assertThatThrownBy(TenantContext::getTenantId).isInstanceOf(IllegalStateException.class);
     }
 
+    private static boolean tenantBound() {
+        try {
+            TenantContext.getTenantId();
+            return true;
+        } catch (IllegalStateException e) {
+            return false;
+        }
+    }
+
     private void stubBatch(ImportBatch batch, List<ImportItem> items) {
         when(importBatchRepository.lockByImportBatchId(batch.getImportBatchId())).thenReturn(Optional.of(batch));
-        when(importSchemaFields.load(tenantId, documentTypeId, 3))
-                .thenReturn(Map.of("amount", new ImportField(UUID.randomUUID(), "amount", "Amount", "decimal", false, false)));
+        Map<String, ImportField> fields = Map.of("amount",
+                new ImportField(UUID.randomUUID(), "amount", "Amount", "decimal", false, false, "12.50"));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(fields);
+        when(importDefaults.resolve(fields, tenantId)).thenReturn(resolved);
         when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
                 .thenReturn(items);
         when(importItemRepository.findAllByImportBatchIdAndImportItemIdIn(eq(batch.getImportBatchId()), any()))
@@ -328,7 +378,7 @@ class BulkImportWorkerTest {
                 .rowNumber(rowNumber)
                 .filenameReference(filename)
                 .stagedObjectKey("imports/" + filename)
-                .rowValues("{\"title\":null,\"fields\":{\"amount\":\"12.50\"}}")
+                .rowValues("{}")
                 .build();
     }
 }

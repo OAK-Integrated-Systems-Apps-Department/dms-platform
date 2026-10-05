@@ -22,25 +22,24 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Deletes the staged files a finished batch keeps for a resubmit of its
- * failed rows (see {@link ImportBatchFinaliser}) once
+ * Backstop for staged files still left on a finished batch - the
+ * finaliser deletes them when the batch finishes (see
+ * {@link ImportBatchFinaliser}), but that delete is best-effort and after
+ * commit. Deletes any left once
  * {@code dms.import-export.retained-file-hours} (default 24) have passed
- * since it completed. Runs every
+ * since the batch completed. Runs every
  * {@code dms.import-export.retained-file-purge-interval-ms} (default 1h).
  *
  * <p>Scheduled the same way as {@link ImportCompletionScheduler}, and safe
  * to run on several instances at once the same way: the candidate list
  * isn't locked, but each batch is claimed with {@code FOR UPDATE SKIP
- * LOCKED} and re-checked before anything is cleared. That lock also
- * conflicts with the one a resubmit holds on the original batch while it
- * claims files, so a file is either moved to the resubmit or purged, never
- * both. Objects are deleted best-effort after commit, via
- * {@link StagedImportFiles}.
+ * LOCKED} and re-checked before anything is cleared. Objects are deleted
+ * best-effort after commit, via {@link StagedImportFiles}.
  *
  * <p>Batches abandoned while uploading, or stuck queued / running, are
  * handled by {@link ImportBatchRecoveryJob}: an abandoned batch's files go
- * when it is cancelled, and a stuck batch is finalised, after which its
- * kept files are purged here like any other's.
+ * when it is cancelled, and a stuck batch is finalised, which deletes its
+ * files like any other's.
  */
 @Slf4j
 @Component
@@ -86,7 +85,7 @@ public class RetainedImportFilePurger {
                 try {
                     purgedFiles += purgeBatch(batchId, cutoff);
                 } catch (RuntimeException e) {
-                    log.error("Purging kept staged files of bulk import batch {} failed", batchId, e);
+                    log.error("Purging left-over staged files of bulk import batch {} failed", batchId, e);
                 }
             }
             if (chunk.size() < CHUNK_SIZE || fresh.isEmpty()) {
@@ -95,7 +94,7 @@ public class RetainedImportFilePurger {
         }
 
         if (purgedFiles > 0) {
-            log.info("Purged {} kept staged import files older than {}h", purgedFiles,
+            log.info("Purged {} left-over staged import files older than {}h", purgedFiles,
                     properties.getRetainedFileHours());
         }
     }
@@ -113,7 +112,7 @@ public class RetainedImportFilePurger {
             }
             int toDelete = stagedImportFiles.clearAndDeleteAfterCommit(staged);
             importItemRepository.saveAll(staged);
-            log.debug("Purging {} kept staged files of bulk import batch {}", toDelete, batchId);
+            log.debug("Purging {} left-over staged files of bulk import batch {}", toDelete, batchId);
             return toDelete;
         });
         return purged != null ? purged : 0;
