@@ -16,6 +16,8 @@ import {
 } from "@/components/documents/document-fields-form"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { ApiError } from "@/lib/api-error"
 import { fetchDocumentTypeSchema } from "@/lib/document-type-fields/api"
 import { fetchAllDocumentTypes } from "@/lib/document-types/api"
@@ -402,15 +404,23 @@ export function DocumentUploadForm() {
                 <div className="mb-2.5 flex items-center justify-between gap-3">
                   <p className="text-[12.5px] font-semibold text-foreground">Fields</p>
                   {(phase === "done" || (phase === "failed" && retryable)) && (
-                    <button
-                      type="button"
-                      disabled={savingFields}
-                      onClick={() => handleRerun(Array.from(selectedFields))}
-                      className="flex items-center gap-1.5 text-[11.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw size={11} />
-                      Re-run OCR
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
+                          <button
+                            {...props}
+                            type="button"
+                            disabled={savingFields}
+                            onClick={() => handleRerun(Array.from(selectedFields))}
+                            className="flex items-center gap-1.5 text-[11.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <RefreshCw size={11} />
+                            Re-run OCR
+                          </button>
+                        )}
+                      />
+                      <TooltipContent>{getTooltip("documents.ocr.rerunAll")}</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
                 <DocumentFieldsForm

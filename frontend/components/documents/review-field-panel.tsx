@@ -6,9 +6,40 @@ import { Check, Crosshair, Pencil, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 import type { ReviewField } from "@/lib/documents/api"
+
+/**
+ * What a badge MEANS, in a sentence. The badge itself is two words, which
+ * is right for scanning a column of them and useless the first time you
+ * meet one -- "Not applicable" and "Enter manually" in particular describe
+ * a distinction (OCR never looked) that nothing on screen otherwise
+ * explains.
+ *
+ * Keyed on the decision first, because once a human has settled a field
+ * what OCR originally thought is no longer what the badge is saying.
+ */
+export function statusHint(field: ReviewField, decision?: FieldDecision): string {
+  if (decision === "corrected") return getTooltip("documents.status.corrected")
+  if (decision === "accepted") return getTooltip("documents.status.accepted")
+  switch (field.status) {
+    case "not_extractable":
+      return field.mandatory
+        ? getTooltip("documents.status.notExtractableMandatory")
+        : getTooltip("documents.status.notExtractable")
+    case "defaulted":
+      return getTooltip("documents.status.defaulted")
+    case "not_found":
+      return getTooltip("documents.status.notFound")
+    case "low_confidence":
+      return getTooltip("documents.status.lowConfidence")
+    default:
+      return getTooltip("documents.status.extracted")
+  }
+}
 
 /** What the reviewer has decided about a field, if anything yet. */
 export type FieldDecision = "accepted" | "corrected"
@@ -161,7 +192,16 @@ function FieldRow({
           {field.label}
           {field.mandatory && <span className="ml-1 text-[var(--rust)]">*</span>}
         </span>
-        <Badge variant={badge.variant}>{badge.text}</Badge>
+        <Tooltip>
+          <TooltipTrigger
+            render={(props) => (
+              <span {...props}>
+                <Badge variant={badge.variant}>{badge.text}</Badge>
+              </span>
+            )}
+          />
+          <TooltipContent>{statusHint(field, decision)}</TooltipContent>
+        </Tooltip>
       </div>
 
       {editing ? (
@@ -204,39 +244,81 @@ function FieldRow({
       )}
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11.5px] text-muted-foreground">
-          {field.confidence != null
-            ? `${Math.round(field.confidence * 100)}% confident`
-            : "no confidence recorded"}
-        </span>
+        {field.confidence != null ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => (
+                <span {...props} className="text-[11.5px] text-muted-foreground">
+                  {`${Math.round(field.confidence! * 100)}% confident`}
+                </span>
+              )}
+            />
+            <TooltipContent>{getTooltip("documents.ocr.confidence")}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="text-[11.5px] text-muted-foreground">no confidence recorded</span>
+        )}
         <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onAccept}
-            disabled={busy}
-            aria-label={`Accept ${field.label}`}
-          >
-            <Check size={14} />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={startEditing}
-            disabled={busy}
-            aria-label={`Edit ${field.label}`}
-          >
-            <Pencil size={14} />
-          </Button>
-          <Button
-            size="sm"
-            variant={selecting ? "default" : "ghost"}
-            onClick={onReExtract}
-            disabled={busy}
-            aria-label={`Re-read ${field.label} from the page`}
-          >
-            <Crosshair size={14} />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => (
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="ghost"
+                  onClick={onAccept}
+                  disabled={busy}
+                  aria-label={`Accept ${field.label}`}
+                >
+                  <Check size={14} />
+                </Button>
+              )}
+            />
+            {/* Accepting a required field that is EMPTY agrees it is
+                empty, which can never clear it from the queue -- the one
+                case where this button does not do what pressing it looks
+                like it does. Say so on the button itself rather than only
+                after a save that did not work. */}
+            <TooltipContent>
+              {field.mandatory && !currentValue.trim()
+                ? getTooltip("documents.review.acceptEmptyMandatory")
+                : getTooltip("documents.review.accept")}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => (
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="ghost"
+                  onClick={startEditing}
+                  disabled={busy}
+                  aria-label={`Edit ${field.label}`}
+                >
+                  <Pencil size={14} />
+                </Button>
+              )}
+            />
+            <TooltipContent>{getTooltip("documents.review.edit")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={(props) => (
+                <Button
+                  {...props}
+                  size="sm"
+                  variant={selecting ? "default" : "ghost"}
+                  onClick={onReExtract}
+                  disabled={busy}
+                  aria-label={`Re-read ${field.label} from the page`}
+                >
+                  <Crosshair size={14} />
+                </Button>
+              )}
+            />
+            <TooltipContent>{getTooltip("documents.review.reExtract")}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

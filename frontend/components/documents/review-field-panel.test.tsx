@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ReviewField } from "@/lib/documents/api"
 
-import { ReviewFieldPanel, statusBadge } from "./review-field-panel"
+import { ReviewFieldPanel, statusBadge, statusHint } from "./review-field-panel"
 
 function field(overrides: Partial<ReviewField> = {}): ReviewField {
   return {
@@ -170,5 +170,34 @@ describe("statusBadge", () => {
       text: "Default applied",
       variant: "muted",
     })
+  })
+})
+
+describe("statusHint", () => {
+  it("explains the required-but-unreadable case as an instruction, not a diagnosis", () => {
+    // The badge says "Enter manually" in two words. The hint has to carry
+    // the part that actually unblocks the reviewer: accepting cannot fill
+    // it, so typing is the only way out of the queue.
+    const hint = statusHint(field({ mandatory: true, status: "not_extractable", value: null }))
+    expect(hint).toContain("Type it in")
+    expect(hint).toContain("accepting cannot fill it")
+  })
+
+  it("does not tell an optional unreadable field to type anything", () => {
+    const hint = statusHint(field({ mandatory: false, status: "not_extractable", value: null }))
+    expect(hint).toContain("never looks for it")
+    expect(hint).not.toContain("Type it in")
+  })
+
+  it("describes the reviewer's own decision once one has been made", () => {
+    // Whatever OCR thought is no longer what the badge is reporting.
+    expect(statusHint(field({ status: "low_confidence" }), "accepted")).toContain("You confirmed")
+    expect(statusHint(field({ status: "extracted" }), "corrected")).toContain("You changed")
+  })
+
+  it("has a hint for every status, so no badge is ever unexplained", () => {
+    for (const status of ["extracted", "low_confidence", "not_found", "not_extractable", "defaulted"] as const) {
+      expect(statusHint(field({ status })).length).toBeGreaterThan(10)
+    }
   })
 })

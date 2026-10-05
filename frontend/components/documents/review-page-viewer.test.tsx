@@ -61,6 +61,33 @@ describe("ReviewPageViewer", () => {
     expect(onHighlightClick).toHaveBeenCalledWith("invoice_number")
   })
 
+  it("names the box after its field, so it is not an unlabelled control", () => {
+    // The box has no text content. It carried a native `title` until the
+    // tooltip replaced it, and a tooltip is a description, not an
+    // accessible name -- dropping the title without an aria-label would
+    // have left a button called nothing.
+    render(
+      <ReviewPageViewer imageUrl="blob:page" isLoading={false} error={null} highlights={[HIGHLIGHT]} />
+    )
+
+    expect(screen.getByRole("button", { name: "Invoice No" })).toBe(
+      screen.getByTestId("highlight-invoice_number")
+    )
+  })
+
+  it("still names a box whose field has no label", () => {
+    render(
+      <ReviewPageViewer
+        imageUrl="blob:page"
+        isLoading={false}
+        error={null}
+        highlights={[{ key: "invoice_number", bbox: [0.25, 0.1, 0.75, 0.2] }]}
+      />
+    )
+
+    expect(screen.getByTestId("highlight-invoice_number")).toHaveAccessibleName("Extracted field")
+  })
+
   it("turns a drag into normalized coordinates", () => {
     const onRegionSelected = vi.fn()
     render(

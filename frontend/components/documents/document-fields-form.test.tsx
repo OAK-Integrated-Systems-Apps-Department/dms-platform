@@ -179,11 +179,11 @@ describe("DocumentFieldsForm OCR badges", () => {
     // link could only waste a round trip and suggest the value is one
     // more attempt away.
     renderForm({ classification_level: { value: null, confidence: null, source: null, status: "not_extractable" } })
-    expect(screen.queryByTitle("Re-run OCR for Classification Level")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Re-run OCR for Classification Level" })).not.toBeInTheDocument()
 
     cleanup()
     renderForm({ classification_level: { value: null, confidence: null, source: null, status: "not_found" } })
-    expect(screen.getByTitle("Re-run OCR for Classification Level")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Re-run OCR for Classification Level" })).toBeInTheDocument()
   })
 
   it("says a defaulted value came from the default rather than the page", () => {

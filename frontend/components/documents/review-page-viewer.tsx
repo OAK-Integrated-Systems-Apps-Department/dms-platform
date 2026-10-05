@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react"
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { cn } from "@/lib/utils"
 
 /** A box to draw over the page, in normalized (0..1) page coordinates. */
@@ -147,29 +149,52 @@ export function ReviewPageViewer({
           {highlights.map((highlight) => {
             const [x0, y0, x1, y1] = highlight.bbox
             return (
-              <button
-                key={highlight.key}
-                type="button"
-                title={highlight.label}
-                data-testid={`highlight-${highlight.key}`}
-                onClick={() => onHighlightClick?.(highlight.key)}
-                // pointer-events off while selecting, so a rubber-band
-                // drag that starts over an existing highlight selects a
-                // region instead of clicking the field underneath it.
-                className={cn(
-                  "absolute rounded-[3px] border-2 transition-colors",
-                  selecting && "pointer-events-none",
-                  highlight.active
-                    ? "border-[var(--gold-foreground)] bg-[var(--gold-tint)]/55"
-                    : "border-primary/45 bg-primary/10 hover:bg-primary/20"
-                )}
-                style={{
-                  left: `${x0 * 100}%`,
-                  top: `${y0 * 100}%`,
-                  width: `${(x1 - x0) * 100}%`,
-                  height: `${(y1 - y0) * 100}%`,
-                }}
-              />
+              // The only control on this screen with no words on it. A
+              // rectangle drawn over the page shows where a value was read
+              // but says nothing about being clickable, and the native
+              // `title` it used to carry named the field without explaining
+              // either half of that.
+              //
+              // `aria-label` stays alongside the tooltip rather than being
+              // replaced by it: the button has no text content, so without
+              // one it is an unnamed control -- a tooltip is a description,
+              // not a name.
+              <Tooltip key={highlight.key}>
+                <TooltipTrigger
+                  render={(props) => (
+                    <button
+                      {...props}
+                      type="button"
+                      aria-label={highlight.label ?? "Extracted field"}
+                      data-testid={`highlight-${highlight.key}`}
+                      onClick={() => onHighlightClick?.(highlight.key)}
+                      // pointer-events off while selecting, so a rubber-band
+                      // drag that starts over an existing highlight selects a
+                      // region instead of clicking the field underneath it.
+                      // It suppresses the tooltip there too, which is what we
+                      // want -- nothing should pop up mid-drag.
+                      className={cn(
+                        "absolute rounded-[3px] border-2 transition-colors",
+                        selecting && "pointer-events-none",
+                        highlight.active
+                          ? "border-[var(--gold-foreground)] bg-[var(--gold-tint)]/55"
+                          : "border-primary/45 bg-primary/10 hover:bg-primary/20"
+                      )}
+                      style={{
+                        left: `${x0 * 100}%`,
+                        top: `${y0 * 100}%`,
+                        width: `${(x1 - x0) * 100}%`,
+                        height: `${(y1 - y0) * 100}%`,
+                      }}
+                    />
+                  )}
+                />
+                <TooltipContent>
+                  {highlight.label
+                    ? `${highlight.label} — ${getTooltip("documents.review.highlight")}`
+                    : getTooltip("documents.review.highlight")}
+                </TooltipContent>
+              </Tooltip>
             )
           })}
 

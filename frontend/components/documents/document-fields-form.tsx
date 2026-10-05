@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { DocumentTypeSchemaResponseDto } from "@/lib/document-type-fields/api"
+import { getTooltip } from "@/lib/tooltips"
+import { cn } from "@/lib/utils"
 import type { MetadataValues } from "@/lib/documents/api"
 
 type SchemaField = DocumentTypeSchemaResponseDto["fields"][number]
@@ -110,9 +112,19 @@ export function DocumentFieldsForm({
                 {field.mandatory && <span className="text-[var(--rust)]"> *</span>}
               </span>
               {field.ocrExtractable && !ocrResult && (
-                <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground">
-                  OCR
-                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(props) => (
+                      <span
+                        {...props}
+                        className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground"
+                      >
+                        OCR
+                      </span>
+                    )}
+                  />
+                  <TooltipContent>{getTooltip("documents.ocr.badge")}</TooltipContent>
+                </Tooltip>
               )}
               {ocrResult && <OcrResultBadge result={ocrResult} />}
               {/* No "Re-run" on a `not_extractable` field: re-running it
@@ -120,15 +132,23 @@ export function DocumentFieldsForm({
                   can only ever waste a round trip and suggest the value is
                   one more attempt away. */}
               {ocrResult && ocrResult.status !== "not_extractable" && onRerunField && (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onRerunField(field.fieldKey)}
-                  title={`Re-run OCR for ${field.label}`}
-                  className="text-[10.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Re-run
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(props) => (
+                      <button
+                        {...props}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onRerunField(field.fieldKey)}
+                        aria-label={`Re-run OCR for ${field.label}`}
+                        className="text-[10.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Re-run
+                      </button>
+                    )}
+                  />
+                  <TooltipContent>{getTooltip("documents.ocr.rerunField")}</TooltipContent>
+                </Tooltip>
               )}
             </Label>
             <FieldInput id={id} field={field} value={values[field.fieldKey]} onChange={onChange} disabled={disabled} />
@@ -155,35 +175,55 @@ function OcrResultBadge({ result }: { result: FieldOcrBadgeInfo }) {
   if (result.status === "not_extractable") {
     return null
   }
-  if (result.status === "defaulted") {
-    // Not an accuracy claim: nothing on the page said this, the tenant
-    // default did. Said plainly so a reviewer who disagrees knows it is a
-    // setting they can change rather than a misread they must correct.
-    return (
-      <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground">
-        Default applied
-      </span>
-    )
-  }
-  if (result.status === "not_found") {
-    return (
-      <span className="rounded-full border border-[var(--rust)]/40 bg-[var(--rust-tint)] px-1.5 py-0.5 text-[10px] font-semibold normal-case text-[var(--rust-foreground)]">
-        Not found
-      </span>
-    )
-  }
+
+  // Text and styling resolved first, then wrapped once. Returning a
+  // separate <Tooltip> from each branch meant four copies of the same
+  // wrapper, which is how one of them ends up without a hint.
   const pct = result.confidence != null ? Math.round(result.confidence * 100) : null
-  if (result.status === "low_confidence") {
-    return (
-      <span className="rounded-full border border-[var(--rust)]/30 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-[var(--rust)]">
-        Low confidence{pct != null ? ` · ${pct}%` : ""}
-      </span>
-    )
-  }
+  const badge =
+    result.status === "defaulted"
+      ? {
+          // Not an accuracy claim: nothing on the page said this, the
+          // tenant default did. Said plainly so a reviewer who disagrees
+          // knows it is a setting they can change rather than a misread
+          // they must correct.
+          text: "Default applied",
+          hint: getTooltip("documents.status.defaulted"),
+          className: "border-border text-muted-foreground font-normal",
+        }
+      : result.status === "not_found"
+        ? {
+            text: "Not found",
+            hint: getTooltip("documents.status.notFound"),
+            className:
+              "border-[var(--rust)]/40 bg-[var(--rust-tint)] text-[var(--rust-foreground)] font-semibold",
+          }
+        : result.status === "low_confidence"
+          ? {
+              text: `Low confidence${pct != null ? ` · ${pct}%` : ""}`,
+              hint: getTooltip("documents.status.lowConfidence"),
+              className: "border-[var(--rust)]/30 text-[var(--rust)] font-semibold",
+            }
+          : {
+              text: pct != null ? `${pct}%` : "OCR",
+              hint: getTooltip("documents.status.extracted"),
+              className: "border-border text-muted-foreground font-normal",
+            }
+
   return (
-    <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground">
-      {pct != null ? `${pct}%` : "OCR"}
-    </span>
+    <Tooltip>
+      <TooltipTrigger
+        render={(props) => (
+          <span
+            {...props}
+            className={cn("rounded-full border px-1.5 py-0.5 text-[10px] normal-case", badge.className)}
+          >
+            {badge.text}
+          </span>
+        )}
+      />
+      <TooltipContent>{badge.hint}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -378,15 +418,27 @@ export function FieldChips({
                 </Tooltip>
               )}
               {field.ocrExtractable && !field.mandatory && (
-                <span
-                  className={
-                    isSelected
-                      ? "rounded-full border border-primary-foreground/40 px-1.5 py-0.5 text-[10px] font-normal normal-case"
-                      : "rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground"
-                  }
-                >
-                  OCR
-                </span>
+                // The same hint as the label badge further down the form:
+                // this chip is the FIRST "OCR" a user meets, so leaving it
+                // unexplained is the one place the tag has to carry its
+                // own meaning.
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(props) => (
+                      <span
+                        {...props}
+                        className={
+                          isSelected
+                            ? "rounded-full border border-primary-foreground/40 px-1.5 py-0.5 text-[10px] font-normal normal-case"
+                            : "rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground"
+                        }
+                      >
+                        OCR
+                      </span>
+                    )}
+                  />
+                  <TooltipContent>{getTooltip("documents.ocr.badge")}</TooltipContent>
+                </Tooltip>
               )}
             </button>
           )

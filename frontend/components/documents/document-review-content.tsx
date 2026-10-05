@@ -15,6 +15,8 @@ import { isRetryable } from "@/components/documents/document-upload-form"
 import { BackendUnavailable } from "@/components/ui/backend-unavailable"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getTooltip } from "@/lib/tooltips"
 import { isNetworkError } from "@/lib/api-error"
 import {
   readRegion,
@@ -87,7 +89,21 @@ export function DocumentReviewContent({ documentId }: { documentId: string }) {
   }
 
   function accept(field: ReviewField) {
-    setDecisions((current) => ({ ...current, [field.fieldKey]: "accepted" }))
+    setDecisions((current) => {
+      // Pressing Accept on a field you have ALREADY corrected means "yes,
+      // my value is right" -- not "throw it away and take OCR's".
+      //
+      // Downgrading the decision to `accepted` here sent
+      // `value: null` (see `save`), so the typed value never left the
+      // browser, while the card went on displaying it under an
+      // "Accepted" badge. Measured live on a mandatory dropdown: typed
+      // "internal", pressed Accept, card read `Accepted internal`, the
+      // request carried `{"action":"accepted","value":null}`, and the
+      // document stayed in the queue for a field the screen showed as
+      // filled and confirmed.
+      if (current[field.fieldKey] === "corrected") return current
+      return { ...current, [field.fieldKey]: "accepted" }
+    })
   }
 
   function edit(field: ReviewField, value: string) {
@@ -157,11 +173,34 @@ export function DocumentReviewContent({ documentId }: { documentId: string }) {
       if (result.requiresReview) {
         // Still queued, and saying why beats a success message that
         // contradicts the document still being in the list.
-        toast.warning(
-          `Saved. ${result.remainingReasons.length} field${
-            result.remainingReasons.length === 1 ? "" : "s"
-          } still need attention, so this stays in the queue.`
-        )
+        //
+        // NAME the fields. The server has always returned them in
+        // `remainingReasons` and this only ever showed the count, which
+        // made the common case unreadable: a reviewer who pressed Accept
+        // on every field was told "1 field still needs attention" with no
+        // way to tell which, and no hint that the blocker is a mandatory
+        // field with no VALUE -- something accepting can never settle,
+        // because accepting an empty mandatory field agrees that it is
+        // empty (see ReviewDecisionApplier.unsettled). Measured live:
+        // 8 fields accepted, 8 recorded, still queued on
+        // `classification_level`.
+        //
+        // `remainingReasons` carries field KEYS; reviewers know labels.
+        const stillOpen = result.remainingReasons.map((key) => {
+          const field = data?.fields.find((f) => f.fieldKey === key)
+          // The reviewer's own edit wins over OCR's value: they may have
+          // just typed into a field the server still counts as open.
+          const current = values[key] ?? (field ? displayValue(field) : "")
+          return { label: field?.label ?? key, needsValue: Boolean(field?.mandatory) && !current.trim() }
+        })
+        const names = stillOpen.map((f) => f.label).join(", ")
+        // "needs a value" when it is empty and required -- that is an
+        // instruction the reviewer can act on. "Needs attention" is not.
+        const allNeedValues = stillOpen.length > 0 && stillOpen.every((f) => f.needsValue)
+        const what = allNeedValues
+          ? stillOpen.length === 1 ? "still needs a value" : "still need values"
+          : stillOpen.length === 1 ? "still needs attention" : "still need attention"
+        toast.warning(`Saved. ${names} ${what}, so this stays in the queue.`)
         return
       }
       toast.success("Review saved. This document has left the queue.")
@@ -264,9 +303,26 @@ export function DocumentReviewContent({ documentId }: { documentId: string }) {
                 ? "Accept or correct a field to record your review."
                 : `${decisionCount} field${decisionCount === 1 ? "" : "s"} decided.`}
             </p>
-            <Button className="w-full" onClick={save} disabled={saving || decisionCount === 0}>
-              {saving ? "Saving…" : "Save review"}
-            </Button>
+            <Tooltip>
+              {/* The trigger is a plain span, not the Button: a disabled
+                  button fires no pointer events, so wrapping it directly
+                  would hide the tooltip in exactly the state whose
+                  explanation the reviewer needs. */}
+              <TooltipTrigger
+                render={(props) => (
+                  <span {...props} className="block">
+                    <Button className="w-full" onClick={save} disabled={saving || decisionCount === 0}>
+                      {saving ? "Saving…" : "Save review"}
+                    </Button>
+                  </span>
+                )}
+              />
+              <TooltipContent>
+                {decisionCount === 0
+                  ? getTooltip("documents.review.saveDisabled")
+                  : getTooltip("documents.review.save")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>
