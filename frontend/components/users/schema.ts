@@ -16,7 +16,8 @@ export const userInviteFormSchema = z.object({
     .min(3, "Username must be at least 3 characters")
     .max(100, "Keep it under 100 characters")
     .regex(/^[a-z0-9._-]+$/i, "Use only letters, numbers, dots, dashes, and underscores"),
-  email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
+  // 255: the most Keycloak stores (user_entity.email) - see CreateUserRequest/UpdateUserRequest.
+  email: z.string().trim().min(1, "Email is required").max(255, "An email can be at most 255 characters").email("Enter a valid email address"),
   // No .min(1): a caller without role-view permission has no picker to
   // select one at all (see UserInviteForm's own "can still be invited
   // without one" copy for that case), and CreateUserRequest itself has no
@@ -40,7 +41,8 @@ export const userEditFormSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
   // Optional, as on the backend (UpdateUserRequest) - a user created without one must still be editable.
   lastName: z.string().trim().max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
-  email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
+  // 255: the most Keycloak stores (user_entity.email) - see CreateUserRequest/UpdateUserRequest.
+  email: z.string().trim().min(1, "Email is required").max(255, "An email can be at most 255 characters").email("Enter a valid email address"),
   roles: z.array(z.string()),
 })
 

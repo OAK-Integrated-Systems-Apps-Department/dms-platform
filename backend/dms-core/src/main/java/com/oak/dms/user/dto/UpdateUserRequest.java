@@ -22,7 +22,7 @@ public record UpdateUserRequest(
 
         /** The new email; null leaves it as it is. Must not be another account's. */
         @Email(message = "Enter a valid email address")
-        @Size(max = 255)
+        @Size(max = 255, message = "An email can be at most 255 characters")
         String email,
 
         @NotNull

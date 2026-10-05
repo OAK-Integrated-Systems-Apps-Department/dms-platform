@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { AlertTriangle, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -12,13 +12,15 @@ import { Label } from "@/components/ui/label"
 import { API_BASE_URL } from "@/lib/api-config"
 import { ApiError } from "@/lib/api-error"
 import { apiFetchJson } from "@/lib/api-fetch"
-import { assignUserRole } from "@/lib/users/api"
+import { assignUserRole, isEmailAvailable } from "@/lib/users/api"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
 
 import { RoleMultiSelect } from "./role-multi-select"
 import { userInviteFormSchema, type UserInviteFormValues } from "./schema"
+
+const EMAIL_TAKEN = "This email is already used by another account."
 
 /**
  * Add User form, per dms-add-user.html. Still an invite, not a signup —
@@ -83,6 +85,8 @@ export function UserInviteForm() {
     handleSubmit,
     control,
     reset,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting, isValid },
   } = useForm<UserInviteFormValues>({
     resolver: zodResolver(userInviteFormSchema),
@@ -93,6 +97,33 @@ export function UserInviteForm() {
     // have a length cap the caller has no other way to see coming.
     mode: "onChange",
   })
+
+  // The email is checked shortly after typing stops - no other user in the organisation, and no
+  // account that signs in with it, may have it. The same check the server makes on create.
+  const email = useWatch({ control, name: "email" })
+  const emailCheck = useRef(0)
+  const [checkingFor, setCheckingFor] = useState<string | null>(null)
+  const candidateEmail = email?.trim() ?? ""
+  const checkingEmail = candidateEmail !== "" && checkingFor === candidateEmail
+  useEffect(() => {
+    const candidate = email?.trim() ?? ""
+    const ticket = ++emailCheck.current
+    if (!candidate || !userInviteFormSchema.shape.email.safeParse(candidate).success) return
+    const timer = setTimeout(async () => {
+      setCheckingFor(candidate)
+      try {
+        const available = await isEmailAvailable(candidate)
+        if (ticket !== emailCheck.current) return
+        if (available) clearErrors("email")
+        else setError("email", { type: "taken", message: EMAIL_TAKEN })
+      } catch {
+        // Can't check now - creating the user checks again anyway.
+      } finally {
+        if (ticket === emailCheck.current) setCheckingFor(null)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [email, setError, clearErrors])
 
   async function onSubmit(values: UserInviteFormValues) {
     setSubmitError(null)
@@ -113,6 +144,15 @@ export function UserInviteForm() {
         "Could not create the user."
       )
     } catch (err) {
+      // Already someone else's - say so under the field it's about.
+      if (err instanceof ApiError && err.code === "EMAIL_IN_USE") {
+        setError("email", { type: "taken", message: EMAIL_TAKEN }, { shouldFocus: true })
+        return
+      }
+      if (err instanceof ApiError && err.code === "USERNAME_IN_USE") {
+        setError("username", { type: "taken", message: err.message }, { shouldFocus: true })
+        return
+      }
       const message =
         err instanceof ApiError && err.status === 403
           ? "You don't have permission to invite users."
@@ -230,7 +270,11 @@ export function UserInviteForm() {
             autoComplete="off"
             {...register("email")}
           />
-          {errors.email && <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.email.message}</p>}
+          {errors.email ? (
+            <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.email.message}</p>
+          ) : checkingEmail ? (
+            <p className="mt-1.5 text-[12px] text-muted-foreground">Checking the email…</p>
+          ) : null}
         </div>
       </div>
 
@@ -271,7 +315,7 @@ export function UserInviteForm() {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || !isValid}
+          disabled={isSubmitting || !isValid || checkingEmail || errors.email?.type === "taken"}
           className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Creating…" : "Create user"}
