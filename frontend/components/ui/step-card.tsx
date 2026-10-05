@@ -25,7 +25,7 @@ export function StepCard({
   children,
   className,
 }: StepCardProps) {
-  const headingId = step ? `bulk-import-step-${step}` : undefined
+  const headingId = step ? `step-card-${step}` : undefined
   return (
     <section
       aria-labelledby={headingId}

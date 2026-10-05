@@ -2,6 +2,7 @@ package com.oak.dms.common.exception;
 
 import com.oak.dms.audit.controller.AccessDeniedAuditor;
 import com.oak.dms.common.dto.ErrorResponse;
+import com.oak.dms.scanning.exception.FileTooLargeException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -185,6 +187,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(ErrorResponse.of(HttpStatus.METHOD_NOT_ALLOWED.value(), "Method Not Allowed",
                         ex.getMethod() + " isn't supported here.", request.getRequestURI()));
+    }
+
+    /** Over spring.servlet.multipart.max-file-size - refused before the scan gate sees it. Same answer as the gate's. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex,
+                                                              HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of(HttpStatus.PAYLOAD_TOO_LARGE.value(), "Payload Too Large", "FILE_TOO_LARGE",
+                        FileTooLargeException.message(ex.getMaxUploadSize() > 0 ? ex.getMaxUploadSize()
+                                : 2_146_435_072L), request.getRequestURI()));
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)

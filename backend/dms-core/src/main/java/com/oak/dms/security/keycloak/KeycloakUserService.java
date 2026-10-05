@@ -126,6 +126,44 @@ public class KeycloakUserService {
         }
     }
 
+    /**
+     * Writes a user's name - and, when {@code newEmail} isn't null, their email - to their Keycloak
+     * account, so sign-in, tokens and Keycloak's own screens show what DMS shows. A changed email
+     * starts out unverified. Keycloak refusing it as another account's (409) surfaces as
+     * {@link KeycloakUserAlreadyExistsException}.
+     */
+    public void updateProfile(UUID keycloakId, String firstName, String lastName, String newEmail) {
+        try {
+            var user = realm().users().get(keycloakId.toString());
+            UserRepresentation representation = user.toRepresentation();
+            representation.setFirstName(firstName);
+            representation.setLastName(lastName == null ? "" : lastName);
+            if (newEmail != null) {
+                representation.setEmail(newEmail);
+                representation.setEmailVerified(false);
+            }
+            user.update(representation);
+        } catch (WebApplicationException e) {
+            if (e.getResponse() != null && e.getResponse().getStatus() == Response.Status.CONFLICT.getStatusCode()) {
+                throw new KeycloakUserAlreadyExistsException(newEmail, null);
+            }
+            throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
+        }
+    }
+
+    /**
+     * Whether some Keycloak account other than {@code keycloakId} would clash with {@code email}:
+     * one with that email, or one whose username is it (people may sign in with either).
+     */
+    public boolean emailTakenByAnotherAccount(String email, UUID keycloakId) {
+        UsersResource users = realm().users();
+        String self = keycloakId.toString();
+        return users.searchByEmail(email, true).stream().anyMatch(u -> !self.equals(u.getId()))
+                || users.searchByUsername(email, true).stream().anyMatch(u -> !self.equals(u.getId()));
+    }
+
     public void disableUser(UUID keycloakId) {
         updateEnabled(keycloakId, false);
     }

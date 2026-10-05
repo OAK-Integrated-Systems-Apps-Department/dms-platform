@@ -250,6 +250,46 @@ services:
     networks:
       - previews
 
+  # Virus scanner for every upload (dms-core streams each file to clamd before it
+  # becomes a document - see docs/scanning-architecture.md). Same image and
+  # limits as infra/local; keep the two in step. No host port: only dms-core
+  # talks to it, over the default network. It needs outbound HTTPS to
+  # database.clamav.net for its signature updates (freshclam).
+  clamav:
+    image: clamav/clamav-debian:1.4.3
+    container_name: oakdms-clamav
+    restart: unless-stopped
+    environment:
+      FRESHCLAM_CHECKS: "12" # every 2 hours
+      # Kept >= dms.scanning.max-file-size-bytes (2047MB). clamd scans at most
+      # 2147483645 bytes of any one file whatever MaxFileSize says, hence 2047M;
+      # MaxScanSize is the total read from inside archives, so it stays higher.
+      CLAMD_CONF_StreamMaxLength: 2047M
+      CLAMD_CONF_MaxFileSize: 2047M
+      CLAMD_CONF_MaxScanSize: 4000M
+      # Anything clamd can't finish (too many files, nested too deep, too big, too
+      # slow) or can't open (a password-protected archive) is flagged, and dms-core
+      # refuses it as unscannable - never passes it as clean. MaxScanTime matches
+      # dms-core's 900 s scan timeout.
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_AlertEncryptedArchive: "yes"
+      CLAMD_CONF_MaxScanTime: "900000"
+    volumes:
+      # The signature database - persisted so a restart doesn't re-download
+      # ~300MB of definitions before clamd can start.
+      - clamav_db:/var/lib/clamav
+    # Signatures take ~1.5 GB in memory, roughly double while a new set loads.
+    mem_limit: 4g
+    healthcheck:
+      # The image's own check: PING -> PONG on 3310.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # The first start downloads the full signature database before clamd
+      # listens - several minutes on a fresh volume.
+      start_period: 600s
+
   dms-core:
     image: ${DMS_CORE_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-core}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
     container_name: oakdms-core
@@ -275,6 +315,9 @@ services:
       REDIS_HOST: redis
       # Office files are converted to PDF for the preview (DocumentRenditionService).
       PREVIEW_CONVERTER_URL: http://gotenberg:3000
+      # Every upload is virus scanned by clamd before it becomes a document.
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
@@ -332,6 +375,11 @@ services:
         condition: service_healthy
       seaweedfs:
         condition: service_healthy
+      # Started, not healthy: on a fresh volume clamd needs minutes to download
+      # its signatures. Uploads made meanwhile wait (pending) and are scanned
+      # automatically once it answers - dms-core retries, it never skips the scan.
+      clamav:
+        condition: service_started
 
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-frontend}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
@@ -359,3 +407,4 @@ volumes:
   rabbitmq_data:
   seaweedfs_data:
   documents_data:
+  clamav_db:

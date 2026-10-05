@@ -259,11 +259,24 @@ services:
     <<: *secrets-env
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
-      # Kept >= dms.scanning.max-file-size-bytes (100MB), otherwise clamd
-      # answers "INSTREAM size limit exceeded" for files the gate accepted.
-      CLAMD_CONF_StreamMaxLength: 100M
-      CLAMD_CONF_MaxFileSize: 100M
-      CLAMD_CONF_MaxScanSize: 400M
+      # Kept >= dms.scanning.max-file-size-bytes (2047MB), otherwise clamd
+      # answers "INSTREAM size limit exceeded" for files the gate accepted -
+      # or worse, stops scanning part-way through a large file and passes it.
+      # clamd scans at most 2147483645 bytes of any one file whatever MaxFileSize
+      # says (it logs "File size limit set to 2147483645"), hence 2047M.
+      # MaxScanSize is the total read from inside archives, so it stays higher.
+      CLAMD_CONF_StreamMaxLength: 2047M
+      CLAMD_CONF_MaxFileSize: 2047M
+      CLAMD_CONF_MaxScanSize: 4000M
+      # ZIP uploads: clamd opens every archive (nested ones too) and scans each file in it.
+      # Anything it can't finish - more than MaxFiles, nested deeper than MaxRecursion,
+      # past MaxScanSize/MaxScanTime - is flagged Heuristics.Limits.Exceeded, and a
+      # password-protected archive Heuristics.Encrypted.*; dms-core treats both as
+      # unscannable (ClamAvScanAdapter), never as clean. MaxScanTime matches the 900 s
+      # scan timeout so a large file isn't cut short.
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_AlertEncryptedArchive: "yes"
+      CLAMD_CONF_MaxScanTime: "900000"
     ports:
       - "3310:3310" # clamd - for a host-run dms-core (dms.scanning.clamav.host=localhost)
     volumes:

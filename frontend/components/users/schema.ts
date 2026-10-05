@@ -38,7 +38,8 @@ export type UserInviteFormValues = z.infer<typeof userInviteFormSchema>
  */
 export const userEditFormSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
-  lastName: z.string().trim().min(1, "Last name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
+  // Optional, as on the backend (UpdateUserRequest) - a user created without one must still be editable.
+  lastName: z.string().trim().max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
   roles: z.array(z.string()),
 })

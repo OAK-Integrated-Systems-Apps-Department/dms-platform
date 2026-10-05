@@ -123,15 +123,16 @@ public class DocumentServiceImpl implements DocumentService {
                     ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(), pageable)
                     : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(), pageable);
         } else if (allFolders) {
-            page = q == null ? documentRepository.findByTenantIdAndDeletedFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId, q, pageable);
+            page = q == null ? documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
+                    tenantId, q, pageable);
         } else if (folderId != null) {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalse(tenantId, folderId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId,
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalse(tenantId, folderId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(tenantId,
                     folderId, q, pageable);
         } else {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTitleContainingIgnoreCase(
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
                     tenantId, q, pageable);
         }
 

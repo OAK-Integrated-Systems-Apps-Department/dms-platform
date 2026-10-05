@@ -9,12 +9,15 @@ import com.oak.dms.scanning.entity.ScanEngine;
 import com.oak.dms.scanning.entity.ScanResult;
 import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.scanning.exception.FileTooLargeException;
+import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
 import com.oak.dms.scanning.helper.EncryptionMarkerInputStream;
 import com.oak.dms.scanning.helper.FileTypeInspector;
+import com.oak.dms.scanning.helper.IngestionProperties;
 import com.oak.dms.scanning.helper.IngestionTicketMapper;
 import com.oak.dms.scanning.helper.ScanProperties;
 import com.oak.dms.scanning.helper.SizeLimitingInputStream;
 import com.oak.dms.scanning.helper.StorageObjectMover;
+import com.oak.dms.scanning.helper.ZipArchiveCheck;
 import com.oak.dms.scanning.repository.ScanResultRepository;
 import com.oak.dms.scanning.service.DocumentPromoter;
 import com.oak.dms.scanning.service.IngestionGate;
@@ -25,6 +28,7 @@ import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.exception.StorageException;
+import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.extern.slf4j.Slf4j;
@@ -77,6 +81,7 @@ public class IngestionGateImpl implements IngestionGate {
     private final DocumentPromoter documentPromoter;
     private final IngestionTicketMapper ingestionTicketMapper;
     private final ScanProperties scanProperties;
+    private final IngestionProperties ingestionProperties;
     private final TransactionTemplate transactionTemplate;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
@@ -91,6 +96,7 @@ public class IngestionGateImpl implements IngestionGate {
                              DocumentPromoter documentPromoter,
                              IngestionTicketMapper ingestionTicketMapper,
                              ScanProperties scanProperties,
+                             IngestionProperties ingestionProperties,
                              PlatformTransactionManager transactionManager,
                              org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -105,6 +111,7 @@ public class IngestionGateImpl implements IngestionGate {
         this.documentPromoter = documentPromoter;
         this.ingestionTicketMapper = ingestionTicketMapper;
         this.scanProperties = scanProperties;
+        this.ingestionProperties = ingestionProperties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -135,7 +142,8 @@ public class IngestionGateImpl implements IngestionGate {
 
         if (detected.encrypted()) {
             ingestionProcessor.markUnscannable(scanResultId, leaseToken,
-                    "Password-protected Office document (encrypted OOXML package)", null);
+                    "zip".equals(detected.extension()) ? "Password-protected ZIP archive"
+                            : "Password-protected Office document (encrypted OOXML package)", null);
             return ticket(scanResultId);
         }
 
@@ -145,13 +153,14 @@ public class IngestionGateImpl implements IngestionGate {
         InputStream hashing = new DigestInputStream(limited, digest);
         EncryptionMarkerInputStream encryptionWatch = detected.pdf() ? new EncryptionMarkerInputStream(hashing) : null;
         StoredObjectMetadata stored;
+        ObjectStorageService stagingStore = engine.getScanMode() == ScanMode.post_store_object
+                ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
+                : objectStorageServiceFactory.resolve(staging);
         try {
             // Encrypted at rest like everything else. A cloud scanner (GuardDuty / Defender) reads the staged
             // object in place, so there the storage's own server-side encryption protects it instead - the
             // upload is refused if the staging location doesn't have it.
-            stored = (engine.getScanMode() == ScanMode.post_store_object
-                    ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
-                    : objectStorageServiceFactory.resolve(staging)).upload(staging, row.getStagingObjectKey(),
+            stored = stagingStore.upload(staging, row.getStagingObjectKey(),
                     encryptionWatch != null ? encryptionWatch : hashing, request.contentLength(), detected.mimeType());
         } catch (StorageException e) {
             storageObjectMover.deleteQuietly(staging, row.getStagingObjectKey());
@@ -171,6 +180,27 @@ public class IngestionGateImpl implements IngestionGate {
         if (encryptionWatch != null && encryptionWatch.markerFound()) {
             ingestionProcessor.markUnscannable(scanResultId, leaseToken, "Encrypted PDF", null);
             return ticket(scanResultId);
+        }
+
+        // 4a. A ZIP is checked whole - complete, readable, within what the scanner can inspect - by
+        // reading the staged copy once. Nothing is extracted or run; the archive is kept as uploaded.
+        if ("zip".equals(detected.extension())) {
+            ZipArchiveCheck.Result zip;
+            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                zip = ZipArchiveCheck.check(staged, ingestionProperties.getZipMaxEntries(),
+                        ingestionProperties.getZipMaxUncompressedBytes());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (zip.outcome() == ZipArchiveCheck.Outcome.ENCRYPTED) {
+                ingestionProcessor.markUnscannable(scanResultId, leaseToken, zip.message(), null);
+                return ticket(scanResultId);
+            }
+            if (zip.outcome() == ZipArchiveCheck.Outcome.INVALID) {
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, zip.message());
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw new FileTypeNotAllowedException(zip.message());
+            }
         }
 
         // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
@@ -256,8 +286,8 @@ public class IngestionGateImpl implements IngestionGate {
         Boolean taken = jdbc.queryForObject("""
                 select exists (select 1 from documents d
                                join document_versions v on v.document_id = d.document_id and not v.is_deleted
-                               where d.tenant_id = ? and not d.is_deleted and d.folder_id is not distinct from ?
-                                 and v.file_hash = ?)
+                               where d.tenant_id = ? and not d.is_deleted and not d.is_template
+                                 and d.folder_id is not distinct from ? and v.file_hash = ?)
                     or exists (select 1 from scan_results s
                                where s.tenant_id = ? and s.file_hash = ? and s.scan_result_id <> ?
                                  and s.ingestion_kind = 'new_document' and s.folder_id is not distinct from ?

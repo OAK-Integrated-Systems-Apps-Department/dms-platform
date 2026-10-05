@@ -15,12 +15,12 @@ import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import {
   ProgressBar,
   StatTile,
   StepCard,
-} from "@/components/bulk-import/step-card"
+} from "@/components/ui/step-card"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { RotationScheduleCard } from "@/components/encryption/rotation-schedule-card"
 import { DashboardShell } from "@/components/layout/dashboard-shell"

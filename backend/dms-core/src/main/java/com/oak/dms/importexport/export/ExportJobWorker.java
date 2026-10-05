@@ -164,8 +164,8 @@ public class ExportJobWorker {
                 return;
             }
             temp = Files.createTempFile("dms-export-", ".zip");
-            ExportArchiveBuilder.Result result = builder.build(job.getTenantId(), documentIds, request.filesIncluded(),
-                    job.getMetadataFormat(), temp, properties.getMaxExportSize().toBytes());
+            ExportArchiveBuilder.Result result = builder.build(job.getTenantId(), documentIds,
+                    request.byFolder() ? request.folderId() : null, temp, properties.getMaxExportSize().toBytes());
 
             StorageLocation location = storageLocationResolver.resolveForTenant(job.getTenantId(), StoragePurpose.staging);
             String objectKey = job.getTenantId() + "/tmp/exports/" + jobId + "/export.zip";
@@ -243,7 +243,8 @@ public class ExportJobWorker {
             job.setCompletedAt(now);
             job.setExpiresAt(now.plus(properties.getJobTtl()));
             job.setFailureReason(result.filesSkipped() > 0
-                    ? result.filesSkipped() + " file(s) could not be included - see the Note column." : null);
+                    ? result.filesSkipped() + " file(s) could not be included - see \""
+                            + ExportArchiveBuilder.SKIPPED_ENTRY + "\" in the ZIP." : null);
             job.setUpdatedAt(now);
             return repository.save(job);
         });

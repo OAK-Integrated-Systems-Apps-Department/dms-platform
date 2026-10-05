@@ -175,7 +175,18 @@ public class RecycleBinService {
                 .log();
     }
 
-    /** Deletes it for good now, instead of at the end of the retention period. */
+    /**
+     * Deletes it for good now, instead of at the end of the retention period.
+     * <p>
+     * FOLLOW-UP: a document whose folder was deleted after it (deleting the
+     * documents empties the folder, so it can then be deleted) is left out of
+     * {@link #list} and answers 404 here, because the access check can't find
+     * the folder. It is still purged by the sweep at the end of retention, but
+     * nobody can see it or purge it sooner, and the "ask an administrator to
+     * restore it" in {@link #restore} has no admin screen behind it. Either
+     * check access against the nearest surviving ancestor (or the top level),
+     * or let a folder delete send its deleted documents along with it.
+     */
     public void purgeNow(UUID documentId) {
         Document document = inBin(documentId);
         documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.edit);

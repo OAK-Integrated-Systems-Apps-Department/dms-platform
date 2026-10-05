@@ -26,8 +26,9 @@ import org.springframework.stereotype.Component;
 public class ScanProperties {
 
     private ScanProvider defaultProvider = ScanProvider.CLAMAV;
-    private int timeoutSeconds = 60;
-    private long maxFileSizeBytes = 104_857_600L;
+    private int timeoutSeconds = 900;
+    /** 2047 MB - the most ClamAV scans of one file (clamd caps it at 2147483645 bytes whatever MaxFileSize says). */
+    private long maxFileSizeBytes = 2_146_435_072L;
     /** A cloud row still without a verdict this long after staging is failed, never promoted. */
     private int cloudVerdictTimeoutMinutes = 60;
     /** How long a failed row's staged object is kept (for Phase 2 re-queue) before the purge sweep deletes it. */
@@ -46,7 +47,7 @@ public class ScanProperties {
         private int initialBackoffSeconds = 30;
         private int maxBackoffSeconds = 900;
         /** Must comfortably exceed timeoutSeconds plus the staging -> document/quarantine copy time. */
-        private int leaseSeconds = 300;
+        private int leaseSeconds = 1_800;
         private int batchSize = 20;
     }
 

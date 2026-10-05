@@ -55,8 +55,8 @@ export const navSections: NavSection[] = [
   {
     label: "Documents",
     items: [
-      // Bulk Import, Bulk Export, Import Templates and My Exports are tabs
-      // inside My Documents (DocumentsHub), each on its own /documents/... path.
+      // Bulk Import (with Import Templates under it) is a tab inside My
+      // Documents (DocumentsHub), on its own /documents/... path.
       {
         label: "My Documents",
         icon: FileText,
@@ -178,6 +178,10 @@ export const navSections: NavSection[] = [
           PermissionCodes.MDTM_CONTENT_TYPES_CREATE,
           PermissionCodes.MDTM_CONTENT_TYPES_UPDATE,
           PermissionCodes.MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE,
+          // Template managers reach a type's Templates tab from here.
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_CREATE,
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_UPDATE,
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE,
         ],
       },
       {

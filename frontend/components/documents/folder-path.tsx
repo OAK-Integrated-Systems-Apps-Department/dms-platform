@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { ItemMenu } from "@/components/documents/browser-items"
+import type { DropBinding } from "@/components/documents/browser-dnd"
 import type { FolderNode } from "@/lib/folders/api"
 import { cn } from "@/lib/utils"
 
@@ -30,17 +31,21 @@ export function FolderPath({
   trail,
   onOpen,
   summary,
+  dropTarget,
 }: {
   /** Folders from the top level down to the current one; empty at the top level. */
   trail: FolderNode[]
   onOpen: (folderId: string | null) => void
   summary?: string
+  /** Drop onto a folder further up the path (null = My Documents) to move or upload there. */
+  dropTarget?: (folder: FolderNode | null) => DropBinding | undefined
 }) {
   const current = trail.at(-1)
   const parent = trail.at(-2)
   const hidden =
     trail.length > MAX_VISIBLE ? trail.slice(1, trail.length - 2) : []
   const visible = hidden.length > 0 ? [trail[0], ...trail.slice(-2)] : trail
+  const rootDrop = current ? dropTarget?.(null) : undefined
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -63,9 +68,12 @@ export function FolderPath({
               <button
                 type="button"
                 onClick={() => onOpen(null)}
+                {...rootDrop?.handlers}
                 className={cn(
                   SEGMENT,
-                  "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  rootDrop?.over
+                    ? DROP_OVER
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <House size={15} className="shrink-0" />
@@ -118,17 +126,11 @@ export function FolderPath({
                     )}
                   </span>
                 ) : (
-                  <button
-                    type="button"
-                    title={node.path}
-                    onClick={() => onOpen(node.folderId)}
-                    className={cn(
-                      SEGMENT,
-                      "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <span className="truncate">{node.name}</span>
-                  </button>
+                  <SegmentButton
+                    node={node}
+                    onOpen={onOpen}
+                    drop={dropTarget?.(node)}
+                  />
                 )}
               </li>
             </Fragment>
@@ -142,6 +144,35 @@ export function FolderPath({
         </span>
       )}
     </div>
+  )
+}
+
+const DROP_OVER = "bg-primary/15 text-foreground ring-2 ring-primary"
+
+function SegmentButton({
+  node,
+  onOpen,
+  drop,
+}: {
+  node: FolderNode
+  onOpen: (folderId: string | null) => void
+  drop?: DropBinding
+}) {
+  return (
+    <button
+      type="button"
+      title={node.path}
+      onClick={() => onOpen(node.folderId)}
+      {...drop?.handlers}
+      className={cn(
+        SEGMENT,
+        drop?.over
+          ? DROP_OVER
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+    >
+      <span className="truncate">{node.name}</span>
+    </button>
   )
 }
 

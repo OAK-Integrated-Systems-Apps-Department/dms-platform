@@ -200,17 +200,20 @@ export async function reactivateUser(userId: string): Promise<UserResponseDto> {
 
 /**
  * Full profile update via `PUT /api/v1/users/{userId}` — accepts
- * `firstName`, `lastName`, `mfaEnabled`, and `status`, and returns the
- * updated `UserResponseDto` (see the schema on the endpoint's Swagger
- * page). Used by the Edit User form; `mfaEnabled`/`status` are unrelated
- * to what that form edits, so callers should pass through a freshly
- * fetched user's current values for those two rather than guessing.
+ * `firstName`, `lastName`, `email`, `mfaEnabled`, and `status`, and returns
+ * the updated `UserResponseDto`. Name and email are written to the user's
+ * Keycloak account too. An email another account already has fails with
+ * ApiError code `EMAIL_IN_USE` (409). Used by the Edit User form;
+ * `mfaEnabled`/`status` are unrelated to what that form edits, so callers
+ * should pass through a freshly fetched user's current values for those two
+ * rather than guessing.
  */
 export async function updateUserProfile(
   userId: string,
   patch: {
     firstName: string
     lastName: string
+    email: string
     mfaEnabled: boolean
     status: UserResponseDto["status"]
   }
@@ -224,6 +227,25 @@ export async function updateUserProfile(
     },
     "Could not save changes."
   )
+}
+
+/**
+ * `GET /api/v1/users/email-availability` - whether `email` is free to give
+ * `userId` (leave out for a new user): no other user in the organisation,
+ * and no account that signs in with it, has it. The same check a save makes.
+ */
+export async function isEmailAvailable(
+  email: string,
+  userId?: string
+): Promise<boolean> {
+  const params = new URLSearchParams({ email })
+  if (userId) params.set("userId", userId)
+  const result = await apiFetchJson<{ available: boolean }>(
+    `${API_BASE_URL}/api/v1/users/email-availability?${params.toString()}`,
+    undefined,
+    "Could not check the email."
+  )
+  return result.available
 }
 
 /**

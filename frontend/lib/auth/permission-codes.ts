@@ -69,6 +69,9 @@ export const PermissionCodes = {
 
   MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
   MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
+  MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
+  MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
+  MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a

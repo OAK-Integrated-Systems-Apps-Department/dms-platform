@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

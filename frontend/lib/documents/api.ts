@@ -1,5 +1,10 @@
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import {
+  apiFetch,
+  apiFetchJson,
+  apiUpload,
+  type UploadTransfer,
+} from "@/lib/api-fetch"
 import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
@@ -50,6 +55,16 @@ export async function fetchSelectableDocumentTypes(): Promise<
 }
 
 /**
+ * Largest file that can be uploaded (dms.scanning.max-file-size-bytes): 2047 MB,
+ * the most the virus scanner checks in one file. Bigger files are refused
+ * before any of them is sent.
+ */
+export const MAX_UPLOAD_BYTES = 2047 * 1024 * 1024
+
+export const TOO_LARGE_MESSAGE =
+  "Larger than 2047 MB - the most the virus scanner can check in one file - so it can't be uploaded."
+
+/**
  * One file through `POST /api/v1/documents` (multipart). Throws ApiError on
  * 413 (too large), 415 (type not allowed), 422 (blocked by the malware scan)
  * and any other failure - `status` tells them apart.
@@ -60,7 +75,9 @@ export async function uploadDocument(
   title: string,
   folderId?: string | null,
   /** Checked for duplicates and found none: refuse (409) if the same file arrived meanwhile. */
-  refuseDuplicates = false
+  refuseDuplicates = false,
+  /** Progress and cancellation - see apiUpload. */
+  transfer?: UploadTransfer
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
@@ -68,12 +85,12 @@ export async function uploadDocument(
   const params = new URLSearchParams({ documentTypeId, title })
   if (folderId) params.set("folderId", folderId)
   if (refuseDuplicates) params.set("refuseDuplicates", "true")
-  const response = await apiFetch(
+  return apiUpload<IngestionTicketDto>(
     `${API_BASE_URL}/api/v1/documents?${params.toString()}`,
-    { method: "POST", body: form },
+    form,
+    transfer,
     "Upload failed."
   )
-  return response.json() as Promise<IngestionTicketDto>
 }
 
 /** Mirrors DocumentListItem - one row of the document browser. */
@@ -332,18 +349,19 @@ export async function downloadDocumentVersion(
 export async function uploadDocumentVersion(
   documentId: string,
   file: File,
-  comment?: string
+  comment?: string,
+  transfer?: UploadTransfer
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
   const params = new URLSearchParams()
   if (comment?.trim()) params.set("comment", comment.trim())
-  const response = await apiFetch(
+  return apiUpload<IngestionTicketDto>(
     `${API_BASE_URL}/api/v1/documents/${documentId}/versions?${params.toString()}`,
-    { method: "POST", body: form },
+    form,
+    transfer,
     "Could not upload the new version."
   )
-  return response.json() as Promise<IngestionTicketDto>
 }
 
 /** `POST .../versions/{versionId}/restore` - adds a new version with that version's content. */

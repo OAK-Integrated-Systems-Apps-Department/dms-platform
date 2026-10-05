@@ -29,13 +29,13 @@ import java.util.Set;
  * stores a password-protected document. Encrypted PDFs are detected while
  * staging, by {@link EncryptionMarkerInputStream}.
  * <p>
- * <b>Archives are deliberately not accepted</b> - there is no zip/7z/rar/tar
- * entry in the table, and a ZIP container is only accepted when it is
- * structurally an OOXML or ODF document. This is a recorded deviation from
- * VMSBDI-FR-004 ("including embedded/compressed files (e.g., ZIP archives)"):
- * the system accepts no archive uploads, so there are no archives to scan -
- * see docs/scanning-architecture.md. (ClamAV still inspects the zip
- * structure inside OOXML/ODF files as part of its normal scan.)
+ * <b>ZIP is the one archive format accepted</b> ({@code .zip}, stored as
+ * uploaded - never extracted, nothing in it run). Its head must be a ZIP
+ * local file header, and a first entry flagged as encrypted marks it
+ * encrypted here, like a password-protected Office file. The whole archive is
+ * checked once staged ({@link ZipArchiveCheck}) and ClamAV scans every file
+ * inside it. 7z/rar/tar/gz and the rest are still refused. A ZIP container
+ * with an Office or OpenDocument extension must still be that document.
  */
 @Component
 public class FileTypeInspector {
@@ -45,6 +45,8 @@ public class FileTypeInspector {
 
     private static final byte[] PDF = "%PDF-".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] ZIP = {'P', 'K', 3, 4};
+    /** An empty ZIP is only its end record - let ZipArchiveCheck say so in words. */
+    private static final byte[] EMPTY_ZIP = {'P', 'K', 5, 6};
     private static final byte[] OLE2 = {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1};
     private static final byte[] RTF = "{\\rtf".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
@@ -67,7 +69,7 @@ public class FileTypeInspector {
     private static final List<byte[]> NOT_TEXT = List.of(ZIP, OLE2, PDF, "MZ".getBytes(StandardCharsets.US_ASCII),
             new byte[]{0x7F, 'E', 'L', 'F'});
 
-    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF, GIF, BMP, WEBP, HEIF, DWG, EMAIL, XML, JSON }
+    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF, GIF, BMP, WEBP, HEIF, DWG, EMAIL, XML, JSON, ZIP }
 
     private record KnownType(String mimeType, Family family) {
     }
@@ -99,7 +101,7 @@ public class FileTypeInspector {
         // Added with the bulk import work (2026-10): common business formats,
         // each still verified by content. Deliberately NOT added: anything
         // that can carry active content when opened (html/htm/svg - scripts;
-        // docm/xlsm/pptm - macros; js/exe/bat/ps1), and archives (see above).
+        // docm/xlsm/pptm - macros; js/exe/bat/ps1), and archives other than ZIP.
         KNOWN_TYPES.put("msg", new KnownType("application/vnd.ms-outlook", Family.OLE2));
         KNOWN_TYPES.put("eml", new KnownType("message/rfc822", Family.EMAIL));
         KNOWN_TYPES.put("vsd", new KnownType("application/vnd.visio", Family.OLE2));
@@ -115,6 +117,8 @@ public class FileTypeInspector {
         KNOWN_TYPES.put("heic", new KnownType("image/heic", Family.HEIF));
         KNOWN_TYPES.put("heif", new KnownType("image/heif", Family.HEIF));
         KNOWN_TYPES.put("dwg", new KnownType("image/vnd.dwg", Family.DWG));
+        // A ZIP archive, kept as one file (see the class comment).
+        KNOWN_TYPES.put("zip", new KnownType("application/zip", Family.ZIP));
     }
 
     private final Set<String> allowedExtensions;
@@ -152,6 +156,10 @@ public class FileTypeInspector {
             // Password-protected OOXML: Office wraps the encrypted package in an OLE2 container.
             return new DetectedFileType(extension, known.mimeType(), false, true);
         }
+        if (known.family() == Family.ZIP && startsWith(bytes, ZIP) && bytes.length >= 8 && (bytes[6] & 1) != 0) {
+            // General-purpose flag bit 0 of the first entry: encrypted (ZipCrypto or AES) - can't be scanned.
+            return new DetectedFileType(extension, known.mimeType(), false, true);
+        }
         if (!matches(known.family(), bytes)) {
             throw new FileTypeNotAllowedException("The file's content does not match its ." + extension
                     + " extension");
@@ -184,6 +192,8 @@ public class FileTypeInspector {
             case EMAIL -> isText(head) && firstLine(head).matches("[!-9;-~]+:.*");
             case XML -> isText(head) && firstNonBlank(head) == '<';
             case JSON -> isText(head) && (firstNonBlank(head) == '{' || firstNonBlank(head) == '[');
+            // A local file header - or the end record alone, an empty archive ZipArchiveCheck refuses.
+            case ZIP -> (startsWith(head, ZIP) && head.length >= 30) || (startsWith(head, EMPTY_ZIP) && head.length >= 22);
         };
     }
 

@@ -60,7 +60,7 @@ class BulkExportServiceTest {
     private final BulkExportService service = new BulkExportService(repository, selector, worker, types,
             mock(StorageLocationRepository.class), mock(ObjectStorageServiceFactory.class), auditService, properties,
             new ObjectMapper().findAndRegisterModules(), access, documentAccess,
-            mock(com.oak.dms.document.DocumentRepository.class));
+            mock(com.oak.dms.document.DocumentRepository.class), mock(com.oak.dms.folder.FolderRepository.class));
 
     @BeforeEach
     void setUp() {
@@ -108,11 +108,13 @@ class BulkExportServiceTest {
     void request_typeFollowsWhatWasAsked() {
         UUID doc = UUID.randomUUID();
         CreateExportRequest single = new CreateExportRequest(List.of(doc), null, null, null, null, null);
-        CreateExportRequest report = new CreateExportRequest(null, TYPE, null, null, "xlsx", false);
+        CreateExportRequest metadataOnly = new CreateExportRequest(null, TYPE, null, null, "xlsx", false);
         when(selector.count(eq(TENANT), any())).thenReturn(1L);
 
         assertThat(service.request(single).exportType()).isEqualTo(ExportType.single_document);
-        assertThat(service.request(report).exportType()).isEqualTo(ExportType.report_data);
+        // Downloads are the files - a metadata sheet on its own isn't offered any more.
+        assertThatThrownBy(() -> service.request(metadataOnly))
+                .isInstanceOf(BulkImportException.class).hasMessageContaining("no metadata-only");
     }
 
     @Test
@@ -122,8 +124,6 @@ class BulkExportServiceTest {
         assertThatThrownBy(() -> service.request(new CreateExportRequest(null, TYPE, LocalDate.of(2026, 9, 30),
                 LocalDate.of(2026, 1, 1), null, null)))
                 .isInstanceOf(BulkImportException.class).hasMessageContaining("start date is after");
-        assertThatThrownBy(() -> service.request(new CreateExportRequest(null, TYPE, null, null, "pdf", null)))
-                .isInstanceOf(BulkImportException.class);
         assertThatThrownBy(() -> service.request(new CreateExportRequest(null, UUID.randomUUID(), null, null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
 

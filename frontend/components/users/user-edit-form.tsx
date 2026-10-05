@@ -1,16 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { AlertTriangle, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { fetchUser, syncUserRoles, updateUserProfile } from "@/lib/users/api"
+import { ApiError } from "@/lib/api-error"
+import { fetchUser, isEmailAvailable, syncUserRoles, updateUserProfile } from "@/lib/users/api"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useRolesStore } from "@/stores/roles-store"
@@ -18,6 +19,8 @@ import { useRolesStore } from "@/stores/roles-store"
 import { RoleMultiSelect } from "./role-multi-select"
 import { userEditFormSchema, type UserEditFormValues } from "./schema"
 import type { UserRecord } from "./types"
+
+const EMAIL_TAKEN = "This email is already used by another account."
 
 interface UserEditFormProps {
   user: UserRecord
@@ -29,11 +32,12 @@ interface UserEditFormProps {
  * credential) are Keycloak-managed and this screen only exposes what DMS
  * is permitted to write.
  *
- * `PUT /api/v1/users/{userId}` only accepts `firstName`, `lastName`,
- * `mfaEnabled`, and `status` (see UpdateUserRequest.java) — there's no
- * field for email at all. Email stays on the form because the mockup
- * calls for it, but it's not sent to the backend; it's Keycloak-managed
- * like username, just not yet marked read-only in this design.
+ * `PUT /api/v1/users/{userId}` takes `firstName`, `lastName`, `email`,
+ * `mfaEnabled`, and `status` (see UpdateUserRequest.java), and writes the
+ * name and email to the user's Keycloak account too. A changed email is
+ * checked as it's typed (`isEmailAvailable`) and again on save: one another
+ * user in the organisation - or any account that signs in with it - already
+ * has is refused, shown under the field.
  *
  * `mfaEnabled`/`status` are passed through unmodified from a freshly
  * fetched copy of the user (not the `user` prop, which may be a moment
@@ -100,6 +104,8 @@ export function UserEditForm({ user }: UserEditFormProps) {
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting, isValid },
   } = useForm<UserEditFormValues>({
     resolver: zodResolver(userEditFormSchema),
@@ -113,6 +119,34 @@ export function UserEditForm({ user }: UserEditFormProps) {
     // matching UserInviteForm - see that component's own comment.
     mode: "onChange",
   })
+
+  // A changed email is checked shortly after typing stops - the same check a save makes.
+  const email = useWatch({ control, name: "email" })
+  const emailCheck = useRef(0)
+  const [checkingFor, setCheckingFor] = useState<string | null>(null)
+  const candidateEmail = email?.trim() ?? ""
+  const emailChanged =
+    canEditProfile && candidateEmail !== "" && candidateEmail.toLowerCase() !== user.email.toLowerCase()
+  const checkingEmail = emailChanged && checkingFor === candidateEmail
+  useEffect(() => {
+    const candidate = email?.trim() ?? ""
+    const ticket = ++emailCheck.current
+    if (!canEditProfile || !candidate || candidate.toLowerCase() === user.email.toLowerCase()) return
+    const timer = setTimeout(async () => {
+      setCheckingFor(candidate)
+      try {
+        const available = await isEmailAvailable(candidate, user.id)
+        if (ticket !== emailCheck.current) return
+        if (available) clearErrors("email")
+        else setError("email", { type: "taken", message: EMAIL_TAKEN })
+      } catch {
+        // Can't check now - the save checks again anyway.
+      } finally {
+        if (ticket === emailCheck.current) setCheckingFor(null)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [email, canEditProfile, user.email, user.id, setError, clearErrors])
 
   async function onSubmit(values: UserEditFormValues) {
     setSubmitError(null)
@@ -129,6 +163,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
         await updateUserProfile(user.id, {
           firstName: values.firstName,
           lastName: values.lastName,
+          email: values.email.trim(),
           // Not edited on this form — carried over as-is from the current
           // record so saving a name change can't accidentally toggle MFA
           // or flip a locked/disabled account back to active.
@@ -136,6 +171,10 @@ export function UserEditForm({ user }: UserEditFormProps) {
           status: current.status,
         })
       } catch (err) {
+        if (err instanceof ApiError && err.code === "EMAIL_IN_USE") {
+          setError("email", { type: "taken", message: EMAIL_TAKEN }, { shouldFocus: true })
+          return
+        }
         const message = err instanceof Error ? err.message : "Could not save changes."
         setSubmitError(message)
         toast.error(message)
@@ -228,11 +267,13 @@ export function UserEditForm({ user }: UserEditFormProps) {
           className={!canEditProfile ? "cursor-not-allowed border-dashed" : undefined}
           {...register("email")}
         />
-        {errors.email && (
+        {errors.email ? (
           <p className="mt-1.5 text-[12px] text-[var(--rust)]">
             {errors.email.message}
           </p>
-        )}
+        ) : checkingEmail ? (
+          <p className="mt-1.5 text-[12px] text-muted-foreground">Checking the email…</p>
+        ) : null}
       </div>
 
       <div className="mb-5">
@@ -293,7 +334,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || !isValid}
+          disabled={isSubmitting || !isValid || checkingEmail || errors.email?.type === "taken"}
           className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving…" : "Save changes"}

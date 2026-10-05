@@ -106,6 +106,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .documentTypeId(cleanResult.getDocumentTypeId())
                     .folderId(cleanResult.getFolderId())
                     .title(cleanResult.getTitle())
+                    .template(DocumentTemplateService.CREATED_REASON.equals(cleanResult.getCreatedReason()))
                     .currentVersionId(plan.versionId())
                     .latestVersionId(plan.versionId())
                     .ownerUserId(uploadedBy)

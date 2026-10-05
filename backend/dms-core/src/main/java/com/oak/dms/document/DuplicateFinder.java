@@ -76,7 +76,7 @@ public class DuplicateFinder {
                 join documents d on d.document_id = v.document_id
                      and v.version_id = coalesce(d.current_version_id, d.latest_version_id)
                 where v.tenant_id = ? and v.content_simhash is not null and not v.is_deleted
-                  and not d.is_deleted and d.purged_at is null
+                  and not d.is_deleted and d.purged_at is null and not d.is_template
                   and bit_count((v.content_simhash # ?)::bit(64)) <= ?
                 limit 200
                 """, tenantId, simhash, DocumentFingerprints.SIMILAR_WITHIN_BITS)) {
@@ -123,7 +123,7 @@ public class DuplicateFinder {
                     from document_versions v
                     join documents d on d.document_id = v.document_id
                     where v.tenant_id = ? and v.file_hash = ? and not v.is_deleted
-                      and not d.is_deleted and d.purged_at is null
+                      and not d.is_deleted and d.purged_at is null and not d.is_template
                     order by is_current desc, v.version_number desc
                     limit 200
                     """, tenantId, sha256.toLowerCase(Locale.ROOT))) {
@@ -139,7 +139,7 @@ public class DuplicateFinder {
             for (UUID documentId : jdbc.queryForList("""
                     select d.document_id from documents d
                     join document_versions cv on cv.version_id = coalesce(d.current_version_id, d.latest_version_id)
-                    where d.tenant_id = ? and not d.is_deleted and d.purged_at is null
+                    where d.tenant_id = ? and not d.is_deleted and d.purged_at is null and not d.is_template
                       and d.folder_id is not distinct from ?
                       and lower(cv.original_filename) = lower(?)
                     limit 200

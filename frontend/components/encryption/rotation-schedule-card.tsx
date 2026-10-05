@@ -4,7 +4,7 @@ import { useState } from "react"
 import { AlertTriangle, CalendarClock, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { StatTile, StepCard } from "@/components/bulk-import/step-card"
+import { StatTile, StepCard } from "@/components/ui/step-card"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { Button } from "@/components/ui/button"
 import { SegmentedControl } from "@/components/ui/segmented-control"

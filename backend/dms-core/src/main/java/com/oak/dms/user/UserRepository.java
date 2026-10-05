@@ -26,6 +26,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByTenantIdAndUsernameAndDeletedFalse(UUID tenantId, String username);
 
+    /**
+     * Another user in the tenant - deactivated ones included, since uq_users_tenant_email covers
+     * them too - already has this email, ignoring case.
+     */
+    boolean existsByTenantIdAndEmailIgnoreCaseAndUserIdNot(UUID tenantId, String email, UUID userId);
+
     // Includes deactivated (soft-deleted) users deliberately, unlike the
     // three lookups above: the User List / View User screens need to keep
     // showing a deactivated user (with status "disabled") so there's

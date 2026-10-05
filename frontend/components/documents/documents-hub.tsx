@@ -3,27 +3,16 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
-import {
-  Download,
-  FileDown,
-  FileSpreadsheet,
-  FileText,
-  FileUp,
-  Folder,
-  Loader2,
-} from "lucide-react"
+import { FileText, Folder, Loader2 } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { fetchActiveBulkImport } from "@/lib/bulk-imports/api"
 import { fetchDocuments } from "@/lib/documents/api"
-import { fetchMyExportJobs, isExportInFlight } from "@/lib/export-jobs/api"
 import { useFolders } from "@/lib/folders/use-folders"
 import { cn } from "@/lib/utils"
 
-export type DocumentsTab =
-  "documents" | "bulk-import" | "bulk-export" | "import-templates" | "exports"
+export type DocumentsTab = "documents"
 
 interface TabDef {
   key: DocumentsTab
@@ -33,6 +22,8 @@ interface TabDef {
   /** Any one of these lets you open the tab; empty = everyone. */
   permissions: string[]
   description: string
+  /** A page inside another tab: not in the tab bar, that tab stays selected. */
+  parent?: DocumentsTab
 }
 
 const TABS: TabDef[] = [
@@ -43,54 +34,14 @@ const TABS: TabDef[] = [
     icon: FileText,
     permissions: [PermissionCodes.DOCM_DOCUMENTS_VIEW],
     description:
-      "Your organisation's documents in shared folders - browse, upload into a folder, move and export.",
-  },
-  {
-    key: "bulk-import",
-    label: "Bulk Import",
-    href: "/documents/bulk-import",
-    icon: FileUp,
-    permissions: [PermissionCodes.FIE_BULK_IMPORT_UPLOAD_FILE],
-    description:
-      "Import many documents at once - with a template for their metadata, or a quick upload of files only. Every file is virus-scanned as it uploads.",
-  },
-  {
-    key: "bulk-export",
-    label: "Bulk Export",
-    href: "/documents/bulk-export",
-    icon: FileDown,
-    permissions: [PermissionCodes.FIE_BULK_EXPORT_EXECUTE],
-    description:
-      "Export documents with their metadata as a ZIP - by document type or by folder.",
-  },
-  {
-    key: "import-templates",
-    label: "Import Templates",
-    href: "/documents/import-templates",
-    icon: FileSpreadsheet,
-    permissions: [
-      PermissionCodes.FIE_IMPORT_TEMPLATES_CREATE,
-      PermissionCodes.FIE_IMPORT_TEMPLATES_UPDATE,
-      PermissionCodes.FIE_IMPORT_TEMPLATES_DELETE,
-    ],
-    description:
-      "Saved Bulk Import templates: the columns people fill in, their names and order, and defaults for the rest.",
-  },
-  {
-    key: "exports",
-    label: "My Exports",
-    href: "/documents/exports",
-    icon: Download,
-    permissions: [],
-    description:
-      "Exports you requested and where each one stands. Finished ones are kept until their expiry time.",
+      "Your organisation's documents in shared folders - browse, upload, move and download.",
   },
 ]
 
 /**
  * The shared frame of the Documents area: breadcrumb, title, the tabs the
- * caller may open, and a live summary - documents, folders, and any import
- * or export still running - so every page in the area reads as one place.
+ * caller may open (the bar shows only once there's more than one), and a
+ * live summary of documents and folders.
  */
 export function DocumentsHub({
   active,
@@ -102,9 +53,11 @@ export function DocumentsHub({
   const { hasPermission, hasAnyPermission } = usePermissions()
   const visible = TABS.filter(
     (tab) =>
-      tab.permissions.length === 0 || hasAnyPermission(...tab.permissions)
+      !tab.parent &&
+      (tab.permissions.length === 0 || hasAnyPermission(...tab.permissions))
   )
   const current = TABS.find((tab) => tab.key === active) ?? TABS[0]
+  const parent = TABS.find((tab) => tab.key === current.parent)
 
   return (
     <>
@@ -113,6 +66,7 @@ export function DocumentsHub({
         segments={[
           { label: "Dashboard", href: "/" },
           { label: "Documents", href: "/documents" },
+          ...(parent ? [{ label: parent.label, href: parent.href }] : []),
           { label: current.label },
         ]}
       />
@@ -127,51 +81,46 @@ export function DocumentsHub({
         </div>
         <SummaryStrip
           canView={hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)}
-          canImport={hasPermission(PermissionCodes.FIE_BULK_IMPORT_UPLOAD_FILE)}
         />
       </div>
 
-      <nav
-        aria-label="Documents sections"
-        className="mb-6 border-b border-border"
-      >
-        <ul className="-mb-px flex flex-wrap gap-1">
-          {visible.map((tab) => {
-            const Icon = tab.icon
-            const selected = tab.key === active
-            return (
-              <li key={tab.key}>
-                <Link
-                  href={tab.href}
-                  aria-current={selected ? "page" : undefined}
-                  className={cn(
-                    "inline-flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-[13px] font-medium transition-colors",
-                    selected
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                  )}
-                >
-                  <Icon size={15} aria-hidden="true" />
-                  {tab.label}
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+      {visible.length > 1 && (
+        <nav
+          aria-label="Documents sections"
+          className="mb-6 border-b border-border"
+        >
+          <ul className="-mb-px flex flex-wrap gap-1">
+            {visible.map((tab) => {
+              const Icon = tab.icon
+              const selected = tab.key === active || tab.key === current.parent
+              return (
+                <li key={tab.key}>
+                  <Link
+                    href={tab.href}
+                    aria-current={selected ? "page" : undefined}
+                    className={cn(
+                      "inline-flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-[13px] font-medium transition-colors",
+                      selected
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                    )}
+                  >
+                    <Icon size={15} aria-hidden="true" />
+                    {tab.label}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+      )}
 
       {children}
     </>
   )
 }
 
-function SummaryStrip({
-  canView,
-  canImport,
-}: {
-  canView: boolean
-  canImport: boolean
-}) {
+function SummaryStrip({ canView }: { canView: boolean }) {
   const documents = useQuery({
     queryKey: ["documents", "count"],
     queryFn: () =>
@@ -180,19 +129,6 @@ function SummaryStrip({
     staleTime: 30_000,
   })
   const folders = useFolders(canView)
-  const activeImport = useQuery({
-    queryKey: ["bulk-imports", "active"],
-    queryFn: fetchActiveBulkImport,
-    enabled: canImport,
-  })
-  const exports = useQuery({
-    queryKey: ["export-jobs", "mine", "all", 1, 20],
-    queryFn: () => fetchMyExportJobs(undefined, 0, 20),
-    staleTime: 15_000,
-  })
-  const exportsRunning = (exports.data?.content ?? []).filter((job) =>
-    isExportInFlight(job.status)
-  ).length
 
   const items: { icon: ReactNode; label: string; busy?: boolean }[] = []
   if (canView) {
@@ -205,23 +141,6 @@ function SummaryStrip({
     items.push({
       icon: <Folder size={14} />,
       label: `${folders.flat.length} ${folders.flat.length === 1 ? "folder" : "folders"}`,
-    })
-  }
-  if (canImport && activeImport.data) {
-    items.push({
-      icon: <FileUp size={14} />,
-      label:
-        activeImport.data.status === "uploading"
-          ? "Import being uploaded"
-          : "Import processing",
-      busy: activeImport.data.status !== "uploading",
-    })
-  }
-  if (exportsRunning > 0) {
-    items.push({
-      icon: <FileDown size={14} />,
-      label: `${exportsRunning} ${exportsRunning === 1 ? "export" : "exports"} preparing`,
-      busy: true,
     })
   }
   if (items.length === 0) return null

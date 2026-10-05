@@ -90,6 +90,14 @@ public class Document {
     @Builder.Default
     private boolean deleted = false;
 
+    /**
+     * A document type's template (V69): offered for download and as a starting point, never
+     * listed as a document, and view-only except through DocumentTemplateService.
+     */
+    @Column(name = "is_template", nullable = false)
+    @Builder.Default
+    private boolean template = false;
+
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 

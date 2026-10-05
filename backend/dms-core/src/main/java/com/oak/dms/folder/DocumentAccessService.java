@@ -57,13 +57,13 @@ public class DocumentAccessService {
                                      boolean anyRestricted) {
 
         public FolderAccessLevel level(Document document) {
-            if (admin) {
-                return FolderAccessLevel.manage;
-            }
-            if (document.getAccessMode() == FolderAccessMode.restricted) {
-                return granted.getOrDefault(document.getDocumentId(), FolderAccessLevel.none);
-            }
-            return folders.level(document.getFolderId());
+            FolderAccessLevel level = admin ? FolderAccessLevel.manage
+                    : document.getAccessMode() == FolderAccessMode.restricted
+                    ? granted.getOrDefault(document.getDocumentId(), FolderAccessLevel.none)
+                    : folders.level(document.getFolderId());
+            // A template is only ever opened, downloaded or copied here - it's changed through
+            // DocumentTemplateService, with the document-type permission, never as a document.
+            return document.isTemplate() && level.atLeast(FolderAccessLevel.view) ? FolderAccessLevel.view : level;
         }
 
         public boolean canSee(Document document) {

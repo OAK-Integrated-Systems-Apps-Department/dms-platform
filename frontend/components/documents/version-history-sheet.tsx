@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { Button } from "@/components/ui/button"
@@ -26,11 +26,13 @@ import {
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { friendlyMessage } from "@/lib/api-error"
-import { saveDownloadedFile } from "@/lib/bulk-imports/api"
+import { saveDownloadedFile } from "@/lib/download-file"
 import {
   downloadDocumentVersion,
   fetchDocumentVersions,
+  MAX_UPLOAD_BYTES,
   restoreDocumentVersion,
+  TOO_LARGE_MESSAGE,
   uploadDocumentVersion,
   type DocumentVersionDto,
   type IngestionTicketDto,
@@ -100,6 +102,10 @@ export function VersionHistorySheet({
 
   async function upload() {
     if (!file) return
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error(TOO_LARGE_MESSAGE)
+      return
+    }
     setUploading(true)
     try {
       // The same file as a version already in the history would change nothing - say so instead.

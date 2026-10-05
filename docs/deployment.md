@@ -305,8 +305,26 @@ ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 oak@1
   `keycloak_db` would be better.
 - **Mail.** Defaults deliver into Mailpit, so nobody receives email. Set
   `SMTP_*` to a real relay.
-- **Upload size.** nginx allows 100 MB, but Spring's default multipart limit
-  (1 MB file / 10 MB request) is not configured in `application.yml`.
+- **Upload size.** One file can be up to 2047 MB, the most ClamAV scans of a
+  single file. That limit is set in four places that must agree:
+  - nginx `client_max_body_size 2048m`
+  - `spring.servlet.multipart`
+  - `dms.scanning.max-file-size-bytes` (the `scan_engines` row)
+  - clamd `StreamMaxLength`/`MaxFileSize`
+
+  Uploads spool to the dms-core container's temp directory and to staging
+  storage, so allow several GB of free disk for concurrent large uploads.
+- **Virus scanner.** The `clamav` service (`clamav/clamav-debian:1.4.3`) has the
+  same limits as the local stack, and dms-core reaches it at `clamav:3310`.
+  - **Network:** it has no host port, but it needs outbound HTTPS to
+    `database.clamav.net` for signature updates (every 2 hours).
+  - **First deploy:** a fresh `clamav_db` volume downloads about 300 MB of
+    signatures before clamd listens, which takes several minutes. Uploads made
+    meanwhile wait as "being scanned" and finish by themselves once it's up.
+  - **Memory:** budget about 3 GB of RAM for it (it's capped at 4 GB).
+  - **Check it:** `docker exec oakdms-clamav clamdcheck.sh` should succeed, and
+    `docker logs oakdms-clamav` shows "File size limit set to 2146435072
+    bytes".
 - **Integration tests.** The 14 `*IT` classes compile but never run (no
   maven-failsafe-plugin configured), so CI runs the 28 unit/context tests.
 - **Actions pinning.** Workflows use major-version tags (`@v5`). Pin to

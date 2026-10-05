@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetchJson } from "@/lib/api-fetch"
+import { sha256HexStreaming } from "@/lib/documents/sha256-stream"
 
 /** Mirrors DuplicateFinder.Match - a document an upload would duplicate. */
 export interface DuplicateMatchDto {
@@ -73,12 +74,18 @@ export interface DuplicateCheckResultDto {
 /** What to do with one file that's already in the DMS. */
 export type DuplicateChoice = "version" | "both" | "skip"
 
+/** Up to this size the file is hashed by Web Crypto in one go; bigger ones are read in slices. */
+const MAX_ONE_SHOT_HASH_BYTES = 256 * 1024 * 1024
+
 /**
  * The file's SHA-256, worked out in the browser so nothing has to be uploaded
  * to find a duplicate. Null where the browser can't (no Web Crypto outside
- * HTTPS/localhost) - the check then goes by name only.
+ * HTTPS/localhost) - the check then goes by name only. Files over
+ * MAX_ONE_SHOT_HASH_BYTES (up to the 2047 MB upload limit) are hashed slice
+ * by slice instead, so a large file is never held in memory whole.
  */
 export async function sha256Hex(file: File): Promise<string | null> {
+  if (file.size > MAX_ONE_SHOT_HASH_BYTES) return sha256HexStreaming(file)
   if (typeof crypto === "undefined" || !crypto.subtle) return null
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
   return Array.from(new Uint8Array(digest), (b) =>

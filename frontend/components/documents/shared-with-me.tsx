@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import {
   BrowserList,
   DocumentTile,
@@ -33,7 +33,7 @@ import { TablePagination } from "@/components/ui/table-pagination"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { saveDownloadedFile } from "@/lib/bulk-imports/api"
+import { saveDownloadedFile } from "@/lib/download-file"
 import {
   deleteDocument,
   downloadDocumentFile,

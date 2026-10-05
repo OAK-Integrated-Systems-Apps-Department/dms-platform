@@ -119,6 +119,20 @@ public class UserController {
         return userService.getPlatformRoles(userId);
     }
 
+    public record EmailAvailability(boolean available) {
+    }
+
+    @GetMapping("/email-availability")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_CREATE)")
+    @Operation(summary = "Whether an email is free to give a user",
+            description = "The same check a save makes - another user in the tenant, or any account that signs in "
+                    + "with it. One answer either way, so it can't tell which.")
+    // userId: the user whose email is being changed; left out when inviting a new one.
+    public EmailAvailability emailAvailability(@RequestParam("email") String email,
+                                               @RequestParam(value = "userId", required = false) UUID userId) {
+        return new EmailAvailability(userService.isEmailAvailable(email, userId));
+    }
+
     @GetMapping
     // Same read-widening as getUser() above, same reason - see its comment.
     @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_RESET_PASSWORD, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DEACTIVATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_DELETE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_ASSIGN_ROLE)")

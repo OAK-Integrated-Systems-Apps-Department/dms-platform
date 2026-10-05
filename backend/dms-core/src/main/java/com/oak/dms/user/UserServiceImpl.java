@@ -7,7 +7,9 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
+import com.oak.dms.common.exception.EmailInUseException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
@@ -289,8 +291,21 @@ public class UserServiceImpl implements UserService {
         Map<String, Object> previousValue = Map.of(
                 "firstName", user.getFirstName(),
                 "lastName", user.getLastName() == null ? "" : user.getLastName(),
+                "email", user.getEmail(),
                 "mfaEnabled", user.isMfaEnabled(),
                 "status", user.getStatus());
+
+        // A new email must be no other account's: another user in this tenant (deactivated ones
+        // included - they keep theirs), or any Keycloak account in the shared realm, by email or by
+        // username (both sign in). One generic answer for all of these - see EmailInUseException.
+        String requested = request.email() == null ? "" : request.email().strip();
+        String newEmail = requested.isEmpty() || requested.equals(user.getEmail()) ? null : requested; // null = unchanged
+        if (newEmail != null) {
+            if (emailTaken(newEmail, user)) {
+                throw new EmailInUseException();
+            }
+            user.setEmail(newEmail);
+        }
 
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
@@ -315,7 +330,21 @@ public class UserServiceImpl implements UserService {
             keycloakUserService.enableUser(user.getKeycloakId());
         }
 
-        User saved = userRepository.save(user);
+        // The row first, flushed - so a clash on uq_users_tenant_email (two admins at once) fails
+        // here - then the Keycloak account. If Keycloak refuses, the transaction rolls the row back
+        // and the two never disagree.
+        User saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new EmailInUseException();
+        }
+        try {
+            keycloakUserService.updateProfile(saved.getKeycloakId(), saved.getFirstName(), saved.getLastName(),
+                    newEmail);
+        } catch (KeycloakUserAlreadyExistsException e) {
+            throw new EmailInUseException();
+        }
         log.info("Updated user {}", saved.getUserId());
 
         auditService.event(AuditActionCatalog.USER_UPDATED)
@@ -327,11 +356,39 @@ public class UserServiceImpl implements UserService {
                 .newValue(Map.of(
                         "firstName", saved.getFirstName(),
                         "lastName", saved.getLastName() == null ? "" : saved.getLastName(),
+                        "email", saved.getEmail(),
                         "mfaEnabled", saved.isMfaEnabled(),
                         "status", saved.getStatus()))
                 .log();
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isEmailAvailable(String email, UUID userId) {
+        String candidate = email == null ? "" : email.strip();
+        if (candidate.isEmpty()) {
+            return false;
+        }
+        User user = userId == null ? null : findOwnedByCallerTenant(userId);
+        if (user != null && candidate.equalsIgnoreCase(user.getEmail())) {
+            return true; // their own
+        }
+        return !emailTaken(candidate, user);
+    }
+
+    /**
+     * Another account has {@code email}: a user in the caller's tenant (deactivated ones too - they
+     * keep theirs, and uq_users_tenant_email covers them), or any Keycloak account in the shared
+     * realm, by email or username. {@code self} (null for a new user) is never counted.
+     */
+    private boolean emailTaken(String email, User self) {
+        UUID tenantId = self != null ? self.getTenantId() : TenantContext.getTenantId();
+        UUID selfId = self != null ? self.getUserId() : new UUID(0, 0);
+        return userRepository.existsByTenantIdAndEmailIgnoreCaseAndUserIdNot(tenantId, email, selfId)
+                || keycloakUserService.emailTakenByAnotherAccount(email,
+                self != null ? self.getKeycloakId() : new UUID(0, 0));
     }
 
     @Override

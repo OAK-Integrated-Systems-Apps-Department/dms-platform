@@ -52,6 +52,13 @@ public interface UserService {
     UserResponse updateUser(UUID userId, UpdateUserRequest request);
 
     /**
+     * Whether {@code email} is free for {@code userId} (null = a new user) - the check
+     * {@link #updateUser} makes before changing an email, asked ahead so the form can say so as
+     * the email is typed.
+     */
+    boolean isEmailAvailable(String email, UUID userId);
+
+    /**
      * @param reason Why the account is being deactivated - mandatory (see
      *               AuditActionCatalog's USER_DEACTIVATED entry): sanitized
      *               and recorded on the resulting audit event, never stored

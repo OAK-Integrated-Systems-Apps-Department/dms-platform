@@ -22,7 +22,7 @@ public class ImportExportProperties {
     private int maxFilesPerBatch = 500;
 
     /** Maximum total size of all files staged for one batch. */
-    private DataSize maxBatchSize = DataSize.ofGigabytes(2);
+    private DataSize maxBatchSize = DataSize.ofGigabytes(20);
 
     /** Batches a user may have in uploading/queued/running at once. */
     private int maxActiveBatchesPerUser = 1;
@@ -52,12 +52,12 @@ public class ImportExportProperties {
      * resumable upload session. Its entries still count toward
      * {@link #maxBatchSize} as they're staged.
      */
-    private DataSize maxArchiveSize = DataSize.ofGigabytes(2);
+    private DataSize maxArchiveSize = DataSize.ofGigabytes(20);
 
     /** Most entries one ZIP may hold - an archive built to exhaust the server is refused up front. */
     private int maxArchiveEntries = 5000;
 
-    /** Largest single chunk of a resumable upload (kept under the 100 MB proxy/multipart limits). */
+    /** Largest single chunk of a resumable upload (kept well under the proxy/multipart limits). */
     private DataSize maxChunkSize = DataSize.ofMegabytes(64);
 
     /** An unfinished resumable upload is deleted after this. */

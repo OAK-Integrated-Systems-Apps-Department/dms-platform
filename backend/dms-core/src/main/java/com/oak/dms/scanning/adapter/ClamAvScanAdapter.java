@@ -41,7 +41,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code Heuristics.Encrypted.*} detections (only raised if clamd's
  * {@code AlertEncrypted*} options are on) are mapped to UNSCANNABLE, not
  * INFECTED - an encrypted file isn't evidence of malware, it just can't be
- * inspected.
+ * inspected. So are {@code Heuristics.Limits.Exceeded.*} ({@code AlertExceedsMax}):
+ * clamd stopped before the end - an archive nested too deep, too many files
+ * inside - so what it didn't reach is unknown, not infected.
  */
 @Slf4j
 @Component
@@ -51,6 +53,7 @@ public class ClamAvScanAdapter implements ScanService {
     static final String ENGINE_NAME = "ClamAV";
     private static final Duration VERSION_CACHE_TTL = Duration.ofMinutes(5);
     private static final String ENCRYPTED_HEURISTIC_PREFIX = "Heuristics.Encrypted";
+    private static final String LIMITS_HEURISTIC_PREFIX = "Heuristics.Limits.Exceeded";
 
     private final ScanProperties scanProperties;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
@@ -98,6 +101,7 @@ public class ClamAvScanAdapter implements ScanService {
         if (body.endsWith(" FOUND")) {
             String threat = body.substring(0, body.length() - " FOUND".length()).trim();
             ScanVerdictStatus status = threat.startsWith(ENCRYPTED_HEURISTIC_PREFIX)
+                    || threat.startsWith(LIMITS_HEURISTIC_PREFIX)
                     ? ScanVerdictStatus.UNSCANNABLE
                     : ScanVerdictStatus.INFECTED;
             return new ScanVerdict(status, threat, null, ENGINE_NAME, version.engineVersion(),

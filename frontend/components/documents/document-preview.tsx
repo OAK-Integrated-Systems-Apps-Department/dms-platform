@@ -9,7 +9,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Download, FileQuestion, Loader2, ZoomIn, ZoomOut } from "lucide-react"
+import {
+  Download,
+  FileArchive,
+  FileQuestion,
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
 
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { Button } from "@/components/ui/button"
@@ -153,6 +160,8 @@ function rendererFor(
 function noPreviewReason(fileName: string | null, label: string): string {
   if (extensionOf(fileName) === "dwg")
     return "AutoCAD drawings (.dwg) can't be shown in the browser - open it in AutoCAD or a DWG viewer."
+  if (extensionOf(fileName) === "zip")
+    return "ZIP archives are kept exactly as uploaded - nothing in them is opened or unpacked here. Every file inside was checked for viruses when it was uploaded."
   return `${label} files can't be shown in the browser.`
 }
 
@@ -378,6 +387,7 @@ export function DocumentPreview({
         <div ref={content} className="flex min-h-0 flex-1 flex-col bg-muted/30">
           {renderer === null || tooBigForText ? (
             <NoPreview
+              archive={extensionOf(row.fileName) === "zip"}
               reason={
                 tooBigForText
                   ? "This file is too large to show here."
@@ -667,23 +677,39 @@ function Viewer({
 
 function NoPreview({
   reason,
+  archive = false,
   onDownload,
 }: {
   reason: string
+  /** A ZIP: shown as a downloadable archive rather than "no preview". */
+  archive?: boolean
   onDownload: () => void
 }) {
+  const Icon = archive ? FileArchive : FileQuestion
   return (
     <div className="m-auto flex max-w-[420px] flex-col items-center gap-3 p-6 text-center">
-      <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <FileQuestion size={22} />
+      <span
+        className={cn(
+          "flex size-12 items-center justify-center rounded-full",
+          archive
+            ? "bg-[#986f0b]/10 text-[#986f0b]"
+            : "bg-muted text-muted-foreground"
+        )}
+      >
+        <Icon size={22} />
       </span>
-      <p className="text-[14px] font-semibold">No preview available</p>
+      <p className="text-[14px] font-semibold">
+        {archive ? "ZIP archive" : "No preview available"}
+      </p>
       <p className="text-[13px] text-muted-foreground">
-        {reason} Download it to open it on your computer.
+        {reason}{" "}
+        {archive
+          ? "Download it to see the files inside."
+          : "Download it to open it on your computer."}
       </p>
       <Button size="sm" onClick={onDownload}>
         <Download />
-        Download
+        {archive ? "Download ZIP" : "Download"}
       </Button>
     </div>
   )
