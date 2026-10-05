@@ -31,6 +31,9 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.folder.FolderAccessService;
 import com.oak.dms.folder.FolderException;
+import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.document.DocumentVersionService;
+import com.oak.dms.document.DuplicateFinder;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,6 +73,8 @@ public class ImportRecordCreator {
     static final String FILE_MISSING = "FILE_MISSING";
     static final String VALUE_NOT_SAVED = "VALUE_NOT_SAVED";
     static final String ACCESS_REVOKED = "ACCESS_REVOKED";
+    static final String DUPLICATE_SKIPPED = "DUPLICATE_SKIPPED";
+    static final String DUPLICATE = "DUPLICATE";
     private static final String FILE = "file";
     private static final TypeReference<List<ImportRowError>> ERRORS = new TypeReference<>() {
     };
@@ -84,6 +89,9 @@ public class ImportRecordCreator {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final FolderAccessService folderAccess;
+    private final DuplicateFinder duplicates;
+    private final DocumentVersionService versions;
+    private final DocumentRepository documentRepository;
 
     public ImportRecordCreator(DocumentService documentService,
                                IngestionGate ingestionGate,
@@ -94,7 +102,10 @@ public class ImportRecordCreator {
                                ImportUsers importUsers,
                                ObjectMapper objectMapper,
                                PlatformTransactionManager transactionManager,
-                               FolderAccessService folderAccess) {
+                               FolderAccessService folderAccess,
+                               DuplicateFinder duplicates,
+                               DocumentVersionService versions,
+                               DocumentRepository documentRepository) {
         this.documentService = documentService;
         this.ingestionGate = ingestionGate;
         this.documentMetadataRepository = documentMetadataRepository;
@@ -105,6 +116,9 @@ public class ImportRecordCreator {
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.folderAccess = folderAccess;
+        this.duplicates = duplicates;
+        this.versions = versions;
+        this.documentRepository = documentRepository;
     }
 
     /**
@@ -159,6 +173,36 @@ public class ImportRecordCreator {
             failAccessRevoked(item.getImportItemId(), denied.get());
             return Optional.empty();
         }
+        // Already in the DMS? The batch's own choice decides (V65).
+        UUID versionOf = null;
+        Optional<DuplicateFinder.Match> duplicate = "keep_both".equals(batch.duplicateAction()) ? Optional.empty()
+                : duplicates.find(item.getStagedFileHash(), item.getFilenameReference(), batch.folderId()).stream()
+                .findFirst();
+        if (duplicate.isPresent()) {
+            DuplicateFinder.Match match = duplicate.get();
+            String where = "'" + match.title() + "'" + (match.folderName() != null ? " in " + match.folderName() : "");
+            if ("skip".equals(batch.duplicateAction())) {
+                fail(item.getImportItemId(), DUPLICATE_SKIPPED, match.sameContent()
+                        ? "Skipped - the same file is already in the DMS as " + where
+                        : "Skipped - " + where + " already has this file name");
+                return Optional.empty();
+            }
+            // new_version
+            if (match.identicalToCurrent()) {
+                linkExisting(item.getImportItemId(), match.documentId(), "Identical to " + where
+                        + " - nothing new to add, so it wasn't uploaded again");
+                return Optional.empty();
+            }
+            if (match.sameName() && match.canAddVersion()) {
+                versionOf = match.documentId();
+                warn(item.getImportItemId(), "Added as a new version of " + where);
+            } else if (match.sameName()) {
+                warn(item.getImportItemId(), "You can't edit " + where + ", so it was added as a separate document");
+            } else {
+                warn(item.getImportItemId(), "The same content is already in " + where
+                        + " (version " + match.matchedVersion() + ") - added as a separate document");
+            }
+        }
         String title = ImportTitles.resolve(rowValues(item).title(), item.getFilenameReference());
 
         InputStream content;
@@ -190,7 +234,10 @@ public class ImportRecordCreator {
          */
         IngestionTicketResponse ticket;
         try {
-            ticket = documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
+            ticket = versionOf != null
+                    ? versions.upload(versionOf, item.getFilenameReference(), item.getStagedSizeBytes(), content,
+                    "Uploaded again by bulk import")
+                    : documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
                     item.getStagedSizeBytes(), content, batch.folderId());
         } catch (ApiException e) {
             if (!isRejection(e)) {
@@ -273,7 +320,15 @@ public class ImportRecordCreator {
                 values.put(field.fieldId().toString(), new FieldValue(result.value(), SOURCE, null));
             }
         }
-        writeMetadata(batch, documentId, values);
+        // A new version of a document of another type keeps that document's own fields.
+        boolean sameType = documentRepository.findById(documentId)
+                .map(d -> batch.documentTypeId().equals(d.getDocumentTypeId())).orElse(true);
+        if (sameType) {
+            writeMetadata(batch, documentId, values);
+        } else if (!values.isEmpty()) {
+            notSaved.add(new ImportRowError(FILE, DUPLICATE, "Its document is of another type, so this row's "
+                    + "values weren't applied", ImportRowError.WARNING));
+        }
 
         item.setStatus(ImportItemStatus.success);
         item.setDocumentId(documentId);
@@ -325,6 +380,29 @@ public class ImportRecordCreator {
         } catch (FolderException e) {
             return Optional.of("You no longer have edit access to the target folder");
         }
+    }
+
+    /** A row whose file is already there, unchanged: done, pointing at that document - nothing uploaded. */
+    private void linkExisting(UUID itemId, UUID documentId, String message) {
+        transactionTemplate.executeWithoutResult(status -> importItemRepository.findById(itemId)
+                .filter(item -> item.getStatus() == ImportItemStatus.pending)
+                .ifPresent(item -> {
+                    item.setStatus(ImportItemStatus.success);
+                    item.setDocumentId(documentId);
+                    item.setValidationErrors(appendErrors(item,
+                            List.of(new ImportRowError(FILE, DUPLICATE, message, ImportRowError.WARNING))));
+                    item.setUpdatedAt(OffsetDateTime.now());
+                    importItemRepository.save(item);
+                }));
+    }
+
+    private void warn(UUID itemId, String message) {
+        transactionTemplate.executeWithoutResult(status -> importItemRepository.findById(itemId)
+                .ifPresent(item -> {
+                    item.setValidationErrors(appendErrors(item,
+                            List.of(new ImportRowError(FILE, DUPLICATE, message, ImportRowError.WARNING))));
+                    importItemRepository.save(item);
+                }));
     }
 
     /** Fails a row that may no longer be imported; finalisation removes its staged file, as for any failed row. */

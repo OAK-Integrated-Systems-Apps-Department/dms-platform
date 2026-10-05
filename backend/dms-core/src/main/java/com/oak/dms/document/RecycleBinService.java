@@ -107,7 +107,12 @@ public class RecycleBinService {
                                  String deletedByName, OffsetDateTime purgeAt, boolean protectedVersion) {
     }
 
-    public record RecycleBin(int retentionDays, List<RecycleBinItem> items) {
+    /** @param retentionDays its own period; null = the organisation's */
+    public record TypeRetention(UUID documentTypeId, String typeName, Integer retentionDays) {
+    }
+
+    /** @param byType the active document types, each with its own period if it has one */
+    public record RecycleBin(int retentionDays, List<RecycleBinItem> items, List<TypeRetention> byType) {
     }
 
     /** The caller's tenant's deleted documents they can still open, most recently deleted first. */
@@ -127,6 +132,10 @@ public class RecycleBinService {
                         u -> u.getDisplayName() != null ? u.getDisplayName() : u.getEmail(), (a, b) -> a));
         Set<UUID> protectedDocs = Set.copyOf(jdbc.queryForList("select distinct document_id from document_versions "
                 + "where tenant_id = ? and is_protected and purged_at is null", UUID.class, tenantId));
+        List<TypeRetention> byType = typeRetentions(tenantId);
+        Map<UUID, Integer> typeDays = new java.util.HashMap<>();
+        byType.stream().filter(t -> t.retentionDays() != null)
+                .forEach(t -> typeDays.put(t.documentTypeId(), t.retentionDays()));
         List<RecycleBinItem> items = deleted.stream().map(d -> {
             DocumentVersion current = currentVersion(d);
             Folder folder = d.getFolderId() == null ? null : access.folders().folder(d.getFolderId()).orElse(null);
@@ -135,10 +144,11 @@ public class RecycleBinService {
                     current != null ? current.getOriginalFilename() : null,
                     current != null ? current.getSizeBytes() : 0, d.getFolderId(),
                     folder != null ? folder.getFolderName() : null, d.getFolderId() != null && folder == null,
-                    deletedAt, d.getUpdatedBy(), names.get(d.getUpdatedBy()), deletedAt.plusDays(retention),
+                    deletedAt, d.getUpdatedBy(), names.get(d.getUpdatedBy()),
+                    deletedAt.plusDays(typeDays.getOrDefault(d.getDocumentTypeId(), retention)),
                     protectedDocs.contains(d.getDocumentId()));
         }).toList();
-        return new RecycleBin(retention, items);
+        return new RecycleBin(retention, items, byType);
     }
 
     /** Back where it was. Refused when its folder has since been deleted. Audited as DOCUMENT_RESTORED. */
@@ -206,6 +216,46 @@ public class RecycleBinService {
         return days;
     }
 
+    private List<TypeRetention> typeRetentions(UUID tenantId) {
+        return jdbc.query("""
+                select document_type_id, type_name, recycle_bin_retention_days from document_types
+                where tenant_id = ? and not is_deleted order by lower(type_name)
+                """, (rs, i) -> new TypeRetention((UUID) rs.getObject(1), rs.getString(2),
+                (Integer) rs.getObject(3)), tenantId);
+    }
+
+    /**
+     * How long deleted documents of one type are kept - overriding the organisation's period, or
+     * {@code null} to follow it again. Audited as RECYCLE_BIN_RETENTION_CHANGED.
+     */
+    @Transactional
+    public void setTypeRetentionDays(UUID documentTypeId, Integer days) {
+        if (days != null && (days < 1 || days > 3650)) {
+            throw new FolderException(HttpStatus.BAD_REQUEST, "RECYCLE_BIN_RETENTION_INVALID",
+                    "Keep deleted documents for between 1 and 3650 days.");
+        }
+        UUID tenantId = TenantContext.getTenantId();
+        List<Map<String, Object>> type = jdbc.queryForList("select type_name, recycle_bin_retention_days "
+                + "from document_types where document_type_id = ? and tenant_id = ? and not is_deleted",
+                documentTypeId, tenantId);
+        if (type.isEmpty()) {
+            throw new ResourceNotFoundException("DocumentType", documentTypeId);
+        }
+        jdbc.update("update document_types set recycle_bin_retention_days = ? where document_type_id = ?",
+                days, documentTypeId);
+        Map<String, Object> before = new java.util.HashMap<>();
+        before.put("retentionDays", type.get(0).get("recycle_bin_retention_days"));
+        Map<String, Object> after = new java.util.HashMap<>();
+        after.put("retentionDays", days);
+        auditService.event(AuditActionCatalog.RECYCLE_BIN_RETENTION_CHANGED)
+                .objectType(AuditObjectTypes.DOCUMENT)
+                .resourceName("Recycle bin - " + type.get(0).get("type_name"))
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(before)
+                .newValue(after)
+                .log();
+    }
+
     /**
      * The sweep: documents deleted longer ago than their tenant keeps them are purged. One instance at
      * a time (a Postgres session lock); a failure is retried on the next run.
@@ -220,9 +270,11 @@ public class RecycleBinService {
                 for (Map<String, Object> row : jdbc.queryForList("""
                         select d.document_id from documents d
                         left join recycle_bin_settings s on s.tenant_id = d.tenant_id
+                        left join document_types t on t.document_type_id = d.document_type_id
                         where d.is_deleted and d.purged_at is null
                           and coalesce(d.deleted_at, d.updated_at, d.created_at)
-                              < now() - make_interval(days => coalesce(s.retention_days, ?))
+                              < now() - make_interval(days => coalesce(t.recycle_bin_retention_days,
+                                                                       s.retention_days, ?))
                           and not exists (select 1 from document_versions v where v.document_id = d.document_id
                                           and v.is_protected and v.purged_at is null)
                         order by d.deleted_at limit ?

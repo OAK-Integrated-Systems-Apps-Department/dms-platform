@@ -24,6 +24,8 @@ import { friendlyMessage } from "@/lib/api-error"
 import {
   previewConvertedPdf,
   previewDocumentFile,
+  previewVersionFile,
+  previewVersionPdf,
   type DocumentListItemDto,
 } from "@/lib/documents/api"
 import {
@@ -198,10 +200,22 @@ function useStoredWidth(): [number, (width: number) => void] {
  */
 export function DocumentPreview({
   row,
+  version,
   onOpenChange,
   onDownload,
 }: {
-  row: DocumentListItemDto
+  row: Pick<
+    DocumentListItemDto,
+    | "documentId"
+    | "title"
+    | "fileName"
+    | "mimeType"
+    | "sizeBytes"
+    | "documentTypeName"
+    | "createdAt"
+  >
+  /** An older version from the history; absent = the current version. */
+  version?: { versionId: string; label: string; current: boolean }
   onOpenChange: (open: boolean) => void
   onDownload: () => void
 }) {
@@ -216,11 +230,18 @@ export function DocumentPreview({
     renderer === "text" && (row.sizeBytes ?? 0) > MAX_TEXT_BYTES
 
   const file = useQuery({
-    queryKey: ["document-preview", row.documentId],
+    queryKey: [
+      "document-preview",
+      row.documentId,
+      version?.versionId ?? "current",
+    ],
     queryFn: async () => {
       // Office files the browser can't read come as a PDF made on the server.
-      const blob =
-        renderer === "converted"
+      const blob = version
+        ? renderer === "converted"
+          ? await previewVersionPdf(row.documentId, version.versionId)
+          : await previewVersionFile(row.documentId, version.versionId)
+        : renderer === "converted"
           ? await previewConvertedPdf(row.documentId)
           : (await previewDocumentFile(row.documentId)).blob
       return {
@@ -282,7 +303,22 @@ export function DocumentPreview({
               <kind.icon size={20} />
             </span>
             <div className="min-w-0 flex-1">
-              <SheetTitle className="truncate">{row.title}</SheetTitle>
+              <SheetTitle className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{row.title}</span>
+                {version && (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-px font-mono text-[11px] font-semibold",
+                      version.current
+                        ? "bg-primary/10 text-primary"
+                        : "bg-[var(--gold-tint)] text-foreground"
+                    )}
+                  >
+                    v{version.label}
+                    {version.current ? " · current" : " · older version"}
+                  </span>
+                )}
+              </SheetTitle>
               <SheetDescription className="truncate">
                 {[
                   row.fileName,

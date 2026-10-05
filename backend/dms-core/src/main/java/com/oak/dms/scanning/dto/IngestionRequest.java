@@ -23,8 +23,26 @@ public record IngestionRequest(
         long contentLength,
         InputStream content,
         UUID folderId,
-        String versionComment
+        String versionComment,
+        boolean refuseDuplicates
 ) {
+
+    /**
+     * @param refuseDuplicates the uploader checked for duplicates and found none: refuse (409) if the same
+     *                         file reached the same folder meanwhile, rather than create a second copy
+     */
+    public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,
+                            String title, String originalFilename, long contentLength, InputStream content,
+                            UUID folderId, String versionComment) {
+        this(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename, contentLength, content,
+                folderId, versionComment, false);
+    }
+
+    /** A new document whose uploader asked to refuse it if the same file arrived meanwhile. */
+    public IngestionRequest refusingDuplicates() {
+        return new IngestionRequest(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename,
+                contentLength, content, folderId, versionComment, true);
+    }
 
     public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,
                             String title, String originalFilename, long contentLength, InputStream content) {

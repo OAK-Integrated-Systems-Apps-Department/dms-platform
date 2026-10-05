@@ -23,9 +23,33 @@ export interface RecycleBinItemDto {
   protectedVersion: boolean
 }
 
+/** One document type's own period; null = the organisation's. */
+export interface TypeRetentionDto {
+  documentTypeId: string
+  typeName: string
+  retentionDays: number | null
+}
+
 export interface RecycleBinDto {
   retentionDays: number
   items: RecycleBinItemDto[]
+  byType: TypeRetentionDto[]
+}
+
+/** How long deleted documents of one type are kept; null = follow the organisation's period. */
+export async function saveTypeRetention(
+  documentTypeId: string,
+  retentionDays: number | null
+): Promise<void> {
+  await apiFetch(
+    `${BASE}/settings/document-types/${documentTypeId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ retentionDays }),
+    },
+    "Could not save the period for that document type."
+  )
 }
 
 export async function fetchRecycleBin(): Promise<RecycleBinDto> {

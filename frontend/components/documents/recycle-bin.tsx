@@ -19,7 +19,9 @@ import {
   purgeFromRecycleBin,
   restoreFromRecycleBin,
   saveRecycleBinRetention,
+  saveTypeRetention,
   type RecycleBinItemDto,
+  type TypeRetentionDto,
 } from "@/lib/recycle-bin/api"
 
 const KEY = ["recycle-bin"] as const
@@ -66,7 +68,7 @@ export function RecycleBin() {
       </p>
     )
   }
-  const { items, retentionDays } = bin.data
+  const { items, retentionDays, byType } = bin.data
 
   return (
     <div className="flex max-w-[1100px] flex-col gap-5">
@@ -75,6 +77,13 @@ export function RecycleBin() {
         canEdit={canSetRetention}
         onSaved={refresh}
       />
+      {canSetRetention && byType.length > 0 && (
+        <TypeRetentions
+          types={byType}
+          defaultDays={retentionDays}
+          onSaved={refresh}
+        />
+      )}
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-10 text-center">
@@ -197,6 +206,110 @@ export function RecycleBin() {
         }}
       />
     </div>
+  )
+}
+
+/** Document types that keep their deleted documents longer (or shorter) than the organisation does. */
+function TypeRetentions({
+  types,
+  defaultDays,
+  onSaved,
+}: {
+  types: TypeRetentionDto[]
+  defaultDays: number
+  onSaved: () => void
+}) {
+  const [open, setOpen] = useState(types.some((t) => t.retentionDays !== null))
+  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      types.map((t) => [t.documentTypeId, t.retentionDays?.toString() ?? ""])
+    )
+  )
+  const [saving, setSaving] = useState<string | null>(null)
+
+  async function save(type: TypeRetentionDto) {
+    const raw = (drafts[type.documentTypeId] ?? "").trim()
+    const days = raw === "" ? null : Number(raw)
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) {
+      toast.error("Enter between 1 and 3650 days, or leave it empty.")
+      return
+    }
+    setSaving(type.documentTypeId)
+    try {
+      await saveTypeRetention(type.documentTypeId, days)
+      toast.success(
+        days === null
+          ? `${type.typeName} follows the organisation's ${defaultDays} days again.`
+          : `Deleted ${type.typeName} documents are now kept for ${days} days.`
+      )
+      onSaved()
+    } catch (error) {
+      toast.error(friendlyMessage(error, "Could not save that period."))
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card text-[13px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between px-4 py-3 text-left font-medium"
+      >
+        Different periods per document type
+        <span className="text-[12px] font-normal text-muted-foreground">
+          {open ? "Hide" : "Show"}
+        </span>
+      </button>
+      {open && (
+        <ul className="divide-y divide-border border-t border-border">
+          {types.map((type) => {
+            const draft = drafts[type.documentTypeId] ?? ""
+            const changed = draft !== (type.retentionDays?.toString() ?? "")
+            return (
+              <li
+                key={type.documentTypeId}
+                className="flex flex-wrap items-center gap-3 px-4 py-2.5"
+              >
+                <span className="min-w-[180px] flex-1 font-medium">
+                  {type.typeName}
+                </span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={draft}
+                  placeholder={String(defaultDays)}
+                  onChange={(event) =>
+                    setDrafts((d) => ({
+                      ...d,
+                      [type.documentTypeId]: event.target.value,
+                    }))
+                  }
+                  className="h-8 w-24"
+                  aria-label={`Days deleted ${type.typeName} documents are kept`}
+                />
+                <span className="text-muted-foreground">
+                  {draft === ""
+                    ? `days (organisation's ${defaultDays})`
+                    : "days"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!changed || saving === type.documentTypeId}
+                  onClick={() => void save(type)}
+                >
+                  Save
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 

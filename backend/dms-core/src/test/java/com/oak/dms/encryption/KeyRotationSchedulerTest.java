@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -23,8 +24,9 @@ class KeyRotationSchedulerTest {
     private final KeyRotationPolicyStore policies = mock(KeyRotationPolicyStore.class);
     private final EncryptionAdminService admin = mock(EncryptionAdminService.class);
     private final AuditService audit = mock(AuditService.class, RETURNS_DEEP_STUBS);
+    private final KeyRotationReminderMailer mailer = mock(KeyRotationReminderMailer.class);
     private final KeyRotationScheduler scheduler = new KeyRotationScheduler(policies, admin,
-            new EncryptionProperties(), audit, mock(JdbcTemplate.class));
+            new EncryptionProperties(), audit, mock(JdbcTemplate.class), mailer);
 
     private static RotationPolicy policy(boolean due, boolean autoRotate) {
         OffsetDateTime since = OffsetDateTime.now().minusDays(400);
@@ -54,6 +56,7 @@ class KeyRotationSchedulerTest {
 
         verify(admin, never()).rotate(any(), any());
         verify(audit).event(AuditActionCatalog.ENCRYPTION_KEY_ROTATION_DUE); // once, not twice
+        verify(mailer).send(eq(tenant), any(), eq(365)); // and emailed once
     }
 
     @Test

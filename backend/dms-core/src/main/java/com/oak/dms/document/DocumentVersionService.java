@@ -65,7 +65,7 @@ public class DocumentVersionService {
     public record VersionItem(UUID versionId, int versionNumber, String versionLabel, String originalFilename,
                               String mimeType, long sizeBytes, String versionComment, String createdReason,
                               String scanStatus, boolean servable, OffsetDateTime createdAt, UUID createdBy,
-                              String createdByName, boolean current) {
+                              String createdByName, boolean current, String fileHash) {
     }
 
     @Transactional(readOnly = true)
@@ -83,16 +83,26 @@ public class DocumentVersionService {
         return versions.stream().map(v -> new VersionItem(v.getVersionId(), v.getVersionNumber(), label(v),
                 v.getOriginalFilename(), v.getMimeType(), v.getSizeBytes(), v.getVersionComment(),
                 v.getCreatedReason(), v.getScanStatus(), v.isServable(), v.getCreatedAt(), v.getCreatedBy(),
-                names.get(v.getCreatedBy()), v.getVersionId().equals(current))).toList();
+                names.get(v.getCreatedBy()), v.getVersionId().equals(current), v.getFileHash())).toList();
     }
 
     /** One version's file. Audited as DOCUMENT_DOWNLOADED, naming the version. */
     @Transactional
     public DownloadedDocument download(UUID documentId, UUID versionId) {
+        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_DOWNLOADED);
+    }
+
+    /** One version's file, for the in-app preview. Audited as DOCUMENT_VIEWED, naming the version. */
+    @Transactional
+    public DownloadedDocument preview(UUID documentId, UUID versionId) {
+        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_VIEWED);
+    }
+
+    private DownloadedDocument open(UUID documentId, UUID versionId, String action) {
         Document document = visible(documentId, FolderAccessLevel.view);
         DocumentVersion version = version(document, versionId);
         DownloadedDocument downloaded = versionContent.open(version);
-        auditService.event(AuditActionCatalog.DOCUMENT_DOWNLOADED)
+        auditService.event(action)
                 .objectType(AuditObjectTypes.DOCUMENT)
                 .objectId(documentId)
                 .resourceName(document.getTitle())

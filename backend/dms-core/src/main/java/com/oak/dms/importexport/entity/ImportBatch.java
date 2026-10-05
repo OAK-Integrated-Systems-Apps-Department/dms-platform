@@ -82,6 +82,14 @@ public class ImportBatch {
     @Column(name = "folder_id", updatable = false)
     private UUID folderId;
 
+    /**
+     * What to do with a row whose file is already in the DMS (V65): keep_both (no check),
+     * new_version (add it to the existing document) or skip.
+     */
+    @Column(name = "duplicate_action", nullable = false, updatable = false)
+    @Builder.Default
+    private String duplicateAction = "keep_both";
+
     @Column(name = "created_by")
     private UUID createdBy;
 

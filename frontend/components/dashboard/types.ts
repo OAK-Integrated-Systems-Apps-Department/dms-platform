@@ -26,6 +26,8 @@ export interface NavItem {
    * those stay visible to everyone.
    */
   permission?: string | string[]
+  /** Only for platform administrators (cross-tenant) - e.g. managing organisations. */
+  platformAdminOnly?: boolean
 }
 
 export interface NavSection {

@@ -78,6 +78,7 @@ public class IngestionGateImpl implements IngestionGate {
     private final IngestionTicketMapper ingestionTicketMapper;
     private final ScanProperties scanProperties;
     private final TransactionTemplate transactionTemplate;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public IngestionGateImpl(ScanEngineResolver scanEngineResolver,
                              ScanEngineFactory scanEngineFactory,
@@ -90,7 +91,9 @@ public class IngestionGateImpl implements IngestionGate {
                              DocumentPromoter documentPromoter,
                              IngestionTicketMapper ingestionTicketMapper,
                              ScanProperties scanProperties,
-                             PlatformTransactionManager transactionManager) {
+                             PlatformTransactionManager transactionManager,
+                             org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         this.scanEngineResolver = scanEngineResolver;
         this.scanEngineFactory = scanEngineFactory;
         this.storageLocationResolver = storageLocationResolver;
@@ -170,6 +173,13 @@ public class IngestionGateImpl implements IngestionGate {
             return ticket(scanResultId);
         }
 
+        // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
+        duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
+            ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());
+            ingestionProcessor.purgeStaging(scanResultId);
+            throw refusal;
+        });
+
         // 5. Scan and route. ClamAV answers now; cloud scanners come back pending.
         ingestionProcessor.process(scanResultId);
         return ticket(scanResultId);
@@ -219,6 +229,49 @@ public class IngestionGateImpl implements IngestionGate {
             }
             return saved;
         });
+    }
+
+    /**
+     * A new version byte-for-byte equal to its document's current version adds nothing - refused. A new
+     * document whose uploader checked for duplicates is refused when the same file is already in that folder,
+     * or someone uploaded it there a moment earlier (both checked and found nothing - the earlier upload wins,
+     * so exactly one of them goes through).
+     */
+    private java.util.Optional<com.oak.dms.common.exception.DuplicateUploadException> duplicateRefusal(
+            IngestionRequest request, UUID tenantId, UUID scanResultId, OffsetDateTime createdAt, String fileHash) {
+        if (request.kind() == com.oak.dms.scanning.enums.IngestionKind.new_version) {
+            Boolean same = jdbc.queryForObject("""
+                    select coalesce((select v.file_hash = ? from documents d
+                        join document_versions v on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
+                        where d.document_id = ? and d.tenant_id = ?), false)
+                    """, Boolean.class, fileHash, request.targetDocumentId(), tenantId);
+            return Boolean.TRUE.equals(same)
+                    ? java.util.Optional.of(new com.oak.dms.common.exception.DuplicateUploadException(
+                    "VERSION_IDENTICAL", "This file is identical to the current version - there's nothing new to add."))
+                    : java.util.Optional.empty();
+        }
+        if (!request.refuseDuplicates()) {
+            return java.util.Optional.empty();
+        }
+        Boolean taken = jdbc.queryForObject("""
+                select exists (select 1 from documents d
+                               join document_versions v on v.document_id = d.document_id and not v.is_deleted
+                               where d.tenant_id = ? and not d.is_deleted and d.folder_id is not distinct from ?
+                                 and v.file_hash = ?)
+                    or exists (select 1 from scan_results s
+                               where s.tenant_id = ? and s.file_hash = ? and s.scan_result_id <> ?
+                                 and s.ingestion_kind = 'new_document' and s.folder_id is not distinct from ?
+                                 and s.status in ('pending', 'clean', 'released_override')
+                                 and s.document_version_id is null and not s.is_deleted
+                                 and s.created_at > now() - interval '1 hour'
+                                 and (s.created_at, s.scan_result_id) < (?, ?))
+                """, Boolean.class, tenantId, request.folderId(), fileHash, tenantId, fileHash, scanResultId,
+                request.folderId(), createdAt, scanResultId);
+        return Boolean.TRUE.equals(taken)
+                ? java.util.Optional.of(new com.oak.dms.common.exception.DuplicateUploadException(
+                "DUPLICATE_UPLOADED_MEANWHILE", "The same file was just added to this folder - check again "
+                + "and choose what to do with it."))
+                : java.util.Optional.empty();
     }
 
     private void recordStaged(UUID scanResultId, String fileHash, long sizeBytes, String eTag) {

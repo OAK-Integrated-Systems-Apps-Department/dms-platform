@@ -2,11 +2,19 @@
 
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Download, History, Loader2, RotateCcw, Upload } from "lucide-react"
+import {
+  Download,
+  Eye,
+  History,
+  Loader2,
+  RotateCcw,
+  Upload,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
 import { FriendlyDate } from "@/components/documents/browser-items"
+import { DocumentPreview } from "@/components/documents/document-preview"
 import { Button } from "@/components/ui/button"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import {
@@ -27,6 +35,7 @@ import {
   type DocumentVersionDto,
   type IngestionTicketDto,
 } from "@/lib/documents/api"
+import { sha256Hex } from "@/lib/documents/duplicates"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
 
@@ -82,6 +91,7 @@ export function VersionHistorySheet({
   const [comment, setComment] = useState("")
   const [uploading, setUploading] = useState(false)
   const [restoring, setRestoring] = useState<DocumentVersionDto | null>(null)
+  const [previewing, setPreviewing] = useState<DocumentVersionDto | null>(null)
 
   function changed() {
     void queryClient.invalidateQueries({ queryKey: key })
@@ -92,6 +102,19 @@ export function VersionHistorySheet({
     if (!file) return
     setUploading(true)
     try {
+      // The same file as a version already in the history would change nothing - say so instead.
+      const hash = await sha256Hex(file)
+      const same = hash
+        ? versions.data?.find((v) => v.fileHash === hash)
+        : undefined
+      if (same) {
+        toast.error(
+          same.current
+            ? "This file is identical to the current version - there's nothing new to upload."
+            : `This file is identical to version ${same.versionLabel}. Restore that version instead.`
+        )
+        return
+      }
       const ticket = await uploadDocumentVersion(documentId, file, comment)
       toast.success(ticketMessage(ticket, "New version uploaded"))
       setFile(null)
@@ -233,6 +256,16 @@ export function VersionHistorySheet({
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        aria-label={`Preview version ${version.versionLabel}`}
+                        title="Preview"
+                        disabled={!version.servable}
+                        onClick={() => setPreviewing(version)}
+                      >
+                        <Eye />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         aria-label={`Download version ${version.versionLabel}`}
                         title="Download"
                         disabled={!version.servable}
@@ -260,6 +293,28 @@ export function VersionHistorySheet({
           )}
         </div>
       </SheetContent>
+
+      {previewing && (
+        <DocumentPreview
+          key={previewing.versionId}
+          row={{
+            documentId,
+            title,
+            fileName: previewing.originalFilename,
+            mimeType: previewing.mimeType,
+            sizeBytes: previewing.sizeBytes,
+            documentTypeName: null,
+            createdAt: previewing.createdAt,
+          }}
+          version={{
+            versionId: previewing.versionId,
+            label: previewing.versionLabel,
+            current: previewing.current,
+          }}
+          onOpenChange={(open) => !open && setPreviewing(null)}
+          onDownload={() => void download(previewing)}
+        />
+      )}
 
       <ConfirmActionDialog
         open={restoring !== null}

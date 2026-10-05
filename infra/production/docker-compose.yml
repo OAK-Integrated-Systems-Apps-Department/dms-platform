@@ -232,6 +232,12 @@ services:
       - --api-timeout=90s
       - --libreoffice-auto-start=true
       - --log-level=warn
+    # LibreOffice can use a lot of memory on a large or malformed file - cap it
+    # so a bad upload can't starve the rest of the server. A conversion that
+    # hits the limit fails (the preview says so); the container restarts.
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
       interval: 30s

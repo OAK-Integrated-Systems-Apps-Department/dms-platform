@@ -166,7 +166,12 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
-                                                 UUID folderId) {
+                                                 UUID folderId, String duplicateAction) {
+        String onDuplicate = duplicateAction == null || duplicateAction.isBlank() ? "keep_both" : duplicateAction;
+        if (!java.util.Set.of("keep_both", "new_version", "skip").contains(onDuplicate)) {
+            throw com.oak.dms.importexport.exception.BulkImportException.badRequest("IMPORT_DUPLICATE_ACTION_INVALID",
+                    "Choose what to do with files already in the DMS: keep_both, new_version or skip.");
+        }
         if (folderId != null) {
             folderService.requireEditable(folderId); // 404/403 now; the worker checks again for every row
         }
@@ -223,6 +228,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .correlationId(UUID.randomUUID())
                 .importTemplateId(parsed.importTemplateId())
                 .folderId(folderId)
+                .duplicateAction(onDuplicate)
                 .createdBy(userId)
                 .build());
 
@@ -421,8 +427,15 @@ public class BulkImportServiceImpl implements BulkImportService {
 
         // Upload before touching the row - a storage failure leaves the
         // item exactly as it was.
-        StoredObjectMetadata stored = storage.upload(location, objectKey, buffered, contentLength,
-                detected.mimeType());
+        // Fingerprinted as it streams in - the duplicate check uses it before the row becomes a document.
+        java.security.MessageDigest sha256;
+        try {
+            sha256 = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+        StoredObjectMetadata stored = storage.upload(location, objectKey,
+                new java.security.DigestInputStream(buffered, sha256), contentLength, detected.mimeType());
         deleteOnRollback(storage, location, objectKey);
 
         // Virus scan now, before the file counts as received: an infected
@@ -435,6 +448,7 @@ public class BulkImportServiceImpl implements BulkImportService {
         item.setStagedStorageLocationId(location.getStorageLocationId());
         item.setStagedSizeBytes(stored.sizeBytes());
         item.setIntakeBlockedReason(null); // a clean file replaced one that was refused
+        item.setStagedFileHash(java.util.HexFormat.of().formatHex(sha256.digest()));
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
 

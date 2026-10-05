@@ -141,11 +141,13 @@ const COL1_WIDTH = 340
  */
 export function PermissionMatrix() {
   const roles = useRolesStore((state) => state.roles)
-  const fetchRoles = useRolesStore((state) => state.fetchRoles)
-  const fetchRolePermissions = useRolesStore((state) => state.fetchRolePermissions)
-  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
+  const fetchRolePermissions = useRolesStore(
+    (state) => state.fetchRolePermissions
+  )
+  const { groups: permissionGroups, loading: catalogLoading } =
+    usePermissionCatalog()
   const [area, setArea] = useState(ALL_AREAS)
-  const [grantsLoading, setGrantsLoading] = useState(true)
+  const [grantsLoading, setGrantsLoading] = useState(roles.length > 0)
   // Rows are grouped two levels deep (module, then action-with-children) and
   // both start collapsed — 32 modules x ~92 actions is far too much to lay
   // out flat by default. Keyed by moduleCode / action id.
@@ -189,13 +191,16 @@ export function PermissionMatrix() {
   // if the set of role ids changes (e.g. a role gets added elsewhere) but
   // not on every render.
   const roleIdsKey = roles.map((r) => r.id).join(",")
+  // Loading flag reset for a new set of role ids during render, against the
+  // last-seen key; the effect below only does the fetching.
+  const [prevRoleIdsKey, setPrevRoleIdsKey] = useState(roleIdsKey)
+  if (roleIdsKey !== prevRoleIdsKey) {
+    setPrevRoleIdsKey(roleIdsKey)
+    setGrantsLoading(roles.length > 0)
+  }
   useEffect(() => {
-    if (roles.length === 0) {
-      setGrantsLoading(false)
-      return
-    }
+    if (roles.length === 0) return
     let cancelled = false
-    setGrantsLoading(true)
     Promise.all(roles.map((role) => fetchRolePermissions(role.id))).then(() => {
       if (!cancelled) setGrantsLoading(false)
     })
@@ -433,7 +438,7 @@ export function PermissionMatrix() {
                 visibleRoles.map((role) => (
                   <th
                     key={role.id}
-                    className="min-w-[150px] whitespace-nowrap bg-muted px-3 py-2.5 text-center text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase"
+                    className="min-w-[150px] bg-muted px-3 py-2.5 text-center text-[11px] font-semibold tracking-[0.04em] whitespace-nowrap text-muted-foreground uppercase"
                   >
                     <span
                       className={role.status === "Inactive" ? "opacity-50" : ""}
@@ -553,7 +558,7 @@ export function PermissionMatrix() {
                                   className="border-b border-border last:border-b-0 hover:bg-muted/50"
                                 >
                                   <td
-                                    className="sticky left-0 z-10 break-words whitespace-normal bg-card py-2.5 pr-3.5 pl-10 text-[13px] text-foreground"
+                                    className="sticky left-0 z-10 bg-card py-2.5 pr-3.5 pl-10 text-[13px] break-words whitespace-normal text-foreground"
                                     style={{
                                       width: COL1_WIDTH,
                                       minWidth: COL1_WIDTH,
@@ -598,7 +603,7 @@ export function PermissionMatrix() {
                           className="border-b border-border last:border-b-0 hover:bg-muted/50"
                         >
                           <td
-                            className="sticky left-0 z-10 break-words whitespace-normal bg-card py-2.5 pr-3.5 pl-7 text-[13px] text-foreground"
+                            className="sticky left-0 z-10 bg-card py-2.5 pr-3.5 pl-7 text-[13px] break-words whitespace-normal text-foreground"
                             style={{
                               width: COL1_WIDTH,
                               minWidth: COL1_WIDTH,
@@ -644,9 +649,9 @@ export function PermissionMatrix() {
       <p className="mt-3.5 text-[12px] text-muted-foreground">
         Read-only reference view — permissions are edited via Role Permission
         Configuration, not from this matrix. Module and action rows start
-        collapsed; click a row, or use Expand all, to see individual
-        permissions and the role columns. Use the Roles filter to hide
-        columns you don't need right now.
+        collapsed; click a row, or use Expand all, to see individual permissions
+        and the role columns. Use the Roles filter to hide columns you
+        don&apos;t need right now.
       </p>
     </div>
   )

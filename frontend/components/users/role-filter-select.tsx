@@ -54,12 +54,16 @@ export function RoleFilterSelect({
     return () => document.removeEventListener("click", handleClickOutside)
   }, [])
 
+  // Search text resets on close - adjusted during render against the
+  // last-seen `open`; the effect below only handles focus.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (!open) setQuery("")
+  }
+
   useEffect(() => {
-    if (open) {
-      searchInputRef.current?.focus()
-    } else {
-      setQuery("")
-    }
+    if (open) searchInputRef.current?.focus()
   }, [open])
 
   function toggleRole(role: string) {
@@ -85,8 +89,8 @@ export function RoleFilterSelect({
     selected.length === 0
       ? "All roles"
       : selected.length === 1
-      ? selected[0]
-      : `${selected.length} roles`
+        ? selected[0]
+        : `${selected.length} roles`
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
@@ -115,7 +119,10 @@ export function RoleFilterSelect({
               <X size={12} />
             </span>
           )}
-          <ChevronDown size={14} className="pointer-events-none text-[var(--ink-faint)]" />
+          <ChevronDown
+            size={14}
+            className="pointer-events-none text-[var(--ink-faint)]"
+          />
         </span>
       </button>
 
@@ -154,7 +161,11 @@ export function RoleFilterSelect({
                   )}
                 >
                   {selected.length === 0 && (
-                    <Check size={11} strokeWidth={3} className="text-primary-foreground" />
+                    <Check
+                      size={11}
+                      strokeWidth={3}
+                      className="text-primary-foreground"
+                    />
                   )}
                 </span>
                 All roles
@@ -183,7 +194,11 @@ export function RoleFilterSelect({
                       )}
                     >
                       {isSelected && (
-                        <Check size={11} strokeWidth={3} className="text-primary-foreground" />
+                        <Check
+                          size={11}
+                          strokeWidth={3}
+                          className="text-primary-foreground"
+                        />
                       )}
                     </span>
                     {role}

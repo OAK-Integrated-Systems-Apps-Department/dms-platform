@@ -75,12 +75,21 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
                                                   long contentLength, InputStream content, UUID folderId) {
+        return uploadDocument(documentTypeId, title, originalFilename, contentLength, content, folderId, false);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId,
+                                                  boolean refuseDuplicates) {
         if (folderId != null) {
             // 404/403 now, rather than a document landing nowhere (or somewhere it mustn't) later
             folderService.requireEditable(folderId);
         }
-        return ingestionGate.submit(
-                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId));
+        IngestionRequest request =
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
+        return ingestionGate.submit(refuseDuplicates ? request.refusingDuplicates() : request);
     }
 
     @Override

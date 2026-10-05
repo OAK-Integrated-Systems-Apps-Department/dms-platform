@@ -57,8 +57,17 @@ public interface BulkImportService {
     }
 
     /** @param folderId the folder every document of the batch is filed in; null = not in a folder */
+    default BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
+                                                  UUID folderId) {
+        return createBatch(templateFilename, templateSize, template, folderId, "keep_both");
+    }
+
+    /**
+     * @param duplicateAction what to do with a row whose file is already in the DMS: keep_both,
+     *                        new_version or skip (V65)
+     */
     BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
-                                          UUID folderId);
+                                          UUID folderId, String duplicateAction);
 
     /**
      * Checks a still-uploading batch's rows now - data types, mandatory

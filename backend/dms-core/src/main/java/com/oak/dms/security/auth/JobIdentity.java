@@ -19,6 +19,7 @@ import java.util.UUID;
 public class JobIdentity {
 
     private final UserRepository users;
+    private final OrganisationStatusGuard organisationStatus;
 
     /**
      * @return false - and nothing bound - when the user no longer exists or isn't active in the
@@ -28,8 +29,8 @@ public class JobIdentity {
         Optional<User> user = users.findById(userId)
                 .filter(u -> tenantId.equals(u.getTenantId()))
                 .filter(u -> !u.isDeleted() && u.getStatus() == User.UserStatus.active);
-        if (user.isEmpty()) {
-            return false;
+        if (user.isEmpty() || organisationStatus.inactiveReason(tenantId).isPresent()) {
+            return false; // gone, deactivated - or their organisation is suspended or closed
         }
         TenantContext.set(tenantId, userId, user.get().getDisplayName(), user.get().getKeycloakId());
         TenantContext.markBackgroundJob();

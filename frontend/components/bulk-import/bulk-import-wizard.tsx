@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
-import { isFinished } from "@/lib/bulk-imports/api"
+import { isFinished, type DuplicateAction } from "@/lib/bulk-imports/api"
 import { useArchiveUpload } from "@/lib/bulk-imports/use-archive-upload"
 import { useBulkImport } from "@/lib/bulk-imports/use-bulk-import"
 import { useImportDocumentTypes } from "@/lib/bulk-imports/use-import-document-types"
@@ -56,8 +56,12 @@ export function BulkImportWizard() {
     )
   }
 
-  async function handleCreate(template: File, folderId: string | null) {
-    const result = await bulkImport.create(template, folderId)
+  async function handleCreate(
+    template: File,
+    folderId: string | null,
+    duplicateAction: DuplicateAction
+  ) {
+    const result = await bulkImport.create(template, folderId, duplicateAction)
     if (result.batch) {
       const { batchId: createdId, totalRecords } = result.batch
       setCreatedNotice(

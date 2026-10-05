@@ -10,6 +10,7 @@ import {
   isInFlight,
   submitBulkImport,
   type BulkImportCreatedResponseDto,
+  type DuplicateAction,
 } from "./api"
 
 export const BULK_IMPORTS_KEY = ["bulk-imports"] as const
@@ -65,10 +66,12 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     mutationFn: ({
       template,
       folderId,
+      duplicateAction,
     }: {
       template: File
       folderId?: string | null
-    }) => createBulkImport(template, folderId),
+      duplicateAction?: DuplicateAction
+    }) => createBulkImport(template, folderId, duplicateAction),
     onSuccess: () => invalidate(),
   })
   const submitMutation = useMutation({
@@ -106,14 +109,19 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     cancelling: cancelMutation.isPending,
     create: async (
       template: File,
-      folderId?: string | null
+      folderId?: string | null,
+      duplicateAction?: DuplicateAction
     ): Promise<
       | { batch: BulkImportCreatedResponseDto; error: null }
       | { batch: null; error: string }
     > => {
       try {
         return {
-          batch: await createMutation.mutateAsync({ template, folderId }),
+          batch: await createMutation.mutateAsync({
+            template,
+            folderId,
+            duplicateAction,
+          }),
           error: null,
         }
       } catch (err) {

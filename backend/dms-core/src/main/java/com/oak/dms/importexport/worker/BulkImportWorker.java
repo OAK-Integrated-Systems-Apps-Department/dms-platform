@@ -111,11 +111,17 @@ public class BulkImportWorker {
 
     /** What processing needs from the claimed batch, read while it was locked. */
     /** @param folderId where the batch's documents are filed; null = not in a folder */
+    /** @param duplicateAction keep_both, new_version or skip - see ImportBatch#duplicateAction */
     record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
-                        UUID folderId) {
+                        UUID folderId, String duplicateAction) {
 
         ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
-            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, null);
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, null, "keep_both");
+        }
+
+        ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
+                     UUID folderId) {
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, folderId, "keep_both");
         }
     }
 
@@ -184,7 +190,8 @@ public class BulkImportWorker {
                 }
             }
             return Optional.of(new ClaimedBatch(batch.getImportBatchId(), batch.getTenantId(), batch.getCreatedBy(),
-                    batch.getDocumentTypeId(), batch.getSchemaVersion(), batch.getFolderId()));
+                    batch.getDocumentTypeId(), batch.getSchemaVersion(), batch.getFolderId(),
+                    batch.getDuplicateAction()));
         });
     }
 

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Building2,
   FileStack,
   FileText,
   Grid3x3,
@@ -141,6 +142,13 @@ export const navSections: NavSection[] = [
           PermissionCodes.DE_KEYS_ROTATE,
           PermissionCodes.DE_KEYS_GENERATE,
         ],
+      },
+      // Every organisation on the platform - suspend, deactivate, destroy keys.
+      {
+        label: "Organisations",
+        icon: Building2,
+        href: "/admin/organisations",
+        platformAdminOnly: true,
       },
     ],
   },

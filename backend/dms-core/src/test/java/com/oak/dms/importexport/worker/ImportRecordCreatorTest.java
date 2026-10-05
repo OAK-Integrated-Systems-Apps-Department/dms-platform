@@ -86,12 +86,15 @@ class ImportRecordCreatorTest {
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final com.oak.dms.folder.FolderAccessService folderAccess = mock(com.oak.dms.folder.FolderAccessService.class);
+    private final com.oak.dms.document.DuplicateFinder duplicates = mock(com.oak.dms.document.DuplicateFinder.class);
+    private final com.oak.dms.document.DocumentVersionService versions =
+            mock(com.oak.dms.document.DocumentVersionService.class);
 
     private final ImportRecordCreator creator = new ImportRecordCreator(documentService, ingestionGate,
             documentMetadataRepository, importItemRepository,
             new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
             new ImportValueConverter(), new ImportUsers(mock(UserRepository.class)), objectMapper, transactionManager,
-            folderAccess);
+            folderAccess, duplicates, versions, mock(com.oak.dms.document.DocumentRepository.class));
 
     @BeforeEach
     void setUp() {
@@ -222,6 +225,77 @@ class ImportRecordCreatorTest {
         assertThat(error.get("code").asText()).isEqualTo("ACCESS_REVOKED");
         assertThat(error.get("message").asText()).contains("no longer have edit access");
         verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+    }
+
+    private BulkImportWorker.ClaimedBatch batchThat(String duplicateAction) {
+        return new BulkImportWorker.ClaimedBatch(batch.importBatchId(), tenantId, userId, documentTypeId, 3, null,
+                duplicateAction);
+    }
+
+    private static com.oak.dms.document.DuplicateFinder.Match match(boolean sameContent, boolean identical,
+                                                                    boolean sameName, boolean canEdit) {
+        return new com.oak.dms.document.DuplicateFinder.Match(UUID.randomUUID(), "Contract", "contract.pdf", null,
+                null, UUID.randomUUID(), sameContent, identical, sameName, sameContent ? "1.0" : null, canEdit);
+    }
+
+    @Test
+    void duplicates_skip_failsTheRowWithoutUploading_andSaysWhereItIs() throws Exception {
+        ImportItem item = stagedItem();
+        stub(item);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(match(true, true, true, true)));
+
+        creator.createRecord(batchThat("skip"), item.getImportItemId(), fields);
+
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
+        JsonNode error = objectMapper.readTree(item.getValidationErrors()).get(0);
+        assertThat(error.get("code").asText()).isEqualTo("DUPLICATE_SKIPPED");
+        assertThat(error.get("message").asText()).contains("already in the DMS as 'Contract'");
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void duplicates_newVersion_ofAnIdenticalFile_linksTheExistingDocument_withoutUploading() throws Exception {
+        ImportItem item = stagedItem();
+        stub(item);
+        var existing = match(true, true, true, true);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(existing));
+
+        creator.createRecord(batchThat("new_version"), item.getImportItemId(), fields);
+
+        assertThat(item.getStatus()).isEqualTo(ImportItemStatus.success);
+        assertThat(item.getDocumentId()).isEqualTo(existing.documentId());
+        assertThat(objectMapper.readTree(item.getValidationErrors()).get(0).get("message").asText())
+                .contains("Identical to 'Contract'");
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        verify(versions, never()).upload(any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void duplicates_newVersion_ofAChangedFileWithTheSameName_addsAVersionToIt() {
+        ImportItem item = stagedItem();
+        stub(item);
+        var existing = match(false, false, true, true);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(existing));
+        when(versions.upload(any(), any(), anyLong(), any(), any())).thenThrow(new RuntimeException("stop here"));
+
+        assertThatThrownBy(() -> creator.createRecord(batchThat("new_version"), item.getImportItemId(), fields))
+                .hasMessageContaining("stop here");
+
+        verify(versions).upload(eq(existing.documentId()), eq("Q3 report.pdf"), anyLong(), any(), any());
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void duplicates_keepBoth_doesntEvenLook() {
+        ImportItem item = stagedItem();
+        stub(item);
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
+                .thenThrow(new RuntimeException("stop here"));
+
+        assertThatThrownBy(() -> creator.createRecord(batchThat("keep_both"), item.getImportItemId(), fields))
+                .hasMessageContaining("stop here");
+
+        verifyNoInteractions(duplicates);
     }
 
     @Test

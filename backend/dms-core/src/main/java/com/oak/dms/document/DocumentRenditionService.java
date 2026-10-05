@@ -103,11 +103,17 @@ public class DocumentRenditionService {
      * Audited as DOCUMENT_VIEWED.
      */
     public DownloadedDocument preview(UUID documentId) {
+        return preview(documentId, null);
+    }
+
+    /** @param requestedVersion one of its versions (from the version history); null = the current one */
+    public DownloadedDocument preview(UUID documentId, UUID requestedVersion) {
         Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId,
                         TenantContext.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
         documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.view);
-        UUID versionId = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+        UUID versionId = requestedVersion != null ? requestedVersion
+                : document.getCurrentVersionId() != null ? document.getCurrentVersionId()
                 : document.getLatestVersionId();
         DocumentVersion version = versionRepository.findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId,
                         documentId, document.getTenantId())
@@ -138,7 +144,15 @@ public class DocumentRenditionService {
                 pdfName(version));
     }
 
+    /** A version whose conversion failed isn't tried again for this long - its content never changes. */
+    static final java.time.Duration RETRY_AFTER_FAILURE = java.time.Duration.ofHours(6);
+
     private DownloadedDocument convert(DocumentVersion version) {
+        if ("failed".equals(version.getRenditionStatus()) && version.getUpdatedAt() != null
+                && version.getUpdatedAt().isAfter(java.time.OffsetDateTime.now().minus(RETRY_AFTER_FAILURE))) {
+            throw new FolderException(HttpStatus.UNPROCESSABLE_CONTENT, "PREVIEW_FAILED",
+                    "This file couldn't be turned into a preview - download it to open it.");
+        }
         if (converter == null) {
             throw new FolderException(HttpStatus.SERVICE_UNAVAILABLE, "PREVIEW_UNAVAILABLE",
                     "Previews of this file type aren't set up on this server - download it to open it.");
@@ -166,6 +180,11 @@ public class DocumentRenditionService {
             });
             pdf = converter.post().uri("/forms/libreoffice/convert").contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(form).retrieve().body(byte[].class);
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            // The converter is down or timed out - not the file's fault, so it is tried again next time.
+            log.warn("Preview converter unavailable for version {}: {}", version.getVersionId(), e.getMessage());
+            throw new FolderException(HttpStatus.SERVICE_UNAVAILABLE, "PREVIEW_UNAVAILABLE",
+                    "Previews are unavailable just now - try again shortly, or download the file.");
         } catch (RestClientException e) {
             log.warn("Could not convert version {} ({}) for preview: {}", version.getVersionId(),
                     extension(version.getOriginalFilename()), e.getMessage());

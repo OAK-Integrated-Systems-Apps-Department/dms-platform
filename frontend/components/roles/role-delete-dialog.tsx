@@ -71,7 +71,9 @@ export function RoleDeleteDialog({
           </span>
           <AlertDialogTitle>Delete this role?</AlertDialogTitle>
           <AlertDialogDescription>
-            <strong className="font-semibold text-foreground">{role.name}</strong>{" "}
+            <strong className="font-semibold text-foreground">
+              {role.name}
+            </strong>{" "}
             will be permanently removed
             {role.assignedUsers > 0 && (
               <>
@@ -81,7 +83,7 @@ export function RoleDeleteDialog({
                   : "users currently holding it"}
               </>
             )}
-            . This can't be undone.
+            . This can&apos;t be undone.
           </AlertDialogDescription>
 
           <div className="flex items-center justify-center gap-2.5">

@@ -58,13 +58,16 @@ export async function uploadDocument(
   file: File,
   documentTypeId: string,
   title: string,
-  folderId?: string | null
+  folderId?: string | null,
+  /** Checked for duplicates and found none: refuse (409) if the same file arrived meanwhile. */
+  refuseDuplicates = false
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
   // No Content-Type header: the browser must set the multipart boundary itself.
   const params = new URLSearchParams({ documentTypeId, title })
   if (folderId) params.set("folderId", folderId)
+  if (refuseDuplicates) params.set("refuseDuplicates", "true")
   const response = await apiFetch(
     `${API_BASE_URL}/api/v1/documents?${params.toString()}`,
     { method: "POST", body: form },
@@ -230,6 +233,32 @@ export async function previewConvertedPdf(documentId: string): Promise<Blob> {
   return response.blob()
 }
 
+/** One older version's file, for the in-app preview - audited as viewed, not downloaded. */
+export async function previewVersionFile(
+  documentId: string,
+  versionId: string
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/content?inline=true`,
+    undefined,
+    "Could not open that version."
+  )
+  return response.blob()
+}
+
+/** An older version of an Office file as a PDF - converted on the server the first time. */
+export async function previewVersionPdf(
+  documentId: string,
+  versionId: string
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/preview.pdf`,
+    undefined,
+    "Could not prepare the preview."
+  )
+  return response.blob()
+}
+
 /** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
 export async function moveDocuments(
   documentIds: string[],
@@ -265,6 +294,8 @@ export interface DocumentVersionDto {
   createdByName: string | null
   /** the version that opens and downloads */
   current: boolean
+  /** SHA-256 of its content */
+  fileHash: string
 }
 
 /** `GET /api/v1/documents/{id}/versions` - newest first. */

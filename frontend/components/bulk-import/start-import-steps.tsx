@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { FolderSelect } from "@/components/folders/folder-select"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { friendlyMessage } from "@/lib/api-error"
 import {
   downloadImportTemplate,
@@ -15,6 +16,7 @@ import {
   type BulkImportCreatedResponseDto,
   type ImportDocumentTypeOptionDto,
   type TemplateFormat,
+  type DuplicateAction,
 } from "@/lib/bulk-imports/api"
 import {
   downloadSavedImportTemplate,
@@ -33,7 +35,8 @@ interface StartImportStepsProps {
   creating: boolean
   onCreate: (
     template: File,
-    folderId: string | null
+    folderId: string | null,
+    duplicateAction: DuplicateAction
   ) => Promise<{
     batch: BulkImportCreatedResponseDto | null
     error: string | null
@@ -63,6 +66,8 @@ export function StartImportSteps({
   const [templateName, setTemplateName] = useState<string | null>(null)
   /** "" = documents not filed in a folder. */
   const [folderId, setFolderId] = useState("")
+  const [duplicateAction, setDuplicateAction] =
+    useState<DuplicateAction>("new_version")
 
   async function handleDownload() {
     if (!documentTypeId) return
@@ -88,7 +93,11 @@ export function StartImportSteps({
     if (!template) return
     setTemplateName(template.name)
     setTemplateError(null)
-    const { error } = await onCreate(template, folderId || null)
+    const { error } = await onCreate(
+      template,
+      folderId || null,
+      duplicateAction
+    )
     if (error) setTemplateError(error)
   }
 
@@ -185,6 +194,25 @@ export function StartImportSteps({
             disabled={creating}
             className="w-full"
           />
+        </Field>
+        <Field label="If a file is already in the DMS">
+          <SegmentedControl
+            value={duplicateAction}
+            onChange={setDuplicateAction}
+            disabled={creating}
+            options={[
+              { value: "new_version", label: "Add as new version" },
+              { value: "keep_both", label: "Keep both" },
+              { value: "skip", label: "Skip it" },
+            ]}
+          />
+          <p className="mt-1.5 text-[12px] leading-[1.5] text-muted-foreground">
+            {duplicateAction === "new_version"
+              ? "A file with the same name in this folder becomes its next version. An identical file isn't uploaded again."
+              : duplicateAction === "skip"
+                ? "Files with the same name in this folder, or the same content anywhere you can see, are left out."
+                : "Every file becomes a new document, even if it's already there."}
+          </p>
         </Field>
         <FileDropzone
           accept=".xlsx,.csv"

@@ -63,7 +63,7 @@ class DocumentAccessServiceTest {
         TenantContext.set(TENANT, ME);
         when(audit.event(anyString())).thenReturn(mock(AuditEventBuilder.class, Answers.RETURNS_SELF));
         when(folderAccess.forCaller()).thenReturn(folders);
-        when(documents.existsByTenantIdAndAccessModeAndDeletedFalse(TENANT, FolderAccessMode.restricted)).thenReturn(true);
+        when(documents.existsRestrictedNotPurged(TENANT)).thenReturn(true);
     }
 
     @AfterEach

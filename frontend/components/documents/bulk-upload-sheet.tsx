@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Loader2, RotateCcw, Upload, X } from "lucide-react"
+import { Copy, Loader2, RotateCcw, Upload, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,18 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { ApiError } from "@/lib/api-error"
-import { uploadDocument } from "@/lib/documents/api"
+import { uploadDocument, uploadDocumentVersion } from "@/lib/documents/api"
+import {
+  canCheckSimilar,
+  checkDuplicates,
+  findSimilarDocuments,
+  matchReason,
+  sha256Hex,
+  suggestedChoice,
+  type DuplicateChoice,
+  type DuplicateMatchDto,
+} from "@/lib/documents/duplicates"
+import { cn } from "@/lib/utils"
 import { useSelectableDocumentTypes } from "@/lib/documents/use-selectable-document-types"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 
@@ -28,6 +39,8 @@ type ItemState =
   | { kind: "queued" }
   | { kind: "uploading" }
   | { kind: "uploaded" }
+  | { kind: "versioned" }
+  | { kind: "skipped" }
   | { kind: "scanning" }
   | { kind: "blocked"; message: string }
   | { kind: "rejected"; message: string }
@@ -38,12 +51,20 @@ interface UploadItem {
   file: File
   title: string
   state: ItemState
+  /** Checked against what's already in the DMS for the chosen folder. */
+  checked: boolean
+  /** Why it is waiting again - e.g. the same file arrived meanwhile. */
+  notice?: string
+  /** Already there - and what to do about it. */
+  duplicate?: { match: DuplicateMatchDto; choice: DuplicateChoice }
 }
 
 const STATE_LABEL: Record<ItemState["kind"], string> = {
   queued: "Ready",
   uploading: "Uploading…",
   uploaded: "Uploaded",
+  versioned: "Added as new version",
+  skipped: "Skipped - already there",
   scanning: "Being scanned",
   blocked: "Blocked by malware scan",
   rejected: "Not accepted",
@@ -57,6 +78,8 @@ const STATE_VARIANT: Record<
   queued: "outline",
   uploading: "muted",
   uploaded: "default",
+  versioned: "default",
+  skipped: "muted",
   scanning: "gold",
   blocked: "rust",
   rejected: "rust",
@@ -71,6 +94,7 @@ function toItems(files: File[]): UploadItem[] {
     file,
     title: titleFromFilename(file.name),
     state: { kind: "queued" },
+    checked: false,
   }))
 }
 
@@ -137,6 +161,7 @@ export function BulkUploadSheet({
     toItems(initialFiles ?? [])
   )
   const [running, setRunning] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const types = useSelectableDocumentTypes(open)
@@ -151,26 +176,162 @@ export function BulkUploadSheet({
     )
   }
 
+  /** A different folder changes what counts as a duplicate (same name there). */
+  function changeFolder(next: string) {
+    setFolderId(next)
+    setItems((current) =>
+      current.map((item) =>
+        item.state.kind === "queued"
+          ? { ...item, checked: false, duplicate: undefined }
+          : item
+      )
+    )
+  }
+
+  /**
+   * Looks the not-yet-checked files up first (fingerprinted here, nothing
+   * uploaded). Found duplicates wait for the user's choice; the rest upload.
+   */
+  async function start() {
+    const unchecked = queued.filter((item) => !item.checked)
+    if (unchecked.length === 0) {
+      await runUploads(queued)
+      return
+    }
+    setChecking(true)
+    let found: Map<string, DuplicateMatchDto> = new Map()
+    try {
+      const hashes = await Promise.all(
+        unchecked.map((item) => sha256Hex(item.file))
+      )
+      const results = await checkDuplicates(
+        folderId || null,
+        unchecked.map((item, i) => ({
+          name: item.file.name,
+          sha256: hashes[i],
+        }))
+      )
+      found = new Map(
+        results.flatMap((result, i) =>
+          result.matches.length > 0
+            ? [[unchecked[i].id, result.matches[0]]]
+            : []
+        ) as [string, DuplicateMatchDto][]
+      )
+      // No exact copy: look for documents with nearly the same text.
+      for (const item of unchecked) {
+        if (found.has(item.id) || !canCheckSimilar(item.file)) continue
+        try {
+          const similar = await findSimilarDocuments(item.file)
+          if (similar.length > 0) found.set(item.id, similar[0])
+        } catch {
+          // a file whose text can't be read is just not compared
+        }
+      }
+    } catch {
+      // The check is a convenience - if it can't run, upload as before.
+    } finally {
+      setChecking(false)
+    }
+    const ids = new Set(unchecked.map((item) => item.id))
+    const next = items.map((item) => {
+      if (!ids.has(item.id)) return item
+      const match = found.get(item.id)
+      return {
+        ...item,
+        checked: true,
+        notice: undefined,
+        duplicate: match
+          ? { match, choice: suggestedChoice(match) }
+          : undefined,
+      }
+    })
+    setItems(next)
+    // Duplicates need a decision first; with none, carry straight on.
+    if (found.size === 0) {
+      await runUploads(next.filter((item) => item.state.kind === "queued"))
+    }
+  }
+
+  function choose(id: string, choice: DuplicateChoice) {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id && item.duplicate
+          ? { ...item, duplicate: { ...item.duplicate, choice } }
+          : item
+      )
+    )
+  }
+
+  function chooseForAll(choice: DuplicateChoice) {
+    setItems((current) =>
+      current.map((item) =>
+        item.duplicate && item.state.kind === "queued"
+          ? {
+              ...item,
+              duplicate: {
+                ...item.duplicate,
+                // A version only where the user may add one.
+                choice:
+                  choice === "version" && !item.duplicate.match.canAddVersion
+                    ? "both"
+                    : choice,
+              },
+            }
+          : item
+      )
+    )
+  }
+
   async function runUploads(targets: UploadItem[]) {
     setRunning(true)
     const queue = [...targets]
     async function worker() {
       for (let next = queue.shift(); next; next = queue.shift()) {
+        const choice = next.duplicate?.choice
+        if (choice === "skip") {
+          update(next.id, { state: { kind: "skipped" } })
+          continue
+        }
         update(next.id, { state: { kind: "uploading" } })
         try {
-          const ticket = await uploadDocument(
-            next.file,
-            documentTypeId,
-            next.title.trim() || titleFromFilename(next.file.name),
-            folderId || null
-          )
+          const ticket =
+            choice === "version" && next.duplicate
+              ? await uploadDocumentVersion(
+                  next.duplicate.match.documentId,
+                  next.file,
+                  "Uploaded again"
+                )
+              : await uploadDocument(
+                  next.file,
+                  documentTypeId,
+                  next.title.trim() || titleFromFilename(next.file.name),
+                  folderId || null,
+                  // Checked and nothing found: if the same file arrives meanwhile, ask again.
+                  next.checked && !next.duplicate
+                )
           update(next.id, {
             state:
               ticket.status === "pending"
                 ? { kind: "scanning" }
-                : { kind: "uploaded" },
+                : choice === "version"
+                  ? { kind: "versioned" }
+                  : { kind: "uploaded" },
           })
         } catch (error) {
+          if (
+            error instanceof ApiError &&
+            error.code === "DUPLICATE_UPLOADED_MEANWHILE"
+          ) {
+            // Someone added the same file a moment ago - check again and let the user choose.
+            update(next.id, {
+              state: { kind: "queued" },
+              checked: false,
+              notice:
+                "The same file was just added by someone else. Upload again to choose what to do.",
+            })
+            continue
+          }
           update(next.id, { state: outcomeOf(error) })
         }
       }
@@ -184,16 +345,18 @@ export function BulkUploadSheet({
 
   const queued = items.filter((i) => i.state.kind === "queued")
   const retryable = items.filter((i) => i.state.kind === "failed")
-  const done = items.filter(
-    (i) => i.state.kind === "uploaded" || i.state.kind === "scanning"
+  const done = items.filter((i) =>
+    ["uploaded", "versioned", "scanning", "skipped"].includes(i.state.kind)
   ).length
+  const waitingForChoice = queued.filter((i) => i.duplicate)
   const problems = items.filter((i) =>
     ["blocked", "rejected", "failed"].includes(i.state.kind)
   ).length
-  const canUpload = Boolean(documentTypeId) && queued.length > 0 && !running
+  const canUpload =
+    Boolean(documentTypeId) && queued.length > 0 && !running && !checking
 
   function handleOpenChange(next: boolean) {
-    if (running) return // don't close mid-upload
+    if (running || checking) return // don't close mid-upload
     onOpenChange(next)
   }
 
@@ -246,9 +409,9 @@ export function BulkUploadSheet({
             </p>
             <FolderSelect
               value={folderId}
-              onChange={setFolderId}
+              onChange={changeFolder}
               className="w-full"
-              disabled={running}
+              disabled={running || checking}
             />
           </div>
 
@@ -293,6 +456,47 @@ export function BulkUploadSheet({
             />
           </div>
 
+          {waitingForChoice.length > 0 && !running && (
+            <div className="flex flex-col gap-2 rounded-lg border border-[var(--gold)] bg-[var(--gold-tint)] p-3 text-[12.5px]">
+              <p className="flex items-start gap-2 font-medium text-foreground">
+                <Copy
+                  size={14}
+                  className="mt-0.5 shrink-0 text-[var(--gold)]"
+                />
+                {waitingForChoice.length === 1
+                  ? "1 file is already in the DMS."
+                  : `${waitingForChoice.length} files are already in the DMS.`}{" "}
+                Choose what to do with each, then upload.
+              </p>
+              {waitingForChoice.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                  For all of them:
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => chooseForAll("version")}
+                  >
+                    New version
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => chooseForAll("both")}
+                  >
+                    Keep both
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => chooseForAll("skip")}
+                  >
+                    Skip
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {items.length > 0 && (
             <ul className="divide-y divide-border rounded-lg border border-border">
               {items.map((item) => (
@@ -319,6 +523,19 @@ export function BulkUploadSheet({
                       <p className="mt-1 text-[12px] text-[var(--rust)]">
                         {item.state.message}
                       </p>
+                    )}
+                    {item.notice && item.state.kind === "queued" && (
+                      <p className="mt-1 text-[12px] text-[var(--gold)]">
+                        {item.notice}
+                      </p>
+                    )}
+                    {item.duplicate && item.state.kind === "queued" && (
+                      <DuplicateChoicePicker
+                        match={item.duplicate.match}
+                        choice={item.duplicate.choice}
+                        disabled={running}
+                        onChange={(choice) => choose(item.id, choice)}
+                      />
                     )}
                   </div>
                   <Badge
@@ -375,13 +592,19 @@ export function BulkUploadSheet({
             <Button
               type="button"
               disabled={!canUpload}
-              onClick={() => void runUploads(queued)}
+              onClick={() => void start()}
               className="flex-1"
             >
-              {running ? <Loader2 className="animate-spin" /> : <Upload />}
-              {running
-                ? "Uploading…"
-                : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
+              {running || checking ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Upload />
+              )}
+              {checking
+                ? "Checking for duplicates…"
+                : running
+                  ? "Uploading…"
+                  : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
             </Button>
           </div>
           {!documentTypeId && queued.length > 0 && (
@@ -392,5 +615,68 @@ export function BulkUploadSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  )
+}
+
+const CHOICES: { value: DuplicateChoice; label: string }[] = [
+  { value: "version", label: "New version" },
+  { value: "both", label: "Keep both" },
+  { value: "skip", label: "Skip" },
+]
+
+/** What's already there, and the three ways to go on. */
+function DuplicateChoicePicker({
+  match,
+  choice,
+  disabled,
+  onChange,
+}: {
+  match: DuplicateMatchDto
+  choice: DuplicateChoice
+  disabled: boolean
+  onChange: (choice: DuplicateChoice) => void
+}) {
+  return (
+    <div className="mt-2 rounded-md border border-[var(--gold)]/60 bg-[var(--gold-tint)] p-2.5">
+      <p className="text-[12px] leading-[1.45] text-foreground">
+        {matchReason(match)}
+      </p>
+      <div
+        role="radiogroup"
+        aria-label="What to do with this file"
+        className="mt-2 flex flex-wrap gap-1.5"
+      >
+        {CHOICES.map((option) => {
+          const unavailable = option.value === "version" && !match.canAddVersion
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={choice === option.value}
+              disabled={disabled || unavailable}
+              title={
+                unavailable
+                  ? "You can't edit that document, so you can't add a version to it"
+                  : option.value === "version"
+                    ? `Becomes the next version of "${match.title}" - the current one stays in its history`
+                    : option.value === "both"
+                      ? "Upload it as a separate document"
+                      : "Don't upload this file"
+              }
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                choice === option.value
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-foreground hover:border-primary/60"
+              )}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }

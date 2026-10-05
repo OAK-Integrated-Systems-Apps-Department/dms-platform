@@ -66,7 +66,9 @@ class ImportCompletionSchedulerTest {
     private final ImportRecordCreator recordCreator = new ImportRecordCreator(documentService, ingestionGate,
             documentMetadataRepository, importItemRepository, stagedImportFiles, new ImportValueConverter(),
             new ImportUsers(mock(UserRepository.class)), new ObjectMapper(), transactionManager,
-            mock(com.oak.dms.folder.FolderAccessService.class));
+            mock(com.oak.dms.folder.FolderAccessService.class), mock(com.oak.dms.document.DuplicateFinder.class),
+            mock(com.oak.dms.document.DocumentVersionService.class),
+            mock(com.oak.dms.document.DocumentRepository.class));
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
             importItemRepository, stagedImportFiles, mock(BulkImportAuditor.class), transactionManager);
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,

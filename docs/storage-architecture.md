@@ -469,7 +469,8 @@ and FILE_SYSTEM were the only providers this application started with.
 - **Deleting is two-step (V62).** `deleteDocument` is a soft delete: the
   document goes to the recycle bin (`/api/v1/recycle-bin`, module RBR), where
   it can be restored for the tenant's retention period
-  (`recycle_bin_settings`; default `RECYCLE_BIN_RETENTION_DAYS`, 30). After
+  (`recycle_bin_settings`; default `RECYCLE_BIN_RETENTION_DAYS`, 30; a document
+  type can set its own, `document_types.recycle_bin_retention_days`, V66). After
   that the hourly sweep (`RecycleBinService#purgeExpired`, one instance at a
   time) purges it, or someone with `rbr.permanently-purge-documents` does it
   straight away. A purge deletes every version's object, its encrypted copy and
@@ -497,6 +498,27 @@ and FILE_SYSTEM were the only providers this application started with.
   - In production the converter sits on an internal-only Docker network
     (`previews`), because LibreOffice can follow links embedded in a document.
     Its Chromium (URL-fetching) routes are switched off.
+  - The converter is capped at 2 GB of memory, 2 CPUs and 256 processes, so a
+    large or malformed file can't starve the server.
+  - A conversion that fails because of the file is not tried again for 6
+    hours. One that fails because the converter is down is retried on the next
+    preview.
+- **Duplicates (V65, V67).**
+  - The upload screen fingerprints each file in the browser (SHA-256) and asks
+    the user what to do when the same content, or a file with the same name in
+    the target folder, is already there: add it as a new version, keep both, or
+    skip it.
+  - **Similar text:** `POST /documents/duplicates/similar` reads the file's
+    text in memory (PDFBox / Apache POI; at most 25 MB; nothing is stored),
+    computes a 64-bit SimHash, and finds documents whose text fingerprint is
+    within 6 bits (about 90% the same). `FingerprintBackfill` fingerprints
+    stored versions in the background (`document_versions.content_simhash`).
+  - **Uploads at the same moment:** an upload sent with `refuseDuplicates=true`
+    is refused (409 `DUPLICATE_UPLOADED_MEANWHILE`) if the same bytes reached
+    the same folder meanwhile. The earlier upload wins, so exactly one goes
+    through.
+  - **A new version byte-for-byte equal to the current version** is refused
+    (409 `VERSION_IDENTICAL`).
 - **No `publishedVersionId` workflow is wired up** in this pass - no publish
   endpoint exists yet to drive it.
 - **No live-server test coverage for S3/MinIO/SeaweedFS/Azure Blob.** This

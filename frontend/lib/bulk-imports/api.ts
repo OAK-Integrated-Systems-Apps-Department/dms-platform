@@ -260,15 +260,21 @@ export async function fetchBulkImportRowCheck(
   )
 }
 
+/** What a bulk import does with a file that's already in the DMS (V65). */
+export type DuplicateAction = "new_version" | "keep_both" | "skip"
+
 /** POST /bulk-imports - uploads the filled-in template (.xlsx or .csv) and opens a batch. */
 export async function createBulkImport(
   template: File,
-  folderId?: string | null
+  folderId?: string | null,
+  duplicateAction: DuplicateAction = "keep_both"
 ): Promise<BulkImportCreatedResponseDto> {
   const body = new FormData()
   body.append("template", template)
+  const params = new URLSearchParams({ duplicateAction })
+  if (folderId) params.set("folderId", folderId)
   return apiFetchJson<BulkImportCreatedResponseDto>(
-    folderId ? `${BASE}?folderId=${encodeURIComponent(folderId)}` : BASE,
+    `${BASE}?${params.toString()}`,
     { method: "POST", body },
     "Could not upload the template."
   )

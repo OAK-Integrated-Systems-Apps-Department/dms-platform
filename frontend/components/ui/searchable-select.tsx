@@ -49,7 +49,10 @@ export function SearchableSelect({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setOpen(false)
       }
     }
@@ -57,13 +60,19 @@ export function SearchableSelect({
     return () => document.removeEventListener("click", handleClickOutside)
   }, [])
 
+  // Search text resets whenever the search box goes away (panel closed) -
+  // adjusted during render against the last-seen state; the effect below
+  // only handles focus.
+  const searchActive = open && searchable
+  const [prevSearchActive, setPrevSearchActive] = useState(searchActive)
+  if (searchActive !== prevSearchActive) {
+    setPrevSearchActive(searchActive)
+    if (!searchActive) setQuery("")
+  }
+
   useEffect(() => {
-    if (open && searchable) {
-      searchInputRef.current?.focus()
-    } else {
-      setQuery("")
-    }
-  }, [open, searchable])
+    if (searchActive) searchInputRef.current?.focus()
+  }, [searchActive])
 
   function selectOption(value: string) {
     onChange(value)
@@ -89,11 +98,16 @@ export function SearchableSelect({
         onClick={() => setOpen((v) => !v)}
         className={cn(
           "flex h-[38px] w-full items-center justify-between rounded-btn border bg-muted px-3 text-left text-[13.5px] text-foreground transition-colors",
-          open ? "border-primary bg-card ring-3 ring-primary/15" : "border-border"
+          open
+            ? "border-primary bg-card ring-3 ring-primary/15"
+            : "border-border"
         )}
       >
         <span className="truncate">{triggerLabel}</span>
-        <ChevronDown size={14} className="pointer-events-none ml-2 shrink-0 text-[var(--ink-faint)]" />
+        <ChevronDown
+          size={14}
+          className="pointer-events-none ml-2 shrink-0 text-[var(--ink-faint)]"
+        />
       </button>
 
       {open && (
@@ -103,7 +117,10 @@ export function SearchableSelect({
         >
           {searchable && (
             <div className="relative mb-1.5">
-              <Search size={13} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+              <Search
+                size={13}
+                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[var(--ink-faint)]"
+              />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -121,7 +138,9 @@ export function SearchableSelect({
                 onClick={clearSelection}
                 className={cn(
                   "cursor-pointer truncate rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted",
-                  selected === "" ? "font-semibold text-primary" : "text-foreground"
+                  selected === ""
+                    ? "font-semibold text-primary"
+                    : "text-foreground"
                 )}
               >
                 {allLabel}
@@ -129,7 +148,9 @@ export function SearchableSelect({
             )}
 
             {filteredOptions.length === 0 && !showAllOption ? (
-              <p className="px-2.5 py-2.5 text-[13px] text-[var(--ink-faint)]">No matches for &quot;{query}&quot;</p>
+              <p className="px-2.5 py-2.5 text-[13px] text-[var(--ink-faint)]">
+                No matches for &quot;{query}&quot;
+              </p>
             ) : (
               filteredOptions.map((option) => {
                 const isSelected = selected === option.value
@@ -139,7 +160,9 @@ export function SearchableSelect({
                     onClick={() => selectOption(option.value)}
                     className={cn(
                       "cursor-pointer truncate rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted",
-                      isSelected ? "font-semibold text-primary" : "text-foreground"
+                      isSelected
+                        ? "font-semibold text-primary"
+                        : "text-foreground"
                     )}
                   >
                     {option.label}

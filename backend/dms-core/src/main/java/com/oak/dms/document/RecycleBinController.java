@@ -58,6 +58,19 @@ public class RecycleBinController {
     public record RetentionRequest(@Min(1) @Max(3650) int retentionDays) {
     }
 
+    /** @param retentionDays null = follow the organisation's period again */
+    public record TypeRetentionRequest(@Min(1) @Max(3650) Integer retentionDays) {
+    }
+
+    @PutMapping("/settings/document-types/{documentTypeId}")
+    @PreAuthorize("@authz.hasPermission(" + P + "RBR_RETENTION)")
+    @Operation(summary = "How many days deleted documents of one type are kept - null to follow the organisation's")
+    public ResponseEntity<Void> setTypeRetention(@PathVariable("documentTypeId") UUID documentTypeId,
+                                                 @Valid @RequestBody TypeRetentionRequest request) {
+        service.setTypeRetentionDays(documentTypeId, request.retentionDays());
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/settings")
     @PreAuthorize("@authz.hasPermission(" + P + "RBR_RETENTION)")
     @Operation(summary = "How many days deleted documents are kept before they're purged")

@@ -32,9 +32,8 @@ import java.util.UUID;
  * and an instance that can't take it skips this round. Reminders are claimed
  * in the database too, so each is sent once.
  * <p>
- * FOLLOW-UP (2026-10-02): a reminder is an audit event and the "due" banner on
- * the key screen - nobody is emailed. Once there is a notification service,
- * send it to the users holding de.manage-encryption-keys.rotate-key.
+ * A reminder is an audit event, the "due" banner on the key screen, and an
+ * email to the people who can rotate it ({@link KeyRotationReminderMailer}).
  */
 @Slf4j
 @Component
@@ -49,6 +48,7 @@ public class KeyRotationScheduler {
     private final EncryptionProperties properties;
     private final AuditService auditService;
     private final JdbcTemplate jdbc;
+    private final KeyRotationReminderMailer mailer;
 
     @Scheduled(fixedDelayString = "${dms.encryption.rotation.check-interval:PT6H}", initialDelayString = "PT2M")
     public void checkSchedule() {
@@ -108,6 +108,8 @@ public class KeyRotationScheduler {
                     .outcome(AuditOutcome.SUCCESS)
                     .newValue(details)
                     .log();
+            int emailed = mailer.send(tenantId, policy.nextDueAt(), policy.intervalDays());
+            log.info("Key rotation for tenant {} is due - reminder emailed to {} people", tenantId, emailed);
         }
     }
 }

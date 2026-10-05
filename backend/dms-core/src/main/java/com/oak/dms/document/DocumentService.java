@@ -34,6 +34,14 @@ public interface DocumentService {
      * @param folderId the folder to file the document in - checked now to exist and to let the caller
      *                 upload into it (V53 folder access); null = the top level
      */
+    /**
+     * As {@link #uploadDocument(UUID, String, String, long, InputStream, UUID)}; {@code refuseDuplicates}: the
+     * uploader checked for duplicates and found none - refuse (409) if the same file reached the folder meanwhile.
+     */
+    IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                           long contentLength, InputStream content, UUID folderId,
+                                           boolean refuseDuplicates);
+
     IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
                                            long contentLength, InputStream content, UUID folderId);
 

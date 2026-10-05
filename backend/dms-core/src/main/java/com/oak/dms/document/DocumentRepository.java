@@ -76,6 +76,11 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     boolean existsByTenantIdAndAccessModeAndDeletedFalse(UUID tenantId, com.oak.dms.folder.FolderAccessMode accessMode);
 
+    /** Restricted documents still live or in the recycle bin (not purged) - their access lists still matter. */
+    @Query("select count(d) > 0 from Document d where d.tenantId = :tenantId "
+            + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted and d.purgedAt is null")
+    boolean existsRestrictedNotPurged(@Param("tenantId") UUID tenantId);
+
     @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
             + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
     List<UUID> findRestrictedIds(@Param("tenantId") UUID tenantId);

@@ -87,8 +87,10 @@ public class DocumentAccessService {
         UUID userId = TenantContext.getUserId();
         FolderAccessView folders = folderAccess.forCaller();
         boolean admin = folderAccess.callerIsAdmin();
+        // Deleted ones too: a restricted document in the recycle bin must stay open to the people on its
+        // list, so they can restore it - even when no live document is restricted.
         boolean anyRestricted = cache.anyRestrictedDocuments(tenantId, () ->
-                documentRepository.existsByTenantIdAndAccessModeAndDeletedFalse(tenantId, FolderAccessMode.restricted));
+                documentRepository.existsRestrictedNotPurged(tenantId));
         Map<UUID, FolderAccessLevel> granted = Map.of();
         if (!admin && anyRestricted) {
             granted = cache.documentGrants(tenantId, userId, () -> {

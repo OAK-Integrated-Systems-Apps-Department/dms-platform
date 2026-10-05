@@ -86,6 +86,43 @@ public class TenantServiceImpl implements TenantService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<TenantResponse> listTenants(Pageable pageable, boolean includeDeactivated) {
+        return includeDeactivated
+                ? tenantRepository.findAllIncludingDeactivated(pageable).map(tenantMapper::toResponse)
+                : listTenants(pageable);
+    }
+
+    @Override
+    @Transactional
+    public TenantResponse reactivateTenant(UUID tenantId) {
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
+        if (tenant.getKeysShreddedAt() != null) {
+            throw new com.oak.dms.folder.FolderException(org.springframework.http.HttpStatus.CONFLICT,
+                    "TENANT_KEYS_SHREDDED", "This organisation's encryption keys were destroyed, so its documents "
+                    + "can never be read again - it can't be reactivated.");
+        }
+        Map<String, Object> previousValue = Map.of("status", tenant.getStatus(), "deactivated", tenant.isDeleted());
+        tenant.setDeleted(false);
+        tenant.setDeletedAt(null);
+        tenant.setStatus(Tenant.TenantStatus.active);
+        tenant.setUpdatedAt(OffsetDateTime.now());
+        Tenant saved = tenantRepository.save(tenant);
+        log.info("Reactivated tenant {}", tenantId);
+        auditService.event(AuditActionCatalog.TENANT_UPDATED)
+                .platformLevel()
+                .objectType(AuditObjectTypes.TENANT)
+                .objectId(tenantId)
+                .resourceName(saved.getTenantName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of("status", saved.getStatus(), "deactivated", false))
+                .log();
+        return tenantMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<TenantResponse> listTenants(Pageable pageable) {
         return tenantRepository.findAllActive(pageable).map(tenantMapper::toResponse);
     }
@@ -129,17 +166,8 @@ public class TenantServiceImpl implements TenantService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
         String tenantName = tenant.getTenantName();
 
-        /*
-         * FOLLOW-UP (found 2026-10-02 while building crypto-shredding): a
-         * tenant's status (suspended / archived / deleted) isn't checked at
-         * sign-in or per request - nothing in security/ reads it - so the
-         * users of a deactivated tenant keep working with a valid session.
-         * After its keys are shredded (TenantKeyShredder), a new upload from
-         * such a session would even be encrypted under a freshly created key.
-         * Fix: refuse sign-in and reject requests (403, "organisation is not
-         * active") for a tenant that isn't active, e.g. where TenantContext is
-         * bound from the token, and end its sessions on deactivation.
-         */
+        // From here its users can't sign in, and sessions they already have stop working on their next
+        // request (OrganisationStatusGuard).
         tenant.setDeleted(true);
         tenant.setDeletedAt(OffsetDateTime.now());
         tenant.setStatus(Tenant.TenantStatus.archived);

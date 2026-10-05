@@ -83,11 +83,14 @@ public class BulkImportController {
     @Operation(summary = "Upload a filled-in import template (.xlsx or .csv) to start a bulk import")
     public ResponseEntity<BulkImportCreatedResponse> createBatch(@RequestPart("template") MultipartFile template,
                                                                  @RequestParam(value = "folderId", required = false)
-                                                                 UUID folderId)
+                                                                 UUID folderId,
+                                                                 @RequestParam(value = "duplicateAction",
+                                                                         defaultValue = "keep_both")
+                                                                 String duplicateAction)
             throws IOException {
         try (InputStream content = template.getInputStream()) {
             BulkImportCreatedResponse response = bulkImportService.createBatch(template.getOriginalFilename(),
-                    template.getSize(), content, folderId);
+                    template.getSize(), content, folderId, duplicateAction);
             return ResponseEntity.created(URI.create("/api/v1/bulk-imports/" + response.batchId())).body(response);
         }
     }

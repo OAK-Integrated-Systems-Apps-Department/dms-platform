@@ -58,6 +58,7 @@ public class DocumentController {
     private final DocumentAccessService documentAccessService;
     private final DocumentVersionService versionService;
     private final DocumentRenditionService renditionService;
+    private final DuplicateFinder duplicateFinder;
 
     /**
      * Returns an ingestion ticket, uniformly across scan providers - the
@@ -72,11 +73,13 @@ public class DocumentController {
     public ResponseEntity<IngestionTicketResponse> uploadDocument(@RequestPart("file") MultipartFile file,
                                                                    @RequestParam("documentTypeId") UUID documentTypeId,
                                                                    @RequestParam("title") String title,
-                                                                   @RequestParam(value = "folderId", required = false) UUID folderId)
+                                                                   @RequestParam(value = "folderId", required = false) UUID folderId,
+                                                                   @RequestParam(value = "refuseDuplicates", defaultValue = "false")
+                                                                   boolean refuseDuplicates)
             throws IOException {
         try (InputStream content = file.getInputStream()) {
             IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, title,
-                    file.getOriginalFilename(), file.getSize(), content, folderId);
+                    file.getOriginalFilename(), file.getSize(), content, folderId, refuseDuplicates);
             return IngestionTicketResponses.toResponseEntity(ticket);
         }
     }
@@ -102,6 +105,52 @@ public class DocumentController {
             @RequestParam(value = "q", required = false) String query,
             @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(documentService.listSharedWithMe(query, pageable));
+    }
+
+    /**
+     * @param name   the file's name, as it will be uploaded
+     * @param sha256 its SHA-256 in hex, worked out by the browser; null to check the name only
+     */
+    public record DuplicateCheckFile(@jakarta.validation.constraints.NotBlank @Size(max = 500) String name,
+                                     @jakarta.validation.constraints.Pattern(regexp = "^[0-9a-fA-F]{64}$")
+                                     String sha256) {
+    }
+
+    /** @param folderId the folder the files are going into; null = the top level */
+    public record DuplicateCheckRequest(UUID folderId, @NotEmpty @Size(max = 500) List<@Valid DuplicateCheckFile> files) {
+    }
+
+    public record DuplicateCheckResult(String name, List<DuplicateFinder.Match> matches) {
+    }
+
+    /**
+     * Before uploading: documents whose text is nearly the same as this file's (a re-saved copy, a light
+     * edit, the same report renamed). The file is read in memory only - nothing is stored - and must be
+     * at most 25 MB; files with no readable text (images, email) find nothing.
+     */
+    @PostMapping(value = "/duplicates/similar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
+    @Operation(summary = "Before uploading: documents with nearly the same text as this file")
+    public List<DuplicateFinder.Match> similarDocuments(@RequestPart("file") MultipartFile file) throws IOException {
+        if (file.getSize() > DocumentFingerprints.MAX_BYTES
+                || !DocumentFingerprints.readable(file.getOriginalFilename())) {
+            return List.of();
+        }
+        return DocumentFingerprints.of(file.getOriginalFilename(), file.getBytes())
+                .map(duplicateFinder::findSimilar)
+                .orElse(List.of());
+    }
+
+    @PostMapping("/duplicates")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
+    @Operation(summary = "Before uploading: which of these files are already in the DMS",
+            description = "Same content (SHA-256) in any document the caller can open, or the same file name in the "
+                    + "target folder. Documents hidden from the caller are never reported.")
+    public List<DuplicateCheckResult> checkDuplicates(@Valid @RequestBody DuplicateCheckRequest request) {
+        return request.files().stream()
+                .map(f -> new DuplicateCheckResult(f.name(), duplicateFinder.find(f.sha256(), f.name(),
+                        request.folderId())))
+                .toList();
     }
 
     /** @param folderId the destination folder; null = take the documents out of any folder */
@@ -184,12 +233,34 @@ public class DocumentController {
         return versionService.list(id);
     }
 
+    @GetMapping("/{id}/versions/{versionId}/preview.pdf")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Preview an older version of an Office document as a PDF - converted on first use")
+    public ResponseEntity<StreamingResponseBody> previewVersionPdf(@PathVariable("id") UUID id,
+                                                                   @PathVariable("versionId") UUID versionId) {
+        DownloadedDocument pdf = renditionService.preview(id, versionId);
+        StreamingResponseBody body = outputStream -> {
+            try (InputStream content = pdf.content()) {
+                content.transferTo(outputStream);
+            }
+        };
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PDF_VALUE)
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.sizeBytes()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(pdf.filename()) + "\"")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
     @GetMapping("/{id}/versions/{versionId}/content")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
-    @Operation(summary = "Download one version of a document")
-    public ResponseEntity<StreamingResponseBody> downloadVersion(@PathVariable("id") UUID id,
-                                                                 @PathVariable("versionId") UUID versionId) {
-        DownloadedDocument downloaded = versionService.download(id, versionId);
+    @Operation(summary = "Download one version of a document; inline=true to show it in the browser (preview)")
+    public ResponseEntity<StreamingResponseBody> downloadVersion(
+            @PathVariable("id") UUID id,
+            @PathVariable("versionId") UUID versionId,
+            @RequestParam(value = "inline", defaultValue = "false") boolean inline) {
+        DownloadedDocument downloaded = inline ? versionService.preview(id, versionId)
+                : versionService.download(id, versionId);
         StreamingResponseBody body = outputStream -> {
             try (InputStream content = downloaded.content()) {
                 content.transferTo(outputStream);
@@ -202,7 +273,7 @@ public class DocumentController {
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
+                        (inline ? "inline" : "attachment") + "; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
     }

@@ -10,7 +10,10 @@ import { Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
-import { loginCredentialsSchema, type LoginCredentialsValues } from "@/components/auth/schema"
+import {
+  loginCredentialsSchema,
+  type LoginCredentialsValues,
+} from "@/components/auth/schema"
 import { APP_NAME } from "@/lib/app-config"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
@@ -55,7 +58,12 @@ async function checkMfaRequired(username: string): Promise<boolean> {
  * comment for why that's safe: this function is the only thing standing
  * between the two, so don't remove this try/catch.
  */
-async function login(username: string, password: string, rememberMe: boolean, totp?: string): Promise<LoginResponse> {
+async function login(
+  username: string,
+  password: string,
+  rememberMe: boolean,
+  totp?: string
+): Promise<LoginResponse> {
   if (!totp) {
     const mfaRequired = await checkMfaRequired(username)
     if (mfaRequired) {
@@ -78,7 +86,11 @@ async function login(username: string, password: string, rememberMe: boolean, to
       "Invalid username or password."
     )
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Invalid username or password." }
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Invalid username or password.",
+    }
   }
   return { ok: true }
 }
@@ -107,15 +119,21 @@ export function LoginPageContent() {
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
   // Stripped out entirely in production builds — see the check below.
-  const devOtpBypass = process.env.NODE_ENV !== "production" && searchParams.get("step") === "otp"
-  const [step, setStep] = useState<"credentials" | "otp">(devOtpBypass ? "otp" : "credentials")
+  const devOtpBypass =
+    process.env.NODE_ENV !== "production" && searchParams.get("step") === "otp"
+  const [step, setStep] = useState<"credentials" | "otp">(
+    devOtpBypass ? "otp" : "credentials"
+  )
   const [rememberMe, setRememberMe] = useState(false)
   const [code, setCode] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   // Kept alongside the validated form state below — the OTP step's retry
   // needs the credentials again, and OtpInput is a controlled component
   // that doesn't fit cleanly into react-hook-form's register() pattern.
-  const [savedCredentials, setSavedCredentials] = useState({ username: "", password: "" })
+  const [savedCredentials, setSavedCredentials] = useState({
+    username: "",
+    password: "",
+  })
 
   const {
     register,
@@ -128,8 +146,15 @@ export function LoginPageContent() {
   })
 
   const mutation = useMutation({
-    mutationFn: ({ username, password, totp }: { username: string; password: string; totp?: string }) =>
-      login(username, password, rememberMe, totp),
+    mutationFn: ({
+      username,
+      password,
+      totp,
+    }: {
+      username: string
+      password: string
+      totp?: string
+    }) => login(username, password, rememberMe, totp),
     onSuccess: (result) => {
       if (result.ok) {
         toast.success("Signed in successfully.")
@@ -190,10 +215,22 @@ export function LoginPageContent() {
             <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
               Sign in to your account
             </h1>
+            {searchParams.get("reason") === "organisation-inactive" && (
+              <p
+                role="alert"
+                className="mb-4 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
+              >
+                You were signed out because your organisation&apos;s account is
+                suspended or closed. Contact your administrator.
+              </p>
+            )}
 
             <form onSubmit={handleSubmit(handleCredentialsSubmit)} noValidate>
               <div className="mb-[17px]">
-                <label htmlFor="username" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+                <label
+                  htmlFor="username"
+                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
+                >
                   Username or email
                 </label>
                 <input
@@ -202,15 +239,20 @@ export function LoginPageContent() {
                   placeholder="username"
                   autoComplete="username"
                   {...register("username")}
-                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                 />
                 {credentialErrors.username && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.username.message}</p>
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                    {credentialErrors.username.message}
+                  </p>
                 )}
               </div>
 
               <div className="mb-[17px]">
-                <label htmlFor="password" className="mb-[7px] block text-[13px] font-semibold text-foreground">
+                <label
+                  htmlFor="password"
+                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
+                >
                   Password
                 </label>
                 <div className="relative">
@@ -220,13 +262,15 @@ export function LoginPageContent() {
                     placeholder="••••••••••"
                     autoComplete="current-password"
                     {...register("password")}
-                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
                     tabIndex={-1}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                     aria-pressed={showPassword}
                     className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
                   >
@@ -234,7 +278,9 @@ export function LoginPageContent() {
                   </button>
                 </div>
                 {credentialErrors.password && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">{credentialErrors.password.message}</p>
+                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                    {credentialErrors.password.message}
+                  </p>
                 )}
               </div>
 
@@ -248,7 +294,10 @@ export function LoginPageContent() {
                   />
                   Remember me
                 </label>
-                <a href="/reset-password" className="text-[13px] font-semibold text-primary hover:underline">
+                <a
+                  href="/reset-password"
+                  className="text-[13px] font-semibold text-primary hover:underline"
+                >
                   Forgot password?
                 </a>
               </div>
@@ -268,7 +317,7 @@ export function LoginPageContent() {
           </>
         ) : (
           <div className="text-center">
-            <div className="mx-auto mb-[18px] flex size-[52px] items-center justify-center rounded-full border border-border bg-primary-tint">
+            <div className="bg-primary-tint mx-auto mb-[18px] flex size-[52px] items-center justify-center rounded-full border border-border">
               <ShieldCheck size={24} className="text-primary" />
             </div>
             <h1 className="mb-2 font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
@@ -279,7 +328,11 @@ export function LoginPageContent() {
             </p>
 
             <form onSubmit={handleOtpSubmit}>
-              <OtpInput value={code} onChange={setCode} disabled={mutation.isPending} />
+              <OtpInput
+                value={code}
+                onChange={setCode}
+                disabled={mutation.isPending}
+              />
 
               <button
                 type="submit"
