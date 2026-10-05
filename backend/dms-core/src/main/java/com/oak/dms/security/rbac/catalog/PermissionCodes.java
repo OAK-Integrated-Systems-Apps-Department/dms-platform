@@ -109,4 +109,30 @@ public final class PermissionCodes {
     // viewing it on-screen, and the seeded catalog (V10) already reserves a
     // separate code for it rather than folding it into "view".
     public static final String ABDR_EXPORT_AUDIT_REPORTS = "abdr.export-audit-reports";
+
+    // Departments - OTUA, seeded by V46. Back the department approver pools
+    // of workflow stages (3.1 Workflow Automation).
+    public static final String OTUA_DEPARTMENTS_VIEW = "otua.manage-departments.view";
+    public static final String OTUA_DEPARTMENTS_CREATE = "otua.manage-departments.create";
+    public static final String OTUA_DEPARTMENTS_UPDATE = "otua.manage-departments.update";
+    public static final String OTUA_DEPARTMENTS_DELETE = "otua.manage-departments.delete";
+
+    // Workflow Automation - WA, seeded by V10. toggle-active gates activating
+    // and deactivating a template version.
+    public static final String WA_TEMPLATES_CREATE = "wa.configure-workflow-templates.create";
+    public static final String WA_TEMPLATES_UPDATE = "wa.configure-workflow-templates.update";
+    public static final String WA_TEMPLATES_DELETE = "wa.configure-workflow-templates.delete";
+    public static final String WA_TEMPLATES_TOGGLE_ACTIVE = "wa.configure-workflow-templates.toggle-active";
+    public static final String WA_TASK_APPROVE = "wa.approve-reject-workflow-task.approve";
+    public static final String WA_TASK_REJECT = "wa.approve-reject-workflow-task.reject";
+    // Phase 2 (delegation/reassign). Phase 1 only mails holders when a stage
+    // has no eligible approver.
+    public static final String WA_TASK_REASSIGN = "wa.reassign-workflow-task";
+    // Lets a non-participant (e.g. a compliance reviewer) see any instance's
+    // status and timeline.
+    public static final String WA_AUDIT_TRAIL_VIEW = "wa.view-workflow-audit-trail.view";
+
+    // Document Lifecycle - DLM, seeded by V10. Submitting a document into its
+    // document type's active workflow.
+    public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
 }

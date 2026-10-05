@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -69,6 +70,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict",
                         "The request conflicts with an existing resource",
+                        request.getRequestURI()));
+    }
+
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleLockFailure(PessimisticLockingFailureException ex,
+            HttpServletRequest request) {
+        // A row lock wait that hit its timeout, or a deadlock victim - the
+        // other transaction is still in progress. Retryable, so a coded 409
+        // rather than a 500 (workflow transactions bound their waits to 5s,
+        // see WorkflowLocks).
+        log.warn("Lock conflict on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", "CONCURRENT_UPDATE",
+                        "Someone else is changing this right now - please try again",
                         request.getRequestURI()));
     }
 

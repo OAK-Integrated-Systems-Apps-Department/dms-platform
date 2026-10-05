@@ -240,6 +240,13 @@ dms:
     # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
     # docs/scanning-architecture.md).
     allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,rtf,txt,csv,png,jpg,jpeg,tif,tiff}
+  # 3.1 Workflow Automation (WorkflowProperties). Task-assigned and outcome
+  # mails go out after the workflow change commits, off the request thread;
+  # a mail failure never affects the workflow. Uses spring.mail.*.
+  workflow:
+    notifications:
+      enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
+      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

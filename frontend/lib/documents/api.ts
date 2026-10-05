@@ -59,3 +59,23 @@ export async function uploadDocument(file: File, documentTypeId: string, title: 
   )
   return response.json() as Promise<IngestionTicketDto>
 }
+
+/** Mirrors backend/dms-core's DocumentResponse - a document's metadata (no content). */
+export interface DocumentDto {
+  documentId: string
+  tenantId: string
+  documentTypeId: string
+  title: string
+  currentVersionId: string | null
+  latestVersionId: string | null
+  publishedVersionId: string | null
+  ownerUserId: string | null
+  status: string
+  createdAt: string
+  updatedAt: string | null
+}
+
+/** `GET /api/v1/documents/{id}` - needs docm.documents.view. */
+export async function fetchDocument(documentId: string): Promise<DocumentDto> {
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents/${documentId}`, undefined, "Could not load this document.")
+}

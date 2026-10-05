@@ -19,6 +19,7 @@ import { APP_NAME } from "@/lib/app-config"
 import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
+import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -68,6 +69,11 @@ export function AppSidebar({
   const isDark = resolvedTheme === "dark"
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
+  // Live badge for the My Tasks item (see NavItem.liveBadge).
+  const { data: taskCount } = useMyTaskCount()
+  const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
+    myOpenTasks: taskCount?.open || undefined,
+  }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
   // always visible; items that name one are hidden entirely — not shown
@@ -140,13 +146,14 @@ export function AppSidebar({
                     : pathname.startsWith(item.href)
                   : item.label === activeLabel
                 const Icon = item.icon
+                const badge = item.liveBadge ? liveBadges[item.liveBadge] : item.badge
                 const content = (
                   <>
                     <Icon size={16.5} className={cn(!isActive && "opacity-85")} />
                     <span className="flex-1">{item.label}</span>
-                    {item.badge != null && (
+                    {badge != null && (
                       <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
-                        {item.badge}
+                        {badge}
                       </span>
                     )}
                   </>

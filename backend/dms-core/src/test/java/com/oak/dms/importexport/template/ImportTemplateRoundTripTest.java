@@ -25,14 +25,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** B1/B3: what ImportTemplateWriter writes, ImportTemplateReader reads back - both formats. */
-class ImportTemplateRoundTripTest {
+public class ImportTemplateRoundTripTest {
 
-    static final UUID TYPE_ID = UUID.randomUUID();
+    public static final UUID TYPE_ID = UUID.randomUUID();
 
     private final ImportTemplateWriter writer = new ImportTemplateWriter();
     private final ImportTemplateReader reader = new ImportTemplateReader();
 
-    static DocumentTypeSchemaResponse schema(int version) {
+    public static DocumentTypeSchemaResponse schema(int version) {
         UUID statusId = UUID.randomUUID();
         return new DocumentTypeSchemaResponse(TYPE_ID, "INV", "Invoice", version, List.of(
                 field("invoice_no", "text", true, false, "active",

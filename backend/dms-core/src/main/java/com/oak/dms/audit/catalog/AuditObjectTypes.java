@@ -47,6 +47,14 @@ public final class AuditObjectTypes {
     public static final String QUARANTINE_RECORD = "QUARANTINE_RECORD";
     /** One template-based bulk import (migration_batches) - the object of every BULK_IMPORT_* event. */
     public static final String MIGRATION_BATCH = "MIGRATION_BATCH";
+    /** A department (V43) - the object of every DEPARTMENT_* event. */
+    public static final String DEPARTMENT = "DEPARTMENT";
+    /** One workflow template version (workflow_templates) - every WORKFLOW_TEMPLATE_* event. */
+    public static final String WORKFLOW_TEMPLATE = "WORKFLOW_TEMPLATE";
+    /** One workflow run (workflow_instances) - submit/stage/outcome/cancel/version events. */
+    public static final String WORKFLOW_INSTANCE = "WORKFLOW_INSTANCE";
+    /** One approver task (workflow_tasks) - claim/release/approve/reject events. */
+    public static final String WORKFLOW_TASK = "WORKFLOW_TASK";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

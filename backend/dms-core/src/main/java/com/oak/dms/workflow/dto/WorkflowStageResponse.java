@@ -1,0 +1,18 @@
+package com.oak.dms.workflow.dto;
+
+import java.util.List;
+import java.util.UUID;
+
+public record WorkflowStageResponse(
+        UUID stageId,
+        int stageOrder,
+        String name,
+        String completionRule,
+        String rejectionRule,
+        Integer slaHours,
+        Integer reminderBeforeHours,
+        String escalationTarget,
+        UUID escalationUserId,
+        List<ParticipantResponse> participants
+) {
+}

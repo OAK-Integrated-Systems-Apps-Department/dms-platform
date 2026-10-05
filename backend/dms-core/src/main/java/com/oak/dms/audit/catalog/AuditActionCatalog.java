@@ -19,6 +19,7 @@ import java.util.Map;
  *  - ABDR = Comprehensive Audit Management (the audit trail itself, e.g. exporting it)
  *  - SHAD = System Health and Administration Dashboard (platform infrastructure status, e.g. the outbox relay)
  *  - MDTM = Metadata and Document-Type Management (document types, the metadata field catalog, and the field-mapping matrix that ties them together)
+ *  - WA   = Workflow Automation (approval templates and their runtime)
  *
  * reasonRequired would, per the spec's own example, be true for
  * destructive/access-revoking actions ("mandatory for legal hold /
@@ -113,6 +114,28 @@ public final class AuditActionCatalog {
     public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
     public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
     public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
+    public static final String DEPARTMENT_CREATED = "DEPARTMENT_CREATED";
+    public static final String DEPARTMENT_UPDATED = "DEPARTMENT_UPDATED";
+    public static final String DEPARTMENT_DELETED = "DEPARTMENT_DELETED";
+    public static final String USER_DEPARTMENT_CHANGED = "USER_DEPARTMENT_CHANGED";
+    public static final String WORKFLOW_TEMPLATE_CREATED = "WORKFLOW_TEMPLATE_CREATED";
+    public static final String WORKFLOW_TEMPLATE_UPDATED = "WORKFLOW_TEMPLATE_UPDATED";
+    public static final String WORKFLOW_TEMPLATE_STAGES_UPDATED = "WORKFLOW_TEMPLATE_STAGES_UPDATED";
+    public static final String WORKFLOW_TEMPLATE_VERSION_CREATED = "WORKFLOW_TEMPLATE_VERSION_CREATED";
+    public static final String WORKFLOW_TEMPLATE_ACTIVATED = "WORKFLOW_TEMPLATE_ACTIVATED";
+    public static final String WORKFLOW_TEMPLATE_DEACTIVATED = "WORKFLOW_TEMPLATE_DEACTIVATED";
+    public static final String WORKFLOW_TEMPLATE_DELETED = "WORKFLOW_TEMPLATE_DELETED";
+    public static final String WORKFLOW_SUBMITTED = "WORKFLOW_SUBMITTED";
+    public static final String WORKFLOW_TASK_CLAIMED = "WORKFLOW_TASK_CLAIMED";
+    public static final String WORKFLOW_TASK_RELEASED = "WORKFLOW_TASK_RELEASED";
+    public static final String WORKFLOW_TASK_APPROVED = "WORKFLOW_TASK_APPROVED";
+    public static final String WORKFLOW_TASK_REJECTED = "WORKFLOW_TASK_REJECTED";
+    public static final String WORKFLOW_STAGE_COMPLETED = "WORKFLOW_STAGE_COMPLETED";
+    public static final String WORKFLOW_APPROVED = "WORKFLOW_APPROVED";
+    public static final String WORKFLOW_REJECTED = "WORKFLOW_REJECTED";
+    public static final String WORKFLOW_CANCELLED = "WORKFLOW_CANCELLED";
+    public static final String WORKFLOW_DOCUMENT_VERSION_CHANGED = "WORKFLOW_DOCUMENT_VERSION_CHANGED";
+    public static final String WORKFLOW_RESTARTED = "WORKFLOW_RESTARTED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -301,7 +324,37 @@ public final class AuditActionCatalog {
             // already audited as DOCUMENT_UPLOADED by the scan gate.
             Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
-            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false))
+            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+
+            // Departments (DepartmentController) - module OTUA. They define
+            // who sits in a department approver pool, hence MEDIUM.
+            Map.entry(DEPARTMENT_CREATED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+            Map.entry(DEPARTMENT_UPDATED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+            Map.entry(DEPARTMENT_DELETED, new AuditActionSpec("OTUA", AuditSeverity.HIGH, false)),
+            Map.entry(USER_DEPARTMENT_CHANGED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+
+            // Workflow Automation - module WA (3.1, docs/events/workflow-audit-events.md).
+            // Configuration changes: who approves what.
+            Map.entry(WORKFLOW_TEMPLATE_CREATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_UPDATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_STAGES_UPDATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_VERSION_CREATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_ACTIVATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_DEACTIVATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_DELETED, new AuditActionSpec("WA", AuditSeverity.HIGH, false)),
+            // Runtime. A task rejection, a workflow rejection and a cancel
+            // always carry a reason (WA-FR-003, WA-FR-014).
+            Map.entry(WORKFLOW_SUBMITTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_CLAIMED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_RELEASED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_REJECTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_STAGE_COMPLETED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_REJECTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
+            Map.entry(WORKFLOW_CANCELLED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
+            Map.entry(WORKFLOW_DOCUMENT_VERSION_CHANGED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_RESTARTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

@@ -5,9 +5,11 @@ import { notFound, useParams } from "next/navigation"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { UserDepartmentSelect } from "@/components/departments/user-department-select"
 import { UserEditForm } from "@/components/users/user-edit-form"
 import { LoadingState } from "@/components/ui/loading-state"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -15,6 +17,8 @@ import { useUser } from "@/lib/users/use-user"
 export default function EditUserPage() {
   const params = useParams<{ userId: string }>()
   const { data: user, isPending, isError, error } = useUser(params.userId)
+  const { hasPermission } = usePermissions()
+  const canAssignDepartment = hasPermission(PermissionCodes.OTUA_DEPARTMENTS_UPDATE)
 
   usePageTitle(user ? `Edit ${user.name}` : "Edit User")
 
@@ -57,6 +61,8 @@ export default function EditUserPage() {
           <UserEditForm user={user} />
         </PermissionGate>
       )}
+      {/* Saved separately from the profile form (its own endpoint and permission). */}
+      {user && canAssignDepartment && <UserDepartmentSelect userId={user.id} />}
     </DashboardShell>
   )
 }
