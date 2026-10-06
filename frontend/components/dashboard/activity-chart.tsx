@@ -1,0 +1,307 @@
+"use client"
+
+import { useState, type CSSProperties } from "react"
+
+import { DeltaBadge, NUMBER, niceCeiling } from "@/components/dashboard/charts"
+import { DashCard, DashSkeleton } from "@/components/dashboard/dash-card"
+import { useBox } from "@/components/dashboard/motion"
+import type { DashboardDay, DashboardDto } from "@/lib/dashboard/api"
+import { cn } from "@/lib/utils"
+
+const HEIGHT = 240
+const PAD = { top: 12, right: 8, bottom: 26, left: 36 }
+
+const SERIES = [
+  { key: "views", label: "Views", color: "#2b579a" },
+  { key: "downloads", label: "Downloads", color: "var(--gold)" },
+  { key: "uploads", label: "Uploads", color: "var(--primary)" },
+] as const
+
+type SeriesKey = (typeof SERIES)[number]["key"]
+
+interface Bucket {
+  /** First and last day it covers (the same day unless grouped by week). */
+  from: string
+  to: string
+  views: number
+  downloads: number
+  uploads: number
+}
+
+/** A day per column - or, over 90 days, a week per column (counted back from today). */
+function bucketsOf(daily: DashboardDay[], days: number): Bucket[] {
+  const size = days > 31 ? 7 : 1
+  const buckets: Bucket[] = []
+  for (let end = daily.length; end > 0; end -= size) {
+    const slice = daily.slice(Math.max(0, end - size), end)
+    buckets.unshift({
+      from: slice[0].date,
+      to: slice[slice.length - 1].date,
+      views: slice.reduce((s, d) => s + d.views, 0),
+      downloads: slice.reduce((s, d) => s + d.downloads, 0),
+      uploads: slice.reduce((s, d) => s + d.uploads, 0),
+    })
+  }
+  return buckets
+}
+
+function dayLabel(date: string, weekday = false) {
+  // Calendar days - read as local midnight, not UTC.
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(weekday ? { weekday: "short" } : {}),
+  })
+}
+
+/**
+ * Views, downloads and uploads over the period as stacked columns - a day
+ * each, or a week each over 90 days - with this period's totals against the
+ * period before. Each kind can be switched off from its legend entry.
+ */
+export function ActivityChart({
+  data,
+  order,
+}: {
+  data?: DashboardDto
+  order: number
+}) {
+  const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set())
+  const usage = data?.usage
+
+  return (
+    <DashCard
+      order={order}
+      title="Activity"
+      subtitle={
+        data?.usageScope === "organisation"
+          ? "Everyone in your organisation"
+          : "Your own views, downloads and uploads"
+      }
+    >
+      {!data || !usage ? (
+        <DashSkeleton className="h-[300px] w-full" />
+      ) : (
+        <>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {SERIES.map((s) => {
+              const now = usage[s.key]
+              const before =
+                usage[`${s.key}Before` as `${SeriesKey}Before`] ?? 0
+              const off = hidden.has(s.key)
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  aria-pressed={!off}
+                  onClick={() =>
+                    setHidden((current) => {
+                      const next = new Set(current)
+                      if (next.has(s.key)) next.delete(s.key)
+                      else next.add(s.key)
+                      return next
+                    })
+                  }
+                  className={cn(
+                    "flex min-w-[130px] flex-1 flex-col items-start rounded-xl border px-3 py-2 text-left transition-all",
+                    off
+                      ? "border-dashed border-border opacity-50"
+                      : "border-border bg-muted/40 hover:bg-muted"
+                  )}
+                >
+                  <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                    <span
+                      className="size-2.5 rounded-[3px]"
+                      style={{ background: s.color }}
+                    />
+                    {s.label}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-2">
+                    <span className="font-heading text-[20px] leading-tight font-semibold tabular-nums">
+                      {NUMBER.format(now)}
+                    </span>
+                    <DeltaBadge now={now} before={before} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <Columns
+            buckets={bucketsOf(data.daily, data.days)}
+            hidden={hidden}
+            weekly={data.days > 31}
+          />
+        </>
+      )}
+    </DashCard>
+  )
+}
+
+function Columns({
+  buckets,
+  hidden,
+  weekly,
+}: {
+  buckets: Bucket[]
+  hidden: Set<SeriesKey>
+  weekly: boolean
+}) {
+  const [frame, box] = useBox<HTMLDivElement>()
+  const [hover, setHover] = useState<number | null>(null)
+  const shown = SERIES.filter((s) => !hidden.has(s.key))
+  const totals = buckets.map((b) => shown.reduce((sum, s) => sum + b[s.key], 0))
+  const max = niceCeiling(Math.max(0, ...totals))
+  const width = box.width
+  const innerWidth = Math.max(0, width - PAD.left - PAD.right)
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom
+  const band = buckets.length > 0 ? innerWidth / buckets.length : 0
+  const column = Math.max(2, Math.min(42, band * 0.68))
+  const y = (value: number) =>
+    PAD.top + innerHeight - (value / max) * innerHeight
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f))
+  // Label every column when few, otherwise about six evenly - always today.
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / 6))
+  const hovered = hover !== null ? buckets[hover] : null
+
+  return (
+    <div ref={frame} className="relative">
+      {width > 0 && (
+        <svg
+          width={width}
+          height={HEIGHT}
+          role="img"
+          aria-label={`Views, downloads and uploads per ${weekly ? "week" : "day"}`}
+          className="block"
+          onPointerLeave={() => setHover(null)}
+        >
+          {ticks.map((tick) => (
+            <g key={tick}>
+              <line
+                x1={PAD.left}
+                x2={width - PAD.right}
+                y1={y(tick)}
+                y2={y(tick)}
+                strokeDasharray={tick === 0 ? undefined : "3 5"}
+                style={{ stroke: "var(--border)" }}
+              />
+              <text
+                x={PAD.left - 8}
+                y={y(tick)}
+                dy="0.32em"
+                textAnchor="end"
+                className="fill-[var(--ink-faint)] text-[10.5px] tabular-nums"
+              >
+                {NUMBER.format(tick)}
+              </text>
+            </g>
+          ))}
+
+          {buckets.map((bucket, i) => {
+            const x = PAD.left + band * i + (band - column) / 2
+            let base = PAD.top + innerHeight
+            const last = i === buckets.length - 1
+            return (
+              <g
+                key={bucket.from}
+                onPointerEnter={() => setHover(i)}
+                className="cursor-default"
+              >
+                {/* The whole band answers the pointer, not just the bars. */}
+                <rect
+                  x={PAD.left + band * i}
+                  y={PAD.top}
+                  width={band}
+                  height={innerHeight}
+                  fill="transparent"
+                />
+                {hover === i && (
+                  <rect
+                    x={PAD.left + band * i + 1}
+                    y={PAD.top}
+                    width={band - 2}
+                    height={innerHeight}
+                    rx={4}
+                    style={{ fill: "var(--muted)" }}
+                  />
+                )}
+                <g
+                  className="dash-col"
+                  style={{ "--dash-order": i } as CSSProperties}
+                >
+                  {shown.map((s) => {
+                    const value = bucket[s.key]
+                    if (value === 0) return null
+                    const h = (value / max) * innerHeight
+                    base -= h
+                    return (
+                      <rect
+                        key={s.key}
+                        x={x}
+                        y={base}
+                        width={column}
+                        height={Math.max(1, h - 1)}
+                        rx={Math.min(3, column / 4)}
+                        style={{ fill: s.color }}
+                      />
+                    )
+                  })}
+                </g>
+                {(i % labelEvery === (buckets.length - 1) % labelEvery ||
+                  last) && (
+                  <text
+                    x={PAD.left + band * i + band / 2}
+                    y={HEIGHT - 8}
+                    textAnchor={last ? "end" : "middle"}
+                    dx={last ? band / 2 : 0}
+                    className="fill-[var(--ink-faint)] text-[10.5px]"
+                  >
+                    {last && !weekly ? "Today" : dayLabel(bucket.from)}
+                  </text>
+                )}
+              </g>
+            )
+          })}
+        </svg>
+      )}
+
+      {hovered && hover !== null && (
+        <div
+          role="status"
+          className="pointer-events-none absolute top-0 z-10 min-w-[150px] -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-2 text-[12px] shadow-[var(--ledger-shadow)]"
+          style={{
+            left: Math.min(
+              Math.max(PAD.left + band * hover + band / 2, 80),
+              width - 80
+            ),
+          }}
+        >
+          <div className="mb-1 font-semibold">
+            {weekly
+              ? `${dayLabel(hovered.from)} – ${dayLabel(hovered.to)}`
+              : dayLabel(hovered.from, true)}
+          </div>
+          {SERIES.map((s) => (
+            <div
+              key={s.key}
+              className={cn(
+                "flex items-center justify-between gap-4",
+                hidden.has(s.key) && "opacity-40"
+              )}
+            >
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="size-2 rounded-[2px]"
+                  style={{ background: s.color }}
+                />
+                {s.label}
+              </span>
+              <span className="font-semibold tabular-nums">
+                {NUMBER.format(hovered[s.key])}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

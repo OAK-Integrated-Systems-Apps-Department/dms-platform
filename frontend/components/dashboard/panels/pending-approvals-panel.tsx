@@ -1,43 +1,72 @@
-import { CheckCircle2, XCircle } from "lucide-react"
+import type { CSSProperties } from "react"
+import { Stamp } from "lucide-react"
 
-import { pendingApprovals } from "@/components/dashboard/data"
-import { Panel } from "@/components/ui/panel"
+import { DashCard } from "@/components/dashboard/dash-card"
+import { cn } from "@/lib/utils"
 
-const approveClass =
-  "flex items-center gap-[5px] rounded-sm border border-primary bg-primary/10 px-[11px] py-[6px] text-xs font-semibold text-primary"
-
-const rejectClass =
-  "flex items-center gap-[5px] rounded-sm border border-[var(--border-strong)] bg-card px-[11px] py-[6px] text-xs font-semibold text-muted-foreground"
-
-/** Self-contained — delete this file's import from the page to remove the panel. */
-export function PendingApprovalsPanel() {
+/**
+ * Approvals aren't built yet - there's no workflow module in dms-core - so
+ * this says so instead of showing made-up tasks. `compact` lays it out as a
+ * single strip, for when it has the row to itself.
+ *
+ * FOLLOW-UP: when approval workflows exist, list the documents waiting for
+ * the user's sign-off here (with approve/reject), from a real endpoint.
+ */
+export function PendingApprovalsPanel({
+  order,
+  compact,
+}: {
+  order: number
+  compact?: boolean
+}) {
   return (
-    <Panel title="Pending my approval" action="View all">
-      <div>
-        {pendingApprovals.map((task, index) => (
+    <DashCard order={order} className={cn(compact && "py-4")}>
+      <div
+        className={cn(
+          "flex flex-1 items-center gap-5",
+          compact ? "flex-row" : "flex-col justify-center py-4 text-center"
+        )}
+      >
+        <div className="dash-stack-scene shrink-0">
+          {/* A seal, gently floating. */}
           <div
-            key={task.id}
-            className="py-3"
-            style={index === 0 ? undefined : { borderTop: "1px solid var(--border)" }}
+            className={cn(
+              "dash-tile flex items-center justify-center rounded-2xl text-white",
+              compact ? "size-11" : "size-16"
+            )}
+            style={
+              {
+                background:
+                  "linear-gradient(145deg, color-mix(in oklab, var(--gold) 70%, white), var(--gold))",
+                "--tile-depth": "color-mix(in oklab, var(--gold) 55%, black)",
+                "--tile-glow": "var(--dash-gold-glow)",
+                animation: "dash-float-seal 5s ease-in-out infinite",
+              } as CSSProperties
+            }
           >
-            <div className="mb-[3px] text-[13px] font-medium">{task.name}</div>
-            <div className="mb-[9px] text-[11.5px] text-muted-foreground">
-              From {task.requester} · {task.size} ·{" "}
-              <span className="font-semibold text-[var(--gold)]">{task.due}</span>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" className={approveClass}>
-                <CheckCircle2 size={13.5} />
-                Approve
-              </button>
-              <button type="button" className={rejectClass}>
-                <XCircle size={13.5} />
-                Reject
-              </button>
-            </div>
+            <Stamp size={compact ? 20 : 28} />
           </div>
-        ))}
+        </div>
+        <div className={cn(compact ? "min-w-0 flex-1" : "max-w-[320px]")}>
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-2",
+              !compact && "justify-center"
+            )}
+          >
+            <h2 className="font-heading text-[15px] font-semibold">
+              Pending my approval
+            </h2>
+            <span className="rounded-full bg-[var(--gold-tint)] px-2.5 py-0.5 text-[10.5px] font-semibold tracking-wide text-[var(--gold)] uppercase">
+              Coming soon
+            </span>
+          </div>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
+            Approval workflows aren&apos;t set up yet. When they are, documents
+            waiting for your sign-off will appear here.
+          </p>
+        </div>
       </div>
-    </Panel>
+    </DashCard>
   )
 }

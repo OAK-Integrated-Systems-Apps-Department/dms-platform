@@ -91,6 +91,23 @@ class FileTypeInspectorTest {
                 .isInstanceOf(FileTypeNotAllowedException.class);
     }
 
+    @Test
+    void anOfficeFileWhoseContentTypesPartComesLast_isAcceptedByItsFirstPart() throws Exception {
+        // How PowerPoint, Google Slides and OneDrive often write them: [Content_Types].xml megabytes in.
+        byte[] pptx = ZipArchiveCheckTest.zip("ppt/presentation.xml", "<p:presentation/>".repeat(1000),
+                "[Content_Types].xml", "<Types/>");
+        byte[] head = Arrays.copyOf(pptx, 64);
+        assertThat(inspector.inspect("deck.pptx", head, head.length).mimeType())
+                .isEqualTo("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        assertThat(FileTypeInspector.isOfficeOpenXml("pptx")).isTrue();
+        assertThat(FileTypeInspector.isOfficeOpenXml("zip")).isFalse();
+
+        // A ZIP whose first entry isn't an Office part, and no marker in the head, is still refused here.
+        byte[] notOffice = ZipArchiveCheckTest.zip("photos/a.jpg", "jpeg bytes");
+        assertThatThrownBy(() -> inspector.inspect("deck.pptx", notOffice, notOffice.length))
+                .isInstanceOf(FileTypeNotAllowedException.class);
+    }
+
     private static byte[] pad(String head) {
         byte[] start = head.getBytes(StandardCharsets.ISO_8859_1);
         return Arrays.copyOf(start, Math.max(64, start.length));

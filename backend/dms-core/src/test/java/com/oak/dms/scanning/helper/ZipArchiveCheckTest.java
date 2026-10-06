@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.zip.CRC32;
@@ -30,6 +32,48 @@ class ZipArchiveCheckTest {
             }
         }
         return out.toByteArray();
+    }
+
+    /**
+     * The layout OneDrive, SharePoint and Google Drive download: every entry stored (no compression)
+     * with general-purpose flag bit 3 - its CRC and sizes come in a data descriptor after the data,
+     * not in its local header.
+     */
+    static byte[] storedWithDescriptors(String... namesAndContents) {
+        ByteBuffer out = ByteBuffer.allocate(64 * 1024).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer central = ByteBuffer.allocate(16 * 1024).order(ByteOrder.LITTLE_ENDIAN);
+        int count = namesAndContents.length / 2;
+        for (int i = 0; i < namesAndContents.length; i += 2) {
+            byte[] name = namesAndContents[i].getBytes(StandardCharsets.UTF_8);
+            byte[] data = namesAndContents[i + 1].getBytes(StandardCharsets.UTF_8);
+            CRC32 crc = new CRC32();
+            crc.update(data);
+            int offset = out.position();
+            out.putInt(0x04034b50).putShort((short) 20).putShort((short) 0x0008).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putInt(0).putInt(0).putInt(0)
+                    .putShort((short) name.length).putShort((short) 0).put(name).put(data);
+            out.putInt(0x08074b50).putInt((int) crc.getValue()).putInt(data.length).putInt(data.length);
+            central.putInt(0x02014b50).putShort((short) 20).putShort((short) 20).putShort((short) 0x0008)
+                    .putShort((short) 0).putShort((short) 0).putShort((short) 0).putInt((int) crc.getValue())
+                    .putInt(data.length).putInt(data.length).putShort((short) name.length).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putShort((short) 0).putInt(0).putInt(offset).put(name);
+        }
+        int centralOffset = out.position();
+        int centralSize = central.position();
+        out.put(central.array(), 0, centralSize);
+        out.putInt(0x06054b50).putShort((short) 0).putShort((short) 0).putShort((short) count)
+                .putShort((short) count).putInt(centralSize).putInt(centralOffset).putShort((short) 0);
+        return Arrays.copyOf(out.array(), out.position());
+    }
+
+    /** Offset of {@code signature} (little-endian int) in {@code zip}, from the end. */
+    private static int lastIndexOf(byte[] zip, int signature) {
+        for (int i = zip.length - 4; i >= 0; i--) {
+            if (ByteBuffer.wrap(zip, i, 4).order(ByteOrder.LITTLE_ENDIAN).getInt() == signature) {
+                return i;
+            }
+        }
+        throw new AssertionError("signature not found");
     }
 
     private static ZipArchiveCheck.Result check(byte[] zip) {
@@ -106,9 +150,55 @@ class ZipArchiveCheckTest {
             zip.closeEntry();
         }
         byte[] zip = out.toByteArray();
-        zip[6] |= 1;
+        zip[6] |= 1; // local header
+        zip[lastIndexOf(zip, 0x02014b50) + 8] |= 1; // and central directory, as real encrypted ZIPs have
 
         assertThat(check(zip).outcome()).isEqualTo(ZipArchiveCheck.Outcome.ENCRYPTED);
+    }
+
+    @Test
+    void aOneDriveStyleZip_storedWithTrailingDescriptors_isValid() {
+        ZipArchiveCheck.Result result = check(storedWithDescriptors(
+                "Reports/q1.pdf", "%PDF-1.4 quarter one", "Reports/notes.txt", "notes ".repeat(50)));
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+        assertThat(result.entries()).isEqualTo(2);
+        assertThat(result.uncompressedBytes()).isEqualTo(20 + 300);
+    }
+
+    @Test
+    void aStoredEntryWhoseBytesChanged_failsItsCrc() {
+        byte[] zip = storedWithDescriptors("a.txt", "the original content of the file");
+        zip[30 + "a.txt".length() + 4] ^= 0x20; // a byte inside the stored data
+
+        ZipArchiveCheck.Result result = check(zip);
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("damaged");
+    }
+
+    @Test
+    void aCompressionMethodThatCantBeChecked_isRefusedWithItsOwnMessage() {
+        byte[] zip = storedWithDescriptors("big.bin", "pretend this is Deflate64 data");
+        zip[lastIndexOf(zip, 0x02014b50) + 10] = 9; // central directory: method 9, Deflate64
+
+        ZipArchiveCheck.Result result = check(zip);
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("compression method");
+    }
+
+    @Test
+    void containsEntry_readsTheIndex_whateverOrderThePartsCameIn() throws IOException {
+        byte[] pptx = zip("ppt/slides/slide1.xml", "<slide/>", "[Content_Types].xml", "<Types/>");
+        assertThat(ZipArchiveCheck.containsEntry(new ByteArrayInputStream(pptx), "[Content_Types].xml"))
+                .isEqualTo(ZipArchiveCheck.Presence.PRESENT);
+
+        byte[] plain = zip("ppt/slides/slide1.xml", "<slide/>");
+        assertThat(ZipArchiveCheck.containsEntry(new ByteArrayInputStream(plain), "[Content_Types].xml"))
+                .isEqualTo(ZipArchiveCheck.Presence.ABSENT);
+
+        byte[] cut = Arrays.copyOf(pptx, pptx.length / 2);
+        assertThat(ZipArchiveCheck.containsEntry(new ByteArrayInputStream(cut), "[Content_Types].xml"))
+                .isEqualTo(ZipArchiveCheck.Presence.UNREADABLE);
     }
 
     @Test

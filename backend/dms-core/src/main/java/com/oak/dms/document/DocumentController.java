@@ -226,6 +226,47 @@ public class DocumentController {
                 .body(body);
     }
 
+    /** A presentation (.ppt, .pptx, .odp) shown slide by slide: how many slides, and their shape. */
+    @GetMapping("/{id}/preview/slides")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Open a presentation as slides - converted on first use; audited as viewed")
+    public DocumentRenditionService.SlideDeck slides(@PathVariable("id") UUID id) {
+        return renditionService.slides(id, null);
+    }
+
+    @GetMapping("/{id}/preview/slides/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "One slide of a presentation as a JPEG about `width` pixels wide")
+    public ResponseEntity<byte[]> slide(@PathVariable("id") UUID id, @PathVariable("number") int number,
+                                        @RequestParam(name = "width", defaultValue = "1280") int width) {
+        return slideImage(renditionService.slide(id, null, number, width));
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/slides")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Open an older version of a presentation as slides")
+    public DocumentRenditionService.SlideDeck versionSlides(@PathVariable("id") UUID id,
+                                                            @PathVariable("versionId") UUID versionId) {
+        return renditionService.slides(id, versionId);
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/slides/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "One slide of an older version of a presentation as a JPEG")
+    public ResponseEntity<byte[]> versionSlide(@PathVariable("id") UUID id, @PathVariable("versionId") UUID versionId,
+                                               @PathVariable("number") int number,
+                                               @RequestParam(name = "width", defaultValue = "1280") int width) {
+        return slideImage(renditionService.slide(id, versionId, number, width));
+    }
+
+    private static ResponseEntity<byte[]> slideImage(byte[] jpeg) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(jpeg);
+    }
+
     @GetMapping("/{id}/versions")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
     @Operation(summary = "A document's version history, newest first")

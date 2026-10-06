@@ -57,7 +57,7 @@ async function fetchCurrentUser(): Promise<CurrentUser> {
 
 /**
  * Loads the real signed-in user from dms-core (GET /api/v1/users/me),
- * replacing the mock `currentUser` in components/dashboard/data.ts.
+ * which replaced the dashboard's old mock user.
  * `initials` is derived client-side since the backend doesn't return one.
  */
 export function useCurrentUser() {

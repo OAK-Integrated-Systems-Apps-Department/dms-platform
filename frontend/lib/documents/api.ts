@@ -276,6 +276,48 @@ export async function previewVersionPdf(
   return response.blob()
 }
 
+/** Mirrors backend/dms-core's DocumentRenditionService.SlideDeck - a presentation shown slide by slide. */
+export interface SlideDeckDto {
+  versionId: string
+  slides: number
+  /** The first slide's shape, in points - only the ratio matters. */
+  width: number
+  height: number
+}
+
+function slidesBase(documentId: string, versionId?: string): string {
+  return versionId
+    ? `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/preview/slides`
+    : `${API_BASE_URL}/api/v1/documents/${documentId}/preview/slides`
+}
+
+/** Opens a presentation (.ppt/.pptx/.odp) as slides - converted on first use, audited as viewed. */
+export async function openSlides(
+  documentId: string,
+  versionId?: string
+): Promise<SlideDeckDto> {
+  return apiFetchJson<SlideDeckDto>(
+    slidesBase(documentId, versionId),
+    undefined,
+    "Could not prepare the slides."
+  )
+}
+
+/** One slide (numbered from 1) as a JPEG about `width` pixels wide. */
+export async function slideImage(
+  documentId: string,
+  versionId: string | undefined,
+  slide: number,
+  width: number
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${slidesBase(documentId, versionId)}/${slide}?width=${width}`,
+    undefined,
+    "Could not show this slide."
+  )
+  return response.blob()
+}
+
 /** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
 export async function moveDocuments(
   documentIds: string[],

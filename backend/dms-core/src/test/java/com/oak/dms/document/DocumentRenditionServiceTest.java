@@ -16,6 +16,16 @@ class DocumentRenditionServiceTest {
     }
 
     @Test
+    void presentations_areShownAsSlides_andOtherConvertedFilesAreNot() {
+        for (String name : new String[]{"Deck.PPTX", "old.ppt", "talk.odp"}) {
+            assertThat(DocumentRenditionService.slides(name)).as(name).isTrue();
+        }
+        for (String name : new String[]{"a.doc", "c.odt", "plan.odg", "e.rtf", "flow.vsdx", "a.pdf", null}) {
+            assertThat(DocumentRenditionService.slides(name)).as(String.valueOf(name)).isFalse();
+        }
+    }
+
+    @Test
     void filesTheBrowserShowsItself_orCantBeConverted_areNot() {
         for (String name : new String[]{"a.pdf", "b.docx", "c.xlsx", "d.csv", "e.eml", "f.png", "g.tiff", "h.dwg",
                 "noextension", null}) {

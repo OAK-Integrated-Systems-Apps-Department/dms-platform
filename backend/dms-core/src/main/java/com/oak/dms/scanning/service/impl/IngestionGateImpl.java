@@ -203,6 +203,24 @@ public class IngestionGateImpl implements IngestionGate {
             }
         }
 
+        // 4a'. An Office Open XML file's head only showed a plausible package (its parts can come in
+        // any order); its index must list [Content_Types].xml, or it's a ZIP wearing an Office extension.
+        // An index that can't be read is left to the scanner, as before this check.
+        if (FileTypeInspector.isOfficeOpenXml(detected.extension())) {
+            ZipArchiveCheck.Presence types;
+            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                types = ZipArchiveCheck.containsEntry(staged, FileTypeInspector.OOXML_CONTENT_TYPES);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (types == ZipArchiveCheck.Presence.ABSENT) {
+                String message = "The file's content does not match its ." + detected.extension() + " extension";
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, message);
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw new FileTypeNotAllowedException(message);
+            }
+        }
+
         // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
         duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
             ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());

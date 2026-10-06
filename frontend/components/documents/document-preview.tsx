@@ -42,6 +42,7 @@ import {
   TiffViewer,
   ZoomableImage,
 } from "@/components/documents/preview-viewers"
+import { SlideViewer } from "@/components/documents/slide-viewer"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
 
@@ -56,6 +57,7 @@ type Renderer =
   | "text"
   | "docx"
   | "converted"
+  | "slides"
   | "sheet"
   | "email"
   | "heic"
@@ -65,12 +67,13 @@ type Renderer =
 const BY_EXTENSION: Record<string, Renderer> = {
   pdf: "pdf",
   docx: "docx",
-  // Converted to PDF on the server (DocumentRenditionService).
+  // Converted to PDF on the server (DocumentRenditionService) - presentations
+  // are then shown slide by slide, the rest as the PDF.
   doc: "converted",
-  ppt: "converted",
-  pptx: "converted",
+  ppt: "slides",
+  pptx: "slides",
   odt: "converted",
-  odp: "converted",
+  odp: "slides",
   odg: "converted",
   rtf: "converted",
   vsd: "converted",
@@ -116,6 +119,7 @@ const ZOOMABLE = new Set<Renderer>([
   "heic",
   "tiff",
   "docx",
+  "slides",
   "sheet",
   "email",
   "text",
@@ -202,8 +206,8 @@ function useStoredWidth(): [number, (width: number) => void] {
 /**
  * The in-app preview of a document (opened by clicking it). Every type that
  * can be uploaded is shown here except AutoCAD .dwg: PDF, Word, Excel and
- * other spreadsheets, PowerPoint, OpenDocument, RTF, Visio (converted to PDF
- * on the server), email (.eml/.msg), images (HEIC and TIFF too), text. Showing it is audited as DOCUMENT_VIEWED. The file
+ * other spreadsheets, PowerPoint (as slides), OpenDocument, RTF, Visio
+ * (converted to PDF on the server), email (.eml/.msg), images (HEIC and TIFF too), text. Showing it is audited as DOCUMENT_VIEWED. The file
  * is only fetched when it can be shown. The panel is resized sideways by
  * dragging its left edge (or with the arrow keys on that edge).
  */
@@ -259,7 +263,8 @@ export function DocumentPreview({
         blob,
       }
     },
-    enabled: renderer !== null && !tooBigForText,
+    // A slide show fetches its own slides, one at a time.
+    enabled: renderer !== null && renderer !== "slides" && !tooBigForText,
     gcTime: 0,
     staleTime: Infinity,
     retry: false,
@@ -340,7 +345,7 @@ export function DocumentPreview({
                 <FriendlyDate iso={row.createdAt} />
               </SheetDescription>
             </div>
-            {zoomable && file.isSuccess && (
+            {zoomable && (renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"
                 aria-label="Zoom"
@@ -394,6 +399,13 @@ export function DocumentPreview({
                   : noPreviewReason(row.fileName, kind.label)
               }
               onDownload={onDownload}
+            />
+          ) : renderer === "slides" ? (
+            <SlideViewer
+              documentId={row.documentId}
+              versionId={version?.versionId}
+              title={row.title}
+              zoom={zoom}
             />
           ) : file.isPending ? (
             <p className="m-auto inline-flex items-center gap-2 text-[13px] text-muted-foreground">

@@ -1,23 +1,31 @@
 package com.oak.dms.scanning.helper;
 
-import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Enumeration;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /**
  * Checks that an uploaded {@code .zip} is a complete, readable ZIP archive the virus scanner can
- * inspect in full - before it is scanned or becomes a document. One streaming pass over the
- * staged copy: every entry is read (and its CRC checked) by the JDK's own ZIP reader and the
- * bytes thrown away. <b>Nothing is extracted to disk and nothing in it is ever run or
- * opened</b>; the archive is stored exactly as uploaded.
+ * inspect in full - before it is scanned or becomes a document. The staged copy is written to a
+ * private temporary file and opened by its central directory - the index at the end of every ZIP -
+ * the way unzip tools read it, so every standard layout is understood: ZIP64, an archive comment,
+ * and entries whose sizes follow their data (how OneDrive, SharePoint and Google Drive build the
+ * ZIPs they download). Every entry is then read once, its CRC compared with the one recorded, and
+ * the bytes thrown away. <b>Nothing is extracted and nothing in it is ever run or opened</b>; the
+ * temporary copy is deleted straight after, and the archive is stored exactly as uploaded.
  * <p>
- * Refused: a damaged or truncated archive (bad header, bad CRC, no end-of-archive record), an
+ * Refused: a damaged or truncated archive (no readable index, data that doesn't match its CRC), an
  * empty one, more than {@code maxEntries} entries or more than {@code maxUncompressedBytes} once
- * unpacked - ClamAV's own limits, past which it would stop looking and pass the rest unscanned.
+ * unpacked - ClamAV's own limits, past which it would stop looking and pass the rest unscanned -
+ * and entries compressed some way other than stored/deflated, whose content can't be checked.
  * Password-protected entries can't be scanned at all, so they're reported separately and handled
  * like any other encrypted upload (unscannable). Nested archives are left to ClamAV, which opens
  * them itself and flags anything it can't finish (clamd {@code AlertExceedsMax},
@@ -31,40 +39,83 @@ public final class ZipArchiveCheck {
     public record Result(Outcome outcome, String message, int entries, long uncompressedBytes) {
     }
 
-    /** End of central directory record (22 bytes) - the last thing in every ZIP, followed only by an optional comment. */
-    private static final byte[] EOCD = {'P', 'K', 5, 6};
-    /** The EOCD record (22 bytes) plus the longest comment it may carry. */
-    private static final int TAIL_BYTES = 22 + 0xFFFF;
-
     private ZipArchiveCheck() {
     }
 
+    /** Whether a ZIP-based file's index lists {@code name}; read the same way, nothing extracted. */
+    public enum Presence { PRESENT, ABSENT, UNREADABLE }
+
     public static Result check(InputStream content, int maxEntries, long maxUncompressedBytes) {
-        TailKeepingInputStream source = new TailKeepingInputStream(content, TAIL_BYTES);
+        return onTempCopy(content, copy -> check(copy, maxEntries, maxUncompressedBytes));
+    }
+
+    /**
+     * Looks {@code name} up in the archive's central directory - how an Office Open XML package is
+     * confirmed whatever order its parts were written in. {@code UNREADABLE} when the index itself
+     * can't be read; the caller decides what that means for its format.
+     */
+    public static Presence containsEntry(InputStream content, String name) {
+        return onTempCopy(content, copy -> {
+            try (ZipFile zip = new ZipFile(copy.toFile())) {
+                return zip.getEntry(name) != null ? Presence.PRESENT : Presence.ABSENT;
+            } catch (IOException | IllegalArgumentException e) {
+                return Presence.UNREADABLE;
+            }
+        });
+    }
+
+    private static <T> T onTempCopy(InputStream content, java.util.function.Function<Path, T> work) {
+        Path copy = null;
+        try {
+            copy = Files.createTempFile("dms-zip-check-", ".zip");
+            Files.copy(content, copy, StandardCopyOption.REPLACE_EXISTING);
+            return work.apply(copy);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the staged ZIP for checking", e);
+        } finally {
+            if (copy != null) {
+                try {
+                    Files.deleteIfExists(copy);
+                } catch (IOException ignored) {
+                    // the OS cleans up its temp directory
+                }
+            }
+        }
+    }
+
+    private static Result check(Path file, int maxEntries, long maxUncompressedBytes) {
         int entries = 0;
         long unpacked = 0;
         byte[] buffer = new byte[64 * 1024];
-        try (ZipInputStream zip = new ZipInputStream(source)) {
-            for (ZipEntry entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
-                if (++entries > maxEntries) {
-                    return invalid("This ZIP holds more than " + maxEntries + " files - the most the virus scanner "
-                            + "checks in one archive. Split it into smaller archives.", entries, unpacked);
+        try (ZipFile zip = new ZipFile(file.toFile())) {
+            if (zip.size() > maxEntries) {
+                return invalid("This ZIP holds more than " + maxEntries + " files - the most the virus scanner "
+                        + "checks in one archive. Split it into smaller archives.", zip.size(), 0);
+            }
+            for (Enumeration<? extends ZipEntry> all = zip.entries(); all.hasMoreElements(); ) {
+                ZipEntry entry = all.nextElement();
+                entries++;
+                if (entry.isDirectory()) {
+                    continue;
                 }
-                for (int n = zip.read(buffer); n >= 0; n = zip.read(buffer)) {
-                    unpacked += n;
-                    if (unpacked > maxUncompressedBytes) {
-                        return invalid("Unpacked, this ZIP comes to more than " + (maxUncompressedBytes / (1024 * 1024))
-                                + " MB - the most the virus scanner checks in one archive. Split it into smaller "
-                                + "archives.", entries, unpacked);
+                CRC32 crc = new CRC32();
+                try (InputStream data = zip.getInputStream(entry)) {
+                    for (int n = data.read(buffer); n >= 0; n = data.read(buffer)) {
+                        unpacked += n;
+                        if (unpacked > maxUncompressedBytes) {
+                            return invalid("Unpacked, this ZIP comes to more than "
+                                    + (maxUncompressedBytes / (1024 * 1024)) + " MB - the most the virus scanner "
+                                    + "checks in one archive. Split it into smaller archives.", entries, unpacked);
+                        }
+                        crc.update(buffer, 0, n);
                     }
+                }
+                if (entry.getCrc() != -1 && crc.getValue() != entry.getCrc()) {
+                    return invalid(damaged(), entries, unpacked);
                 }
             }
             if (entries == 0) {
                 return invalid("This ZIP is empty.", 0, 0);
-            }
-            source.transferTo(OutputStream.nullOutputStream()); // the central directory and end record
-            if (!source.endsWithEndRecordFor(entries)) {
-                return invalid(damaged(), entries, unpacked);
             }
             return new Result(Outcome.VALID, null, entries, unpacked);
         } catch (ZipException e) {
@@ -72,17 +123,14 @@ public final class ZipArchiveCheck {
             if (reason.contains("encrypted")) {
                 return new Result(Outcome.ENCRYPTED, "Password-protected ZIP archive", entries, unpacked);
             }
-            if (reason.contains("EXT descriptor")) {
-                return invalid("This ZIP stores files in a way that can't be checked (uncompressed entries with "
-                        + "trailing descriptors). Re-create it with a standard ZIP tool and upload it again.",
-                        entries, unpacked);
+            if (reason.contains("compression method")) {
+                return invalid("This ZIP uses a compression method that can't be checked (only the standard "
+                        + "Deflate or no compression can). Re-create it with a standard ZIP tool and upload it "
+                        + "again.", entries, unpacked);
             }
             return invalid(damaged(), entries, unpacked);
-        } catch (IOException e) {
-            // EOF part-way through an entry, a header that doesn't parse - a damaged or cut-off archive.
-            return invalid(damaged(), entries, unpacked);
-        } catch (IllegalArgumentException e) {
-            // The JDK's reader rejects malformed entry names this way.
+        } catch (IOException | IllegalArgumentException e) {
+            // EOF part-way through an entry, a header or entry name that doesn't parse.
             return invalid(damaged(), entries, unpacked);
         }
     }
@@ -93,79 +141,5 @@ public final class ZipArchiveCheck {
 
     private static Result invalid(String message, int entries, long unpacked) {
         return new Result(Outcome.INVALID, message, entries, unpacked);
-    }
-
-    /** Passes bytes through, remembering the last {@code capacity} of them. */
-    private static final class TailKeepingInputStream extends FilterInputStream {
-        private final byte[] ring;
-        private long total;
-
-        TailKeepingInputStream(InputStream in, int capacity) {
-            super(in);
-            this.ring = new byte[capacity];
-        }
-
-        @Override
-        public int read() throws IOException {
-            int b = super.read();
-            if (b >= 0) {
-                keep((byte) b);
-            }
-            return b;
-        }
-
-        @Override
-        public int read(byte[] b, int off, int len) throws IOException {
-            int n = super.read(b, off, len);
-            for (int i = 0; i < n; i++) {
-                keep(b[off + i]);
-            }
-            return n;
-        }
-
-        @Override
-        public long skip(long n) throws IOException {
-            // Read rather than skip, so skipped bytes are still seen.
-            long skipped = 0;
-            byte[] scratch = new byte[8192];
-            while (skipped < n) {
-                int r = read(scratch, 0, (int) Math.min(scratch.length, n - skipped));
-                if (r < 0) {
-                    break;
-                }
-                skipped += r;
-            }
-            return skipped;
-        }
-
-        private void keep(byte b) {
-            ring[(int) (total % ring.length)] = b;
-            total++;
-        }
-
-        /**
-         * Whether the archive ends with a complete end-of-central-directory record: its comment runs
-         * exactly to the end of the file, and the entry count it records is the number read (0xFFFF
-         * means a ZIP64 archive, whose count lives elsewhere).
-         */
-        boolean endsWithEndRecordFor(int entries) {
-            int length = (int) Math.min(total, ring.length);
-            byte[] tail = new byte[length];
-            long start = total - length;
-            for (int i = 0; i < length; i++) {
-                tail[i] = ring[(int) ((start + i) % ring.length)];
-            }
-            for (int i = length - 22; i >= 0; i--) {
-                if (tail[i] != EOCD[0] || tail[i + 1] != EOCD[1] || tail[i + 2] != EOCD[2] || tail[i + 3] != EOCD[3]) {
-                    continue;
-                }
-                int recorded = (tail[i + 10] & 0xFF) | (tail[i + 11] & 0xFF) << 8;
-                int comment = (tail[i + 20] & 0xFF) | (tail[i + 21] & 0xFF) << 8;
-                if (i + 22 + comment == length) {
-                    return recorded == 0xFFFF || recorded == entries;
-                }
-            }
-            return false;
-        }
     }
 }

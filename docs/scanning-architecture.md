@@ -133,6 +133,12 @@ until the status is terminal. Then:
 - The first bytes must match that extension's format: `%PDF-`, OOXML ZIP with
   `[Content_Types].xml`, ODF ZIP with a leading `mimetype` entry, OLE2, RTF,
   PNG, JPEG, TIFF, or text with no NUL bytes and no binary signature.
+- An OOXML package's parts can come in any order (PowerPoint, Google Slides
+  and OneDrive often write `[Content_Types].xml` last). The head only has to
+  show that marker or a first entry that is an OOXML part (`ppt/`, `word/`,
+  `xl/`, `docProps/`, ...). Once the file is staged, the gate confirms
+  `[Content_Types].xml` in the ZIP index (`ZipArchiveCheck.containsEntry`). An
+  index that can't be read is left to the scanner.
 - The client's Content-Type is ignored, and the canonical MIME type is stored.
 
 Unscannable files are marked `unscannable` and rejected (VMSBDI alternate
@@ -273,12 +279,19 @@ time. It is never stored as a raw credential and never logged.
   1. `FileTypeInspector` needs a ZIP local file header. A first entry marked
      encrypted makes the upload unscannable at once, like a password-protected
      Office file.
-  2. Once staged, `ZipArchiveCheck` reads the whole archive once and refuses it
-     (415) when it's damaged or truncated, empty, or holds more than
-     `dms.ingestion.zip-max-entries` (10,000, clamd's `MaxFiles`) or unpacks to
-     more than `zip-max-uncompressed-bytes` (4000 MB, clamd's `MaxScanSize`).
-     It checks every entry's CRC and the end-of-archive record. A
-     password-protected entry anywhere makes it unscannable.
+  2. Once staged, `ZipArchiveCheck` copies the archive to a private temporary
+     file and opens it by its central directory, the way unzip tools do. It
+     handles every standard layout: ZIP64, comments, and entries whose sizes
+     follow their data (how OneDrive, SharePoint and Google Drive build their
+     download ZIPs). Every entry is read once and its CRC compared, then the
+     temporary copy is deleted.
+
+     The archive is refused (415, with the reason) when it's damaged or
+     truncated, or empty. It's also refused when it holds more than
+     `dms.ingestion.zip-max-entries` (10,000, clamd's `MaxFiles`), unpacks to
+     more than `zip-max-uncompressed-bytes` (4000 MB, clamd's `MaxScanSize`),
+     or uses a compression method other than stored or Deflate.
+     A password-protected entry anywhere makes it unscannable.
   3. ClamAV scans every file inside, nested archives included. Because of
      `AlertExceedsMax` and `AlertEncryptedArchive`, anything clamd can't finish
      comes back `Heuristics.Limits.Exceeded.*` or `Heuristics.Encrypted.*`.

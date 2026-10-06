@@ -36,6 +36,12 @@ import java.util.Set;
  * checked once staged ({@link ZipArchiveCheck}) and ClamAV scans every file
  * inside it. 7z/rar/tar/gz and the rest are still refused. A ZIP container
  * with an Office or OpenDocument extension must still be that document.
+ * <p>
+ * An Office Open XML file ({@code .docx/.xlsx/.pptx/.vsdx}) is a ZIP whose parts can come in any
+ * order - PowerPoint, Google Slides and OneDrive often write {@code [Content_Types].xml} last, megabytes
+ * in. So the head only has to show a ZIP that is plausibly that package (the marker, or a first entry
+ * that is an OOXML part); the gate then confirms {@code [Content_Types].xml} is in the archive's
+ * index once it's staged ({@link #isOfficeOpenXml}, {@link ZipArchiveCheck#containsEntry}).
  */
 @Component
 public class FileTypeInspector {
@@ -63,7 +69,12 @@ public class FileTypeInspector {
     private static final List<String> HEIF_BRANDS = List.of("heic", "heix", "heim", "heis", "mif1", "msf1");
     /** AutoCAD DWG files start "AC10" followed by a two-digit release (AC1015, AC1032, ...). */
     private static final byte[] DWG = "AC10".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] OOXML_MARKER = "[Content_Types].xml".getBytes(StandardCharsets.US_ASCII);
+    /** The OOXML content-types part every Office Open XML package must have. */
+    public static final String OOXML_CONTENT_TYPES = "[Content_Types].xml";
+    private static final byte[] OOXML_MARKER = OOXML_CONTENT_TYPES.getBytes(StandardCharsets.US_ASCII);
+    /** Folders an OOXML package's parts live in - any of them may be the first entry. */
+    private static final List<String> OOXML_PART_PREFIXES = List.of(
+            "_rels/", "docProps/", "customXml/", "word/", "xl/", "ppt/", "visio/");
     private static final byte[] ODF_MIMETYPE_ENTRY = "mimetype".getBytes(StandardCharsets.US_ASCII);
     /** Executable/binary signatures that must never pass as text. */
     private static final List<byte[]> NOT_TEXT = List.of(ZIP, OLE2, PDF, "MZ".getBytes(StandardCharsets.US_ASCII),
@@ -123,6 +134,12 @@ public class FileTypeInspector {
 
     private final Set<String> allowedExtensions;
 
+    /** True for the Office Open XML extensions, whose package the gate confirms once staged. */
+    public static boolean isOfficeOpenXml(String extension) {
+        KnownType known = extension == null ? null : KNOWN_TYPES.get(extension);
+        return known != null && known.family() == Family.OOXML;
+    }
+
     public FileTypeInspector(IngestionProperties ingestionProperties) {
         List<String> configured = ingestionProperties.getAllowedFileTypes().stream()
                 .map(ext -> ext.trim().toLowerCase(Locale.ROOT).replaceFirst("^\\.", ""))
@@ -171,7 +188,8 @@ public class FileTypeInspector {
         return switch (family) {
             // The PDF spec tolerates junk before the header; readers look in the first 1024 bytes.
             case PDF -> indexOf(head, PDF, 1024) >= 0;
-            case OOXML -> startsWith(head, ZIP) && indexOf(head, OOXML_MARKER, head.length) >= 0;
+            case OOXML -> startsWith(head, ZIP)
+                    && (indexOf(head, OOXML_MARKER, head.length) >= 0 || firstEntryIsOoxmlPart(head));
             // ODF requires an uncompressed "mimetype" entry first: name at offset 30 of the first local header.
             case ODF -> startsWith(head, ZIP) && head.length >= 38
                     && Arrays.equals(head, 30, 38, ODF_MIMETYPE_ENTRY, 0, ODF_MIMETYPE_ENTRY.length);
@@ -195,6 +213,19 @@ public class FileTypeInspector {
             // A local file header - or the end record alone, an empty archive ZipArchiveCheck refuses.
             case ZIP -> (startsWith(head, ZIP) && head.length >= 30) || (startsWith(head, EMPTY_ZIP) && head.length >= 22);
         };
+    }
+
+    /** The first local header's entry name (length at offset 26, name from 30) is an OOXML part. */
+    private static boolean firstEntryIsOoxmlPart(byte[] head) {
+        if (head.length < 30) {
+            return false;
+        }
+        int nameLength = (head[26] & 0xFF) | (head[27] & 0xFF) << 8;
+        if (nameLength == 0 || 30 + nameLength > head.length) {
+            return false;
+        }
+        String name = new String(head, 30, nameLength, StandardCharsets.UTF_8);
+        return OOXML_PART_PREFIXES.stream().anyMatch(name::startsWith);
     }
 
     /** The first non-whitespace character after an optional UTF-8 BOM, or 0. */
