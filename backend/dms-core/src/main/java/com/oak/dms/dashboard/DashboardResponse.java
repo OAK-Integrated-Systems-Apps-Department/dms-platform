@@ -14,6 +14,9 @@ import java.util.UUID;
  * @param documentsVisible false when the caller can't view documents - every document figure is then empty
  * @param usageScope       {@code mine} or {@code organisation} - whose views, downloads, uploads and activity
  * @param security         null without the quarantine-view permission
+ * @param usageMonths      the last {@value DashboardService#USAGE_MONTHS} calendar months, oldest first (the
+ *                         current one to date) - the same usage, whatever {@code days} is
+ * @param usageYear        those months' totals, against the same span a year earlier
  */
 public record DashboardResponse(
         int days,
@@ -29,7 +32,9 @@ public record DashboardResponse(
         Security security,
         List<RecentDocument> recent,
         String usageScope,
-        List<Activity> activity
+        List<Activity> activity,
+        List<Month> usageMonths,
+        Usage usageYear
 ) {
 
     /** Live documents the caller can see; {@code added} in this period, {@code addedBefore} in the one before. */
@@ -51,6 +56,10 @@ public record DashboardResponse(
      * @param documents the documents the caller can see that existed by the end of that day
      */
     public record Day(LocalDate date, long added, long documents, long views, long downloads, long uploads) {
+    }
+
+    /** Views, downloads and uploads in one calendar month ({@code month} is its first day). */
+    public record Month(LocalDate month, long views, long downloads, long uploads) {
     }
 
     public record NamedCount(String name, long count) {

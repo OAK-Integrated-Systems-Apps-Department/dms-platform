@@ -3,9 +3,15 @@
 import type { CSSProperties, ReactNode } from "react"
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
-import { ArrowUpRight, ShieldAlert, ShieldCheck, Stamp } from "lucide-react"
+import {
+  ArrowUpRight,
+  ShieldAlert,
+  ShieldCheck,
+  ClipboardCheck,
+} from "lucide-react"
 
 import { NUMBER, share } from "@/components/dashboard/charts"
+import { IconTile } from "@/components/ui/icon-tile"
 import {
   DashCard,
   DashSkeleton,
@@ -85,7 +91,7 @@ export function AttentionPanel({
           )}
           {security && <UploadSafety data={data} />}
           <Item
-            icon={Stamp}
+            icon={ClipboardCheck}
             tone="gold"
             title="Approvals"
             badge="Coming soon"
@@ -131,19 +137,7 @@ function Item({
       )}
     >
       <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="dash-tile flex size-8 shrink-0 items-center justify-center rounded-lg text-white"
-          style={
-            {
-              background: `linear-gradient(145deg, color-mix(in oklab, ${color} 75%, white), ${color})`,
-              "--tile-depth": `color-mix(in oklab, ${color} 55%, black)`,
-              "--tile-glow": `color-mix(in oklab, ${color} 30%, transparent)`,
-            } as CSSProperties
-          }
-        >
-          <Icon size={15} />
-        </span>
+        <IconTile icon={Icon} color={color} size={32} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span

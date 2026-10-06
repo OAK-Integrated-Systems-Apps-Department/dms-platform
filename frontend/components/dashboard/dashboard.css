@@ -153,15 +153,6 @@
   opacity: 1;
 }
 
-/* the 3D icon tile on the KPI cards: a face with a darker side under it */
-.dash-tile {
-  position: relative;
-  transform-style: preserve-3d;
-  box-shadow:
-    0 4px 0 var(--tile-depth, var(--dash-depth)),
-    0 10px 18px -6px var(--tile-glow, var(--dash-glow));
-}
-
 /* --- charts --------------------------------------------------------------- */
 
 /* columns and bars grow out of their baseline, one after another */
@@ -265,6 +256,36 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* --- Environmental Impact ---------------------------------------------------- */
+
+/* The forest band: a real photo of oak leaves and acorns (public/images/oak-leaves.jpg -
+   Pexels photo 18760063, Pexels licence: free for commercial use, no attribution needed)
+   under a deep oak-green wash - dark where the figures are, so white text stays readable,
+   lifting toward the right so the leaves show through. */
+.impact-band {
+  background-color: #14301f;
+  background-image:
+    linear-gradient(
+      90deg,
+      rgba(11, 29, 20, 0.95) 0%,
+      rgba(13, 34, 23, 0.9) 38%,
+      rgba(16, 42, 28, 0.62) 68%,
+      rgba(20, 48, 31, 0.28) 100%
+    ),
+    url("/images/oak-leaves.jpg");
+  background-size: cover;
+  background-position: center 40%;
+}
+
+/* On narrow screens the text runs the full width - darken the photo evenly. */
+@media (max-width: 767px) {
+  .impact-band {
+    background-image:
+      linear-gradient(180deg, rgba(11, 29, 20, 0.9), rgba(13, 34, 23, 0.86)),
+      url("/images/oak-leaves.jpg");
   }
 }
 

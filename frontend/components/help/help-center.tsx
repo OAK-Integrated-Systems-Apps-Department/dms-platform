@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type CSSProperties } from "react"
+import { useState } from "react"
 import { ChevronRight, LifeBuoy, SearchX } from "lucide-react"
 
 import {
@@ -16,6 +16,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { IconTile } from "@/components/ui/icon-tile"
 import { SearchInput } from "@/components/ui/search-input"
 import { MAX_UPLOAD_BYTES } from "@/lib/documents/api"
 
@@ -51,22 +52,7 @@ function matches({ topic, article }: Found, words: string[]): boolean {
 
 /** A topic's icon on a small coloured tile. */
 function TopicIcon({ topic, size = 36 }: { topic: HelpTopic; size?: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-lg text-white"
-      style={
-        {
-          width: size,
-          height: size,
-          background: `linear-gradient(145deg, color-mix(in oklab, ${topic.color} 78%, white), ${topic.color})`,
-          boxShadow: `0 2px 0 color-mix(in oklab, ${topic.color} 55%, black)`,
-        } as CSSProperties
-      }
-    >
-      <topic.icon size={Math.round(size * 0.45)} />
-    </span>
-  )
+  return <IconTile icon={topic.icon} color={topic.color} size={size} />
 }
 
 /**

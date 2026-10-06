@@ -57,6 +57,18 @@ export interface DashboardDto {
   recent: DashboardRecentDocument[]
   usageScope: "mine" | "organisation"
   activity: DashboardActivity[]
+  /** The last 12 calendar months, oldest first - the current one to date. */
+  usageMonths: DashboardMonth[]
+  /** Those months' totals, against the same span a year earlier. */
+  usageYear: DashboardDto["usage"]
+}
+
+export interface DashboardMonth {
+  /** The month's first day, e.g. "2026-10-01". */
+  month: string
+  views: number
+  downloads: number
+  uploads: number
 }
 
 export interface DashboardDay {

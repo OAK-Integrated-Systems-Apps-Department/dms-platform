@@ -62,6 +62,22 @@ class DashboardServiceTest {
     }
 
     @Test
+    void theUsageYear_hasTwelveMonths_withZeros_andTotalsAgainstTheYearBefore() {
+        LocalDate first = LocalDate.of(2025, 11, 1);
+
+        List<DashboardResponse.Month> months = DashboardService.months(first, Map.of(
+                first, new long[]{2, 1, 0},
+                LocalDate.of(2026, 10, 1), new long[]{5, 0, 3}));
+
+        assertThat(months).hasSize(DashboardService.USAGE_MONTHS);
+        assertThat(months.get(0)).isEqualTo(new DashboardResponse.Month(first, 2, 1, 0));
+        assertThat(months.get(1)).isEqualTo(new DashboardResponse.Month(LocalDate.of(2025, 12, 1), 0, 0, 0));
+        assertThat(months.get(11)).isEqualTo(new DashboardResponse.Month(LocalDate.of(2026, 10, 1), 5, 0, 3));
+        assertThat(DashboardService.yearUsage(months, new long[]{9, 8, 7}))
+                .isEqualTo(new DashboardResponse.Usage(7, 1, 3, 9, 8, 7));
+    }
+
+    @Test
     void anUnknownOrMissingTimeZone_fallsBackToUtc() {
         assertThat(DashboardController.zone("Asia/Colombo")).isEqualTo(ZoneId.of("Asia/Colombo"));
         assertThat(DashboardController.zone("Not/AZone")).isEqualTo(ZoneOffset.UTC);

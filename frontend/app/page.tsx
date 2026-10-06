@@ -20,6 +20,7 @@ import {
   EmptyState,
 } from "@/components/dashboard/dash-card"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DigitalImpact } from "@/components/dashboard/digital-impact"
 import { MetricCards } from "@/components/dashboard/metric-cards"
 import { RecentActivityPanel } from "@/components/dashboard/panels"
 import { QuickActions } from "@/components/dashboard/quick-actions"
@@ -187,9 +188,41 @@ export default function Page() {
 
           <QuickActions />
 
-          <div className="mb-5 grid items-start gap-5 lg:grid-cols-3">
-            <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
-              {canView && (
+          {/* How efficiently - Environmental Impact - beside what needs attention and the latest activity. */}
+          <div className="mb-5 grid items-stretch gap-5 lg:grid-cols-3">
+            {canView && (
+              <div className="flex min-w-0 flex-col lg:col-span-2 [&>section]:flex-1">
+                <DigitalImpact order={11} onOpen={setPreview} />
+              </div>
+            )}
+            {/* What needs attention comes first on narrow screens; activity fills the rest of the column. */}
+            <div
+              className={
+                canView
+                  ? "order-first flex min-w-0 flex-col gap-5 lg:order-none"
+                  : "flex min-w-0 flex-col gap-5 lg:col-span-3"
+              }
+            >
+              <AttentionPanel data={data} order={12} />
+              <div className="flex min-w-0 flex-1 flex-col [&>section]:flex-1">
+                <RecentActivityPanel
+                  activity={data?.activity}
+                  scope={data?.usageScope}
+                  currentUserId={user?.userId}
+                  order={13}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Usage over time, full width - room for 30 or 90 days of columns. */}
+          <div className="mb-5">
+            <ActivityChart data={data} order={14} />
+          </div>
+
+          {canView && (
+            <>
+              <div className="mb-5">
                 <RecentDocuments
                   documents={recent.data?.content}
                   owners={owners}
@@ -198,30 +231,17 @@ export default function Page() {
                   onRetry={() => void recent.refetch()}
                   onOpen={setPreview}
                   onDownload={(doc) => void download(doc.documentId)}
-                  order={11}
+                  order={15}
                 />
-              )}
-              <ActivityChart data={data} order={13} />
-            </div>
-            {/* What needs attention comes first on narrow screens. */}
-            <div className="order-first flex min-w-0 flex-col gap-5 lg:order-none">
-              <AttentionPanel data={data} order={12} />
-              <RecentActivityPanel
-                activity={data?.activity}
-                scope={data?.usageScope}
-                currentUserId={user?.userId}
-                order={14}
-              />
-            </div>
-          </div>
+              </div>
 
-          {canView && (
-            <div className="grid items-stretch gap-5 md:grid-cols-2 2xl:grid-cols-4">
-              <StorageCard data={data} order={15} />
-              <TypesCard data={data} order={16} />
-              <FoldersCard data={data} order={17} />
-              <MostOpenedCard data={data} order={18} onOpen={setPreview} />
-            </div>
+              <div className="grid items-stretch gap-5 md:grid-cols-2 2xl:grid-cols-4">
+                <StorageCard data={data} order={16} />
+                <TypesCard data={data} order={17} />
+                <FoldersCard data={data} order={18} />
+                <MostOpenedCard data={data} order={19} onOpen={setPreview} />
+              </div>
+            </>
           )}
         </div>
       </DashStatusProvider>

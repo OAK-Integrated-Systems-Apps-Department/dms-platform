@@ -171,6 +171,17 @@
   html {
     @apply font-sans;
     }
+  /* The page never scrolls sideways. Entrance animations (the dashboard's
+     cards tilt in with perspective) and hover effects briefly paint past the
+     edge, and browsers make that scrollable - a trackpad swipe then slid the
+     whole page under the fixed sidebar. `clip` (unlike `hidden`) makes no
+     scroll container, so position: sticky and the top bar's popouts are
+     unaffected. Content that's genuinely wide still gets its own local
+     overflow-x-auto container (see dashboard-shell.tsx). */
+  html,
+  body {
+    overflow-x: clip;
+    }
   /* Tailwind v4 Preflight no longer sets a pointer cursor on <button> (it
      matches native browser behavior instead, which is cursor: default) —
      restore it here so every button in the app hovers like a button,

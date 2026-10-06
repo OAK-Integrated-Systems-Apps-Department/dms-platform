@@ -6,14 +6,15 @@ import type { LucideIcon } from "lucide-react"
 import {
   ArrowDownRight,
   ArrowUpRight,
-  FileStack,
-  HardDrive,
+  Database,
+  FileUser,
+  Files,
   Minus,
-  UserRound,
-  Users,
+  UsersRound,
 } from "lucide-react"
 
 import { NUMBER } from "@/components/dashboard/charts"
+import { IconTile } from "@/components/ui/icon-tile"
 import { DashSkeleton, Pending } from "@/components/dashboard/dash-card"
 import { useCountUp, useTilt } from "@/components/dashboard/motion"
 import type { DashboardDto } from "@/lib/dashboard/api"
@@ -44,7 +45,7 @@ export function MetricCards({
     <div className="mb-5 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         order={1}
-        icon={FileStack}
+        icon={Files}
         color="var(--primary)"
         label="Documents"
         href="/documents"
@@ -68,7 +69,7 @@ export function MetricCards({
       />
       <MetricCard
         order={2}
-        icon={UserRound}
+        icon={FileUser}
         color="var(--gold)"
         label="My documents"
         href="/documents"
@@ -87,7 +88,7 @@ export function MetricCards({
       />
       <MetricCard
         order={3}
-        icon={Users}
+        icon={UsersRound}
         color="#2b579a"
         label="Shared with me"
         href="/shared"
@@ -103,7 +104,7 @@ export function MetricCards({
       />
       <MetricCard
         order={4}
-        icon={HardDrive}
+        icon={Database}
         color="#8764b8"
         label="Storage"
         value={storage?.usedBytes}
@@ -180,19 +181,7 @@ export function MetricCard({
       <span aria-hidden="true" className="dash-glare" />
       <div className="mb-3.5 flex items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-[11.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-          <span
-            aria-hidden="true"
-            className="dash-tile flex size-7 items-center justify-center rounded-lg text-white"
-            style={
-              {
-                background: `linear-gradient(145deg, color-mix(in oklab, ${color} 78%, white), ${color})`,
-                "--tile-depth": `color-mix(in oklab, ${color} 55%, black)`,
-                "--tile-glow": `color-mix(in oklab, ${color} 35%, transparent)`,
-              } as CSSProperties
-            }
-          >
-            <Icon size={14} />
-          </span>
+          <IconTile icon={Icon} color={color} size={30} />
           {label}
         </span>
         {change && <Change {...change} format={format} />}

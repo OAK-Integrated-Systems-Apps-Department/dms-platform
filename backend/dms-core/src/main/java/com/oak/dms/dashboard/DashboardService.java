@@ -6,6 +6,7 @@ import com.oak.dms.dashboard.DashboardResponse.Day;
 import com.oak.dms.dashboard.DashboardResponse.Documents;
 import com.oak.dms.dashboard.DashboardResponse.FolderCount;
 import com.oak.dms.dashboard.DashboardResponse.FormatCount;
+import com.oak.dms.dashboard.DashboardResponse.Month;
 import com.oak.dms.dashboard.DashboardResponse.NamedCount;
 import com.oak.dms.dashboard.DashboardResponse.RecentDocument;
 import com.oak.dms.dashboard.DashboardResponse.Security;
@@ -70,6 +71,9 @@ public class DashboardService {
             AuditActionCatalog.FOLDER_CREATED, AuditActionCatalog.FOLDER_RENAMED, AuditActionCatalog.FOLDER_MOVED,
             AuditActionCatalog.FOLDER_DELETED, AuditActionCatalog.FOLDER_ACCESS_CHANGED);
 
+    /** Calendar months in the usage chart. */
+    static final int USAGE_MONTHS = 12;
+
     /** The events counted as usage. */
     static final List<String> USAGE_ACTIONS = List.of(AuditActionCatalog.DOCUMENT_VIEWED,
             AuditActionCatalog.DOCUMENT_DOWNLOADED, AuditActionCatalog.DOCUMENT_UPLOADED);
@@ -90,12 +94,12 @@ public class DashboardService {
     }
 
     /** The documents the caller can see - :everything skips the folder/document access filter. */
-    private static final String VISIBLE = " d.tenant_id = :tenant and not d.is_deleted and not d.is_template"
+    static final String VISIBLE = " d.tenant_id = :tenant and not d.is_deleted and not d.is_template"
             + " and (:everything or (d.access_mode = 'inherit' and (d.folder_id is null or d.folder_id not in (:hidden)))"
             + " or (d.access_mode = 'restricted' and d.document_id in (:granted))) ";
 
     /** Audit events in scope - everyone's, or (:actor set) only the caller's. */
-    private static final String IN_SCOPE = " a.tenant_id = :tenant and a.outcome = 'SUCCESS'"
+    static final String IN_SCOPE = " a.tenant_id = :tenant and a.outcome = 'SUCCESS'"
             + " and (cast(:actor as uuid) is null or a.actor_id = :actor) ";
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -140,10 +144,33 @@ public class DashboardService {
         });
         Usage usage = usage(usagePerDay, start);
 
+        // Usage by month over the last year, and the same span a year earlier for the comparison.
+        LocalDate yearStart = today.withDayOfMonth(1).minusMonths(USAGE_MONTHS - 1L);
+        params.addValue("yearStart", yearStart)
+                .addValue("yearBeforeStart", yearStart.minusYears(1))
+                .addValue("yearBeforeEnd", today.minusYears(1));
+        Map<LocalDate, long[]> usagePerMonth = new HashMap<>();
+        long[] yearBefore = new long[3];
+        jdbc.query("""
+                select date_trunc('month', a.occurred_at at time zone :zone)::date as month, a.action, count(*) as n
+                from audit_events a
+                where""" + IN_SCOPE + """
+                  and a.action in (:usage)
+                  and ((a.occurred_at at time zone :zone)::date >= :yearStart
+                       or (a.occurred_at at time zone :zone)::date between :yearBeforeStart and :yearBeforeEnd)
+                group by 1, 2""", params, rs -> {
+            LocalDate month = rs.getObject("month", LocalDate.class);
+            long[] counts = month.isBefore(yearStart) ? yearBefore
+                    : usagePerMonth.computeIfAbsent(month, k -> new long[3]);
+            counts[USAGE_ACTIONS.indexOf(rs.getString("action"))] += rs.getLong("n");
+        });
+        List<Month> usageMonths = months(yearStart, usagePerMonth);
+        Usage usageYear = yearUsage(usageMonths, yearBefore);
+
         if (!authorization.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)) {
             return new DashboardResponse(days, false, new Documents(0, 0, 0, 0, 0), new Storage(0, 0, 0, 0), usage,
                     series(start, today, 0, Map.of(), usagePerDay), List.of(), List.of(), List.of(), List.of(),
-                    security, List.of(), scope, activity);
+                    security, List.of(), scope, activity, usageMonths, usageYear);
         }
 
         DocumentAccessView access = documentAccessService.forCaller();
@@ -252,7 +279,7 @@ public class DashboardService {
 
         return new DashboardResponse(days, true, documents, storage, usage,
                 series(start, today, beforeStart, addedPerDay, usagePerDay), types, formats, foldersWithTop,
-                mostOpened, security, recent(tenantId), scope, activity);
+                mostOpened, security, recent(tenantId), scope, activity, usageMonths, usageYear);
     }
 
     static int period(int requested) {
@@ -278,6 +305,24 @@ public class DashboardService {
             days.add(new Day(day, added, running, usage[0], usage[1], usage[2]));
         }
         return days;
+    }
+
+    /** Every month from {@code first}, {@link #USAGE_MONTHS} of them, zeros included. */
+    static List<Month> months(LocalDate first, Map<LocalDate, long[]> perMonth) {
+        List<Month> months = new ArrayList<>();
+        for (int i = 0; i < USAGE_MONTHS; i++) {
+            LocalDate month = first.plusMonths(i);
+            long[] counts = perMonth.getOrDefault(month, new long[3]);
+            months.add(new Month(month, counts[0], counts[1], counts[2]));
+        }
+        return months;
+    }
+
+    /** The months' totals against {@code before} (views, downloads, uploads a year earlier). */
+    static Usage yearUsage(List<Month> months, long[] before) {
+        return new Usage(months.stream().mapToLong(Month::views).sum(),
+                months.stream().mapToLong(Month::downloads).sum(),
+                months.stream().mapToLong(Month::uploads).sum(), before[0], before[1], before[2]);
     }
 
     /** This period's usage against the one before, from the per-day counts (views, downloads, uploads). */
@@ -353,7 +398,7 @@ public class DashboardService {
     }
 
     /** An IN list is never empty - the all-zero id matches nothing. */
-    private static Collection<UUID> nonEmpty(Set<UUID> ids) {
+    static Collection<UUID> nonEmpty(Set<UUID> ids) {
         return ids.isEmpty() ? List.of(new UUID(0, 0)) : ids;
     }
 }

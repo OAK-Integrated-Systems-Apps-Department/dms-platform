@@ -174,6 +174,23 @@ dms:
     max-bytes: ${PREVIEW_MAX_BYTES:52428800}
   # Deleted documents stay in the recycle bin this long (each tenant can set
   # its own), then the sweep purges them: files and keys destroyed for good.
+  # Digital Impact on the dashboard (DigitalImpactService). Pages are read from the files
+  # (PageCountBackfill); these are the assumptions that turn them into estimates. Defaults are
+  # the low end of published ranges, so the figures understate. Bump calculation-version when
+  # the method changes.
+  impact:
+    calculation-version: ${IMPACT_CALCULATION_VERSION:1}
+    paper-size: ${IMPACT_PAPER_SIZE:A4}
+    paper-width-mm: ${IMPACT_PAPER_WIDTH_MM:210}
+    paper-height-mm: ${IMPACT_PAPER_HEIGHT_MM:297}
+    paper-gsm: ${IMPACT_PAPER_GSM:80}
+    pages-per-sheet: ${IMPACT_PAGES_PER_SHEET:2}
+    co2e-kg-per-kg-paper: ${IMPACT_CO2E_KG_PER_KG_PAPER:1.08}
+    co2e-source: ${IMPACT_CO2E_SOURCE:EPA Victoria, office copy paper - 1.08 to 1.52 kg CO2e/kg; the low end of the range}
+    water-litres-per-kg-paper: ${IMPACT_WATER_LITRES_PER_KG_PAPER:300}
+    water-source: ${IMPACT_WATER_SOURCE:Water Footprint Network, printing and writing paper - 300 to 2600 L/kg; the low end of the range}
+    page-count-interval: ${IMPACT_PAGE_COUNT_INTERVAL:PT2M}
+    page-count-max-bytes: ${IMPACT_PAGE_COUNT_MAX_BYTES:524288000}
   documents:
     recycle-bin:
       retention-days: ${RECYCLE_BIN_RETENTION_DAYS:30}

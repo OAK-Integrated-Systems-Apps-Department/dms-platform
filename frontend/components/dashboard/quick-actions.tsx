@@ -4,14 +4,15 @@ import type { CSSProperties } from "react"
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import {
-  FileText,
-  History,
+  FolderOpen,
+  ScrollText,
   Search,
   ShieldAlert,
   Trash2,
-  Users,
+  UsersRound,
 } from "lucide-react"
 
+import { IconTile } from "@/components/ui/icon-tile"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 
@@ -42,7 +43,7 @@ const ACTIONS: QuickAction[] = [
   {
     label: "My Documents",
     hint: "Browse your folders",
-    icon: FileText,
+    icon: FolderOpen,
     color: "#2b579a",
     href: "/documents",
     permissions: [PermissionCodes.DOCM_DOCUMENTS_VIEW],
@@ -50,7 +51,7 @@ const ACTIONS: QuickAction[] = [
   {
     label: "Shared with me",
     hint: "From other people",
-    icon: Users,
+    icon: UsersRound,
     color: "#8764b8",
     href: "/shared",
     permissions: [PermissionCodes.DOCM_DOCUMENTS_VIEW],
@@ -83,7 +84,7 @@ const ACTIONS: QuickAction[] = [
   {
     label: "Audit log",
     hint: "Who did what, when",
-    icon: History,
+    icon: ScrollText,
     color: "var(--gold)",
     href: "/admin/audit-log",
     permissions: [PermissionCodes.ABDR_VIEW_AUDIT_HISTORY],
@@ -105,19 +106,12 @@ export function QuickActions() {
         {actions.map((action, i) => {
           const content = (
             <>
-              <span
-                aria-hidden="true"
-                className="dash-tile flex size-9 shrink-0 items-center justify-center rounded-lg text-white transition-transform duration-200 group-hover:scale-105"
-                style={
-                  {
-                    background: `linear-gradient(145deg, color-mix(in oklab, ${action.color} 78%, white), ${action.color})`,
-                    "--tile-depth": `color-mix(in oklab, ${action.color} 55%, black)`,
-                    "--tile-glow": `color-mix(in oklab, ${action.color} 30%, transparent)`,
-                  } as CSSProperties
-                }
-              >
-                <action.icon size={16} />
-              </span>
+              <IconTile
+                icon={action.icon}
+                color={action.color}
+                size={38}
+                className="transition-transform duration-200 group-hover:scale-105"
+              />
               <span className="min-w-0">
                 <span className="block text-[13px] leading-tight font-semibold sm:truncate">
                   {action.label}

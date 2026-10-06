@@ -18,6 +18,8 @@ export function useDashboard(days: DashboardPeriod = 30) {
     queryKey: [...DASHBOARD_QUERY_KEY, days],
     queryFn: () => fetchDashboard(days),
     staleTime: 60_000,
+    // Uploads, deletes and restores happen on other pages - always refresh on arrival.
+    refetchOnMount: "always",
     placeholderData: keepPreviousData,
   })
 }

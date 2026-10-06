@@ -9,7 +9,11 @@ import {
   Pending,
 } from "@/components/dashboard/dash-card"
 import { useBox, useInView } from "@/components/dashboard/motion"
-import type { DashboardDay, DashboardDto } from "@/lib/dashboard/api"
+import type {
+  DashboardDay,
+  DashboardDto,
+  DashboardMonth,
+} from "@/lib/dashboard/api"
 import { cn } from "@/lib/utils"
 
 const HEIGHT = 240
@@ -23,24 +27,55 @@ const SERIES = [
 
 type SeriesKey = (typeof SERIES)[number]["key"]
 
+/** The dashboard's period (days, or weeks over 90 days) - or calendar months. */
+type View = "period" | "months"
+
+/** The fewest months shown, so a young organisation still sees a trend. */
+const MIN_MONTHS = 6
+
 interface Bucket {
-  /** First and last day it covers (the same day unless grouped by week). */
-  from: string
-  to: string
+  key: string
+  /** Under the column. */
+  label: string
+  /** At the top of the tooltip. */
+  title: string
+  /** Shows the label even when only some fit (the newest column). */
+  always?: boolean
   views: number
   downloads: number
   uploads: number
 }
 
+/** Calendar days and months - read as local midnight, not UTC. */
+function dateOf(date: string) {
+  return new Date(`${date}T00:00:00`)
+}
+
+function dayLabel(date: string, weekday = false) {
+  return dateOf(date).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(weekday ? { weekday: "short" } : {}),
+  })
+}
+
 /** A day per column - or, over 90 days, a week per column (counted back from today). */
-function bucketsOf(daily: DashboardDay[], days: number): Bucket[] {
+function periodBuckets(daily: DashboardDay[], days: number): Bucket[] {
   const size = days > 31 ? 7 : 1
   const buckets: Bucket[] = []
   for (let end = daily.length; end > 0; end -= size) {
     const slice = daily.slice(Math.max(0, end - size), end)
+    const from = slice[0].date
+    const to = slice[slice.length - 1].date
+    const today = end === daily.length
     buckets.unshift({
-      from: slice[0].date,
-      to: slice[slice.length - 1].date,
+      key: from,
+      label: today && size === 1 ? "Today" : dayLabel(from),
+      title:
+        size === 1
+          ? dayLabel(from, true)
+          : `${dayLabel(from)} – ${dayLabel(to)}`,
+      always: today,
       views: slice.reduce((s, d) => s + d.views, 0),
       downloads: slice.reduce((s, d) => s + d.downloads, 0),
       uploads: slice.reduce((s, d) => s + d.uploads, 0),
@@ -49,19 +84,41 @@ function bucketsOf(daily: DashboardDay[], days: number): Bucket[] {
   return buckets
 }
 
-function dayLabel(date: string, weekday = false) {
-  // Calendar days - read as local midnight, not UTC.
-  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    ...(weekday ? { weekday: "short" } : {}),
+/**
+ * A column per month, from the first with any activity (at least the last
+ * six) to this one - so months before anyone used the system aren't a row of
+ * empty columns. Only empty months are left out, so the totals still match.
+ */
+function monthBuckets(months: DashboardMonth[]): Bucket[] {
+  const first = months.findIndex((m) => m.views + m.downloads + m.uploads > 0)
+  const start = Math.min(
+    first === -1 ? months.length : first,
+    Math.max(0, months.length - MIN_MONTHS)
+  )
+  return months.slice(start).map((m, i, shown) => {
+    const date = dateOf(m.month)
+    const current = i === shown.length - 1
+    return {
+      key: m.month,
+      label: date.toLocaleDateString(undefined, {
+        month: "short",
+        ...(i === 0 || date.getMonth() === 0 ? { year: "2-digit" } : {}),
+      }),
+      title: `${date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}${current ? " · to date" : ""}`,
+      always: current,
+      views: m.views,
+      downloads: m.downloads,
+      uploads: m.uploads,
+    }
   })
 }
 
 /**
- * Views, downloads and uploads over the period as stacked columns - a day
- * each, or a week each over 90 days - with this period's totals against the
- * period before. Each kind can be switched off from its legend entry.
+ * Views, downloads and uploads as stacked columns, with the totals against
+ * the span before. By default it follows the dashboard's period (a day each,
+ * or a week each over 90 days); "Months" shows calendar months instead, the
+ * current one to date, against the same months a year earlier. Each kind can
+ * be switched off from its legend entry.
  */
 export function ActivityChart({
   data,
@@ -71,16 +128,57 @@ export function ActivityChart({
   order: number
 }) {
   const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set())
-  const usage = data?.usage
+  const [view, setView] = useState<View>("period")
+  const usage = view === "months" ? data?.usageYear : data?.usage
+  const buckets = !data
+    ? []
+    : view === "months"
+      ? monthBuckets(data.usageMonths)
+      : periodBuckets(data.daily, data.days)
+  const days = data?.days ?? 30
 
   return (
     <DashCard
       order={order}
-      title="Usage"
-      subtitle={
+      title="Document engagement"
+      subtitle={`${
         data?.usageScope === "organisation"
           ? "Everyone in your organisation"
           : "Your own views, downloads and uploads"
+      } · ${
+        view === "months"
+          ? "by month, against the year before"
+          : `last ${days} days, against the ${days} before`
+      }`}
+      action={
+        <div
+          role="radiogroup"
+          aria-label="Engagement view"
+          className="flex shrink-0 rounded-md bg-muted p-0.5"
+        >
+          {(
+            [
+              ["period", "Period"],
+              ["months", "Months"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={view === value}
+              onClick={() => setView(value)}
+              className={cn(
+                "rounded px-2.5 py-1 text-[12px] font-semibold transition-colors",
+                view === value
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       }
     >
       {!data || !usage ? (
@@ -130,12 +228,12 @@ export function ActivityChart({
               )
             })}
           </div>
-          {/* A new period is a new chart - its columns grow in again. */}
+          {/* A new view or period is a new chart - its columns grow in again. */}
           <Columns
-            key={data.days}
-            buckets={bucketsOf(data.daily, data.days)}
+            key={view === "months" ? "months" : data.days}
+            buckets={buckets}
             hidden={hidden}
-            weekly={data.days > 31}
+            unit={view === "months" ? "month" : data.days > 31 ? "week" : "day"}
           />
         </>
       )}
@@ -146,11 +244,11 @@ export function ActivityChart({
 function Columns({
   buckets,
   hidden,
-  weekly,
+  unit,
 }: {
   buckets: Bucket[]
   hidden: Set<SeriesKey>
-  weekly: boolean
+  unit: "day" | "week" | "month"
 }) {
   const [frame, box, element] = useBox<HTMLDivElement>()
   // The columns wait at the baseline until the chart is scrolled into view.
@@ -167,18 +265,29 @@ function Columns({
   const y = (value: number) =>
     PAD.top + innerHeight - (value / max) * innerHeight
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f))
-  // Label every column when few, otherwise about six evenly - always today.
-  const labelEvery = Math.max(1, Math.ceil(buckets.length / 6))
+  // Months are labelled when about 44px each fits; days and weeks about six
+  // evenly - always the newest.
+  const labelEvery =
+    unit === "month"
+      ? Math.max(1, Math.ceil(44 / Math.max(1, band)))
+      : Math.max(1, Math.ceil(buckets.length / 6))
   const hovered = hover !== null ? buckets[hover] : null
 
   return (
     <div ref={frame} className="dash-cols relative" data-in-view={inView}>
+      {totals.every((t) => t === 0) && (
+        <p className="absolute inset-x-0 top-[40%] z-10 text-center text-[12.5px] text-muted-foreground">
+          {shown.length === 0
+            ? "Turn on views, downloads or uploads to see them here."
+            : "No views, downloads or uploads in this period yet."}
+        </p>
+      )}
       {width > 0 && (
         <svg
           width={width}
           height={HEIGHT}
           role="img"
-          aria-label={`Views, downloads and uploads per ${weekly ? "week" : "day"}`}
+          aria-label={`Views, downloads and uploads per ${unit}`}
           className="block"
           onPointerLeave={() => setHover(null)}
         >
@@ -207,10 +316,12 @@ function Columns({
           {buckets.map((bucket, i) => {
             const x = PAD.left + band * i + (band - column) / 2
             let base = PAD.top + innerHeight
-            const last = i === buckets.length - 1
+            // Narrow daily and weekly columns end at the right edge, so the
+            // newest label is right-aligned to fit; months are wide enough.
+            const edge = i === buckets.length - 1 && unit !== "month"
             return (
               <g
-                key={bucket.from}
+                key={bucket.key}
                 onPointerEnter={() => setHover(i)}
                 className="cursor-default"
               >
@@ -255,15 +366,15 @@ function Columns({
                   })}
                 </g>
                 {(i % labelEvery === (buckets.length - 1) % labelEvery ||
-                  last) && (
+                  bucket.always) && (
                   <text
                     x={PAD.left + band * i + band / 2}
                     y={HEIGHT - 8}
-                    textAnchor={last ? "end" : "middle"}
-                    dx={last ? band / 2 : 0}
+                    textAnchor={edge ? "end" : "middle"}
+                    dx={edge ? band / 2 : 0}
                     className="fill-[var(--ink-faint)] text-[10.5px]"
                   >
-                    {last && !weekly ? "Today" : dayLabel(bucket.from)}
+                    {bucket.label}
                   </text>
                 )}
               </g>
@@ -283,11 +394,7 @@ function Columns({
             ),
           }}
         >
-          <div className="mb-1 font-semibold">
-            {weekly
-              ? `${dayLabel(hovered.from)} – ${dayLabel(hovered.to)}`
-              : dayLabel(hovered.from, true)}
-          </div>
+          <div className="mb-1 font-semibold">{hovered.title}</div>
           {SERIES.map((s) => (
             <div
               key={s.key}
