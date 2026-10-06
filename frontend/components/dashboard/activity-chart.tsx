@@ -8,7 +8,7 @@ import {
   DashSkeleton,
   Pending,
 } from "@/components/dashboard/dash-card"
-import { useBox } from "@/components/dashboard/motion"
+import { useBox, useInView } from "@/components/dashboard/motion"
 import type { DashboardDay, DashboardDto } from "@/lib/dashboard/api"
 import { cn } from "@/lib/utils"
 
@@ -130,7 +130,9 @@ export function ActivityChart({
               )
             })}
           </div>
+          {/* A new period is a new chart - its columns grow in again. */}
           <Columns
+            key={data.days}
             buckets={bucketsOf(data.daily, data.days)}
             hidden={hidden}
             weekly={data.days > 31}
@@ -150,7 +152,9 @@ function Columns({
   hidden: Set<SeriesKey>
   weekly: boolean
 }) {
-  const [frame, box] = useBox<HTMLDivElement>()
+  const [frame, box, element] = useBox<HTMLDivElement>()
+  // The columns wait at the baseline until the chart is scrolled into view.
+  const inView = useInView(element)
   const [hover, setHover] = useState<number | null>(null)
   const shown = SERIES.filter((s) => !hidden.has(s.key))
   const totals = buckets.map((b) => shown.reduce((sum, s) => sum + b[s.key], 0))
@@ -168,7 +172,7 @@ function Columns({
   const hovered = hover !== null ? buckets[hover] : null
 
   return (
-    <div ref={frame} className="relative">
+    <div ref={frame} className="dash-cols relative" data-in-view={inView}>
       {width > 0 && (
         <svg
           width={width}

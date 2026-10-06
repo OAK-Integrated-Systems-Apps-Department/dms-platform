@@ -113,7 +113,27 @@ export function useBox<T extends HTMLElement>() {
     observer.observe(element)
     return () => observer.disconnect()
   }, [element])
-  return [setElement, box] as const
+  return [setElement, box, element] as const
+}
+
+/**
+ * Whether the element has come into view yet - so an entrance animation plays
+ * when someone scrolls to it, not unseen below the fold. Once true, it stays.
+ */
+export function useInView(element: Element | null, threshold = 0.3) {
+  const [seen, setSeen] = useState(false)
+  useEffect(() => {
+    if (!element || seen) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setSeen(true)
+      },
+      { threshold }
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [element, seen, threshold])
+  return seen
 }
 
 const noSubscription = () => () => {}

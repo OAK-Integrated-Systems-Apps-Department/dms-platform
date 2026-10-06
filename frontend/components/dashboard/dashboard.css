@@ -178,6 +178,11 @@
 }
 
 /* the same for SVG column groups - scaled from the bottom of their own box */
+/* held at the baseline until the chart is in view (data-in-view, set from script) */
+.dash-cols[data-in-view="false"] .dash-col {
+  animation-play-state: paused;
+}
+
 .dash-col {
   transform-box: fill-box;
   transform-origin: 50% 100%;
