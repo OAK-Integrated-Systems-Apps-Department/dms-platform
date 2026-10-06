@@ -59,6 +59,8 @@ export function SupportingDocumentRow({ document, onRemove }: { document: Suppor
 
 interface SupportingDocumentsListProps {
   instanceId: string
+  /** The document under approval - left out of the picker. */
+  documentId: string
   documents: SupportingDocumentDto[]
   currentUserId: string | undefined
   /** Participants of a running workflow who can open documents may attach more. */
@@ -67,7 +69,7 @@ interface SupportingDocumentsListProps {
 }
 
 /** Evidence attached to the run (decision 17): never routed for approval, pinned to a version. */
-export function SupportingDocumentsList({ instanceId, documents, currentUserId, canAttach, inProgress }: SupportingDocumentsListProps) {
+export function SupportingDocumentsList({ instanceId, documentId, documents, currentUserId, canAttach, inProgress }: SupportingDocumentsListProps) {
   const actions = useWorkflowActions()
   const [attaching, setAttaching] = useState(false)
   const standalone = documents.filter((d) => d.infoRequestId === null)
@@ -103,12 +105,22 @@ export function SupportingDocumentsList({ instanceId, documents, currentUserId, 
           ))}
         </ul>
       )}
-      {attaching && <AttachDialog instanceId={instanceId} onOpenChange={(o) => !o && setAttaching(false)} />}
+      {attaching && (
+        <AttachDialog instanceId={instanceId} documentId={documentId} onOpenChange={(o) => !o && setAttaching(false)} />
+      )}
     </div>
   )
 }
 
-function AttachDialog({ instanceId, onOpenChange }: { instanceId: string; onOpenChange: (open: boolean) => void }) {
+function AttachDialog({
+  instanceId,
+  documentId,
+  onOpenChange,
+}: {
+  instanceId: string
+  documentId: string
+  onOpenChange: (open: boolean) => void
+}) {
   const actions = useWorkflowActions()
   const [documents, setDocuments] = useState<PickedSupportingDocument[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -134,7 +146,7 @@ function AttachDialog({ instanceId, onOpenChange }: { instanceId: string; onOpen
       onConfirm={() => void confirm()}
       onOpenChange={onOpenChange}
     >
-      <SupportingDocumentPicker value={documents} onChange={setDocuments} />
+      <SupportingDocumentPicker value={documents} onChange={setDocuments} excludeDocumentId={documentId} />
     </WorkflowFormDialog>
   )
 }

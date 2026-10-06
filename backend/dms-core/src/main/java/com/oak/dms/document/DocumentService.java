@@ -1,8 +1,11 @@
 package com.oak.dms.document;
 
 import com.oak.dms.document.dto.DocumentResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.io.InputStream;
 import java.util.UUID;
@@ -29,6 +32,14 @@ public interface DocumentService {
                                            long contentLength, InputStream content);
 
     DocumentResponse getDocument(UUID documentId);
+
+    /**
+     * The caller's tenant's documents, newest first, optionally narrowed by
+     * a title search and a document type, and leaving out one document
+     * (e.g. the one under approval when picking supporting documents).
+     */
+    Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
+                                                Pageable pageable);
 
     /** Streams the document's current version (falling back to its latest version if none is current yet). */
     DownloadedDocument downloadDocument(UUID documentId);

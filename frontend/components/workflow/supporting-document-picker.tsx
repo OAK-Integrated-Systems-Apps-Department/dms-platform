@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { FilePlus, Link2, Loader2, Upload, X } from "lucide-react"
+import { FilePlus, Loader2, Upload, X } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,12 +9,13 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { fetchDocument, fetchIngestionTicket, uploadDocument } from "@/lib/documents/api"
+import { fetchIngestionTicket, uploadDocument } from "@/lib/documents/api"
 import { useSelectableDocumentTypes } from "@/lib/documents/use-selectable-document-types"
 
 import type { SupportingDocumentInput } from "@/lib/workflow/api"
 
-const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+import { DocumentPicker } from "./document-picker"
+
 const TICKET_POLL_MS = 3000
 
 /** A chosen document, with the title shown in the list. */
@@ -26,15 +26,17 @@ export interface PickedSupportingDocument extends SupportingDocumentInput {
 interface SupportingDocumentPickerProps {
   value: PickedSupportingDocument[]
   onChange: (docs: PickedSupportingDocument[]) => void
+  /** The document under approval - never offered as its own evidence. */
+  excludeDocumentId?: string
 }
 
 /**
- * Pick supporting documents (decisions 17-18, A10): link an existing one by
- * its link or id (you must be able to open it), or upload a new one through
+ * Pick supporting documents (decisions 17-18, A10): search the documents you
+ * can open and link one (its latest version is pinned), or upload a new one through
  * the normal upload - which needs docm.documents.create and a document type,
  * and may wait for its malware scan before it can be attached.
  */
-export function SupportingDocumentPicker({ value, onChange }: SupportingDocumentPickerProps) {
+export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }: SupportingDocumentPickerProps) {
   const { hasPermission } = usePermissions()
   const canView = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
   const canUpload = hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
@@ -86,51 +88,14 @@ export function SupportingDocumentPicker({ value, onChange }: SupportingDocument
           ]}
         />
       )}
-      {mode === "link" || !canUpload ? <LinkExisting onAdd={add} /> : <UploadNew onAdd={add} />}
-    </div>
-  )
-}
-
-function LinkExisting({ onAdd }: { onAdd: (doc: PickedSupportingDocument) => void }) {
-  const [text, setText] = useState("")
-  const documentId = text.match(UUID_PATTERN)?.[0]?.toLowerCase() ?? null
-  const document = useQuery({
-    queryKey: ["document", documentId],
-    queryFn: () => fetchDocument(documentId!),
-    enabled: documentId !== null,
-    retry: false,
-  })
-
-  return (
-    <div>
-      <Label htmlFor="link-document">Document link or ID</Label>
-      <div className="flex gap-2">
-        <Input
-          id="link-document"
-          value={text}
-          placeholder="Paste the document's address, e.g. …/documents/3f2a…"
-          onChange={(e) => setText(e.target.value)}
+      {mode === "link" || !canUpload ? (
+        <DocumentPicker
+          excludeDocumentId={excludeDocumentId}
+          pickedIds={value.map((d) => d.documentId)}
+          onPick={(doc) => add({ documentId: doc.documentId, source: "linked_existing", title: doc.title })}
         />
-        <button
-          type="button"
-          disabled={!document.data}
-          onClick={() => {
-            if (!document.data) return
-            onAdd({ documentId: document.data.documentId, source: "linked_existing", title: document.data.title })
-            setText("")
-          }}
-          className="flex shrink-0 items-center gap-1 rounded-btn border border-primary bg-primary/10 px-3 text-[12.5px] font-semibold text-primary disabled:opacity-50"
-        >
-          <Link2 size={13} /> Add
-        </button>
-      </div>
-      {documentId && document.isPending && <p className="mt-1.5 text-[12px] text-muted-foreground">Looking it up…</p>}
-      {document.isError && <p className="mt-1.5 text-[12px] text-destructive">That document wasn&apos;t found, or you can&apos;t open it.</p>}
-      {document.data && (
-        <p className="mt-1.5 text-[12px] text-muted-foreground">
-          {document.data.title}
-          {document.data.documentTypeName && <> · {document.data.documentTypeName}</>} - its latest version is attached.
-        </p>
+      ) : (
+        <UploadNew onAdd={add} />
       )}
     </div>
   )

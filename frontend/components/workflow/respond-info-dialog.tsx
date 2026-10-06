@@ -75,7 +75,11 @@ export function RespondInfoDialog({ request, mode, onOpenChange }: RespondInfoDi
       {!decline && (
         <div>
           <Label>Supporting documents</Label>
-          <SupportingDocumentPicker value={documents} onChange={setDocuments} />
+          <SupportingDocumentPicker
+            value={documents}
+            onChange={setDocuments}
+            excludeDocumentId={request.documentId ?? undefined}
+          />
         </div>
       )}
     </WorkflowFormDialog>

@@ -274,6 +274,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
         />
         <SupportingDocumentsList
           instanceId={instance.instanceId}
+          documentId={instance.documentId}
           documents={instance.supportingDocuments ?? []}
           currentUserId={me}
           canAttach={canAttach}

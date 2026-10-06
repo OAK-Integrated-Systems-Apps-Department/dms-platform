@@ -1,12 +1,15 @@
 package com.oak.dms.document;
 
+import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.document.dto.DocumentResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.scanning.controller.IngestionTicketResponses;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +41,8 @@ import java.util.UUID;
 @Tag(name = "Documents", description = "Document upload, download, and lifecycle")
 public class DocumentController {
 
+    private static final int MAX_PAGE_SIZE = 50;
+
     private final DocumentService documentService;
 
     /**
@@ -58,6 +63,21 @@ public class DocumentController {
                     file.getOriginalFilename(), file.getSize(), content);
             return IngestionTicketResponses.toResponseEntity(ticket);
         }
+    }
+
+    @GetMapping
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "List documents, newest first",
+            description = "search matches the title (case-insensitive); documentTypeId narrows to one type; "
+                    + "excludeDocumentId leaves one document out. size is at most 50.")
+    public PageResponse<DocumentSummaryResponse> listDocuments(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID documentTypeId,
+            @RequestParam(required = false) UUID excludeDocumentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.from(documentService.listDocuments(search, documentTypeId, excludeDocumentId,
+                PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE))));
     }
 
     @GetMapping("/{id}")
