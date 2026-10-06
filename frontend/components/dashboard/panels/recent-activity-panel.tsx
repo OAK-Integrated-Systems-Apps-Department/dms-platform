@@ -2,7 +2,14 @@
 
 import type { CSSProperties } from "react"
 import { activityLook, activityWho } from "@/components/dashboard/activity"
-import { DashCard, DashSkeleton } from "@/components/dashboard/dash-card"
+import { History } from "lucide-react"
+
+import {
+  DashCard,
+  DashSkeleton,
+  EmptyState,
+  Pending,
+} from "@/components/dashboard/dash-card"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import type { DashboardActivity } from "@/lib/dashboard/api"
 
@@ -38,18 +45,24 @@ export function RecentActivityPanel({
       }
     >
       {!activity ? (
-        <div className="flex flex-col gap-4">
-          {[1, 2, 3, 4].map((row) => (
-            <div key={row} className="flex items-center gap-3">
-              <DashSkeleton className="size-8 shrink-0 rounded-full" />
-              <DashSkeleton className="h-3.5 flex-1" />
+        <Pending
+          skeleton={
+            <div className="flex flex-col gap-4">
+              {[1, 2, 3, 4].map((row) => (
+                <div key={row} className="flex items-center gap-3">
+                  <DashSkeleton className="size-8 shrink-0 rounded-full" />
+                  <DashSkeleton className="h-3.5 flex-1" />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          }
+        />
       ) : activity.length === 0 ? (
-        <p className="py-10 text-center text-[13px] text-muted-foreground">
-          Nothing yet.
-        </p>
+        <EmptyState
+          icon={History}
+          title="No activity yet"
+          text="Uploads, moves, restores and access changes will show up here."
+        />
       ) : (
         <ol className="relative">
           {activity.slice(0, SHOWN).map((entry, i) => {

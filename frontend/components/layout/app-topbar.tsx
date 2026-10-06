@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Bell,
@@ -188,9 +189,15 @@ export function AppTopbar() {
 
       <div className="flex-1" />
 
-      <IconButton title="Help" className="shrink-0">
+      {/* A real link, so the page can be prefetched and opened in a new tab. */}
+      <Link
+        href="/help"
+        title="Help"
+        aria-label="Help"
+        className="relative flex size-[38px] shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
         <HelpCircle size={17} />
-      </IconButton>
+      </Link>
 
       <div ref={pinRef} className="relative shrink-0">
         <IconButton

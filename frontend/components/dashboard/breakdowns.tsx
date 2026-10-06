@@ -2,17 +2,29 @@
 
 import type { CSSProperties } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, Download, ShieldCheck } from "lucide-react"
+import {
+  Download,
+  Eye,
+  FileText,
+  FolderOpen,
+  MousePointerClick,
+} from "lucide-react"
 
-import { BarList, NUMBER, share } from "@/components/dashboard/charts"
-import { DashCard, DashSkeleton } from "@/components/dashboard/dash-card"
+import { BarList, NUMBER } from "@/components/dashboard/charts"
+import {
+  DashCard,
+  DashSkeleton,
+  EmptyState,
+  Pending,
+} from "@/components/dashboard/dash-card"
+import { DonutChart } from "@/components/dashboard/donut-chart"
 import { fileKind } from "@/components/documents/browser-items"
 import type { DashboardDto, DashboardTopDocument } from "@/lib/dashboard/api"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
 
-/** Up to this many rows in a ranked list; the rest are summed into one. */
-const ROWS = 6
+/** Slices in the document-type donut, the last one being "more types" when there are more. */
+const SLICES = 5
 const PALETTE = [
   "var(--primary)",
   "#2b579a",
@@ -44,8 +56,9 @@ export function TypesCard({
   order: number
 }) {
   const types = data?.types ?? []
-  const shown = types.slice(0, ROWS)
-  const rest = types.slice(ROWS).reduce((sum, t) => sum + t.count, 0)
+  // A donut reads well up to about five slices; the rest share one.
+  const shown = types.length > SLICES ? types.slice(0, SLICES - 1) : types
+  const rest = types.slice(shown.length).reduce((sum, t) => sum + t.count, 0)
   return (
     <DashCard
       order={order}
@@ -57,24 +70,41 @@ export function TypesCard({
       }
     >
       {!data ? (
-        <BarSkeleton />
+        <Pending
+          skeleton={
+            <div className="flex items-center gap-5">
+              <DashSkeleton className="size-[140px] shrink-0 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2">
+                <DashSkeleton className="h-3 w-full" />
+                <DashSkeleton className="h-3 w-4/5" />
+                <DashSkeleton className="h-3 w-3/5" />
+              </div>
+            </div>
+          }
+        />
+      ) : types.length === 0 ? (
+        <EmptyState icon={FileText} title="No documents yet" />
       ) : (
-        <BarList
+        <DonutChart
+          ariaLabel="Documents by type"
           total={data.documents.total}
-          emptyText="No documents yet."
-          items={[
+          centerValue={NUMBER.format(data.documents.total)}
+          centerLabel="documents"
+          slices={[
             ...shown.map((t, i) => ({
               key: t.name,
               label: t.name,
               value: t.count,
+              valueLabel: NUMBER.format(t.count),
               color: PALETTE[i % PALETTE.length],
             })),
             ...(rest > 0
               ? [
                   {
                     key: "rest",
-                    label: `${types.length - ROWS} more types`,
+                    label: `${types.length - shown.length} more types`,
                     value: rest,
+                    valueLabel: NUMBER.format(rest),
                     color: "var(--ink-faint)",
                   },
                 ]
@@ -103,11 +133,16 @@ export function FoldersCard({
       link={{ href: "/documents", label: "Browse" }}
     >
       {!data ? (
-        <BarSkeleton />
+        <Pending skeleton={<BarSkeleton />} />
+      ) : data.folders.length === 0 ? (
+        <EmptyState
+          icon={FolderOpen}
+          title="No documents yet"
+          action={{ href: "/documents", label: "Go to My Documents" }}
+        />
       ) : (
         <BarList
           total={data.documents.total}
-          emptyText="No documents yet."
           items={data.folders.map((f) => ({
             key: f.folderId ?? "top",
             label: f.name ?? (
@@ -155,11 +190,13 @@ export function MostOpenedCard({
       }
     >
       {!data ? (
-        <BarSkeleton />
+        <Pending skeleton={<BarSkeleton />} />
       ) : top.length === 0 ? (
-        <p className="py-8 text-center text-[13px] text-muted-foreground">
-          Nothing opened in this period.
-        </p>
+        <EmptyState
+          icon={MousePointerClick}
+          title="Nothing opened yet"
+          text={`Documents viewed or downloaded in the last ${data.days} days are ranked here.`}
+        />
       ) : (
         <>
           <ol className="flex flex-col gap-1">
@@ -238,123 +275,6 @@ export function MostOpenedCard({
           </div>
         </>
       )}
-    </DashCard>
-  )
-}
-
-const OUTCOMES = [
-  {
-    key: "clean",
-    label: "Clean, stored",
-    color: "var(--primary)",
-  },
-  {
-    key: "threats",
-    label: "Malware quarantined",
-    color: "var(--rust)",
-  },
-  {
-    key: "unscannable",
-    label: "Couldn't be scanned",
-    color: "var(--gold)",
-  },
-  {
-    key: "refused",
-    label: "Refused (duplicate, damaged…)",
-    color: "#8b968f",
-  },
-] as const
-
-/** What the virus scanner did with this period's uploads, and what's held in quarantine now. */
-export function SecurityCard({
-  data,
-  order,
-}: {
-  data: DashboardDto
-  order: number
-}) {
-  const security = data.security
-  if (!security) return null
-  const total = OUTCOMES.reduce((sum, o) => sum + security[o.key], 0)
-  return (
-    <DashCard
-      order={order}
-      title="Upload security"
-      subtitle={`Every upload is scanned for malware · last ${data.days} days`}
-      link={{ href: "/admin/quarantine", label: "Quarantine" }}
-    >
-      <div className="mb-4 flex items-center gap-4">
-        <span
-          className="dash-tile flex size-12 shrink-0 items-center justify-center rounded-2xl text-white"
-          style={
-            {
-              background:
-                security.threats > 0
-                  ? "linear-gradient(145deg, color-mix(in oklab, var(--rust) 75%, white), var(--rust))"
-                  : "linear-gradient(145deg, color-mix(in oklab, var(--primary) 75%, white), var(--primary))",
-              "--tile-depth":
-                security.threats > 0
-                  ? "color-mix(in oklab, var(--rust) 55%, black)"
-                  : "var(--dash-depth)",
-            } as CSSProperties
-          }
-        >
-          <ShieldCheck size={22} />
-        </span>
-        <div>
-          <div className="font-heading text-[22px] leading-tight font-semibold tabular-nums">
-            {share(security.clean, total)} clean
-          </div>
-          <div className="text-[12px] text-muted-foreground">
-            {NUMBER.format(total)} uploads checked ·{" "}
-            <span
-              className={cn(
-                security.quarantined > 0 && "font-semibold text-[var(--rust)]"
-              )}
-            >
-              {NUMBER.format(security.quarantined)} held in quarantine now
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {total > 0 && (
-        <div className="mb-3 flex h-3 overflow-hidden rounded-full bg-muted shadow-[inset_0_1px_2px_rgba(0,0,0,0.08)]">
-          {OUTCOMES.map((o, i) =>
-            security[o.key] > 0 ? (
-              <span
-                key={o.key}
-                title={`${o.label}: ${NUMBER.format(security[o.key])}`}
-                className="dash-bar-fill h-full border-r-2 border-card last:border-r-0"
-                style={
-                  {
-                    "--dash-order": i,
-                    width: `${(security[o.key] / total) * 100}%`,
-                    background: o.color,
-                  } as CSSProperties
-                }
-              />
-            ) : null
-          )}
-        </div>
-      )}
-
-      <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-        {OUTCOMES.map((o) => (
-          <li key={o.key} className="flex items-center gap-2 text-[12px]">
-            <span
-              className="size-2.5 shrink-0 rounded-[3px]"
-              style={{ background: o.color }}
-            />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {o.label}
-            </span>
-            <span className="font-semibold tabular-nums">
-              {NUMBER.format(security[o.key])}
-            </span>
-          </li>
-        ))}
-      </ul>
     </DashCard>
   )
 }

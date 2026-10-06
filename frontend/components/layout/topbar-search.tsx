@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { FolderOpen, Loader2 } from "lucide-react"
 
+import { GLOBAL_SEARCH_ID } from "@/components/dashboard/quick-actions"
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { SearchInput } from "@/components/ui/search-input"
 import { fetchDocuments, type DocumentListItemDto } from "@/lib/documents/api"
@@ -101,6 +102,7 @@ export function TopbarSearch({
         onChange={change}
         placeholder="Search documents…"
         inputProps={{
+          id: GLOBAL_SEARCH_ID,
           role: "combobox",
           "aria-expanded": showList,
           "aria-controls": listId,

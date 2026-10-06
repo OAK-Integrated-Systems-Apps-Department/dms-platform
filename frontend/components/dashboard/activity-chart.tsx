@@ -3,7 +3,11 @@
 import { useState, type CSSProperties } from "react"
 
 import { DeltaBadge, NUMBER, niceCeiling } from "@/components/dashboard/charts"
-import { DashCard, DashSkeleton } from "@/components/dashboard/dash-card"
+import {
+  DashCard,
+  DashSkeleton,
+  Pending,
+} from "@/components/dashboard/dash-card"
 import { useBox } from "@/components/dashboard/motion"
 import type { DashboardDay, DashboardDto } from "@/lib/dashboard/api"
 import { cn } from "@/lib/utils"
@@ -72,7 +76,7 @@ export function ActivityChart({
   return (
     <DashCard
       order={order}
-      title="Activity"
+      title="Usage"
       subtitle={
         data?.usageScope === "organisation"
           ? "Everyone in your organisation"
@@ -80,7 +84,7 @@ export function ActivityChart({
       }
     >
       {!data || !usage ? (
-        <DashSkeleton className="h-[300px] w-full" />
+        <Pending skeleton={<DashSkeleton className="h-[300px] w-full" />} />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-2">

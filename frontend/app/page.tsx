@@ -1,43 +1,53 @@
 "use client"
 
-import { useState, useSyncExternalStore } from "react"
-import { FileLock2, RefreshCw } from "lucide-react"
+import { useMemo, useState, useSyncExternalStore } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { FileLock2 } from "lucide-react"
 import { toast } from "sonner"
 
 import "@/components/dashboard/dashboard.css"
 import { ActivityChart } from "@/components/dashboard/activity-chart"
+import { AttentionPanel } from "@/components/dashboard/attention-panel"
 import {
   FoldersCard,
   MostOpenedCard,
-  SecurityCard,
   TypesCard,
 } from "@/components/dashboard/breakdowns"
 import { NUMBER } from "@/components/dashboard/charts"
-import { DashCard } from "@/components/dashboard/dash-card"
-import { DashboardHero } from "@/components/dashboard/dashboard-hero"
-import { KpiCards } from "@/components/dashboard/kpi-cards"
 import {
-  PendingApprovalsPanel,
-  RecentActivityPanel,
-  RecentDocumentsPanel,
-} from "@/components/dashboard/panels"
-import { StorageTreemap } from "@/components/dashboard/storage-treemap"
+  DashCard,
+  DashStatusProvider,
+  EmptyState,
+} from "@/components/dashboard/dash-card"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { MetricCards } from "@/components/dashboard/metric-cards"
+import { RecentActivityPanel } from "@/components/dashboard/panels"
+import { QuickActions } from "@/components/dashboard/quick-actions"
+import { RecentDocuments } from "@/components/dashboard/recent-documents"
+import { StorageCard } from "@/components/dashboard/storage-card"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
-import { Button } from "@/components/ui/button"
 import { friendlyMessage } from "@/lib/api-error"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import {
   DASHBOARD_PERIODS,
   type DashboardDto,
   type DashboardPeriod,
 } from "@/lib/dashboard/api"
 import { useDashboard } from "@/lib/dashboard/use-dashboard"
-import { downloadDocumentFile } from "@/lib/documents/api"
+import {
+  downloadDocumentFile,
+  fetchDocuments,
+  fetchSharedWithMe,
+} from "@/lib/documents/api"
 import { saveDownloadedFile } from "@/lib/download-file"
 
 /** A document the preview can open - from the recent or most-opened lists. */
 type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
+
+const RECENT_ROWS = 6
 
 /** The chosen period, remembered in this browser (a convenience - it falls back to 30 days). */
 const PERIOD_KEY = "dms.dashboard.days"
@@ -82,13 +92,18 @@ function summaryOf(data: DashboardDto): string {
 }
 
 /**
- * The home dashboard, from GET /api/v1/dashboard for the chosen period:
- * only what the user can see - documents by the same access rules as My
- * Documents, usage and activity of their own (or everyone's, with the
- * audit-history permission), and upload security with quarantine view.
+ * The home dashboard. Figures come from GET /api/v1/dashboard for the
+ * chosen period; the recent-documents table from the document list (GET
+ * /api/v1/documents) and the shared count from shared-with-me - all with the
+ * caller's own access, so nobody sees what they couldn't open. Each section
+ * loads, empties and fails on its own.
  */
 export default function Page() {
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  // Assume access until the permissions arrive, so nothing flashes "no access".
+  const canView =
+    permissionsLoading || hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
   const period = useSyncExternalStore<DashboardPeriod>(
     subscribePeriod,
     readPeriod,
@@ -96,8 +111,37 @@ export default function Page() {
   )
   const dashboard = useDashboard(period)
   const data = dashboard.data
-  const showDocuments = !data || data.documentsVisible
   const [preview, setPreview] = useState<PreviewRow | null>(null)
+
+  const recent = useQuery({
+    queryKey: ["documents", "dashboard-recent"],
+    queryFn: () =>
+      fetchDocuments({
+        folderId: null,
+        all: true,
+        page: 0,
+        size: RECENT_ROWS,
+      }),
+    enabled: canView && !permissionsLoading,
+    staleTime: 30_000,
+  })
+  const shared = useQuery({
+    queryKey: ["documents", "shared-count"],
+    queryFn: () => fetchSharedWithMe({ page: 0, size: 1 }),
+    enabled: canView && !permissionsLoading,
+    staleTime: 60_000,
+  })
+
+  // Owner names come with the dashboard's own recent list - the same newest documents.
+  const owners = useMemo(
+    () =>
+      new Map(
+        (data?.recent ?? [])
+          .filter((d) => d.ownerUserId && d.ownerName)
+          .map((d) => [d.ownerUserId as string, d.ownerName as string])
+      ),
+    [data?.recent]
+  )
 
   async function download(documentId: string) {
     try {
@@ -109,94 +153,78 @@ export default function Page() {
 
   return (
     <DashboardShell initialActiveLabel="Dashboard">
-      <div className="dash">
-        <DashboardHero
-          firstName={user?.displayName.split(" ")[0] ?? ""}
-          isLoadingName={isUserLoading}
-          summary={data?.documentsVisible ? summaryOf(data) : undefined}
-          period={period}
-          onPeriodChange={savePeriod}
-          refreshing={dashboard.isPlaceholderData}
-        />
+      <DashStatusProvider
+        value={{
+          failed: dashboard.isError && !data,
+          retry: () => void dashboard.refetch(),
+        }}
+      >
+        <div className="dash">
+          <DashboardHeader
+            name={user?.displayName ?? ""}
+            role={user?.roles[0]}
+            isLoadingName={isUserLoading}
+            summary={data?.documentsVisible ? summaryOf(data) : undefined}
+            period={period}
+            onPeriodChange={savePeriod}
+            refreshing={dashboard.isPlaceholderData}
+          />
 
-        {dashboard.isError ? (
-          <DashCard className="mb-6 items-center py-10 text-center">
-            <p className="mb-3 text-[13.5px] text-[var(--rust)]">
-              {friendlyMessage(
-                dashboard.error,
-                "Could not load the dashboard."
-              )}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void dashboard.refetch()}
-            >
-              <RefreshCw />
-              Try again
-            </Button>
-          </DashCard>
-        ) : showDocuments ? (
-          <>
-            <KpiCards data={data} />
-
-            <div className="mb-6 grid items-stretch gap-5 lg:grid-cols-[1.7fr_1fr]">
-              <ActivityChart data={data} order={5} />
-              <StorageTreemap data={data} order={6} />
-            </div>
-
-            <div className="mb-6 grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
-              <TypesCard data={data} order={7} />
-              <FoldersCard data={data} order={8} />
-              <MostOpenedCard data={data} order={9} onOpen={setPreview} />
-            </div>
-
-            <div className="mb-6 grid items-stretch gap-5 lg:grid-cols-[1.6fr_1fr]">
-              <RecentDocumentsPanel
-                documents={data?.recent}
-                order={10}
-                onOpen={setPreview}
-                onDownload={(document) => void download(document.documentId)}
+          {canView ? (
+            <MetricCards
+              data={data}
+              sharedWithMe={shared.isError ? null : shared.data?.totalElements}
+            />
+          ) : (
+            <DashCard className="mb-5">
+              <EmptyState
+                icon={FileLock2}
+                title="No access to documents yet"
+                text="Ask an administrator for a role that can view documents."
               />
-              <RecentActivityPanel
-                activity={data?.activity}
-                scope={data?.usageScope}
-                currentUserId={user?.userId}
-                order={11}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <DashCard className="mb-6 items-center py-10 text-center">
-              <FileLock2 size={28} className="mb-3 text-muted-foreground" />
-              <p className="text-[13.5px] text-muted-foreground">
-                You don&apos;t have access to documents yet - ask an
-                administrator for a role that can view them.
-              </p>
             </DashCard>
-            <div className="mb-6">
+          )}
+
+          <QuickActions />
+
+          <div className="mb-5 grid items-start gap-5 lg:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
+              {canView && (
+                <RecentDocuments
+                  documents={recent.data?.content}
+                  owners={owners}
+                  loading={recent.isPending && !recent.isError}
+                  failed={recent.isError}
+                  onRetry={() => void recent.refetch()}
+                  onOpen={setPreview}
+                  onDownload={(doc) => void download(doc.documentId)}
+                  order={11}
+                />
+              )}
+              <ActivityChart data={data} order={13} />
+            </div>
+            {/* What needs attention comes first on narrow screens. */}
+            <div className="order-first flex min-w-0 flex-col gap-5 lg:order-none">
+              <AttentionPanel data={data} order={12} />
               <RecentActivityPanel
                 activity={data?.activity}
                 scope={data?.usageScope}
                 currentUserId={user?.userId}
-                order={2}
+                order={14}
               />
             </div>
-          </>
-        )}
+          </div>
 
-        <div
-          className={
-            data?.security
-              ? "grid items-stretch gap-5 lg:grid-cols-[1.6fr_1fr]"
-              : undefined
-          }
-        >
-          {data?.security && <SecurityCard data={data} order={12} />}
-          <PendingApprovalsPanel order={13} compact={!data?.security} />
+          {canView && (
+            <div className="grid items-stretch gap-5 md:grid-cols-2 2xl:grid-cols-4">
+              <StorageCard data={data} order={15} />
+              <TypesCard data={data} order={16} />
+              <FoldersCard data={data} order={17} />
+              <MostOpenedCard data={data} order={18} onOpen={setPreview} />
+            </div>
+          )}
         </div>
-      </div>
+      </DashStatusProvider>
 
       {preview && (
         <DocumentPreview
