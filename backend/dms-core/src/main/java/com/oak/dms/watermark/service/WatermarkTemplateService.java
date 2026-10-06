@@ -95,6 +95,19 @@ public class WatermarkTemplateService {
         return template;
     }
 
+    /**
+     * One template the caller may SEE, for the preview endpoint.
+     * <p>
+     * Unlike {@link #requireUsable} this does not insist the template is
+     * active: an admin who has just retired a template should still be able
+     * to look at it on the settings screen. Previewing creates nothing, so
+     * there is nothing to protect against here beyond tenancy.
+     */
+    @Transactional(readOnly = true)
+    public WatermarkTemplate requireVisibleForPreview(UUID templateId) {
+        return requireVisible(templateId);
+    }
+
     // ------------------------------------------------------------ writes
 
     @Transactional
