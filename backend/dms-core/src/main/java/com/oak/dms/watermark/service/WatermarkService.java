@@ -164,9 +164,11 @@ public class WatermarkService {
 
     private void checkFormatAndSize(VersionDetails version) {
         if (!formatServices.isSupported(version.mimeType())) {
+            // The list comes from the registered services, so it names what
+            // this build can really do rather than what is planned.
             throw WatermarkException.unsupportedType(
-                    "Watermarking isn't available for this kind of file yet. Supported: PDF, Word (.docx), "
-                            + "Excel (.xlsx), PowerPoint (.pptx), JPEG and PNG.");
+                    "Watermarking isn't available for this kind of file. Supported: "
+                            + formatServices.supportedFormats() + ".");
         }
         // From the version row, so nothing is read before the cap applies.
         DataSize max = maxBytesFor(version.mimeType());

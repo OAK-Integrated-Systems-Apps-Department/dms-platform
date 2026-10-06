@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * CHECK constraint on the way to the templates table.
  */
 @SpringBootTest(properties = "dms.watermark.enabled=true")
-class WatermarkWireValuesIT {
+class WatermarkWireValuesIT extends WatermarkFixtures {
 
     private static final String PATH = "/api/v1/watermark-templates";
 
@@ -131,6 +131,7 @@ class WatermarkWireValuesIT {
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
                 .build());
+        trackTenant(tenant.getTenantId());
         userRepository.save(User.builder()
                 .tenantId(tenant.getTenantId())
                 .keycloakId(keycloakId)

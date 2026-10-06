@@ -81,11 +81,31 @@ public class WatermarkController {
     @PostMapping("/api/v1/documents/{documentId}/watermark")
     @PreAuthorize(CAN_VIEW_DOCUMENTS + " and (#request.versionId() == null or " + CAN_VIEW_VERSIONS + ")")
     @Operation(summary = "Ask for a watermarked copy of a document",
-            description = "Supply exactly one of templateId or customText. Style fields override the "
-                    + "template, which overrides the system defaults. Produced in the background: poll the "
-                    + "job, then fetch its result. Send an Idempotency-Key header so a repeated click "
-                    + "returns the same job instead of producing a second copy. Naming a versionId needs "
-                    + "dvc.view-version-history.view as well.")
+            description = """
+                    Supply exactly one of templateId or customText. Style fields override the template, \
+                    which overrides the system defaults. Produced in the background: poll the job, then \
+                    fetch its result. Send an Idempotency-Key header so a repeated click returns the same \
+                    job instead of producing a second copy. Naming a versionId needs \
+                    dvc.view-version-history.view as well.
+
+                    The copy is always in the ORIGINAL's format - nothing is converted, and the original \
+                    is never modified. Supported: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), \
+                    JPEG and PNG. Anything else, including legacy .doc/.xls/.ppt, is a 415.
+
+                    pageScope=first-page-only means something different in each format, because "page" \
+                    does: PDF - page 1; Word - page 1, which is done by turning on the section's title \
+                    page (its existing first-page header content is preserved); Excel - the first VISIBLE \
+                    worksheet, since a spreadsheet has no pages until it is printed; PowerPoint - slide 1; \
+                    images - the whole image, which is one page by definition.
+
+                    Known limitations. (1) In Word, Excel and PowerPoint the watermark is an ordinary \
+                    picture, so a recipient who opens the file can delete it; Phase 1 makes provenance \
+                    visible, it does not make it tamper-proof. (2) The in-app preview may not show the \
+                    mark - check the downloaded file in desktop Office or LibreOffice. (3) In Excel the \
+                    mark floats ABOVE the cells (Excel offers nothing behind them), which is why opacity \
+                    has a floor. (4) A JPEG copy is re-encoded and loses EXIF metadata, including GPS. \
+                    (5) A digitally signed document is refused with 422 - any change would break its \
+                    signature. (6) Password-protected files are refused with 422.""")
     public ResponseEntity<WatermarkJobResponse> request(
             @PathVariable UUID documentId,
             @Valid @RequestBody WatermarkRequest request,

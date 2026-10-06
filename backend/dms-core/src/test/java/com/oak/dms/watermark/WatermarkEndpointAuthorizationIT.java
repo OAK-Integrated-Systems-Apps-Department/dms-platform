@@ -59,12 +59,6 @@ class WatermarkEndpointAuthorizationIT extends WatermarkFixtures {
     @Autowired
     private WebApplicationContext context;
     @Autowired
-    private RoleRepository roleRepository;
-    @Autowired
-    private RolePermissionRepository rolePermissionRepository;
-    @Autowired
-    private UserRoleRepository userRoleRepository;
-    @Autowired
     private UserRepository users;
     @Autowired
     private ObjectMapper objectMapper;
@@ -326,25 +320,4 @@ class WatermarkEndpointAuthorizationIT extends WatermarkFixtures {
                 .build());
     }
 
-    /** Gives the fixture's user a tenant role carrying exactly one permission code. */
-    private void grant(Fixture fixture, String permissionCode) {
-        UUID permissionId = jdbc.queryForObject(
-                "select permission_id from permissions where permission_code = ?", UUID.class, permissionCode);
-        Role role = roleRepository.save(Role.builder()
-                .tenantId(fixture.tenantId())
-                .roleName("wm-endpoint-" + UUID.randomUUID())
-                .description("Watermark endpoint authorization test role")
-                .status(Role.RoleStatus.active)
-                .build());
-        rolePermissionRepository.save(RolePermission.builder()
-                .tenantId(fixture.tenantId())
-                .roleId(role.getRoleId())
-                .permissionId(permissionId)
-                .build());
-        userRoleRepository.save(UserRole.builder()
-                .tenantId(fixture.tenantId())
-                .userId(fixture.userId())
-                .roleId(role.getRoleId())
-                .build());
-    }
 }

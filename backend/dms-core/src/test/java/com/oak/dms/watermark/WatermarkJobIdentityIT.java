@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * test is for.
  */
 @SpringBootTest(properties = "dms.watermark.enabled=true")
-class WatermarkJobIdentityIT {
+class WatermarkJobIdentityIT extends WatermarkFixtures {
 
     @Autowired
     private WatermarkJobRepository repository;
@@ -110,11 +110,11 @@ class WatermarkJobIdentityIT {
     }
 
     private UUID tenant() {
-        return tenantRepository.save(Tenant.builder()
+        return trackTenant(tenantRepository.save(Tenant.builder()
                 .tenantName("Watermark job id test tenant " + UUID.randomUUID())
                 .domain("watermark-job-id-test-" + UUID.randomUUID() + ".invalid")
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
-                .build()).getTenantId();
+                .build()).getTenantId());
     }
 }

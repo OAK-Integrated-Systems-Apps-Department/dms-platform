@@ -70,8 +70,8 @@ public class PdfWatermarkService implements WatermarkFormatService {
     private final WatermarkProperties properties;
 
     @Override
-    public boolean supports(String mimeType) {
-        return MIME_PDF.equals(mimeType);
+    public java.util.Set<String> mimeTypes() {
+        return java.util.Set.of(MIME_PDF);
     }
 
     @Override

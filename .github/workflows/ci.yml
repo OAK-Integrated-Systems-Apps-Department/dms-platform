@@ -234,7 +234,7 @@ jobs:
                 printf "  %-6s %s\n" "$lang" "$(fc-list :lang=$lang | wc -l)"
               done
               ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test \
-                -Dtest="WatermarkRendererTest,FontProviderTest,FontProviderConcurrencyTest,ExifOrientationTest,ImageWatermarkServiceTest,PdfWatermarkServiceTest,WatermarkAvailabilityTest,TextSanitizerTest" \
+                -Dtest="WatermarkRendererTest,FontProviderTest,FontProviderConcurrencyTest,ExifOrientationTest,ImageWatermarkServiceTest,PdfWatermarkServiceTest,DocxWatermarkServiceTest,XlsxWatermarkServiceTest,PptxWatermarkServiceTest,WatermarkServiceFactoryTest,WatermarkAvailabilityTest,TextSanitizerTest" \
                 -Dsurefire.failIfNoSpecifiedTests=false
             '
 

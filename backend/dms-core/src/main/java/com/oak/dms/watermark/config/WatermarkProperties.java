@@ -130,9 +130,38 @@ public class WatermarkProperties {
         private int renderDpi = 150;
         /** Hard ceiling on the rendered tile, whatever the page size and DPI work out to. */
         private long maxRenderPixels = 16_000_000L;
-        /** OOXML zip-bomb guards (ZipSecureFile). */
+        /**
+         * Sections a Word document may have before it is refused.
+         * <p>
+         * There is no page cap for docx, and there cannot be one: a .docx
+         * stores no page count and no page breaks that a reader could
+         * count - pagination is decided by whatever lays the document out,
+         * which is why Word shows "calculating page numbers". Sections are
+         * the thing that actually costs work here, because each one has its
+         * own page size and its own set of headers to stamp.
+         */
+        private int maxSections = 100;
+
+        /**
+         * OOXML package guards, applied by {@code OoxmlGuards} on the bytes
+         * themselves. These are NOT POI's {@code ZipSecureFile} statics -
+         * see that class for why those are left alone.
+         */
         private double minInflateRatio = 0.001d;
         private DataSize maxZipEntrySize = DataSize.ofMegabytes(256);
+        /** Hard ceiling on total inflated size, whatever the ratio allows. */
+        private DataSize maxUncompressedBytes = DataSize.ofMegabytes(300);
+        private int maxZipEntries = 2000;
+
+        /**
+         * How far an Excel watermark may stretch across a sheet. A used
+         * range can be tens of thousands of columns wide; a picture sized
+         * to all of it would be a grey smear nobody could read, and an
+         * enormous one to render.
+         */
+        private int maxSheetWatermarkColumns = 30;
+        private int maxSheetWatermarkRows = 60;
+        private int maxSheetWatermarkPixels = 1600;
     }
 
     /** Both pools - see WatermarkExecutorConfig for why the format pool is the wider one. */

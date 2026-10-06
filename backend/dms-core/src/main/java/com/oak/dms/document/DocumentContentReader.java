@@ -82,6 +82,16 @@ public class DocumentContentReader {
     public VersionDetails describe(UUID documentId, UUID requestedVersion) {
         Document document = visible(documentId);
         DocumentVersion version = version(document, requestedVersion);
+        // The scan gate, applied HERE as well as in VersionContent. Both
+        // matter: VersionContent is what actually refuses to hand over the
+        // bytes, but a caller that only describes a version - to decide
+        // whether to accept a job, say - would otherwise accept work on a
+        // version it will never be allowed to read, and discover that in a
+        // background thread. Checked up front, it is a refusal the person
+        // asking can be told about.
+        if (!version.isServable()) {
+            throw new DocumentNotScannedException(documentId);
+        }
         return new VersionDetails(document.getDocumentId(), version.getVersionId(), version.getVersionNumber(),
                 document.getTitle(), version.getOriginalFilename(), version.getMimeType(), version.getSizeBytes());
     }

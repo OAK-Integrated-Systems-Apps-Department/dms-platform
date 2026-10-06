@@ -163,7 +163,19 @@ public class WatermarkRenderer {
      * PowerPoint and PDF all accept without conversion.
      */
     public byte[] renderPng(WatermarkSpec spec, RenderTarget target) {
-        BufferedImage image = render(spec, target);
+        return encode(render(spec, target));
+    }
+
+    /**
+     * The same, with the font already decided - what the three OOXML
+     * services use, so one document embeds one typeface however many page
+     * geometries it turns out to have.
+     */
+    public byte[] renderPng(WatermarkSpec spec, RenderTarget target, FontChoice font) {
+        return encode(render(spec, target, font));
+    }
+
+    private byte[] encode(BufferedImage image) {
         ByteArrayOutputStream out = new ByteArrayOutputStream(16 * 1024);
         try {
             if (!ImageIO.write(image, "png", out)) {

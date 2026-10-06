@@ -55,7 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the last test here is what proves the distinction holds.
  */
 @SpringBootTest(properties = "dms.watermark.enabled=true")
-class WatermarkTemplateAuthorizationIT {
+class WatermarkTemplateAuthorizationIT extends WatermarkFixtures {
 
     private static final String PATH = "/api/v1/watermark-templates";
     private static final UUID SYSTEM_CONFIDENTIAL = UUID.fromString("d0cc0000-0000-4000-8000-000000000001");
@@ -257,6 +257,7 @@ class WatermarkTemplateAuthorizationIT {
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
                 .build());
+        trackTenant(tenant.getTenantId());
 
         UUID keycloakId = UUID.randomUUID();
         User user = userRepository.save(User.builder()

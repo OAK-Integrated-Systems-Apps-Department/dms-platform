@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the service's own lookup. These tests go at the index directly.
  */
 @SpringBootTest(properties = "dms.watermark.enabled=true")
-class WatermarkJobIdempotencyIT {
+class WatermarkJobIdempotencyIT extends WatermarkFixtures {
 
     @Autowired
     private WatermarkJobRepository repository;
@@ -169,11 +169,11 @@ class WatermarkJobIdempotencyIT {
     }
 
     private UUID tenant() {
-        return tenantRepository.save(Tenant.builder()
+        return trackTenant(tenantRepository.save(Tenant.builder()
                 .tenantName("Watermark idempotency tenant " + UUID.randomUUID())
                 .domain("watermark-idempotency-" + UUID.randomUUID() + ".invalid")
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
-                .build()).getTenantId();
+                .build()).getTenantId());
     }
 }

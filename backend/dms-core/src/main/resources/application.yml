@@ -234,6 +234,13 @@ dms:
     # and its thread abandoned - see WatermarkExecutorConfig.
     format-timeout: ${WATERMARK_FORMAT_TIMEOUT:PT60S}
     stuck-after: ${WATERMARK_STUCK_AFTER:PT15M}
+    # How often expired copies are deleted (WatermarkOutputSweeper). This
+    # shares the one @Scheduled thread with OutboxRelay (every 2s),
+    # RecycleBinService and KeyRotationScheduler, so each run takes a capped
+    # batch and leaves the rest for the next tick rather than holding that
+    # thread. spring.task.scheduling.pool.size is deliberately NOT changed
+    # by this feature.
+    sweep-interval: ${WATERMARK_SWEEP_INTERVAL:PT15M}
     style:
       # The default look, and the range a template or a request may move it
       # within. These are the real guardrails; V68's CHECK constraints are
@@ -261,12 +268,33 @@ dms:
       # Checked from the image header BEFORE decoding - a 50MP decode is
       # ~200MB of int[] whatever the file on disk weighs.
       max-image-pixels: ${WATERMARK_MAX_IMAGE_PIXELS:50000000}
+      # A .docx stores no page count - pagination is decided by whatever
+      # lays the document out - so sections, which are what actually cost
+      # work here, are capped instead.
+      max-sections: ${WATERMARK_MAX_SECTIONS:100}
       max-distinct-page-sizes: ${WATERMARK_MAX_DISTINCT_PAGE_SIZES:4}
       render-dpi: ${WATERMARK_RENDER_DPI:150}
       max-render-pixels: ${WATERMARK_MAX_RENDER_PIXELS:16000000}
-      # Zip-bomb guards for OOXML (ZipSecureFile), which POI applies globally.
+      # OOXML package guards, applied by OoxmlGuards on the bytes before POI
+      # opens anything. These are NOT POI's ZipSecureFile statics: those are
+      # JVM-wide and shared with DocumentFingerprints and the import
+      # templates, so this feature does not touch them. POI's own defaults
+      # (min inflate ratio 0.01, max entry 4GB, max 1000 entries) stay in
+      # force underneath. Note 0.01 is STRICTER than the 0.001 here, which
+      # is why applying our value globally would have loosened the guard for
+      # everyone else; what POI does not bound tightly is total inflated
+      # size, and max-uncompressed-bytes is what covers that.
       min-inflate-ratio: ${WATERMARK_MIN_INFLATE_RATIO:0.001}
       max-zip-entry-size: ${WATERMARK_MAX_ZIP_ENTRY_SIZE:256MB}
+      max-uncompressed-bytes: ${WATERMARK_MAX_UNCOMPRESSED_BYTES:300MB}
+      max-zip-entries: ${WATERMARK_MAX_ZIP_ENTRIES:2000}
+      # How far an Excel watermark may stretch. A used range is routinely
+      # tens of thousands of columns wide because somebody formatted a whole
+      # row once; a picture sized to all of it would be an unreadable smear
+      # and enormous to render.
+      max-sheet-watermark-columns: ${WATERMARK_MAX_SHEET_COLUMNS:30}
+      max-sheet-watermark-rows: ${WATERMARK_MAX_SHEET_ROWS:60}
+      max-sheet-watermark-pixels: ${WATERMARK_MAX_SHEET_PIXELS:1600}
     executor:
       job-core-size: ${WATERMARK_JOB_CORE_SIZE:2}
       job-max-size: ${WATERMARK_JOB_MAX_SIZE:2}

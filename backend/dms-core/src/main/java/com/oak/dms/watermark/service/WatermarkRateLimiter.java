@@ -48,6 +48,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class WatermarkRateLimiter {
 
     private static final String KEY_PREFIX = "dms:watermark:rate:";
+    /** Ceiling on the Redis-is-down fallback map - see evictStale. */
+    private static final int MAX_LOCAL_WINDOWS = 50_000;
 
     private final StringRedisTemplate redis;
     private final WatermarkProperties properties;
@@ -131,13 +133,42 @@ public class WatermarkRateLimiter {
         Window current = localWindows.compute(key, (ignored, existing) ->
                 existing == null || now - existing.startedAt >= window.toMillis()
                         ? new Window(now) : existing);
-        if (localWindows.size() > 10_000) {
-            // The key includes the window start, so entries are naturally
-            // short-lived; this only stops an unbounded accumulation if
-            // Redis stays down for a long time.
-            localWindows.entrySet().removeIf(entry -> now - entry.getValue().startedAt >= window.toMillis());
-        }
+        evictStale(now, window);
         return current.count.incrementAndGet();
+    }
+
+    /**
+     * Keeps the fallback map bounded.
+     * <p>
+     * Every key carries its window's start, so a new window means a new key
+     * and the old one is dead the moment it rolls over - the map would
+     * otherwise grow by one entry per (user, address, window) for as long as
+     * Redis is down. That is attacker-influenced: the address half of the
+     * key comes from a header, so an unbounded map here would be a memory
+     * leak somebody could drive.
+     * <p>
+     * Swept on roughly 1 request in 64 rather than on every one, and with a
+     * hard ceiling that clears everything if a sweep ever fails to keep up.
+     * Same opportunistic approach as {@code LoginAttemptLimiter}: exactness
+     * is not worth a background thread for a counter that resets on a timer
+     * anyway.
+     */
+    private void evictStale(long now, Duration window) {
+        boolean overCeiling = localWindows.size() > MAX_LOCAL_WINDOWS;
+        if (!overCeiling && (now & 0x3F) != 0) {
+            return;
+        }
+        localWindows.entrySet().removeIf(entry -> now - entry.getValue().startedAt >= window.toMillis());
+        if (localWindows.size() > MAX_LOCAL_WINDOWS) {
+            // Everything in the map is from the CURRENT window, so nothing
+            // is stale and the sweep freed nothing. Dropping the lot resets
+            // every counter, which briefly lets through more than the limit
+            // - the right trade against unbounded growth, and only reachable
+            // while Redis is down and under heavy, spread-out load.
+            log.warn("Watermark preview fallback limiter exceeded {} live windows - resetting its counters",
+                    MAX_LOCAL_WINDOWS);
+            localWindows.clear();
+        }
     }
 
     /**
@@ -163,9 +194,32 @@ public class WatermarkRateLimiter {
     }
 
     /**
-     * The first address in {@code X-Forwarded-For}, or the socket's. Only
-     * used as a rate-limit bucket - it is never an authorisation decision,
-     * so a spoofed header costs its owner their own quota and nothing more.
+     * The first entry of {@code X-Forwarded-For}, falling back to the socket
+     * address - the same rule {@code LoginAttemptLimiter} and
+     * {@code AuditRequestContextFilter} already use, deliberately, so there
+     * is one answer in this codebase to "who is this request from?".
+     *
+     * <h3>Whether that header can be trusted</h3>
+     * {@code server.forward-headers-strategy} is NOT set, so Spring does not
+     * process forwarded headers and {@code getRemoteAddr()} is the proxy,
+     * not the client - which is why the header is read directly here rather
+     * than relying on the container.
+     * <p>
+     * The header is trustworthy because of what the edge does with it:
+     * {@code infra/production/nginx/dms.conf} sets
+     * {@code proxy_set_header X-Forwarded-For $remote_addr} - note
+     * {@code $remote_addr}, not {@code $proxy_add_x_forwarded_for} - so
+     * nginx OVERWRITES whatever a client sent with the socket peer it
+     * actually saw. A client cannot inject its own value through that edge.
+     * <p>
+     * Behind a different edge that appends rather than overwrites, the first
+     * entry becomes client-supplied and this bucket becomes spoofable. The
+     * consequence is bounded and worth stating: a spoofer spreads their own
+     * requests across buckets, so they evade the per-IP limit. They do not
+     * evade the per-user limit, the active-job cap or the executor queue,
+     * and they cannot cause anyone ELSE to be throttled by more than their
+     * own share. This is a rate-limit bucket, never an authorisation
+     * decision.
      */
     private static String clientAddress(HttpServletRequest request) {
         if (request == null) {

@@ -255,16 +255,35 @@ class WatermarkServiceIT extends WatermarkFixtures {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    /**
+     * The two jobs that fill the cap are seeded as rows rather than
+     * requested through the service. Once a real worker exists, a requested
+     * job is picked up immediately and is no longer active by the time the
+     * third request arrives - so asking for three in a row would be a race
+     * that passes or fails on how fast the pool happens to be. What the cap
+     * actually promises is about the state of the rows, and this asserts
+     * exactly that.
+     */
     @Test
     void theActiveJobCapIsEnforced() {
         Fixture fixture = fixture();
-        watermarkService.apply(fixture.documentId(), customText("ONE"), null);
-        watermarkService.apply(fixture.documentId(), customText("TWO"), null);
+        seedActiveJob(fixture, "pending");
+        seedActiveJob(fixture, "processing");
 
         assertThatThrownBy(() -> watermarkService.apply(fixture.documentId(), customText("THREE"), null))
                 .isInstanceOf(WatermarkException.class)
                 .extracting(e -> ((WatermarkException) e).getStatus())
                 .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    /** A job row of the user's that is in flight and will stay that way. */
+    private void seedActiveJob(Fixture fixture, String status) {
+        jdbc.update("""
+                insert into watermark_jobs (job_id, tenant_id, requested_by, document_id, version_id,
+                                            source, status, request_snapshot, created_at, updated_at)
+                values (?, ?, ?, ?, ?, 'USER_REQUEST', ?, '{}'::jsonb, now(), now())
+                """, UUID.randomUUID(), fixture.tenantId(), fixture.userId(),
+                fixture.documentId(), fixture.versionId(), status);
     }
 
     // ------------------------------------------------------ idempotency

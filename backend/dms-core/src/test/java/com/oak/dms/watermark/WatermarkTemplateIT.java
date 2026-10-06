@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * into) another test sharing this suite's Postgres.
  */
 @SpringBootTest(properties = "dms.watermark.enabled=true")
-class WatermarkTemplateIT {
+class WatermarkTemplateIT extends WatermarkFixtures {
 
     /** Seeded by V68 with a fixed id so it is the same row in every environment. */
     private static final UUID SYSTEM_CONFIDENTIAL = UUID.fromString("d0cc0000-0000-4000-8000-000000000001");
@@ -294,6 +294,7 @@ class WatermarkTemplateIT {
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
                 .build());
+        trackTenant(tenant.getTenantId());
 
         UUID keycloakId = UUID.randomUUID();
         User user = userRepository.save(User.builder()
@@ -308,12 +309,6 @@ class WatermarkTemplateIT {
                 .build());
 
         return new TenantFixture(tenant.getTenantId(), user.getUserId());
-    }
-
-    private int auditCount(String action, UUID objectId) {
-        Integer count = jdbc.queryForObject("select count(*) from audit_events where action = ? and object_id = ?",
-                Integer.class, action, objectId);
-        return count == null ? 0 : count;
     }
 
     private record TenantFixture(UUID tenantId, UUID userId) {

@@ -66,8 +66,8 @@ public class ImageWatermarkService implements WatermarkFormatService {
     private final WatermarkProperties properties;
 
     @Override
-    public boolean supports(String mimeType) {
-        return MIME_JPEG.equals(mimeType) || MIME_PNG.equals(mimeType);
+    public java.util.Set<String> mimeTypes() {
+        return java.util.Set.of(MIME_JPEG, MIME_PNG);
     }
 
     @Override

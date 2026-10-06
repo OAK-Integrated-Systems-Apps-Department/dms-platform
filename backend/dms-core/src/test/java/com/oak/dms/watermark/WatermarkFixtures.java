@@ -18,6 +18,7 @@ import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import com.oak.dms.watermark.dto.WatermarkRequest;
 import org.junit.jupiter.api.AfterEach;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,8 +31,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -97,9 +101,169 @@ abstract class WatermarkFixtures {
         transactions = new TransactionTemplate(transactionManager);
     }
 
+    @Autowired
+    protected com.oak.dms.security.rbac.repository.RoleRepository roleRepository;
+    @Autowired
+    protected com.oak.dms.security.rbac.repository.RolePermissionRepository rolePermissionRepository;
+    @Autowired
+    protected com.oak.dms.security.rbac.repository.UserRoleRepository userRoleRepository;
+
+    /**
+     * Gives this fixture's user one permission, through a real role.
+     * <p>
+     * Needed by any test that goes through HTTP: the endpoints are
+     * @PreAuthorize-guarded, and the fixture user is an ordinary user with
+     * no roles, so without this every request is a 403 before the feature
+     * is reached. Service-level tests do not need it - document ownership
+     * is enough there - which is why the two look inconsistent.
+     * <p>
+     * The role is tenant-scoped, so the fixture cleanup removes it with
+     * everything else.
+     */
+    protected void grant(Fixture fixture, String permissionCode) {
+        UUID permissionId = jdbc.queryForObject(
+                "select permission_id from permissions where permission_code = ?", UUID.class, permissionCode);
+        com.oak.dms.security.rbac.entity.Role role = roleRepository.save(
+                com.oak.dms.security.rbac.entity.Role.builder()
+                        .tenantId(fixture.tenantId())
+                        .roleName("wm-test-" + UUID.randomUUID())
+                        .description("Watermark test role")
+                        .status(com.oak.dms.security.rbac.entity.Role.RoleStatus.active)
+                        .build());
+        rolePermissionRepository.save(com.oak.dms.security.rbac.entity.RolePermission.builder()
+                .tenantId(fixture.tenantId()).roleId(role.getRoleId()).permissionId(permissionId).build());
+        userRoleRepository.save(com.oak.dms.security.rbac.entity.UserRole.builder()
+                .tenantId(fixture.tenantId()).userId(fixture.userId()).roleId(role.getRoleId()).build());
+    }
+
+    /** Every tenant this test made, so it can take them away again. */
+    private final List<UUID> createdTenants = new ArrayList<>();
+
+    /**
+     * Registers a tenant for cleanup. Tests that build their own tenants
+     * rather than using {@link #fixture()} call this, so every watermark
+     * test leaves the database as it found it regardless of how it got
+     * there.
+     */
+    protected UUID trackTenant(UUID tenantId) {
+        createdTenants.add(tenantId);
+        return tenantId;
+    }
+
+    /**
+     * Removes everything the test created.
+     * <p>
+     * The suite shares one database, and several ITs assert on tables that
+     * are global rather than tenant-scoped - {@code TenantAdministrationIT}
+     * pages through ALL tenants, for instance. A watermark test that leaves
+     * a few dozen tenants behind doesn't fail itself; it fails somebody
+     * else's test, intermittently, depending on execution order. That is a
+     * miserable thing to debug, so these tests clean up after themselves
+     * rather than relying on CI starting from an empty database.
+     * <p>
+     * Deleted in dependency order with SQL rather than repositories: the
+     * rows cross several modules' entities, and this is bookkeeping, not
+     * behaviour under test.
+     */
     @AfterEach
-    void clearTenantContext() {
+    void removeWhatThisTestCreated() {
         TenantContext.clear();
+        for (UUID tenantId : createdTenants) {
+            waitForJobsToSettle(tenantId);
+            deleteEverythingOf(tenantId);
+        }
+        createdTenants.clear();
+    }
+
+    /**
+     * Up to three attempts, because a job that finished between the settle
+     * check and the delete can still write one last audit row. Each attempt
+     * is a whole transaction, so a partial delete is never left behind.
+     */
+    private void deleteEverythingOf(UUID tenantId) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                // One transaction for the lot. documents and
+                // document_versions point at each other, and
+                // documents.latest_version_id is NOT NULL - so neither can be
+                // emptied first, and nulling the pointers isn't allowed
+                // either. The DEFERRABLE INITIALLY DEFERRED keys make both
+                // deletes legal as long as they commit together.
+                transactions.executeWithoutResult(status -> {
+                    for (String statement : new String[]{
+                            "delete from watermark_jobs where tenant_id = ?",
+                            "delete from watermark_templates where tenant_id = ?",
+                            "delete from audit_events where tenant_id = ?",
+                            "delete from document_metadata where document_id in "
+                                    + "(select document_id from documents where tenant_id = ?)",
+                            "delete from document_access where document_id in "
+                                    + "(select document_id from documents where tenant_id = ?)",
+                            "delete from scan_results where tenant_id = ?",
+                            "delete from document_versions where tenant_id = ?",
+                            "delete from documents where tenant_id = ?",
+                            "delete from document_types where tenant_id = ?",
+                            "delete from user_roles where tenant_id = ?",
+                            "delete from role_permissions where tenant_id = ?",
+                            "delete from roles where tenant_id = ?",
+                            "delete from storage_object_keys where tenant_id = ?",
+                            "delete from storage_locations where tenant_id = ?",
+                            "delete from users where tenant_id = ?",
+                            "delete from tenants where tenant_id = ?"}) {
+                        jdbc.update(statement, tenantId);
+                    }
+                });
+                return;
+            } catch (RuntimeException e) {
+                if (attempt == 3) {
+                    // A cleanup failure must not turn a passing test red, or
+                    // mask the real failure of a failing one. It is reported
+                    // so a growing database doesn't stay mysterious.
+                    LoggerFactory.getLogger(WatermarkFixtures.class)
+                            .warn("Could not clean up watermark test tenant {}: {}", tenantId, e.toString());
+                    return;
+                }
+                sleepBriefly();
+            }
+        }
+    }
+
+    /**
+     * Waits for the tenant's jobs to stop running before anything is
+     * deleted.
+     * <p>
+     * The worker is asynchronous, so a test can return while its job is
+     * still finishing. The cleanup would then delete {@code audit_events}
+     * and {@code storage_object_keys}, the worker would write its
+     * completion audit and its staged output a moment later, and the final
+     * {@code delete from tenants} would fail on a foreign key to a row that
+     * did not exist when the delete started - leaving the whole tenant
+     * behind. That showed up as exactly two leftover tenants per full run,
+     * from whichever tests happened to lose the race.
+     * <p>
+     * Deliberately silent on timeout: a test that means to leave a job
+     * running forever is a legitimate test (see
+     * {@code WatermarkWorkerFailureIT}), and cleanup is not the place to
+     * fail it. The retry around the deletes covers what is left.
+     */
+    private void waitForJobsToSettle(UUID tenantId) {
+        Instant deadline = Instant.now().plusSeconds(15);
+        while (Instant.now().isBefore(deadline)) {
+            Integer running = jdbc.queryForObject(
+                    "select count(*) from watermark_jobs where tenant_id = ? and status in ('pending', 'processing')",
+                    Integer.class, tenantId);
+            if (running == null || running == 0) {
+                return;
+            }
+            sleepBriefly();
+        }
+    }
+
+    private static void sleepBriefly() {
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     protected record Fixture(UUID tenantId, UUID userId, String username, UUID documentId, UUID versionId,
@@ -118,13 +282,23 @@ abstract class WatermarkFixtures {
         return fixture(filename, mimeType, -1);
     }
 
+    /** Same fixture with content of the caller's choosing - a real PDF or image. */
+    protected Fixture fixtureWithContent(String filename, String mimeType, byte[] content) {
+        return fixture(filename, mimeType, -1, content);
+    }
+
     protected Fixture fixture(String filename, String mimeType, long declaredSize) {
+        return fixture(filename, mimeType, declaredSize, minimalPdf());
+    }
+
+    private Fixture fixture(String filename, String mimeType, long declaredSize, byte[] content) {
         Tenant tenant = tenantRepository.save(Tenant.builder()
                 .tenantName("Watermark test tenant " + UUID.randomUUID())
                 .domain("watermark-test-" + UUID.randomUUID() + ".invalid")
                 .subscriptionTier("standard")
                 .status(Tenant.TenantStatus.active)
                 .build());
+        createdTenants.add(tenant.getTenantId());
 
         UUID keycloakId = UUID.randomUUID();
         User user = userRepository.save(User.builder()
@@ -164,7 +338,6 @@ abstract class WatermarkFixtures {
                 .typeName("Watermark test type " + suffix)
                 .build());
 
-        byte[] content = minimalPdf();
         long size = declaredSize >= 0 ? declaredSize : content.length;
         UUID documentId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
