@@ -190,6 +190,102 @@ dms:
     max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
     max-export-size: ${EXPORT_MAX_SIZE:2GB}
     max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
+  # Document watermarking (module DW, V68): a watermarked COPY of a document
+  # in its own format. The original is never touched. See WatermarkProperties.
+  watermark:
+    # OFF by default. While off the endpoints are not mapped at all, so they
+    # answer 404. Not the same as the startup font probe failing, which
+    # leaves them mapped and answers 503 WATERMARK_UNAVAILABLE - the
+    # difference tells an operator "not switched on" from "switched on but
+    # the image has no fonts" (see the Dockerfile).
+    enabled: ${WATERMARK_ENABLED:false}
+    # How long a produced copy is kept before WatermarkOutputSweeper deletes
+    # it. Short on purpose: the copy carries a person's name and is a second
+    # place the document's content exists.
+    output-ttl: ${WATERMARK_OUTPUT_TTL:PT24H}
+    max-active-jobs-per-user: ${WATERMARK_MAX_ACTIVE_JOBS_PER_USER:2}
+    # Largest source file per format, checked against DocumentVersion.sizeBytes
+    # BEFORE anything is read. Per format because the cost is not the file,
+    # it is what the library does with it.
+    #
+    # Heap arithmetic, worst case per job: the source byte[] + the output
+    # byte[] + the library's working set. POI holds an OOXML file in memory
+    # several times over (~5-8x for xlsx, less for docx/pptx); PDFBox reads
+    # a PDF far more lazily (~2x). With executor.job-max-size 2 that is
+    #   xlsx  10MB x 8 x 2 threads ~= 160MB
+    #   pptx  15MB x 5 x 2 threads ~= 150MB
+    #   docx  25MB x 4 x 2 threads ~= 200MB
+    #   pdf   25MB x 3 x 2 threads ~= 150MB
+    # so roughly 200MB of headroom covers the worst case. Raise a format's
+    # cap only together with the container's memory limit.
+    #
+    # NOTE: the 10MB xlsx cap is BELOW the 20MB file size the p95-under-5s
+    # target was written against. A spreadsheet between 10MB and 20MB is
+    # refused with 413 rather than being slow. Raise xlsx (and the heap) if
+    # real tenants have workbooks that large.
+    max-bytes:
+      pdf: ${WATERMARK_MAX_BYTES_PDF:25MB}
+      docx: ${WATERMARK_MAX_BYTES_DOCX:25MB}
+      xlsx: ${WATERMARK_MAX_BYTES_XLSX:10MB}
+      pptx: ${WATERMARK_MAX_BYTES_PPTX:15MB}
+      image: ${WATERMARK_MAX_BYTES_IMAGE:25MB}
+    default-max-bytes: ${WATERMARK_DEFAULT_MAX_BYTES:25MB}
+    # POI and PDFBox cannot be interrupted, so a job that overruns is failed
+    # and its thread abandoned - see WatermarkExecutorConfig.
+    format-timeout: ${WATERMARK_FORMAT_TIMEOUT:PT60S}
+    stuck-after: ${WATERMARK_STUCK_AFTER:PT15M}
+    style:
+      # The default look, and the range a template or a request may move it
+      # within. These are the real guardrails; V68's CHECK constraints are
+      # deliberately wider, so tightening these is a config change.
+      font-size: ${WATERMARK_FONT_SIZE:40}
+      min-font-size: ${WATERMARK_MIN_FONT_SIZE:8}
+      max-font-size: ${WATERMARK_MAX_FONT_SIZE:200}
+      # Floor is 5, never 0: an invisible watermark is worse than none,
+      # because the person who asked believes their copy is marked.
+      opacity: ${WATERMARK_OPACITY:25}
+      min-opacity: ${WATERMARK_MIN_OPACITY:5}
+      max-opacity: ${WATERMARK_MAX_OPACITY:100}
+      rotation: ${WATERMARK_ROTATION:-45}
+      min-rotation: ${WATERMARK_MIN_ROTATION:-90}
+      max-rotation: ${WATERMARK_MAX_ROTATION:90}
+      color: ${WATERMARK_COLOR:#808080}
+      placement: ${WATERMARK_PLACEMENT:tiled}
+      page-scope: ${WATERMARK_PAGE_SCOPE:all-pages}
+      max-text-length: ${WATERMARK_MAX_TEXT_LENGTH:200}
+      max-token-length: ${WATERMARK_MAX_TOKEN_LENGTH:64}
+    limits:
+      max-pages: ${WATERMARK_MAX_PAGES:2000}
+      max-sheets: ${WATERMARK_MAX_SHEETS:200}
+      max-slides: ${WATERMARK_MAX_SLIDES:500}
+      # Checked from the image header BEFORE decoding - a 50MP decode is
+      # ~200MB of int[] whatever the file on disk weighs.
+      max-image-pixels: ${WATERMARK_MAX_IMAGE_PIXELS:50000000}
+      max-distinct-page-sizes: ${WATERMARK_MAX_DISTINCT_PAGE_SIZES:4}
+      render-dpi: ${WATERMARK_RENDER_DPI:150}
+      max-render-pixels: ${WATERMARK_MAX_RENDER_PIXELS:16000000}
+      # Zip-bomb guards for OOXML (ZipSecureFile), which POI applies globally.
+      min-inflate-ratio: ${WATERMARK_MIN_INFLATE_RATIO:0.001}
+      max-zip-entry-size: ${WATERMARK_MAX_ZIP_ENTRY_SIZE:256MB}
+    executor:
+      job-core-size: ${WATERMARK_JOB_CORE_SIZE:2}
+      job-max-size: ${WATERMARK_JOB_MAX_SIZE:2}
+      # Full queue is a 503 with Retry-After, not a silent wait.
+      job-queue-capacity: ${WATERMARK_JOB_QUEUE_CAPACITY:20}
+      # Wider than the job pool on purpose: a thread abandoned by a timeout
+      # is never reclaimed, so an equal-sized pool would stall the feature
+      # after two bad files.
+      format-max-size: ${WATERMARK_FORMAT_MAX_SIZE:4}
+      retry-after: ${WATERMARK_RETRY_AFTER:PT30S}
+    rate-limit:
+      # Redis fixed window, per user and per IP. Fails OPEN if Redis is
+      # unreachable - max-active-jobs-per-user is the hard limit and it is
+      # in the database. The preview endpoint, which creates no job and so
+      # has no such backstop, falls back to an in-memory limiter instead.
+      window: ${WATERMARK_RATE_WINDOW:PT1M}
+      watermarks-per-window: ${WATERMARK_RATE_PER_WINDOW:10}
+      previews-per-window: ${WATERMARK_PREVIEW_RATE_PER_WINDOW:30}
+      preview-fallback-per-window: ${WATERMARK_PREVIEW_FALLBACK_PER_WINDOW:30}
   storage:
     # Backs the single platform-default StorageLocation (tenant_id NULL)
     # that StorageLocationBootstrap creates on startup if none exists yet -

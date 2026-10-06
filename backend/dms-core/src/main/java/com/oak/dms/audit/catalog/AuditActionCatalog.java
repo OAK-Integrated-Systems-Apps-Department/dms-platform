@@ -138,6 +138,13 @@ public final class AuditActionCatalog {
     public static final String EXPORT_REQUESTED = "EXPORT_REQUESTED";
     public static final String EXPORT_COMPLETED = "EXPORT_COMPLETED";
     public static final String EXPORT_DOWNLOADED = "EXPORT_DOWNLOADED";
+    public static final String WATERMARK_TEMPLATE_CREATED = "WATERMARK_TEMPLATE_CREATED";
+    public static final String WATERMARK_TEMPLATE_UPDATED = "WATERMARK_TEMPLATE_UPDATED";
+    public static final String WATERMARK_TEMPLATE_DELETED = "WATERMARK_TEMPLATE_DELETED";
+    public static final String WATERMARK_REQUESTED = "WATERMARK_REQUESTED";
+    public static final String WATERMARK_COMPLETED = "WATERMARK_COMPLETED";
+    public static final String WATERMARK_FAILED = "WATERMARK_FAILED";
+    public static final String WATERMARK_RESULT_DOWNLOADED = "WATERMARK_RESULT_DOWNLOADED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -370,7 +377,27 @@ public final class AuditActionCatalog {
             // DOCUMENT_DOWNLOADED, with {"via": "bulk_export"}.
             Map.entry(EXPORT_REQUESTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
-            Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false))
+            Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false)),
+
+            // Watermarking (WatermarkTemplateService / WatermarkService /
+            // WatermarkJobWorker) - module DW, the module code V7 seeded for
+            // it. Template changes are MEDIUM: they decide what every future
+            // copy will say, but affect no copy already produced.
+            Map.entry(WATERMARK_TEMPLATE_CREATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_UPDATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_DELETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            // REQUESTED carries the resolved text and is written in the
+            // request thread, which is the only place impersonation is
+            // captured - the worker runs as the effective user with no
+            // "acting as" of its own, so the two later events reference the
+            // job id and join back to this one.
+            Map.entry(WATERMARK_REQUESTED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_COMPLETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_FAILED, new AuditActionSpec("DW", AuditSeverity.LOW, false)),
+            // HIGH for the same reason as EXPORT_DOWNLOADED: this is the
+            // moment a copy of a document leaves the system - one carrying
+            // the name of the person who took it.
+            Map.entry(WATERMARK_RESULT_DOWNLOADED, new AuditActionSpec("DW", AuditSeverity.HIGH, false))
     );
 
     private AuditActionCatalog() {

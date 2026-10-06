@@ -135,4 +135,16 @@ public final class PermissionCodes {
     // viewing it on-screen, and the seeded catalog (V10) already reserves a
     // separate code for it rather than folding it into "view".
     public static final String ABDR_EXPORT_AUDIT_REPORTS = "abdr.export-audit-reports";
+
+    // Document Watermarking - DW. Both codes were seeded by V10 and the
+    // module by V7, long before any Java referenced them. Phase 1 uses only
+    // these two: APPLYING a watermark is gated on DOCM_DOCUMENTS_VIEW (plus
+    // the folder's own view level, and DVC_VERSIONS_VIEW when the request
+    // names a specific version), because a watermarked copy shows the
+    // person exactly what an ordinary download already would.
+    // The catalogue has no delete-template code and this deliberately
+    // doesn't add one - deleting reuses UPDATE, see
+    // WatermarkTemplateService#delete for the reasoning.
+    public static final String DW_WATERMARK_TEMPLATE_CREATE = "dw.configure-watermark-policy.create-template";
+    public static final String DW_WATERMARK_TEMPLATE_UPDATE = "dw.configure-watermark-policy.update-template";
 }
