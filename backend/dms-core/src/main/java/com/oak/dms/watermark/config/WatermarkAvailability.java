@@ -4,7 +4,6 @@ import com.oak.dms.watermark.exception.WatermarkException;
 import com.oak.dms.watermark.format.FontProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -38,10 +37,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(prefix = "dms.watermark", name = "enabled", havingValue = "true")
 public class WatermarkAvailability {
 
     private final FontProvider fontProvider;
+    private final WatermarkProperties properties;
     /**
      * Optimistic until the probe says otherwise: the probe runs after the
      * context is ready, and a request arriving in that window should be
@@ -49,12 +48,29 @@ public class WatermarkAvailability {
      */
     private final AtomicBoolean fontsUsable = new AtomicBoolean(true);
 
-    public WatermarkAvailability(FontProvider fontProvider) {
+    public WatermarkAvailability(FontProvider fontProvider, WatermarkProperties properties) {
         this.fontProvider = fontProvider;
+        this.properties = properties;
     }
 
+    /**
+     * Deliberately NOT {@code @ConditionalOnProperty}. The bean exists
+     * whether or not the feature is switched on, because
+     * {@code WatermarkService} depends on it and making that conditional too
+     * would mean annotating every bean in the module - and getting one wrong
+     * breaks the whole application context for everybody, which is how this
+     * was found: an unrelated test that runs with the flag off stopped
+     * loading. The flag is enforced where it is visible, on the controllers.
+     * <p>
+     * The probe itself is skipped when the feature is off, so a deployment
+     * that doesn't use watermarking pays nothing for the fonts at startup.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void probeFonts() {
+        if (!properties.isEnabled()) {
+            log.debug("Watermarking is disabled - skipping the font probe");
+            return;
+        }
         boolean usable = fontProvider.probe();
         fontsUsable.set(usable);
         if (!usable) {

@@ -28,6 +28,13 @@ import static org.mockito.Mockito.when;
  */
 class WatermarkAvailabilityTest {
 
+    /** The probe only runs when the feature is on - see WatermarkAvailability. */
+    private static WatermarkProperties enabled() {
+        WatermarkProperties properties = new WatermarkProperties();
+        properties.setEnabled(true);
+        return properties;
+    }
+
     @BeforeAll
     static void headless() {
         System.setProperty("java.awt.headless", "true");
@@ -36,7 +43,7 @@ class WatermarkAvailabilityTest {
     @Test
     void aJvmThatCanRenderTextIsAvailableAndLetsRequestsThrough() {
         WatermarkAvailability availability = new WatermarkAvailability(
-                new FontProvider(new WatermarkProperties()));
+                new FontProvider(enabled()), enabled());
         availability.probeFonts();
 
         assertThat(availability.isAvailable()).isTrue();
@@ -48,7 +55,7 @@ class WatermarkAvailabilityTest {
         FontProvider broken = mock(FontProvider.class);
         when(broken.probe()).thenReturn(false);
 
-        WatermarkAvailability availability = new WatermarkAvailability(broken);
+        WatermarkAvailability availability = new WatermarkAvailability(broken, enabled());
         availability.probeFonts();
 
         assertThat(availability.isAvailable()).isFalse();
@@ -67,7 +74,7 @@ class WatermarkAvailabilityTest {
         // should be tried - refusing pre-emptively would make every restart
         // briefly look like an outage.
         WatermarkAvailability availability = new WatermarkAvailability(
-                new FontProvider(new WatermarkProperties()));
+                new FontProvider(enabled()), enabled());
 
         assertThat(availability.isAvailable()).isTrue();
         assertThatCode(availability::require).doesNotThrowAnyException();
@@ -80,7 +87,7 @@ class WatermarkAvailabilityTest {
         WatermarkProperties properties = new WatermarkProperties();
         properties.setFontFamilies(List.of("Definitely Not Installed"));
 
-        assertThatCode(() -> new WatermarkAvailability(new FontProvider(properties)).probeFonts())
+        assertThatCode(() -> new WatermarkAvailability(new FontProvider(properties), properties).probeFonts())
                 .doesNotThrowAnyException();
     }
 }
