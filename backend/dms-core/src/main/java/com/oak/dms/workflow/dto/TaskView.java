@@ -15,6 +15,18 @@ public record TaskView(
         String decision,
         String decisionReason,
         OffsetDateTime actedAt,
-        OffsetDateTime dueAt
+        OffsetDateTime dueAt,
+        /** Original holder of a delegated or reassigned task (null when reassigned from an unclaimed pool). */
+        UserRef delegatedFrom,
+        UserRef delegatedTo,
+        OffsetDateTime delegatedAt,
+        /** The added escalation route; null with escalatedAt set means the target couldn't be used. */
+        UserRef escalatedTo,
+        OffsetDateTime escalatedAt,
+        OffsetDateTime reminderSentAt,
+        /** Set while the task awaits information - its SLA clock is paused. */
+        OffsetDateTime slaPausedAt,
+        int slaPausedSeconds,
+        long openInfoRequestCount
 ) {
 }

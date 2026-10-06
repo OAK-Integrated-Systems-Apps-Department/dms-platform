@@ -13,6 +13,7 @@ public record WorkflowStageResponse(
         Integer reminderBeforeHours,
         String escalationTarget,
         UUID escalationUserId,
+        boolean allowInfoRequests,
         List<ParticipantResponse> participants
 ) {
 }

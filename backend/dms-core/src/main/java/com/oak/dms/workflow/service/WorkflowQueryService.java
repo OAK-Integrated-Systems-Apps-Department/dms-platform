@@ -18,7 +18,12 @@ import java.util.UUID;
  */
 public interface WorkflowQueryService {
 
-    enum MyTasksView { all, assigned, available, claimed }
+    /**
+     * all | assigned (addressed, claimed, delegated or escalated to me) |
+     * available (unclaimed pool tasks) | claimed | waiting (my tasks paused
+     * by an information request).
+     */
+    enum MyTasksView { all, assigned, available, claimed, waiting }
 
     WorkflowInstanceResponse getInstance(UUID instanceId);
 
@@ -29,4 +34,10 @@ public interface WorkflowQueryService {
     Page<MyTaskResponse> myTasks(MyTasksView view, Pageable pageable);
 
     MyTaskCountResponse myTaskCount();
+
+    /**
+     * 404 for another tenant's instance, 403 (AccessDeniedException) unless
+     * the caller may see it - the same rule as {@link #getInstance}.
+     */
+    void requireVisible(UUID instanceId);
 }

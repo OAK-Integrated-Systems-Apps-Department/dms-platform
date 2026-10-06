@@ -55,6 +55,12 @@ public final class AuditObjectTypes {
     public static final String WORKFLOW_INSTANCE = "WORKFLOW_INSTANCE";
     /** One approver task (workflow_tasks) - claim/release/approve/reject events. */
     public static final String WORKFLOW_TASK = "WORKFLOW_TASK";
+    /** One information request (workflow_info_requests) - every WORKFLOW_INFO_* event. */
+    public static final String WORKFLOW_INFO_REQUEST = "WORKFLOW_INFO_REQUEST";
+    /** Evidence attached to a workflow run (workflow_supporting_documents). */
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT = "WORKFLOW_SUPPORTING_DOCUMENT";
+    /** A comment on a document (document_comments) - every DOCUMENT_COMMENT_* event. */
+    public static final String DOCUMENT_COMMENT = "DOCUMENT_COMMENT";
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

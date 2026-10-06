@@ -207,6 +207,22 @@ class WorkflowTemplateIT extends WorkflowApiSupport {
     }
 
     @Test
+    void allowInfoRequests_defaultsOn_isStored_andIsCopiedToANewVersion() throws Exception {
+        UUID v1 = draft("INFOREQ");
+        JsonNode open = addStage(v1, legalStage("Open"), 201);
+        Map<String, Object> closed = legalStage("Closed");
+        closed.put("allowInfoRequests", false);
+        JsonNode both = addStage(v1, closed, 201);
+        assertThat(open.get("stages").get(0).get("allowInfoRequests").asBoolean()).isTrue();
+        assertThat(both.get("stages").get(1).get("allowInfoRequests").asBoolean()).isFalse();
+
+        adminPost("/api/v1/workflow/templates/" + v1 + "/activate", w.admin(), null, 200);
+        JsonNode v2 = adminPost("/api/v1/workflow/templates/" + v1 + "/versions", w.admin(), null, 201);
+        assertThat(v2.get("stages").get(0).get("allowInfoRequests").asBoolean()).isTrue();
+        assertThat(v2.get("stages").get(1).get("allowInfoRequests").asBoolean()).isFalse();
+    }
+
+    @Test
     void draftWithoutInstances_canBeDeleted() throws Exception {
         UUID id = draft("THROWAWAY");
         addStage(id, legalStage("Review"), 201);

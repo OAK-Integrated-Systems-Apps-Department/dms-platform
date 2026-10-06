@@ -7,6 +7,8 @@ import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
@@ -45,6 +47,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
+    private final DocumentTypeRepository documentTypeRepository;
     private final StorageLocationRepository storageLocationRepository;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
@@ -68,7 +71,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
-        return documentMapper.toResponse(findOwnedByCallerTenant(documentId));
+        Document document = findOwnedByCallerTenant(documentId);
+        String typeName = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(document.getDocumentTypeId(), document.getTenantId())
+                .map(DocumentType::getTypeName)
+                .orElse(null);
+        return documentMapper.toResponse(document, typeName);
     }
 
     @Override

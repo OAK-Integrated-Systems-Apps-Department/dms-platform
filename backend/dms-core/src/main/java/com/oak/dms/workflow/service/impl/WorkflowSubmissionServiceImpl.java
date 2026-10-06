@@ -2,10 +2,16 @@ package com.oak.dms.workflow.service.impl;
 
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.department.entity.Department;
+import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.security.rbac.entity.Role;
+import com.oak.dms.security.rbac.repository.RoleRepository;
+import com.oak.dms.user.User;
+import com.oak.dms.user.UserRepository;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
@@ -66,6 +72,9 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
     private final AuthorizationService authorizationService;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final DepartmentRepository departmentRepository;
 
     @Override
     @Transactional
@@ -205,8 +214,8 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
                 }
                 Set<UUID> resolved = approverResolver.resolve(tenantId, p, initiatorId);
                 if (resolved.isEmpty()) {
-                    empty.add("stage " + stage.getStageOrder() + " \"" + stage.getName() + "\" (" + p.getAssigneeType()
-                            + " " + p.getAssigneeId() + ")");
+                    empty.add("stage " + stage.getStageOrder() + " \"" + stage.getName() + "\" ("
+                            + describe(tenantId, p) + ")");
                 } else if (everyEntryMustRespond && resolved.size() == 1 && !soleApprovers.add(resolved.iterator().next())) {
                     throw new WorkflowValidationException("WORKFLOW_UNSATISFIABLE_STAGE",
                             "Stage \"" + stage.getName() + "\" needs two entries whose only eligible approver is the same"
@@ -218,5 +227,18 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
             throw new WorkflowValidationException("WORKFLOW_NO_ELIGIBLE_APPROVERS",
                     "Nobody is eligible to approve: " + String.join(", ", empty));
         }
+    }
+
+    /** "role Finance Approvers" - what an admin sees in the template builder, never a raw id (shown in toasts). */
+    private String describe(UUID tenantId, WorkflowStageParticipant p) {
+        String name = switch (p.getAssigneeType()) {
+            case user -> userRepository.findByUserIdAndTenantIdAndDeletedFalse(p.getAssigneeId(), tenantId)
+                    .map(User::getDisplayName).orElse(null);
+            case role -> roleRepository.findByRoleIdAndTenantIdAndDeletedFalse(p.getAssigneeId(), tenantId)
+                    .map(Role::getRoleName).orElse(null);
+            case department -> departmentRepository.findByDepartmentIdAndTenantIdAndDeletedFalse(p.getAssigneeId(), tenantId)
+                    .map(Department::getName).orElse(null);
+        };
+        return p.getAssigneeType() + " " + (name == null ? "(deleted)" : name);
     }
 }

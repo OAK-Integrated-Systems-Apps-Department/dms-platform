@@ -87,6 +87,8 @@ public final class PermissionCodes {
     public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
     public static final String DOCM_DOCUMENTS_VIEW = "docm.documents.view";
     public static final String DOCM_DOCUMENTS_DELETE = "docm.documents.delete";
+    // Writing document comments (V50). Reading them needs DOCM_DOCUMENTS_VIEW.
+    public static final String DOCM_COMMENTS_CREATE = "docm.document-comments.create";
     // Quarantine review (V40) - granted to no role by default.
     // DOCM_QUARANTINE_OVERRIDE is deliberately separate from _RELEASE: it
     // force-releases a file the scanner still flags.
@@ -125,9 +127,12 @@ public final class PermissionCodes {
     public static final String WA_TEMPLATES_TOGGLE_ACTIVE = "wa.configure-workflow-templates.toggle-active";
     public static final String WA_TASK_APPROVE = "wa.approve-reject-workflow-task.approve";
     public static final String WA_TASK_REJECT = "wa.approve-reject-workflow-task.reject";
-    // Phase 2 (delegation/reassign). Phase 1 only mails holders when a stage
-    // has no eligible approver.
+    // An admin moves any open task to another user (Phase 2); holders are
+    // also mailed when a stage has no eligible approver or an escalation
+    // target can't be used.
     public static final String WA_TASK_REASSIGN = "wa.reassign-workflow-task";
+    // The holder of a task pauses it to ask someone for information (V50).
+    public static final String WA_REQUEST_INFORMATION = "wa.request-workflow-information.create";
     // Lets a non-participant (e.g. a compliance reviewer) see any instance's
     // status and timeline.
     public static final String WA_AUDIT_TRAIL_VIEW = "wa.view-workflow-audit-trail.view";

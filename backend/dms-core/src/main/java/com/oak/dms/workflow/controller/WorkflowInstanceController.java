@@ -3,11 +3,14 @@ package com.oak.dms.workflow.controller;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.workflow.dto.CancelWorkflowRequest;
 import com.oak.dms.workflow.dto.SubmitWorkflowRequest;
+import com.oak.dms.workflow.dto.SupportingDocumentInput;
+import com.oak.dms.workflow.dto.SupportingDocumentView;
 import com.oak.dms.workflow.dto.WorkflowActionView;
 import com.oak.dms.workflow.dto.WorkflowInstanceResponse;
 import com.oak.dms.workflow.dto.WorkflowInstanceSummaryResponse;
 import com.oak.dms.workflow.service.WorkflowQueryService;
 import com.oak.dms.workflow.service.WorkflowSubmissionService;
+import com.oak.dms.workflow.service.WorkflowSupportingDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -18,13 +21,16 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -39,6 +45,7 @@ public class WorkflowInstanceController {
 
     private final WorkflowSubmissionService submissionService;
     private final WorkflowQueryService queryService;
+    private final WorkflowSupportingDocumentService supportingDocumentService;
 
     @PostMapping("/workflow/instances")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DLM_SUBMIT_DOCUMENTS_FOR_REVIEW)")
@@ -79,5 +86,30 @@ public class WorkflowInstanceController {
     public PageResponse<WorkflowInstanceSummaryResponse> documentHistory(@PathVariable("documentId") UUID documentId,
             @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(queryService.documentHistory(documentId, pageable));
+    }
+
+    @PostMapping("/workflow/instances/{id}/supporting-documents")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Attach a document as evidence (link an existing one, or one you just uploaded)",
+            description = "Pinned to a version (default: the latest). Participants only. Never routed for approval "
+                    + "and never part of the version-change check.")
+    public ResponseEntity<SupportingDocumentView> addSupportingDocument(@PathVariable("id") UUID id,
+            @Valid @RequestBody SupportingDocumentInput request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(supportingDocumentService.add(id, request));
+    }
+
+    @GetMapping("/workflow/instances/{id}/supporting-documents")
+    @Operation(summary = "Supporting documents of a workflow run",
+            description = "canOpen is false for a viewer without docm.documents.view - they see title and note only.")
+    public List<SupportingDocumentView> supportingDocuments(@PathVariable("id") UUID id) {
+        return supportingDocumentService.list(id);
+    }
+
+    @DeleteMapping("/workflow/instances/{id}/supporting-documents/{supportingDocumentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Remove a supporting document I attached")
+    public void removeSupportingDocument(@PathVariable("id") UUID id,
+                                         @PathVariable("supportingDocumentId") UUID supportingDocumentId) {
+        supportingDocumentService.remove(id, supportingDocumentId);
     }
 }

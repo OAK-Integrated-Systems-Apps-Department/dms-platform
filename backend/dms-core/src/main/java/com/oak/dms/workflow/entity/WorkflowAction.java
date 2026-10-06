@@ -53,6 +53,10 @@ public class WorkflowAction {
     @Column(name = "task_id", updatable = false)
     private UUID taskId;
 
+    /** The information request this entry is about (V48). */
+    @Column(name = "info_request_id", updatable = false)
+    private UUID infoRequestId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "action_type", nullable = false, updatable = false)
     private WorkflowActionType actionType;

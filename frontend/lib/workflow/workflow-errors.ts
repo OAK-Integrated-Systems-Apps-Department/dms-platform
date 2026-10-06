@@ -1,10 +1,11 @@
 import { ApiError, friendlyMessage } from "@/lib/api-error"
 
 /**
- * Friendly copy for the machine-readable `code` the backend puts on a
- * workflow or department error (ErrorResponse.code). The backend's own
- * `message` is accurate but written for developers; these are what a
- * toast shows instead. Codes not listed here fall back to that message.
+ * Fallback copy for the machine-readable `code` the backend puts on a
+ * workflow or department error (ErrorResponse.code). A toast shows the
+ * backend's own `message` whenever there is one, since it carries the
+ * detail (which stage, which approver slot is empty); these are used only
+ * when a coded error arrives without a message.
  */
 const ERROR_MESSAGES: Record<string, string> = {
   // Submitting a document
@@ -52,8 +53,10 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 /** The friendly message for a failed workflow/department call - by `code` when known, else 403 copy or the backend message. */
 export function workflowErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
-  if (error instanceof ApiError && error.code && ERROR_MESSAGES[error.code]) {
-    return ERROR_MESSAGES[error.code]
+  if (error instanceof ApiError && error.code) {
+    // A coded error is a deliberate refusal (including a 403 such as
+    // WORKFLOW_NOT_ASSIGNEE), so its message is meant for the user.
+    return error.message.trim() || ERROR_MESSAGES[error.code] || fallback
   }
   return friendlyMessage(error, fallback)
 }

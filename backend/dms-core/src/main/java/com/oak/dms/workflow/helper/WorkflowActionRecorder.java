@@ -25,11 +25,18 @@ public class WorkflowActionRecorder {
 
     public WorkflowAction record(WorkflowInstance instance, UUID stageInstanceId, UUID taskId,
                                  WorkflowActionType type, UUID actorUserId, String reason, Map<String, Object> detail) {
+        return record(instance, stageInstanceId, taskId, null, type, actorUserId, reason, detail);
+    }
+
+    /** Same, for an entry about an information request (info_*, or a supporting document added in a response). */
+    public WorkflowAction record(WorkflowInstance instance, UUID stageInstanceId, UUID taskId, UUID infoRequestId,
+                                 WorkflowActionType type, UUID actorUserId, String reason, Map<String, Object> detail) {
         return actionRepository.save(WorkflowAction.builder()
                 .tenantId(instance.getTenantId())
                 .instanceId(instance.getInstanceId())
                 .stageInstanceId(stageInstanceId)
                 .taskId(taskId)
+                .infoRequestId(infoRequestId)
                 .actionType(type)
                 .actorUserId(actorUserId)
                 .reason(reason)

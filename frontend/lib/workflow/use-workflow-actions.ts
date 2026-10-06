@@ -4,20 +4,30 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  addSupportingDocument,
   approveTask,
   cancelWorkflowInstance,
   claimTask,
+  declineInfoRequest,
+  delegateTask,
+  raiseInfoRequest,
+  reassignInfoRequest,
+  reassignTask,
   rejectTask,
   releaseTask,
+  removeSupportingDocument,
+  respondInfoRequest,
   submitDocumentToWorkflow,
+  withdrawInfoRequest,
 } from "./api"
-import type { TaskActionResultDto, WorkflowInstanceDto } from "./api"
+import type { SupportingDocumentInput, TaskActionResultDto, WorkflowInstanceDto } from "./api"
 import { INSTANCE_STATUS_LABELS } from "./workflow-badges"
 import { workflowErrorMessage } from "./workflow-errors"
 
 /**
  * Every runtime workflow action - submit, cancel, claim, release, approve,
- * reject. Any of them can change the queue, the badge count, an instance's
+ * reject, and the Phase 2 ones (delegate, reassign, information requests,
+ * supporting documents). Any of them can change the queue, the badge count, an instance's
  * status and a document's history at once, so each success simply
  * invalidates everything under ["workflow"].
  *
@@ -89,6 +99,57 @@ export function useWorkflowActions() {
     reject: async (taskId: string, reason: string) => {
       const result = await run(() => rejectTask(taskId, reason), "Could not reject this task.")
       toastDecision(result, "rejected")
+      return result
+    },
+    delegate: async (taskId: string, delegateUserId: string, note?: string) => {
+      const result = await run(() => delegateTask(taskId, delegateUserId, note), "Could not delegate this task.")
+      if (result) toast.success("Task delegated. You'll no longer see it in your queue.")
+      return result
+    },
+    reassign: async (taskId: string, userId: string, reason: string) => {
+      const result = await run(() => reassignTask(taskId, userId, reason), "Could not reassign this task.")
+      if (result) toast.success("Task reassigned.")
+      return result
+    },
+    requestInfo: async (taskId: string, requestedFromUserId: string, message: string, dueAt?: string | null) => {
+      const result = await run(() => raiseInfoRequest(taskId, requestedFromUserId, message, dueAt), "Could not send the request.")
+      if (result) toast.success("Request sent. Your task is paused until it's answered.")
+      return result
+    },
+    respondInfo: async (infoRequestId: string, message: string | null, documents: SupportingDocumentInput[]) => {
+      const result = await run(() => respondInfoRequest(infoRequestId, message, documents), "Could not send your answer.")
+      if (result) toast.success("Answer sent.")
+      return result
+    },
+    declineInfo: async (infoRequestId: string, reason: string) => {
+      const result = await run(() => declineInfoRequest(infoRequestId, reason), "Could not decline the request.")
+      if (result) toast.success("Request declined.")
+      return result
+    },
+    withdrawInfo: async (infoRequestId: string) => {
+      const result = await run(() => withdrawInfoRequest(infoRequestId), "Could not withdraw the request.")
+      if (result) toast.success("Request withdrawn.")
+      return result
+    },
+    redirectInfo: async (infoRequestId: string, requestedFromUserId: string, reason?: string) => {
+      const result = await run(() => reassignInfoRequest(infoRequestId, requestedFromUserId, reason), "Could not redirect the request.")
+      if (result) toast.success("Request redirected.")
+      return result
+    },
+    attachDocument: async (instanceId: string, input: SupportingDocumentInput) => {
+      const result = await run(() => addSupportingDocument(instanceId, input), "Could not attach the document.")
+      if (result) toast.success("Supporting document attached.")
+      return result
+    },
+    removeDocument: async (instanceId: string, supportingDocumentId: string) => {
+      const result = await run(
+        async () => {
+          await removeSupportingDocument(instanceId, supportingDocumentId)
+          return true
+        },
+        "Could not remove the document."
+      )
+      if (result) toast.success("Supporting document removed.")
       return result
     },
   }

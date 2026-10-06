@@ -136,6 +136,20 @@ public final class AuditActionCatalog {
     public static final String WORKFLOW_CANCELLED = "WORKFLOW_CANCELLED";
     public static final String WORKFLOW_DOCUMENT_VERSION_CHANGED = "WORKFLOW_DOCUMENT_VERSION_CHANGED";
     public static final String WORKFLOW_RESTARTED = "WORKFLOW_RESTARTED";
+    public static final String WORKFLOW_TASK_DELEGATED = "WORKFLOW_TASK_DELEGATED";
+    public static final String WORKFLOW_TASK_REASSIGNED = "WORKFLOW_TASK_REASSIGNED";
+    public static final String WORKFLOW_TASK_REMINDER_SENT = "WORKFLOW_TASK_REMINDER_SENT";
+    public static final String WORKFLOW_TASK_ESCALATED = "WORKFLOW_TASK_ESCALATED";
+    public static final String WORKFLOW_INFO_REQUESTED = "WORKFLOW_INFO_REQUESTED";
+    public static final String WORKFLOW_INFO_PROVIDED = "WORKFLOW_INFO_PROVIDED";
+    public static final String WORKFLOW_INFO_DECLINED = "WORKFLOW_INFO_DECLINED";
+    public static final String WORKFLOW_INFO_CANCELLED = "WORKFLOW_INFO_CANCELLED";
+    public static final String WORKFLOW_INFO_REQUEST_REASSIGNED = "WORKFLOW_INFO_REQUEST_REASSIGNED";
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT_ADDED = "WORKFLOW_SUPPORTING_DOCUMENT_ADDED";
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT_REMOVED = "WORKFLOW_SUPPORTING_DOCUMENT_REMOVED";
+    public static final String DOCUMENT_COMMENT_CREATED = "DOCUMENT_COMMENT_CREATED";
+    public static final String DOCUMENT_COMMENT_UPDATED = "DOCUMENT_COMMENT_UPDATED";
+    public static final String DOCUMENT_COMMENT_DELETED = "DOCUMENT_COMMENT_DELETED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -354,7 +368,24 @@ public final class AuditActionCatalog {
             Map.entry(WORKFLOW_REJECTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
             Map.entry(WORKFLOW_CANCELLED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
             Map.entry(WORKFLOW_DOCUMENT_VERSION_CHANGED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
-            Map.entry(WORKFLOW_RESTARTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false))
+            Map.entry(WORKFLOW_RESTARTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            // Phase 2 (docs/workflow-phase2-plan.md S10). A reassignment by an
+            // admin, a declined request and a cancelled request carry a reason.
+            Map.entry(WORKFLOW_TASK_DELEGATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_REASSIGNED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_TASK_REMINDER_SENT, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_ESCALATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_REQUESTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_PROVIDED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_DECLINED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_INFO_CANCELLED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_INFO_REQUEST_REASSIGNED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_SUPPORTING_DOCUMENT_ADDED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_SUPPORTING_DOCUMENT_REMOVED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            // Document comments - module DOCM. Rows carry ids and length, never the body.
+            Map.entry(DOCUMENT_COMMENT_CREATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_COMMENT_UPDATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

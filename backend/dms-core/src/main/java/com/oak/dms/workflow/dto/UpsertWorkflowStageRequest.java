@@ -26,6 +26,8 @@ public record UpsertWorkflowStageRequest(
         @Min(1) @Max(8759) Integer reminderBeforeHours,
         EscalationTarget escalationTarget,
         UUID escalationUserId,
+        /** Whether approvers may pause their task to request information; null means true (V47 default). */
+        Boolean allowInfoRequests,
         @NotEmpty @Size(max = 50) List<@Valid ParticipantRequest> participants
 ) {
 }

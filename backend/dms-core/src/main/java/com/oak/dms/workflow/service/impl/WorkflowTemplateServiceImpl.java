@@ -219,6 +219,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     .reminderBeforeHours(stage.getReminderBeforeHours())
                     .escalationTarget(stage.getEscalationTarget())
                     .escalationUserId(stage.getEscalationUserId())
+                    .allowInfoRequests(stage.isAllowInfoRequests())
                     .createdBy(userId)
                     .build());
             for (WorkflowStageParticipant p : participants.getOrDefault(stage.getStageId(), List.of())) {
@@ -451,7 +452,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     private void requireActiveDocumentType(UUID documentTypeId, UUID tenantId) {
         DocumentType type = documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId)
                 .orElseThrow(() -> new WorkflowValidationException("WORKFLOW_DOCUMENT_TYPE_INVALID",
-                        "Document type " + documentTypeId + " does not exist"));
+                        "The selected document type does not exist"));
         if (type.getStatus() != DocumentType.DocumentTypeStatus.active) {
             throw new WorkflowValidationException("WORKFLOW_DOCUMENT_TYPE_INVALID",
                     "Document type " + type.getTypeName() + " is inactive");
@@ -494,7 +495,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         };
         if (!ok) {
             throw new WorkflowValidationException("WORKFLOW_INVALID_ASSIGNEE",
-                    "No active " + type + " " + id + " in this tenant");
+                    "The selected " + type + " does not exist or is no longer active");
         }
     }
 
@@ -525,6 +526,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         stage.setReminderBeforeHours(request.reminderBeforeHours());
         stage.setEscalationTarget(target);
         stage.setEscalationUserId(target == EscalationTarget.named_user ? request.escalationUserId() : null);
+        stage.setAllowInfoRequests(request.allowInfoRequests() == null || request.allowInfoRequests());
         return stage;
     }
 
@@ -660,6 +662,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                 .map(s -> new WorkflowStageResponse(s.getStageId(), s.getStageOrder(), s.getName(),
                         s.getCompletionRule().name(), s.getRejectionRule().name(), s.getSlaHours(),
                         s.getReminderBeforeHours(), s.getEscalationTarget().name(), s.getEscalationUserId(),
+                        s.isAllowInfoRequests(),
                         participants.getOrDefault(s.getStageId(), List.of()).stream()
                                 .map(p -> new ParticipantResponse(p.getParticipantId(), p.getAssigneeType().name(),
                                         p.getAssigneeId(), names.get(p.getAssigneeType() + ":" + p.getAssigneeId()),

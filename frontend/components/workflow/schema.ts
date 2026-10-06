@@ -24,8 +24,13 @@ export type CreateTemplateFormValues = z.infer<typeof createTemplateSchema>
 export const updateTemplateSchema = z.object(templateDetailsShape)
 export type UpdateTemplateFormValues = z.infer<typeof updateTemplateSchema>
 
-/** One stage, as edited on its card. Matches UpsertWorkflowStageRequest's limits. */
-export const stageSchema = z.object({
+/**
+ * One stage, as edited on its card. Matches UpsertWorkflowStageRequest's
+ * limits, including the Phase 2 rules: a reminder needs an SLA and comes
+ * before it; a named-user escalation needs the person.
+ */
+export const stageSchema = z
+  .object({
   name: z.string().trim().min(1, "Stage name is required").max(150, "Name must be under 150 characters"),
   completionRule: z.enum(["all", "any", "majority"]),
   rejectionRule: z.enum(["halt_immediately", "wait_for_all"]),
@@ -35,6 +40,10 @@ export const stageSchema = z.object({
     .min(1, "At least 1 hour")
     .max(8760, "At most 8760 hours (one year)")
     .nullable(),
+  reminderBeforeHours: z.number().int("Whole hours only").min(1, "At least 1 hour").nullable(),
+  escalationTarget: z.enum(["none", "department_head", "named_user"]),
+  escalationUserId: z.string().nullable(),
+  allowInfoRequests: z.boolean(),
   participants: z
     .array(
       z.object({
@@ -45,7 +54,22 @@ export const stageSchema = z.object({
     )
     .min(1, "Add at least one participant")
     .max(50, "At most 50 participants per stage"),
-})
+  })
+  .superRefine((stage, ctx) => {
+    if (stage.reminderBeforeHours != null) {
+      if (stage.slaHours == null) {
+        ctx.addIssue({ code: "custom", path: ["reminderBeforeHours"], message: "Set SLA hours to send a reminder" })
+      } else if (stage.reminderBeforeHours >= stage.slaHours) {
+        ctx.addIssue({ code: "custom", path: ["reminderBeforeHours"], message: "Must be less than the SLA hours" })
+      }
+    }
+    if (stage.escalationTarget !== "none" && stage.slaHours == null) {
+      ctx.addIssue({ code: "custom", path: ["escalationTarget"], message: "Escalation happens at the due time - set SLA hours" })
+    }
+    if (stage.escalationTarget === "named_user" && !stage.escalationUserId) {
+      ctx.addIssue({ code: "custom", path: ["escalationUserId"], message: "Choose who to escalate to" })
+    }
+  })
 export type StageFormValues = z.infer<typeof stageSchema>
 
 /** Rejecting needs a real reason (WA-FR-003); approving takes an optional comment. Both max 2000 like the backend. */

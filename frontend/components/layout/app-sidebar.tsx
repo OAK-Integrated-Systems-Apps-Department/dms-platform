@@ -72,7 +72,8 @@ export function AppSidebar({
   // Live badge for the My Tasks item (see NavItem.liveBadge).
   const { data: taskCount } = useMyTaskCount()
   const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
-    myOpenTasks: taskCount?.open || undefined,
+    // Tasks to decide plus information requests waiting on me (Phase 2).
+    myOpenTasks: (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) || undefined,
   }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are

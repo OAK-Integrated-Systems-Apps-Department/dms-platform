@@ -3,6 +3,7 @@
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
@@ -56,9 +57,16 @@ export default function WorkflowInstancePage() {
       ) : (
         <div className="grid items-start gap-5 lg:grid-cols-[1.6fr_1fr]">
           <WorkflowStatusPanel instance={instance} />
-          <Panel title="Timeline">
-            <WorkflowTimeline instanceId={instance.instanceId} />
-          </Panel>
+          <div className="flex min-w-0 flex-col gap-5">
+            <Panel title="Timeline">
+              <WorkflowTimeline instanceId={instance.instanceId} />
+            </Panel>
+            <DiscussionPanel
+              documentId={instance.documentId}
+              workflowInstanceId={instance.instanceId}
+              title="Discussion of this workflow"
+            />
+          </div>
         </div>
       )}
     </DashboardShell>

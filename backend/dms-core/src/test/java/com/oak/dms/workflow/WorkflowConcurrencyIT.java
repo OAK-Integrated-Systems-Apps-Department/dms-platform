@@ -1,16 +1,19 @@
 package com.oak.dms.workflow;
 
 import com.oak.dms.user.User;
+import com.oak.dms.workflow.service.WorkflowSlaService;
 import com.oak.dms.workflow.support.ContractWorld;
 import com.oak.dms.workflow.support.WorkflowApiSupport;
 import com.oak.dms.workflow.support.WorkflowFixtures;
 import org.junit.jupiter.api.RepeatedTest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.JsonNode;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class WorkflowConcurrencyIT extends WorkflowApiSupport {
 
     private static final int REPEATS = 5;
+
+    @Autowired
+    private WorkflowSlaService slaService;
 
     /** all, n=2: Saman and Kumari approve at the same moment - stage 2 activates exactly once. */
     @RepeatedTest(REPEATS)
@@ -163,6 +169,181 @@ class WorkflowConcurrencyIT extends WorkflowApiSupport {
         assertInvariants(instanceId);
     }
 
+    /** The holder delegates while approving - one wins; the task is never both decided and newly delegated. */
+    @RepeatedTest(REPEATS)
+    void delegateRacesApprove_oneWins() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        activeTemplate(w.admin(), "DELEGATE", w.contractTypeId(), "flag_only", List.of(
+                stageDef("Final Sign-off", "any", "halt_immediately", 24, entry("user", w.nimal().getUserId()))));
+        JsonNode submitted = submit(w.chamath(), w.contractDocumentId(), 201);
+        UUID instanceId = id(submitted, "instanceId");
+        UUID task = taskId(submitted, 1, w.nimal().getDisplayName());
+
+        List<Integer> codes = concurrently(List.of(
+                act(w.nimal(), task, "approve"),
+                request(w.nimal(), post("/api/v1/workflow/tasks/" + task + "/delegate"),
+                        Map.of("delegateUserId", w.kumari().getUserId()))));
+
+        // Approve first: the delegation finds a closed task (409). Delegate first: Nimal no longer holds it (403).
+        assertThat(codes).containsAnyOf(200);
+        assertThat(codes.stream().filter(c -> c == 200)).hasSize(1);
+        assertThat(codes).allMatch(c -> c == 200 || c == 403 || c == 409);
+        boolean approved = codes.get(0) == 200;
+        assertThat(fx.count("select count(*) from workflow_tasks where task_id = ? and status = 'approved'", task))
+                .isEqualTo(approved ? 1 : 0);
+        assertThat(fx.count("select count(*) from workflow_tasks where task_id = ? and delegated_to = ?", task,
+                w.kumari().getUserId())).isEqualTo(approved ? 0 : 1);
+        assertThat(fx.count("select count(*) from workflow_actions where task_id = ? and action_type = 'delegated'",
+                task)).isEqualTo(approved ? 0 : 1);
+        assertInvariants(instanceId);
+    }
+
+    /** Two scheduler runs (two app instances) over the same due tasks - each reminder is recorded exactly once. */
+    @RepeatedTest(REPEATS)
+    void twoSlaRunnersAtOnce_remindEachTaskOnce() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        Map<String, Object> stage = stageDef("Review", "all", "halt_immediately", 48,
+                entry("department", w.legal().getDepartmentId()), entry("role", w.deptHead().getRoleId()));
+        stage.put("reminderBeforeHours", 24);
+        activeTemplate(w.admin(), "SLARACE", w.contractTypeId(), "flag_only", List.of(stage));
+        List<UUID> instances = new ArrayList<>();
+        instances.add(id(submit(w.chamath(), w.contractDocumentId(), 201), "instanceId"));
+        for (int i = 0; i < 9; i++) {
+            UUID doc = fx.document(w.tenantId(), w.contractTypeId(), w.chamath(), "Contract " + i);
+            instances.add(id(submit(w.chamath(), doc, 201), "instanceId"));
+        }
+        fx.jdbc().update("update workflow_tasks t set due_at = now() + interval '23 hours' from workflow_stage_instances si"
+                + " where si.stage_instance_id = t.stage_instance_id and si.tenant_id = ?", w.tenantId());
+
+        concurrently(List.of(slaService::runOnce, slaService::runOnce));
+        slaService.runOnce();   // whatever a runner skipped as busy
+
+        assertThat(fx.count("""
+                select count(*) from workflow_tasks t join workflow_stage_instances si
+                  on si.stage_instance_id = t.stage_instance_id
+                where si.tenant_id = ? and (select count(*) from workflow_actions a
+                                            where a.task_id = t.task_id and a.action_type = 'reminded') <> 1
+                """, w.tenantId())).as("tasks not reminded exactly once").isZero();
+        assertThat(fx.count("select count(*) from audit_events where tenant_id = ? and action = 'WORKFLOW_TASK_REMINDER_SENT'",
+                w.tenantId())).isEqualTo(20);
+        for (UUID instanceId : instances) {
+            assertInvariants(instanceId);
+        }
+    }
+
+    /** The scheduler escalates while the holder approves - both end consistent, the escalation at most once. */
+    @RepeatedTest(REPEATS)
+    void slaRunnerRacesApprove_consistent() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        Map<String, Object> stage = stageDef("Review", "any", "halt_immediately", 48,
+                entry("department", w.legal().getDepartmentId()));
+        stage.put("escalationTarget", "named_user");
+        stage.put("escalationUserId", w.nimal().getUserId());
+        activeTemplate(w.admin(), "SLAAPPROVE", w.contractTypeId(), "flag_only", List.of(stage));
+        JsonNode submitted = submit(w.chamath(), w.contractDocumentId(), 201);
+        UUID instanceId = id(submitted, "instanceId");
+        UUID legal = taskId(submitted, 1, "Legal");
+        fx.jdbc().update("update workflow_tasks set due_at = now() - interval '1 minute' where task_id = ?", legal);
+
+        List<Integer> codes = concurrently(List.of(
+                act(w.saman(), legal, "approve"),
+                () -> { slaService.runOnce(); return 0; }));
+
+        assertThat(codes.get(0)).isEqualTo(200);
+        assertThat(instance(instanceId, w.chamath()).get("status").asString()).isEqualTo("approved");
+        assertThat(fx.count("select count(*) from workflow_actions where task_id = ? and action_type = 'escalated'",
+                legal)).isLessThanOrEqualTo(1);
+        assertInvariants(instanceId);
+    }
+
+    /** The holder raises an information request while approving - one wins cleanly. */
+    @RepeatedTest(REPEATS)
+    void raiseRacesApprove_oneWins() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        fx.role(w.tenantId(), "Requesters", new String[]{WorkflowInfoRequestIT.REQUEST_INFO}, w.saman());
+        contractTemplate(w, "all", "halt_immediately");
+        JsonNode submitted = submit(w.chamath(), w.contractDocumentId(), 201);
+        UUID instanceId = id(submitted, "instanceId");
+        UUID legal = taskId(submitted, 1, "Legal");
+
+        List<Integer> codes = concurrently(List.of(
+                act(w.saman(), legal, "approve"),
+                request(w.saman(), post("/api/v1/workflow/tasks/" + legal + "/info-requests"),
+                        Map.of("requestedFromUserId", w.chamath().getUserId(), "message", "Annex?"))));
+
+        // Approve first: the request finds a decided task (409). Raise first: the approval is blocked (409).
+        assertThat(codes).containsAnyOf(200, 201);
+        assertThat(codes.stream().filter(c -> c == 409)).hasSize(1);
+        assertThat(fx.count("select count(*) from workflow_tasks where task_id = ? and status = 'approved'", legal))
+                .isEqualTo(codes.get(0) == 200 ? 1 : 0);
+        assertInvariants(instanceId);
+    }
+
+    /** Two people answer the task's last two open requests at once - the task resumes exactly once. */
+    @RepeatedTest(REPEATS)
+    void lastTwoResponsesAtOnce_resumeOnce() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        fx.role(w.tenantId(), "Requesters", new String[]{WorkflowInfoRequestIT.REQUEST_INFO}, w.saman());
+        contractTemplate(w, "all", "halt_immediately");
+        JsonNode submitted = submit(w.chamath(), w.contractDocumentId(), 201);
+        UUID instanceId = id(submitted, "instanceId");
+        UUID legal = taskId(submitted, 1, "Legal");
+        UUID r1 = id(postAs("/api/v1/workflow/tasks/" + legal + "/info-requests", w.saman(),
+                Map.of("requestedFromUserId", w.chamath().getUserId(), "message", "A?"), 201), "infoRequestId");
+        UUID r2 = id(postAs("/api/v1/workflow/tasks/" + legal + "/info-requests", w.saman(),
+                Map.of("requestedFromUserId", w.ruwan().getUserId(), "message", "B?"), 201), "infoRequestId");
+        fx.jdbc().update("update workflow_tasks set sla_paused_at = sla_paused_at - interval '1 hour' where task_id = ?",
+                legal);
+        OffsetDateTime dueBefore = fx.jdbc().queryForObject("select due_at from workflow_tasks where task_id = ?",
+                OffsetDateTime.class, legal);
+
+        List<Integer> codes = concurrently(List.of(
+                request(w.chamath(), post("/api/v1/workflow/info-requests/" + r1 + "/respond"), Map.of("message", "a")),
+                request(w.ruwan(), post("/api/v1/workflow/info-requests/" + r2 + "/respond"), Map.of("message", "b"))));
+
+        assertThat(codes).containsOnly(200);
+        Map<String, Object> task = fx.jdbc().queryForMap(
+                "select status, sla_paused_at, sla_paused_seconds, due_at from workflow_tasks where task_id = ?", legal);
+        assertThat(task.get("status")).isEqualTo("claimed");
+        assertThat(task.get("sla_paused_at")).isNull();
+        int paused = (Integer) task.get("sla_paused_seconds");
+        assertThat(paused).isBetween(3600, 3700);
+        OffsetDateTime dueAfter = fx.jdbc().queryForObject("select due_at from workflow_tasks where task_id = ?",
+                OffsetDateTime.class, legal);
+        assertThat(java.time.Duration.between(dueBefore, dueAfter).getSeconds()).as("due_at moved once")
+                .isEqualTo((long) paused);
+        assertThat(fx.count("select count(*) from workflow_actions where task_id = ? and action_type = 'info_provided'"
+                + " and detail ->> 'taskResumed' = 'true'", legal)).isEqualTo(1);
+        assertInvariants(instanceId);
+    }
+
+    /** A response races the approval that closes the stage (any) - the request is answered or auto-cancelled. */
+    @RepeatedTest(REPEATS)
+    void respondRacesStageClosing_consistent() throws Exception {
+        ContractWorld w = ContractWorld.create(fx);
+        fx.role(w.tenantId(), "Requesters", new String[]{WorkflowInfoRequestIT.REQUEST_INFO}, w.saman());
+        contractTemplate(w, "any", "halt_immediately");
+        JsonNode submitted = submit(w.chamath(), w.contractDocumentId(), 201);
+        UUID instanceId = id(submitted, "instanceId");
+        UUID legal = taskId(submitted, 1, "Legal");
+        UUID request = id(postAs("/api/v1/workflow/tasks/" + legal + "/info-requests", w.saman(),
+                Map.of("requestedFromUserId", w.chamath().getUserId(), "message", "A?"), 201), "infoRequestId");
+
+        List<Integer> codes = concurrently(List.of(
+                request(w.chamath(), post("/api/v1/workflow/info-requests/" + request + "/respond"),
+                        Map.of("message", "here")),
+                act(w.kumari(), taskId(submitted, 1, w.deptHead().getRoleName()), "approve")));
+
+        assertThat(codes.get(1)).isEqualTo(200);
+        String status = fx.jdbc().queryForObject("select status from workflow_info_requests where info_request_id = ?",
+                String.class, request);
+        assertThat(status).isEqualTo(codes.get(0) == 200 ? "answered" : "cancelled");
+        assertThat(codes.get(0)).isIn(200, 409);
+        assertThat(fx.jdbc().queryForObject("select status from workflow_tasks where task_id = ?", String.class, legal))
+                .isEqualTo("cancelled");
+        assertInvariants(instanceId);
+    }
+
     /** Ten submissions of the same document at once - one instance, nine clean 409s. */
     @RepeatedTest(REPEATS)
     void submitRace_oneInstance() throws Exception {
@@ -253,7 +434,19 @@ class WorkflowConcurrencyIT extends WorkflowApiSupport {
         assertThat(fx.count("""
                 select count(*) from workflow_tasks t join workflow_stage_instances si
                   on si.stage_instance_id = t.stage_instance_id
-                where si.instance_id = ? and si.status <> 'active' and t.status in ('pending', 'claimed')
+                where si.instance_id = ? and si.status <> 'active' and t.status in ('pending', 'claimed', 'awaiting_info')
                 """, instanceId)).as("open tasks left on a closed stage").isZero();
+        // decision 12/13: a task awaits information exactly while it has an open request
+        assertThat(fx.count("""
+                select count(*) from workflow_tasks t join workflow_stage_instances si
+                  on si.stage_instance_id = t.stage_instance_id
+                where si.instance_id = ?
+                  and (t.status = 'awaiting_info') <> exists (select 1 from workflow_info_requests r
+                                                              where r.task_id = t.task_id and r.status = 'open')
+                """, instanceId)).as("awaiting_info vs open requests").isZero();
+        assertThat(fx.count("""
+                select count(*) from workflow_info_requests r join workflow_tasks t on t.task_id = r.task_id
+                where r.instance_id = ? and r.status = 'open' and t.status <> 'awaiting_info'
+                """, instanceId)).as("open requests on a task that isn't waiting").isZero();
     }
 }

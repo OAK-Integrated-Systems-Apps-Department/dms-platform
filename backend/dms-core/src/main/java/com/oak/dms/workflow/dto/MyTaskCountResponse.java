@@ -1,4 +1,5 @@
 package com.oak.dms.workflow.dto;
 
-public record MyTaskCountResponse(long open, long overdue) {
+/** open/overdue: my task queue; requestsForMe: open information requests addressed to me. */
+public record MyTaskCountResponse(long open, long overdue, long requestsForMe) {
 }

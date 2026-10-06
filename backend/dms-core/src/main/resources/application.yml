@@ -22,6 +22,14 @@ spring:
         order_inserts: true
         order_updates: true
 
+  # Two scheduler threads instead of Boot's one, so a slow ClamAV retry
+  # (ScanRetryScheduler) can't hold up workflow SLA reminders or the outbox
+  # relay, and vice versa. The jobs touch independent tables.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:2}
+
   # Spring's own multipart default is 1MB, which silently capped uploads
   # before the scan gate existed. Kept in line with
   # dms.scanning.max-file-size-bytes below; the scan gate enforces the exact
@@ -247,6 +255,13 @@ dms:
     notifications:
       enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
       mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    # Phase 2: reminders before a task's due time and escalation when it
+    # passes (WorkflowSlaScheduler). Safe with several app instances - each
+    # task is handled under its instance row lock taken FOR UPDATE SKIP LOCKED.
+    sla:
+      enabled: ${WORKFLOW_SLA_ENABLED:true}
+      poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
+      batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

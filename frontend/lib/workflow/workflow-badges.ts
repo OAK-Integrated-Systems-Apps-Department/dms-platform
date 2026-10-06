@@ -1,5 +1,6 @@
 import type {
   CompletionRule,
+  InfoRequestStatus,
   InstanceStatus,
   OnDocumentChange,
   RejectionRule,
@@ -57,19 +58,37 @@ export const STAGE_STATUS_BADGE_VARIANT: Record<StageInstanceStatus, BadgeVarian
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   pending: "Pending",
   claimed: "Claimed",
+  awaiting_info: "Waiting on info",
   approved: "Approved",
   rejected: "Rejected",
   cancelled: "Cancelled",
+  delegated: "Delegated",
   expired: "Expired",
 }
 
 export const TASK_STATUS_BADGE_VARIANT: Record<TaskStatus, BadgeVariant> = {
   pending: "outline",
   claimed: "gold",
+  awaiting_info: "gold",
   approved: "default",
   rejected: "rust",
   cancelled: "muted",
+  delegated: "muted",
   expired: "muted",
+}
+
+export const INFO_REQUEST_STATUS_LABELS: Record<InfoRequestStatus, string> = {
+  open: "Open",
+  answered: "Answered",
+  declined: "Declined",
+  cancelled: "Cancelled",
+}
+
+export const INFO_REQUEST_STATUS_BADGE_VARIANT: Record<InfoRequestStatus, BadgeVariant> = {
+  open: "gold",
+  answered: "default",
+  declined: "rust",
+  cancelled: "muted",
 }
 
 export const COMPLETION_RULE_LABELS: Record<CompletionRule, string> = {
@@ -104,4 +123,16 @@ export const ACTION_TYPE_LABELS: Record<WorkflowActionType, string> = {
   cancelled: "cancelled the workflow",
   version_changed: "A new document version was uploaded",
   restarted: "Workflow restarted",
+  reassigned: "reassigned a task",
+  delegated: "delegated a task",
+  escalated: "Task escalated",
+  reminded: "Reminder sent",
+  commented: "commented",
+  info_requested: "asked for information",
+  info_provided: "answered an information request",
+  info_declined: "declined an information request",
+  info_cancelled: "withdrew an information request",
+  info_reassigned: "redirected an information request",
+  supporting_document_added: "attached a supporting document",
+  supporting_document_removed: "removed a supporting document",
 }

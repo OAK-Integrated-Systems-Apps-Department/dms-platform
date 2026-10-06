@@ -65,6 +65,8 @@ export interface DocumentDto {
   documentId: string
   tenantId: string
   documentTypeId: string
+  /** Embedded by the backend; null when the type has since been deleted. */
+  documentTypeName: string | null
   title: string
   currentVersionId: string | null
   latestVersionId: string | null
@@ -73,6 +75,11 @@ export interface DocumentDto {
   status: string
   createdAt: string
   updatedAt: string | null
+}
+
+/** `GET /api/v1/ingestion-tickets/{id}` - the uploader polls a 202 upload until its scan finishes. */
+export async function fetchIngestionTicket(scanResultId: string): Promise<IngestionTicketDto> {
+  return apiFetchJson(`${API_BASE_URL}/api/v1/ingestion-tickets/${scanResultId}`, undefined, "Could not check the upload.")
 }
 
 /** `GET /api/v1/documents/{id}` - needs docm.documents.view. */

@@ -12,6 +12,7 @@ import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import com.oak.dms.security.rbac.repository.RoleRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.workflow.dto.InfoRequestView;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
 import com.oak.dms.workflow.dto.MyTaskResponse;
 import com.oak.dms.workflow.dto.StageInstanceView;
@@ -26,16 +27,22 @@ import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
 import com.oak.dms.workflow.entity.WorkflowTask;
 import com.oak.dms.workflow.entity.WorkflowTemplate;
+import com.oak.dms.workflow.enums.InfoRequestStatus;
 import com.oak.dms.workflow.enums.InstanceStatus;
+import com.oak.dms.workflow.enums.StageInstanceStatus;
 import com.oak.dms.workflow.enums.TaskStatus;
+import com.oak.dms.workflow.helper.TaskRouting;
+import com.oak.dms.workflow.helper.WorkflowEvidenceMapper;
 import com.oak.dms.workflow.repository.WorkflowActionRepository;
+import com.oak.dms.workflow.repository.WorkflowInfoRequestRepository;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
 import com.oak.dms.workflow.repository.WorkflowMembershipRepository;
 import com.oak.dms.workflow.repository.WorkflowStageInstanceRepository;
+import com.oak.dms.workflow.repository.WorkflowStageParticipantRepository;
 import com.oak.dms.workflow.repository.WorkflowStageRepository;
+import com.oak.dms.workflow.repository.WorkflowSupportingDocumentRepository;
 import com.oak.dms.workflow.repository.WorkflowTaskRepository;
 import com.oak.dms.workflow.repository.WorkflowTemplateRepository;
-import com.oak.dms.workflow.service.ApproverResolver;
 import com.oak.dms.workflow.service.WorkflowQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -64,11 +71,11 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
 
     /** Placeholder for an empty role-id list - Hibernate renders "in ()" unreliably. */
     private static final UUID NO_ID = new UUID(0L, 0L);
-    private static final int COUNT_SCAN_LIMIT = 1000;
 
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
     private final WorkflowStageRepository stageRepository;
+    private final WorkflowStageParticipantRepository participantRepository;
     private final WorkflowTaskRepository taskRepository;
     private final WorkflowTemplateRepository templateRepository;
     private final WorkflowActionRepository actionRepository;
@@ -78,7 +85,10 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
-    private final ApproverResolver approverResolver;
+    private final TaskRouting taskRouting;
+    private final WorkflowEvidenceMapper evidenceMapper;
+    private final WorkflowInfoRequestRepository infoRequestRepository;
+    private final WorkflowSupportingDocumentRepository supportingDocumentRepository;
     private final AuthorizationService authorizationService;
 
     @Override
@@ -96,27 +106,33 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
         stageRepository.findAllById(stages.stream().map(WorkflowStageInstance::getStageId).toList())
                 .forEach(s -> stageDefs.put(s.getStageId(), s));
         Names names = names(tenantId, tasks, List.of(instance.getInitiatedBy()));
+        Map<UUID, Long> openRequests = openRequestCounts(tenantId, tasks);
         Map<UUID, List<WorkflowTask>> tasksByStage = tasks.stream()
                 .collect(Collectors.groupingBy(WorkflowTask::getStageInstanceId));
+
+        Map<UUID, Integer> plannedEntries = plannedEntryCounts(tenantId, stages);
 
         List<StageInstanceView> stageViews = new ArrayList<>();
         for (WorkflowStageInstance si : stages) {
             WorkflowStage def = stageDefs.get(si.getStageId());
+            int entryCount = neverActivated(si)
+                    ? plannedEntries.getOrDefault(si.getStageId(), 0) : si.getEntryCount();
             List<TaskView> taskViews = tasksByStage.getOrDefault(si.getStageInstanceId(), List.of()).stream()
                     .sorted((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()))
-                    .map(t -> taskView(t, names))
+                    .map(t -> taskView(t, names, openRequests))
                     .toList();
             stageViews.add(new StageInstanceView(si.getStageInstanceId(), si.getStageOrder(),
                     def == null ? null : def.getName(), si.getStatus().name(),
                     def == null ? null : def.getCompletionRule().name(), def == null ? null : def.getRejectionRule().name(),
-                    si.getEntryCount(), si.getRequiredCount(), si.getApprovedCount(), si.getRejectedCount(),
-                    si.getActivatedAt(), si.getDueAt(), si.getCompletedAt(), taskViews));
+                    entryCount, si.getRequiredCount(), si.getApprovedCount(), si.getRejectedCount(),
+                    si.getActivatedAt(), si.getDueAt(), si.getCompletedAt(), taskViews,
+                    def == null || def.isAllowInfoRequests()));
         }
 
         List<TaskView> nextAssignees = instance.getCurrentStageInstanceId() == null ? List.of()
                 : tasksByStage.getOrDefault(instance.getCurrentStageInstanceId(), List.of()).stream()
                 .filter(t -> TaskStatus.OPEN.contains(t.getStatus()))
-                .map(t -> taskView(t, names))
+                .map(t -> taskView(t, names, openRequests))
                 .toList();
 
         UUID myOpenTaskId = null;
@@ -128,12 +144,14 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
             if (!decided) {
                 myOpenTaskId = current.stream()
                         .filter(t -> TaskStatus.OPEN.contains(t.getStatus()))
-                        .filter(t -> approverResolver.canAct(tenantId, t, userId))
+                        .filter(t -> taskRouting.canAct(tenantId, t, userId))
                         .map(WorkflowTask::getTaskId)
                         .findFirst().orElse(null);
             }
         }
 
+        List<InfoRequestView> requests = evidenceMapper.requestViews(tenantId, infoRequestRepository
+                .findByInstanceIdAndTenantIdAndDeletedFalseOrderByRequestedAtAsc(instanceId, tenantId));
         Document document = documentRepository.findById(instance.getDocumentId()).orElse(null);
         WorkflowTemplate template = templateRepository.findById(instance.getTemplateId()).orElse(null);
         return new WorkflowInstanceResponse(instance.getInstanceId(), instance.getDocumentId(),
@@ -143,7 +161,11 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                 template == null ? null : template.getName(), instance.getTemplateVersionNumber(),
                 instance.getStatus().name(), names.user(instance.getInitiatedBy()), instance.getStartedAt(),
                 instance.getCompletedAt(), instance.getOutcomeReason(), instance.getCurrentStageInstanceId(),
-                stageViews, nextAssignees, myOpenTaskId);
+                stageViews, nextAssignees, myOpenTaskId, requests,
+                evidenceMapper.supportingViews(tenantId, supportingDocumentRepository
+                        .findByInstanceIdAndTenantIdAndDeletedFalseOrderByAddedAtAsc(instanceId, tenantId)),
+                requests.stream().filter(r -> "open".equals(r.status()) && userId.equals(r.requestedFrom().userId()))
+                        .map(InfoRequestView::infoRequestId).toList());
     }
 
     /** Gated at the controller by document-view / submit / audit-trail permissions. */
@@ -201,15 +223,30 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
     public MyTaskCountResponse myTaskCount() {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
-        Page<WorkflowTask> page = queryMyTasks(tenantId, userId, MyTasksView.all, PageRequest.of(0, COUNT_SCAN_LIMIT));
-        OffsetDateTime now = OffsetDateTime.now();
-        long overdue = page.stream().filter(t -> t.getDueAt() != null && t.getDueAt().isBefore(now)).count();
-        return new MyTaskCountResponse(page.getTotalElements(), overdue);
+        Queue q = queue(tenantId, userId, MyTasksView.all);
+        long open = taskRepository.findMyTasks(tenantId, userId, q.roleIds, q.departmentId, q.user, q.claimed, q.pool,
+                q.delegated, q.escalated, q.waitingOnly, PageRequest.of(0, 1)).getTotalElements();
+        long overdue = taskRepository.countMyOverdueTasks(tenantId, userId, q.roleIds, q.departmentId, q.user,
+                q.claimed, q.pool, q.delegated, q.escalated, q.waitingOnly, OffsetDateTime.now());
+        long requestsForMe = infoRequestRepository.countByTenantIdAndRequestedFromAndStatusAndDeletedFalse(tenantId,
+                userId, InfoRequestStatus.open);
+        return new MyTaskCountResponse(open, overdue, requestsForMe);
     }
 
     // ---------------------------------------------------------------- helpers
 
     private Page<WorkflowTask> queryMyTasks(UUID tenantId, UUID userId, MyTasksView view, Pageable pageable) {
+        Queue q = queue(tenantId, userId, view);
+        return taskRepository.findMyTasks(tenantId, userId, q.roleIds, q.departmentId, q.user, q.claimed, q.pool,
+                q.delegated, q.escalated, q.waitingOnly, pageable);
+    }
+
+    /** The caller's pools and which My Tasks routes a view includes (mirrors TaskRouting). */
+    private record Queue(List<UUID> roleIds, UUID departmentId, boolean user, boolean claimed, boolean pool,
+                         boolean delegated, boolean escalated, boolean waitingOnly) {
+    }
+
+    private Queue queue(UUID tenantId, UUID userId, MyTasksView view) {
         List<UUID> roleIds = new ArrayList<>(membershipRepository.findActiveRoleIds(tenantId, userId));
         if (roleIds.isEmpty()) {
             roleIds.add(NO_ID);
@@ -219,11 +256,11 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                 .filter(id -> departmentRepository.findByDepartmentIdAndTenantIdAndDeletedFalse(id, tenantId)
                         .map(d -> d.getStatus() == Department.DepartmentStatus.active).orElse(false))
                 .orElse(NO_ID);
-        boolean includeUser = view == MyTasksView.all || view == MyTasksView.assigned;
-        boolean includeClaimed = view != MyTasksView.available;
-        boolean includePool = view == MyTasksView.all || view == MyTasksView.available;
-        return taskRepository.findMyTasks(tenantId, userId, roleIds, departmentId, includeUser, includeClaimed,
-                includePool, pageable);
+        boolean mine = view != MyTasksView.available && view != MyTasksView.claimed;
+        boolean pool = view == MyTasksView.all || view == MyTasksView.available;
+        boolean claimed = view != MyTasksView.available;
+        boolean escalated = view == MyTasksView.all || view == MyTasksView.assigned;
+        return new Queue(roleIds, departmentId, mine, claimed, pool, mine, escalated, view == MyTasksView.waiting);
     }
 
     private Page<MyTaskResponse> enrich(Page<WorkflowTask> page, UUID tenantId, UUID userId) {
@@ -253,6 +290,7 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
         Names names = names(tenantId, page.getContent(),
                 instances.values().stream().map(WorkflowInstance::getInitiatedBy).toList());
         OffsetDateTime now = OffsetDateTime.now();
+        Map<UUID, Long> openRequests = openRequestCounts(tenantId, page.getContent());
 
         return page.map(t -> {
             WorkflowStageInstance si = stageInstances.get(t.getStageInstanceId());
@@ -265,15 +303,52 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                     tpl == null ? null : tpl.getName(), si.getStageOrder(), def == null ? null : def.getName(),
                     stageCounts.getOrDefault(i.getInstanceId(), 0L).intValue(), t.getAssigneeType().name(),
                     t.isPool() ? names.assignee(t) : null, t.getStatus().name(),
-                    t.getStatus() == TaskStatus.claimed && userId.equals(t.getClaimedBy()), t.getDueAt(),
-                    t.getDueAt() != null && t.getDueAt().isBefore(now), si.getActivatedAt(),
-                    names.user(i.getInitiatedBy()), i.isVersionChangedFlag());
+                    TaskStatus.HELD.contains(t.getStatus()) && userId.equals(t.getClaimedBy())
+                            && t.getDelegatedTo() == null,
+                    t.getDueAt(), t.getStatus() != TaskStatus.awaiting_info && t.getDueAt() != null
+                            && t.getDueAt().isBefore(now), si.getActivatedAt(),
+                    names.user(i.getInitiatedBy()), i.isVersionChangedFlag(), routeName(tenantId, t, userId),
+                    t.getDelegatedFrom() == null ? null : names.user(t.getDelegatedFrom()),
+                    openRequests.getOrDefault(t.getTaskId(), 0L));
         });
+    }
+
+    /**
+     * A stage instance that never activated keeps entry_count 0, so the
+     * status view takes its entry count from the template stage instead
+     * (otherwise a skipped stage reads "Any of 0 entries").
+     */
+    private Map<UUID, Integer> plannedEntryCounts(UUID tenantId, List<WorkflowStageInstance> stages) {
+        List<UUID> stageIds = stages.stream().filter(WorkflowQueryServiceImpl::neverActivated)
+                .map(WorkflowStageInstance::getStageId).toList();
+        Map<UUID, Integer> counts = new HashMap<>();
+        if (!stageIds.isEmpty()) {
+            for (Object[] row : participantRepository.countLiveByStageIds(tenantId, stageIds)) {
+                counts.put((UUID) row[0], ((Number) row[1]).intValue());
+            }
+        }
+        return counts;
+    }
+
+    private static boolean neverActivated(WorkflowStageInstance si) {
+        return si.getStatus() == StageInstanceStatus.not_started
+                || (si.getStatus() == StageInstanceStatus.skipped && si.getActivatedAt() == null);
     }
 
     private WorkflowInstance findOwned(UUID instanceId, UUID tenantId) {
         return instanceRepository.findByInstanceIdAndTenantIdAndDeletedFalse(instanceId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("WorkflowInstance", instanceId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireVisible(UUID instanceId) {
+        UUID tenantId = TenantContext.getTenantId();
+        WorkflowInstance instance = findOwned(instanceId, tenantId);
+        List<WorkflowStageInstance> stages = stageInstanceRepository.findByInstanceIdOrderByStageOrderAsc(instanceId);
+        List<WorkflowTask> tasks = stages.isEmpty() ? List.of() : taskRepository.findByStageInstanceIdInAndDeletedFalse(
+                stages.stream().map(WorkflowStageInstance::getStageInstanceId).toList());
+        requireVisible(instance, tasks, tenantId, TenantContext.getUserId());
     }
 
     private void requireVisible(WorkflowInstance instance, List<WorkflowTask> tasks, UUID tenantId, UUID userId) {
@@ -283,24 +358,53 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
             return;
         }
         for (WorkflowTask t : tasks) {
-            if (userId.equals(t.getActedBy()) || userId.equals(t.getClaimedBy())) {
+            if (userId.equals(t.getActedBy()) || userId.equals(t.getClaimedBy())
+                    || userId.equals(t.getDelegatedTo()) || userId.equals(t.getDelegatedFrom())
+                    || userId.equals(t.getEscalatedTo())) {
                 return;
             }
         }
+        // Phase 2 §9: someone asked for information, or who attached evidence, sees the run.
+        if (infoRequestRepository.existsByInstanceIdAndRequestedFromAndDeletedFalse(instance.getInstanceId(), userId)
+                || supportingDocumentRepository.existsByInstanceIdAndAddedByAndDeletedFalse(instance.getInstanceId(),
+                userId)) {
+            return;
+        }
         boolean canActOnOpen = instance.getStatus() == InstanceStatus.in_progress && tasks.stream()
                 .filter(t -> TaskStatus.OPEN.contains(t.getStatus()))
-                .anyMatch(t -> approverResolver.canAct(tenantId, t, userId));
+                .anyMatch(t -> taskRouting.canAct(tenantId, t, userId));
         if (!canActOnOpen) {
             throw new AccessDeniedException("Not a participant of workflow instance " + instance.getInstanceId());
         }
     }
 
-    private static TaskView taskView(WorkflowTask t, Names names) {
+    /** Open information requests per task, in one grouped query. */
+    private Map<UUID, Long> openRequestCounts(UUID tenantId, Collection<WorkflowTask> tasks) {
+        List<UUID> waiting = tasks.stream().filter(t -> t.getStatus() == TaskStatus.awaiting_info)
+                .map(WorkflowTask::getTaskId).toList();
+        Map<UUID, Long> counts = new HashMap<>();
+        if (!waiting.isEmpty()) {
+            for (Object[] row : infoRequestRepository.countOpenByTaskIds(tenantId, waiting)) {
+                counts.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
+        }
+        return counts;
+    }
+
+    private static TaskView taskView(WorkflowTask t, Names names, Map<UUID, Long> openRequests) {
         return new TaskView(t.getTaskId(), t.getAssigneeType().name(), t.getAssigneeId(), names.assignee(t),
                 t.getStatus().name(), t.getClaimedBy() == null ? null : names.user(t.getClaimedBy()),
                 t.getActedBy() == null ? null : names.user(t.getActedBy()),
                 t.getDecision() == null ? null : t.getDecision().name(), t.getDecisionReason(), t.getActedAt(),
-                t.getDueAt());
+                t.getDueAt(), names.user(t.getDelegatedFrom()), names.user(t.getDelegatedTo()), t.getDelegatedAt(),
+                names.user(t.getEscalatedTo()), t.getEscalatedAt(), t.getReminderSentAt(), t.getSlaPausedAt(),
+                t.getSlaPausedSeconds(), openRequests.getOrDefault(t.getTaskId(), 0L));
+    }
+
+    /** How the caller reaches a task in their queue; "pool" when only the live pool check would say so. */
+    private String routeName(UUID tenantId, WorkflowTask t, UUID userId) {
+        TaskRouting.Route route = taskRouting.route(tenantId, t, userId);
+        return route == null ? null : route.name();
     }
 
     private Map<UUID, String> userNames(Collection<UUID> ids, UUID tenantId) {
@@ -320,6 +424,9 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
         for (WorkflowTask t : tasks) {
             users.add(t.getClaimedBy());
             users.add(t.getActedBy());
+            users.add(t.getDelegatedFrom());
+            users.add(t.getDelegatedTo());
+            users.add(t.getEscalatedTo());
             switch (t.getAssigneeType()) {
                 case user -> users.add(t.getAssigneeId());
                 case role -> roles.add(t.getAssigneeId());

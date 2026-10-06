@@ -11,7 +11,20 @@ export type EscalationTarget = "none" | "department_head" | "named_user"
 export type AssigneeType = "user" | "role" | "department"
 export type InstanceStatus = "in_progress" | "approved" | "rejected" | "cancelled"
 export type StageInstanceStatus = "not_started" | "active" | "approved" | "rejected" | "skipped"
-export type TaskStatus = "pending" | "claimed" | "approved" | "rejected" | "cancelled" | "expired"
+/** `delegated` and `expired` are never written (Phase 2 decisions 1 and 6) but kept so any row reads. */
+export type TaskStatus =
+  | "pending"
+  | "claimed"
+  | "awaiting_info"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "delegated"
+  | "expired"
+/** How the caller reaches a task (My Tasks) or how its decider did (timeline detail). */
+export type TaskRoute = "assigned" | "pool" | "claimed" | "delegated" | "escalated"
+export type InfoRequestStatus = "open" | "answered" | "declined" | "cancelled"
+export type SupportingDocumentSource = "linked_existing" | "uploaded_new"
 export type TaskDecision = "approve" | "reject"
 export type WorkflowActionType =
   | "submitted"
@@ -28,7 +41,19 @@ export type WorkflowActionType =
   | "cancelled"
   | "version_changed"
   | "restarted"
-export type MyTasksView = "all" | "assigned" | "available" | "claimed"
+  | "reassigned"
+  | "delegated"
+  | "escalated"
+  | "reminded"
+  | "commented"
+  | "info_requested"
+  | "info_provided"
+  | "info_declined"
+  | "info_cancelled"
+  | "info_reassigned"
+  | "supporting_document_added"
+  | "supporting_document_removed"
+export type MyTasksView = "all" | "assigned" | "available" | "claimed" | "waiting"
 
 /** Mirrors backend/dms-core's PageResponse<T>. `page` is 0-indexed. */
 export interface PageDto<T> {
@@ -72,7 +97,7 @@ export interface WorkflowParticipantDto {
   displayOrder: number
 }
 
-/** Mirrors backend/dms-core's WorkflowStageResponse. Reminder/escalation fields are stored for Phase 2. */
+/** Mirrors backend/dms-core's WorkflowStageResponse. */
 export interface WorkflowStageDto {
   stageId: string
   stageOrder: number
@@ -83,6 +108,8 @@ export interface WorkflowStageDto {
   reminderBeforeHours: number | null
   escalationTarget: EscalationTarget | null
   escalationUserId: string | null
+  /** Whether approvers may pause their task to request information (default true). */
+  allowInfoRequests: boolean
   participants: WorkflowParticipantDto[]
 }
 
@@ -140,6 +167,7 @@ export interface UpsertStagePayload {
   reminderBeforeHours?: number | null
   escalationTarget?: EscalationTarget | null
   escalationUserId?: string | null
+  allowInfoRequests?: boolean
   participants: ParticipantPayload[]
 }
 
@@ -252,7 +280,19 @@ export interface WorkflowTaskDto {
   decision: TaskDecision | null
   decisionReason: string | null
   actedAt: string | null
+  /** Moves forward by the paused time when an information request closes. */
   dueAt: string | null
+  /** Original holder of a delegated/reassigned task (null when reassigned from an unclaimed pool). */
+  delegatedFrom: WorkflowUserRefDto | null
+  delegatedTo: WorkflowUserRefDto | null
+  delegatedAt: string | null
+  /** Added escalation route; null with escalatedAt set means the target couldn't be used. */
+  escalatedTo: WorkflowUserRefDto | null
+  escalatedAt: string | null
+  reminderSentAt: string | null
+  slaPausedAt: string | null
+  slaPausedSeconds: number
+  openInfoRequestCount: number
 }
 
 /** Mirrors backend/dms-core's StageInstanceView. */
@@ -271,6 +311,7 @@ export interface WorkflowStageInstanceDto {
   dueAt: string | null
   completedAt: string | null
   tasks: WorkflowTaskDto[]
+  allowInfoRequests: boolean
 }
 
 /**
@@ -298,6 +339,66 @@ export interface WorkflowInstanceDto {
   stages: WorkflowStageInstanceDto[]
   nextAssignees: WorkflowTaskDto[]
   myOpenTaskId: string | null
+  infoRequests: InfoRequestDto[]
+  supportingDocuments: SupportingDocumentDto[]
+  /** Open requests of this run addressed to the caller. */
+  myOpenInfoRequestIds: string[]
+}
+
+/** Mirrors backend/dms-core's SupportingDocumentView. canOpen: the viewer holds docm.documents.view. */
+export interface SupportingDocumentDto {
+  supportingDocumentId: string
+  documentId: string
+  title: string | null
+  versionId: string
+  versionNumber: number | null
+  source: SupportingDocumentSource
+  note: string | null
+  addedBy: WorkflowUserRefDto
+  addedAt: string
+  infoRequestId: string | null
+  canOpen: boolean
+}
+
+/** Mirrors backend/dms-core's InfoRequestView. */
+export interface InfoRequestDto {
+  infoRequestId: string
+  instanceId: string
+  documentId: string | null
+  documentTitle: string | null
+  taskId: string
+  stageInstanceId: string
+  stageOrder: number | null
+  requestedBy: WorkflowUserRefDto
+  requestedFrom: WorkflowUserRefDto
+  message: string
+  status: InfoRequestStatus
+  responseMessage: string | null
+  declineReason: string | null
+  cancelReason: string | null
+  dueAt: string | null
+  requestedAt: string
+  respondedAt: string | null
+  respondedBy: WorkflowUserRefDto | null
+  supportingDocuments: SupportingDocumentDto[]
+}
+
+/** Mirrors backend/dms-core's SupportingDocumentInput. documentVersionId defaults to the latest version. */
+export interface SupportingDocumentInput {
+  documentId: string
+  documentVersionId?: string | null
+  source: SupportingDocumentSource
+  note?: string | null
+}
+
+/** Mirrors backend/dms-core's PersonOptionResponse - one row of a people picker. */
+export interface PersonOptionDto {
+  userId: string
+  displayName: string | null
+  username: string | null
+  departmentName: string | null
+  /** Set by /people/lookup: whether they could open documents. */
+  hasDocumentAccess: boolean | null
 }
 
 /** Mirrors backend/dms-core's WorkflowActionView - one timeline entry. actor is null for system actions. */
@@ -381,19 +482,23 @@ export interface MyTaskDto {
   totalStages: number
   assigneeType: AssigneeType
   poolName: string | null
-  status: "pending" | "claimed"
+  status: "pending" | "claimed" | "awaiting_info"
   claimedByMe: boolean
   dueAt: string | null
   overdue: boolean
   activatedAt: string | null
   initiatedBy: WorkflowUserRefDto | null
   versionChangedFlag: boolean
+  route: TaskRoute | null
+  delegatedFrom: WorkflowUserRefDto | null
+  openInfoRequestCount: number
 }
 
-/** Mirrors backend/dms-core's MyTaskCountResponse. */
+/** Mirrors backend/dms-core's MyTaskCountResponse. requestsForMe: open information requests addressed to me. */
 export interface MyTaskCountDto {
   open: number
   overdue: number
+  requestsForMe: number
 }
 
 /** Mirrors backend/dms-core's TaskActionResponse - the task, its stage and its instance after the action. */
@@ -478,4 +583,104 @@ export function fetchRoleOptions(): Promise<LookupOption[]> {
 
 export function fetchDocumentTypeOptions(): Promise<LookupOption[]> {
   return fetchLookup("document-types", "Could not load document types.")
+}
+
+// ---------------------------------------------------------- delegation (Phase 2)
+
+/** The holder hands the task on; delegating back to the original holder clears the delegation. */
+export async function delegateTask(taskId: string, delegateUserId: string, note?: string): Promise<TaskActionResultDto> {
+  return apiFetchJson(
+    `${BASE}/tasks/${taskId}/delegate`,
+    jsonInit("POST", { delegateUserId, note: note || null }),
+    "Could not delegate this task."
+  )
+}
+
+/** Admin (wa.reassign-workflow-task): move any open task; the reason is mandatory. */
+export async function reassignTask(taskId: string, userId: string, reason: string): Promise<TaskActionResultDto> {
+  return apiFetchJson(`${BASE}/tasks/${taskId}/reassign`, jsonInit("POST", { userId, reason }), "Could not reassign this task.")
+}
+
+export async function fetchDelegateCandidates(taskId: string, search: string): Promise<PersonOptionDto[]> {
+  const params = new URLSearchParams({ limit: "20" })
+  if (search.trim()) params.set("search", search.trim())
+  return apiFetchJson(`${BASE}/tasks/${taskId}/delegate-candidates?${params.toString()}`, undefined, "Could not load people.")
+}
+
+/** Active people of my tenant (mentions, information requests). */
+export async function lookupPeople(search: string, limit = 10): Promise<PersonOptionDto[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (search.trim()) params.set("search", search.trim())
+  return apiFetchJson(`${API_BASE_URL}/api/v1/people/lookup?${params.toString()}`, undefined, "Could not load people.")
+}
+
+// ---------------------------------------------------- information requests (Phase 2)
+
+export async function raiseInfoRequest(
+  taskId: string,
+  requestedFromUserId: string,
+  message: string,
+  dueAt?: string | null
+): Promise<InfoRequestDto> {
+  return apiFetchJson(
+    `${BASE}/tasks/${taskId}/info-requests`,
+    jsonInit("POST", { requestedFromUserId, message, dueAt: dueAt || null }),
+    "Could not send the request."
+  )
+}
+
+export async function respondInfoRequest(
+  infoRequestId: string,
+  message: string | null,
+  supportingDocuments: SupportingDocumentInput[]
+): Promise<InfoRequestDto> {
+  return apiFetchJson(
+    `${BASE}/info-requests/${infoRequestId}/respond`,
+    jsonInit("POST", { message, supportingDocuments }),
+    "Could not send your answer."
+  )
+}
+
+export async function declineInfoRequest(infoRequestId: string, reason: string): Promise<InfoRequestDto> {
+  return apiFetchJson(`${BASE}/info-requests/${infoRequestId}/decline`, jsonInit("POST", { reason }), "Could not decline the request.")
+}
+
+export async function withdrawInfoRequest(infoRequestId: string, reason?: string): Promise<InfoRequestDto> {
+  return apiFetchJson(
+    `${BASE}/info-requests/${infoRequestId}/withdraw`,
+    jsonInit("POST", { reason: reason || null }),
+    "Could not withdraw the request."
+  )
+}
+
+export async function reassignInfoRequest(infoRequestId: string, requestedFromUserId: string, reason?: string): Promise<InfoRequestDto> {
+  return apiFetchJson(
+    `${BASE}/info-requests/${infoRequestId}/reassign`,
+    jsonInit("POST", { requestedFromUserId, reason: reason || null }),
+    "Could not redirect the request."
+  )
+}
+
+/** "Requests for me", newest first. status: open | answered | declined | cancelled | all. */
+export async function fetchMyInfoRequests(status: string, page: number, size: number): Promise<PageDto<InfoRequestDto>> {
+  const params = new URLSearchParams({ status, page: String(page), size: String(size) })
+  return apiFetchJson(`${BASE}/info-requests/my?${params.toString()}`, undefined, "Could not load your requests.")
+}
+
+// ------------------------------------------------- supporting documents (Phase 2)
+
+export async function addSupportingDocument(instanceId: string, input: SupportingDocumentInput): Promise<SupportingDocumentDto> {
+  return apiFetchJson(
+    `${BASE}/instances/${instanceId}/supporting-documents`,
+    jsonInit("POST", input),
+    "Could not attach the document."
+  )
+}
+
+export async function removeSupportingDocument(instanceId: string, supportingDocumentId: string): Promise<void> {
+  await apiFetch(
+    `${BASE}/instances/${instanceId}/supporting-documents/${supportingDocumentId}`,
+    { method: "DELETE" },
+    "Could not remove the document."
+  )
 }

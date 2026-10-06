@@ -20,9 +20,9 @@ public interface ApproverResolver {
      */
     Set<UUID> resolve(UUID tenantId, WorkflowStageParticipant participant, UUID initiatorId);
 
-    /** Live check: is the user the task's assignee, its claimer, or a current member of its pool? */
-    boolean canAct(UUID tenantId, WorkflowTask task, UUID userId);
-
-    /** Live pool membership only (role grant or primary department), ignoring claims. */
+    /**
+     * Live pool membership only (role grant or primary department), ignoring
+     * claims, delegation and escalation - see {@code TaskRouting} for who may act.
+     */
     boolean isPoolMember(UUID tenantId, WorkflowTask task, UUID userId);
 }

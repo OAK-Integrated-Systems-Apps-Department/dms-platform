@@ -2,11 +2,15 @@ package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.workflow.dto.ApproveTaskRequest;
+import com.oak.dms.workflow.dto.DelegateTaskRequest;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
 import com.oak.dms.workflow.dto.MyTaskResponse;
+import com.oak.dms.workflow.dto.PersonOptionResponse;
+import com.oak.dms.workflow.dto.ReassignTaskRequest;
 import com.oak.dms.workflow.dto.RejectTaskRequest;
 import com.oak.dms.workflow.dto.TaskActionResponse;
 import com.oak.dms.workflow.enums.TaskDecision;
+import com.oak.dms.workflow.service.WorkflowDelegationService;
 import com.oak.dms.workflow.service.WorkflowQueryService;
 import com.oak.dms.workflow.service.WorkflowTaskService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -41,6 +46,7 @@ public class WorkflowTaskController {
     private static final String ACT = "@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_APPROVE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_REJECT)";
 
     private final WorkflowTaskService taskService;
+    private final WorkflowDelegationService delegationService;
     private final WorkflowQueryService queryService;
 
     @GetMapping("/my")
@@ -85,5 +91,36 @@ public class WorkflowTaskController {
     @Operation(summary = "Reject - a reason is mandatory (400 without one)")
     public TaskActionResponse reject(@PathVariable("taskId") UUID taskId, @Valid @RequestBody RejectTaskRequest request) {
         return taskService.act(taskId, TaskDecision.reject, request.reason());
+    }
+
+    @PostMapping("/{taskId}/delegate")
+    @PreAuthorize(ACT)
+    @Operation(summary = "Hand my task to someone else",
+            description = "The same task moves to the delegate; both are notified. Only its holder may delegate - "
+                    + "claim a pool task first (409 WORKFLOW_TASK_NOT_CLAIMED). Delegating back to the original "
+                    + "holder clears the delegation. 422 for the initiator, someone who already decided in this "
+                    + "stage, or someone without an approve/reject permission.")
+    public TaskActionResponse delegate(@PathVariable("taskId") UUID taskId,
+                                       @Valid @RequestBody DelegateTaskRequest request) {
+        return delegationService.delegate(taskId, request.delegateUserId(), request.note());
+    }
+
+    @PostMapping("/{taskId}/reassign")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_REASSIGN)")
+    @Operation(summary = "Admin: move any open task to another user (reason required)",
+            description = "Also unblocks a task whose pool has nobody eligible. A task waiting on information has "
+                    + "its open requests cancelled first.")
+    public TaskActionResponse reassign(@PathVariable("taskId") UUID taskId,
+                                       @Valid @RequestBody ReassignTaskRequest request) {
+        return delegationService.reassign(taskId, request.userId(), request.reason());
+    }
+
+    @GetMapping("/{taskId}/delegate-candidates")
+    @PreAuthorize(ACT + " or @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_REASSIGN)")
+    @Operation(summary = "People this task could be delegated or reassigned to")
+    public List<PersonOptionResponse> delegateCandidates(@PathVariable("taskId") UUID taskId,
+                                                         @RequestParam(required = false) String search,
+                                                         @RequestParam(defaultValue = "20") int limit) {
+        return delegationService.delegateCandidates(taskId, search, limit);
     }
 }

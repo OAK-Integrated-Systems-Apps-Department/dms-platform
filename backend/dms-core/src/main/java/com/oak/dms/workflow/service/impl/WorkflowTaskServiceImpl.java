@@ -17,6 +17,7 @@ import com.oak.dms.workflow.enums.WorkflowActionType;
 import com.oak.dms.workflow.exception.WorkflowAccessException;
 import com.oak.dms.workflow.exception.WorkflowRequestException;
 import com.oak.dms.workflow.exception.WorkflowStateException;
+import com.oak.dms.workflow.helper.TaskRouting;
 import com.oak.dms.workflow.helper.WorkflowActionRecorder;
 import com.oak.dms.workflow.helper.WorkflowLocks;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
@@ -34,7 +35,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /** See {@link WorkflowTaskService} and docs/workflow-phase1-plan.md §4/§6. */
@@ -42,12 +42,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WorkflowTaskServiceImpl implements WorkflowTaskService {
 
-    private static final Set<TaskStatus> DECIDED = Set.of(TaskStatus.approved, TaskStatus.rejected);
-
     private final WorkflowTaskRepository taskRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
     private final WorkflowInstanceRepository instanceRepository;
     private final ApproverResolver approverResolver;
+    private final TaskRouting taskRouting;
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
@@ -72,7 +71,10 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
             throw new WorkflowStateException("WORKFLOW_TASK_NOT_CLAIMABLE",
                     "Only a role or department task can be claimed - this one is assigned to a person");
         }
-        if (task.getStatus() == TaskStatus.claimed) {
+        if (task.getDelegatedTo() != null) {
+            throw new WorkflowStateException("WORKFLOW_TASK_DELEGATED", "This task has been delegated to someone");
+        }
+        if (TaskStatus.HELD.contains(task.getStatus())) {
             throw new WorkflowStateException("WORKFLOW_TASK_ALREADY_CLAIMED", "Someone has already claimed this task");
         }
         requireOpen(task);
@@ -81,13 +83,13 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
         }
         if (taskRepository.claim(taskId, tenantId, userId, OffsetDateTime.now()) == 0) {
             WorkflowTask now = findTask(taskId, tenantId);
-            if (now.getStatus() == TaskStatus.claimed) {
+            if (TaskStatus.HELD.contains(now.getStatus()) || now.getDelegatedTo() != null) {
                 throw new WorkflowStateException("WORKFLOW_TASK_ALREADY_CLAIMED", "Someone has already claimed this task");
             }
             throw new WorkflowStateException("WORKFLOW_TASK_CLOSED", "This task is no longer open");
         }
         actions.record(instance, stage.getStageInstanceId(), taskId, WorkflowActionType.claimed, userId, null, null);
-        taskAudit(AuditActionCatalog.WORKFLOW_TASK_CLAIMED, instance, taskId, stage, null).log();
+        taskAudit(AuditActionCatalog.WORKFLOW_TASK_CLAIMED, instance, taskId, stage, null, null).log();
         return response(findTask(taskId, tenantId), stage, instance);
     }
 
@@ -100,12 +102,20 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
         WorkflowTask task = findTask(taskId, tenantId);
         WorkflowStageInstance stage = findStage(task, tenantId);
         WorkflowInstance instance = findInstance(stage, tenantId);
+        if (userId.equals(task.getClaimedBy()) && task.getDelegatedTo() != null) {
+            throw new WorkflowStateException("WORKFLOW_TASK_DELEGATED",
+                    "You delegated this task - it can no longer be released to the pool");
+        }
+        if (userId.equals(task.getClaimedBy()) && task.getStatus() == TaskStatus.awaiting_info) {
+            throw new WorkflowStateException("WORKFLOW_TASK_AWAITING_INFO",
+                    "This task is waiting on your information request - withdraw it before releasing the task");
+        }
         if (taskRepository.release(taskId, tenantId, userId, OffsetDateTime.now()) == 0) {
             throw new WorkflowStateException("WORKFLOW_TASK_NOT_CLAIMED_BY_YOU",
                     "Only the person who claimed this task can release it");
         }
         actions.record(instance, stage.getStageInstanceId(), taskId, WorkflowActionType.released, userId, null, null);
-        taskAudit(AuditActionCatalog.WORKFLOW_TASK_RELEASED, instance, taskId, stage, null).log();
+        taskAudit(AuditActionCatalog.WORKFLOW_TASK_RELEASED, instance, taskId, stage, null, null).log();
         return response(findTask(taskId, tenantId), stage, instance);
     }
 
@@ -140,22 +150,27 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
         requireActionable(instance, stage, userId);
         if (task == null) {
             WorkflowTask current = taskRepository.findById(taskId).orElseThrow();
-            if (DECIDED.contains(current.getStatus())) {
+            if (TaskStatus.DECIDED.contains(current.getStatus())) {
                 throw new WorkflowStateException("WORKFLOW_ENTRY_SATISFIED",
                         "Someone has already decided this entry of the stage");
             }
             throw new WorkflowStateException("WORKFLOW_TASK_CLOSED", "This task is no longer open");
         }
-        if (task.isPool() && task.getStatus() == TaskStatus.claimed && !userId.equals(task.getClaimedBy())) {
-            throw new WorkflowStateException("WORKFLOW_TASK_ALREADY_CLAIMED",
-                    "Another approver has claimed this task");
+        if (task.getStatus() == TaskStatus.awaiting_info) {
+            throw new WorkflowStateException("WORKFLOW_TASK_AWAITING_INFO",
+                    "This task is waiting for requested information and can't be decided until every request is closed");
         }
-        if (!approverResolver.canAct(tenantId, task, userId)) {
+        TaskRouting.Route route = taskRouting.route(tenantId, task, userId);
+        if (route == null) {
+            if (task.isPool() && task.getClaimedBy() != null && task.getDelegatedTo() == null) {
+                throw new WorkflowStateException("WORKFLOW_TASK_ALREADY_CLAIMED",
+                        "Another approver has claimed this task");
+            }
             throw new WorkflowAccessException("WORKFLOW_NOT_ASSIGNEE", "You are not an approver of this task");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
-        if (task.isPool() && task.getStatus() == TaskStatus.pending) {
+        if (task.isPool() && task.getClaimedBy() == null) {
             task.setClaimedBy(userId);
             task.setClaimedAt(now);
         }
@@ -182,11 +197,20 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
         stage.setUpdatedBy(userId);
         stage.setUpdatedAt(now);
 
+        Map<String, Object> decisionDetail = new LinkedHashMap<>();
+        decisionDetail.put("stageOrder", stage.getStageOrder());
+        decisionDetail.put("assigneeType", task.getAssigneeType().name());
+        decisionDetail.put("route", route.name());
+        if (route == TaskRouting.Route.delegated && task.getDelegatedFrom() != null) {
+            // "Approved by <delegate>, delegated from <original>" (decision 2)
+            decisionDetail.put("delegatedFrom", task.getDelegatedFrom().toString());
+            decisionDetail.put("delegatedFromName", engine.displayName(task.getDelegatedFrom()));
+        }
         actions.record(instance, stage.getStageInstanceId(), taskId,
                 approve ? WorkflowActionType.approved : WorkflowActionType.rejected, userId, cleanReason,
-                Map.of("stageOrder", stage.getStageOrder(), "assigneeType", task.getAssigneeType().name()));
+                decisionDetail);
         taskAudit(approve ? AuditActionCatalog.WORKFLOW_TASK_APPROVED : AuditActionCatalog.WORKFLOW_TASK_REJECTED,
-                instance, taskId, stage, task).reason(cleanReason).log();
+                instance, taskId, stage, task, route).reason(cleanReason).log();
 
         List<WorkflowTask> remaining = new ArrayList<>(open);
         remaining.remove(task);
@@ -211,14 +235,15 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
             throw new WorkflowAccessException("WORKFLOW_SELF_APPROVAL_FORBIDDEN",
                     "You cannot act on a workflow you submitted");
         }
-        if (taskRepository.existsByStageInstanceIdAndActedByAndStatusIn(stage.getStageInstanceId(), userId, DECIDED)) {
+        if (taskRepository.existsByStageInstanceIdAndActedByAndStatusIn(stage.getStageInstanceId(), userId,
+                TaskStatus.DECIDED)) {
             throw new WorkflowStateException("WORKFLOW_ALREADY_ACTED_IN_STAGE", "You have already decided this stage");
         }
     }
 
     private static void requireOpen(WorkflowTask task) {
         if (!TaskStatus.OPEN.contains(task.getStatus())) {
-            throw new WorkflowStateException(DECIDED.contains(task.getStatus()) ? "WORKFLOW_ENTRY_SATISFIED"
+            throw new WorkflowStateException(TaskStatus.DECIDED.contains(task.getStatus()) ? "WORKFLOW_ENTRY_SATISFIED"
                     : "WORKFLOW_TASK_CLOSED", "This task is no longer open");
         }
     }
@@ -241,7 +266,7 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     }
 
     private AuditEventBuilder taskAudit(String action, WorkflowInstance instance, UUID taskId,
-                                                                 WorkflowStageInstance stage, WorkflowTask task) {
+                                        WorkflowStageInstance stage, WorkflowTask task, TaskRouting.Route route) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("taskId", taskId);
         detail.put("stageInstanceId", stage.getStageInstanceId());
@@ -250,6 +275,12 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
             detail.put("assigneeType", task.getAssigneeType().name());
             detail.put("assigneeId", task.getAssigneeId());
             detail.put("decision", task.getDecision() == null ? null : task.getDecision().name());
+            detail.put("delegatedFrom", task.getDelegatedFrom());
+            detail.put("delegatedTo", task.getDelegatedTo());
+            detail.put("escalatedTo", task.getEscalatedTo());
+        }
+        if (route != null) {
+            detail.put("route", route.name());
         }
         return engine.audit(action, instance)
                 .objectType(AuditObjectTypes.WORKFLOW_TASK)

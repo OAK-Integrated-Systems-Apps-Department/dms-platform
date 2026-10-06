@@ -18,6 +18,8 @@ public record StageInstanceView(
         OffsetDateTime activatedAt,
         OffsetDateTime dueAt,
         OffsetDateTime completedAt,
-        List<TaskView> tasks
+        List<TaskView> tasks,
+        /** Whether approvers in this stage may request information (V47). */
+        boolean allowInfoRequests
 ) {
 }

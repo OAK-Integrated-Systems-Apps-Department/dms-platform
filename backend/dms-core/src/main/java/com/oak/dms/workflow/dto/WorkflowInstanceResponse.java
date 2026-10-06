@@ -27,6 +27,10 @@ public record WorkflowInstanceResponse(
         UUID currentStageInstanceId,
         List<StageInstanceView> stages,
         List<TaskView> nextAssignees,
-        UUID myOpenTaskId
+        UUID myOpenTaskId,
+        List<InfoRequestView> infoRequests,
+        List<SupportingDocumentView> supportingDocuments,
+        /** Open requests of this run addressed to the caller - "you need to answer" on the status panel. */
+        List<UUID> myOpenInfoRequestIds
 ) {
 }

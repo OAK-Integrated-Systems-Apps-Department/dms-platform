@@ -77,6 +77,11 @@ public class WorkflowStage {
     @Column(name = "escalation_user_id")
     private UUID escalationUserId;
 
+    /** Whether approvers in this stage may pause their task to request information (V47, decision 19). */
+    @Column(name = "allow_info_requests", nullable = false)
+    @Builder.Default
+    private boolean allowInfoRequests = true;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

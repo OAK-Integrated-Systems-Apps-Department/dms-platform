@@ -82,6 +82,7 @@ export const PermissionCodes = {
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
   // Reading a document's metadata (GET /api/v1/documents/{id}).
   DOCM_DOCUMENTS_VIEW: "docm.documents.view",
+  DOCM_COMMENTS_CREATE: "docm.document-comments.create",
 
   // Departments (OTUA) - also the approver pools a workflow stage can route
   // to. The department list is additionally readable with
@@ -100,8 +101,8 @@ export const PermissionCodes = {
   WA_TEMPLATES_TOGGLE_ACTIVE: "wa.configure-workflow-templates.toggle-active",
   WA_TASK_APPROVE: "wa.approve-reject-workflow-task.approve",
   WA_TASK_REJECT: "wa.approve-reject-workflow-task.reject",
-  // Cataloged for Phase 2 (task reassignment) - no UI checks it yet.
   WA_TASK_REASSIGN: "wa.reassign-workflow-task",
+  WA_REQUEST_INFORMATION: "wa.request-workflow-information.create",
   WA_AUDIT_TRAIL_VIEW: "wa.view-workflow-audit-trail.view",
   // Document Lifecycle Management - starting a workflow on a document.
   DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",

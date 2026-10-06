@@ -42,6 +42,11 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, UUID
     List<WorkflowTask> lockOpenByStageInstance(@Param("stageInstanceId") UUID stageInstanceId,
                                                @Param("open") Collection<TaskStatus> open);
 
+    /** LOCK 3 for a path that touches one task (delegate, reassign, info requests) - after the stage lock. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from WorkflowTask t where t.taskId = :id and t.tenantId = :tenantId and t.deleted = false")
+    Optional<WorkflowTask> lockByTaskIdAndTenantId(@Param("id") UUID taskId, @Param("tenantId") UUID tenantId);
+
     List<WorkflowTask> findByStageInstanceIdAndDeletedFalseOrderByCreatedAtAsc(UUID stageInstanceId);
 
     List<WorkflowTask> findByStageInstanceIdInAndDeletedFalse(Collection<UUID> stageInstanceIds);
@@ -63,6 +68,7 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, UUID
             where t.taskId = :taskId and t.tenantId = :tenantId
               and t.status = com.oak.dms.workflow.enums.TaskStatus.pending
               and t.assigneeType <> com.oak.dms.workflow.enums.AssigneeType.user
+              and t.delegatedTo is null
             """)
     int claim(@Param("taskId") UUID taskId, @Param("tenantId") UUID tenantId, @Param("userId") UUID userId,
               @Param("now") OffsetDateTime now);
@@ -74,61 +80,72 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, UUID
                 t.updatedBy = :userId, t.updatedAt = :now
             where t.taskId = :taskId and t.tenantId = :tenantId
               and t.status = com.oak.dms.workflow.enums.TaskStatus.claimed and t.claimedBy = :userId
+              and t.delegatedTo is null
             """)
     int release(@Param("taskId") UUID taskId, @Param("tenantId") UUID tenantId, @Param("userId") UUID userId,
                 @Param("now") OffsetDateTime now);
 
     /**
-     * The caller's queue (W10): open tasks of active stages of in-progress
-     * instances the caller didn't start, that the caller can act on, minus
-     * stages they already decided. Each include* flag switches one branch on:
-     * user tasks addressed to them, pool tasks they claimed, and unclaimed
-     * pool tasks of their roles / their department. roleIds must not be empty
-     * (pass a placeholder) - Hibernate renders an empty IN list unreliably.
+     * The caller's queue (W10, Phase 2 S3): open tasks of active stages of
+     * in-progress instances the caller didn't start, that the caller can act
+     * on, minus stages they already decided. Mirrors {@code TaskRouting} -
+     * keep the two in step. Each include* flag switches one route on: user
+     * tasks addressed to them, tasks they hold by claim (claimed or awaiting
+     * information), unclaimed pool tasks of their roles / department, tasks
+     * delegated to them, and tasks escalated to them. A delegated task
+     * belongs to its delegate only, so the assignee/claimer/pool routes skip
+     * it. waitingOnly narrows to tasks paused for information. roleIds must
+     * not be empty (pass a placeholder) - Hibernate renders an empty IN list
+     * unreliably. One predicate for the page, its count and the overdue count.
      */
-    @Query(value = """
-            select t from WorkflowTask t, WorkflowStageInstance si, WorkflowInstance i
+    String MY_TASKS_FROM_WHERE = """
+            from WorkflowTask t, WorkflowStageInstance si, WorkflowInstance i
             where t.stageInstanceId = si.stageInstanceId and si.instanceId = i.instanceId
               and t.tenantId = :tenantId and t.deleted = false
-              and t.status in (com.oak.dms.workflow.enums.TaskStatus.pending, com.oak.dms.workflow.enums.TaskStatus.claimed)
+              and t.status in (com.oak.dms.workflow.enums.TaskStatus.pending, com.oak.dms.workflow.enums.TaskStatus.claimed,
+                               com.oak.dms.workflow.enums.TaskStatus.awaiting_info)
+              and (:waitingOnly = false or t.status = com.oak.dms.workflow.enums.TaskStatus.awaiting_info)
               and si.status = com.oak.dms.workflow.enums.StageInstanceStatus.active
               and i.status = com.oak.dms.workflow.enums.InstanceStatus.in_progress
               and i.initiatedBy <> :userId
               and (
-                   (:includeUser = true and t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.user and t.assigneeId = :userId)
-                or (:includeClaimed = true and t.status = com.oak.dms.workflow.enums.TaskStatus.claimed and t.claimedBy = :userId)
-                or (:includePool = true and t.status = com.oak.dms.workflow.enums.TaskStatus.pending
+                   (:includeUser = true and t.delegatedTo is null
+                    and t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.user and t.assigneeId = :userId)
+                or (:includeClaimed = true and t.delegatedTo is null and t.claimedBy = :userId)
+                or (:includePool = true and t.delegatedTo is null and t.status = com.oak.dms.workflow.enums.TaskStatus.pending
                     and ((t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.role and t.assigneeId in :roleIds)
                       or (t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.department and t.assigneeId = :departmentId)))
+                or (:includeDelegated = true and t.delegatedTo = :userId)
+                or (:includeEscalated = true and t.escalatedTo = :userId)
               )
               and not exists (select d.taskId from WorkflowTask d
                               where d.stageInstanceId = t.stageInstanceId and d.actedBy = :userId
                                 and d.status in (com.oak.dms.workflow.enums.TaskStatus.approved, com.oak.dms.workflow.enums.TaskStatus.rejected))
-            """,
-            countQuery = """
-            select count(t) from WorkflowTask t, WorkflowStageInstance si, WorkflowInstance i
-            where t.stageInstanceId = si.stageInstanceId and si.instanceId = i.instanceId
-              and t.tenantId = :tenantId and t.deleted = false
-              and t.status in (com.oak.dms.workflow.enums.TaskStatus.pending, com.oak.dms.workflow.enums.TaskStatus.claimed)
-              and si.status = com.oak.dms.workflow.enums.StageInstanceStatus.active
-              and i.status = com.oak.dms.workflow.enums.InstanceStatus.in_progress
-              and i.initiatedBy <> :userId
-              and (
-                   (:includeUser = true and t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.user and t.assigneeId = :userId)
-                or (:includeClaimed = true and t.status = com.oak.dms.workflow.enums.TaskStatus.claimed and t.claimedBy = :userId)
-                or (:includePool = true and t.status = com.oak.dms.workflow.enums.TaskStatus.pending
-                    and ((t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.role and t.assigneeId in :roleIds)
-                      or (t.assigneeType = com.oak.dms.workflow.enums.AssigneeType.department and t.assigneeId = :departmentId)))
-              )
-              and not exists (select d.taskId from WorkflowTask d
-                              where d.stageInstanceId = t.stageInstanceId and d.actedBy = :userId
-                                and d.status in (com.oak.dms.workflow.enums.TaskStatus.approved, com.oak.dms.workflow.enums.TaskStatus.rejected))
-            """)
+            """;
+
+    @Query(value = "select t " + MY_TASKS_FROM_WHERE, countQuery = "select count(t) " + MY_TASKS_FROM_WHERE)
     Page<WorkflowTask> findMyTasks(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId,
                                    @Param("roleIds") Collection<UUID> roleIds,
                                    @Param("departmentId") UUID departmentId,
                                    @Param("includeUser") boolean includeUser,
                                    @Param("includeClaimed") boolean includeClaimed,
                                    @Param("includePool") boolean includePool,
+                                   @Param("includeDelegated") boolean includeDelegated,
+                                   @Param("includeEscalated") boolean includeEscalated,
+                                   @Param("waitingOnly") boolean waitingOnly,
                                    Pageable pageable);
+
+    /** Overdue tasks of the same queue; a task paused for information is never overdue (its clock is stopped). */
+    @Query("select count(t) " + MY_TASKS_FROM_WHERE
+            + " and t.dueAt < :now and t.status <> com.oak.dms.workflow.enums.TaskStatus.awaiting_info")
+    long countMyOverdueTasks(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId,
+                             @Param("roleIds") Collection<UUID> roleIds,
+                             @Param("departmentId") UUID departmentId,
+                             @Param("includeUser") boolean includeUser,
+                             @Param("includeClaimed") boolean includeClaimed,
+                             @Param("includePool") boolean includePool,
+                             @Param("includeDelegated") boolean includeDelegated,
+                             @Param("includeEscalated") boolean includeEscalated,
+                             @Param("waitingOnly") boolean waitingOnly,
+                             @Param("now") OffsetDateTime now);
 }

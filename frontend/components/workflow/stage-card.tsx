@@ -1,11 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, ArrowDown, ArrowUp, Clock, Pencil, Trash2 } from "lucide-react"
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, Clock, MessageSquareMore, Pencil, Trash2, TrendingUp } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
+import { Switch } from "@/components/ui/switch"
+import { useUserOptions } from "@/lib/workflow/use-participant-options"
 import { COMPLETION_RULE_LABELS, REJECTION_RULE_LABELS } from "@/lib/workflow/workflow-badges"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +39,19 @@ const REJECTION_HELP = {
   wait_for_all: "Every approver decides first; the stage is rejected only if the approvals can no longer reach the rule.",
 }
 
+const ESCALATION_OPTIONS = [
+  { value: "none" as const, label: "None" },
+  { value: "department_head" as const, label: "Department head" },
+  { value: "named_user" as const, label: "Named person" },
+]
+
+const ESCALATION_HELP = {
+  none: "Nothing happens at the due time; the task just shows as overdue.",
+  department_head:
+    "A department pool task goes to that department's head; a user or role task to the head of the submitter's department. The original approvers can still act.",
+  named_user: "At the due time this person can also approve or reject. The original approvers can still act.",
+}
+
 const ICON_BUTTON =
   "flex size-8 items-center justify-center rounded-btn border border-[var(--border-strong)] bg-card text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
 
@@ -45,6 +61,10 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
     completionRule: stage?.completionRule ?? "all",
     rejectionRule: stage?.rejectionRule ?? "halt_immediately",
     slaHours: stage?.slaHours ?? null,
+    reminderBeforeHours: stage?.reminderBeforeHours ?? null,
+    escalationTarget: stage?.escalationTarget ?? "none",
+    escalationUserId: stage?.escalationUserId ?? null,
+    allowInfoRequests: stage?.allowInfoRequests ?? true,
     participants: (stage?.participants ?? [])
       .slice()
       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -52,16 +72,16 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
   }
 }
 
-/** Keeps the Phase 2 reminder/escalation fields the card doesn't edit, so saving never clears them. */
-function toPayload(values: StageFormValues, stage: WorkflowStageDto | null): UpsertStagePayload {
+function toPayload(values: StageFormValues): UpsertStagePayload {
   return {
     name: values.name.trim(),
     completionRule: values.completionRule,
     rejectionRule: values.rejectionRule,
     slaHours: values.slaHours,
-    reminderBeforeHours: stage?.reminderBeforeHours ?? null,
-    escalationTarget: stage?.escalationTarget ?? null,
-    escalationUserId: stage?.escalationUserId ?? null,
+    reminderBeforeHours: values.reminderBeforeHours,
+    escalationTarget: values.escalationTarget,
+    escalationUserId: values.escalationTarget === "named_user" ? values.escalationUserId : null,
+    allowInfoRequests: values.allowInfoRequests,
     participants: values.participants.map((p, index) => ({
       assigneeType: p.assigneeType,
       assigneeId: p.assigneeId,
@@ -114,7 +134,7 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
       return
     }
     setErrors({})
-    const ok = await onSave(toPayload(parsed.data, stage))
+    const ok = await onSave(toPayload(parsed.data))
     if (ok && !isNew) setDraft(null)
   }
 
@@ -124,6 +144,7 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
     else setDraft(null)
   }
 
+  const users = useUserOptions(Boolean(draft) && draft?.escalationTarget === "named_user")
   const values = draft ?? toFormValues(stage)
   const entries = values.participants.length
   const showMajorityWarning = values.completionRule === "majority" && entries > 0 && entries <= 2
@@ -142,6 +163,9 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             <p className="text-[12px] text-muted-foreground">
               {COMPLETION_RULE_LABELS[stage.completionRule]} must approve · {REJECTION_RULE_LABELS[stage.rejectionRule]}
               {stage.slaHours ? ` · SLA ${stage.slaHours}h` : ""}
+              {stage.reminderBeforeHours ? ` · Reminder ${stage.reminderBeforeHours}h before` : ""}
+              {stage.escalationTarget === "department_head" ? " · Escalates to department head" : ""}
+              {stage.escalationTarget === "named_user" ? " · Escalates to a named person" : ""}
             </p>
           )}
         </div>
@@ -224,6 +248,67 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             {errors.participants && <p className="mt-1.5 text-[12px] text-destructive">{errors.participants}</p>}
           </div>
 
+          <div className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">
+            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+              Reminders, escalation &amp; information requests
+            </p>
+            <div className="sm:w-[240px]">
+              <Label htmlFor={`stage-reminder-${stage?.stageId ?? "new"}`}>
+                Remind Hours Before Due <span className="text-[var(--ink-faint)] normal-case">(optional)</span>
+              </Label>
+              <Input
+                id={`stage-reminder-${stage?.stageId ?? "new"}`}
+                type="number"
+                min={1}
+                disabled={draft.slaHours == null}
+                value={draft.reminderBeforeHours ?? ""}
+                aria-invalid={Boolean(errors.reminderBeforeHours)}
+                onChange={(e) => update({ reminderBeforeHours: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+              {draft.slaHours == null && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">Set SLA hours first.</p>
+              )}
+              {errors.reminderBeforeHours && <p className="mt-1.5 text-[12px] text-destructive">{errors.reminderBeforeHours}</p>}
+            </div>
+
+            <div>
+              <Label>Escalate When Overdue To</Label>
+              <SegmentedControl
+                value={draft.escalationTarget}
+                onChange={(escalationTarget) => update({ escalationTarget })}
+                options={ESCALATION_OPTIONS}
+              />
+              <p className="mt-2 text-[12.5px] text-muted-foreground">{ESCALATION_HELP[draft.escalationTarget]}</p>
+              {errors.escalationTarget && <p className="mt-1.5 text-[12px] text-destructive">{errors.escalationTarget}</p>}
+              {draft.escalationTarget === "named_user" && (
+                <div className="mt-3 sm:w-[320px]">
+                  <SearchableSelect
+                    options={(users.data ?? []).map((u) => ({ value: u.value, label: u.hint ? `${u.label} (${u.hint})` : u.label }))}
+                    selected={draft.escalationUserId ?? ""}
+                    onChange={(value) => update({ escalationUserId: value || null })}
+                    allLabel={users.isPending ? "Loading people…" : "Choose a person"}
+                    searchPlaceholder="Search people"
+                  />
+                  {errors.escalationUserId && <p className="mt-1.5 text-[12px] text-destructive">{errors.escalationUserId}</p>}
+                </div>
+              )}
+            </div>
+
+            <label className="flex items-start gap-3">
+              <Switch
+                checked={draft.allowInfoRequests}
+                onCheckedChange={(allowInfoRequests) => update({ allowInfoRequests })}
+                className="mt-0.5"
+              />
+              <span className="text-[13px] text-foreground">
+                Allow information requests
+                <span className="block text-[12px] text-muted-foreground">
+                  Approvers can pause their task to ask someone for a document or an answer; the SLA clock stops meanwhile.
+                </span>
+              </span>
+            </label>
+          </div>
+
           <div className="flex items-center justify-end gap-2.5 border-t border-dashed border-border pt-4">
             <button
               type="button"
@@ -281,6 +366,24 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             {stage.slaHours && (
               <p className="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 <Clock size={12} /> Due {stage.slaHours} hours after the stage starts.
+              </p>
+            )}
+            {stage.reminderBeforeHours && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <BellRing size={12} /> Approvers are reminded {stage.reminderBeforeHours} hours before it is due.
+              </p>
+            )}
+            {stage.escalationTarget !== "none" && stage.escalationTarget && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <TrendingUp size={12} />{" "}
+                {stage.escalationTarget === "department_head"
+                  ? "Escalates to the department head when overdue."
+                  : "Escalates to a named person when overdue."}
+              </p>
+            )}
+            {!stage.allowInfoRequests && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <MessageSquareMore size={12} /> Information requests are switched off for this stage.
               </p>
             )}
           </div>

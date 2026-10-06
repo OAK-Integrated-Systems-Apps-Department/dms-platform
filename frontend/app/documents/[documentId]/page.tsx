@@ -2,10 +2,10 @@
 
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
 import { ChevronRight } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -13,7 +13,6 @@ import { Panel } from "@/components/ui/panel"
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
 import { ApiError } from "@/lib/api-error"
-import { fetchDocumentType } from "@/lib/document-types/api"
 import { useDocument } from "@/lib/documents/use-document"
 import { usePageTitle } from "@/lib/use-page-title"
 import { formatDateTime } from "@/lib/utils"
@@ -32,15 +31,6 @@ export default function DocumentPage() {
   const params = useParams<{ documentId: string }>()
   const { data: document, isPending, isError, error } = useDocument(params.documentId)
   const history = useDocumentWorkflowHistory(params.documentId)
-
-  // Type name is best-effort: GET /document-types/{id} needs a document type
-  // permission the viewer may lack, in which case the row shows "—".
-  const documentType = useQuery({
-    queryKey: ["document-type", document?.documentTypeId],
-    queryFn: () => fetchDocumentType(document!.documentTypeId),
-    enabled: Boolean(document?.documentTypeId),
-    retry: false,
-  })
 
   const runs = history.data?.content ?? []
   const current = runs.find((run) => run.status === "in_progress") ?? runs[0]
@@ -79,7 +69,7 @@ export default function DocumentPage() {
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
               </div>
               <p className="text-[13px] text-muted-foreground">
-                {documentType.data?.typeName ?? "—"} · Created {formatDateTime(document.createdAt)}
+                {document.documentTypeName ?? "—"} · Created {formatDateTime(document.createdAt)}
                 {document.updatedAt && <> · Updated {formatDateTime(document.updatedAt)}</>}
               </p>
             </div>
@@ -94,7 +84,7 @@ export default function DocumentPage() {
             <div className="flex min-w-0 flex-col gap-5">
               <Panel title="Document">
                 <dl className="grid grid-cols-1 gap-x-6 gap-y-3 pt-3 sm:grid-cols-2">
-                  <Field label="Type" value={documentType.data?.typeName ?? "—"} />
+                  <Field label="Type" value={document.documentTypeName ?? "—"} />
                   <Field label="Status" value={<span className="capitalize">{document.status.replace(/_/g, " ")}</span>} />
                   <Field label="Latest Version" value={document.latestVersionId ?? "—"} mono />
                   <Field label="Published Version" value={document.publishedVersionId ?? "—"} mono />
@@ -118,41 +108,44 @@ export default function DocumentPage() {
               )}
             </div>
 
-            <Panel title="Workflow History">
-              {history.isPending ? (
-                <p className="pt-3 text-[13px] text-muted-foreground">Loading…</p>
-              ) : history.isError ? (
-                <p className="pt-3 text-[13px] text-[var(--rust)]">Could not load this document&apos;s workflow history.</p>
-              ) : runs.length === 0 ? (
-                <p className="pt-3 text-[13px] text-muted-foreground">No workflows yet.</p>
-              ) : (
-                <ul className="divide-y divide-border pt-2">
-                  {runs.map((run) => (
-                    <li key={run.instanceId}>
-                      <Link href={`/workflows/instances/${run.instanceId}`} className="flex items-center justify-between gap-3 rounded-sm px-2 py-2.5 hover:bg-muted">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[13px] font-semibold text-foreground">
-                              {run.templateName} <span className="font-normal text-muted-foreground">v{run.templateVersionNumber}</span>
-                            </span>
-                            <Badge variant={INSTANCE_STATUS_BADGE_VARIANT[run.status]}>{INSTANCE_STATUS_LABELS[run.status]}</Badge>
-                          </div>
-                          <p className="mt-0.5 text-[12px] text-muted-foreground">
-                            {run.initiatedBy?.displayName ?? "—"} · {formatDateTime(run.startedAt)}
-                          </p>
-                          {run.outcomeReason && (
-                            <p className="mt-0.5 truncate text-[12px] text-muted-foreground" title={run.outcomeReason}>
-                              {run.outcomeReason}
+            <div className="flex min-w-0 flex-col gap-5">
+              <Panel title="Workflow History">
+                {history.isPending ? (
+                  <p className="pt-3 text-[13px] text-muted-foreground">Loading…</p>
+                ) : history.isError ? (
+                  <p className="pt-3 text-[13px] text-[var(--rust)]">Could not load this document&apos;s workflow history.</p>
+                ) : runs.length === 0 ? (
+                  <p className="pt-3 text-[13px] text-muted-foreground">No workflows yet.</p>
+                ) : (
+                  <ul className="divide-y divide-border pt-2">
+                    {runs.map((run) => (
+                      <li key={run.instanceId}>
+                        <Link href={`/workflows/instances/${run.instanceId}`} className="flex items-center justify-between gap-3 rounded-sm px-2 py-2.5 hover:bg-muted">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[13px] font-semibold text-foreground">
+                                {run.templateName} <span className="font-normal text-muted-foreground">v{run.templateVersionNumber}</span>
+                              </span>
+                              <Badge variant={INSTANCE_STATUS_BADGE_VARIANT[run.status]}>{INSTANCE_STATUS_LABELS[run.status]}</Badge>
+                            </div>
+                            <p className="mt-0.5 text-[12px] text-muted-foreground">
+                              {run.initiatedBy?.displayName ?? "—"} · {formatDateTime(run.startedAt)}
                             </p>
-                          )}
-                        </div>
-                        <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Panel>
+                            {run.outcomeReason && (
+                              <p className="mt-0.5 truncate text-[12px] text-muted-foreground" title={run.outcomeReason}>
+                                {run.outcomeReason}
+                              </p>
+                            )}
+                          </div>
+                          <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+              <DiscussionPanel documentId={document.documentId} />
+            </div>
           </div>
         </>
       )}

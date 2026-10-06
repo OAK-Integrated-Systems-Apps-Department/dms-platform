@@ -1,4 +1,5 @@
 import {
+  AtSign,
   BarChart3,
   Building2,
   Download,
@@ -37,6 +38,8 @@ export const navSections: NavSection[] = [
       // The caller's workflow approval queue - visible to everyone (anyone
       // can be named as an approver); the badge is their live open-task count.
       { label: "My Tasks", icon: Workflow, href: "/tasks", liveBadge: "myOpenTasks" },
+      // Comments that mention me - readable even without document access (Phase 2).
+      { label: "Mentions", icon: AtSign, href: "/mentions" },
       { label: "Search", icon: Search },
       { label: "Reports", icon: BarChart3 },
     ],

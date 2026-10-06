@@ -2,7 +2,21 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Ban, Check, CheckCircle2, Clock, Hand, X, XCircle } from "lucide-react"
+import {
+  AlertTriangle,
+  Ban,
+  Check,
+  CheckCircle2,
+  Clock,
+  Forward,
+  Hand,
+  MessageCircleQuestion,
+  PauseCircle,
+  TrendingUp,
+  UserCog,
+  X,
+  XCircle,
+} from "lucide-react"
 
 import {
   AlertDialog,
@@ -32,8 +46,12 @@ import {
 } from "@/lib/workflow/workflow-badges"
 import { cn, formatDateTime } from "@/lib/utils"
 
-import type { WorkflowInstanceDto, WorkflowStageInstanceDto, WorkflowTaskDto } from "@/lib/workflow/api"
+import type { InfoRequestDto, WorkflowInstanceDto, WorkflowStageInstanceDto, WorkflowTaskDto } from "@/lib/workflow/api"
 
+import { DelegateTaskDialog } from "./delegate-task-dialog"
+import { InfoRequestsList } from "./info-requests-list"
+import { RequestInfoDialog } from "./request-info-dialog"
+import { SupportingDocumentsList } from "./supporting-documents-list"
 import { TaskActionDialog, type TaskDecisionKind } from "./task-action-dialog"
 
 const CANCEL_REASON_MAX = 2000
@@ -49,7 +67,10 @@ interface WorkflowStatusPanelProps {
  * (each stage's status, approvals so far against what its rule requires,
  * due date and every task with its assignee, decision and reason), the
  * caller's own pending task with its actions, and "Cancel workflow" for the
- * initiator or a tenant admin (a reason is required).
+ * initiator or a tenant admin (a reason is required). Phase 2 adds, per
+ * task, who it was delegated or escalated to and whom it is waiting on;
+ * Delegate and Request information on my task; Reassign for admins; and
+ * the run's information requests and supporting documents.
  */
 export function WorkflowStatusPanel({ instance, showDocumentLink = true }: WorkflowStatusPanelProps) {
   const { data: currentUser } = useCurrentUser()
@@ -58,6 +79,8 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
   const actions = useWorkflowActions()
   const [decision, setDecision] = useState<TaskDecisionKind | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [moving, setMoving] = useState<{ task: WorkflowTaskDto; stage: WorkflowStageInstanceDto; mode: "delegate" | "reassign" } | null>(null)
+  const [requestingInfo, setRequestingInfo] = useState(false)
 
   const inProgress = instance.status === "in_progress"
   const isInitiator = Boolean(currentUser?.userId) && currentUser?.userId === instance.initiatedBy?.userId
@@ -67,9 +90,19 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
   const myTask = findTask(stages, instance.myOpenTaskId)
   const myStage = myTask ? stages.find((s) => s.tasks.some((t) => t.taskId === myTask.taskId)) : undefined
   // Claiming is optional: deciding an unclaimed pool task claims it implicitly.
-  const myTaskClaimable = myTask ? myTask.assigneeType !== "user" && myTask.status === "pending" : false
+  const myTaskClaimable = myTask ? myTask.assigneeType !== "user" && myTask.status === "pending" && !myTask.delegatedTo : false
+  const myTaskWaiting = myTask?.status === "awaiting_info"
+  const me = currentUser?.userId
+  const iHoldMyTask = Boolean(myTask && me && holderOf(myTask) === me)
   const canApprove = hasPermission(PermissionCodes.WA_TASK_APPROVE)
   const canReject = hasPermission(PermissionCodes.WA_TASK_REJECT)
+  const canRequestInfo = Boolean(myStage?.allowInfoRequests) && hasPermission(PermissionCodes.WA_REQUEST_INFORMATION)
+  const canReassign = inProgress && hasPermission(PermissionCodes.WA_TASK_REASSIGN)
+  const askedOfMe = instance.myOpenInfoRequestIds ?? []
+  const infoRequests = instance.infoRequests ?? []
+  const waitingOn = openRequestsByTask(infoRequests)
+  const canAttach =
+    hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW) && (isInitiator || Boolean(myTask) || askedOfMe.length > 0)
 
   return (
     <div className="rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
@@ -130,15 +163,60 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
           </div>
         )}
 
+        {askedOfMe.length > 0 && inProgress && (
+          <div className="flex items-start gap-2 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[13px] text-[var(--gold-foreground)]">
+            <MessageCircleQuestion size={15} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">You&apos;ve been asked for information.</span> An approver is waiting on your
+              answer - see Information requests below.
+            </span>
+          </div>
+        )}
+
         {myTask && myStage && inProgress && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-btn border border-primary bg-primary/5 px-3.5 py-2.5">
             <p className="text-[13px] text-foreground">
-              <span className="font-semibold">Your action is needed</span> on stage {myStage.stageOrder}: {myStage.name}
-              {myTaskClaimable && (
-                <span className="text-muted-foreground"> - sent to the {myTask.assigneeName ?? "pool"} pool; the first member to decide answers for it.</span>
+              {myTaskWaiting ? (
+                <>
+                  <span className="font-semibold">Your task is paused</span> on stage {myStage.stageOrder}: {myStage.name}
+                  <span className="text-muted-foreground"> - waiting on {waitingOn.get(myTask.taskId)?.join(", ") ?? "information"}. Its clock is stopped.</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">Your action is needed</span> on stage {myStage.stageOrder}: {myStage.name}
+                  {myTaskClaimable && (
+                    <span className="text-muted-foreground"> - sent to the {myTask.assigneeName ?? "pool"} pool; the first member to decide answers for it.</span>
+                  )}
+                  {myTask.delegatedFrom && myTask.delegatedTo?.userId === me && (
+                    <span className="text-muted-foreground"> - delegated to you by {myTask.delegatedFrom.displayName ?? "a colleague"}.</span>
+                  )}
+                  {myTask.escalatedTo?.userId === me && holderOf(myTask) !== me && (
+                    <span className="text-muted-foreground"> - escalated to you because it is overdue.</span>
+                  )}
+                </>
               )}
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {canRequestInfo && (
+                <button
+                  type="button"
+                  disabled={actions.isActing}
+                  onClick={() => setRequestingInfo(true)}
+                  className="flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:opacity-60"
+                >
+                  <MessageCircleQuestion size={13} /> Request Info
+                </button>
+              )}
+              {iHoldMyTask && !myTaskWaiting && (canApprove || canReject) && (
+                <button
+                  type="button"
+                  disabled={actions.isActing}
+                  onClick={() => setMoving({ task: myTask, stage: myStage, mode: "delegate" })}
+                  className="flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:opacity-60"
+                >
+                  <Forward size={13} /> Delegate
+                </button>
+              )}
               {myTaskClaimable && (canApprove || canReject) && (
                 <button
                   type="button"
@@ -149,7 +227,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   <Hand size={13} /> Claim
                 </button>
               )}
-              {canApprove && (
+              {canApprove && !myTaskWaiting && (
                 <button
                   type="button"
                   disabled={actions.isActing}
@@ -159,7 +237,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   <CheckCircle2 size={13} /> Approve
                 </button>
               )}
-              {canReject && (
+              {canReject && !myTaskWaiting && (
                 <button
                   type="button"
                   disabled={actions.isActing}
@@ -181,9 +259,26 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
               last={index === stages.length - 1}
               current={stage.stageInstanceId === instance.currentStageInstanceId}
               totalStages={stages.length}
+              waitingOn={waitingOn}
+              onReassign={canReassign ? (task) => setMoving({ task, stage, mode: "reassign" }) : undefined}
             />
           ))}
         </ol>
+
+        <InfoRequestsList
+          requests={infoRequests}
+          documentTitle={instance.documentTitle ?? "Untitled document"}
+          currentUserId={me}
+          canRedirect={isInitiator || isTenantAdmin}
+          inProgress={inProgress}
+        />
+        <SupportingDocumentsList
+          instanceId={instance.instanceId}
+          documents={instance.supportingDocuments ?? []}
+          currentUserId={me}
+          canAttach={canAttach}
+          inProgress={inProgress}
+        />
       </div>
 
       {decision && myTask && myStage && (
@@ -196,6 +291,25 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
           onConfirm={async (text) =>
             (decision === "approve" ? await actions.approve(myTask.taskId, text) : await actions.reject(myTask.taskId, text)) !== null
           }
+        />
+      )}
+
+      {moving && (
+        <DelegateTaskDialog
+          mode={moving.mode}
+          taskId={moving.task.taskId}
+          documentTitle={instance.documentTitle ?? "Untitled document"}
+          stageLabel={`Stage ${moving.stage.stageOrder} of ${stages.length}: ${moving.stage.name}`}
+          onOpenChange={(open) => !open && setMoving(null)}
+        />
+      )}
+
+      {requestingInfo && myTask && (
+        <RequestInfoDialog
+          mode="raise"
+          taskId={myTask.taskId}
+          documentTitle={instance.documentTitle ?? "Untitled document"}
+          onOpenChange={(open) => !open && setRequestingInfo(false)}
         />
       )}
 
@@ -218,6 +332,23 @@ function findTask(stages: WorkflowStageInstanceDto[], taskId: string | null): Wo
   return undefined
 }
 
+/** The one person holding a task: its delegate, else its claimer, else its user assignee (null for an unclaimed pool). */
+function holderOf(task: WorkflowTaskDto): string | null {
+  return task.delegatedTo?.userId ?? task.claimedBy?.userId ?? (task.assigneeType === "user" ? task.assigneeId : null)
+}
+
+/** Names each waiting task is waiting on, from the run's open information requests. */
+function openRequestsByTask(requests: InfoRequestDto[]): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const r of requests) {
+    if (r.status !== "open") continue
+    map.set(r.taskId, [...(map.get(r.taskId) ?? []), r.requestedFrom.displayName ?? "someone"])
+  }
+  return map
+}
+
+const OPEN_TASK_STATUSES = new Set(["pending", "claimed", "awaiting_info"])
+
 /** Read at render time on purpose: the instance re-polls every 15s while in progress, which refreshes it. */
 function isPast(iso: string | null): boolean {
   return iso !== null && new Date(iso).getTime() < new Date().getTime()
@@ -231,7 +362,16 @@ const STEP_DOT: Record<WorkflowStageInstanceDto["status"], string> = {
   skipped: "border-[var(--border-strong)] bg-muted text-muted-foreground",
 }
 
-function StageStep({ stage, last, current, totalStages }: { stage: WorkflowStageInstanceDto; last: boolean; current: boolean; totalStages: number }) {
+interface StageStepProps {
+  stage: WorkflowStageInstanceDto
+  last: boolean
+  current: boolean
+  totalStages: number
+  waitingOn: Map<string, string[]>
+  onReassign?: (task: WorkflowTaskDto) => void
+}
+
+function StageStep({ stage, last, current, totalStages, waitingOn, onReassign }: StageStepProps) {
   const progress = stage.requiredCount > 0 ? Math.min(100, Math.round((stage.approvedCount / stage.requiredCount) * 100)) : 0
   const overdue = stage.status === "active" && isPast(stage.dueAt)
 
@@ -282,16 +422,48 @@ function StageStep({ stage, last, current, totalStages }: { stage: WorkflowStage
                   <span className="font-medium text-foreground">{task.assigneeName ?? "Unknown"}</span>
                   {task.assigneeType !== "user" && <span className="text-[11.5px] text-muted-foreground">({task.assigneeType} pool)</span>}
                   <Badge variant={TASK_STATUS_BADGE_VARIANT[task.status]}>{TASK_STATUS_LABELS[task.status]}</Badge>
-                  {task.claimedBy && task.status === "claimed" && (
+                  {task.claimedBy && task.status === "claimed" && !task.delegatedTo && (
                     <span className="text-muted-foreground">claimed by {task.claimedBy.displayName ?? "someone"}</span>
+                  )}
+                  {task.delegatedTo && OPEN_TASK_STATUSES.has(task.status) && (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Forward size={12} /> with {task.delegatedTo.displayName ?? "someone"}
+                      {task.delegatedFrom && <> (delegated from {task.delegatedFrom.displayName ?? "someone"})</>}
+                    </span>
+                  )}
+                  {task.status === "awaiting_info" && (
+                    <span className="flex items-center gap-1 text-[var(--gold-foreground)]">
+                      <PauseCircle size={12} /> Waiting on {waitingOn.get(task.taskId)?.join(", ") ?? "information"}
+                    </span>
+                  )}
+                  {task.escalatedAt && (
+                    <Badge variant="rust" className="gap-1">
+                      <TrendingUp /> {task.escalatedTo ? `Escalated to ${task.escalatedTo.displayName ?? "someone"}` : "Overdue - not escalated"}
+                    </Badge>
+                  )}
+                  {onReassign && stage.status === "active" && OPEN_TASK_STATUSES.has(task.status) && (
+                    <button
+                      type="button"
+                      onClick={() => onReassign(task)}
+                      className="ml-auto flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                      <UserCog size={12} /> Reassign
+                    </button>
                   )}
                   {task.actedBy && task.decision && (
                     <span className="text-muted-foreground">
                       {task.decision === "approve" ? "approved" : "rejected"} by {task.actedBy.displayName ?? "someone"}
+                      {task.delegatedFrom && <>, delegated from {task.delegatedFrom.displayName ?? "someone"}</>}
                       {task.actedAt && <> · {formatDateTime(task.actedAt)}</>}
                     </span>
                   )}
                 </div>
+                {OPEN_TASK_STATUSES.has(task.status) && task.dueAt && task.dueAt !== stage.dueAt && (
+                  <p className="mt-0.5 flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                    <Clock size={11} /> Due {formatDateTime(task.dueAt)}
+                    {task.slaPausedSeconds > 0 && " (extended by the time it waited for information)"}
+                  </p>
+                )}
                 {task.decisionReason && (
                   <p className="mt-1 rounded-sm border-l-2 border-[var(--border-strong)] bg-muted px-2.5 py-1.5 whitespace-pre-wrap text-foreground">
                     {task.decisionReason}

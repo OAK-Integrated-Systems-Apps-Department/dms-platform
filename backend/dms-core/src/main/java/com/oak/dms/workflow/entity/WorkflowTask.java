@@ -22,8 +22,9 @@ import java.util.UUID;
 /**
  * One task per participant entry of an active stage (V45). For a role or
  * department entry the task is a claimable pool: one row, visible to every
- * eligible member, and the first to act satisfies the entry. The
- * delegation/reminder/escalation columns are Phase 2 and stay null here.
+ * eligible member, and the first to act satisfies the entry. Who may act
+ * on it - the assignee, claimer, delegate or escalation route - is decided
+ * by {@code TaskRouting} only.
  */
 @Entity
 @Table(name = "workflow_tasks")
@@ -96,6 +97,18 @@ public class WorkflowTask {
 
     @Column(name = "escalated_at")
     private OffsetDateTime escalatedAt;
+
+    /** The escalation route (V47); null with escalatedAt set means the target couldn't be used. */
+    @Column(name = "escalated_to")
+    private UUID escalatedTo;
+
+    /** When the first open information request paused the SLA clock (V47). */
+    @Column(name = "sla_paused_at")
+    private OffsetDateTime slaPausedAt;
+
+    @Column(name = "sla_paused_seconds", nullable = false)
+    @Builder.Default
+    private int slaPausedSeconds = 0;
 
     @Column(name = "created_by")
     private UUID createdBy;

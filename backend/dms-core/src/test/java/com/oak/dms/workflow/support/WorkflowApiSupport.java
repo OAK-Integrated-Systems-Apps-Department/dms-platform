@@ -140,6 +140,24 @@ public abstract class WorkflowApiSupport {
                 reason == null ? Map.of() : Map.of("reason", reason), expectedStatus);
     }
 
+    protected JsonNode delegate(User as, UUID taskId, User to, int expectedStatus) throws Exception {
+        return postAs("/api/v1/workflow/tasks/" + taskId + "/delegate", as, Map.of("delegateUserId", to.getUserId()),
+                expectedStatus);
+    }
+
+    /** As a tenant admin (who holds wa.reassign-workflow-task implicitly). */
+    protected JsonNode reassign(User admin, UUID taskId, User to, String reason, int expectedStatus) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("userId", to.getUserId());
+        body.put("reason", reason);
+        return adminPost("/api/v1/workflow/tasks/" + taskId + "/reassign", admin, body, expectedStatus);
+    }
+
+    /** The caller's My Tasks rows for a view (all, assigned, available, claimed, waiting). */
+    protected JsonNode myTasks(User as, String view) throws Exception {
+        return get200("/api/v1/workflow/tasks/my?size=100&view=" + view, as).get("content");
+    }
+
     protected JsonNode instance(UUID instanceId, User as) throws Exception {
         return get200("/api/v1/workflow/instances/" + instanceId, as);
     }

@@ -8,7 +8,6 @@ import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import com.oak.dms.workflow.entity.WorkflowStageParticipant;
 import com.oak.dms.workflow.entity.WorkflowTask;
-import com.oak.dms.workflow.enums.TaskStatus;
 import com.oak.dms.workflow.repository.WorkflowMembershipRepository;
 import com.oak.dms.workflow.service.ApproverResolver;
 import lombok.RequiredArgsConstructor;
@@ -58,17 +57,6 @@ public class ApproverResolverImpl implements ApproverResolver {
         holders.addAll(rolePermissionRepository.findUserIdsWithPermission(tenantId, PermissionCodes.WA_TASK_REJECT));
         members.retainAll(holders);
         return members;
-    }
-
-    @Override
-    public boolean canAct(UUID tenantId, WorkflowTask task, UUID userId) {
-        if (!task.isPool()) {
-            return userId.equals(task.getAssigneeId());
-        }
-        if (task.getStatus() == TaskStatus.claimed) {
-            return userId.equals(task.getClaimedBy());
-        }
-        return isPoolMember(tenantId, task, userId);
     }
 
     @Override
