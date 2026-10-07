@@ -6,7 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Binds {@code dms.ingestion.*}. {@code allowedFileTypes} is the
@@ -34,4 +36,10 @@ public class IngestionProperties {
 
     /** ...and come to at most this much unpacked. No limit by default, for the same reason (clamd's MaxScanSize). */
     private long zipMaxUncompressedBytes = Long.MAX_VALUE;
+
+    /**
+     * File extensions refused inside a ZIP (programs and scripts), even when the scan finds no malware.
+     * Entries that start like a program are refused whatever they're called (ZipArchiveCheck).
+     */
+    private Set<String> zipBlockedExtensions = new HashSet<>(ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS);
 }

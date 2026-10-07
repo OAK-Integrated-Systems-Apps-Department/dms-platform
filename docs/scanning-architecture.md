@@ -304,6 +304,21 @@ time. It is never stored as a raw credential and never logged.
      Deflate. `dms.ingestion.zip-max-entries` / `zip-max-uncompressed-bytes`
      can refuse larger ZIPs too, but have no limit by default.
      A password-protected entry anywhere makes it unscannable.
+
+     A ZIP holding a program or script is refused too, even if ClamAV would find
+     nothing in it. Each entry is checked:
+     - by extension, against `dms.ingestion.zip-blocked-extensions` (default
+       `ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS`: .exe, .msi, .dll, .bat,
+       .cmd, .ps1, .vbs, .js, .jar, .sh and similar);
+     - by content, whatever it's called: a Windows program (MZ with a PE
+       header offset), ELF, Mach-O, a Java class, a Windows shortcut, or a
+       `#!` script.
+
+     ZIPs inside the ZIP are checked the same way, up to 3 deep. Office and
+     OpenDocument files, which are ZIPs too, aren't looked into.
+
+     Not caught: an installer renamed to a document extension, because an
+     .msi is an OLE2 file, the same as a .doc. ClamAV still scans it.
   3. ClamAV scans every file inside, nested archives included. Because of
      `AlertExceedsMax` and `AlertEncryptedArchive`, anything clamd can't finish
      comes back `Heuristics.Limits.Exceeded.*` or `Heuristics.Encrypted.*`.

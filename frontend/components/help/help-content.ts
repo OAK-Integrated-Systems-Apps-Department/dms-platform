@@ -120,7 +120,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         id: "zip",
         question: "Can I upload ZIP files?",
         answer: [
-          "Yes. A ZIP is stored exactly as uploaded and is never unpacked - but every file inside it is scanned. Damaged, empty or password-protected ZIPs are refused.",
+          "Yes. A ZIP is stored exactly as uploaded and is never unpacked - but every file inside it is scanned. Damaged, empty or password-protected ZIPs are refused, and so are ZIPs containing programs or scripts (such as .exe, .msi, .bat or .js files).",
         ],
         keywords: "zip archive compressed",
       },

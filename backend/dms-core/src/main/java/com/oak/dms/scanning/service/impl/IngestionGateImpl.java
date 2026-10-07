@@ -191,7 +191,10 @@ public class IngestionGateImpl implements IngestionGate {
             ZipArchiveCheck.Result zip;
             try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
                 zip = ZipArchiveCheck.check(staged, ingestionProperties.getZipMaxEntries(),
-                        ingestionProperties.getZipMaxUncompressedBytes());
+                        ingestionProperties.getZipMaxUncompressedBytes(),
+                        ingestionProperties.getZipBlockedExtensions().stream()
+                                .map(e -> e.trim().replaceFirst("^\\.", "").toLowerCase(java.util.Locale.ROOT))
+                                .collect(java.util.stream.Collectors.toSet()));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

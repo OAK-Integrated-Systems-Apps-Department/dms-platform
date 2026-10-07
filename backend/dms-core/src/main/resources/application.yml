@@ -340,6 +340,10 @@ dms:
     # instead. Set these to refuse larger ZIPs outright.
     zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
     zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
+    # A ZIP holding a program or script (.exe, .msi, .dll, .bat, .ps1, .js, .jar, ... - see
+    # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
+    # called, is refused even when the scan finds no malware - nested ZIPs included. Override the
+    # list with dms.ingestion.zip-blocked-extensions (DMS_INGESTION_ZIP_BLOCKED_EXTENSIONS, comma-separated).
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

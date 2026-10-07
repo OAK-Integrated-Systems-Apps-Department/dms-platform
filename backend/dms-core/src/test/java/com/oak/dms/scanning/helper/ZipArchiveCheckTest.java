@@ -80,6 +80,93 @@ class ZipArchiveCheckTest {
         return ZipArchiveCheck.check(new ByteArrayInputStream(zip), MAX_ENTRIES, MAX_UNPACKED);
     }
 
+    /** A ZIP of name/bytes pairs, deflated - for binary entries. */
+    private static byte[] zipOf(Object... namesAndBytes) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (int i = 0; i < namesAndBytes.length; i += 2) {
+                zip.putNextEntry(new ZipEntry((String) namesAndBytes[i]));
+                zip.write((byte[]) namesAndBytes[i + 1]);
+                zip.closeEntry();
+            }
+        }
+        return out.toByteArray();
+    }
+
+    /** The start of a Windows program: "MZ", and at 0x3C the offset of its PE header. */
+    private static byte[] windowsProgram() {
+        byte[] exe = new byte[256];
+        exe[0] = 'M';
+        exe[1] = 'Z';
+        exe[0x3c] = (byte) 0x80;
+        exe[0x80] = 'P';
+        exe[0x81] = 'E';
+        return exe;
+    }
+
+    @Test
+    void anInstallerInside_isRefusedByName() throws IOException {
+        ZipArchiveCheck.Result result = check(zip("readme.txt", "hi", "tools/Setup.MSI", "not really an msi"));
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("program or script").contains("tools/Setup.MSI");
+    }
+
+    @Test
+    void scriptsInside_areRefusedByName() throws IOException {
+        assertThat(check(zip("run.ps1", "Write-Host hi")).outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(check(zip("a/b/start.BAT", "@echo off")).outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+    }
+
+    @Test
+    void aProgramRenamedAsADocument_isRefusedByContent() throws IOException {
+        ZipArchiveCheck.Result result = check(zipOf("invoice.pdf", windowsProgram()));
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("invoice.pdf");
+    }
+
+    @Test
+    void aShellScriptWithoutAnExtension_isRefusedByContent() throws IOException {
+        assertThat(check(zip("install", "#!/bin/sh\nrm -rf /")).outcome())
+                .isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+    }
+
+    @Test
+    void textThatMerelyStartsWithMZ_isAccepted() throws IOException {
+        String text = "MZ Holdings quarterly figures - " + "revenue up, costs down. ".repeat(10);
+
+        assertThat(check(zip("notes.txt", text)).outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+    }
+
+    @Test
+    void aProgramInANestedZip_isRefused() throws IOException {
+        byte[] inner = zip("docs/a.txt", "fine", "setup.msi", "installer");
+        byte[] innerTwice = zipOf("inner.zip", inner);
+
+        ZipArchiveCheck.Result result = check(zipOf("report.txt", "ok".getBytes(StandardCharsets.UTF_8),
+                "bundle.zip", innerTwice));
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("bundle.zip > inner.zip > setup.msi");
+    }
+
+    @Test
+    void officeDocumentsInside_areNotTreatedAsNestedArchives() throws IOException {
+        // A .docx is itself a ZIP; what's inside one isn't checked against the list.
+        byte[] docx = zip("[Content_Types].xml", "<Types/>", "word/document.xml", "<w:document/>");
+
+        assertThat(check(zipOf("contract.docx", docx)).outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+    }
+
+    @Test
+    void aBlocklistFromConfig_isUsed() throws IOException {
+        byte[] zip = zip("data.csv", "a,b", "notes.txt", "hi");
+
+        assertThat(ZipArchiveCheck.check(new ByteArrayInputStream(zip), MAX_ENTRIES, MAX_UNPACKED,
+                java.util.Set.of("csv")).outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+    }
+
     @Test
     void aGoodZip_isValid() throws IOException {
         ZipArchiveCheck.Result result = check(zip("a.txt", "alpha", "docs/b.txt", "beta".repeat(100)));
