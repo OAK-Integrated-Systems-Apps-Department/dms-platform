@@ -244,9 +244,20 @@ public class WatermarkRenderer {
 
     private void drawTiled(Graphics2D graphics, Mark mark,
                            WatermarkSpec spec, RenderTarget target) {
-        // Tiles are laid out on the UNROTATED grid and each one rotated about
-        // its own centre. Rotating the grid instead would leave bald corners
-        // on the page, which is exactly where someone would crop.
+        // Tiles are laid out on an axis-aligned grid and each one rotated
+        // about its own centre. Rotating the grid instead would leave bald
+        // corners on the page, which is exactly where someone would crop.
+        //
+        // The SPACING is measured on the rotated footprint, not on the
+        // unrotated text bounds. Those are two very different numbers: a
+        // long mark turned 45 degrees occupies about 0.7 of its own length
+        // horizontally, so spacing the grid by the unrotated width left a
+        // gap wider than the tile itself at each end of every row. The page
+        // came back with clean vertical strips down the left and right
+        // edges - a border to crop to, which is the one thing tiling exists
+        // to prevent. Found by looking at the samples; the edge test at the
+        // time summed all four borders together and passed on the top and
+        // bottom alone.
         double stepX = mark.bounds().getWidth() * (1 + TILE_GAP_X);
         double stepY = mark.bounds().getHeight() * TILE_GAP_Y;
         if (stepX <= 1 || stepY <= 1) {
@@ -255,13 +266,50 @@ public class WatermarkRenderer {
             return;
         }
 
-        // Overscan by one step each way so rotated tiles still reach the
-        // edges rather than stopping short of them - except on an axis with
-        // no room for a second tile, which gets exactly one. A long name on
-        // a thumbnail is wider than the whole surface; laying out a lattice
-        // there puts every tile centre off the image and draws nothing.
-        int columns = stepX >= target.widthPx() ? 1 : (int) Math.ceil(target.widthPx() / stepX) + 2;
-        int rows = stepY >= target.heightPx() ? 1 : (int) Math.ceil(target.heightPx() / stepY) + 2;
+        // The fallback is about the MARK being bigger than the surface, not
+        // about the step being bigger. A long name on a thumbnail is wider
+        // than the whole image, and tiling there would put every tile
+        // centre off it and draw nothing readable. But a step wider than
+        // the page is ordinary - it just means one column - and bailing out
+        // on that condition turned a full A4 page of tiling into a single
+        // diagonal mark the moment the surface grew to the whole sheet.
+        Rectangle2D footprint = rotatedBounds(mark.bounds(), spec.rotation());
+        if (footprint.getWidth() >= target.widthPx() || footprint.getHeight() >= target.heightPx()) {
+            drawRotatedAt(graphics, mark, spec.rotation(),
+                    target.widthPx() / 2.0, target.heightPx() / 2.0);
+            return;
+        }
+
+        // The grid is ANCHORED to the surface rather than centred on it:
+        // the step is rounded DOWN to a whole number of intervals across
+        // the page, so a tile centre lands exactly on x=0 and on x=width,
+        // and likewise top and bottom.
+        //
+        // Centring instead left the phase to chance. Whether a tile
+        // happened to fall near an edge depended on how width divided by
+        // the step, and on this page it did not: the nearest tile centre
+        // sat half a step outside, its ink stopped short, and every tiled
+        // page came back with a clean vertical strip down the left and
+        // right - a border to crop to, which is the one thing tiling
+        // exists to prevent. Nudging the overscan only moved the problem
+        // to another edge, because that changes the phase too.
+        // One interval is the normal case for a page barely wider than the
+        // mark, and it is not a degenerate one: the half-pitch stagger
+        // below puts even rows' tiles on the two EDGES and odd rows' tiles
+        // in the MIDDLE, so the rows alternate and every column of the page
+        // is covered by one or the other. Forcing a second interval instead
+        // halves the pitch, and since the mark is nearly as wide as the
+        // page that produced tiles overlapping each other two deep - the
+        // page came back as unreadable clutter.
+        int intervalsX = Math.max(1, (int) Math.ceil(target.widthPx() / stepX));
+        int intervalsY = Math.max(1, (int) Math.ceil(target.heightPx() / stepY));
+        double pitchX = target.widthPx() / (double) intervalsX;
+        double pitchY = target.heightPx() / (double) intervalsY;
+
+        // One extra ring outside the surface on every side, so rotated ink
+        // and the half-step stagger below still reach past the border.
+        int columns = intervalsX + 3;
+        int rows = intervalsY + 3;
         if ((long) columns * rows > MAX_TILES) {
             log.debug("Watermark tiling would need {}x{} tiles - falling back to a single centred mark",
                     columns, rows);
@@ -270,24 +318,21 @@ public class WatermarkRenderer {
             return;
         }
 
-        // The lattice is CENTRED on the page rather than started at one
-        // corner. Two reasons, and the second is not cosmetic: a centred
-        // lattice looks balanced instead of anchored top-left, and when the
-        // text is wider than the page itself - a long name on a small image,
-        // a thumbnail - a corner-anchored lattice puts every tile centre off
-        // the page and draws precisely nothing. Centring guarantees one tile
-        // always lands on the surface.
-        double startX = (target.widthPx() - (columns - 1) * stepX) / 2;
-        double startY = (target.heightPx() - (rows - 1) * stepY) / 2;
+        // Starts one pitch OUTSIDE the surface, so the ring of tiles that
+        // never fully appears is what carries ink across each border.
+        double startX = -pitchX;
+        double startY = -pitchY;
 
         for (int row = 0; row < rows; row++) {
-            // Every other row offset by half a step: a square grid leaves
+            // Every other row offset by half a pitch: a square grid leaves
             // readable horizontal lanes through the page, a staggered one
-            // doesn't.
-            double offsetX = (columns == 1 || row % 2 == 0) ? 0 : stepX / 2;
+            // doesn't. The staggered rows are also why the overscan ring
+            // above is needed - they are the rows that would otherwise stop
+            // half a tile short of the left and right edges.
+            double offsetX = row % 2 == 0 ? 0 : pitchX / 2;
             for (int column = 0; column < columns; column++) {
                 drawRotatedAt(graphics, mark, spec.rotation(),
-                        startX + column * stepX + offsetX, startY + row * stepY);
+                        startX + column * pitchX + offsetX, startY + row * pitchY);
             }
         }
     }

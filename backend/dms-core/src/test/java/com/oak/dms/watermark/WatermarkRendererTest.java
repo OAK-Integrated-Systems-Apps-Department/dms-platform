@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -120,12 +121,105 @@ class WatermarkRendererTest {
         assertThat(edgeInk(renderer.render(spec(placement, -45), a4()))).isZero();
     }
 
+    /**
+     * Every border separately, which is the point.
+     * <p>
+     * This used to sum all four and assert the total was positive - so it
+     * passed while the left and right edges were completely bare, because
+     * the top and bottom alone cleared the bar. The samples showed clean
+     * vertical strips down both sides of every tiled page. A border to crop
+     * to is the one thing tiling exists to prevent, so each edge is now
+     * asserted on its own.
+     */
     @Test
-    void tilingDeliberatelyBleedsToTheEdge() {
-        // Tiles are meant to run off the page. Stopping them short would
-        // leave a clean border to crop to, which is the one thing tiling
-        // exists to prevent.
-        assertThat(edgeInk(renderer.render(spec(WatermarkPlacement.TILED, -45), a4()))).isGreaterThan(0);
+    void tilingBleedsToEveryEdgeAndNotJustTwoOfThem() {
+        BufferedImage image = renderer.render(spec(WatermarkPlacement.TILED, -45), a4());
+
+        assertThat(inkOnEdge(image, Edge.LEFT)).describedAs("left edge").isGreaterThan(0);
+        assertThat(inkOnEdge(image, Edge.RIGHT)).describedAs("right edge").isGreaterThan(0);
+        assertThat(inkOnEdge(image, Edge.TOP)).describedAs("top edge").isGreaterThan(0);
+        assertThat(inkOnEdge(image, Edge.BOTTOM)).describedAs("bottom edge").isGreaterThan(0);
+    }
+
+    /**
+     * At several rotations, because the gap that was missed only appeared
+     * once the mark was turned: the grid was spaced by the UNROTATED text
+     * width, which is about 1.4x the footprint a 45-degree mark actually
+     * occupies horizontally.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {-90, -45, 0, 30, 90})
+    void tilingReachesTheSideEdgesAtEveryRotation(int rotation) {
+        BufferedImage image = renderer.render(spec(WatermarkPlacement.TILED, rotation), a4());
+
+        assertThat(inkOnEdge(image, Edge.LEFT)).describedAs("left edge at %d degrees", rotation)
+                .isGreaterThan(0);
+        assertThat(inkOnEdge(image, Edge.RIGHT)).describedAs("right edge at %d degrees", rotation)
+                .isGreaterThan(0);
+    }
+
+    /**
+     * A vertical strip down each side must carry ink along most of its
+     * height, not merely touch the border once. Counting border pixels
+     * alone would be satisfied by a single tile clipping one corner.
+     */
+    @Test
+    void theSideStripsAreCoveredDownMostOfThePageNotJustAtOnePoint() {
+        BufferedImage image = renderer.render(spec(WatermarkPlacement.TILED, -45), a4());
+
+        assertThat(rowsWithInkIn(image, 0.0, 0.06))
+                .describedAs("fraction of rows with ink in the leftmost 6% of the page")
+                .isGreaterThan(0.5);
+        assertThat(rowsWithInkIn(image, 0.94, 1.0))
+                .describedAs("fraction of rows with ink in the rightmost 6% of the page")
+                .isGreaterThan(0.5);
+    }
+
+    private enum Edge { LEFT, RIGHT, TOP, BOTTOM }
+
+    private static long inkOnEdge(BufferedImage image, Edge edge) {
+        long count = 0;
+        int width = image.getWidth();
+        int height = image.getHeight();
+        switch (edge) {
+            case LEFT -> {
+                for (int y = 0; y < height; y++) {
+                    count += (image.getRGB(0, y) >>> 24) != 0 ? 1 : 0;
+                }
+            }
+            case RIGHT -> {
+                for (int y = 0; y < height; y++) {
+                    count += (image.getRGB(width - 1, y) >>> 24) != 0 ? 1 : 0;
+                }
+            }
+            case TOP -> {
+                for (int x = 0; x < width; x++) {
+                    count += (image.getRGB(x, 0) >>> 24) != 0 ? 1 : 0;
+                }
+            }
+            case BOTTOM -> {
+                for (int x = 0; x < width; x++) {
+                    count += (image.getRGB(x, height - 1) >>> 24) != 0 ? 1 : 0;
+                }
+            }
+        }
+        return count;
+    }
+
+    /** What fraction of the image's rows have any ink inside this vertical band. */
+    private static double rowsWithInkIn(BufferedImage image, double fromFraction, double toFraction) {
+        int from = (int) (image.getWidth() * fromFraction);
+        int to = Math.max(from + 1, (int) (image.getWidth() * toFraction));
+        int rows = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = from; x < to; x++) {
+                if ((image.getRGB(x, y) >>> 24) != 0) {
+                    rows++;
+                    break;
+                }
+            }
+        }
+        return (double) rows / image.getHeight();
     }
 
     @Test

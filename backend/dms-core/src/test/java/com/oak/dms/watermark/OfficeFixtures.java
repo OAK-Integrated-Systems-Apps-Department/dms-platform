@@ -152,6 +152,48 @@ final class OfficeFixtures {
         });
     }
 
+    /**
+     * The populated-header document, forced onto two pages with an explicit
+     * page break.
+     * <p>
+     * Two pages is the whole point for the first-page-only evidence: one
+     * page cannot show that page 2 was left alone, and it cannot show that
+     * page 2 still has the ORIGINAL header while page 1 has the first-page
+     * one carrying both the letterhead and the mark.
+     */
+    static byte[] docxWithPopulatedDefaultHeaderAndTwoPages() {
+        return docx(document -> {
+            XWPFHeaderFooterPolicy policy = document.createHeaderFooterPolicy();
+            XWPFHeader header = policy.createHeader(STHdrFtr.DEFAULT);
+            XWPFRun headerRun = header.createParagraph().createRun();
+            headerRun.setText("ACME LETTERHEAD");
+            try {
+                headerRun.addPicture(new ByteArrayInputStream(logoPng()), Document.PICTURE_TYPE_PNG,
+                        "logo.png", Units.toEMU(40), Units.toEMU(40));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+            document.createParagraph().createRun().setText("Page one body");
+            XWPFParagraph breaker = document.createParagraph();
+            breaker.setPageBreak(true);
+            breaker.createRun().setText("Page two body");
+        });
+    }
+
+    /** Even/odd headers across two pages, so the even header is actually used. */
+    static byte[] docxWithEvenAndOddHeadersAndTwoPages() {
+        return docx(document -> {
+            document.setEvenAndOddHeadings(true);
+            XWPFHeaderFooterPolicy policy = document.createHeaderFooterPolicy();
+            policy.createHeader(STHdrFtr.DEFAULT).createParagraph().createRun().setText("Odd pages");
+            policy.createHeader(STHdrFtr.EVEN).createParagraph().createRun().setText("Even pages");
+            document.createParagraph().createRun().setText("Page one body");
+            XWPFParagraph breaker = document.createParagraph();
+            breaker.setPageBreak(true);
+            breaker.createRun().setText("Page two body");
+        });
+    }
+
     /** More sections than any cap would allow, for the refusal test. */
     static byte[] docxWithSections(int count) {
         return docx(document -> {
@@ -175,7 +217,7 @@ final class OfficeFixtures {
         margin.setRight(BigInteger.valueOf(1440));
     }
 
-    private static byte[] docx(DocxBuilder builder) {
+    static byte[] docx(DocxBuilder builder) {
         try (XWPFDocument document = new XWPFDocument();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             builder.build(document);
@@ -367,7 +409,7 @@ final class OfficeFixtures {
         });
     }
 
-    private static byte[] pptx(PptxBuilder builder) {
+    static byte[] pptx(PptxBuilder builder) {
         try (XMLSlideShow show = new XMLSlideShow();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             builder.build(show);
@@ -445,6 +487,32 @@ final class OfficeFixtures {
         graphics.setColor(Color.RED);
         graphics.fillRect(0, 0, 32, 32);
         graphics.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            ImageIO.write(image, "png", out);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out.toByteArray();
+    }
+
+    /**
+     * An incompressible image of roughly the requested edge length.
+     * <p>
+     * Random pixels on purpose: a solid-colour PNG of the same dimensions
+     * compresses to a few hundred bytes, so a document padded with those
+     * would be small on disk and would walk through the zip guard in no
+     * time at all. Real documents are big because of photographs, and
+     * photographs do not compress - so a benchmark padded with flat colour
+     * would measure nothing and report a flattering number.
+     */
+    static byte[] noisyPng(java.util.Random random, int edge) {
+        BufferedImage image = new BufferedImage(edge, edge, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < edge; y++) {
+            for (int x = 0; x < edge; x++) {
+                image.setRGB(x, y, random.nextInt(0xFFFFFF));
+            }
+        }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             ImageIO.write(image, "png", out);

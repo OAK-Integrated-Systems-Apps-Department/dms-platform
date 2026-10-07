@@ -103,7 +103,10 @@ public class WatermarkController {
                     visible, it does not make it tamper-proof. (2) The in-app preview may not show the \
                     mark - check the downloaded file in desktop Office or LibreOffice. (3) In Excel the \
                     mark floats ABOVE the cells (Excel offers nothing behind them), which is why opacity \
-                    has a floor. (4) A JPEG copy is re-encoded and loses EXIF metadata, including GPS. \
+                    has a floor; a floating picture in desktop Excel can also take the click when \
+                    somebody selects a cell underneath it, so a recipient may need to click past it or \
+                    drag it aside to edit those cells. (4) A JPEG copy is re-encoded and loses EXIF \
+                    metadata, including GPS. \
                     (5) A digitally signed document is refused with 422 - any change would break its \
                     signature. (6) Password-protected files are refused with 422.""")
     public ResponseEntity<WatermarkJobResponse> request(

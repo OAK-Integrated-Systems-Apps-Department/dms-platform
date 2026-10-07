@@ -1,8 +1,6 @@
 package com.oak.dms.watermark.format;
 
 import com.oak.dms.watermark.config.WatermarkProperties;
-import com.oak.dms.watermark.dto.WatermarkSpec;
-import com.oak.dms.watermark.enums.WatermarkPlacement;
 import com.oak.dms.watermark.exception.WatermarkException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -345,7 +343,7 @@ public class DocxWatermarkService implements WatermarkFormatService {
     private void stamp(XWPFHeader header, CTSectPr section, WatermarkOptions options,
                        FontChoice font, Map<Geometry, byte[]> rendered) throws IOException {
         Page page = pageOf(section);
-        Area area = areaFor(page, options.spec());
+        Area area = areaFor(page);
         Geometry geometry = new Geometry(area.widthTwips(), area.heightTwips());
 
         byte[] png = rendered.get(geometry);
@@ -436,23 +434,24 @@ public class DocxWatermarkService implements WatermarkFormatService {
     // ------------------------------------------------------------ geometry
 
     /**
-     * Where the mark is drawn on the page, which is not the same question
-     * for every placement.
+     * The whole sheet of paper, for every placement.
      * <p>
-     * Tiled covers the text area: tiles running under the margins would be
-     * cut off by most printers and look like a mistake. The other three are
-     * drawn across the whole sheet, because a corner badge belongs in the
-     * paper's corner and a header/footer line belongs at the paper's edges -
-     * the renderer insets them from the surface it is given, so giving it
-     * the text area instead would inset them twice.
+     * Tiled used to cover only the text area, on the reasoning that tiles
+     * running under the margins would be trimmed by most printers. That was
+     * wrong in the way that matters: it left a clean unmarked margin all
+     * round, which is a border to crop to, and it made Word the odd one out
+     * - PDF, the images and PowerPoint all tile across the whole page, so
+     * the same template produced visibly different copies depending on the
+     * document's format.
+     * <p>
+     * The other placements want the full page for their own reasons: a
+     * corner badge belongs in the paper's corner, and a header/footer line
+     * belongs at the paper's edges. The renderer insets those from whatever
+     * surface it is handed, so handing it the text area would inset them
+     * twice.
      */
-    private Area areaFor(Page page, WatermarkSpec spec) {
-        if (spec.placement() != WatermarkPlacement.TILED) {
-            return new Area(0, 0, page.widthTwips(), page.heightTwips());
-        }
-        long width = Math.max(1, page.widthTwips() - page.leftTwips() - page.rightTwips());
-        long height = Math.max(1, page.heightTwips() - page.topTwips() - page.bottomTwips());
-        return new Area(page.leftTwips(), page.topTwips(), width, height);
+    private Area areaFor(Page page) {
+        return new Area(0, 0, page.widthTwips(), page.heightTwips());
     }
 
     private RenderTarget targetFor(Area area) {

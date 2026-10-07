@@ -129,10 +129,57 @@ class WatermarkSampleGenerator {
             }
         }
 
+        written.addAll(writeDocxHeaderEvidence(root));
+
         rasterise(root);
         Files.writeString(root.resolve("README.txt"), readme(written));
         System.out.println("\n=== Watermark samples written to: " + root.toAbsolutePath() + " ===");
         System.out.println("Open the 'pages' folder and look at the PNGs.\n");
+    }
+
+    /**
+     * The two Word header cases that cannot be judged from a structural
+     * assertion, written under names that say what to check.
+     *
+     * <h2>first-page-only on a document that already has a header</h2>
+     * Turning on {@code w:titlePg} moves page 1 from the default header to
+     * the first-page one. If the existing content does not come across,
+     * page 1 silently loses its letterhead and its logo - and the loss is
+     * invisible in the XML unless you know to look for the relationship
+     * ids. Page 1 of this sample must show BOTH the original letterhead and
+     * the watermark; page 2 must show the letterhead and no watermark.
+     *
+     * <h2>evenAndOddHeaders</h2>
+     * Word draws even pages from a separate header part. Marking only the
+     * default one leaves every second page clean, which nobody notices
+     * until a recipient prints the document. Both pages of this sample must
+     * carry the mark, and page 2 must still say "Even pages".
+     */
+    private List<String> writeDocxHeaderEvidence(Path root) throws Exception {
+        List<String> written = new ArrayList<>();
+        DocxWatermarkService docx = new DocxWatermarkService(renderer, properties);
+
+        written.add(writeDocx(root, docx,
+                "EVIDENCE-docx-first-page-only-keeps-existing-letterhead.docx",
+                OfficeFixtures.docxWithPopulatedDefaultHeaderAndTwoPages(),
+                WatermarkPageScope.FIRST_PAGE_ONLY));
+        written.add(writeDocx(root, docx,
+                "EVIDENCE-docx-even-and-odd-headers-both-marked.docx",
+                OfficeFixtures.docxWithEvenAndOddHeadersAndTwoPages(),
+                WatermarkPageScope.ALL_PAGES));
+        return written;
+    }
+
+    private String writeDocx(Path root, DocxWatermarkService service, String name,
+                             byte[] source, WatermarkPageScope scope) throws Exception {
+        WatermarkSpec spec = new WatermarkSpec(TEXTS.get("latin"), 40, 30, -45, "#c00000",
+                WatermarkPlacement.TILED, scope);
+        byte[] output = service.watermark(new ByteArrayInputStream(source),
+                new WatermarkOptions(spec, OfficeFixtures.DOCX_MIME, "evidence.docx"));
+        Path file = root.resolve("files").resolve(name);
+        Files.createDirectories(file.getParent());
+        Files.write(file, output);
+        return name;
     }
 
     private String produce(Path root, String format, Source source, WatermarkPlacement placement,
