@@ -23,15 +23,15 @@ spring:
         order_updates: true
 
   # Spring's own multipart default is 1MB, which silently capped uploads
-  # before the scan gate existed. Kept in line with
-  # dms.scanning.max-file-size-bytes below (2047 MB - the most ClamAV can
-  # scan in one file); the scan gate enforces the exact byte limit itself,
-  # this just stops the servlet layer rejecting first. Parts over the
-  # threshold are spooled to disk, never held in memory.
+  # before the scan gate existed. -1 = no limit, in line with
+  # dms.scanning.max-file-size-bytes below; the scan gate enforces any
+  # engine's own byte limit itself. Parts over the threshold are spooled to
+  # disk, never held in memory - so the temp directory needs room for the
+  # largest file uploaded.
   servlet:
     multipart:
-      max-file-size: ${UPLOAD_MAX_FILE_SIZE:2047MB}
-      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:2048MB}
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:-1}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:-1}
       file-size-threshold: ${UPLOAD_FILE_SIZE_THRESHOLD:1MB}
 
   flyway:
@@ -337,18 +337,24 @@ dms:
     # (ZipArchiveCheck): refused when damaged, empty, password-protected (unscannable), or past
     # these limits, which match clamd's MaxFiles / MaxScanSize so nothing inside goes unscanned.
     zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:10000}
+    # FOLLOW-UP (found 2026-10-07, while lifting the 2047 MB upload limit): single files
+    # have no size limit now (ClamAV scans big ones in segments), but a ZIP whose contents
+    # unpack to more than this is still refused - segments can't help there, since clamd
+    # has to open the archive whole to scan what's inside. Lifting it needs clamd's
+    # MaxScanSize raised to match (and checking clamd honours values past 4 GB, as it
+    # doesn't for MaxFileSize), plus a longer MaxScanTime/timeout-seconds.
     zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:4194304000}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
     # AZURE_DEFENDER | AWS_GUARDDUTY.
     default-provider: ${SCAN_PROVIDER:CLAMAV}
-    # Long enough for clamd to scan a 2047 MB file once it has received it.
+    # Long enough for clamd to scan one 2000 MB segment once it has received it.
     timeout-seconds: ${SCAN_TIMEOUT_SECONDS:900}
-    # 2047 MB - ClamAV's ceiling: clamd scans at most 2147483645 bytes of one
-    # file whatever its MaxFileSize says, and passes the rest unscanned. Keeping
-    # under it means every accepted file is scanned in full.
-    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:2146435072}
+    # No limit (Long.MAX_VALUE). clamd reads at most 2147483645 bytes of one
+    # stream whatever its MaxFileSize says, so a larger file is sent to it in
+    # overlapping segments (clamav.segment-bytes below) and scanned in full.
+    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:9223372036854775807}
     # A cloud-scanned file still without a verdict this long after staging is
     # failed - never promoted.
     cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
@@ -368,12 +374,19 @@ dms:
       initial-backoff-seconds: ${SCAN_RETRY_INITIAL_BACKOFF_SECONDS:30}
       max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
       lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:1800}
+      # Added per GB of the file, so a very large file's lease outlasts its scan.
+      lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:300}
       batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
     clamav:
       host: ${CLAMAV_HOST:localhost}
       port: ${CLAMAV_PORT:3310}
       connect-timeout-ms: ${CLAMAV_CONNECT_TIMEOUT_MS:5000}
       chunk-size-bytes: ${CLAMAV_CHUNK_SIZE_BYTES:65536}
+      # Files larger than this go to clamd in several INSTREAMs. Must stay under
+      # clamd's StreamMaxLength (2047M) and its 2147483645-byte read ceiling.
+      segment-bytes: ${CLAMAV_SEGMENT_BYTES:2097152000}
+      # Each segment repeats this much of the end of the one before (held in memory).
+      segment-overlap-bytes: ${CLAMAV_SEGMENT_OVERLAP_BYTES:16777216}
     azure-defender:
       # Blob Service endpoint of the Defender-protected account that holds the
       # staging container - verdicts are read from its blob index tags.

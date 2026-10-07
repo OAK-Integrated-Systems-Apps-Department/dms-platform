@@ -244,15 +244,16 @@ Provider prerequisites:
 | Key | Default | Notes |
 |---|---|---|
 | `dms.scanning.default-provider` (`SCAN_PROVIDER`) | `CLAMAV` | seeds the platform-default `scan_engines` row |
-| `dms.scanning.timeout-seconds` / `max-file-size-bytes` | 900 s / 2047 MB | copied onto the seeded engine row; V68 raised rows still on the old 60 s / 100 MB |
-| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 1800 s | lease outlasts a 2 GB scan |
+| `dms.scanning.timeout-seconds` / `max-file-size-bytes` | 900 s / no limit (Long.MAX_VALUE) | copied onto the seeded engine row; timeout is per clamd segment; V72 lifted rows still on 2047 MB (V68) or 100 MB |
+| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 1800 s + 300 s per GB | lease outlasts a segmented scan of the file |
+| `dms.scanning.clamav.segment-bytes` / `segment-overlap-bytes` | 2000 MB / 16 MB | files larger than one segment are scanned as overlapping segments |
 | `dms.scanning.cloud-verdict-timeout-minutes`, `failed-retention-hours` | 60, 72 | |
 | `dms.scanning.clamav.host/port` (`CLAMAV_HOST`/`CLAMAV_PORT`) | `localhost:3310` (`clamav` in Docker) | |
 | `dms.scanning.azure-defender.*` | blank | endpoint, account name/key, `AZURE_DEFENDER_CALLBACK_SECRET` |
 | `dms.scanning.aws-guardduty.*` | blank | region, access/secret key (blank → AWS default credential chain), `AWS_GUARDDUTY_CALLBACK_SECRET` |
 | `dms.storage.staging.*` / `dms.storage.quarantine.*` | FILE_SYSTEM `/data/dms/staging`, `/data/dms/quarantine` | platform-default staging/quarantine locations |
 | `dms.ingestion.allowed-file-types` | pdf, doc(x), xls(x), ppt(x), odt/ods/odp/odg, rtf, txt, csv, tsv, md, xml, json, msg, eml, vsd(x), dwg, png, jpg/jpeg, gif, bmp, webp, heic/heif, tif/tiff - each verified by content (FileTypeInspector); never html/svg, macro-enabled Office or archives | |
-| `spring.servlet.multipart.max-file-size` / `max-request-size` | 2047 MB / 2048 MB | previously Spring's 1 MB default; parts over 1 MB spool to disk |
+| `spring.servlet.multipart.max-file-size` / `max-request-size` | -1 / -1 (no limit) | previously Spring's 1 MB default; parts over 1 MB spool to disk |
 
 A tenant `scan_engines.credential_ref` resolves `SCAN_CRED_<REF>_ACCESS_KEY`
 / `_SECRET_KEY` (AWS) or `_ACCOUNT_NAME` / `_ACCOUNT_KEY` (Azure) at call
@@ -265,14 +266,26 @@ time. It is never stored as a raw credential and never logged.
   (`FRESHCLAM_CHECKS`). If an update fails, clamd keeps the last good
   definitions.
 - `clamd` limits are set through the image's `CLAMD_CONF_*` env vars.
-  `StreamMaxLength` and `MaxFileSize` must stay ≥ the scan size cap.
-- **Why 2047 MB.** clamd scans at most 2147483645 bytes of any one file,
+  `StreamMaxLength` and `MaxFileSize` must stay ≥ `clamav.segment-bytes`.
+- **Files over 2 GB.** clamd scans at most 2147483645 bytes of any one stream,
   whatever `MaxFileSize` says. Its startup log shows
   `File size limit set to 2147483645 bytes` even when 4000M is configured.
-  Past that it answers `OK` without reading the rest. Raising the upload limit
-  beyond 2047 MB would therefore let files through only partly scanned.
-  Checked with a test signature in the last bytes of a 2047 MB stream: it was
-  found. `MaxScanSize` (the total read from inside archives) stays at 4000M.
+  Past that it answers `OK` without reading the rest. Checked with a test
+  signature in the last bytes of a 2047 MB stream: it was found.
+  So `ClamAvScanAdapter` sends a larger file as consecutive 2000 MB segments,
+  one `INSTREAM` each (`OverlappingSegments`):
+  - Each segment starts with the last 16 MB of the one before, so a signature
+    that straddles a cut is still whole somewhere.
+  - Any detection in any segment makes the file infected. Otherwise a segment
+    clamd couldn't finish makes it unscannable.
+  - Limitation: segments after the first start mid-file, so clamd's
+    file-format parsing (a PDF's objects, an Office package's parts) covers
+    only the first 2000 MB. Byte-pattern signatures cover the whole file.
+  - The upload request doesn't wait for such a scan. The gate hands the row
+    to the retry scheduler at once, and its lease grows by
+    `lease-seconds-per-gb`.
+
+  `MaxScanSize` (the total read from inside archives) stays at 4000M.
 - **ZIP archives.** `.zip` is the one archive type accepted. It is stored as
   uploaded, never extracted, and nothing in it is opened or run. On top of the
   usual checks:

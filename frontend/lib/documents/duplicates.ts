@@ -81,7 +81,7 @@ const MAX_ONE_SHOT_HASH_BYTES = 256 * 1024 * 1024
  * The file's SHA-256, worked out in the browser so nothing has to be uploaded
  * to find a duplicate. Null where the browser can't (no Web Crypto outside
  * HTTPS/localhost) - the check then goes by name only. Files over
- * MAX_ONE_SHOT_HASH_BYTES (up to the 2047 MB upload limit) are hashed slice
+ * MAX_ONE_SHOT_HASH_BYTES (of any size) are hashed slice
  * by slice instead, so a large file is never held in memory whole.
  */
 export async function sha256Hex(file: File): Promise<string | null> {

@@ -261,8 +261,9 @@ services:
     restart: unless-stopped
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
-      # Kept >= dms.scanning.max-file-size-bytes (2047MB). clamd scans at most
-      # 2147483645 bytes of any one file whatever MaxFileSize says, hence 2047M;
+      # Kept >= dms.scanning.clamav.segment-bytes (2000 MB). clamd scans at most
+      # 2147483645 bytes of any one stream whatever MaxFileSize says, hence 2047M -
+      # larger files arrive as several overlapping segments;
       # MaxScanSize is the total read from inside archives, so it stays higher.
       CLAMD_CONF_StreamMaxLength: 2047M
       CLAMD_CONF_MaxFileSize: 2047M

@@ -53,9 +53,10 @@ public class ScanRetryScheduler {
     public void runDueWork() {
         ScanProperties.Retry retry = scanProperties.getRetry();
         Duration lease = Duration.ofSeconds(retry.getLeaseSeconds());
+        Duration leasePerGb = Duration.ofSeconds(retry.getLeaseSecondsPerGb());
 
         for (int i = 0; i < retry.getBatchSize(); i++) {
-            List<UUID> claimed = transactionTemplate.execute(status -> scanResultRepository.claimDueWork(1, lease));
+            List<UUID> claimed = transactionTemplate.execute(status -> scanResultRepository.claimDueWork(1, lease, leasePerGb));
             if (claimed == null || claimed.isEmpty()) {
                 break;
             }

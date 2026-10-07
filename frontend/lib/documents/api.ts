@@ -55,14 +55,13 @@ export async function fetchSelectableDocumentTypes(): Promise<
 }
 
 /**
- * Largest file that can be uploaded (dms.scanning.max-file-size-bytes): 2047 MB,
- * the most the virus scanner checks in one file. Bigger files are refused
- * before any of them is sent.
+ * Files of any size can be uploaded - the virus scanner checks the ones over
+ * 2 GB in parts. Only an organisation's own scan engine limit can refuse one
+ * (413), and the server's message then says what that limit is; this is the
+ * fallback if it doesn't.
  */
-export const MAX_UPLOAD_BYTES = 2047 * 1024 * 1024
-
 export const TOO_LARGE_MESSAGE =
-  "Larger than 2047 MB - the most the virus scanner can check in one file - so it can't be uploaded."
+  "This file is larger than your organisation's upload limit, so it can't be uploaded."
 
 /**
  * One file through `POST /api/v1/documents` (multipart). Throws ApiError on

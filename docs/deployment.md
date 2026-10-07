@@ -305,15 +305,17 @@ ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 oak@1
   `keycloak_db` would be better.
 - **Mail.** Defaults deliver into Mailpit, so nobody receives email. Set
   `SMTP_*` to a real relay.
-- **Upload size.** One file can be up to 2047 MB, the most ClamAV scans of a
-  single file. That limit is set in four places that must agree:
-  - nginx `client_max_body_size 2048m`
-  - `spring.servlet.multipart`
-  - `dms.scanning.max-file-size-bytes` (the `scan_engines` row)
-  - clamd `StreamMaxLength`/`MaxFileSize`
+- **Upload size.** No per-file limit: nginx `client_max_body_size 0`,
+  `spring.servlet.multipart` `-1` and `dms.scanning.max-file-size-bytes`
+  (the `scan_engines` row) at Long.MAX_VALUE. ClamAV reads at most 2047 MB of
+  one stream, so dms-core sends larger files to it in overlapping 2000 MB
+  segments (`dms.scanning.clamav.segment-bytes`, which must stay under clamd's
+  `StreamMaxLength`). Those are scanned in the background, not within the
+  upload request.
 
   Uploads spool to the dms-core container's temp directory and to staging
-  storage, so allow several GB of free disk for concurrent large uploads.
+  storage, so allow free disk for the largest files users will upload, several
+  at a time.
 - **Virus scanner.** The `clamav` service (`clamav/clamav-debian:1.4.3`) has the
   same limits as the local stack, and dms-core reaches it at `clamav:3310`.
   - **Network:** it has no host port, but it needs outbound HTTPS to

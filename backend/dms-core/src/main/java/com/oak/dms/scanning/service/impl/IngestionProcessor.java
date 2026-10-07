@@ -407,6 +407,11 @@ public class IngestionProcessor {
         }
     }
 
+    /** Releases a staged row this caller holds to the retry scheduler, due at once. */
+    void handOff(UUID scanResultId, OffsetDateTime leaseToken) {
+        reschedule(scanResultId, leaseToken, OffsetDateTime.now());
+    }
+
     private void reschedule(UUID scanResultId, OffsetDateTime leaseToken, OffsetDateTime nextAttemptAt) {
         transactionTemplate.executeWithoutResult(status -> {
             ScanResult locked = lockOwned(scanResultId, leaseToken, ScanResultStatus.pending);

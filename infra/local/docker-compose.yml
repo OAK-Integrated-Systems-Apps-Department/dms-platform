@@ -259,11 +259,11 @@ services:
     <<: *secrets-env
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
-      # Kept >= dms.scanning.max-file-size-bytes (2047MB), otherwise clamd
-      # answers "INSTREAM size limit exceeded" for files the gate accepted -
-      # or worse, stops scanning part-way through a large file and passes it.
-      # clamd scans at most 2147483645 bytes of any one file whatever MaxFileSize
-      # says (it logs "File size limit set to 2147483645"), hence 2047M.
+      # Kept >= dms.scanning.clamav.segment-bytes (2000 MB), otherwise clamd
+      # answers "INSTREAM size limit exceeded" for a segment dms-core sends.
+      # clamd scans at most 2147483645 bytes of any one stream whatever
+      # MaxFileSize says (it logs "File size limit set to 2147483645"), hence
+      # 2047M - larger files arrive as several overlapping segments.
       # MaxScanSize is the total read from inside archives, so it stays higher.
       CLAMD_CONF_StreamMaxLength: 2047M
       CLAMD_CONF_MaxFileSize: 2047M

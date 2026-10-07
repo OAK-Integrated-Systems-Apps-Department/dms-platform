@@ -81,6 +81,18 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
     }
 
     @Override
+    /*
+     * FOLLOW-UP (found 2026-10-07, while lifting the 2047 MB upload limit): one PutObject
+     * takes at most 5 GB, so on an S3 staging or document location an upload over 5 GB
+     * fails here with a StorageUploadException ("Staging upload failed"). FILE_SYSTEM and
+     * Azure Blob (which splits into blocks itself) have no such cap. Not fixed in that
+     * change, which was about the scanner's limit. The fix: above a threshold (say
+     * 100 MB), upload in parts - the SDK's S3TransferManager / multipart upload
+     * (CreateMultipartUpload, UploadPart, CompleteMultipartUpload; abort on failure) -
+     * keeping the server-side encryption settings on the CreateMultipartUpload request.
+     * Note a multipart object's ETag is not an MD5 of its bytes, which matters to
+     * anything comparing ETags (cloud verdict matching uses it only as an identity).
+     */
     public StoredObjectMetadata upload(StorageLocation location, String objectKey, java.io.InputStream content,
                                         long contentLength, String contentType) {
         String bucket = requireBucket(location);

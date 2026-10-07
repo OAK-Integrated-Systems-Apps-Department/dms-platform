@@ -44,6 +44,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * inspected. So are {@code Heuristics.Limits.Exceeded.*} ({@code AlertExceedsMax}):
  * clamd stopped before the end - an archive nested too deep, too many files
  * inside - so what it didn't reach is unknown, not infected.
+ * <p>
+ * A file larger than {@code dms.scanning.clamav.segment-bytes} is scanned as
+ * overlapping segments ({@link OverlappingSegments}), since clamd stops
+ * reading one stream at 2147483645 bytes. Every byte is checked against the
+ * byte-pattern signatures, and the overlap keeps a match that straddles a cut
+ * whole. Segments after the first start mid-file, though, so file-format
+ * parsing (a PDF's or an Office package's structure) only covers the first.
+ * Any detection makes the file INFECTED; otherwise any segment clamd couldn't
+ * finish makes it UNSCANNABLE.
  */
 @Slf4j
 @Component
@@ -78,11 +87,40 @@ public class ClamAvScanAdapter implements ScanService {
     public ScanVerdict scan(ScanEngine engine, ScanTarget target) {
         ClamdClient client = client(engine);
         CachedVersion version = version(engine, client);
+        ScanProperties.ClamAv settings = scanProperties.getClamav();
 
-        String reply;
+        // clamd reads at most 2147483645 bytes of one stream and answers OK for
+        // the rest unread, so a larger file goes over in overlapping segments,
+        // one INSTREAM each. A file that fits is one segment - one INSTREAM, as before.
+        String unscannableThreat = null;
+        String unscannableReply = null;
         InputStream content = openStaged(target);
         try {
-            reply = client.instream(content);
+            OverlappingSegments segments = new OverlappingSegments(content, settings.getSegmentBytes(),
+                    settings.getSegmentOverlapBytes());
+            InputStream segment;
+            while ((segment = nextSegment(segments, target)) != null) {
+                String reply = client.instream(segment);
+                String body = reply.startsWith("stream:") ? reply.substring("stream:".length()).trim() : reply;
+                if (body.equals("OK")) {
+                    continue;
+                }
+                if (!body.endsWith(" FOUND")) {
+                    throw new ScanEngineErrorException("clamd returned no verdict for scan result "
+                            + target.scanResultId() + ": " + reply);
+                }
+                String threat = body.substring(0, body.length() - " FOUND".length()).trim();
+                if (!threat.startsWith(ENCRYPTED_HEURISTIC_PREFIX) && !threat.startsWith(LIMITS_HEURISTIC_PREFIX)) {
+                    return new ScanVerdict(ScanVerdictStatus.INFECTED, threat, null, ENGINE_NAME,
+                            version.engineVersion(), version.signatureVersion(), OffsetDateTime.now(), reply);
+                }
+                // Part of the file can't be inspected - but a later segment may still hold a
+                // detection, which outranks that, so keep going.
+                if (unscannableThreat == null) {
+                    unscannableThreat = threat;
+                    unscannableReply = reply;
+                }
+            }
         } finally {
             try {
                 content.close();
@@ -93,22 +131,21 @@ public class ClamAvScanAdapter implements ScanService {
         }
 
         OffsetDateTime scannedAt = OffsetDateTime.now();
-        String body = reply.startsWith("stream:") ? reply.substring("stream:".length()).trim() : reply;
-        if (body.equals("OK")) {
-            return new ScanVerdict(ScanVerdictStatus.CLEAN, null, null, ENGINE_NAME, version.engineVersion(),
-                    version.signatureVersion(), scannedAt, null);
+        if (unscannableThreat != null) {
+            return new ScanVerdict(ScanVerdictStatus.UNSCANNABLE, unscannableThreat, null, ENGINE_NAME,
+                    version.engineVersion(), version.signatureVersion(), scannedAt, unscannableReply);
         }
-        if (body.endsWith(" FOUND")) {
-            String threat = body.substring(0, body.length() - " FOUND".length()).trim();
-            ScanVerdictStatus status = threat.startsWith(ENCRYPTED_HEURISTIC_PREFIX)
-                    || threat.startsWith(LIMITS_HEURISTIC_PREFIX)
-                    ? ScanVerdictStatus.UNSCANNABLE
-                    : ScanVerdictStatus.INFECTED;
-            return new ScanVerdict(status, threat, null, ENGINE_NAME, version.engineVersion(),
-                    version.signatureVersion(), scannedAt, reply);
+        return new ScanVerdict(ScanVerdictStatus.CLEAN, null, null, ENGINE_NAME, version.engineVersion(),
+                version.signatureVersion(), scannedAt, null);
+    }
+
+    private static InputStream nextSegment(OverlappingSegments segments, ScanTarget target) {
+        try {
+            return segments.next();
+        } catch (IOException e) {
+            throw new ScanEngineErrorException("Could not read the staged object for scan result "
+                    + target.scanResultId() + " to scan it", e);
         }
-        throw new ScanEngineErrorException("clamd returned no verdict for scan result " + target.scanResultId()
-                + ": " + reply);
     }
 
     private InputStream openStaged(ScanTarget target) {

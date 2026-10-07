@@ -17,7 +17,7 @@ public class ScanResultRepositoryImpl implements ScanResultRepositoryCustom {
 
     private static final String CLAIM_DUE_SQL = """
             update scan_results
-               set lease_expires_at = now() + make_interval(secs => ?)
+               set lease_expires_at = now() + make_interval(secs => ? + (coalesce(size_bytes, 0) / 1073741824) * ?)
              where scan_result_id in (
                    select scan_result_id
                      from scan_results
@@ -33,7 +33,7 @@ public class ScanResultRepositoryImpl implements ScanResultRepositoryCustom {
 
     private static final String CLAIM_ONE_SQL = """
             update scan_results
-               set lease_expires_at = now() + make_interval(secs => ?)
+               set lease_expires_at = now() + make_interval(secs => ? + (coalesce(size_bytes, 0) / 1073741824) * ?)
              where scan_result_id = ?
                and status in ('pending', 'infected')
                and is_deleted = false
@@ -54,13 +54,15 @@ public class ScanResultRepositoryImpl implements ScanResultRepositoryCustom {
     private final JdbcTemplate jdbcTemplate;
 
     @Override
-    public List<UUID> claimDueWork(int batchSize, Duration lease) {
-        return jdbcTemplate.queryForList(CLAIM_DUE_SQL, UUID.class, (double) lease.toSeconds(), batchSize);
+    public List<UUID> claimDueWork(int batchSize, Duration lease, Duration leasePerGb) {
+        return jdbcTemplate.queryForList(CLAIM_DUE_SQL, UUID.class, (double) lease.toSeconds(),
+                (double) leasePerGb.toSeconds(), batchSize);
     }
 
     @Override
-    public boolean claimOne(UUID scanResultId, Duration lease) {
-        return jdbcTemplate.update(CLAIM_ONE_SQL, (double) lease.toSeconds(), scanResultId) == 1;
+    public boolean claimOne(UUID scanResultId, Duration lease, Duration leasePerGb) {
+        return jdbcTemplate.update(CLAIM_ONE_SQL, (double) lease.toSeconds(), (double) leasePerGb.toSeconds(),
+                scanResultId) == 1;
     }
 
     @Override

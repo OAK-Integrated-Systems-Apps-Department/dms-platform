@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/accordion"
 import { IconTile } from "@/components/ui/icon-tile"
 import { SearchInput } from "@/components/ui/search-input"
-import { MAX_UPLOAD_BYTES } from "@/lib/documents/api"
 
 /** Shortcuts under the search box to the questions people ask most - short labels, one line. */
 const POPULAR = [
@@ -386,10 +385,7 @@ function QuickReference() {
             <h3 className="mb-3 text-[13.5px] font-semibold">Limits</h3>
             <dl className="flex flex-col gap-2 text-[12.5px]">
               {[
-                [
-                  "Largest file",
-                  `${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB`,
-                ],
+                ["Largest file", "No limit"],
                 ["Recycle Bin keeps documents for", "30 days (by default)"],
                 ["Password-protected files", "Can't be uploaded"],
               ].map(([term, value]) => (

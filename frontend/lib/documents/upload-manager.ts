@@ -277,7 +277,7 @@ function outcomeOf(error: unknown): Partial<UploadJob> {
     if (error.status === 422)
       return { state: "blocked", message: error.message }
     if (error.status === 413)
-      return { state: "rejected", message: TOO_LARGE_MESSAGE }
+      return { state: "rejected", message: error.message || TOO_LARGE_MESSAGE }
     // The server says why: a type that isn't allowed, content that doesn't match its extension,
     // or a ZIP that's damaged, empty or past what the virus scanner can check.
     if (error.status === 415)

@@ -14,8 +14,6 @@ import { Input } from "@/components/ui/input"
 import { friendlyMessage } from "@/lib/api-error"
 import {
   downloadDocumentFile,
-  MAX_UPLOAD_BYTES,
-  TOO_LARGE_MESSAGE,
   type IngestionTicketDto,
 } from "@/lib/documents/api"
 import {
@@ -114,10 +112,6 @@ export function DocumentTypeTemplatesTab({
 
   async function add(files: File[]) {
     for (const file of files) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        toast.error(`${file.name}: ${TOO_LARGE_MESSAGE}`)
-        continue
-      }
       setUploading({ name: file.name, percent: 0 })
       try {
         const ticket = await addTemplate(
@@ -138,10 +132,6 @@ export function DocumentTypeTemplatesTab({
   }
 
   async function replace(template: DocumentTemplateDto, file: File) {
-    if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error(TOO_LARGE_MESSAGE)
-      return
-    }
     setUploading({ name: file.name, percent: 0 })
     try {
       const ticket = await replaceTemplate(

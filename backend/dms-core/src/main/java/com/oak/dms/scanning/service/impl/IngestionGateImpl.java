@@ -7,6 +7,7 @@ import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.entity.ScanEngine;
 import com.oak.dms.scanning.entity.ScanResult;
+import com.oak.dms.scanning.enums.ScanProvider;
 import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.scanning.exception.FileTooLargeException;
 import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
@@ -61,7 +62,8 @@ import java.util.UUID;
  *   for direct uploads) and, for PDFs, watching for {@code /Encrypt} - all in
  *   one pass;</li>
  *   <li>hand the row to {@link IngestionProcessor} - which, for ClamAV,
- *   reaches a verdict before this request returns.</li>
+ *   reaches a verdict before this request returns (except for a file larger
+ *   than one clamd segment, left pending for the retry scheduler).</li>
  * </ol>
  * Never runs inside a transaction: each step commits on its own, so a crash
  * at any point leaves a row the retry scheduler can finish or fail.
@@ -228,7 +230,14 @@ public class IngestionGateImpl implements IngestionGate {
             throw refusal;
         });
 
-        // 5. Scan and route. ClamAV answers now; cloud scanners come back pending.
+        // 5. Scan and route. ClamAV answers now; cloud scanners come back pending. So does a
+        // file too large for one clamd pass: scanning it segment by segment can take far longer
+        // than a request should stay open, so the scheduler picks it up straight away instead.
+        if (engine.getProvider() == ScanProvider.CLAMAV
+                && limited.count() > scanProperties.getClamav().getSegmentBytes()) {
+            ingestionProcessor.handOff(scanResultId, leaseToken);
+            return ticket(scanResultId);
+        }
         ingestionProcessor.process(scanResultId);
         return ticket(scanResultId);
     }
@@ -259,7 +268,7 @@ public class IngestionGateImpl implements IngestionGate {
                     .startedAt(now)
                     .uploadedBy(userId)
                     .nextAttemptAt(now)
-                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().getLeaseSeconds()))
+                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().leaseSecondsFor(request.contentLength())))
                     .ingestionKind(request.kind())
                     .createdReason(request.createdReason())
                     .documentTypeId(request.documentTypeId())

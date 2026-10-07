@@ -100,7 +100,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         id: "size-limit",
         question: "How large can a file be?",
         answer: [
-          "Up to 2047 MB per file - the most the virus scanner can check in one go. Larger files are refused before they upload.",
+          "There's no size limit. Files over 2 GB are checked for viruses in parts, so they take longer - they show as being scanned until the check finishes.",
         ],
         keywords: "size limit big large maximum",
       },

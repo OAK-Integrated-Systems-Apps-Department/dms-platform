@@ -30,9 +30,7 @@ import { saveDownloadedFile } from "@/lib/download-file"
 import {
   downloadDocumentVersion,
   fetchDocumentVersions,
-  MAX_UPLOAD_BYTES,
   restoreDocumentVersion,
-  TOO_LARGE_MESSAGE,
   uploadDocumentVersion,
   type DocumentVersionDto,
   type IngestionTicketDto,
@@ -102,10 +100,6 @@ export function VersionHistorySheet({
 
   async function upload() {
     if (!file) return
-    if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error(TOO_LARGE_MESSAGE)
-      return
-    }
     setUploading(true)
     try {
       // The same file as a version already in the history would change nothing - say so instead.

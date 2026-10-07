@@ -29,7 +29,6 @@ import {
 import { downloadTemplate } from "@/components/document-types/document-type-templates-tab"
 import { friendlyMessage } from "@/lib/api-error"
 import { fetchTemplates, TEMPLATES_KEY } from "@/lib/documents/templates"
-import { MAX_UPLOAD_BYTES, TOO_LARGE_MESSAGE } from "@/lib/documents/api"
 import {
   canCheckSimilar,
   checkDuplicates,
@@ -105,10 +104,7 @@ function toItems(files: DroppedFile[]): UploadItem[] {
     file,
     dir,
     title: titleFromFilename(file.name),
-    state:
-      file.size > MAX_UPLOAD_BYTES
-        ? { kind: "rejected", message: TOO_LARGE_MESSAGE }
-        : { kind: "queued" },
+    state: { kind: "queued" },
     checked: false,
   }))
 }

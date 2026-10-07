@@ -138,7 +138,8 @@ class QuarantineReleaseService {
                     .startedAt(now)
                     .uploadedBy(original.getUploadedBy())
                     .nextAttemptAt(now)
-                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().getLeaseSeconds()))
+                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().leaseSecondsFor(
+                            original.getSizeBytes() != null ? original.getSizeBytes() : 0)))
                     .ingestionKind(original.getIngestionKind())
                     .createdReason(original.getCreatedReason())
                     .documentTypeId(original.getDocumentTypeId())
