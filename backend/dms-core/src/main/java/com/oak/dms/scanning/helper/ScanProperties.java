@@ -57,7 +57,7 @@ public class ScanProperties {
          * file (scanned segment by segment, then copied) doesn't run out mid-way and let a
          * second worker take the row over.
          */
-        private int leaseSecondsPerGb = 300;
+        private int leaseSecondsPerGb = 120;
         private int batchSize = 20;
 
         /** The lease for a file of {@code sizeBytes} (0 or less if not known yet). */
@@ -90,6 +90,13 @@ public class ScanProperties {
         private long segmentBytes = 2_097_152_000L;
         /** How much of the end of one segment starts the next, so no signature is cut in two. Held in memory. */
         private int segmentOverlapBytes = 16 * 1024 * 1024;
+        /**
+         * The most clamd unpacks of one archive - its MaxScanSize (4000M). A ZIP that unpacks to
+         * more (or is larger than one segment) is opened by dms-core and scanned file by file.
+         */
+        private long archiveScanBytes = 4_194_304_000L;
+        /** The most files clamd opens in one archive - its MaxFiles. More, and the ZIP is scanned file by file too. */
+        private int archiveScanFiles = 10_000;
     }
 
     @Getter

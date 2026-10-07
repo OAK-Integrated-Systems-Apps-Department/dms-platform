@@ -103,6 +103,9 @@ services:
     image: quay.io/keycloak/keycloak:26.7.0
     container_name: oakdms-keycloak
     command: ["start-dev", "--import-realm"]
+    # Keycloak sizes its heap from what it can see (70%, half of it up front) - uncapped,
+    # that was ~4 GB of Docker Desktop's VM. See the clamav service's note.
+    mem_limit: 1536m
     <<: *secrets-env
     environment:
       KC_DB: postgres
@@ -257,6 +260,10 @@ services:
     image: clamav/clamav-debian:1.4.3
     container_name: oakdms-clamav
     <<: *secrets-env
+    # Signatures take ~1.5 GB in memory, more while a new set loads. Capped (like every
+    # large service here) so the stack can't exhaust Docker Desktop's VM - when it did,
+    # the whole VM froze mid-upload rather than one container being restarted.
+    mem_limit: 3g
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
       # Kept >= dms.scanning.clamav.segment-bytes (2000 MB), otherwise clamd
@@ -264,7 +271,9 @@ services:
       # clamd scans at most 2147483645 bytes of any one stream whatever
       # MaxFileSize says (it logs "File size limit set to 2147483645"), hence
       # 2047M - larger files arrive as several overlapping segments.
-      # MaxScanSize is the total read from inside archives, so it stays higher.
+      # MaxScanSize is the total read from inside archives, so it stays higher; keep it
+      # (and MaxFiles) equal to dms.scanning.clamav.archive-scan-bytes / -files - a ZIP
+      # past either is unpacked by dms-core and sent to clamd file by file.
       CLAMD_CONF_StreamMaxLength: 2047M
       CLAMD_CONF_MaxFileSize: 2047M
       CLAMD_CONF_MaxScanSize: 4000M
@@ -324,6 +333,9 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     container_name: oakdms-core
+    # The JVM takes up to 75% of what it can see (backend/Dockerfile) - capped, ~1.9 GB of
+    # heap. Uploads stream through it, never held in memory, whatever their size.
+    mem_limit: 2560m
     env_file:
       - ../secrets/dms-core.secrets.env
       # Root .env (repo root, gitignored - see .env.example) - loaded here

@@ -6,6 +6,7 @@ import { ApiError, friendlyMessage } from "@/lib/api-error"
 import { refreshSession } from "@/lib/api-fetch"
 import { beginSessionKeepAlive } from "@/lib/auth/use-proactive-session-refresh"
 import {
+  fetchIngestionTicket,
   TOO_LARGE_MESSAGE,
   uploadDocument,
   uploadDocumentVersion,
@@ -41,7 +42,11 @@ export type UploadJobState =
   | "scanning"
   | "done"
   | "versioned"
-  /** Accepted; a cloud scanner gives its verdict later. */
+  /**
+   * Every byte sent and stored, but the virus scan runs on after the upload
+   * (a cloud scanner, or a file too large to scan within the request). Its
+   * ticket is polled until the verdict is in.
+   */
   | "pending-scan"
   | "blocked"
   | "rejected"
@@ -71,11 +76,7 @@ export const ACTIVE_STATES: UploadJobState[] = [
   "uploading",
   "scanning",
 ]
-export const FINISHED_OK: UploadJobState[] = [
-  "done",
-  "versioned",
-  "pending-scan",
-]
+export const FINISHED_OK: UploadJobState[] = ["done", "versioned"]
 export const RETRYABLE: UploadJobState[] = ["failed", "duplicate", "cancelled"]
 
 /**
@@ -171,9 +172,12 @@ function pump() {
     running++
     void run(next.id)
   }
+  // A scan still being waited on keeps the session alive too, so its polling isn't logged out.
   const active = useUploads
     .getState()
-    .jobs.some((j) => ACTIVE_STATES.includes(j.state))
+    .jobs.some(
+      (j) => ACTIVE_STATES.includes(j.state) || j.state === "pending-scan"
+    )
   if (active && !endKeepAlive) {
     endKeepAlive = beginSessionKeepAlive()
     session = { startedAt: Date.now(), loadedAtStart: totalLoaded() }
@@ -246,16 +250,9 @@ async function run(id: string) {
             request.refuseDuplicates,
             transfer
           )
-    patch(id, {
-      loaded: current.size,
-      documentId: ticket.documentId ?? undefined,
-      state:
-        ticket.status === "pending"
-          ? "pending-scan"
-          : request.kind === "version"
-            ? "versioned"
-            : "done",
-    })
+    patch(id, { loaded: current.size, ...outcomeOfTicket(ticket, request) })
+    if (ticket.status === "pending")
+      void watchScan(id, ticket.scanResultId, onDoneOf(id))
   } catch (error) {
     patch(id, outcomeOf(error))
   } finally {
@@ -263,6 +260,94 @@ async function run(id: string) {
     finish(id)
     pump()
   }
+}
+
+/** What the upload panel shows for a ticket - the scan's verdict, or still waiting for it. */
+function outcomeOfTicket(
+  ticket: IngestionTicketDto,
+  request: UploadRequest
+): Partial<UploadJob> {
+  switch (ticket.status) {
+    case "pending":
+      return {
+        state: "pending-scan",
+        // Only worth saying when it's held up (the scanner is unavailable and it will retry).
+        message: ticket.retrying ? (ticket.message ?? undefined) : undefined,
+      }
+    case "clean":
+    case "released_override":
+      return {
+        state: request.kind === "version" ? "versioned" : "done",
+        documentId: ticket.documentId ?? undefined,
+        message: undefined,
+      }
+    case "infected":
+    case "quarantined":
+      return {
+        state: "blocked",
+        message: ticket.message ?? "Blocked by the virus scan.",
+      }
+    case "unscannable":
+      return {
+        state: "rejected",
+        message: ticket.message ?? "This file couldn't be checked for viruses.",
+      }
+    default:
+      return {
+        state: "failed",
+        message: ticket.message ?? "The virus scan didn't finish.",
+      }
+  }
+}
+
+/** How often a scan that runs on after its upload is checked on. */
+const SCAN_POLL_MS = 4000
+/** Checks in a row that must fail before the panel says the server can't be reached (~30 s). */
+const SCAN_POLL_FAILURES_SHOWN = 8
+
+/**
+ * Follows a scan that finishes after its upload until the verdict is in, so
+ * the panel ends on Uploaded / Blocked / Not uploaded rather than leaving the
+ * file in limbo. `onScanned` (the batch's callback) runs again once it's
+ * clean, so whatever lists the file shows it. Stops if the panel is cleared.
+ * A failed check (network, server restart) is simply tried again.
+ */
+async function watchScan(
+  id: string,
+  scanResultId: string,
+  onScanned?: () => void
+) {
+  let failures = 0
+  while (job(id)?.state === "pending-scan") {
+    await new Promise((resolve) => setTimeout(resolve, SCAN_POLL_MS))
+    const current = job(id)
+    if (current?.state !== "pending-scan") return
+    try {
+      const ticket = await fetchIngestionTicket(scanResultId)
+      failures = 0
+      if (job(id)?.state !== "pending-scan") return
+      const outcome = outcomeOfTicket(ticket, current.request)
+      patch(id, outcome)
+      if (outcome.state === "done" || outcome.state === "versioned")
+        onScanned?.()
+    } catch {
+      // Not reachable just now - the scan carries on server-side; ask again next time,
+      // but say so once it's been a while rather than look like it's still progressing.
+      if (++failures === SCAN_POLL_FAILURES_SHOWN)
+        patch(id, {
+          message:
+            "Can't reach the server to check the virus scan - still trying…",
+        })
+    }
+  }
+  pump()
+}
+
+/** The callback of the batch this job belongs to, if any. */
+function onDoneOf(id: string) {
+  for (const batch of batches.values())
+    if (batch.remaining.has(id)) return batch.onDone
+  return undefined
 }
 
 function outcomeOf(error: unknown): Partial<UploadJob> {

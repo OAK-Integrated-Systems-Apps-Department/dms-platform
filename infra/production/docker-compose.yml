@@ -264,7 +264,9 @@ services:
       # Kept >= dms.scanning.clamav.segment-bytes (2000 MB). clamd scans at most
       # 2147483645 bytes of any one stream whatever MaxFileSize says, hence 2047M -
       # larger files arrive as several overlapping segments;
-      # MaxScanSize is the total read from inside archives, so it stays higher.
+      # MaxScanSize is the total read from inside archives, so it stays higher; keep it
+      # (and MaxFiles) equal to dms.scanning.clamav.archive-scan-bytes / -files - a ZIP
+      # past either is unpacked by dms-core and sent to clamd file by file.
       CLAMD_CONF_StreamMaxLength: 2047M
       CLAMD_CONF_MaxFileSize: 2047M
       CLAMD_CONF_MaxScanSize: 4000M

@@ -334,16 +334,12 @@ dms:
     # docs/scanning-architecture.md); 7z/rar/tar/gz are not accepted.
     allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
     # A ZIP is kept as one file - never extracted - and checked whole before it's scanned
-    # (ZipArchiveCheck): refused when damaged, empty, password-protected (unscannable), or past
-    # these limits, which match clamd's MaxFiles / MaxScanSize so nothing inside goes unscanned.
-    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:10000}
-    # FOLLOW-UP (found 2026-10-07, while lifting the 2047 MB upload limit): single files
-    # have no size limit now (ClamAV scans big ones in segments), but a ZIP whose contents
-    # unpack to more than this is still refused - segments can't help there, since clamd
-    # has to open the archive whole to scan what's inside. Lifting it needs clamd's
-    # MaxScanSize raised to match (and checking clamd honours values past 4 GB, as it
-    # doesn't for MaxFileSize), plus a longer MaxScanTime/timeout-seconds.
-    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:4194304000}
+    # (ZipArchiveCheck): refused when damaged, empty, or password-protected (unscannable).
+    # No entry-count or unpacked-size limit by default: a ZIP past what clamd opens of one
+    # archive (dms.scanning.clamav.archive-scan-files / -bytes) is scanned file by file
+    # instead. Set these to refuse larger ZIPs outright.
+    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
+    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
@@ -375,7 +371,7 @@ dms:
       max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
       lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:1800}
       # Added per GB of the file, so a very large file's lease outlasts its scan.
-      lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:300}
+      lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:120}
       batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
     clamav:
       host: ${CLAMAV_HOST:localhost}
@@ -387,6 +383,10 @@ dms:
       segment-bytes: ${CLAMAV_SEGMENT_BYTES:2097152000}
       # Each segment repeats this much of the end of the one before (held in memory).
       segment-overlap-bytes: ${CLAMAV_SEGMENT_OVERLAP_BYTES:16777216}
+      # What clamd opens of one archive - keep equal to its MaxScanSize / MaxFiles. A ZIP
+      # past either is opened by dms-core and each file in it scanned on its own.
+      archive-scan-bytes: ${CLAMAV_ARCHIVE_SCAN_BYTES:4194304000}
+      archive-scan-files: ${CLAMAV_ARCHIVE_SCAN_FILES:10000}
     azure-defender:
       # Blob Service endpoint of the Defender-protected account that holds the
       # staging container - verdicts are read from its blob index tags.

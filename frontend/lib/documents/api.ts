@@ -43,6 +43,17 @@ export interface IngestionTicketDto {
   completedAt: string | null
 }
 
+/** Where an upload's scan has got to - polled while it's still pending (202). */
+export async function fetchIngestionTicket(
+  scanResultId: string
+): Promise<IngestionTicketDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/ingestion-tickets/${scanResultId}`,
+    undefined,
+    "Could not check the virus scan."
+  )
+}
+
 /** Active document types the caller may upload as (needs only docm.documents.create). */
 export async function fetchSelectableDocumentTypes(): Promise<
   SelectableDocumentTypeDto[]

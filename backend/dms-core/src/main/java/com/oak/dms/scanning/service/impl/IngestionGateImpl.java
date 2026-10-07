@@ -186,6 +186,7 @@ public class IngestionGateImpl implements IngestionGate {
 
         // 4a. A ZIP is checked whole - complete, readable, within what the scanner can inspect - by
         // reading the staged copy once. Nothing is extracted or run; the archive is kept as uploaded.
+        boolean largeArchive = false;
         if ("zip".equals(detected.extension())) {
             ZipArchiveCheck.Result zip;
             try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
@@ -203,6 +204,9 @@ public class IngestionGateImpl implements IngestionGate {
                 ingestionProcessor.purgeStaging(scanResultId);
                 throw new FileTypeNotAllowedException(zip.message());
             }
+            // More than clamd opens of one archive: ClamAvScanAdapter scans it file by file instead.
+            largeArchive = zip.uncompressedBytes() > scanProperties.getClamav().getArchiveScanBytes()
+                    || zip.entries() > scanProperties.getClamav().getArchiveScanFiles();
         }
 
         // 4a'. An Office Open XML file's head only showed a plausible package (its parts can come in
@@ -224,6 +228,17 @@ public class IngestionGateImpl implements IngestionGate {
         }
 
         // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
+        // The uploader sending the same file into the same folder again - typically because a large
+        // one is still being scanned and they weren't sure it went through - gets their first upload's
+        // ticket back, to follow that scan, rather than a refusal blaming "someone".
+        java.util.Optional<UUID> earlier = ownEarlierUpload(request, tenantId, userId, scanResultId,
+                row.getCreatedAt(), fileHash);
+        if (earlier.isPresent()) {
+            ingestionProcessor.failTerminal(scanResultId, leaseToken,
+                    "Same file as upload " + earlier.get() + " by the same user - that one is followed instead");
+            ingestionProcessor.purgeStaging(scanResultId);
+            return ticket(earlier.get());
+        }
         duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
             ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());
             ingestionProcessor.purgeStaging(scanResultId);
@@ -231,10 +246,11 @@ public class IngestionGateImpl implements IngestionGate {
         });
 
         // 5. Scan and route. ClamAV answers now; cloud scanners come back pending. So does a
-        // file too large for one clamd pass: scanning it segment by segment can take far longer
-        // than a request should stay open, so the scheduler picks it up straight away instead.
+        // file too large for one clamd pass, or a ZIP too large for clamd to open whole: scanning
+        // it piece by piece can take far longer than a request should stay open, so the
+        // scheduler picks it up straight away instead.
         if (engine.getProvider() == ScanProvider.CLAMAV
-                && limited.count() > scanProperties.getClamav().getSegmentBytes()) {
+                && (largeArchive || limited.count() > scanProperties.getClamav().getSegmentBytes())) {
             ingestionProcessor.handOff(scanResultId, leaseToken);
             return ticket(scanResultId);
         }
@@ -286,6 +302,33 @@ public class IngestionGateImpl implements IngestionGate {
             }
             return saved;
         });
+    }
+
+    /**
+     * The same user's own upload of the same file into the same folder within the last hour, still
+     * being scanned or already through - newest first. Only for a new document whose uploader checked
+     * for duplicates ("keep both" uploads deliberately add another copy).
+     */
+    private java.util.Optional<UUID> ownEarlierUpload(IngestionRequest request, UUID tenantId, UUID userId,
+                                                      UUID scanResultId, OffsetDateTime createdAt, String fileHash) {
+        if (request.kind() != com.oak.dms.scanning.enums.IngestionKind.new_document || !request.refuseDuplicates()) {
+            return java.util.Optional.empty();
+        }
+        return jdbc.queryForList("""
+                select s.scan_result_id from scan_results s
+                 where s.tenant_id = ? and s.uploaded_by = ? and s.file_hash = ? and s.scan_result_id <> ?
+                   and s.ingestion_kind = 'new_document' and s.folder_id is not distinct from ?
+                   and s.status in ('pending', 'clean', 'released_override') and not s.is_deleted
+                   and s.created_at > now() - interval '1 hour'
+                   and (s.created_at, s.scan_result_id) < (?, ?)
+                   -- Through already: only while the document it became is still there.
+                   and (s.status = 'pending' or exists (
+                        select 1 from document_versions v join documents d on d.document_id = v.document_id
+                         where v.version_id = s.document_version_id and not v.is_deleted and not d.is_deleted))
+                 order by s.created_at desc
+                 limit 1
+                """, UUID.class, tenantId, userId, fileHash, scanResultId, request.folderId(), createdAt,
+                scanResultId).stream().findFirst();
     }
 
     /**

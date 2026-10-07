@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Clock,
   FileArchive,
   FolderOpen,
   Loader2,
@@ -66,8 +65,13 @@ export function UploadsPanel() {
 
   const active = jobs.filter((j) => ACTIVE_STATES.includes(j.state))
   const succeeded = jobs.filter((j) => FINISHED_OK.includes(j.state)).length
+  // Uploaded, but the virus scan runs on - shown as in progress until its verdict is in.
+  const checking = jobs.filter((j) => j.state === "pending-scan").length
   const problems = jobs.filter(
-    (j) => !ACTIVE_STATES.includes(j.state) && !FINISHED_OK.includes(j.state)
+    (j) =>
+      !ACTIVE_STATES.includes(j.state) &&
+      !FINISHED_OK.includes(j.state) &&
+      j.state !== "pending-scan"
   ).length
   const busy = active.length > 0
   const preparing = downloads.filter((d) => d.state === "preparing").length
@@ -103,10 +107,15 @@ export function UploadsPanel() {
   const sentBytes = active.reduce((sum, j) => sum + j.loaded, 0)
   const percent =
     totalBytes > 0 ? Math.round((sentBytes / totalBytes) * 100) : 0
+  // A scan still running isn't something to cancel (the file is already uploaded), so it
+  // doesn't make the panel "in progress" - closing it just stops watching.
   const title = (
-    inProgress
+    inProgress || checking > 0
       ? [
           busy && `Uploading ${plural(active.length, "item", "items")}`,
+          !busy &&
+            checking > 0 &&
+            `Checking ${plural(checking, "item", "items")} for viruses`,
           preparing > 0 &&
             `Preparing ${plural(preparing, "download", "downloads")}`,
         ]
@@ -341,7 +350,8 @@ function UploadRow({
             : job.state === "versioned"
               ? "Added as a new version"
               : job.state === "pending-scan"
-                ? "Uploaded - the virus scan finishes shortly"
+                ? (job.message ??
+                  "Uploaded - checking for viruses… Large files take a few minutes.")
                 : (job.message ?? "Not uploaded")
 
   return (
@@ -361,7 +371,9 @@ function UploadRow({
         <p
           className={cn(
             "truncate text-[11.5px]",
-            ok || ACTIVE_STATES.includes(job.state)
+            ok ||
+              ACTIVE_STATES.includes(job.state) ||
+              job.state === "pending-scan"
               ? "text-muted-foreground"
               : job.state === "cancelled"
                 ? "text-muted-foreground"
@@ -371,7 +383,9 @@ function UploadRow({
         >
           {detail}
         </p>
-        {(job.state === "uploading" || job.state === "scanning") && (
+        {(job.state === "uploading" ||
+          job.state === "scanning" ||
+          job.state === "pending-scan") && (
           <div
             role="progressbar"
             aria-label={`Uploading ${job.name}`}
@@ -383,7 +397,8 @@ function UploadRow({
             <div
               className={cn(
                 "h-full rounded-full bg-primary transition-[width] duration-300",
-                job.state === "scanning" && "animate-pulse"
+                (job.state === "scanning" || job.state === "pending-scan") &&
+                  "animate-pulse"
               )}
               style={{ width: `${percent}%` }}
             />
@@ -454,9 +469,9 @@ function StateIcon({ job }: { job: UploadJob }) {
       )
     case "pending-scan":
       return (
-        <Clock
+        <Loader2
           size={18}
-          className="text-[var(--gold)]"
+          className="animate-spin text-primary"
           aria-label="Being scanned"
         />
       )

@@ -245,7 +245,7 @@ Provider prerequisites:
 |---|---|---|
 | `dms.scanning.default-provider` (`SCAN_PROVIDER`) | `CLAMAV` | seeds the platform-default `scan_engines` row |
 | `dms.scanning.timeout-seconds` / `max-file-size-bytes` | 900 s / no limit (Long.MAX_VALUE) | copied onto the seeded engine row; timeout is per clamd segment; V72 lifted rows still on 2047 MB (V68) or 100 MB |
-| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 1800 s + 300 s per GB | lease outlasts a segmented scan of the file |
+| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 1800 s + 120 s per GB | lease outlasts a segmented scan of the file |
 | `dms.scanning.clamav.segment-bytes` / `segment-overlap-bytes` | 2000 MB / 16 MB | files larger than one segment are scanned as overlapping segments |
 | `dms.scanning.cloud-verdict-timeout-minutes`, `failed-retention-hours` | 60, 72 | |
 | `dms.scanning.clamav.host/port` (`CLAMAV_HOST`/`CLAMAV_PORT`) | `localhost:3310` (`clamav` in Docker) | |
@@ -300,15 +300,23 @@ time. It is never stored as a raw credential and never logged.
      temporary copy is deleted.
 
      The archive is refused (415, with the reason) when it's damaged or
-     truncated, or empty. It's also refused when it holds more than
-     `dms.ingestion.zip-max-entries` (10,000, clamd's `MaxFiles`), unpacks to
-     more than `zip-max-uncompressed-bytes` (4000 MB, clamd's `MaxScanSize`),
-     or uses a compression method other than stored or Deflate.
+     truncated, or empty, or uses a compression method other than stored or
+     Deflate. `dms.ingestion.zip-max-entries` / `zip-max-uncompressed-bytes`
+     can refuse larger ZIPs too, but have no limit by default.
      A password-protected entry anywhere makes it unscannable.
   3. ClamAV scans every file inside, nested archives included. Because of
      `AlertExceedsMax` and `AlertEncryptedArchive`, anything clamd can't finish
      comes back `Heuristics.Limits.Exceeded.*` or `Heuristics.Encrypted.*`.
      `ClamAvScanAdapter` maps both to unscannable, not infected.
+  4. clamd opens at most 10,000 files (`MaxFiles`) and 4000 MB (`MaxScanSize`)
+     of one archive. A ZIP past either (`dms.scanning.clamav.archive-scan-files`
+     / `-bytes`), or larger than one 2000 MB segment, is opened by
+     `ClamAvScanAdapter` instead:
+     - Each file in it goes to clamd as its own stream, in segments if large.
+       clamd still opens archives nested inside it.
+     - The ZIP's own bytes get a segmented pass as well. A limits alert there is
+       expected and ignored, because the contents are covered file by file.
+     - The gate hands such a ZIP to the scheduler, like any file over 2 GB.
 
   This replaces the earlier deviation from VMSBDI-FR-004, under which no
   archive uploads were accepted. Other archive formats (7z, rar, tar, gz) are
