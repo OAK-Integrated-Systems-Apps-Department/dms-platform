@@ -290,7 +290,7 @@ class BulkImportWorkerTest {
 
         worker.onMessage(message(batch.getImportBatchId()));
 
-        verify(importDefaults, times(1)).resolve(any(), eq(tenantId));
+        verify(importDefaults, times(1)).resolve(any(), eq(tenantId), eq(documentTypeId), eq(3));
         verify(rowValidator).validate(items.get(0), resolved, true);
         verify(rowValidator).validate(items.get(1), resolved, true);
     }
@@ -340,7 +340,7 @@ class BulkImportWorkerTest {
         Map<String, ImportField> fields = Map.of("amount",
                 new ImportField(UUID.randomUUID(), "amount", "Amount", "decimal", false, false, "12.50"));
         when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(fields);
-        when(importDefaults.resolve(fields, tenantId)).thenReturn(resolved);
+        when(importDefaults.resolve(fields, tenantId, documentTypeId, 3)).thenReturn(resolved);
         when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
                 .thenReturn(items);
         when(importItemRepository.findAllByImportBatchIdAndImportItemIdIn(eq(batch.getImportBatchId()), any()))

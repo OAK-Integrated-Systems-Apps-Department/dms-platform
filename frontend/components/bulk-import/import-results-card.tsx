@@ -1,20 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { AlertTriangle, Ban, CheckCircle2, Download, Loader2, RotateCcw, XCircle } from "lucide-react"
+import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { friendlyMessage } from "@/lib/api-error"
-import {
-  downloadFailedRowsTemplate,
-  hasFailedRows,
-  saveDownloadedFile,
-  type BulkImportStatusResponseDto,
-} from "@/lib/bulk-imports/api"
+import { hasFailedRows, isFinished, type BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
+import { useImportDefaults } from "@/lib/bulk-imports/use-import-defaults"
 
 import { FailedRowsTable } from "./failed-rows-table"
-import { InlineError, StepCard } from "./step-card"
+import { StepCard } from "./step-card"
 
 interface ImportResultsCardProps {
   batch: BulkImportStatusResponseDto
@@ -24,14 +18,14 @@ interface ImportResultsCardProps {
 
 /**
  * Summary of a finished import: how many documents were created, how many
- * rows failed, and which ones. A cancelled import gets the same card, minus
+ * files failed, and which ones. A cancelled import gets the same card, minus
  * the counts' wording - nothing was processed - and says whether it was
  * cancelled by the user or expired after a period with no uploads.
  */
 export function ImportResultsCard({ batch, documentTypeName, onStartOver }: ImportResultsCardProps) {
   const { title, badge } = describe(batch)
   const created = `${batch.successCount} ${batch.successCount === 1 ? "document" : "documents"} created`
-  const failed = `${batch.failureCount} ${batch.failureCount === 1 ? "row" : "rows"} failed`
+  const failed = `${batch.failureCount} ${batch.failureCount === 1 ? "file" : "files"} failed`
   const description =
     batch.status !== "cancelled"
       ? `${created}, ${failed}.`
@@ -58,12 +52,11 @@ export function ImportResultsCard({ batch, documentTypeName, onStartOver }: Impo
         </div>
       </dl>
 
-      {hasFailedRows(batch.status) && (
-        <>
-          <DownloadFailedRows batchId={batch.batchId} />
-          <FailedRowsTable batchId={batch.batchId} />
-        </>
+      {batch.successCount > 0 && isFinished(batch.status) && (
+        <EmptyRequiredFieldsNote documentTypeId={batch.documentTypeId} />
       )}
+
+      {hasFailedRows(batch.status) && <FailedRowsTable batchId={batch.batchId} />}
 
       <Button onClick={onStartOver}>
         <RotateCcw />
@@ -73,35 +66,22 @@ export function ImportResultsCard({ batch, documentTypeName, onStartOver }: Impo
   )
 }
 
-/** The failed rows as a fixable template - uploading it again starts a resubmit that reuses kept files. */
-function DownloadFailedRows({ batchId }: { batchId: string }) {
-  const [downloading, setDownloading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleDownload() {
-    setDownloading(true)
-    setError(null)
-    try {
-      saveDownloadedFile(await downloadFailedRowsTemplate(batchId))
-    } catch (err) {
-      setError(friendlyMessage(err, "Could not download the failed rows."))
-    } finally {
-      setDownloading(false)
-    }
-  }
+/**
+ * The type's required fields with no default, which the created documents
+ * were left without. Read from the type's current defaults (the batch's
+ * schema version isn't in the status response); left out if they can't be
+ * loaded, e.g. for a type that has since been deactivated.
+ */
+function EmptyRequiredFieldsNote({ documentTypeId }: { documentTypeId: string }) {
+  const { data } = useImportDefaults(documentTypeId)
+  const missing = data?.mandatoryFieldsWithoutDefault ?? []
+  if (missing.length === 0) return null
 
   return (
-    <div className="mb-5">
-      <Button variant="outline" onClick={handleDownload} disabled={downloading}>
-        {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-        {downloading ? "Downloading…" : "Download failed rows"}
-      </Button>
-      <p className="mt-2 text-[12.5px] text-muted-foreground">
-        Fix the rows in this file and upload it as a new import. Files for rows that only had data problems are kept
-        for 24 hours, so you won&apos;t need to upload them again.
-      </p>
-      {error && <InlineError>{error}</InlineError>}
-    </div>
+    <p className="mb-5 text-[12.5px] text-muted-foreground">
+      These required fields were left empty and need filling in on the documents:{" "}
+      {missing.map((field) => field.label).join(", ")}.
+    </p>
   )
 }
 

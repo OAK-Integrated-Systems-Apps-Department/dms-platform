@@ -1,11 +1,10 @@
 import type { ImportRowFailureDto, ImportRowProblemDto } from "@/lib/bulk-imports/api"
 
-const COLUMNS = ["Row", "File", "Problem"]
+const COLUMNS = ["#", "File", "Problem"]
 
 /**
- * Import rows with their problems, one problem per line - the failed rows of
- * a finished import, or the problem rows of a template being checked.
- * Scrolls inside a fixed-height area (header stays put) so a 500-row batch
+ * The failed files of a finished import with their problems, one problem per
+ * line. Scrolls inside a fixed-height area (header stays put) so a 500-row batch
  * doesn't push the rest of the card off screen.
  */
 export function ImportRowsTable({ rows }: { rows: ImportRowFailureDto[] }) {
@@ -57,7 +56,7 @@ function ImportRow({ row }: { row: ImportRowFailureDto }) {
   )
 }
 
-/** "Label: message", or just the message when it already names its column (as the download's errors column does). */
+/** "Label: message", or just the message when it already names its field. */
 function describe(problem: ImportRowProblemDto): string {
   const label = problem.fieldLabel
   if (!label || problem.message.toLowerCase().includes(label.toLowerCase())) {

@@ -70,7 +70,8 @@ public class ImportCompletionScheduler {
             try {
                 ImportDefaults.Resolved defaults = defaultsByBatch.computeIfAbsent(candidate.importBatchId(),
                         id -> importDefaults.resolve(importSchemaFields.load(candidate.tenantId(),
-                                candidate.documentTypeId(), candidate.schemaVersion()), candidate.tenantId()));
+                                candidate.documentTypeId(), candidate.schemaVersion()), candidate.tenantId(),
+                                candidate.documentTypeId(), candidate.schemaVersion()));
                 recordCreator.handleTicket(candidate.batch(), candidate.importItemId(),
                         ingestionGate.getTicket(candidate.scanResultId()), defaults);
             } catch (RuntimeException e) {

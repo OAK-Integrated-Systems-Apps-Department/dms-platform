@@ -29,31 +29,33 @@ export function isFinished(status: BulkImportStatus | undefined): boolean {
   return status !== undefined && FINISHED_STATUSES.includes(status)
 }
 
-/** Finished with at least some rows not imported - worth listing what failed. */
+/** Finished with at least some files not imported - worth listing what failed. */
 export function hasFailedRows(status: BulkImportStatus | undefined): boolean {
   return status === "completed_with_errors" || status === "failed"
 }
 
-/**
- * Response of POST /bulk-imports. `expectedFilenames` has one entry per row
- * that needs a file, in row order; rows skipped for template errors, and rows
- * that reused a kept file, are left out (`totalRecords` still counts them).
- */
+/** Response of POST /bulk-imports - the batch is open for uploads. */
 export interface BulkImportCreatedResponseDto {
   batchId: string
-  totalRecords: number
-  expectedFilenames: string[]
-  /** Rows saved as failed because of template errors - they need no file and appear in the results. */
-  skippedRows: number
-  /** Rows of a resubmit that took over a file kept from the previous import - already received. */
-  reusedFiles: number
+  documentTypeId: string
+  /** The type's schema version the batch was created at - its defaults are the ones applied. */
+  schemaVersion: number
+  /** How many files (accepted and rejected) the batch can take. */
+  maxFiles: number
 }
 
-/** Response of POST /bulk-imports/{batchId}/files. */
+/** Response of POST /bulk-imports/{batchId}/files for an accepted file. A rejected one gets a 4xx instead. */
 export interface ImportFileReceivedResponseDto {
+  /** The item this upload became. */
   rowNumber: number
+  /** The file's name as kept, without any folder path. */
+  filename: string
+  /** Uploads accepted into the batch so far. */
   filesReceived: number
-  totalRecords: number
+  /** Uploads refused so far. */
+  filesRejected: number
+  /** Every upload so far, accepted or rejected. */
+  totalFiles: number
 }
 
 /** Response of GET /bulk-imports/{batchId}, /bulk-imports/active and POST .../cancel. */
@@ -61,15 +63,16 @@ export interface BulkImportStatusResponseDto {
   batchId: string
   documentTypeId: string
   status: BulkImportStatus
+  /** Every upload into the batch, accepted or rejected. */
   totalRecords: number
-  /** Rows that need a file and have one - skipped rows never count. */
+  /** Uploads that were accepted. */
   filesReceived: number
+  /** Uploads that were refused - each is a failed item in the results. */
+  filesRejected: number
   successCount: number
   failureCount: number
-  /** One entry per row still waiting for its file. Skipped rows never wait for one. */
-  missingFilenames: string[]
-  /** Rows skipped at creation because of template errors. */
-  skippedRows: number
+  /** The refused uploads' names, in upload order. */
+  rejectedFilenames: string[]
   createdAt: string
   /** Set on a cancelled batch; null otherwise. */
   cancelReason: BulkImportCancelReason | null
@@ -102,7 +105,7 @@ export interface BulkImportPageDto {
   last: boolean
 }
 
-/** One problem with a failed row. `fieldLabel` is the column's display name (null if the problem isn't about one column). */
+/** One problem with a failed file. `fieldLabel` is the column's display name (null if the problem isn't about one column). */
 export interface ImportRowProblemDto {
   field: string | null
   fieldLabel: string | null
@@ -112,31 +115,52 @@ export interface ImportRowProblemDto {
   severity: "error" | "warning"
 }
 
-/** Response item of GET /bulk-imports/{batchId}/failures - failed rows only, in row order. */
+/** Response item of GET /bulk-imports/{batchId}/failures - failed files only, in upload order. */
 export interface ImportRowFailureDto {
   rowNumber: number
   filename: string
-  /** The raw title cell; null if it was left blank. */
+  /** The document title taken from the filename; null if there was none. */
   title: string | null
   problems: ImportRowProblemDto[]
 }
 
+/** A default value an import applies to every document. `value` is as configured, before conversion. */
+export interface ImportDefaultValueDto {
+  fieldKey: string
+  label: string
+  value: string
+}
+
 /**
- * Response of POST /import-templates/preview - the row checks the template
- * would get on POST /bulk-imports (all but the file one), with nothing saved.
- * `rows` lists only rows with errors, in row order.
+ * A configured default an import won't apply: it doesn't convert, match one of
+ * the field's active options, or pass the field's validation. `reason` has no
+ * full stop.
  */
-export interface ImportTemplatePreviewDto {
+export interface ImportInvalidDefaultDto {
+  fieldKey: string
+  label: string
+  value: string
+  reason: string
+}
+
+export interface ImportFieldDto {
+  fieldKey: string
+  label: string
+}
+
+/**
+ * Response of GET /bulk-imports/document-types/{id}/defaults - the metadata an
+ * import into the type would apply right now (its current schema version).
+ * Mandatory fields with no default are left empty, unless
+ * `enforceMandatoryFields`, when the import can't be started.
+ */
+export interface ImportDefaultsDto {
   documentTypeId: string
   schemaVersion: number
-  totalRows: number
-  validRows: number
-  invalidRows: number
-  rows: ImportRowFailureDto[]
-  /** The import whose failed rows this template resubmits; null for a normal template. */
-  resubmitOf: string | null
-  /** Rows that would reuse a file kept from that import (nothing is moved by the preview). */
-  reusableFiles: number
+  defaults: ImportDefaultValueDto[]
+  invalidDefaults: ImportInvalidDefaultDto[]
+  mandatoryFieldsWithoutDefault: ImportFieldDto[]
+  enforceMandatoryFields: boolean
 }
 
 /** Response item of GET /import-templates/document-types - active types only, in display order. */
@@ -146,19 +170,13 @@ export interface ImportDocumentTypeOptionDto {
   typeCode: string
 }
 
-export interface DownloadedFile {
-  blob: Blob
-  filename: string
-}
-
 const BASE = `${API_BASE_URL}/api/v1/bulk-imports`
-const TEMPLATE_FALLBACK_FILENAME = "import-template.xlsx"
-const FAILED_ROWS_FALLBACK_FILENAME = "failed-rows.xlsx"
 
 /**
- * GET /import-templates/document-types - the types a template can be
- * downloaded for. Gated on the import permission, unlike the full
- * /document-types list (which needs metadata-management access).
+ * GET /import-templates/document-types - the types a bulk import can be
+ * started for. Gated on the import permission, unlike the full
+ * /document-types list (which needs metadata-management access). The path
+ * predates the files-first flow; the backend kept it.
  */
 export async function fetchImportDocumentTypes(): Promise<ImportDocumentTypeOptionDto[]> {
   return apiFetchJson<ImportDocumentTypeOptionDto[]>(
@@ -168,54 +186,25 @@ export async function fetchImportDocumentTypes(): Promise<ImportDocumentTypeOpti
   )
 }
 
-/** GET /import-templates - the .xlsx template for a document type's current schema. */
-export async function downloadImportTemplate(documentTypeId: string): Promise<DownloadedFile> {
-  const response = await apiFetch(
-    `${API_BASE_URL}/api/v1/import-templates?documentTypeId=${encodeURIComponent(documentTypeId)}`,
+/** GET /bulk-imports/document-types/{id}/defaults - what an import into the type would apply. */
+export async function fetchImportDefaults(documentTypeId: string): Promise<ImportDefaultsDto> {
+  return apiFetchJson<ImportDefaultsDto>(
+    `${BASE}/document-types/${encodeURIComponent(documentTypeId)}/defaults`,
     undefined,
-    "Could not download the template."
-  )
-  const blob = await response.blob()
-  const filename =
-    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? TEMPLATE_FALLBACK_FILENAME
-  return { blob, filename }
-}
-
-/**
- * GET /bulk-imports/{batchId}/failed-rows-template - a finished import's failed
- * rows as a fixable template; uploading it starts a resubmit.
- */
-export async function downloadFailedRowsTemplate(batchId: string): Promise<DownloadedFile> {
-  const response = await apiFetch(
-    `${BASE}/${batchId}/failed-rows-template`,
-    undefined,
-    "Could not download the failed rows."
-  )
-  const blob = await response.blob()
-  const filename =
-    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? FAILED_ROWS_FALLBACK_FILENAME
-  return { blob, filename }
-}
-
-/** POST /import-templates/preview - checks a filled-in template's rows without starting an import. */
-export async function previewImportTemplate(template: File): Promise<ImportTemplatePreviewDto> {
-  const body = new FormData()
-  body.append("template", template)
-  return apiFetchJson<ImportTemplatePreviewDto>(
-    `${API_BASE_URL}/api/v1/import-templates/preview`,
-    { method: "POST", body },
-    "Could not check the template."
+    "Could not load the default values for this document type."
   )
 }
 
-/** POST /bulk-imports - uploads the filled-in template and opens a batch. */
-export async function createBulkImport(template: File): Promise<BulkImportCreatedResponseDto> {
-  const body = new FormData()
-  body.append("template", template)
+/** POST /bulk-imports - opens a batch for a document type; its files are uploaded next. */
+export async function createBulkImport(documentTypeId: string): Promise<BulkImportCreatedResponseDto> {
   return apiFetchJson<BulkImportCreatedResponseDto>(
     BASE,
-    { method: "POST", body },
-    "Could not upload the template."
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentTypeId }),
+    },
+    "Could not start the import."
   )
 }
 
@@ -252,12 +241,12 @@ export async function fetchBulkImportStatus(batchId: string): Promise<BulkImport
   return apiFetchJson<BulkImportStatusResponseDto>(`${BASE}/${batchId}`, undefined, "Could not load this import.")
 }
 
-/** GET /bulk-imports/{batchId}/failures - the rows that failed and why. */
+/** GET /bulk-imports/{batchId}/failures - the files that failed and why. */
 export async function fetchBulkImportFailures(batchId: string): Promise<ImportRowFailureDto[]> {
   return apiFetchJson<ImportRowFailureDto[]>(
     `${BASE}/${batchId}/failures`,
     undefined,
-    "Could not load the rows that failed."
+    "Could not load the files that failed."
   )
 }
 
@@ -272,34 +261,4 @@ export async function fetchActiveBulkImport(): Promise<BulkImportStatusResponseD
   const response = await apiFetch(`${BASE}/active`, undefined, "Could not check for an import in progress.")
   if (response.status === 204) return null
   return (await response.json()) as BulkImportStatusResponseDto
-}
-
-/** Hands a downloaded blob to the browser as a file save. */
-export function saveDownloadedFile({ blob, filename }: DownloadedFile) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-/**
- * Prefers RFC 5987 `filename*=UTF-8''...` (what Spring's ContentDisposition
- * emits for non-ASCII names) over the plain `filename="..."` parameter.
- */
-function filenameFromContentDisposition(header: string | null): string | null {
-  if (!header) return null
-  const extended = /filename\*\s*=\s*(?:[\w-]+'[^']*')?([^;]+)/i.exec(header)
-  if (extended) {
-    try {
-      return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ""))
-    } catch {
-      // Malformed encoding - fall through to the plain parameter.
-    }
-  }
-  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header)
-  return plain ? plain[1].trim() : null
 }

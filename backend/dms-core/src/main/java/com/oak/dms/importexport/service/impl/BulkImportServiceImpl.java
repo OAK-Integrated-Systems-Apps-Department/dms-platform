@@ -148,11 +148,16 @@ public class BulkImportServiceImpl implements BulkImportService {
 
         // The same resolution the worker runs for a batch at this version.
         ImportDefaults.Resolved resolved = importDefaults.resolve(
-                importSchemaFields.load(tenantId, documentTypeId, schemaVersion), tenantId);
+                importSchemaFields.load(tenantId, documentTypeId, schemaVersion), tenantId, documentTypeId,
+                schemaVersion);
         return new ImportDefaultsResponse(documentTypeId, schemaVersion,
                 resolved.applied().stream()
                         .map(applied -> new ImportDefaultsResponse.DefaultValue(applied.field().fieldKey(),
                                 applied.field().label(), applied.rawValue()))
+                        .toList(),
+                resolved.invalidDefaults().stream()
+                        .map(invalid -> new ImportDefaultsResponse.InvalidDefault(invalid.field().fieldKey(),
+                                invalid.field().label(), invalid.rawValue(), invalid.reason()))
                         .toList(),
                 resolved.missingMandatory().stream()
                         .map(field -> new ImportDefaultsResponse.Field(field.fieldKey(), field.label()))
@@ -177,7 +182,8 @@ public class BulkImportServiceImpl implements BulkImportService {
 
         if (properties.isEnforceMandatoryFields()) {
             List<ImportField> missing = importDefaults.resolve(
-                    importSchemaFields.load(tenantId, documentTypeId, schemaVersion), tenantId).missingMandatory();
+                    importSchemaFields.load(tenantId, documentTypeId, schemaVersion), tenantId, documentTypeId,
+                    schemaVersion).missingMandatory();
             if (!missing.isEmpty()) {
                 throw new ImportBatchSizeException("IMPORT_MANDATORY_FIELDS_WITHOUT_DEFAULT",
                         "'" + documentType.getTypeName() + "' has required fields with no usable default value: "

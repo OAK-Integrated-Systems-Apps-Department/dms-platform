@@ -10,14 +10,12 @@ import type { BulkImportStatusResponseDto } from "@/lib/bulk-imports/api"
 import type { UploadQueueEntry } from "@/lib/bulk-imports/use-upload-queue"
 
 import { ConfirmActionDialog } from "./confirm-action-dialog"
-import { InlineError, InlineSuccess, StepCard } from "./step-card"
+import { InlineError, StepCard } from "./step-card"
 
 interface UploadFilesStepProps {
   status: BulkImportStatusResponseDto
-  /** Shown once, right after the template was accepted. */
-  createdNotice: string | null
-  /** Files a resubmit took over from the previous import (0 if none, or unknown after a resume). */
-  reusedFiles: number
+  /** Most files (accepted and rejected) the batch can take - known only from the create response, null after a resume. */
+  maxFiles: number | null
   entries: UploadQueueEntry[]
   uploading: boolean
   /** False when the caller lacks document-create: uploading and submitting are disabled, Cancel still works. */
@@ -27,11 +25,14 @@ interface UploadFilesStepProps {
   onCancel: () => Promise<string | null>
 }
 
-/** Steps 3 and 4: upload the files the template lists (queued, one at a time), then submit. */
+/**
+ * Steps 2 and 3: add files (queued, uploaded one at a time - each accepted
+ * file becomes a document), then submit. Rejected files stay listed with
+ * the reason; the server keeps them as failed items in the results.
+ */
 export function UploadFilesStep({
   status,
-  createdNotice,
-  reusedFiles,
+  maxFiles,
   entries,
   uploading,
   uploadsAllowed,
@@ -44,11 +45,8 @@ export function UploadFilesStep({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const missingCount = status.missingFilenames.length
-  const allReceived = missingCount === 0
-  const skipped = status.skippedRows
-  /** Rows skipped for template errors never need a file. */
-  const filesExpected = status.totalRecords - skipped
+  const { filesReceived, filesRejected } = status
+  const canSubmit = uploadsAllowed && filesReceived > 0 && !uploading && !submitting
 
   async function submitNow() {
     setSubmitting(true)
@@ -59,10 +57,10 @@ export function UploadFilesStep({
   }
 
   function handleSubmitClick() {
-    if (allReceived) {
-      void submitNow()
-    } else {
+    if (filesRejected > 0) {
       setConfirmSubmitOpen(true)
+    } else {
+      void submitNow()
     }
   }
 
@@ -76,39 +74,27 @@ export function UploadFilesStep({
   return (
     <div className="flex flex-col gap-4">
       <StepCard
-        step={3}
-        title="Upload the files"
-        description="Drop the files named in your template. They're matched to rows by filename and uploaded one at a time."
+        step={2}
+        title="Add files"
+        description="Drop the files to import. Each one becomes a document; they're uploaded one at a time."
         action={cancelButton}
       >
-        {createdNotice && <InlineSuccess>{createdNotice}</InlineSuccess>}
-        {reusedFiles > 0 && (
-          <p className="mb-3 text-[12.5px] text-muted-foreground">
-            {reusedFiles} {reusedFiles === 1 ? "file was" : "files were"} reused from your previous import, so you
-            don&apos;t need to upload {reusedFiles === 1 ? "it" : "them"} again.
-          </p>
-        )}
-        {skipped > 0 && (
-          <p className="mb-3 text-[12.5px] text-muted-foreground">
-            {skipped} {skipped === 1 ? "row was" : "rows were"} skipped because of template errors -{" "}
-            {skipped === 1 ? "it'll" : "they'll"} appear in the results.
-          </p>
-        )}
-
         <FileDropzone multiple onFiles={onFiles} disabled={!uploadsAllowed} label="Upload import files">
           <span className="font-semibold text-foreground">Drag files here</span> or click to browse
-          <span className="mt-0.5 block text-[12px]">Up to 100 MB per file</span>
+          <span className="mt-0.5 block text-[12px]">
+            Up to 100 MB per file{maxFiles !== null && `, ${maxFiles} files per import`}
+          </span>
         </FileDropzone>
 
-        <div className="mt-5 grid gap-5 md:grid-cols-2">
+        <p className="mt-4 text-[12.5px] text-muted-foreground" aria-live="polite">
+          <span className="font-semibold text-foreground">{filesReceived}</span>{" "}
+          {filesReceived === 1 ? "file" : "files"} added,{" "}
+          <span className="font-semibold text-foreground">{filesRejected}</span> rejected
+        </p>
+
+        <div className="mt-3 grid gap-5 md:grid-cols-2">
           <div>
-            <div className="mb-2 flex items-baseline justify-between gap-2">
-              <h3 className="text-[13px] font-semibold">Uploads</h3>
-              <p className="text-[12.5px] text-muted-foreground" aria-live="polite">
-                <span className="font-semibold text-foreground">{status.filesReceived}</span> of{" "}
-                {filesExpected} received
-              </p>
-            </div>
+            <h3 className="mb-2 text-[13px] font-semibold">Uploads</h3>
             {entries.length === 0 ? (
               <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[12.5px] text-muted-foreground">
                 No files added yet.
@@ -124,36 +110,41 @@ export function UploadFilesStep({
 
           <div>
             <h3 className="mb-2 text-[13px] font-semibold">
-              Still missing {missingCount > 0 && <span className="text-muted-foreground">({missingCount})</span>}
+              Rejected files {filesRejected > 0 && <span className="text-muted-foreground">({filesRejected})</span>}
             </h3>
-            {allReceived ? (
+            {filesRejected === 0 ? (
               <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[12.5px] text-muted-foreground">
-                Every row has its file.
+                No files have been rejected.
               </p>
             ) : (
-              <ul className="max-h-[320px] overflow-y-auto rounded-md border border-border px-3.5 py-2 text-[12.5px]">
-                {status.missingFilenames.map((filename, index) => (
-                  <li key={`${filename}-${index}`} className="truncate py-0.5 font-mono" title={filename}>
-                    {filename}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="max-h-[320px] overflow-y-auto rounded-md border border-border px-3.5 py-2 text-[12.5px]">
+                  {status.rejectedFilenames.map((filename, index) => (
+                    <li key={`${filename}-${index}`} className="truncate py-0.5 font-mono" title={filename}>
+                      {filename}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[12px] text-muted-foreground">
+                  These will be listed as failed in the results.
+                </p>
+              </>
             )}
           </div>
         </div>
       </StepCard>
 
       <StepCard
-        step={4}
+        step={3}
         title="Submit for processing"
         description={
-          allReceived
-            ? "All files are in. Submit to queue the import."
-            : `${missingCount} ${missingCount === 1 ? "row has" : "rows have"} no file yet. You can keep uploading, or submit now and let those rows fail.`
+          filesReceived === 0
+            ? "Add at least one file that can be imported, then submit to queue the import."
+            : "Submit to queue the import. You can keep adding files until you do."
         }
         action={cancelButton}
       >
-        <Button onClick={handleSubmitClick} disabled={!uploadsAllowed || uploading || submitting}>
+        <Button onClick={handleSubmitClick} disabled={!canSubmit}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
           {submitting ? "Submitting…" : "Submit import"}
         </Button>
@@ -166,8 +157,8 @@ export function UploadFilesStep({
       <ConfirmActionDialog
         open={confirmSubmitOpen}
         onOpenChange={setConfirmSubmitOpen}
-        title="Submit with missing files?"
-        description={`${missingCount} ${missingCount === 1 ? "row has" : "rows have"} no file and will fail.`}
+        title="Submit with rejected files?"
+        description={`${filesRejected} ${filesRejected === 1 ? "file was" : "files were"} rejected and will be listed as failed in the results.`}
         confirmLabel="Submit anyway"
         pendingLabel="Submitting…"
         onConfirm={onSubmit}
@@ -207,7 +198,7 @@ function UploadRow({ entry }: { entry: UploadQueueEntry }) {
         <p className="truncate text-[13px] font-medium" title={entry.file.name}>
           {entry.file.name}
         </p>
-        {entry.state === "error" && entry.error && (
+        {entry.state === "rejected" && entry.error && (
           <p className="mt-0.5 text-[12px] leading-[1.5] text-[var(--rust)]">{entry.error}</p>
         )}
       </div>
@@ -227,9 +218,9 @@ function UploadStateBadge({ entry }: { entry: UploadQueueEntry }) {
           Uploading
         </Badge>
       )
-    case "matched":
-      return <Badge variant="default">Matched to row {entry.rowNumber}</Badge>
-    case "error":
-      return <Badge variant="rust">Error</Badge>
+    case "accepted":
+      return <Badge variant="default">Accepted</Badge>
+    case "rejected":
+      return <Badge variant="rust">Rejected</Badge>
   }
 }

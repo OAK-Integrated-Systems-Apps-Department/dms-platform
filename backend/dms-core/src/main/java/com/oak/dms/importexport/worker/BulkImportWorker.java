@@ -207,7 +207,7 @@ public class BulkImportWorker {
             // Same for every row of the batch, so worked out once.
             ImportDefaults.Resolved defaults = importDefaults.resolve(
                     importSchemaFields.load(batch.tenantId(), batch.documentTypeId(), batch.schemaVersion()),
-                    batch.tenantId());
+                    batch.tenantId(), batch.documentTypeId(), batch.schemaVersion());
             List<UUID> itemIds = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.importBatchId())
                     .stream()
                     .map(ImportItem::getImportItemId)

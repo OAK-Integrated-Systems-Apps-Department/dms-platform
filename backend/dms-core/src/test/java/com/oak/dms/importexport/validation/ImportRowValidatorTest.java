@@ -58,13 +58,16 @@ class ImportRowValidatorTest {
 
     @Test
     void validate_invalidDefault_isOnlyAWarning() {
-        ImportRowError invalid = new ImportRowError("owner", "DEFAULT_VALUE_INVALID",
-                "The default value for Owner couldn't be used (...) - it was left empty", ImportRowError.WARNING);
+        ImportField region = new ImportField(UUID.randomUUID(), "region", "Region", "dropdown", false, false, "Moon");
+        ImportDefaults.InvalidDefault invalid = new ImportDefaults.InvalidDefault(region, "Moon",
+                "'Moon' isn't one of the field's active options");
 
         List<ImportRowError> errors = validator.validate(item("contract.pdf", "key"),
                 new ImportDefaults.Resolved(List.of(), List.of(invalid), List.of()), false);
 
-        assertThat(errors).containsExactly(invalid);
+        assertThat(errors).containsExactly(new ImportRowError("region", "DEFAULT_VALUE_INVALID",
+                "The default value for 'Region' couldn't be used: 'Moon' isn't one of the field's active options"
+                        + " - it was left empty", ImportRowError.WARNING));
         assertThat(ImportRowValidator.hasErrors(errors)).isFalse();
     }
 

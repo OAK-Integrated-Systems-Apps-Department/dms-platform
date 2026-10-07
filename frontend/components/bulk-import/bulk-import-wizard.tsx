@@ -21,9 +21,9 @@ import { UploadFilesStep } from "./upload-files-step"
 /**
  * Bulk Import screen body. What it shows is derived from the server:
  * - no batch being worked on: the caller's active batch (resume / queued /
- *   running card), or steps 1-2 to start a new one;
- * - a batch being worked on (or a submitted one found on load): steps 3-4
- *   while it's `uploading`, the submitted card - polled for progress -
+ *   running card), or step 1 (choose a document type) to start a new one;
+ * - a batch being worked on (or a submitted one found on load): steps 2-3
+ *   (add files, submit) while it's `uploading`, the submitted card - polled for progress -
  *   while it's `queued`/`running`, and the results once it's finished (or
  *   cancelled).
  *
@@ -38,9 +38,8 @@ import { UploadFilesStep } from "./upload-files-step"
  */
 export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: boolean }) {
   const [batchId, setBatchId] = useState<string | null>(null)
-  const [createdNotice, setCreatedNotice] = useState<string | null>(null)
-  /** Files a resubmit took over from the previous import - known only from the create response. */
-  const [reusedFiles, setReusedFiles] = useState(0)
+  /** The batch's file limit - known only from the create response, so null after a resume. */
+  const [maxFiles, setMaxFiles] = useState<number | null>(null)
   /** The list row last opened - its type name covers types that are no longer active. */
   const [opened, setOpened] = useState<BulkImportSummaryDto | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
@@ -61,37 +60,31 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     return opened?.documentTypeId === documentTypeId ? opened.documentTypeName : null
   }
 
-  async function handleCreate(template: File) {
-    const result = await bulkImport.create(template)
+  async function handleCreate(documentTypeId: string) {
+    const result = await bulkImport.create(documentTypeId)
     if (result.batch) {
-      const { batchId: createdId, expectedFilenames, reusedFiles: reused } = result.batch
-      const expected = expectedFilenames.length
-      setCreatedNotice(`Template accepted - ${expected} ${expected === 1 ? "file" : "files"} expected.`)
-      setReusedFiles(reused)
-      setBatchId(createdId)
+      setMaxFiles(result.batch.maxFiles)
+      setBatchId(result.batch.batchId)
     }
-    return result
+    return result.error
   }
 
   function handleStartOver() {
     queue.reset()
-    setCreatedNotice(null)
-    setReusedFiles(0)
+    setMaxFiles(null)
     setOpened(null)
     setBatchId(null)
     void bulkImport.clearActive()
   }
 
   function handleContinue(id: string) {
-    setCreatedNotice(null)
-    setReusedFiles(0)
+    setMaxFiles(null)
     setBatchId(id)
   }
 
   function handleOpen(summary: BulkImportSummaryDto) {
     queue.reset()
-    setCreatedNotice(null)
-    setReusedFiles(0)
+    setMaxFiles(null)
     setOpened(summary)
     setBatchId(summary.batchId)
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -100,8 +93,6 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
   async function handleSubmit(id: string) {
     const error = await bulkImport.submit(id)
     if (!error) {
-      setCreatedNotice(null)
-      setReusedFiles(0)
       queue.reset()
       toast.success("Import submitted.")
     }
@@ -112,8 +103,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
     const error = await bulkImport.cancel(id)
     if (!error) {
       queue.reset()
-      setCreatedNotice(null)
-      setReusedFiles(0)
+      setMaxFiles(null)
       setBatchId(null)
       toast.success("Import cancelled.")
     }
@@ -148,8 +138,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
         return withPermissionBanner(
           <UploadFilesStep
             status={status}
-            createdNotice={createdNotice}
-            reusedFiles={reusedFiles}
+            maxFiles={maxFiles}
             entries={queue.entries}
             uploading={queue.busy}
             uploadsAllowed={canCreateDocuments}
@@ -209,9 +198,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
         documentTypesError={
           documentTypesError ? friendlyMessage(documentTypesError, "Could not load document types.") : null
         }
-        previewing={bulkImport.previewing}
         creating={bulkImport.creating}
-        onPreview={bulkImport.preview}
         onCreate={handleCreate}
       />
     )

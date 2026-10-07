@@ -8,28 +8,28 @@ import { useBulkImportFailures } from "@/lib/bulk-imports/use-bulk-import-failur
 import { ImportRowsTable } from "./import-rows-table"
 import { InlineError } from "./step-card"
 
-/** The rows of a finished import that failed, loaded from the server. */
+/** The files of a finished import that failed - rejected uploads included - loaded from the server. */
 export function FailedRowsTable({ batchId }: { batchId: string }) {
   const { failures, isLoading, error, refetch, isFetching } = useBulkImportFailures(batchId)
 
   return (
     <section className="mb-5">
-      <h3 className="mb-2 text-[13px] font-semibold">Rows that failed</h3>
+      <h3 className="mb-2 text-[13px] font-semibold">Files that failed</h3>
       {isLoading ? (
         <p className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
           <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          Loading the rows that failed…
+          Loading the files that failed…
         </p>
       ) : error ? (
         <div>
-          <InlineError>We couldn&apos;t load the rows that failed. Please try again.</InlineError>
+          <InlineError>We couldn&apos;t load the files that failed. Please try again.</InlineError>
           <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()} disabled={isFetching}>
             {isFetching ? <Loader2 className="animate-spin" /> : <RotateCcw />}
             Try again
           </Button>
         </div>
       ) : failures.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">No individual rows were recorded as failed.</p>
+        <p className="text-[13px] text-muted-foreground">No individual files were recorded as failed.</p>
       ) : (
         <ImportRowsTable rows={failures} />
       )}

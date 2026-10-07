@@ -15,7 +15,10 @@ import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.importexport.validation.ImportUsers;
 import com.oak.dms.importexport.validation.ImportValueConverter;
 import com.oak.dms.metadata.entity.DocumentMetadata;
+import com.oak.dms.metadata.entity.MetadataFieldOption;
 import com.oak.dms.metadata.repository.DocumentMetadataRepository;
+import com.oak.dms.metadata.repository.MetadataFieldOptionRepository;
+import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.scanning.service.IngestionGate;
@@ -70,8 +73,11 @@ class ImportCompletionSchedulerTest {
             transactionManager);
     private final ImportBatchFinaliser finaliser = new ImportBatchFinaliser(importBatchRepository,
             importItemRepository, stagedImportFiles, mockAuditService(), new ObjectMapper(), transactionManager);
+    private final MetadataFieldOptionRepository metadataFieldOptionRepository =
+            mock(MetadataFieldOptionRepository.class);
     private final ImportDefaults importDefaults = new ImportDefaults(new ImportValueConverter(),
-            new ImportUsers(mock(UserRepository.class)));
+            new ImportUsers(mock(UserRepository.class)), mock(MetadataValidationService.class),
+            metadataFieldOptionRepository);
     private final ImportCompletionScheduler scheduler = new ImportCompletionScheduler(importItemRepository,
             importSchemaFields, importDefaults, ingestionGate, recordCreator, finaliser);
 
@@ -113,6 +119,36 @@ class ImportCompletionSchedulerTest {
         assertThat(batch.getCompletedAt()).isNotNull();
         verifyNoInteractions(documentService);
         assertThatThrownBy(TenantContext::getTenantId).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void completePendingItems_writesMatchedDropdownDefaultsAndNeverInvalidOnes() {
+        UUID classificationFieldId = UUID.randomUUID();
+        UUID retentionFieldId = UUID.randomUUID();
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of(
+                "classification", new ImportField(classificationFieldId, "classification", "Classification",
+                        "dropdown", false, false, "Internal"),
+                "retention", new ImportField(retentionFieldId, "retention", "Retention Class", "dropdown", false,
+                        false, "Long-term")));
+        when(metadataFieldOptionRepository.findAllActiveByFieldsOrdered(any(), eq(tenantId))).thenReturn(List.of(
+                MetadataFieldOption.builder().fieldId(classificationFieldId).optionValue("internal")
+                        .optionLabel("Internal").build(),
+                MetadataFieldOption.builder().fieldId(retentionFieldId).optionValue("short_term")
+                        .optionLabel("Short-Term").build()));
+        ImportBatch batch = runningBatch();
+        ImportItem item = submittedItem(batch);
+        stubPending(batch, item);
+        UUID documentId = UUID.randomUUID();
+        when(ingestionGate.getTicket(item.getScanResultId()))
+                .thenReturn(ticket(item.getScanResultId(), ScanResultStatus.clean, documentId));
+
+        scheduler.completePendingItems();
+
+        ArgumentCaptor<DocumentMetadata> saved = ArgumentCaptor.forClass(DocumentMetadata.class);
+        verify(documentMetadataRepository).save(saved.capture());
+        assertThat(saved.getValue().getFieldValues()).containsOnlyKeys(classificationFieldId.toString());
+        assertThat(saved.getValue().getFieldValues().get(classificationFieldId.toString()).v())
+                .isEqualTo("internal");
     }
 
     @Test

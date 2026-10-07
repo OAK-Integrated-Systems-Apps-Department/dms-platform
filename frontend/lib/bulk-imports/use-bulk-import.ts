@@ -10,11 +10,9 @@ import {
   fetchBulkImportStatus,
   isFinished,
   isInFlight,
-  previewImportTemplate,
   submitBulkImport,
   type BulkImportCreatedResponseDto,
   type BulkImportStatus,
-  type ImportTemplatePreviewDto,
 } from "./api"
 
 export const BULK_IMPORTS_KEY = ["bulk-imports"] as const
@@ -82,12 +80,8 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     return queryClient.invalidateQueries({ queryKey: BULK_IMPORTS_KEY })
   }
 
-  // Read-only on the server, so nothing to invalidate.
-  const previewMutation = useMutation({
-    mutationFn: (template: File) => previewImportTemplate(template),
-  })
   const createMutation = useMutation({
-    mutationFn: (template: File) => createBulkImport(template),
+    mutationFn: (documentTypeId: string) => createBulkImport(documentTypeId),
     onSuccess: () => invalidate(),
   })
   const submitMutation = useMutation({
@@ -120,26 +114,16 @@ export function useBulkImport(batchId: string | null, enabled = true) {
       queryClient.setQueryData(ACTIVE_KEY, null)
       return invalidate()
     },
-    previewing: previewMutation.isPending,
-    preview: async (
-      template: File
-    ): Promise<{ preview: ImportTemplatePreviewDto; error: null } | { preview: null; error: string }> => {
-      try {
-        return { preview: await previewMutation.mutateAsync(template), error: null }
-      } catch (err) {
-        return { preview: null, error: errorMessage(err, "Could not check the template.") }
-      }
-    },
     creating: createMutation.isPending,
     submitting: submitMutation.isPending,
     cancelling: cancelMutation.isPending,
     create: async (
-      template: File
+      documentTypeId: string
     ): Promise<{ batch: BulkImportCreatedResponseDto; error: null } | { batch: null; error: string }> => {
       try {
-        return { batch: await createMutation.mutateAsync(template), error: null }
+        return { batch: await createMutation.mutateAsync(documentTypeId), error: null }
       } catch (err) {
-        return { batch: null, error: errorMessage(err, "Could not upload the template.") }
+        return { batch: null, error: errorMessage(err, "Could not start the import.") }
       }
     },
     submit: async (id: string): Promise<string | null> => {

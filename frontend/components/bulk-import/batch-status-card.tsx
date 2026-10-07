@@ -43,7 +43,7 @@ export function BatchStatusCard({ batch, documentTypeName, onContinue, onCancel 
         <div>
           <dt className="text-[12px] text-muted-foreground">Files</dt>
           <dd className="flex items-center gap-2 font-medium">
-            {batch.filesReceived} of {batch.totalRecords - batch.skippedRows} received
+            {batch.filesReceived} added, {batch.filesRejected} rejected
             {badge}
           </dd>
         </div>
@@ -81,8 +81,8 @@ function describe(batch: BulkImportStatusResponseDto) {
       return {
         title: "Submitted, waiting for processing",
         description:
-          batch.missingFilenames.length > 0
-            ? `The import is queued. ${batch.missingFilenames.length} ${batch.missingFilenames.length === 1 ? "row has" : "rows have"} no file and will fail.`
+          batch.filesRejected > 0
+            ? `The import is queued. ${batch.filesRejected} rejected ${batch.filesRejected === 1 ? "file" : "files"} will be listed as failed. You can still cancel it until processing starts.`
             : "The import is queued and will be processed shortly. You can still cancel it until processing starts.",
         badge: (
           <Badge variant="gold">

@@ -37,7 +37,11 @@ import com.oak.dms.importexport.validation.ImportSchemaFields;
 import com.oak.dms.importexport.validation.ImportUsers;
 import com.oak.dms.importexport.validation.ImportValueConverter;
 import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.metadata.entity.MetadataFieldOption;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.repository.MetadataFieldOptionRepository;
+import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
 import com.oak.dms.scanning.helper.FileTypeInspector;
@@ -92,6 +96,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
@@ -121,6 +126,9 @@ class BulkImportServiceImplTest {
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final ImportSchemaFields importSchemaFields = mock(ImportSchemaFields.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final MetadataValidationService metadataValidationService = mock(MetadataValidationService.class);
+    private final MetadataFieldOptionRepository metadataFieldOptionRepository =
+            mock(MetadataFieldOptionRepository.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final AuditService auditService = mockAuditService();
     private final ImportExportProperties properties = new ImportExportProperties();
@@ -195,6 +203,36 @@ class BulkImportServiceImplTest {
                 new ImportDefaultsResponse.Field("amount", "Amount"),
                 new ImportDefaultsResponse.Field("reference", "Reference"));
         assertThat(defaults.enforceMandatoryFields()).isFalse();
+    }
+
+    @Test
+    void getDefaults_listsInvalidDefaultsApartFromTheAppliedOnes() {
+        stubActiveType(4);
+        ImportField retention = field("retention", "Retention Class", "dropdown", true, "Long-term");
+        ImportField classification = field("classification", "Classification", "dropdown", false, "Internal");
+        ImportField reference = field("reference", "Reference", "text", false, "R-1");
+        when(importSchemaFields.load(tenantId, documentTypeId, 4))
+                .thenReturn(fields(retention, classification, reference));
+        when(metadataFieldOptionRepository.findAllActiveByFieldsOrdered(anyList(), eq(tenantId))).thenReturn(List.of(
+                MetadataFieldOption.builder().fieldId(retention.fieldId()).optionValue("short_term")
+                        .optionLabel("Short-Term").build(),
+                MetadataFieldOption.builder().fieldId(classification.fieldId()).optionValue("internal")
+                        .optionLabel("Internal").build()));
+        when(metadataValidationService.validate(eq(documentTypeId), eq(4), anyMap())).thenReturn(List.of(
+                new ValidationError("reference", "MIN_LENGTH", "Field 'Reference' must be at least 5 characters.",
+                        "error")));
+
+        ImportDefaultsResponse defaults = service().getDefaults(documentTypeId);
+
+        assertThat(defaults.defaults()).containsExactly(
+                new ImportDefaultsResponse.DefaultValue("classification", "Classification", "Internal"));
+        assertThat(defaults.invalidDefaults()).containsExactly(
+                new ImportDefaultsResponse.InvalidDefault("retention", "Retention Class", "Long-term",
+                        "'Long-term' isn't one of the field's active options"),
+                new ImportDefaultsResponse.InvalidDefault("reference", "Reference", "R-1",
+                        "Field 'Reference' must be at least 5 characters"));
+        assertThat(defaults.mandatoryFieldsWithoutDefault())
+                .containsExactly(new ImportDefaultsResponse.Field("retention", "Retention Class"));
     }
 
     @Test
@@ -273,6 +311,20 @@ class BulkImportServiceImplTest {
                 .hasFieldOrPropertyWithValue("code", "IMPORT_MANDATORY_FIELDS_WITHOUT_DEFAULT")
                 .hasMessageContaining("Reference and Owner")
                 .extracting("status").isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(importBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void createBatch_enforcingMandatoryFields_rejectsTypeWhoseMandatoryDefaultIsInvalid() {
+        properties.setEnforceMandatoryFields(true);
+        stubActiveType(2);
+        when(importSchemaFields.load(tenantId, documentTypeId, 2)).thenReturn(fields(
+                field("retention", "Retention Class", "dropdown", true, "Long-term")));
+
+        assertThatThrownBy(() -> service().createBatch(documentTypeId))
+                .isInstanceOf(ImportBatchSizeException.class)
+                .hasFieldOrPropertyWithValue("code", "IMPORT_MANDATORY_FIELDS_WITHOUT_DEFAULT")
+                .hasMessageContaining("Retention Class");
         verify(importBatchRepository, never()).save(any());
     }
 
@@ -1052,7 +1104,8 @@ class BulkImportServiceImplTest {
                 new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
                 outboxEventPublisher, properties, objectMapper,
                 new FileTypeInspector(new IngestionProperties()), importSchemaFields,
-                new ImportDefaults(new ImportValueConverter(), new ImportUsers(userRepository)), auditService);
+                new ImportDefaults(new ImportValueConverter(), new ImportUsers(userRepository),
+                        metadataValidationService, metadataFieldOptionRepository), auditService);
     }
 
     private DocumentType option(String typeCode, String typeName, DocumentType.DocumentTypeStatus status) {

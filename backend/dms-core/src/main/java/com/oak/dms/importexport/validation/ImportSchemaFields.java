@@ -61,7 +61,8 @@ public class ImportSchemaFields {
                 String defaultValue = m.defaultValueOverride() != null
                         ? m.defaultValueOverride() : field.getDefaultValue();
                 fields.put(field.getFieldKey(), new ImportField(field.getFieldId(), field.getFieldKey(), field.getLabel(),
-                        field.getDataType(), m.mandatory(), m.hidden(), defaultValue));
+                        field.getDataType(), m.mandatory(), m.hidden(), defaultValue,
+                        field.getStatus() == MetadataField.FieldStatus.active));
             }
         }
         return fields;

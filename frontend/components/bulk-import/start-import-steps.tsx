@@ -1,21 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRight, Download, Loader2, Upload } from "lucide-react"
+import { AlertTriangle, Loader2, Play } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { FileDropzone } from "@/components/ui/file-dropzone"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { friendlyMessage } from "@/lib/api-error"
-import {
-  downloadImportTemplate,
-  saveDownloadedFile,
-  type BulkImportCreatedResponseDto,
-  type ImportDocumentTypeOptionDto,
-  type ImportTemplatePreviewDto,
-} from "@/lib/bulk-imports/api"
+import type { ImportDefaultsDto, ImportDocumentTypeOptionDto } from "@/lib/bulk-imports/api"
+import { useImportDefaults } from "@/lib/bulk-imports/use-import-defaults"
 
-import { ImportRowsTable } from "./import-rows-table"
 import { InlineError, StepCard } from "./step-card"
 
 interface StartImportStepsProps {
@@ -23,210 +16,151 @@ interface StartImportStepsProps {
   documentTypes: ImportDocumentTypeOptionDto[]
   documentTypesLoading: boolean
   documentTypesError: string | null
-  previewing: boolean
   creating: boolean
-  onPreview: (template: File) => Promise<{ preview: ImportTemplatePreviewDto | null; error: string | null }>
-  onCreate: (template: File) => Promise<{ batch: BulkImportCreatedResponseDto | null; error: string | null }>
+  /** Opens a batch for the type; resolves with an error message, or null on success. */
+  onCreate: (documentTypeId: string) => Promise<string | null>
 }
 
 /**
- * Steps 1 and 2: download a template for a document type, then upload it
- * filled in. The template is checked first; if every row passes the batch is
- * opened straight away, otherwise the problem rows are listed and the user
- * either uploads a corrected template or continues without those rows.
+ * Step 1: choose the document type every file will become, see the default
+ * values that will be applied (and any that aren't valid, or required fields
+ * that will be left empty), then start the import. A type whose required fields must have
+ * defaults (`enforceMandatoryFields`) and lack some can't be started.
  */
 export function StartImportSteps({
   documentTypes,
   documentTypesLoading,
   documentTypesError,
-  previewing,
   creating,
-  onPreview,
   onCreate,
 }: StartImportStepsProps) {
   const [documentTypeId, setDocumentTypeId] = useState("")
-  const [downloading, setDownloading] = useState(false)
-  const [downloadError, setDownloadError] = useState<string | null>(null)
-  const [templateError, setTemplateError] = useState<string | null>(null)
-  const [templateName, setTemplateName] = useState<string | null>(null)
-  /** The checked template, kept so "Continue without these rows" can upload it. Set only while showing problems. */
-  const [template, setTemplate] = useState<File | null>(null)
-  const [preview, setPreview] = useState<ImportTemplatePreviewDto | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const defaultsQuery = useImportDefaults(documentTypeId || null)
+  const defaults = defaultsQuery.data
 
-  async function handleDownload() {
-    if (!documentTypeId) return
-    setDownloading(true)
-    setDownloadError(null)
-    try {
-      saveDownloadedFile(await downloadImportTemplate(documentTypeId))
-    } catch (error) {
-      setDownloadError(friendlyMessage(error, "Could not download the template."))
-    } finally {
-      setDownloading(false)
-    }
+  const blocked = Boolean(defaults?.enforceMandatoryFields && defaults.mandatoryFieldsWithoutDefault.length > 0)
+  const canStart = Boolean(documentTypeId) && Boolean(defaults) && !blocked && !creating
+
+  async function handleStart() {
+    if (!canStart) return
+    setCreateError(null)
+    const error = await onCreate(documentTypeId)
+    if (error) setCreateError(error)
   }
-
-  async function create(file: File) {
-    setTemplateError(null)
-    const { error } = await onCreate(file)
-    if (error) setTemplateError(error)
-  }
-
-  async function handleTemplate(files: File[]) {
-    const file = files[0]
-    if (!file) return
-    setTemplateName(file.name)
-    setTemplateError(null)
-    const checked = await onPreview(file)
-    if (!checked.preview) {
-      setTemplateError(checked.error)
-      return
-    }
-    if (checked.preview.invalidRows === 0) {
-      await create(file)
-      return
-    }
-    setTemplate(file)
-    setPreview(checked.preview)
-  }
-
-  function resetTemplate() {
-    setTemplate(null)
-    setPreview(null)
-    setTemplateName(null)
-    setTemplateError(null)
-  }
-
-  const busy = previewing || creating
 
   return (
-    <div className="flex flex-col gap-4">
-      <StepCard
-        step={1}
-        title="Download a template"
-        description="Pick the document type you're importing. The template lists its current fields - fill in one row per file."
-      >
-        {documentTypesLoading ? (
-          <p className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-            Loading document types…
-          </p>
-        ) : documentTypesError ? (
-          <InlineError>{documentTypesError}</InlineError>
-        ) : documentTypes.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">There are no active document types to import into.</p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <SearchableSelect
-              options={documentTypes.map((type) => ({ value: type.documentTypeId, label: type.name }))}
-              selected={documentTypeId}
-              onChange={(value) => {
-                setDocumentTypeId(value)
-                setDownloadError(null)
-              }}
-              allLabel="Select a document type"
-              searchPlaceholder="Search document types…"
-              className="w-[300px] max-w-full"
-            />
-            <Button onClick={handleDownload} disabled={!documentTypeId || downloading}>
-              {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-              {downloading ? "Downloading…" : "Download template"}
+    <StepCard
+      step={1}
+      title="Choose a document type"
+      description="Every file you add becomes a document of this type, with the type's default values filled in."
+    >
+      {documentTypesLoading ? (
+        <p className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+          Loading document types…
+        </p>
+      ) : documentTypesError ? (
+        <InlineError>{documentTypesError}</InlineError>
+      ) : documentTypes.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">There are no active document types to import into.</p>
+      ) : (
+        <SearchableSelect
+          options={documentTypes.map((type) => ({ value: type.documentTypeId, label: type.name }))}
+          selected={documentTypeId}
+          onChange={(value) => {
+            setDocumentTypeId(value)
+            setCreateError(null)
+          }}
+          allLabel="Select a document type"
+          searchPlaceholder="Search document types…"
+          className="w-[300px] max-w-full"
+        />
+      )}
+
+      {documentTypeId && (
+        <section className="mt-5" aria-live="polite">
+          {defaultsQuery.isLoading ? (
+            <p className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+              Loading default values…
+            </p>
+          ) : defaultsQuery.error ? (
+            <InlineError>
+              {friendlyMessage(defaultsQuery.error, "Could not load the default values for this document type.")}
+            </InlineError>
+          ) : defaults ? (
+            <DefaultsSummary defaults={defaults} blocked={blocked} />
+          ) : null}
+
+          <div className="mt-4">
+            <Button onClick={handleStart} disabled={!canStart}>
+              {creating ? <Loader2 className="animate-spin" /> : <Play />}
+              {creating ? "Starting import…" : "Start import"}
             </Button>
           </div>
-        )}
-        {downloadError && <InlineError>{downloadError}</InlineError>}
-      </StepCard>
-
-      <StepCard
-        step={2}
-        title="Upload the filled-in template"
-        description="Upload the completed .xlsx. Each row names the file it describes; you'll upload those files next."
-      >
-        {preview && template ? (
-          <TemplateProblems
-            preview={preview}
-            templateName={template.name}
-            creating={creating}
-            onReupload={resetTemplate}
-            onContinue={() => create(template)}
-          />
-        ) : (
-          <FileDropzone accept=".xlsx" disabled={busy} onFiles={handleTemplate} label="Upload filled-in template">
-            {busy ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-                {previewing ? "Checking template…" : `Checking ${templateName}…`}
-              </span>
-            ) : (
-              <>
-                <span className="font-semibold text-foreground">Drag the .xlsx template here</span> or click to
-                browse
-              </>
-            )}
-          </FileDropzone>
-        )}
-        {templateError && (
-          <InlineError>
-            {templateName && <strong className="font-semibold">{templateName}: </strong>}
-            {templateError}
-          </InlineError>
-        )}
-      </StepCard>
-    </div>
+          {createError && <InlineError>{createError}</InlineError>}
+        </section>
+      )}
+    </StepCard>
   )
 }
 
-function TemplateProblems({
-  preview,
-  templateName,
-  creating,
-  onReupload,
-  onContinue,
-}: {
-  preview: ImportTemplatePreviewDto
-  templateName: string
-  creating: boolean
-  onReupload: () => void
-  onContinue: () => void
-}) {
-  const { invalidRows, totalRows, validRows, resubmitOf, reusableFiles } = preview
+function DefaultsSummary({ defaults, blocked }: { defaults: ImportDefaultsDto; blocked: boolean }) {
+  const missing = defaults.mandatoryFieldsWithoutDefault.map((field) => field.label).join(", ")
 
   return (
-    <section aria-live="polite">
-      {resubmitOf && (
-        <p className="mb-3 text-[12.5px] text-muted-foreground">
-          Resubmitting failed rows from a previous import - {reusableFiles}{" "}
-          {reusableFiles === 1 ? "file" : "files"} will be reused.
+    <>
+      {defaults.defaults.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">
+          {defaults.invalidDefaults.length > 0
+            ? "No valid default values are set for this type."
+            : "No default values are set for this type."}
         </p>
+      ) : (
+        <>
+          <h3 className="mb-2 text-[13px] font-semibold">These values will be applied to every document:</h3>
+          <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-6 gap-y-1.5 rounded-md border border-border px-3.5 py-2.5 text-[13px]">
+            {defaults.defaults.map((value) => (
+              <div key={value.fieldKey} className="contents">
+                <dt className="text-muted-foreground">{value.label}</dt>
+                <dd className="font-medium break-words">{value.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       )}
-      <h3 className="mb-1 text-[13px] font-semibold">
-        {invalidRows} of {totalRows} {totalRows === 1 ? "row has" : "rows have"} problems
-      </h3>
-      <p className="mb-3 text-[12.5px] text-muted-foreground">
-        {validRows === 0
-          ? `None of the rows in ${templateName} can be imported. Fix the problems below and upload the template again.`
-          : `Fix them in ${templateName} and upload it again, or continue and import only the rows without problems.`}
-      </p>
 
-      <ImportRowsTable rows={preview.rows} />
+      {defaults.invalidDefaults.length > 0 && (
+        <div className="mt-3 flex items-start gap-2 rounded-btn border border-border px-3.5 py-2.5 text-[12.5px] leading-[1.55]">
+          <AlertTriangle size={15} className="mt-px shrink-0 text-[var(--rust)]" aria-hidden="true" />
+          <div>
+            <p className="font-medium">These default values aren&apos;t valid and won&apos;t be applied:</p>
+            <ul className="mt-1 space-y-0.5">
+              {defaults.invalidDefaults.map((invalid) => (
+                <li key={invalid.fieldKey} className="break-words">
+                  {invalid.label} (&apos;{invalid.value}&apos;) - {invalid.reason}.
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-muted-foreground">
+              An administrator can fix them in the document type&apos;s Fields tab.
+            </p>
+          </div>
+        </div>
+      )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
-        <Button onClick={onReupload} disabled={creating}>
-          <Upload />
-          Upload a corrected template
-        </Button>
-        {validRows > 0 && (
-          <>
-            <Button variant="outline" onClick={onContinue} disabled={creating}>
-              {creating ? <Loader2 className="animate-spin" /> : <ArrowRight />}
-              {creating ? "Starting import…" : "Continue without these rows"}
-            </Button>
-            <span className="text-[12.5px] text-muted-foreground">
-              {validRows} {validRows === 1 ? "row" : "rows"} will be imported
-            </span>
-          </>
-        )}
-      </div>
-    </section>
+      {missing &&
+        (blocked ? (
+          <InlineError>
+            This type can&apos;t be imported until an administrator sets default values for its required fields:{" "}
+            {missing}.
+          </InlineError>
+        ) : (
+          <p className="mt-3 text-[12.5px] text-muted-foreground">
+            These required fields will be left empty for now: {missing}.
+          </p>
+        ))}
+    </>
   )
 }
