@@ -15,6 +15,7 @@ import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
+import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
@@ -92,6 +93,7 @@ import static com.oak.dms.importexport.AuditTestSupport.recorded;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -103,6 +105,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -349,7 +352,7 @@ class BulkImportServiceImplTest {
         stubLockedBatch(batch, List.of(first));
         stubStaging();
 
-        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), "a.pdf",
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), null, "a.pdf",
                 "application/octet-stream", PDF.length, new ByteArrayInputStream(PDF));
 
         ImportItem created = savedItems.get(0);
@@ -377,7 +380,7 @@ class BulkImportServiceImplTest {
         stubLockedBatch(batch, List.of());
         stubStaging();
 
-        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(),
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), null,
                 "C:\\Users\\jane\\scans/contract.pdf", "application/pdf", PDF.length, new ByteArrayInputStream(PDF));
 
         assertThat(savedItems.get(0).getFilenameReference()).isEqualTo("contract.pdf");
@@ -392,7 +395,7 @@ class BulkImportServiceImplTest {
         stubLockedBatch(batch, List.of(earlier));
         stubStaging();
 
-        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), "A.pdf",
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), null, "A.pdf",
                 "application/pdf", PDF.length, new ByteArrayInputStream(PDF));
 
         assertThat(response.rowNumber()).isEqualTo(2);
@@ -406,7 +409,7 @@ class BulkImportServiceImplTest {
         ImportBatch batch = batch(ImportBatchStatus.uploading);
         stubLockedBatch(batch, List.of(item(batch, 1, "first.pdf", staging.getStorageLocationId(), "k")));
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "scans/a.pdf", "application/pdf",
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "scans/a.pdf", "application/pdf",
                 ZIP.length, new ByteArrayInputStream(ZIP)))
                 .isInstanceOf(FileTypeNotAllowedException.class)
                 .extracting("status").isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
@@ -432,8 +435,8 @@ class BulkImportServiceImplTest {
         ImportBatch batch = batch(ImportBatchStatus.uploading);
         stubLockedBatch(batch, List.of());
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "Contract.pdf", "application/pdf",
-                0, new ByteArrayInputStream(new byte[0])))
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "Contract.pdf",
+                "application/pdf", 0, new ByteArrayInputStream(new byte[0])))
                 .isInstanceOf(FileTypeNotAllowedException.class)
                 .hasMessage("The uploaded file is empty");
 
@@ -451,7 +454,7 @@ class BulkImportServiceImplTest {
         // Office stores a password-protected .docx as an OLE2 compound file.
         byte[] ole2 = {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1, 0, 0};
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "a.docx",
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "a.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ole2.length,
                 new ByteArrayInputStream(ole2)))
                 .isInstanceOf(FileTypeNotAllowedException.class)
@@ -473,7 +476,7 @@ class BulkImportServiceImplTest {
         stubLockedBatch(batch, List.of(staged));
         properties.setMaxBatchSize(DataSize.ofBytes(1024 + 10));
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "b.pdf", "application/pdf",
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "b.pdf", "application/pdf",
                 PDF.length, new ByteArrayInputStream(PDF)))
                 .isInstanceOf(ImportBatchSizeException.class)
                 .hasFieldOrPropertyWithValue("code", "IMPORT_BATCH_SIZE_EXCEEDED")
@@ -497,7 +500,7 @@ class BulkImportServiceImplTest {
         ImportItem rejected = rejectedItem(batch, 2, "b.pdf");
         stubLockedBatch(batch, List.of(accepted, rejected));
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "c.pdf", "application/pdf",
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "c.pdf", "application/pdf",
                 PDF.length, new ByteArrayInputStream(PDF)))
                 .isInstanceOf(ImportBatchSizeException.class)
                 .hasFieldOrPropertyWithValue("code", "IMPORT_TOO_MANY_FILES")
@@ -514,7 +517,7 @@ class BulkImportServiceImplTest {
         stubLockedBatch(batch, List.of());
 
         for (String name : Arrays.asList(null, "  ", "folder/")) {
-            assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), name, "application/pdf",
+            assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, name, "application/pdf",
                     PDF.length, new ByteArrayInputStream(PDF)))
                     .isInstanceOf(InvalidImportFileException.class)
                     .hasFieldOrPropertyWithValue("code", "IMPORT_FILE_NAME_MISSING")
@@ -528,7 +531,7 @@ class BulkImportServiceImplTest {
         ImportBatch batch = batch(ImportBatchStatus.queued);
         stubLockedBatch(batch, List.of());
 
-        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), "a.pdf", "application/pdf",
+        assertThatThrownBy(() -> service().receiveFile(batch.getImportBatchId(), null, "a.pdf", "application/pdf",
                 PDF.length, new ByteArrayInputStream(PDF)))
                 .isInstanceOf(ImportBatchStateException.class);
         assertThat(savedItems).isEmpty();
@@ -540,7 +543,7 @@ class BulkImportServiceImplTest {
         // is committed rather than rolled back for these two exceptions only.
         TransactionAttribute receive = new AnnotationTransactionAttributeSource().getTransactionAttribute(
                 BulkImportServiceImpl.class.getMethod("receiveFile", UUID.class, String.class, String.class,
-                        long.class, InputStream.class), BulkImportServiceImpl.class);
+                        String.class, long.class, InputStream.class), BulkImportServiceImpl.class);
         assertThat(receive).isNotNull();
         assertThat(receive.rollbackOn(new FileTypeNotAllowedException("x"))).isFalse();
         assertThat(receive.rollbackOn(new ImportBatchSizeException("IMPORT_BATCH_SIZE_EXCEEDED", "x"))).isFalse();
@@ -552,6 +555,139 @@ class BulkImportServiceImplTest {
                 BulkImportServiceImpl.class.getMethod("createBatch", UUID.class), BulkImportServiceImpl.class);
         assertThat(create.rollbackOn(new ImportBatchSizeException("IMPORT_MANDATORY_FIELDS_WITHOUT_DEFAULT", "x")))
                 .isTrue();
+    }
+
+    // --- receiveFile: retries (clientFileId) ---
+
+    @Test
+    void receiveFile_retryOfAnAcceptedUpload_returnsTheOriginalResponseAndCreatesAndStagesNothing() {
+        // Full batch, so the retry is answered before the file limit is checked.
+        properties.setMaxFilesPerBatch(4);
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem accepted = item(batch, 1, "a.pdf", staging.getStorageLocationId(), "imports/key-1");
+        ImportItem rejected = rejectedItem(batch, 2, "b.pdf");
+        ImportItem retried = item(batch, 3, "c.pdf", staging.getStorageLocationId(), "imports/key-3");
+        retried.setClientFileId("file-3");
+        ImportItem later = item(batch, 4, "d.pdf", staging.getStorageLocationId(), "imports/key-4");
+        stubLockedBatch(batch, List.of(accepted, rejected, retried, later));
+
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), "file-3", "c.pdf",
+                "application/pdf", PDF.length, new ByteArrayInputStream(PDF));
+
+        // What row 3 got at the time: 2 accepted (a.pdf and itself), 1 rejected, 3 in all.
+        assertThat(response).isEqualTo(new ImportFileReceivedResponse(3, "c.pdf", 2, 1, 3));
+        assertThat(savedItems).isEmpty();
+        verify(importBatchRepository, never()).save(any());
+        verifyNoInteractions(storageLocationResolver, objectStorageServiceFactory, storage);
+        assertThat(batch.getTotalRecords()).isZero();
+    }
+
+    @Test
+    void receiveFile_retryOfAFileTypeRejection_throwsTheSame415AndMessageAndCreatesNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        stubLockedBatch(batch, List.of());
+        FileTypeNotAllowedException first = catchThrowableOfType(() -> service().receiveFile(
+                batch.getImportBatchId(), "file-1", "a.pdf", "application/pdf", ZIP.length,
+                new ByteArrayInputStream(ZIP)), FileTypeNotAllowedException.class);
+        ImportItem rejected = savedItems.get(0);
+        assertThat(rejected.getClientFileId()).isEqualTo("file-1");
+
+        savedItems.clear();
+        clearInvocations(importBatchRepository);
+        stubLockedBatch(batch, List.of(rejected));
+        FileTypeNotAllowedException replayed = catchThrowableOfType(() -> service().receiveFile(
+                batch.getImportBatchId(), "file-1", "a.pdf", "application/pdf", ZIP.length,
+                new ByteArrayInputStream(ZIP)), FileTypeNotAllowedException.class);
+
+        assertThat(replayed).isNotNull();
+        assertThat(replayed.getStatus()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE).isEqualTo(first.getStatus());
+        assertThat(replayed.getCode()).isEqualTo(first.getCode());
+        assertThat(replayed.getMessage()).isEqualTo(first.getMessage())
+                .isEqualTo("The file's content does not match its .pdf extension");
+        assertThat(savedItems).isEmpty();
+        verify(importBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void receiveFile_retryOfABatchSizeRejection_throwsTheSame400CodeAndMessageAndCreatesNothing() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem staged = item(batch, 1, "a.pdf", staging.getStorageLocationId(), "imports/key-1");
+        stubLockedBatch(batch, List.of(staged));
+        properties.setMaxBatchSize(DataSize.ofBytes(1024 + 10));
+        ImportBatchSizeException first = catchThrowableOfType(() -> service().receiveFile(
+                batch.getImportBatchId(), "file-2", "b.pdf", "application/pdf", PDF.length,
+                new ByteArrayInputStream(PDF)), ImportBatchSizeException.class);
+        ImportItem rejected = savedItems.get(0);
+
+        savedItems.clear();
+        clearInvocations(importBatchRepository);
+        // Even with room now, the retry gets the original answer.
+        properties.setMaxBatchSize(DataSize.ofGigabytes(2));
+        stubLockedBatch(batch, List.of(staged, rejected));
+        ImportBatchSizeException replayed = catchThrowableOfType(() -> service().receiveFile(
+                batch.getImportBatchId(), "file-2", "b.pdf", "application/pdf", PDF.length,
+                new ByteArrayInputStream(PDF)), ImportBatchSizeException.class);
+
+        assertThat(replayed).isNotNull();
+        assertThat(replayed.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST).isEqualTo(first.getStatus());
+        assertThat(replayed.getCode()).isEqualTo("IMPORT_BATCH_SIZE_EXCEEDED").isEqualTo(first.getCode());
+        assertThat(replayed.getMessage()).isEqualTo(first.getMessage());
+        assertThat(savedItems).isEmpty();
+        verify(importBatchRepository, never()).save(any());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void receiveFile_twoClientFileIdsWithTheSameFilename_areTwoItems() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        stubStaging();
+        String firstId = UUID.randomUUID().toString();
+        String secondId = "x".repeat(64);
+
+        stubLockedBatch(batch, List.of());
+        service().receiveFile(batch.getImportBatchId(), firstId, "a.pdf", "application/pdf", PDF.length,
+                new ByteArrayInputStream(PDF));
+        ImportItem first = savedItems.get(savedItems.size() - 1);
+        stubLockedBatch(batch, List.of(first));
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), secondId, "a.pdf",
+                "application/pdf", PDF.length, new ByteArrayInputStream(PDF));
+        ImportItem second = savedItems.get(savedItems.size() - 1);
+
+        assertThat(second).isNotSameAs(first);
+        assertThat(first.getClientFileId()).isEqualTo(firstId);
+        assertThat(second.getClientFileId()).isEqualTo(secondId);
+        assertThat(second.getRowNumber()).isEqualTo(2);
+        assertThat(response).isEqualTo(new ImportFileReceivedResponse(2, "a.pdf", 2, 0, 2));
+        verify(storage, times(2)).upload(any(), anyString(), any(), anyLong(), anyString());
+    }
+
+    @Test
+    void receiveFile_withoutClientFileId_isAlwaysANewItem() {
+        ImportBatch batch = batch(ImportBatchStatus.uploading);
+        ImportItem earlier = item(batch, 1, "a.pdf", staging.getStorageLocationId(), "imports/key-1");
+        stubLockedBatch(batch, List.of(earlier));
+        stubStaging();
+
+        ImportFileReceivedResponse response = service().receiveFile(batch.getImportBatchId(), null, "a.pdf",
+                "application/pdf", PDF.length, new ByteArrayInputStream(PDF));
+
+        assertThat(response.rowNumber()).isEqualTo(2);
+        assertThat(savedItems.get(0)).isNotSameAs(earlier);
+        assertThat(savedItems.get(0).getClientFileId()).isNull();
+    }
+
+    @Test
+    void receiveFile_invalidClientFileId_rejects400BeforeTouchingTheBatch() {
+        UUID batchId = UUID.randomUUID();
+
+        for (String id : List.of("", " ", "a b", "<script>", "../x", "x".repeat(65), "ü")) {
+            assertThatThrownBy(() -> service().receiveFile(batchId, id, "a.pdf", "application/pdf", PDF.length,
+                    new ByteArrayInputStream(PDF)))
+                    .isInstanceOf(InvalidImportFileException.class)
+                    .hasFieldOrPropertyWithValue("code", "IMPORT_CLIENT_FILE_ID_INVALID")
+                    .extracting("status").isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+        verifyNoInteractions(importBatchRepository, importItemRepository, storage);
     }
 
     // --- submit ---
@@ -956,6 +1092,88 @@ class BulkImportServiceImplTest {
 
         assertThat(service().getFailures(batch.getImportBatchId())).isEmpty();
         verifyNoInteractions(importSchemaFields);
+    }
+
+    // --- failures CSV ---
+
+    @Test
+    void exportFailuresCsv_oneLinePerProblem_utf8WithBom_escapedAndFormulaSafe_andAuditedOnce() {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        ImportItem formulaName = failedItem(batch, 2, "=HYPERLINK(1+1).pdf", """
+                [{"field":"file","code":"SCAN_REJECTED","message":"@SUM(1+1)","severity":"error"}]
+                """);
+        ImportItem twoProblems = failedItem(batch, 3, "a, b.pdf", """
+                [{"field":"reference","code":"TOO_LONG","message":"Value \\"x\\", too long","severity":"error"},
+                 {"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"+1 left empty","severity":"warning"}]
+                """);
+        ImportItem sinhala = failedItem(batch, 4, "ලංකාව.pdf", """
+                [{"field":"file","code":"SCAN_REJECTED","message":"-தவறு","severity":"error"}]
+                """);
+        ImportItem noProblems = failedItem(batch, 5, "c.pdf", null);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(formulaName, twoProblems, sinhala, noProblems));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(fields(
+                field("reference", "Reference", "text", false, null)));
+        stubActiveType(3);
+
+        ImportFailuresCsvFile csv = service().exportFailuresCsv(batch.getImportBatchId());
+
+        byte[] content = csv.content();
+        assertThat(Arrays.copyOf(content, 3)).containsExactly(0xEF, 0xBB, 0xBF);
+        assertThat(new String(content, 3, content.length - 3, StandardCharsets.UTF_8)).isEqualTo("""
+                Row,File,Field,Problem,Code
+                2,'=HYPERLINK(1+1).pdf,File,'@SUM(1+1),SCAN_REJECTED
+                3,"a, b.pdf",Reference,"Value ""x"", too long",TOO_LONG
+                3,"a, b.pdf",,'+1 left empty,MANDATORY_FIELD_DEFERRED
+                4,ලංකාව.pdf,File,'-தவறு,SCAN_REJECTED
+                5,c.pdf,,,
+                """);
+        assertThat(csv.filename()).matches("INV-import-failures-\\d{8}-\\d{4}\\.csv");
+
+        AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED, batch);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
+                Map.of("rowCount", 5, "format", "csv"));
+    }
+
+    @Test
+    void exportFailuresCsv_noFailuresAndTypeDeleted_headerOnlyNamedImport_andStillAudited() {
+        ImportBatch batch = batch(ImportBatchStatus.completed);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of());
+        when(documentTypeRepository.findByDocumentTypeIdAndTenantIdAndDeletedFalse(documentTypeId, tenantId))
+                .thenReturn(Optional.empty());
+
+        ImportFailuresCsvFile csv = service().exportFailuresCsv(batch.getImportBatchId());
+
+        assertThat(new String(csv.content(), StandardCharsets.UTF_8)).isEqualTo("﻿Row,File,Field,Problem,Code\n");
+        assertThat(csv.filename()).matches("import-import-failures-\\d{8}-\\d{4}\\.csv");
+        AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED, batch);
+        assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
+                Map.of("rowCount", 0, "format", "csv"));
+    }
+
+    @Test
+    void exportFailuresCsv_batchOfAnotherUserOrTenant_notFoundAndNotAudited() {
+        UUID foreignBatchId = UUID.randomUUID();
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(foreignBatchId,
+                tenantId, userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().exportFailuresCsv(foreignBatchId))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verifyNoInteractions(importItemRepository, importSchemaFields, documentTypeRepository);
+        assertThat(recorded(auditService)).isEmpty();
+    }
+
+    @Test
+    void exportFailuresCsv_runsInAWritableTransactionSoTheAuditInsertIsAllowed() throws NoSuchMethodException {
+        AnnotationTransactionAttributeSource source = new AnnotationTransactionAttributeSource();
+        TransactionAttribute export = source.getTransactionAttribute(
+                BulkImportServiceImpl.class.getMethod("exportFailuresCsv", UUID.class), BulkImportServiceImpl.class);
+        assertThat(export).isNotNull();
+        assertThat(export.isReadOnly()).isFalse();
     }
 
     // --- helpers ---

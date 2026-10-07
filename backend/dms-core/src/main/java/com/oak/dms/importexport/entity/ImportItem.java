@@ -102,6 +102,15 @@ public class ImportItem {
     @Column(name = "upload_rejection_message", columnDefinition = "text")
     private String uploadRejectionMessage;
 
+    /**
+     * The browser's own ID for the upload, sent again when it retries one
+     * that got no response - a retry with an ID already in the batch returns
+     * this item's original outcome instead of adding another (see
+     * {@code BulkImportServiceImpl.receiveFile}). Null when none was sent.
+     */
+    @Column(name = "client_file_id", length = 64)
+    private String clientFileId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default

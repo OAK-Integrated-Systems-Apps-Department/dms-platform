@@ -15,6 +15,7 @@ import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
+import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.dto.ImportRowProblem;
@@ -66,6 +67,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +75,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -110,6 +113,10 @@ public class BulkImportServiceImpl implements BulkImportService {
             "title", "Title");
     private static final TypeReference<List<ImportRowError>> ROW_ERRORS = new TypeReference<>() {
     };
+    /** What the browser may send as a clientFileId: a UUID fits, so does any short token. */
+    private static final Pattern CLIENT_FILE_ID = Pattern.compile("[A-Za-z0-9_-]{1,64}");
+    private static final String FILE_TYPE_NOT_ALLOWED = "FILE_TYPE_NOT_ALLOWED";
+    private static final DateTimeFormatter CSV_FILENAME_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
 
     private final ImportBatchRepository importBatchRepository;
     private final ImportItemRepository importItemRepository;
@@ -219,8 +226,12 @@ public class BulkImportServiceImpl implements BulkImportService {
      */
     @Override
     @Transactional(noRollbackFor = {ImportBatchSizeException.class, FileTypeNotAllowedException.class})
-    public ImportFileReceivedResponse receiveFile(UUID batchId, String originalFilename, String contentType,
-                                                  long contentLength, InputStream content) {
+    public ImportFileReceivedResponse receiveFile(UUID batchId, String clientFileId, String originalFilename,
+                                                  String contentType, long contentLength, InputStream content) {
+        if (clientFileId != null && !CLIENT_FILE_ID.matcher(clientFileId).matches()) {
+            throw new InvalidImportFileException("IMPORT_CLIENT_FILE_ID_INVALID",
+                    "The upload's clientFileId must be 1-64 letters, digits, '-' or '_'.");
+        }
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
 
@@ -237,6 +248,16 @@ public class BulkImportServiceImpl implements BulkImportService {
         }
 
         List<ImportItem> items = importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batchId);
+        // A retry of an upload this batch already has (FIE-NFR-004): answer
+        // as the first time, before anything is written or staged.
+        if (clientFileId != null) {
+            Optional<ImportItem> earlier = items.stream()
+                    .filter(item -> clientFileId.equals(item.getClientFileId()))
+                    .findFirst();
+            if (earlier.isPresent()) {
+                return replay(earlier.get(), items, clientFileId);
+            }
+        }
         if (items.size() >= properties.getMaxFilesPerBatch()) {
             throw new ImportBatchSizeException("IMPORT_TOO_MANY_FILES", "An import can take at most "
                     + properties.getMaxFilesPerBatch() + " files. Submit this one and start another for the rest.");
@@ -275,11 +296,11 @@ public class BulkImportServiceImpl implements BulkImportService {
         } catch (ImportBatchSizeException | FileTypeNotAllowedException e) {
             // Saved (committed - see noRollbackFor above) so it appears in the
             // results; the caller still gets e.
-            recordRejection(batchId, tenantId, rowNumber, filename, e);
+            recordRejection(batchId, tenantId, rowNumber, filename, clientFileId, e);
             throw e;
         }
 
-        ImportItem item = importItemRepository.save(newItem(batchId, tenantId, rowNumber, filename));
+        ImportItem item = importItemRepository.save(newItem(batchId, tenantId, rowNumber, filename, clientFileId));
 
         StorageLocation location = storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging);
         String objectKey = buildStagedObjectKey(tenantId, batchId, item.getImportItemId());
@@ -297,11 +318,42 @@ public class BulkImportServiceImpl implements BulkImportService {
         item.setUpdatedAt(OffsetDateTime.now());
         importItemRepository.save(item);
 
-        int rejected = (int) items.stream().filter(BulkImportServiceImpl::isRejected).count();
-        int received = items.size() - rejected + 1;
-        log.info("Staged file as row {} of bulk import batch {} ({} files, {} rejected)", rowNumber, batchId,
-                items.size() + 1, rejected);
-        return new ImportFileReceivedResponse(rowNumber, filename, received, rejected, items.size() + 1);
+        log.info("Staged file as row {} of bulk import batch {} ({} files)", rowNumber, batchId, items.size() + 1);
+        return receivedResponse(rowNumber, filename, items);
+    }
+
+    /** The response for an accepted file added as {@code rowNumber} after {@code before}. */
+    private static ImportFileReceivedResponse receivedResponse(int rowNumber, String filename,
+                                                               List<ImportItem> before) {
+        int rejected = (int) before.stream().filter(BulkImportServiceImpl::isRejected).count();
+        int received = before.size() - rejected + 1;
+        return new ImportFileReceivedResponse(rowNumber, filename, received, rejected, before.size() + 1);
+    }
+
+    /**
+     * The original outcome of an upload being retried: the response it got
+     * (counted over the rows before it, as it was then - rows are only ever
+     * appended), or its rejection thrown again with the same status, code
+     * and message. Writes nothing.
+     */
+    private static ImportFileReceivedResponse replay(ImportItem earlier, List<ImportItem> items,
+                                                     String clientFileId) {
+        log.debug("Replayed upload {} as row {} of bulk import batch {}", clientFileId, earlier.getRowNumber(),
+                earlier.getImportBatchId());
+        String filename = ImportFilenames.strip(earlier.getFilenameReference());
+        if (isRejected(earlier)) {
+            String stored = earlier.getUploadRejectionMessage();
+            String prefix = rejectionPrefix(filename);
+            String message = stored != null && stored.startsWith(prefix) ? stored.substring(prefix.length()) : stored;
+            String code = earlier.getUploadRejectionCode();
+            throw FILE_TYPE_NOT_ALLOWED.equals(code)
+                    ? new FileTypeNotAllowedException(message)
+                    : new ImportBatchSizeException(code, message);
+        }
+        List<ImportItem> before = items.stream()
+                .filter(item -> item.getRowNumber() < earlier.getRowNumber())
+                .toList();
+        return receivedResponse(earlier.getRowNumber(), filename, before);
     }
 
     @Override
@@ -375,6 +427,49 @@ public class BulkImportServiceImpl implements BulkImportService {
         ImportBatch batch = importBatchRepository
                 .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        return failuresOf(batch, tenantId);
+    }
+
+    // NOT readOnly: the BULK_IMPORT_FAILED_ROWS_DOWNLOADED write below joins
+    // this transaction (see AuditService#persist's @Transactional) - a
+    // readOnly transaction would make Postgres reject that insert.
+    @Override
+    @Transactional
+    public ImportFailuresCsvFile exportFailuresCsv(UUID batchId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+
+        ImportBatch batch = importBatchRepository
+                .findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(batchId, tenantId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("ImportBatch", batchId));
+        ImportFailuresCsv.Written csv = ImportFailuresCsv.write(failuresOf(batch, tenantId));
+
+        // Type codes are upper-case letters, digits and '_', so the name needs
+        // no encoding. A type deleted since keeps the report downloadable.
+        String typeCode = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(batch.getDocumentTypeId(), tenantId)
+                .map(DocumentType::getTypeCode)
+                .orElse("import");
+        String filename = typeCode + "-import-failures-" + CSV_FILENAME_TIMESTAMP.format(OffsetDateTime.now())
+                + ".csv";
+
+        auditService.event(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED)
+                .tenantId(tenantId)
+                .actor(userId, TenantContext.getDisplayNameOrNull())
+                .objectType(AuditObjectTypes.IMPORT_BATCH)
+                .objectId(batchId)
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of(
+                        "rowCount", csv.rowCount(),
+                        "format", "csv"))
+                .log();
+
+        return new ImportFailuresCsvFile(filename, ImportFailuresCsv.withBom(csv.text()));
+    }
+
+    /** The batch's failed items as the failures report shows them. */
+    private List<ImportRowFailure> failuresOf(ImportBatch batch, UUID tenantId) {
+        UUID batchId = batch.getImportBatchId();
         List<ImportItem> failed = importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batchId,
                 ImportItem.ImportItemStatus.failed);
         if (failed.isEmpty()) {
@@ -567,25 +662,32 @@ public class BulkImportServiceImpl implements BulkImportService {
         }
     }
 
-    private static ImportItem newItem(UUID batchId, UUID tenantId, int rowNumber, String filename) {
+    private static ImportItem newItem(UUID batchId, UUID tenantId, int rowNumber, String filename,
+                                      String clientFileId) {
         return ImportItem.builder()
                 .tenantId(tenantId)
                 .importBatchId(batchId)
                 .rowNumber(rowNumber)
                 .filenameReference(filename)
+                .clientFileId(clientFileId)
                 .rowValues(NO_ROW_VALUES)
                 .status(ImportItem.ImportItemStatus.pending)
                 .build();
+    }
+
+    /** What a stored rejection message starts with - stripped again when a retry replays the rejection. */
+    private static String rejectionPrefix(String filename) {
+        return "The file you uploaded ('" + filename + "') was rejected: ";
     }
 
     /**
      * Saves a refused upload as a failed item, with why on it - as the upload
      * rejection columns and as its FILE_REJECTED error. Stages nothing.
      */
-    private void recordRejection(UUID batchId, UUID tenantId, int rowNumber, String filename,
+    private void recordRejection(UUID batchId, UUID tenantId, int rowNumber, String filename, String clientFileId,
                                  ApiException rejection) {
-        String message = "The file you uploaded ('" + filename + "') was rejected: " + rejection.getMessage();
-        ImportItem item = newItem(batchId, tenantId, rowNumber, filename);
+        String message = rejectionPrefix(filename) + rejection.getMessage();
+        ImportItem item = newItem(batchId, tenantId, rowNumber, filename, clientFileId);
         item.setStatus(ImportItem.ImportItemStatus.failed);
         item.setUploadRejectionCode(rejection.getCode());
         item.setUploadRejectionMessage(message);

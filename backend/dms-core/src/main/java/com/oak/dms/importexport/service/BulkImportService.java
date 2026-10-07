@@ -5,6 +5,7 @@ import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
+import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import org.springframework.data.domain.Page;
@@ -48,9 +49,15 @@ public interface BulkImportService {
      * Adds one file to the batch as a new item. An accepted file is staged;
      * a refused one (type, empty, password-protected, batch size) is saved
      * as a failed item with FILE_REJECTED and its exception still thrown.
+     * <p>
+     * {@code clientFileId} (optional; 1-64 letters, digits, '-' or '_') is the
+     * browser's ID for the upload. If an item in the batch already has it,
+     * this is a retry: that item's original outcome is returned - the same
+     * response, or the same rejection thrown again - and nothing is created
+     * or staged.
      */
-    ImportFileReceivedResponse receiveFile(UUID batchId, String originalFilename, String contentType,
-                                           long contentLength, InputStream content);
+    ImportFileReceivedResponse receiveFile(UUID batchId, String clientFileId, String originalFilename,
+                                           String contentType, long contentLength, InputStream content);
 
     /**
      * Moves the batch to {@code queued} and publishes {@code import_batch.submitted};
@@ -66,6 +73,13 @@ public interface BulkImportService {
      * the batch's own schema version).
      */
     List<ImportRowFailure> getFailures(UUID batchId);
+
+    /**
+     * {@link #getFailures} as a CSV file - one line per problem (Row, File,
+     * Field, Problem, Code), UTF-8 with a BOM - and records
+     * BULK_IMPORT_FAILED_ROWS_DOWNLOADED. Same scoping as getFailures.
+     */
+    ImportFailuresCsvFile exportFailuresCsv(UUID batchId);
 
     /**
      * The caller's own batches in their tenant, in every status (cancelled and

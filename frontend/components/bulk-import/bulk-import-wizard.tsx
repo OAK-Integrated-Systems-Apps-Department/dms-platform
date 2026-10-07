@@ -143,6 +143,7 @@ export function BulkImportWizard({ canCreateDocuments }: { canCreateDocuments: b
             uploading={queue.busy}
             uploadsAllowed={canCreateDocuments}
             onFiles={(files) => queue.addFiles(status.batchId, files)}
+            onRetry={queue.retry}
             onSubmit={() => handleSubmit(status.batchId)}
             onCancel={() => handleCancel(status.batchId)}
           />

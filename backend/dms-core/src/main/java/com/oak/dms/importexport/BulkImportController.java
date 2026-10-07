@@ -7,6 +7,7 @@ import com.oak.dms.importexport.dto.BulkImportSummary;
 import com.oak.dms.importexport.dto.CreateBulkImportRequest;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
+import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
 import com.oak.dms.importexport.dto.ImportFileReceivedResponse;
 import com.oak.dms.importexport.dto.ImportRowFailure;
 import com.oak.dms.importexport.service.BulkImportService;
@@ -15,6 +16,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -87,10 +92,12 @@ public class BulkImportController {
             + " and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
     @Operation(summary = "Upload one file into the bulk import - each upload becomes one document")
     public ImportFileReceivedResponse uploadFile(@PathVariable("batchId") UUID batchId,
-                                                 @RequestPart("file") MultipartFile file) throws IOException {
+                                                 @RequestPart("file") MultipartFile file,
+                                                 @RequestParam(value = "clientFileId", required = false)
+                                                 String clientFileId) throws IOException {
         try (InputStream content = file.getInputStream()) {
-            return bulkImportService.receiveFile(batchId, file.getOriginalFilename(), file.getContentType(),
-                    file.getSize(), content);
+            return bulkImportService.receiveFile(batchId, clientFileId, file.getOriginalFilename(),
+                    file.getContentType(), file.getSize(), content);
         }
     }
 
@@ -131,6 +138,18 @@ public class BulkImportController {
     @Operation(summary = "List the files of a bulk import that failed, in upload order, with their problems")
     public List<ImportRowFailure> getFailures(@PathVariable("batchId") UUID batchId) {
         return bulkImportService.getFailures(batchId);
+    }
+
+    @GetMapping(value = "/bulk-imports/{batchId}/failures.csv", produces = "text/csv")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).FIE_BULK_IMPORT_UPLOAD_FILE)")
+    @Operation(summary = "Download the files of a bulk import that failed as CSV, one line per problem")
+    public ResponseEntity<byte[]> exportFailuresCsv(@PathVariable("batchId") UUID batchId) {
+        ImportFailuresCsvFile csv = bulkImportService.exportFailuresCsv(batchId);
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(csv.filename()).build().toString())
+                .body(csv.content());
     }
 
     @GetMapping("/bulk-imports/{batchId}")

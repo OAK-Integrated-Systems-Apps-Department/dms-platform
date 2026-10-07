@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, Send, X } from "lucide-react"
+import { Loader2, RotateCw, Send, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,8 @@ interface UploadFilesStepProps {
   /** False when the caller lacks document-create: uploading and submitting are disabled, Cancel still works. */
   uploadsAllowed: boolean
   onFiles: (files: File[]) => void
+  /** Re-sends an upload that got no answer from the server, with the same clientFileId. */
+  onRetry: (id: string) => void
   onSubmit: () => Promise<string | null>
   onCancel: () => Promise<string | null>
 }
@@ -37,6 +39,7 @@ export function UploadFilesStep({
   uploading,
   uploadsAllowed,
   onFiles,
+  onRetry,
   onSubmit,
   onCancel,
 }: UploadFilesStepProps) {
@@ -46,6 +49,8 @@ export function UploadFilesStep({
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const { filesReceived, filesRejected } = status
+  /** Uploads that got no answer and haven't been retried - the server may never have seen them. */
+  const failedUploads = entries.filter((entry) => entry.state === "failed").length
   const canSubmit = uploadsAllowed && filesReceived > 0 && !uploading && !submitting
 
   async function submitNow() {
@@ -57,7 +62,7 @@ export function UploadFilesStep({
   }
 
   function handleSubmitClick() {
-    if (filesRejected > 0) {
+    if (filesRejected > 0 || failedUploads > 0) {
       setConfirmSubmitOpen(true)
     } else {
       void submitNow()
@@ -102,7 +107,7 @@ export function UploadFilesStep({
             ) : (
               <ul className="max-h-[320px] divide-y divide-border overflow-y-auto rounded-md border border-border">
                 {entries.map((entry) => (
-                  <UploadRow key={entry.id} entry={entry} />
+                  <UploadRow key={entry.id} entry={entry} onRetry={onRetry} />
                 ))}
               </ul>
             )}
@@ -157,8 +162,8 @@ export function UploadFilesStep({
       <ConfirmActionDialog
         open={confirmSubmitOpen}
         onOpenChange={setConfirmSubmitOpen}
-        title="Submit with rejected files?"
-        description={`${filesRejected} ${filesRejected === 1 ? "file was" : "files were"} rejected and will be listed as failed in the results.`}
+        title={submitConfirmTitle(filesRejected, failedUploads)}
+        description={submitConfirmDescription(filesRejected, failedUploads)}
         confirmLabel="Submit anyway"
         pendingLabel="Submitting…"
         onConfirm={onSubmit}
@@ -191,18 +196,49 @@ export function CancelImportDialog({
   )
 }
 
-function UploadRow({ entry }: { entry: UploadQueueEntry }) {
+function submitConfirmTitle(rejected: number, failed: number): string {
+  if (rejected > 0 && failed > 0) return "Submit with rejected and failed files?"
+  if (failed > 0) return "Submit without failed uploads?"
+  return "Submit with rejected files?"
+}
+
+function submitConfirmDescription(rejected: number, failed: number): string {
+  const sentences: string[] = []
+  if (rejected > 0) {
+    sentences.push(
+      `${rejected} ${rejected === 1 ? "file was" : "files were"} rejected and will be listed as failed in the results.`
+    )
+  }
+  if (failed > 0) {
+    const one = failed === 1
+    sentences.push(
+      `${failed} ${one ? "file didn't" : "files didn't"} finish uploading and ${one ? "hasn't" : "haven't"} been retried - ` +
+        `${one ? "it" : "they"} won't be included. Retry ${one ? "it" : "them"} first, or submit without ${one ? "it" : "them"}.`
+    )
+  }
+  return sentences.join(" ")
+}
+
+function UploadRow({ entry, onRetry }: { entry: UploadQueueEntry; onRetry: (id: string) => void }) {
   return (
     <li className="flex items-start justify-between gap-3 px-3.5 py-2.5">
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium" title={entry.file.name}>
           {entry.file.name}
         </p>
-        {entry.state === "rejected" && entry.error && (
+        {(entry.state === "rejected" || entry.state === "failed") && entry.error && (
           <p className="mt-0.5 text-[12px] leading-[1.5] text-[var(--rust)]">{entry.error}</p>
         )}
       </div>
-      <UploadStateBadge entry={entry} />
+      <div className="flex shrink-0 items-center gap-2">
+        {entry.state === "failed" && (
+          <Button variant="outline" size="xs" onClick={() => onRetry(entry.id)}>
+            <RotateCw />
+            Retry
+          </Button>
+        )}
+        <UploadStateBadge entry={entry} />
+      </div>
     </li>
   )
 }
@@ -222,5 +258,7 @@ function UploadStateBadge({ entry }: { entry: UploadQueueEntry }) {
       return <Badge variant="default">Accepted</Badge>
     case "rejected":
       return <Badge variant="rust">Rejected</Badge>
+    case "failed":
+      return <Badge variant="rust">Upload failed</Badge>
   }
 }

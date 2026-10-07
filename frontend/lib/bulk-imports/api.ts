@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { downloadBlob, filenameFromContentDisposition } from "@/lib/download"
 
 /** Mirrors ImportBatch.ImportBatchStatus on the backend. */
 export type BulkImportStatus =
@@ -211,11 +212,17 @@ export async function createBulkImport(documentTypeId: string): Promise<BulkImpo
 /**
  * POST /bulk-imports/{batchId}/files - stages one file. The server locks
  * the batch for the duration of the request, so callers should send these
- * one at a time.
+ * one at a time. `clientFileId` identifies this file: resending it with the
+ * same ID (a retry) gets the original outcome instead of a second item.
  */
-export async function uploadBulkImportFile(batchId: string, file: File): Promise<ImportFileReceivedResponseDto> {
+export async function uploadBulkImportFile(
+  batchId: string,
+  file: File,
+  clientFileId: string
+): Promise<ImportFileReceivedResponseDto> {
   const body = new FormData()
   body.append("file", file)
+  body.append("clientFileId", clientFileId)
   return apiFetchJson<ImportFileReceivedResponseDto>(
     `${BASE}/${batchId}/files`,
     { method: "POST", body },
@@ -248,6 +255,20 @@ export async function fetchBulkImportFailures(batchId: string): Promise<ImportRo
     undefined,
     "Could not load the files that failed."
   )
+}
+
+/**
+ * GET /bulk-imports/{batchId}/failures.csv - downloads the failure report
+ * as CSV (one line per problem). The server records the download.
+ */
+export async function exportBulkImportFailuresCsv(batchId: string): Promise<void> {
+  const response = await apiFetch(
+    `${BASE}/${batchId}/failures.csv`,
+    undefined,
+    "Could not export the failure report."
+  )
+  const blob = await response.blob()
+  downloadBlob(blob, filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? "import-failures.csv")
 }
 
 /** GET /bulk-imports - one page of the caller's batches in every status, newest first. The server caps `size` at 50. */
