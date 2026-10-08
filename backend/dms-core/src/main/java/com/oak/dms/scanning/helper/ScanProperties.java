@@ -59,6 +59,11 @@ public class ScanProperties {
          */
         private int leaseSecondsPerGb = 120;
         private int batchSize = 20;
+        /**
+         * How many files are scanned/promoted in the background at once (ScanWorkPool). Each
+         * busy worker holds about one CPU core while it copies and encrypts a large file.
+         */
+        private int workers = 3;
 
         /** The lease for a file of {@code sizeBytes} (0 or less if not known yet). */
         public long leaseSecondsFor(long sizeBytes) {

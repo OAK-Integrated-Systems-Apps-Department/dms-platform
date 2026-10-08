@@ -79,6 +79,7 @@ public class IngestionGateImpl implements IngestionGate {
     private final ScanResultRepository scanResultRepository;
     private final FileTypeInspector fileTypeInspector;
     private final IngestionProcessor ingestionProcessor;
+    private final ScanWorkPool scanWorkPool;
     private final StorageObjectMover storageObjectMover;
     private final DocumentPromoter documentPromoter;
     private final IngestionTicketMapper ingestionTicketMapper;
@@ -94,6 +95,7 @@ public class IngestionGateImpl implements IngestionGate {
                              ScanResultRepository scanResultRepository,
                              FileTypeInspector fileTypeInspector,
                              IngestionProcessor ingestionProcessor,
+                             ScanWorkPool scanWorkPool,
                              StorageObjectMover storageObjectMover,
                              DocumentPromoter documentPromoter,
                              IngestionTicketMapper ingestionTicketMapper,
@@ -109,6 +111,7 @@ public class IngestionGateImpl implements IngestionGate {
         this.scanResultRepository = scanResultRepository;
         this.fileTypeInspector = fileTypeInspector;
         this.ingestionProcessor = ingestionProcessor;
+        this.scanWorkPool = scanWorkPool;
         this.storageObjectMover = storageObjectMover;
         this.documentPromoter = documentPromoter;
         this.ingestionTicketMapper = ingestionTicketMapper;
@@ -250,11 +253,12 @@ public class IngestionGateImpl implements IngestionGate {
 
         // 5. Scan and route. ClamAV answers now; cloud scanners come back pending. So does a
         // file too large for one clamd pass, or a ZIP too large for clamd to open whole: scanning
-        // it piece by piece can take far longer than a request should stay open, so the
-        // scheduler picks it up straight away instead.
+        // it piece by piece can take far longer than a request should stay open, so a
+        // background worker (ScanWorkPool) picks it up straight away instead.
         if (engine.getProvider() == ScanProvider.CLAMAV
                 && (largeArchive || limited.count() > scanProperties.getClamav().getSegmentBytes())) {
             ingestionProcessor.handOff(scanResultId, leaseToken);
+            scanWorkPool.wake();
             return ticket(scanResultId);
         }
         ingestionProcessor.process(scanResultId);

@@ -34,7 +34,7 @@ export function ImpersonationBanner() {
       <span>
         Viewing as <strong className="font-semibold">{user.displayName}</strong>
         {user.impersonatorDisplayName && (
-          <> — impersonated by {user.impersonatorDisplayName}</>
+          <> - impersonated by {user.impersonatorDisplayName}</>
         )}
       </span>
       <button

@@ -377,6 +377,9 @@ dms:
       # Added per GB of the file, so a very large file's lease outlasts its scan.
       lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:120}
       batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
+      # Files scanned/promoted in the background at once (ScanWorkPool) - a busy worker holds
+      # about one CPU core while it copies and encrypts a large file.
+      workers: ${SCAN_RETRY_WORKERS:3}
     clamav:
       host: ${CLAMAV_HOST:localhost}
       port: ${CLAMAV_PORT:3310}
