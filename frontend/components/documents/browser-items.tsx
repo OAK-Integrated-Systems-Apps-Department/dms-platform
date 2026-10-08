@@ -27,6 +27,15 @@ export interface ItemAction {
   icon: LucideIcon
   onSelect: () => void
   danger?: boolean
+  /**
+   * Shown but not selectable. Use this only when the action exists for
+   * this user but not for this item (an unsupported file type, say) - an
+   * action they simply don't have permission for is left out entirely, so
+   * the menu never advertises what they can't be given.
+   */
+  disabled?: boolean
+  /** Why it's disabled. Becomes the row's title, so the reason is reachable on hover and on focus. */
+  hint?: string
 }
 
 interface FileKind {
@@ -339,20 +348,31 @@ export function ItemMenu({
               key={action.label}
               type="button"
               role="menuitem"
+              // aria-disabled, not disabled: a disabled button can't be
+              // focused, so a keyboard user would never reach the row and
+              // never hear why the action isn't available.
+              aria-disabled={action.disabled}
+              title={action.hint}
               onClick={() => {
+                if (action.disabled) return
                 setPosition(null)
                 action.onSelect()
               }}
               style={{ height: MENU_ROW }}
               className={cn(
                 "flex w-full items-center gap-2.5 px-3 text-left text-[13px] whitespace-nowrap",
-                action.danger
-                  ? "text-destructive hover:bg-destructive/10"
-                  : "text-foreground hover:bg-muted"
+                action.disabled
+                  ? "cursor-not-allowed text-muted-foreground opacity-60"
+                  : action.danger
+                    ? "text-destructive hover:bg-destructive/10"
+                    : "text-foreground hover:bg-muted"
               )}
             >
               <action.icon size={15} className="shrink-0" />
               {action.label}
+              {action.disabled && action.hint && (
+                <span className="sr-only">. {action.hint}</span>
+              )}
             </button>
           ))}
         </div>

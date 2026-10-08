@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Building2,
+  Droplet,
   FileStack,
   FileText,
   Grid3x3,
@@ -130,6 +131,23 @@ export const navSections: NavSection[] = [
           PermissionCodes.DOCM_QUARANTINE_RELEASE,
           PermissionCodes.DOCM_QUARANTINE_DELETE,
           PermissionCodes.DOCM_QUARANTINE_OVERRIDE,
+        ],
+      },
+      // The named watermark texts users can pick when asking for a
+      // watermarked copy (Module DW). Either template capability gets you in;
+      // the list itself hides what you can't do, and built-in templates are
+      // read-only for everyone. `feature` as well as `permission` because
+      // dms.watermark.enabled can be off server-side, and holding the
+      // permission is then still not a reason to show a link to a page with
+      // nothing behind it.
+      {
+        label: "Watermark Templates",
+        icon: Droplet,
+        href: "/admin/watermarks",
+        feature: "watermarking",
+        permission: [
+          PermissionCodes.DW_WATERMARK_TEMPLATE_CREATE,
+          PermissionCodes.DW_WATERMARK_TEMPLATE_UPDATE,
         ],
       },
       // Encryption at rest (Module DE): the master key, rotation, re-wrapping.

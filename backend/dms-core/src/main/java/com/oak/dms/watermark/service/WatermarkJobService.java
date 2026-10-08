@@ -17,6 +17,8 @@ import com.oak.dms.watermark.exception.WatermarkException;
 import com.oak.dms.watermark.repository.WatermarkJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +70,40 @@ public class WatermarkJobService {
     public WatermarkJobResponse get(UUID jobId) {
         WatermarkJob job = own(jobId);
         return WatermarkJobResponse.from(job, watermarkService.textOf(job));
+    }
+
+    /**
+     * The caller's own jobs, newest first, optionally filtered by status -
+     * what the "My watermarked copies" list reads.
+     * <p>
+     * Scoped to tenant AND requester from the session, exactly as
+     * {@link #get(UUID)} is and for the same reason: a watermarked copy
+     * carries the name of whoever asked for it, so even inside one tenant
+     * it isn't somebody else's to look at. The caller cannot widen this -
+     * there is no user parameter to pass.
+     * <p>
+     * An unknown status is a 400 rather than an empty page, so a typo in a
+     * filter is visible instead of looking like "you have none".
+     */
+    @Transactional(readOnly = true)
+    public Page<WatermarkJobResponse> listMine(String status, Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+        Page<WatermarkJob> page = (status == null || status.isBlank())
+                ? jobRepository.findByTenantIdAndRequestedBy(tenantId, userId, pageable)
+                : jobRepository.findByTenantIdAndRequestedByAndStatus(tenantId, userId,
+                        parseStatus(status), pageable);
+        return page.map(job -> WatermarkJobResponse.from(job, watermarkService.textOf(job)));
+    }
+
+    private static WatermarkJobStatus parseStatus(String status) {
+        try {
+            return WatermarkJobStatus.valueOf(status.trim());
+        } catch (IllegalArgumentException e) {
+            throw WatermarkException.badRequest("WATERMARK_UNKNOWN_STATUS",
+                    "'" + status + "' isn't a watermark status. Use one of: "
+                            + java.util.Arrays.toString(WatermarkJobStatus.values()) + ".");
+        }
     }
 
     @Transactional

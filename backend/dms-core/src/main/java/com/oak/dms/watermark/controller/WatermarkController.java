@@ -1,6 +1,7 @@
 package com.oak.dms.watermark.controller;
 
 import com.oak.dms.common.dto.ErrorResponse;
+import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.watermark.dto.WatermarkJobResponse;
 import com.oak.dms.watermark.dto.WatermarkPreviewRequest;
 import com.oak.dms.watermark.dto.WatermarkRequest;
@@ -15,6 +16,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -28,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
@@ -88,6 +93,12 @@ public class WatermarkController {
                     job instead of producing a second copy. Naming a versionId needs \
                     dvc.view-version-history.view as well.
 
+                    Placeholders, resolved once at request time and frozen onto the job: {username} \
+                    (the requester's DISPLAY NAME, falling back to their login username only when that \
+                    is blank), {userEmail}, {date} (UTC, labelled), {documentId}, {documentVersion}, \
+                    {watermarkId} (the first 8 characters of the job id, so a leaked copy traces back \
+                    to its audit entry). An unknown token is a 400, never printed literally.
+
                     The copy is always in the ORIGINAL's format - nothing is converted, and the original \
                     is never modified. Supported: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), \
                     JPEG and PNG. Anything else, including legacy .doc/.xls/.ppt, is a 415.
@@ -120,6 +131,28 @@ public class WatermarkController {
         return ResponseEntity.accepted()
                 .location(URI.create("/api/v1/watermark-jobs/" + job.jobId()))
                 .body(job);
+    }
+
+    /**
+     * "My watermarked copies".
+     * <p>
+     * {@code isAuthenticated()} rather than {@code CAN_VIEW_DOCUMENTS},
+     * matching {@code ExportJobController#listMine}: the list itself carries
+     * no document content - only the caller's own job rows, which they
+     * created. Losing document access still ends access to the copies,
+     * because the DOWNLOAD re-checks it; gating the list as well would hide
+     * a user's own history from them for no gain.
+     */
+    @GetMapping("/api/v1/watermark-jobs")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "List the caller's own watermark jobs",
+            description = "Only jobs the caller requested, in the caller's tenant. status is optional "
+                    + "(pending, processing, completed, failed, expired); anything else is a 400. "
+                    + "Newest first by default.")
+    public PageResponse<WatermarkJobResponse> listMine(
+            @RequestParam(required = false) String status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return PageResponse.from(watermarkJobService.listMine(status, pageable));
     }
 
     @GetMapping("/api/v1/watermark-jobs/{jobId}")

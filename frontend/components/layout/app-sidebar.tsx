@@ -20,6 +20,7 @@ import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -71,18 +72,31 @@ export function AppSidebar({
   const { hasAnyPermission } = usePermissions()
   const { isPlatformAdmin } = useIsPlatformAdmin()
 
+  // Cached probe shared with the rest of the app; `undefined` while it is
+  // still in flight, which keeps a feature-gated item hidden until the
+  // answer arrives rather than flashing a link that may not belong here.
+  const watermarking = useWatermarkAvailability().data?.present === true
+
+  function featureOn(feature: NavItem["feature"]): boolean {
+    if (!feature) return true
+    return feature === "watermarking" ? watermarking : false
+  }
+
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
   // always visible; items that name one are hidden entirely — not shown
   // disabled or left to 403 on click — for anyone who can't satisfy it,
   // same reasoning as every action-button gate elsewhere (see
-  // `usePermissions`). Sections that end up with zero visible items are
-  // dropped too, rather than rendering an empty group header.
+  // `usePermissions`). An item may also name a `feature`, which has to be
+  // switched on for this deployment as well. Sections that end up with zero
+  // visible items are dropped too, rather than rendering an empty group
+  // header.
   const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter(
         (item) =>
           (!item.platformAdminOnly || isPlatformAdmin) &&
+          featureOn(item.feature) &&
           (!item.permission ||
             hasAnyPermission(
               ...(Array.isArray(item.permission)

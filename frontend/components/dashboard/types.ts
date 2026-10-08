@@ -28,6 +28,16 @@ export interface NavItem {
   permission?: string | string[]
   /** Only for platform administrators (cross-tenant) - e.g. managing organisations. */
   platformAdminOnly?: boolean
+  /**
+   * An optional feature that must be switched on for this deployment before
+   * the item appears, on top of any `permission`. Needed where holding the
+   * permission isn't enough because the whole module can be turned off
+   * server-side: `dms.watermark.enabled=false` unmaps the endpoints, so a
+   * tenant admin would otherwise keep a link to a page with nothing behind
+   * it. Resolved live in `AppSidebar`; omit for the usual case, where a
+   * permission alone decides.
+   */
+  feature?: "watermarking"
 }
 
 export interface NavSection {

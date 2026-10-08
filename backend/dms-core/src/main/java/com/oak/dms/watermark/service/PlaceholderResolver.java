@@ -65,7 +65,20 @@ public class PlaceholderResolver {
      * the rest of the line.
      */
     private static final Map<String, Function<Context, String>> RESOLVERS = new LinkedHashMap<>(Map.of(
-            "username", context -> context.user().map(User::getUsername).orElse(""),
+            // The person's DISPLAY NAME, not their login name, falling back
+            // to the login name only when the display name is blank.
+            //
+            // A watermark exists to say who took the copy, to a human
+            // reading the page. Login names here are frequently a Keycloak
+            // id - on this deployment 18 of 43 users have a 36-character
+            // UUID and one has a 60-character token - which identifies
+            // nobody at a glance and crowds the real text off the line. The
+            // display name is populated for every user and is short. The
+            // fallback keeps the token meaningful for any account that
+            // somehow has no display name rather than drawing an empty gap.
+            "username", context -> context.user()
+                    .map(user -> hasText(user.getDisplayName()) ? user.getDisplayName() : user.getUsername())
+                    .orElse(""),
             "userEmail", context -> context.user().map(User::getEmail).orElse(""),
             "date", context -> context.requestedAt().withOffsetSameInstant(ZoneOffset.UTC).format(DATE_FORMAT),
             "documentId", context -> context.version().documentId().toString(),
@@ -75,6 +88,10 @@ public class PlaceholderResolver {
             // it. Visible text, never hidden - this is not steganography, and
             // the person being identified can see that they are.
             "watermarkId", context -> context.jobId().toString().substring(0, 8)));
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
 
     private final UserRepository userRepository;
     private final TextSanitizer sanitizer;

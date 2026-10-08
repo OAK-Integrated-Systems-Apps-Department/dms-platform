@@ -138,6 +138,82 @@ class WatermarkEndpointAuthorizationIT extends WatermarkFixtures {
                 .andExpect(status().isNotFound());
     }
 
+    // --------------------------------------------- GET the caller's own list
+
+    /**
+     * The list is scoped server-side to the caller, so a colleague in the
+     * same tenant - even a tenant admin, who bypasses permission checks -
+     * sees their own jobs and not this user's. There is no parameter that
+     * widens it, which is why this is the only test that can prove it.
+     */
+    @Test
+    void theListShowsOnlyTheCallersOwnJobs() throws Exception {
+        Fixture owner = fixture();
+        grant(owner, PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        WatermarkJobResponse mine = watermarkService.apply(owner.documentId(), customText("DRAFT"), null);
+
+        mockMvc.perform(get("/api/v1/watermark-jobs").with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].jobId").value(mine.jobId().toString()));
+
+        User colleague = sameTenantUser(owner);
+        mockMvc.perform(get("/api/v1/watermark-jobs")
+                        .with(jwtFor(colleague, owner.tenantId(), TENANT_ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    /**
+     * Any signed-in user may see their OWN history, matching
+     * ExportJobController#listMine - the rows carry no document content, and
+     * the download still re-checks document access.
+     */
+    @Test
+    void theListDoesNotItselfRequireDocumentView() throws Exception {
+        Fixture fixture = fixture();   // no grants at all
+        mockMvc.perform(get("/api/v1/watermark-jobs").with(as(fixture)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void theListIsNewestFirstAndFiltersByStatus() throws Exception {
+        Fixture fixture = fixture();
+        grant(fixture, PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        WatermarkJobResponse first = watermarkService.apply(fixture.documentId(), customText("ONE"), null);
+        WatermarkJobResponse second = watermarkService.apply(fixture.documentId(), customText("TWO"), null);
+
+        mockMvc.perform(get("/api/v1/watermark-jobs").with(as(fixture)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].jobId").value(second.jobId().toString()))
+                .andExpect(jsonPath("$.content[1].jobId").value(first.jobId().toString()));
+
+        // Filtered on 'expired' rather than 'failed': this IT has no Keycloak
+        // stub, so the worker fails every job it picks up within
+        // milliseconds - a 'failed' filter raced that and matched both rows.
+        // Nothing reaches 'expired' without the sweeper running.
+        mockMvc.perform(get("/api/v1/watermark-jobs").param("status", "expired").with(as(fixture)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    /** A typo in a filter must be visible, not look like "you have none". */
+    @Test
+    void anUnknownStatusIsARefusalRatherThanAnEmptyPage() throws Exception {
+        Fixture fixture = fixture();
+        mockMvc.perform(get("/api/v1/watermark-jobs").param("status", "nonsense").with(as(fixture)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("WATERMARK_UNKNOWN_STATUS"));
+    }
+
+    @Test
+    void anUnauthenticatedListGetsNowhere() throws Exception {
+        mockMvc.perform(get("/api/v1/watermark-jobs"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ------------------------------------------------- GET the job/result
 
     @Test

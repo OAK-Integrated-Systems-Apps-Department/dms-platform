@@ -167,6 +167,25 @@ Everything else, including legacy `.doc`/`.xls`/`.ppt`, is **415**. The refusal
 message is built from the registered services, so a format is advertised
 exactly when something can produce it.
 
+### Placeholders
+
+Usable in a template's default text or in `customText`. Every one is resolved
+**once, at request time**, and snapshotted onto the job — see §6.
+
+| Token | Resolves to |
+|---|---|
+| `{username}` | The requester's **display name**, falling back to their login username only when the display name is blank. Not the login name: on a Keycloak-backed deployment that is frequently a 36-character UUID, which identifies nobody on a page and crowds out the rest of the line. |
+| `{userEmail}` | The requester's email address. |
+| `{date}` | Request time, `yyyy-MM-dd HH:mm UTC`. Always UTC and always labelled — a watermark is read by someone who has no idea what timezone the server was in. |
+| `{documentId}` | The document's UUID. |
+| `{documentVersion}` | The version number being watermarked. |
+| `{watermarkId}` | The first 8 characters of the job id, so a leaked copy can be traced back to the audit entry that produced it. Visible text, never hidden. |
+
+An unrecognised token is a **400** naming it and listing the valid ones — never
+printed literally, because a typo like `{usernmae}` would otherwise be stamped
+onto somebody's document and the person would believe they had identified
+themselves when they had not.
+
 ### Placements
 
 `tiled` (default), `centered`, `corner`, `header-footer` - the last draws a

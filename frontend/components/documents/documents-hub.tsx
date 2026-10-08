@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import {
   Download,
+  Droplet,
   FileDown,
   FileSpreadsheet,
   FileText,
@@ -20,10 +21,16 @@ import { fetchActiveBulkImport } from "@/lib/bulk-imports/api"
 import { fetchDocuments } from "@/lib/documents/api"
 import { fetchMyExportJobs, isExportInFlight } from "@/lib/export-jobs/api"
 import { useFolders } from "@/lib/folders/use-folders"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { cn } from "@/lib/utils"
 
 export type DocumentsTab =
-  "documents" | "bulk-import" | "bulk-export" | "import-templates" | "exports"
+  | "documents"
+  | "bulk-import"
+  | "bulk-export"
+  | "import-templates"
+  | "exports"
+  | "watermarks"
 
 interface TabDef {
   key: DocumentsTab
@@ -85,6 +92,18 @@ const TABS: TabDef[] = [
     description:
       "Exports you requested and where each one stands. Finished ones are kept until their expiry time.",
   },
+  {
+    key: "watermarks",
+    label: "My Watermarked Copies",
+    href: "/documents/watermarks",
+    icon: Droplet,
+    // No permission list, like My Exports: every user may see the copies
+    // they asked for themselves. This tab is additionally hidden when the
+    // feature is switched off on the deployment - see `visible` below.
+    permissions: [],
+    description:
+      "Watermarked copies you asked for and where each one stands. Finished ones are kept until their expiry time.",
+  },
 ]
 
 /**
@@ -100,9 +119,15 @@ export function DocumentsHub({
   children: ReactNode
 }) {
   const { hasPermission, hasAnyPermission } = usePermissions()
+  // The watermarks tab also disappears when the feature is switched off on
+  // this deployment: the endpoints are not mapped at all, so the page could
+  // only ever show an error. The probe is cached for minutes, so this costs
+  // nothing per render - see useWatermarkAvailability.
+  const { data: watermarks } = useWatermarkAvailability()
   const visible = TABS.filter(
     (tab) =>
-      tab.permissions.length === 0 || hasAnyPermission(...tab.permissions)
+      (tab.key !== "watermarks" || watermarks?.present === true) &&
+      (tab.permissions.length === 0 || hasAnyPermission(...tab.permissions))
   )
   const current = TABS.find((tab) => tab.key === active) ?? TABS[0]
 

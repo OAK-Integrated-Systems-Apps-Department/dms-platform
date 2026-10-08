@@ -101,7 +101,9 @@ class WatermarkDisabledIT {
         UUID keycloakId = UUID.randomUUID();
 
         for (String path : new String[]{"/api/v1/watermark-templates",
-                "/api/v1/watermark-templates/" + UUID.randomUUID()}) {
+                "/api/v1/watermark-templates/" + UUID.randomUUID(),
+                "/api/v1/watermark-jobs",
+                "/api/v1/watermark-jobs/" + UUID.randomUUID()}) {
             try {
                 mockMvc.perform(get(path).with(jwt()
                                 .jwt(builder -> builder.subject(keycloakId.toString())

@@ -9,7 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Download, FileQuestion, Loader2, ZoomIn, ZoomOut } from "lucide-react"
+import { Download, Droplet, FileQuestion, Loader2, ZoomIn, ZoomOut } from "lucide-react"
 
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { Button } from "@/components/ui/button"
@@ -203,6 +203,9 @@ export function DocumentPreview({
   version,
   onOpenChange,
   onDownload,
+  onWatermark,
+  watermarkDisabled,
+  watermarkHint,
 }: {
   row: Pick<
     DocumentListItemDto,
@@ -218,6 +221,16 @@ export function DocumentPreview({
   version?: { versionId: string; label: string; current: boolean }
   onOpenChange: (open: boolean) => void
   onDownload: () => void
+  /**
+   * Opens the watermark dialog. Absent = no button at all, which is how
+   * the caller expresses "the feature is off here, or this user can't view
+   * documents" - the two cases where offering it would be a lie.
+   */
+  onWatermark?: () => void
+  /** Shown but not usable - an unsupported file type, or the renderer being unavailable. */
+  watermarkDisabled?: boolean
+  /** Why it's disabled. */
+  watermarkHint?: string
 }) {
   const renderer = rendererFor(row.mimeType, row.fileName)
   const kind = fileKind(row.fileName)
@@ -367,6 +380,29 @@ export function DocumentPreview({
                   <ZoomIn />
                 </Button>
               </div>
+            )}
+            {onWatermark && (
+              <Button
+                size="sm"
+                variant="outline"
+                // aria-disabled rather than disabled so the reason stays
+                // reachable: a disabled button takes no focus and shows no
+                // title, which would leave a keyboard user with a greyed
+                // control and no explanation.
+                aria-disabled={watermarkDisabled}
+                title={watermarkHint}
+                onClick={() => {
+                  if (watermarkDisabled) return
+                  onWatermark()
+                }}
+                className={watermarkDisabled ? "cursor-not-allowed opacity-60" : undefined}
+              >
+                <Droplet />
+                Add watermark
+                {watermarkDisabled && watermarkHint && (
+                  <span className="sr-only">. {watermarkHint}</span>
+                )}
+              </Button>
             )}
             <Button size="sm" variant="outline" onClick={onDownload}>
               <Download />

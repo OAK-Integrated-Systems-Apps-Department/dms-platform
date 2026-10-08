@@ -3,6 +3,8 @@ package com.oak.dms.watermark.repository;
 import com.oak.dms.watermark.entity.WatermarkJob;
 import com.oak.dms.watermark.enums.WatermarkJobStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -29,6 +31,17 @@ public interface WatermarkJobRepository extends JpaRepository<WatermarkJob, UUID
      * convenience.
      */
     Optional<WatermarkJob> findByJobIdAndTenantIdAndRequestedBy(UUID jobId, UUID tenantId, UUID requestedBy);
+
+    /**
+     * One page of the caller's own jobs - "My watermarked copies". Scoped by
+     * tenant AND requester in the query itself rather than filtered
+     * afterwards, so there is no arrangement of parameters that returns
+     * somebody else's row.
+     */
+    Page<WatermarkJob> findByTenantIdAndRequestedBy(UUID tenantId, UUID requestedBy, Pageable pageable);
+
+    Page<WatermarkJob> findByTenantIdAndRequestedByAndStatus(UUID tenantId, UUID requestedBy,
+                                                             WatermarkJobStatus status, Pageable pageable);
 
     /**
      * The LIVE job an Idempotency-Key still refers to, if there is one.

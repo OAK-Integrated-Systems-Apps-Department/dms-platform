@@ -110,8 +110,12 @@ class WatermarkServiceIT extends WatermarkFixtures {
 
         // Every token substituted before the row was written. The worker
         // reads this snapshot and never re-resolves.
+        // {username} resolves to the DISPLAY name, not the login name - see
+        // PlaceholderResolver. The fixture gives the two different values on
+        // purpose, so this would fail if it quietly went back to the login name.
         assertThat(response.text())
-                .contains(fixture.username())
+                .contains(DISPLAY_NAME)
+                .doesNotContain(fixture.username())
                 .contains(" - 1 - ")
                 .contains(response.jobId().toString().substring(0, 8));
         assertThat(spec(response.jobId()).text()).isEqualTo(response.text());
@@ -167,7 +171,7 @@ class WatermarkServiceIT extends WatermarkFixtures {
         assertThat(jdbc.queryForObject("select new_value::text from audit_events "
                         + "where action = ? and object_id = ?",
                 String.class, "WATERMARK_REQUESTED", response.jobId()))
-                .contains(fixture.username());
+                .contains(DISPLAY_NAME);
     }
 
     // ------------------------------------------------------- validation

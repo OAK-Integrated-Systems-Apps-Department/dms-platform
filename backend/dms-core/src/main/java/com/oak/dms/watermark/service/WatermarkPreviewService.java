@@ -48,12 +48,12 @@ public class WatermarkPreviewService {
     private static final Pattern TOKEN = Pattern.compile("\\{([a-zA-Z][a-zA-Z0-9]*)}");
 
     /**
-     * Recognisably fake, and recognisably the right SHAPE - a short login
-     * name, a plausible email, a full timestamp - so the preview shows how
-     * much room a real value will take.
+     * Recognisably fake, and recognisably the right SHAPE - a person's
+     * display name, a plausible email, a full timestamp - so the preview
+     * shows how much room a real value will take.
      */
     private static final Map<String, String> SAMPLES = Map.of(
-            "username", "jdoe",
+            "username", "Jane Doe",
             "userEmail", "jdoe@example.com",
             "date", "2026-01-31 09:00 UTC",
             "documentId", "00000000-0000-4000-8000-000000000000",

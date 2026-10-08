@@ -76,7 +76,7 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
 
       <div className="divide-y divide-dashed divide-border">
         <Controller name="requiresWatermark" control={control} render={({ field }) => (
-          <Checkbox label="Requires Watermark — applied automatically on preview/download" checked={field.value} onCheckedChange={field.onChange} />
+          <Checkbox label="Requires Watermark — not enforced yet" hint="Recorded on the document type, but nothing applies it automatically. Watermarked copies are made on request, one document at a time, from the document's menu." checked={field.value} onCheckedChange={field.onChange} />
         )} />
         <Controller name="coeditingEnabled" control={control} render={({ field }) => (
           <Checkbox label="Co-editing Enabled — allows collaborative check-in/check-out" checked={field.value} onCheckedChange={field.onChange} />
@@ -149,7 +149,7 @@ export function UpdateDocumentTypeForm({ defaultValues, onSubmit }: EditFormProp
 
       <div className="divide-y divide-dashed divide-border">
         <Controller name="requiresWatermark" control={control} render={({ field }) => (
-          <Checkbox label="Requires Watermark — applied automatically on preview/download" checked={field.value} onCheckedChange={field.onChange} />
+          <Checkbox label="Requires Watermark — not enforced yet" hint="Recorded on the document type, but nothing applies it automatically. Watermarked copies are made on request, one document at a time, from the document's menu." checked={field.value} onCheckedChange={field.onChange} />
         )} />
         <Controller name="coeditingEnabled" control={control} render={({ field }) => (
           <Checkbox label="Co-editing Enabled — allows collaborative check-in/check-out" checked={field.value} onCheckedChange={field.onChange} />

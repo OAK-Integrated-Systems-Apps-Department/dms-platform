@@ -118,4 +118,10 @@ export const PermissionCodes = {
   RBR_RESTORE: "rbr.restore-deleted-documents",
   RBR_PURGE: "rbr.permanently-purge-documents",
   RBR_RETENTION: "rbr.manage-recycle-bin-retention",
+  // Watermarking (DW), seeded by V68. Asking for a watermarked COPY needs
+  // only DOCM_DOCUMENTS_VIEW - these two are about administering the
+  // tenant's templates. There is deliberately no separate "delete template"
+  // code: the backend gates delete on update as well.
+  DW_WATERMARK_TEMPLATE_CREATE: "dw.configure-watermark-policy.create-template",
+  DW_WATERMARK_TEMPLATE_UPDATE: "dw.configure-watermark-policy.update-template",
 } as const

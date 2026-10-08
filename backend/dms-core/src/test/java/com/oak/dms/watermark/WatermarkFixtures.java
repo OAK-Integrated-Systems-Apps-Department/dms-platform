@@ -71,6 +71,12 @@ abstract class WatermarkFixtures {
 
     protected static final UUID SYSTEM_CONFIDENTIAL = UUID.fromString("d0cc0000-0000-4000-8000-000000000001");
     protected static final String PDF_MIME = "application/pdf";
+    /**
+     * The display name every fixture user gets - deliberately different from
+     * their login username, so a test can tell which one {@code {username}}
+     * actually resolved to.
+     */
+    protected static final String DISPLAY_NAME = "Test Requester";
 
     @Autowired
     protected TenantRepository tenantRepository;
@@ -306,7 +312,7 @@ abstract class WatermarkFixtures {
                 .keycloakId(keycloakId)
                 .email(keycloakId + "@watermark-test.invalid")
                 .username("user-" + keycloakId.toString().substring(0, 8))
-                .firstName("Test").lastName("Requester").displayName("Test Requester")
+                .firstName("Test").lastName("Requester").displayName(DISPLAY_NAME)
                 .status(User.UserStatus.active)
                 .build());
 

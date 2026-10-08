@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Download,
+  Droplet,
   FileDown,
   FolderInput,
   FolderOpen,
@@ -31,6 +32,7 @@ import {
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
+import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
 import { FolderPath } from "@/components/documents/folder-path"
 import {
   ActionDialog,
@@ -57,6 +59,8 @@ import {
   type DocumentListItemDto,
 } from "@/lib/documents/api"
 import { requestExport } from "@/lib/export-jobs/api"
+import { watermarkSupport } from "@/lib/watermarks/supported"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import {
   createFolder,
   deleteFolder,
@@ -84,6 +88,7 @@ type Dialog =
   | { kind: "access"; target: AccessTarget; key: number }
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
+  | { kind: "watermark"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -118,11 +123,21 @@ function FolderView({ folderId }: { folderId: string | null }) {
     export: hasPermission(PermissionCodes.FIE_BULK_EXPORT_EXECUTE),
     versions: hasPermission(PermissionCodes.DVC_VERSIONS_VIEW),
     restoreVersion: hasPermission(PermissionCodes.DVC_VERSIONS_RESTORE),
+    viewDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
       PermissionCodes.DSC_FOLDER_ACCESS_ASSIGN
     ),
+  }
+
+  // One cached probe for the whole screen - every row's menu reads the
+  // same answer rather than asking per document.
+  const watermark = useWatermarkAvailability().data ?? {
+    present: false,
+    usable: false,
+    unavailableMessage: null,
+    templates: [],
   }
 
   const view = useBrowserView()
@@ -291,6 +306,21 @@ function FolderView({ folderId }: { folderId: string | null }) {
             key: Date.now(),
           }),
       })
+    // Watermarking needs only document-view: the copy it produces is of a
+    // document the caller can already read, and it never replaces the
+    // original. The row is shown disabled rather than hidden for a file
+    // type the renderer can't handle, so "why isn't this here?" has an
+    // answer; the whole action disappears only when the feature is off.
+    if (watermark.present && can.viewDocuments) {
+      const support = watermarkSupport(row)
+      actions.push({
+        label: "Add watermark",
+        icon: Droplet,
+        disabled: !support.supported || !watermark.usable,
+        hint: support.reason ?? watermark.unavailableMessage ?? undefined,
+        onSelect: () => setDialog({ kind: "watermark", row, key: Date.now() }),
+      })
+    }
     if (can.export)
       actions.push({
         label: "Export",
@@ -771,12 +801,32 @@ function FolderView({ folderId }: { folderId: string | null }) {
         />
       )}
 
+      {dialog?.kind === "watermark" && (
+        <WatermarkDialog
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          documentTitle={dialog.row.title}
+          templates={watermark.templates}
+          open
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      )}
+
       {preview && (
         <DocumentPreview
           key={preview.documentId}
           row={preview}
           onOpenChange={(open) => !open && setPreview(null)}
           onDownload={() => void download(preview)}
+          onWatermark={
+            watermark.present && can.viewDocuments
+              ? () => setDialog({ kind: "watermark", row: preview, key: Date.now() })
+              : undefined
+          }
+          watermarkHint={
+            watermarkSupport(preview).reason ?? watermark.unavailableMessage ?? undefined
+          }
+          watermarkDisabled={!watermarkSupport(preview).supported || !watermark.usable}
         />
       )}
 
