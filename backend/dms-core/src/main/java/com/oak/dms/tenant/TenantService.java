@@ -20,6 +20,14 @@ public interface TenantService {
 
     Page<TenantResponse> listTenants(Pageable pageable);
 
+    /** @param includeDeactivated deactivated (removed) organisations too */
+    default Page<TenantResponse> listTenants(Pageable pageable, boolean includeDeactivated) {
+        return listTenants(pageable);
+    }
+
+    /** Brings a deactivated organisation back - refused once its encryption keys were destroyed. */
+    TenantResponse reactivateTenant(UUID tenantId);
+
     TenantResponse updateTenant(UUID tenantId, UpdateTenantRequest request);
 
     void deactivateTenant(UUID tenantId);

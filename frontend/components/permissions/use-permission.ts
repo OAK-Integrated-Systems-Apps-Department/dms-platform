@@ -28,15 +28,19 @@ export function usePermission(permissionId: string): UsePermissionResult {
   const [loading, setLoading] = useState(!permission)
   const [notFound, setNotFound] = useState(false)
 
+  // Reset for a new id during render (not in the effect below, which only
+  // does the fetch) - loading only if the store doesn't already have it.
+  const [prevPermissionId, setPrevPermissionId] = useState(permissionId)
+  if (permissionId !== prevPermissionId) {
+    setPrevPermissionId(permissionId)
+    setLoading(!permission)
+    if (!permission) setNotFound(false)
+  }
+
   useEffect(() => {
-    if (permission) {
-      setLoading(false)
-      return
-    }
+    if (permission) return
 
     let cancelled = false
-    setLoading(true)
-    setNotFound(false)
 
     fetchPermission(permissionId).then((result) => {
       if (cancelled) return

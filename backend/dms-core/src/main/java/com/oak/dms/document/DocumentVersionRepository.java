@@ -10,7 +10,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, UUID> {
@@ -149,4 +151,145 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
             """,
             nativeQuery = true)
     Page<DocumentVersion> findReviewQueue(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /**
+     * The review queue as {@link #findReviewQueue}, restricted to documents the
+     * caller can actually see.
+     * <p>
+     * The access predicate is applied IN the query rather than by filtering the
+     * page afterwards. Filtering after paging would be the obvious shortcut and
+     * is wrong twice over: the page would come back short, and the total count
+     * would describe documents the caller can't see - which is itself a
+     * disclosure ("there are 14 flagged invoices you're not allowed to know
+     * about"). Same shape as {@code DocumentRepository.findVisible}: a document
+     * is visible when it follows its folder and that folder isn't hidden, or it
+     * is restricted and the caller is on its list.
+     * <p>
+     * {@code hidden} and {@code granted} must never be empty - see
+     * {@code DocumentServiceImpl#nonEmpty}.
+     */
+    @Query(value = """
+            SELECT v.* FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND (v.requires_review = true OR v.ocr_status = 'failed')
+              AND ((d.access_mode = 'inherit'
+                        AND (d.folder_id IS NULL OR d.folder_id NOT IN (:hidden)))
+                   OR (d.access_mode = 'restricted' AND d.document_id IN (:granted)))
+            ORDER BY v.created_at DESC
+            """,
+            countQuery = """
+            SELECT count(*) FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND (v.requires_review = true OR v.ocr_status = 'failed')
+              AND ((d.access_mode = 'inherit'
+                        AND (d.folder_id IS NULL OR d.folder_id NOT IN (:hidden)))
+                   OR (d.access_mode = 'restricted' AND d.document_id IN (:granted)))
+            """,
+            nativeQuery = true)
+    Page<DocumentVersion> findReviewQueueVisible(@Param("tenantId") UUID tenantId,
+                                                 @Param("hidden") Collection<UUID> hiddenFolderIds,
+                                                 @Param("granted") Collection<UUID> grantedDocumentIds,
+                                                 Pageable pageable);
+
+    /**
+     * "Saved reviews": latest versions a human has already settled - at least
+     * one {@code document_ocr_corrections} row exists for them.
+     * <p>
+     * Deliberately not "requires_review = false": a version that never needed
+     * review has nothing to show on this screen, and one still in the queue
+     * may already have some fields saved. The correction rows are the record
+     * that somebody actually made a decision.
+     */
+    @Query(value = """
+            SELECT v.* FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND EXISTS (SELECT 1 FROM document_ocr_corrections c
+                          WHERE c.version_id = v.version_id)
+              AND ((d.access_mode = 'inherit'
+                        AND (d.folder_id IS NULL OR d.folder_id NOT IN (:hidden)))
+                   OR (d.access_mode = 'restricted' AND d.document_id IN (:granted)))
+            ORDER BY v.created_at DESC
+            """,
+            countQuery = """
+            SELECT count(*) FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND EXISTS (SELECT 1 FROM document_ocr_corrections c
+                          WHERE c.version_id = v.version_id)
+              AND ((d.access_mode = 'inherit'
+                        AND (d.folder_id IS NULL OR d.folder_id NOT IN (:hidden)))
+                   OR (d.access_mode = 'restricted' AND d.document_id IN (:granted)))
+            """,
+            nativeQuery = true)
+    Page<DocumentVersion> findSavedReviewsVisible(@Param("tenantId") UUID tenantId,
+                                                  @Param("hidden") Collection<UUID> hiddenFolderIds,
+                                                  @Param("granted") Collection<UUID> grantedDocumentIds,
+                                                  Pageable pageable);
+
+    /** Saved reviews for a caller who sees everything - no access predicate to pay for. */
+    @Query(value = """
+            SELECT v.* FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND EXISTS (SELECT 1 FROM document_ocr_corrections c
+                          WHERE c.version_id = v.version_id)
+            ORDER BY v.created_at DESC
+            """,
+            countQuery = """
+            SELECT count(*) FROM document_versions v
+            JOIN documents d ON d.document_id = v.document_id
+                            AND d.latest_version_id = v.version_id
+            WHERE v.tenant_id = :tenantId
+              AND v.is_deleted = false
+              AND EXISTS (SELECT 1 FROM document_ocr_corrections c
+                          WHERE c.version_id = v.version_id)
+            """,
+            nativeQuery = true)
+    Page<DocumentVersion> findSavedReviews(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /**
+     * Versions whose OCR was requested but never queued - held back by the
+     * bulk-import batch cap or by per-tenant backpressure. The durable marker
+     * is the row itself: {@code ocr_status = 'pending'} with no live
+     * processing_jobs row. See {@code OcrBacklogSweeper}.
+     */
+    @Query(value = """
+            SELECT v.* FROM document_versions v
+            WHERE v.ocr_status = 'pending'
+              AND v.is_deleted = false
+              AND v.requested_fields <> '[]'::jsonb
+              AND NOT EXISTS (
+                  SELECT 1 FROM processing_jobs j
+                  WHERE j.reference_type = 'document_versions'
+                    AND j.reference_id = v.version_id
+                    AND j.job_type = 'ocr'
+                    AND j.status IN ('queued', 'processing')
+              )
+            ORDER BY v.created_at
+            """, nativeQuery = true)
+    List<DocumentVersion> findOcrHeldBack(Pageable pageable);
+    Optional<DocumentVersion> findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(
+            UUID versionId, UUID documentId, UUID tenantId);
+
+    Optional<DocumentVersion> findTopByDocumentIdOrderByVersionNumberDesc(UUID documentId);
+
+    /** A document's version history, newest first. */
+    java.util.List<DocumentVersion> findByDocumentIdAndTenantIdAndDeletedFalseOrderByVersionNumberDesc(UUID documentId,
+                                                                                                    UUID tenantId);
+
+    /** Every version, deleted or not - what a permanent delete destroys. */
+    java.util.List<DocumentVersion> findByDocumentIdAndTenantId(UUID documentId, UUID tenantId);
 }

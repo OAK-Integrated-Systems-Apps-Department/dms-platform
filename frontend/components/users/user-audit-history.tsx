@@ -62,6 +62,11 @@ function parseEntryDate(time: string): Date {
   return new Date(time.slice(0, 10))
 }
 
+/** Start of a "last N days" preset range, counted back from now. */
+function presetCutoff(days: number): Date {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+}
+
 /** Strips the `**bold**` markup `renderActivityText` renders, so a
  * keyword search still matches text inside an emphasized span. */
 function plainText(text: string): string {
@@ -118,7 +123,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
     const cutoff =
       dateRange === "all" || dateRange === "custom"
         ? null
-        : new Date(Date.now() - Number(dateRange) * 24 * 60 * 60 * 1000)
+        : presetCutoff(Number(dateRange))
     const fromDate =
       dateRange === "custom" && customFrom ? new Date(customFrom) : null
     const toDate =

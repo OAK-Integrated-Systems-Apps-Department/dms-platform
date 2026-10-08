@@ -1,0 +1,361 @@
+# Production stack for the single Ubuntu server (oak-app, 192.168.0.10).
+# See docs/deployment.md for the full procedure.
+#
+# Differences from infra/local/docker-compose.yml (which stays dev-only):
+#   - dms-core and frontend run PREBUILT images from GHCR, pinned to an
+#     immutable tag (the git commit SHA) via IMAGE_TAG - the server never
+#     builds anything.
+#   - Nothing listens on a public interface. The host's own nginx is the only
+#     public entry point (infra/production/nginx/dms.conf) and reaches the
+#     three browser-facing services through 127.0.0.1 port bindings.
+#     Postgres, Redis, RabbitMQ (AMQP) and SeaweedFS have no host ports at all.
+#   - Keycloak runs in production mode (`start`, not `start-dev`).
+#   - Every value comes from the server-side .env next to this file (Compose
+#     reads it automatically for ${...} substitution). That file is NEVER
+#     committed - start from .env.example. Secrets are passed to each service
+#     explicitly below, not via a blanket env_file, so each container only
+#     sees the secrets it actually needs.
+#
+# Relative paths below (../local/keycloak, ../keycloak) assume the repo
+# layout is preserved on the server - the deploy workflow uploads exactly
+# those files to $DEPLOY_PATH/infra/...
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: oakdms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: postgres
+      # Read only by init-multiple-dbs.sh, on the very first start.
+      DMS_CORE_DB_PASSWORD: ${DMS_CORE_DB_PASSWORD:?DMS_CORE_DB_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: oakdms-rabbitmq
+    # RabbitMQ names its data directory after the node's hostname - pin it
+    # so the rabbitmq_data volume is reused across container recreations.
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: dms
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+    ports:
+      # Management UI only, localhost only - reach it with an SSH tunnel.
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: oakdms-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Catch-all SMTP sink, kept because the current deployment relies on it
+  # (nothing else sends mail yet). Mail sent here is NOT delivered to anyone -
+  # point SMTP_* in .env at a real relay for real delivery; this container can
+  # then be left idle. UI is localhost-only (SSH tunnel).
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: oakdms-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8026:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/api/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    container_name: oakdms-keycloak
+    restart: unless-stopped
+    # Production mode. --import-realm only creates the realm if it does not
+    # exist yet (IGNORE_EXISTING); keycloak-bootstrap below re-applies the
+    # settings that must track this deployment (web client URLs, SMTP).
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      # Keycloak connects as the postgres superuser (keycloak_db is owned by
+      # it - see postgres/init-multiple-dbs.sh), so its password IS
+      # POSTGRES_PASSWORD. Deriving it here, instead of a separate
+      # KC_DB_PASSWORD that must be kept identical by hand, removes a way to
+      # break Keycloak with a typo. (Least-privilege follow-up: a dedicated
+      # keycloak DB user - see docs/deployment.md.)
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Only used the first time keycloak_db is initialised.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      # Plain HTTP behind nginx on the same host. Keycloak builds every
+      # browser-facing link and the token issuer ("iss") from KC_HOSTNAME,
+      # regardless of which host header a request arrived with - which is
+      # why dms-core can call it internally as keycloak:8080 yet still
+      # validate tokens against ${PUBLIC_URL}/realms/oak-dms.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: ${PUBLIC_URL:?PUBLIC_URL is required}
+      KC_HOSTNAME_STRICT: "false"
+      # nginx does NOT proxy /admin/, so the admin console is only reachable
+      # through an SSH tunnel to the localhost port below.
+      KC_HOSTNAME_ADMIN: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+      # Substituted into oak-dms-realm.json on first import.
+      OAK_DMS_WEB_URL: ${PUBLIC_URL}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ../local/keycloak/oak-dms-realm.json:/opt/keycloak/data/import/oak-dms-realm.json:ro
+    healthcheck:
+      # The image has no curl/wget; bash's /dev/tcp against the management
+      # port's readiness endpoint.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": *"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot job, identical to the local one (same script): grants the
+  # dms-core-admin service account its roles and re-applies SMTP settings and
+  # the web client's redirect URIs / web origins on every deploy.
+  keycloak-bootstrap:
+    image: alpine:3.22
+    container_name: oakdms-keycloak-bootstrap
+    entrypoint: /bin/sh
+    command: ["/bootstrap/bootstrap.sh"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_BOOTSTRAP_ADMIN_USER: admin
+      KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: oak-dms
+      KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      KEYCLOAK_WEB_CLIENT_ID: oak-dms-web
+      KEYCLOAK_WEB_CLIENT_URL: ${PUBLIC_URL}
+      KEYCLOAK_SMTP_HOST: ${SMTP_HOST:-mailpit}
+      KEYCLOAK_SMTP_PORT: ${SMTP_PORT:-1025}
+      KEYCLOAK_SMTP_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
+      KEYCLOAK_SMTP_FROM_DISPLAY_NAME: ${SMTP_FROM_DISPLAY_NAME:-Oak DMS}
+      KEYCLOAK_SMTP_AUTH: ${SMTP_AUTH:-false}
+      KEYCLOAK_SMTP_USER: ${SMTP_USERNAME:-}
+      KEYCLOAK_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_SSL: ${SMTP_SSL:-false}
+      KEYCLOAK_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+    volumes:
+      - ../keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # Optional S3-compatible store (see docs/storage-architecture.md). dms-core
+  # defaults to STORAGE_PROVIDER=FILE_SYSTEM and only talks to this if a
+  # StorageLocation points at it. Internal network only.
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.97
+    container_name: oakdms-seaweedfs
+    restart: unless-stopped
+    environment:
+      SEAWEEDFS_S3_ACCESS_KEY: ${SEAWEEDFS_S3_ACCESS_KEY:?SEAWEEDFS_S3_ACCESS_KEY is required}
+      SEAWEEDFS_S3_SECRET_KEY: ${SEAWEEDFS_S3_SECRET_KEY:?SEAWEEDFS_S3_SECRET_KEY is required}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cat > /data/s3_config.json <<CONFIG
+        {
+          "identities": [
+            {
+              "name": "dms",
+              "credentials": [
+                {"accessKey": "$$SEAWEEDFS_S3_ACCESS_KEY", "secretKey": "$$SEAWEEDFS_S3_SECRET_KEY"}
+              ],
+              "actions": ["Read", "Write", "List", "Tagging", "Admin"]
+            }
+          ]
+        }
+        CONFIG
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/data/s3_config.json
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      # 127.0.0.1, not localhost - see the same check in infra/local.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8333"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Office previews: converts Word/PowerPoint/OpenDocument/RTF/Visio files to
+  # PDF (LibreOffice inside Gotenberg) so they can be shown in the browser -
+  # see dms-core's DocumentRenditionService. Internal only: no ports, and the
+  # Chromium routes (which fetch URLs) are switched off; only dms-core calls it.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oakdms-gotenberg
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-disable-routes=true
+      - --api-timeout=90s
+      - --libreoffice-auto-start=true
+      - --log-level=warn
+    # LibreOffice can use a lot of memory on a large or malformed file - cap it
+    # so a bad upload can't starve the rest of the server. A conversion that
+    # hits the limit fails (the preview says so); the container restarts.
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Only on the internal "previews" network: LibreOffice can follow links
+    # embedded in a document (remote images, OLE links), so the converter
+    # must not reach the internet or anything else on the server.
+    networks:
+      - previews
+
+  dms-core:
+    image: ${DMS_CORE_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-core}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
+    container_name: oakdms-core
+    restart: unless-stopped
+    # default: every other service; previews: the Office converter (Gotenberg) only.
+    networks:
+      - default
+      - previews
+    # Optional extra variables that can't be listed as fixed keys here, e.g.
+    # the per-StorageLocation STORAGE_CRED_<REF>_* pairs or STORAGE_PROVIDER /
+    # S3_* / AZURE_STORAGE_* - see .env.example at the repo root for names.
+    env_file:
+      - path: ./dms-core.env
+        required: false
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/dms_core_db
+      DB_USERNAME: dms_core_user
+      DB_PASSWORD: ${DMS_CORE_DB_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      REDIS_HOST: redis
+      # Office files are converted to PDF for the preview (DocumentRenditionService).
+      PREVIEW_CONVERTER_URL: http://gotenberg:3000
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: oak-dms
+      KEYCLOAK_ISSUER_URI: ${PUBLIC_URL}/realms/oak-dms
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
+      KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+      AUDIT_CORRELATION_SECRET: ${AUDIT_CORRELATION_SECRET:?AUDIT_CORRELATION_SECRET is required}
+      IMPERSONATION_SECRET: ${IMPERSONATION_SECRET:?IMPERSONATION_SECRET is required}
+      MAIL_HOST: ${SMTP_HOST:-mailpit}
+      MAIL_PORT: ${SMTP_PORT:-1025}
+      MAIL_USERNAME: ${SMTP_USERNAME:-}
+      MAIL_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_SMTP_AUTH: ${SMTP_AUTH:-false}
+      MAIL_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      PASSWORD_RESET_MAIL_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
+      # Browser, frontend and API share one origin through nginx, so CORS is
+      # never actually exercised - but keep the allow-list exact anyway.
+      FRONTEND_BASE_URL: ${PUBLIC_URL}
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_URL}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      S3_ENDPOINT: http://seaweedfs:8333
+      # Encryption at rest (com.oak.dms.encryption, Module DE) - data keys wrapped
+      # by OpenBao Transit; the app refuses to start with anything less.
+      # OFF until OpenBao is provisioned for it - see the "Encryption at rest"
+      # runbook in docs/storage-architecture.md (Transit key + token policy,
+      # ENCRYPTION_OPENBAO_TOKEN in the secret store and secret-keys.txt, ENCRYPTION_OPENBAO_ADDR
+      # reachable from this container). Then set ENCRYPTION_ENABLED=true in
+      # .env and run "Encrypt existing documents" on the key management screen.
+      ENCRYPTION_ENABLED: ${ENCRYPTION_ENABLED:-false}
+      ENCRYPTION_PROVIDER: openbao
+      ENCRYPTION_REQUIRE_MANAGED_KEYS: "true"
+      # Every unwrap must be logged by OpenBao's audit device (DE-NFR-006).
+      ENCRYPTION_REQUIRE_AUDIT_DEVICE: "true"
+      ENCRYPTION_OPENBAO_ADDR: ${ENCRYPTION_OPENBAO_ADDR:-}
+      # AppRole: dms-core signs in, renews its token and signs in again itself.
+      ENCRYPTION_OPENBAO_AUTH: approle
+      ENCRYPTION_OPENBAO_ROLE_ID: ${ENCRYPTION_OPENBAO_ROLE_ID:-}
+      ENCRYPTION_OPENBAO_SECRET_ID: ${ENCRYPTION_OPENBAO_SECRET_ID:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - documents_data:/data
+    # Health: the image's own HEALTHCHECK (backend/Dockerfile, /actuator/health).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak-bootstrap:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-frontend}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
+    container_name: oakdms-frontend
+    restart: unless-stopped
+    # The API URL is baked into this image at build time as same-origin
+    # "/api" (frontend/Dockerfile) - nothing host-specific to set here.
+    ports:
+      - "127.0.0.1:3000:3000"
+    # Health: the image's own HEALTHCHECK (frontend/Dockerfile).
+    depends_on:
+      - dms-core
+
+networks:
+  # internal: true - no gateway out. Only dms-core and the converter are on it.
+  previews:
+    internal: true
+
+volumes:
+  # Same volume keys as infra/local, so a server that was started from the
+  # local compose file keeps its data when COMPOSE_PROJECT_NAME matches -
+  # see docs/deployment.md "Existing data".
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  seaweedfs_data:
+  documents_data:

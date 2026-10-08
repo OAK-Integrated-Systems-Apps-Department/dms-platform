@@ -13,6 +13,10 @@ public record TenantResponse(
         String subscriptionTier,
         String status,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        /** Deactivated (removed) - only its keys can be destroyed, or it can be reactivated. */
+        boolean deactivated,
+        OffsetDateTime deactivatedAt,
+        OffsetDateTime keysShreddedAt
 ) {
 }

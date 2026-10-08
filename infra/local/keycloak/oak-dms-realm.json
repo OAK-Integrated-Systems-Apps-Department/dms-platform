@@ -50,7 +50,7 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "authorizationServicesEnabled": false,
-      "secret": "dms-core-admin-secret",
+      "secret": "${KEYCLOAK_ADMIN_CLIENT_SECRET:dms-core-admin-secret}",
       "attributes": {
         "use.refresh.tokens": "false"
       }
@@ -70,11 +70,11 @@
       "serviceAccountsEnabled": false,
 
       "redirectUris": [
-        "http://localhost:3000/*"
+        "${OAK_DMS_WEB_URL:http://localhost:3000}/*"
       ],
 
       "webOrigins": [
-        "http://localhost:3000"
+        "${OAK_DMS_WEB_URL:http://localhost:3000}"
       ],
 
       "attributes": {

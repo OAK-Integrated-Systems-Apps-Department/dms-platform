@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { AlertTriangle } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -38,16 +38,16 @@ interface RoleFormProps {
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
-  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
+  const { groups: permissionGroups, loading: catalogLoading } =
+    usePermissionCatalog()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
     register,
     handleSubmit,
     control,
-    watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<RoleFormValues>({
     resolver: zodResolver(roleFormSchema),
     defaultValues: {
@@ -56,9 +56,10 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
       status: role?.status ?? "Active",
       permissions: role?.permissions ?? [],
     },
+    mode: "onChange",
   })
 
-  const selectedPermissions = watch("permissions")
+  const selectedPermissions = useWatch({ control, name: "permissions" })
 
   function togglePermission(id: string, checked: boolean) {
     setValue(
@@ -212,7 +213,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || isSystemRole}
+          disabled={isSubmitting || isSystemRole || !isValid}
           className={cn(
             "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"

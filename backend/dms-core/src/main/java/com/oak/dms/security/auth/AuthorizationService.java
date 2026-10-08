@@ -3,9 +3,10 @@ package com.oak.dms.security.auth;
 import com.oak.dms.common.exception.KeycloakIntegrationException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import lombok.extern.slf4j.Slf4j;
-import com.oak.dms.security.rbac.Permission;
-import com.oak.dms.security.rbac.PermissionRepository;
-import com.oak.dms.security.rbac.RolePermissionRepository;
+import com.oak.dms.security.rbac.entity.Permission;
+import com.oak.dms.security.rbac.repository.PermissionRepository;
+import com.oak.dms.security.rbac.repository.RolePermissionRepository;
+import com.oak.dms.security.rbac.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
@@ -13,6 +14,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -23,10 +25,10 @@ import java.util.stream.Collectors;
  * role_permissions / user_roles tables, complementing the coarse
  * ROLE_* checks derived straight from the Keycloak token.
  *
- * Usage in controllers - reference permission codes via {@link com.oak.dms.security.rbac.PermissionCodes}
+ * Usage in controllers - reference permission codes via {@link com.oak.dms.security.rbac.catalog.PermissionCodes}
  * rather than a raw string literal (Spring EL has no notion of a Java
  * import, so this needs a fully-qualified {@code T(...)} type reference):
- *   {@code @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.PermissionCodes).OTUA_USERS_UPDATE)")}
+ *   {@code @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE)")}
  */
 @Slf4j
 @Component("authz")
@@ -35,6 +37,7 @@ public class AuthorizationService {
 
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
+    private final UserRoleRepository userRoleRepository;
     private final KeycloakUserService keycloakUserService;
 
     public boolean hasPermission(String permissionCode) {
@@ -70,7 +73,9 @@ public class AuthorizationService {
      * TENANT_ADMIN despite the role being correctly granted in Keycloak).
      */
     private boolean hasFullAccess() {
-        if (TenantContext.getImpersonatorIdOrNull() != null) {
+        // A background job has no token either: it acts as the user who started it, whose realm
+        // roles are looked up the same way - live, so a job never runs with access they've lost.
+        if (TenantContext.getImpersonatorIdOrNull() != null || TenantContext.isBackgroundJob()) {
             // Deliberately NOT the real admin's own JWT authorities here -
             // those never change for the duration of an impersonation
             // session and would let a TENANT_ADMIN's own full access leak
@@ -135,8 +140,14 @@ public class AuthorizationService {
         try {
             roles = keycloakUserService.getPlatformRealmRoles(keycloakId);
         } catch (KeycloakIntegrationException e) {
-            log.warn("Could not resolve impersonation target {}'s platform roles from Keycloak - " +
-                    "treating as no elevated role for this request", keycloakId, e);
+            if (TenantContext.isBackgroundJob()) {
+                // Not "no elevated role" for a job: an admin's import would fail its rows for good, or
+                // their export quietly leave things out, over a passing outage. The job fails and is
+                // retried instead (an import batch is redelivered; an export can be run again).
+                throw new IllegalStateException("Could not check the job user's roles in Keycloak - try again", e);
+            }
+            log.warn("Could not resolve impersonation target {}'s platform roles from Keycloak - "
+                    + "treating as no elevated role for this request", keycloakId, e);
             return List.of();
         }
         TenantContext.cacheTargetPlatformRoles(roles);
@@ -205,6 +216,22 @@ public class AuthorizationService {
     private static final String PLATFORM_ADMIN = "PLATFORM_ADMIN";
     private static final String TENANT_ADMIN = "TENANT_ADMIN";
     private static final Set<String> PLATFORM_ROLE_NAMES = Set.of(PLATFORM_ADMIN, TENANT_ADMIN, "MEMBER");
+
+    /**
+     * Every role name the caller holds, for display (My Profile): the fixed
+     * platform roles first (PLATFORM_ADMIN / TENANT_ADMIN / MEMBER, from
+     * {@link #myPlatformRoles} - so impersonation shows the target's), then
+     * the tenant-defined roles that currently apply, by name. Display only -
+     * never use this for access decisions; permissions come from
+     * {@link #myEffectivePermissionCodes}. Like that method, requires a
+     * bound TenantContext (it's only called for {@code /me}, after the
+     * caller's user has been resolved).
+     */
+    public List<String> myRoleNames() {
+        List<String> names = new ArrayList<>(myPlatformRoles());
+        names.addAll(userRoleRepository.findActiveRoleNames(TenantContext.getUserId(), TenantContext.getTenantId()));
+        return List.copyOf(names);
+    }
 
     /**
      * The caller's own resolved permission set - what {@link #hasPermission}

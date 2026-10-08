@@ -15,8 +15,10 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -37,6 +39,27 @@ public class KeycloakUserService {
 
     private RealmResource realm() {
         return keycloakAdminClient.realm(properties.getRealm());
+    }
+
+    /**
+     * Resolves whatever a person typed as their login id - username or
+     * email - to their Keycloak account, the same way Keycloak's own login
+     * does ({@code loginWithEmailAllowed: true}). Exact username match
+     * first; only if that finds nothing and the value looks like an email,
+     * an exact email match. {@code users().search(value, true)} alone only
+     * ever matches usernames, which silently broke every "username or
+     * email" lookup for people whose username isn't their email.
+     * <p>
+     * Deliberately doesn't catch anything: every caller already treats a
+     * lookup failure in its own way (fail open, no-op, or log-and-skip).
+     */
+    public Optional<UserRepresentation> findByUsernameOrEmail(String usernameOrEmail) {
+        UsersResource users = realm().users();
+        List<UserRepresentation> matches = users.searchByUsername(usernameOrEmail, true);
+        if (matches.isEmpty() && usernameOrEmail.contains("@")) {
+            matches = users.searchByEmail(usernameOrEmail, true);
+        }
+        return matches.stream().findFirst();
     }
 
     /**
@@ -162,7 +185,7 @@ public class KeycloakUserService {
      * The Keycloak-side name is the DMS role name verbatim (no tenant
      * prefix) so what an admin sees in the Keycloak console matches what's
      * in the DMS UI/DB exactly. This relies on
-     * {@code com.oak.dms.security.rbac.RoleServiceImpl} enforcing a
+     * {@code com.oak.dms.security.rbac.service.impl.RoleServiceImpl} enforcing a
      * realm-wide (cross-tenant) uniqueness check
      * ({@code RoleRepository#existsByRoleNameAndDeletedFalse}) before this
      * is ever called, since Keycloak realm roles are unique per realm and
@@ -308,6 +331,33 @@ public class KeycloakUserService {
         } catch (Exception e) {
             throw new KeycloakIntegrationException(
                     "Failed to list platform realm roles for " + keycloakId, e);
+        }
+    }
+
+    /**
+     * Keycloak ids of every user directly assigned the realm role
+     * {@code roleName} (e.g. {@code TENANT_ADMIN}), across all tenants -
+     * the caller narrows to one tenant by matching {@code users.keycloak_id}.
+     * Paged through Keycloak's role-members API. Used to include tenant
+     * admins (who hold every permission implicitly, see
+     * {@code AuthorizationService#hasFullAccess}) as quarantine
+     * notification recipients.
+     */
+    public List<UUID> listRealmRoleMemberIds(String roleName) {
+        final int pageSize = 100;
+        try {
+            List<UUID> ids = new ArrayList<>();
+            for (int first = 0; ; first += pageSize) {
+                List<UserRepresentation> page = realm().roles().get(roleName).getUserMembers(first, pageSize);
+                page.forEach(user -> ids.add(UUID.fromString(user.getId())));
+                if (page.size() < pageSize) {
+                    return ids;
+                }
+            }
+        } catch (WebApplicationException e) {
+            throw keycloakFailure("list members of realm role " + roleName, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException("Failed to list members of realm role " + roleName, e);
         }
     }
 

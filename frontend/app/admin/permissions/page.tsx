@@ -35,9 +35,14 @@ export default function PermissionListPage() {
   const permissions = usePermissionsStore((state) => state.permissions)
   const loading = usePermissionsStore((state) => state.loading)
   const fetchError = usePermissionsStore((state) => state.error)
-  const fetchPermissions = usePermissionsStore((state) => state.fetchPermissions)
+  const fetchPermissions = usePermissionsStore(
+    (state) => state.fetchPermissions
+  )
   const { hasAnyPermission } = usePermissions()
-  const canView = hasAnyPermission(PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE)
+  const canView = hasAnyPermission(
+    PermissionCodes.LEGACY_ROLE_VIEW,
+    PermissionCodes.LEGACY_ROLE_MANAGE
+  )
 
   const [query, setQuery] = useState("")
   // Empty array = "all selected" / no filter applied
@@ -79,18 +84,19 @@ export default function PermissionListPage() {
   // If the Module filter changes to a set that no longer contains one of
   // the currently selected actions, that action selection is now invalid —
   // clear it back to "All actions" rather than silently keeping a stale
-  // filter the user can no longer see or account for. Uses the functional
-  // form of setActionFilters so this doesn't need actionFilters itself as
-  // a dependency (which would otherwise also fire this effect on every
-  // action selection, not just module changes).
-  useEffect(() => {
-    setActionFilters((current) => {
-      if (current.length === 0) return current
-      const stillValid = current.every((code) => actionOptionsForModuleScope.includes(code))
-      return stillValid ? current : []
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionOptionsForModuleScope])
+  // filter the user can no longer see or account for. Adjusted during
+  // render, only when the scope itself changes (compared against the last
+  // one seen), not on every action selection.
+  const [prevActionScope, setPrevActionScope] = useState(
+    actionOptionsForModuleScope
+  )
+  if (actionOptionsForModuleScope !== prevActionScope) {
+    setPrevActionScope(actionOptionsForModuleScope)
+    const stillValid = actionFilters.every((code) =>
+      actionOptionsForModuleScope.includes(code)
+    )
+    if (!stillValid) setActionFilters([])
+  }
 
   // Friendly display name for a module/action code, e.g. "ASM" -> "Access
   // and Security Management" — built from whatever's already on each
@@ -117,14 +123,18 @@ export default function PermissionListPage() {
   const sortedModuleOptions = useMemo(
     () =>
       [...moduleOptions].sort((a, b) =>
-        (moduleNameByCode.get(a) ?? a).localeCompare(moduleNameByCode.get(b) ?? b)
+        (moduleNameByCode.get(a) ?? a).localeCompare(
+          moduleNameByCode.get(b) ?? b
+        )
       ),
     [moduleOptions, moduleNameByCode]
   )
   const sortedActionOptions = useMemo(
     () =>
       [...actionOptionsForModuleScope].sort((a, b) =>
-        (actionNameByCode.get(a) ?? a).localeCompare(actionNameByCode.get(b) ?? b)
+        (actionNameByCode.get(a) ?? a).localeCompare(
+          actionNameByCode.get(b) ?? b
+        )
       ),
     [actionOptionsForModuleScope, actionNameByCode]
   )
@@ -148,7 +158,10 @@ export default function PermissionListPage() {
     })
   }, [permissions, query, moduleFilters, actionFilters])
 
-  const totalPages = Math.max(1, Math.ceil(filteredPermissions.length / pageSize))
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredPermissions.length / pageSize)
+  )
   const currentPage = Math.min(page, totalPages)
   const pagePermissions = filteredPermissions.slice(
     (currentPage - 1) * pageSize,
@@ -185,76 +198,85 @@ export default function PermissionListPage() {
           Permission Catalog
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          The platform-wide catalog of grantable permissions, each mapped
-          to a module and action. These are managed by the platform team;
-          when building a role, you&apos;ll choose which of these
-          permissions to grant it.
+          The platform-wide catalog of grantable permissions, each mapped to a
+          module and action. These are managed by the platform team; when
+          building a role, you&apos;ll choose which of these permissions to
+          grant it.
         </p>
       </div>
 
-      <PermissionGate permission={[PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE]}>
-      <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        <SearchInput
-          className="min-w-[220px] flex-1"
+      <PermissionGate
+        permission={[
+          PermissionCodes.LEGACY_ROLE_VIEW,
+          PermissionCodes.LEGACY_ROLE_MANAGE,
+        ]}
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <SearchInput
+            className="min-w-[220px] flex-1"
             value={query}
-          onChange={(value) => handleFilterChange(() => setQuery(value))}
+            onChange={(value) => handleFilterChange(() => setQuery(value))}
             placeholder="Search permissions…"
           />
 
-        <CheckboxFilter
-          label="Module"
-          options={sortedModuleOptions}
-          selected={moduleFilters}
-          onChange={(next) => handleFilterChange(() => setModuleFilters(next))}
-          getLabel={(code) => moduleNameByCode.get(code) ?? code}
-        />
-
-        <CheckboxFilter
-          label="Action"
-          options={sortedActionOptions}
-          selected={actionFilters}
-          onChange={(next) => handleFilterChange(() => setActionFilters(next))}
-          getLabel={(code) => actionNameByCode.get(code) ?? code}
-        />
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={handleClearAllFilters}
-            className="flex h-[38px] items-center gap-1.5 rounded-btn border border-border bg-muted px-3 text-[13.5px] font-semibold text-muted-foreground hover:border-[var(--border-strong)] hover:bg-card hover:text-foreground"
-          >
-            <X size={14} />
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {loading && permissions.length === 0 ? (
-        <LoadingState message="Loading permissions…" />
-      ) : fetchError && permissions.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
-          <AlertTriangle size={20} className="text-[var(--rust)]" />
-          <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
-          <button
-            type="button"
-            onClick={() => fetchPermissions()}
-            className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
-          >
-            Try again
-          </button>
-        </div>
-      ) : (
-        <>
-          <PermissionsTable permissions={pagePermissions} />
-          <TablePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            pageSize={pageSize}
-            onPageSizeChange={handlePageSizeChange}
+          <CheckboxFilter
+            label="Module"
+            options={sortedModuleOptions}
+            selected={moduleFilters}
+            onChange={(next) =>
+              handleFilterChange(() => setModuleFilters(next))
+            }
+            getLabel={(code) => moduleNameByCode.get(code) ?? code}
           />
-        </>
-      )}
+
+          <CheckboxFilter
+            label="Action"
+            options={sortedActionOptions}
+            selected={actionFilters}
+            onChange={(next) =>
+              handleFilterChange(() => setActionFilters(next))
+            }
+            getLabel={(code) => actionNameByCode.get(code) ?? code}
+          />
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="flex h-[38px] items-center gap-1.5 rounded-btn border border-border bg-muted px-3 text-[13.5px] font-semibold text-muted-foreground hover:border-[var(--border-strong)] hover:bg-card hover:text-foreground"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {loading && permissions.length === 0 ? (
+          <LoadingState message="Loading permissions…" />
+        ) : fetchError && permissions.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center shadow-[var(--ledger-shadow)]">
+            <AlertTriangle size={20} className="text-[var(--rust)]" />
+            <p className="text-[13.5px] text-muted-foreground">{fetchError}</p>
+            <button
+              type="button"
+              onClick={() => fetchPermissions()}
+              className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <>
+            <PermissionsTable permissions={pagePermissions} />
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          </>
+        )}
       </PermissionGate>
     </DashboardShell>
   )

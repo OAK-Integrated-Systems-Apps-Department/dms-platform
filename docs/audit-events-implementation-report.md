@@ -16,8 +16,9 @@ coverage exists.
 ### 1. Failed-login attribution (fallback, automatic)
 
 `AuditService#resolveActor` falls back to the SYSTEM placeholder actor
-(`SystemActor.SYSTEM_USER_ID`) whenever an audit event is logged with no
-bound `TenantContext` identity. In practice this fires for `LOGIN_FAILURE`
+(`SystemActor.SYSTEM_USER_ID`, a reserved UUID with no `users` row behind
+it) whenever an audit event is logged with no bound `TenantContext`
+identity. In practice this fires for `LOGIN_FAILURE`
 only — a failed login attempt can't be attributed to a real user without
 risking username enumeration (see `AuthService#login`'s own doc comment).
 This is automatic: no call site opts into it explicitly, it's just what

@@ -2,10 +2,16 @@ package com.oak.dms.document;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.document.dto.DocumentListItem;
+import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
-import com.oak.dms.document.dto.DocumentVersionResponse;
+import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrFieldResultResponse;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
@@ -15,232 +21,401 @@ import com.oak.dms.document.dto.RubberBandRequest;
 import com.oak.dms.document.dto.RubberBandResponse;
 import com.oak.dms.document.dto.SaveReviewRequest;
 import com.oak.dms.document.dto.SaveReviewResponse;
-import com.oak.dms.metadata.DocumentType;
-import com.oak.dms.metadata.DocumentTypeFieldService;
-import com.oak.dms.metadata.DocumentTypeRepository;
-import com.oak.dms.metadata.MetadataValidationService;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
+import com.oak.dms.folder.FolderAccessLevel;
+import com.oak.dms.folder.FolderAccessMode;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.service.DocumentTypeFieldService;
+import com.oak.dms.metadata.service.MetadataValidationService;
+import com.oak.dms.ocrworker.OcrEnqueueService;
+import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.OcrErrorMessages;
 import com.oak.dms.ocrworker.OcrProperties;
 import com.oak.dms.ocrworker.OcrWorkerClient;
-import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
-import com.oak.dms.outbox.OutboxEventPublisher;
+import com.oak.dms.scanning.dto.IngestionRequest;
+import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.tika.Tika;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.text.Normalizer;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.time.OffsetDateTime;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
+/**
+ * See {@link DocumentService}. Only ever touches storage through
+ * {@code ObjectStorageServiceFactory} - no AWS SDK, SeaweedFS-specific, or
+ * {@code java.nio.file} type appears anywhere in this class.
+ * <p>
+ * Never creates a {@link DocumentVersion} itself: uploads go through
+ * {@link IngestionGate}, and only {@code DocumentVersionPromoter} creates
+ * versions, for scanned-clean files.
+ *
+ * <h2>OCR (merge note)</h2>
+ * The OCR branch's own {@code uploadDocument(MultipartFile, ...)} is gone.
+ * It wrote the object itself, created the version itself and started OCR in
+ * the same call - all three of which are now somebody else's job, and the
+ * first two were only ever safe because that branch had no scan gate. What
+ * survived from it is the field-selection validation, which still runs here,
+ * and the job/event insert, which moved to {@link OcrEnqueueService} so that
+ * the promoter can call it at the one moment a clean version exists.
+ * <p>
+ * Everything else the OCR branch added - the status poll, the review queue,
+ * the review screen, the rubber-band read and the save - is unchanged in
+ * substance. Only its authorization moved: each is now behind an {@code os.*}
+ * permission AND document-level access (see {@code DocumentController}).
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class DocumentServiceImpl implements DocumentService {
 
-    // Tika's facade is thread-safe and meant to be reused across calls
-    // (its own javadoc) -- not a Spring bean since it needs no
-    // configuration/DI, just detection.
-    private static final Tika TIKA = new Tika();
-
-    // Path separators and control characters only -- the MinIO object key
-    // is built by joining this against tenantId/documentId/versionId with
-    // "/" ourselves (see below); a filename containing one could otherwise
-    // inject extra path segments into the key. NFC-normalized afterward so
-    // visually-identical Unicode filenames always produce the same key.
-    private static final Pattern UNSAFE_STORAGE_KEY_CHARS = Pattern.compile("[/\\\\\\p{Cntrl}]");
-
-    /** Matches ocr-worker's own routing key constant (config.py's ROUTING_KEY_OCR_REQUESTED) exactly. */
     private static final String EVENT_TYPE_OCR_REQUESTED = "document.version.ocr.requested";
     private static final String AGGREGATE_TYPE_DOCUMENT_VERSION = "document_version";
 
-    private final DocumentTypeRepository documentTypeRepository;
-    private final DocumentTypeFieldService documentTypeFieldService;
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
+    private final DocumentMapper documentMapper;
+    private final IngestionGate ingestionGate;
+    private final AuditService auditService;
+    private final FolderService folderService;
+    private final FolderAccessService folderAccessService;
+    private final DocumentAccessService documentAccessService;
+    private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
+    private final DocumentTypeRepository documentTypeRepository;
+    private final VersionContent versionContent;
+
+    // OCR. Note the absence of an ObjectStorageService: nothing on the OCR
+    // path reads or writes an object directly any more - the worker asks
+    // dms-core for bytes over the internal endpoint, and dms-core serves them
+    // through the encrypting storage layer like every other read.
+    private final DocumentTypeFieldService documentTypeFieldService;
     private final DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
-    private final ObjectStorageService objectStorageService;
-    private final ProcessingJobRepository processingJobRepository;
     private final DocumentOcrLineItemRepository documentOcrLineItemRepository;
     private final DocumentOcrCorrectionRepository documentOcrCorrectionRepository;
+    private final ProcessingJobRepository processingJobRepository;
     private final OcrWorkerClient ocrWorkerClient;
-    private final OutboxEventPublisher outboxEventPublisher;
+    private final OcrEnqueueService ocrEnqueueService;
     private final DocumentMetadataService documentMetadataService;
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
-
-    /** See {@code dms.ocr.poll-reapply-enabled}. Phase 2 moved the
-     * {@code dms.ocr.*} keys into {@link com.oak.dms.ocrworker.OcrProperties}
-     * once the reconciler added four more of them -- a single scalar was
-     * fine as a {@code @Value}, five are not.
-     */
     private final OcrProperties ocrProperties;
+
+    /**
+     * Not transactional: the scan gate commits each of its own steps (staging,
+     * scanning and promotion must not share one long transaction - and a
+     * cloud verdict may arrive long after this returns). The document and its
+     * first version are created by {@link DocumentVersionPromoter} only once
+     * the file is clean; DOCUMENT_UPLOADED is audited there, at promotion.
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId) {
+        return uploadDocument(documentTypeId, title, originalFilename, contentLength, content, folderId, false);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId,
+                                                  boolean refuseDuplicates) {
+        return uploadDocument(documentTypeId, title, originalFilename, contentLength, content, folderId,
+                refuseDuplicates, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId,
+                                                  boolean refuseDuplicates, List<String> requestedFields) {
+        if (folderId != null) {
+            // 404/403 now, rather than a document landing nowhere (or somewhere it mustn't) later
+            folderService.requireEditable(folderId);
+        }
+        IngestionRequest request =
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
+        request = withOcr(request, documentTypeId, requestedFields, false);
+        return ingestionGate.submit(refuseDuplicates ? request.refusingDuplicates() : request);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                         long contentLength, InputStream content, UUID folderId) {
+        return uploadDocumentFromJob(documentTypeId, title, originalFilename, contentLength, content, folderId, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                         long contentLength, InputStream content, UUID folderId,
+                                                         List<String> requestedFields) {
+        if (folderId != null) {
+            folderService.requireLive(folderId);
+        }
+        IngestionRequest request =
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
+        return ingestionGate.submit(withOcr(request, documentTypeId, requestedFields, true));
+    }
+
+    /**
+     * Attaches the OCR field selection to an ingestion request, after checking
+     * it against the document type's schema.
+     * <p>
+     * Validated HERE, at request time, rather than at promotion: a bad field
+     * list is the caller's mistake and they are still on the phone, so they get
+     * a 400 now instead of a version that silently never gets OCR'd. The gate
+     * carries the list through to the promoter, which is where OCR is actually
+     * started - only once the file is clean.
+     *
+     * @param fromJob a bulk-import batch, which is validated the same way but
+     *                queued at low priority so interactive scans aren't starved
+     */
+    private IngestionRequest withOcr(IngestionRequest request, UUID documentTypeId,
+                                     List<String> requestedFields, boolean fromJob) {
+        if (!ocrProperties.isEnabled() || requestedFields == null || requestedFields.isEmpty()) {
+            return request;
+        }
+        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(documentTypeId);
+        List<String> requested = new ArrayList<>(new LinkedHashSet<>(requestedFields));
+        validateRequestedFields(schema, requested, true);
+        return request.withOcr(requested, fromJob);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentListItem> listDocuments(UUID folderId, boolean allFolders, String query, Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        String q = query == null || query.isBlank() ? null : query.strip();
+        DocumentAccessView access = documentAccessService.forCaller();
+        if (folderId != null && !allFolders) {
+            folderAccessService.require(access.folders(), folderId, FolderAccessLevel.view);
+        }
+        Page<Document> page;
+        if (!access.seesEverything()) {
+            // Folder access (V53) and document access (V54) both apply.
+            String title = q == null ? "" : q;
+            page = allFolders
+                    ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
+                    access.grantedIds(), pageable)
+                    : folderId != null
+                    ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(), pageable)
+                    : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(), pageable);
+        } else if (allFolders) {
+            page = q == null ? documentRepository.findByTenantIdAndDeletedFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId, q, pageable);
+        } else if (folderId != null) {
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalse(tenantId, folderId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId,
+                    folderId, q, pageable);
+        } else {
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTitleContainingIgnoreCase(
+                    tenantId, q, pageable);
+        }
+
+        return toItems(page, access);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentListItem> listSharedWithMe(String query, Pageable pageable) {
+        DocumentAccessView access = documentAccessService.forCaller();
+        String title = query == null ? "" : query.strip();
+        Page<Document> page = documentRepository.findSharedWith(TenantContext.getTenantId(), title,
+                TenantContext.getUserId(), accessPrincipals.callerRoleIds(), pageable);
+        return toItems(page, access);
+    }
+
+    /** List rows for a page of documents: current version, type name, and the caller's access. */
+    private Page<DocumentListItem> toItems(Page<Document> page, DocumentAccessView access) {
+        UUID tenantId = TenantContext.getTenantId();
+        List<UUID> versionIds = page.getContent().stream()
+                .map(d -> d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId())
+                .toList();
+        Map<UUID, DocumentVersion> versions = new HashMap<>();
+        documentVersionRepository.findAllById(versionIds).stream()
+                .filter(v -> tenantId.equals(v.getTenantId()))
+                .forEach(v -> versions.put(v.getVersionId(), v));
+        Map<UUID, String> typeNames = new HashMap<>();
+        documentTypeRepository.findAllById(page.getContent().stream().map(Document::getDocumentTypeId).distinct().toList())
+                .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
+
+        return page.map(d -> {
+            DocumentVersion v = versions.get(d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId());
+            return new DocumentListItem(d.getDocumentId(), d.getTitle(), d.getDocumentTypeId(),
+                    typeNames.get(d.getDocumentTypeId()), d.getFolderId(),
+                    v != null ? v.getOriginalFilename() : null, v != null ? v.getSizeBytes() : null,
+                    v != null ? v.getMimeType() : null, v != null ? v.getVersionNumber() : null,
+                    d.getOwnerUserId(), d.getCreatedAt(), d.getAccessMode() == FolderAccessMode.restricted,
+                    access.level(d).name());
+        });
+    }
+
+    @Override
+    public int moveDocuments(List<UUID> documentIds, UUID folderId) {
+        UUID tenantId = TenantContext.getTenantId();
+        DocumentAccessView access = documentAccessService.forCaller();
+        String folderName = folderId == null ? null
+                : folderAccessService.require(access.folders(), folderId, FolderAccessLevel.edit).getFolderName();
+        Set<UUID> wanted = new LinkedHashSet<>(documentIds);
+        List<Document> documents = documentRepository.findAllByDocumentIdInAndTenantIdAndDeletedFalse(wanted, tenantId);
+        // A document hidden from the caller counts as not found, like any other.
+        if (documents.size() != wanted.size() || documents.stream().anyMatch(d -> !access.canSee(d))) {
+            throw new ResourceNotFoundException("Document", "one or more of the selected documents");
+        }
+        // Moving needs edit on the document - for one that follows its folder, edit in that folder.
+        for (Document document : documents) {
+            documentAccessService.require(access, document, FolderAccessLevel.edit);
+        }
+        int moved = 0;
+        for (Document document : documents) {
+            if (Objects.equals(document.getFolderId(), folderId)) {
+                continue;
+            }
+            UUID from = document.getFolderId();
+            document.setFolderId(folderId);
+            document.setUpdatedBy(TenantContext.getUserId());
+            document.setUpdatedAt(OffsetDateTime.now());
+            documentRepository.save(document);
+            moved++;
+            Map<String, Object> before = new HashMap<>();
+            before.put("folderId", from);
+            Map<String, Object> after = new HashMap<>();
+            after.put("folderId", folderId);
+            after.put("folderName", folderName);
+            auditService.event(AuditActionCatalog.DOCUMENT_MOVED)
+                    .objectType(AuditObjectTypes.DOCUMENT)
+                    .objectId(document.getDocumentId())
+                    .resourceName(document.getTitle())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .previousValue(before)
+                    .newValue(after)
+                    .log();
+        }
+        return moved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentResponse getDocument(UUID documentId) {
+        return documentMapper.toResponse(findVisible(documentId, FolderAccessLevel.view));
+    }
+
+    /**
+     * Read-write on purpose: the DOCUMENT_DOWNLOADED (or DOCUMENT_VIEWED) audit
+     * row joins this transaction and is only written when it commits - a
+     * read-only transaction silently dropped it.
+     */
+    @Override
+    @Transactional
+    public DownloadedDocument downloadDocument(UUID documentId) {
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
+    }
 
     @Override
     @Transactional
-    public DocumentVersionResponse uploadDocument(MultipartFile file, String documentTypeName, Map<String, Object> metadataValues,
-                                                   List<String> requestedFields) {
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-
-        // Document types are now a governed catalog (module 2.7 - Metadata &
-        // Document-Type Management), seeded per tenant with CONTRACT/
-        // INVOICE/POLICY/GENERAL (V30) and managed via DocumentTypeService's
-        // own create/update flow (its own permission checks, display-order
-        // normalization, etc.). This upload path only looks one up by its
-        // typeCode -- it deliberately does NOT auto-create a missing one,
-        // since doing so here would let any user who can upload a file
-        // silently mint new document types, bypassing whatever permission
-        // the real creation flow enforces.
-        String typeCode = documentTypeName.trim().toUpperCase();
-        DocumentType documentType = documentTypeRepository
-                .findByTenantIdAndTypeCodeAndDeletedFalse(tenantId, typeCode)
-                .orElseThrow(() -> new ResourceNotFoundException("document_types", typeCode));
-
-        DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(documentType.getDocumentTypeId());
-        List<String> effectiveRequestedFields = requestedFields != null ? requestedFields : List.of();
-        // Upload is the one place a missing mandatory field IS a hard
-        // reject on requestedFields (unlike metadataValues below, which may
-        // legitimately be blank at upload time -- OCR fills those in
-        // afterward): a mandatory field the user never asked OCR to look
-        // for, and never filled in manually either, would have no path to
-        // ever getting a value.
-        validateRequestedFields(schema, effectiveRequestedFields, true);
-
-        // Upload never requires mandatory fields to already be filled in --
-        // that's the whole point of OCR field-mapping (see
-        // DocumentMetadataService#applyOcrFields): the user picks a
-        // document type, uploads the file, and OCR fills in the fields
-        // afterward. This only rejects real format errors (e.g. an
-        // unparseable date/number) in whatever values were given, never a
-        // missing-mandatory-field error.
-        Map<String, Object> values = metadataValues != null ? metadataValues : Map.of();
-        List<ValidationError> errors = metadataValidationService.validate(documentType.getDocumentTypeId(), null, values);
-        List<ValidationError> blocking = errors.stream()
-                .filter(e -> "error".equals(e.severity()) && !"MANDATORY_FIELD_MISSING".equals(e.errorCode()))
-                .toList();
-        if (!blocking.isEmpty()) {
-            throw new MetadataValidationFailedException(blocking);
-        }
-
-        UUID documentId = UUID.randomUUID();
-        UUID versionId = UUID.randomUUID();
-        String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload";
-        String storageObjectKey = "tenants/%s/documents/%s/versions/%s/%s"
-                .formatted(tenantId, documentId, versionId, sanitizeForStorageKey(originalFilename));
-
-        byte[] content;
-        try (InputStream in = file.getInputStream()) {
-            content = in.readAllBytes();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read uploaded file", e);
-        }
-
-        // Real gap found live: file.getContentType() is a client-supplied
-        // header, trusted outright before this -- Tika sniffs the actual
-        // bytes instead. Falls back to the client-supplied header only
-        // when Tika's own detection is inconclusive (its own contract:
-        // "application/octet-stream" for content it can't identify),
-        // matching the "never silently guess, but don't discard a real
-        // signal either" discipline the ocr-worker side already follows
-        // for the same problem.
-        String detectedMimeType = TIKA.detect(content);
-        String mimeType = !"application/octet-stream".equals(detectedMimeType)
-                ? detectedMimeType
-                : (file.getContentType() != null ? file.getContentType() : "application/octet-stream");
-
-        objectStorageService.putSourceObject(storageObjectKey, content, mimeType);
-
-        // documents.latest_version_id <-> document_versions.document_id are
-        // mutually NOT NULL foreign keys into each other -- see V32's own
-        // comment for why both were declared DEFERRABLE INITIALLY DEFERRED
-        // specifically so this works: both rows (client-generated UUIDs,
-        // assigned above) are persisted in one transaction, and the FK
-        // check only runs at commit, by which point both exist.
-        Document document = Document.builder()
-                .documentId(documentId)
-                .tenantId(tenantId)
-                .documentTypeId(documentType.getDocumentTypeId())
-                .title(originalFilename)
-                .latestVersionId(versionId)
-                .currentVersionId(versionId)
-                .ownerUserId(userId)
-                .createdBy(userId)
-                .build();
-        documentRepository.save(document);
-
-        // Section 2.2 (malware scanning) has no real implementation yet --
-        // backend/workers/scan-worker/ doesn't exist (see ocr-worker's own
-        // README "Known upstream gap"). This upload path stands in for it
-        // by setting scan_status='clean' immediately -- the same
-        // documented gap ocr-worker's own dev-trigger endpoint and fixture
-        // scripts already work around, never silently pretended away.
-        //
-        // ocr_status starts at 'pending' (Phase 1 B.1) -- "queued, not yet
-        // claimed" -- not 'processing', which is reserved for a live claim
-        // held by an actual ocr-worker pool worker (see V36's leasing
-        // columns). queueOcrJobAndPublishRequested, below, is what actually
-        // makes this version eligible for OCR: it inserts the
-        // processing_jobs row and the document.version.ocr.requested
-        // outbox event in this SAME transaction, replacing the old
-        // synchronous HTTP call to ocr-worker that used to run after this
-        // method returned.
-        DocumentVersion version = DocumentVersion.builder()
-                .versionId(versionId)
-                .documentId(documentId)
-                .tenantId(tenantId)
-                .versionNumber(1)
-                .majorVersion(1)
-                .minorVersion(0)
-                .storageObjectKey(storageObjectKey)
-                .originalFilename(originalFilename)
-                .mimeType(mimeType)
-                .fileHash(sha256Hex(content))
-                .sizeBytes(content.length)
-                .createdReason("initial_upload")
-                .scanStatus("clean")
-                .ocrStatus("pending")
-                .requestedFields(writeJson(effectiveRequestedFields))
-                .createdBy(userId)
-                .build();
-        documentVersionRepository.save(version);
-
-        if (!values.isEmpty()) {
-            // Already validated above; no need to re-validate here.
-            documentMetadataService.saveValues(documentId, values, false);
-        }
-
-        queueOcrJobAndPublishRequested(tenantId, documentId, versionId, null);
-
-        log.info("Uploaded document {} version {} ({} bytes) for tenant {}, requestedFields={}",
-                documentId, versionId, content.length, tenantId, effectiveRequestedFields);
-
-        return new DocumentVersionResponse(
-                documentId, versionId, document.getTitle(), originalFilename,
-                version.getMimeType(), version.getSizeBytes(), version.getScanStatus(),
-                version.getOcrStatus(), version.getCreatedAt());
+    public DownloadedDocument previewDocument(UUID documentId) {
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_VIEWED, null);
     }
 
+    @Override
+    @Transactional
+    public DownloadedDocument downloadDocumentFromJob(UUID documentId, String job) {
+        return serve(findOwnedByCallerTenant(documentId), AuditActionCatalog.DOCUMENT_DOWNLOADED, job);
+    }
+
+    /** The document's current (or latest) servable version, audited as {@code action}. */
+    private DownloadedDocument serve(Document document, String action, String job) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID documentId = document.getDocumentId();
+
+        UUID versionId = document.getCurrentVersionId() != null
+                ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        DocumentVersion version = documentVersionRepository
+                .findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentVersion", versionId));
+
+        DownloadedDocument downloaded = versionContent.open(version);
+
+        var event = auditService.event(action)
+                .objectType(AuditObjectTypes.DOCUMENT)
+                .objectId(documentId)
+                .resourceName(document.getTitle())
+                .outcome(AuditOutcome.SUCCESS);
+        if (job != null) {
+            event.newValue(Map.of("via", job));
+        }
+        event.log();
+        return downloaded;
+    }
+
+    @Override
+    public void deleteDocument(UUID documentId) {
+        Document document = findVisible(documentId, FolderAccessLevel.edit);
+
+        document.setDeleted(true);
+        document.setDeletedAt(OffsetDateTime.now());
+        document.setUpdatedBy(TenantContext.getUserId());
+        document.setUpdatedAt(OffsetDateTime.now());
+        documentRepository.save(document);
+
+        log.info("Deleted document {}", documentId);
+
+        // Soft delete: it goes to the recycle bin, restorable until its tenant's
+        // retention period ends, then RecycleBinService purges it - every
+        // version's file and key destroyed.
+        auditService.event(AuditActionCatalog.DOCUMENT_DELETED)
+                .objectType(AuditObjectTypes.DOCUMENT)
+                .objectId(documentId)
+                .resourceName(document.getTitle())
+                .outcome(AuditOutcome.SUCCESS)
+                .log();
+    }
+
+    private Document findOwnedByCallerTenant(UUID documentId) {
+        return documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, TenantContext.getTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+    }
+
+    /**
+     * The caller's tenant's document, if its folder lets them in at {@code needed}:
+     * a document hidden from them (its folder or its own list, V53/V54) is 404, like one that doesn't exist.
+     */
+    private Document findVisible(UUID documentId, FolderAccessLevel needed) {
+        return documentAccessService.require(documentAccessService.forCaller(), findOwnedByCallerTenant(documentId),
+                needed);
+    }
+
+    /** For a NOT IN clause, which must never be empty. */
+    private static Set<UUID> nonEmpty(Set<UUID> ids) {
+        return ids.isEmpty() ? Set.of(new UUID(0, 0)) : ids;
+    }
+
+    // ----------------------------------------------------------- OCR
     @Override
     @Transactional
     public OcrRerunResponse prepareRerun(UUID versionId, List<String> fields) {
@@ -292,40 +467,18 @@ public class DocumentServiceImpl implements DocumentService {
 
         return new OcrRerunResponse(versionId, version.getOcrStatus(), effectiveList);
     }
-
-    /** Inserts a fresh 'queued' processing_jobs row and publishes a
-     * document.version.ocr.requested outbox event, both in the caller's
-     * own transaction (Phase 1 B.1) -- replaces the old synchronous HTTP
-     * call to ocr-worker that used to run after the caller's transaction
-     * committed. No resolved field specs in the payload: ocr-worker
-     * re-queries document_versions.requested_fields itself at claim time
-     * (Phase 1 plan Decision 1), so this stays a cheap, minimal event.
+    /**
+     * Re-run: hand the request to the one service that may queue OCR.
+     *
+     * The job insert and outbox publish that used to live here moved to
+     * OcrEnqueueService when the merge made promotion the only place a
+     * version appears. Keeping a second copy here would have meant two
+     * places that could queue OCR, with only one of them honouring
+     * dms.ocr.enabled and the per-tenant limit.
      */
     private void queueOcrJobAndPublishRequested(UUID tenantId, UUID documentId, UUID versionId, UUID correlationId) {
-        processingJobRepository.save(ProcessingJob.builder()
-                .jobId(UUID.randomUUID())
-                .tenantId(tenantId)
-                .jobType(ProcessingJob.JOB_TYPE_OCR)
-                .referenceType(ProcessingJob.REFERENCE_TYPE_DOCUMENT_VERSION)
-                .referenceId(versionId)
-                .status(ProcessingJob.STATUS_QUEUED)
-                .attempts(0)
-                .correlationId(correlationId)
-                .build());
-
-        // LinkedHashMap, not Map.of: correlation_id must serialize as a
-        // real JSON null when absent (Map.of throws on a null value), to
-        // match ocr-worker's own build_ocr_requested_payload contract
-        // exactly (docs/events/ocr-scanning-events.md).
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("schema_version", 1);
-        payload.put("event_type", EVENT_TYPE_OCR_REQUESTED);
-        payload.put("tenant_id", tenantId.toString());
-        payload.put("document_id", documentId.toString());
-        payload.put("version_id", versionId.toString());
-        payload.put("correlation_id", correlationId != null ? correlationId.toString() : null);
-        payload.put("occurred_at", OffsetDateTime.now().toString());
-        outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE_DOCUMENT_VERSION, versionId, EVENT_TYPE_OCR_REQUESTED, payload);
+        ocrEnqueueService.enqueue(tenantId, documentId, versionId, correlationId,
+                OcrEnqueueService.Source.interactive);
     }
 
     @Override
@@ -544,33 +697,49 @@ public class DocumentServiceImpl implements DocumentService {
         }
     }
 
-    private static String sha256Hex(byte[] content) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return java.util.HexFormat.of().formatHex(digest.digest(content));
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    /** Real gap found live: the MinIO object key previously embedded
-     * file.getOriginalFilename() completely raw, with no stripping of
-     * path separators or control characters -- a filename containing
-     * e.g. "../" would flow straight into the key. Used ONLY when
-     * building storageObjectKey; document_versions.original_filename
-     * keeps storing the raw, unmodified name.
-     */
-    static String sanitizeForStorageKey(String filename) {
-        String normalized = Normalizer.normalize(filename, Normalizer.Form.NFC);
-        String stripped = UNSAFE_STORAGE_KEY_CHARS.matcher(normalized).replaceAll("_");
-        return stripped.isBlank() ? "upload" : stripped;
-    }
+    // MERGE NOTE - sha256Hex and sanitizeForStorageKey were deleted here,
+    // along with DocumentServiceStorageKeySanitizationTest.
+    //
+    // sanitizeForStorageKey patched a real gap the OCR branch found live: its
+    // object key embedded file.getOriginalFilename() raw, so a name containing
+    // "../" flowed straight into the key. That gap cannot exist on this
+    // branch. Keys are built by DocumentVersionPromoter#buildObjectKey from
+    // UUIDs and a version number only - the filename never reaches the key,
+    // and original_filename is stored as a plain column. The fix is obsoleted
+    // by the design, not dropped; if key construction ever takes a
+    // caller-supplied string again, that sanitisation must come back with it.
+    //
+    // sha256Hex went with the old upload, which hashed the bytes itself. The
+    // gate computes the hash now (ScanResult.fileHash) and the promoter copies
+    // it onto the version.
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReviewQueueItemResponse> getReviewQueue(Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        Page<DocumentVersion> versions = documentVersionRepository.findReviewQueue(tenantId, pageable);
+        // Access-filtered in the query, not after it - see
+        // findReviewQueueVisible for why filtering a page afterwards is wrong.
+        DocumentAccessView access = documentAccessService.forCaller();
+        Page<DocumentVersion> versions = access.seesEverything()
+                ? documentVersionRepository.findReviewQueue(tenantId, pageable)
+                : documentVersionRepository.findReviewQueueVisible(tenantId,
+                        nonEmpty(access.folders().hiddenFolderIds()), nonEmpty(access.grantedIds()), pageable);
+        return toQueueItems(versions);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ReviewQueueItemResponse> getSavedReviews(Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        DocumentAccessView access = documentAccessService.forCaller();
+        Page<DocumentVersion> versions = access.seesEverything()
+                ? documentVersionRepository.findSavedReviews(tenantId, pageable)
+                : documentVersionRepository.findSavedReviewsVisible(tenantId,
+                        nonEmpty(access.folders().hiddenFolderIds()), nonEmpty(access.grantedIds()), pageable);
+        return toQueueItems(versions);
+    }
+
+    private Page<ReviewQueueItemResponse> toQueueItems(Page<DocumentVersion> versions) {
         // One findAllById for the page's documents rather than a lookup per
         // row: the queue is read by a human refreshing a list, and 25
         // separate primary-key selects to render one screen is the classic

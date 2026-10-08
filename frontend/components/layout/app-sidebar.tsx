@@ -19,6 +19,8 @@ import { APP_NAME } from "@/lib/app-config"
 import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
+import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -68,22 +70,39 @@ export function AppSidebar({
   const isDark = resolvedTheme === "dark"
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
+  const { isPlatformAdmin } = useIsPlatformAdmin()
+
+  // Cached probe shared with the rest of the app; `undefined` while it is
+  // still in flight, which keeps a feature-gated item hidden until the
+  // answer arrives rather than flashing a link that may not belong here.
+  const watermarking = useWatermarkAvailability().data?.present === true
+
+  function featureOn(feature: NavItem["feature"]): boolean {
+    if (!feature) return true
+    return feature === "watermarking" ? watermarking : false
+  }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
   // always visible; items that name one are hidden entirely — not shown
   // disabled or left to 403 on click — for anyone who can't satisfy it,
   // same reasoning as every action-button gate elsewhere (see
-  // `usePermissions`). Sections that end up with zero visible items are
-  // dropped too, rather than rendering an empty group header.
+  // `usePermissions`). An item may also name a `feature`, which has to be
+  // switched on for this deployment as well. Sections that end up with zero
+  // visible items are dropped too, rather than rendering an empty group
+  // header.
   const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter(
         (item) =>
-          !item.permission ||
-          hasAnyPermission(
-            ...(Array.isArray(item.permission) ? item.permission : [item.permission])
-          )
+          (!item.platformAdminOnly || isPlatformAdmin) &&
+          featureOn(item.feature) &&
+          (!item.permission ||
+            hasAnyPermission(
+              ...(Array.isArray(item.permission)
+                ? item.permission
+                : [item.permission])
+            ))
       ),
     }))
     .filter((section) => section.items.length > 0)
@@ -142,7 +161,10 @@ export function AppSidebar({
                 const Icon = item.icon
                 const content = (
                   <>
-                    <Icon size={16.5} className={cn(!isActive && "opacity-85")} />
+                    <Icon
+                      size={16.5}
+                      className={cn(!isActive && "opacity-85")}
+                    />
                     <span className="flex-1">{item.label}</span>
                     {item.badge != null && (
                       <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
@@ -241,7 +263,9 @@ export function AppSidebar({
               <div className="flex items-center justify-between px-3.5 py-2">
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={15} className="text-muted-foreground" />
-                  <span className="text-[13px]">Auto-lock signed documents</span>
+                  <span className="text-[13px]">
+                    Auto-lock signed documents
+                  </span>
                 </div>
                 <Toggle
                   checked={autoLock}
@@ -270,7 +294,9 @@ export function AppSidebar({
             )}
           >
             <Settings size={16.5} className="shrink-0" />
-            <span className="group-data-[collapsible=icon]:hidden">Settings</span>
+            <span className="group-data-[collapsible=icon]:hidden">
+              Settings
+            </span>
           </button>
         </div>
       </SidebarFooter>

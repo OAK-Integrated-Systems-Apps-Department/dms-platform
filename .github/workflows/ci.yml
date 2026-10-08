@@ -1,0 +1,384 @@
+name: CI
+
+# develop is the integration branch (default branch); main is the release
+# branch. Pushes to main are verified by deploy.yml, which calls this
+# workflow before publishing images - so main is not listed under `push`
+# here, to avoid running the same checks twice for every release.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+  workflow_call:
+    inputs:
+      # Inverted on purpose: for push/pull_request events `inputs` is empty,
+      # and `!null` is true, so images build by default everywhere except
+      # when a caller explicitly opts out.
+      skip-images:
+        description: Skip building the production Docker images
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (dms-core) - test & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # DmsCoreApplicationTests (@SpringBootTest) boots the full context, which
+    # runs every Flyway migration against a real Postgres. Redis/RabbitMQ
+    # mirror the compose stack so context startup matches production.
+    # Credentials here are throwaway, CI-only values for these ephemeral
+    # containers - not real secrets.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres
+          POSTGRES_DB: dms_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: dms
+          RABBITMQ_DEFAULT_PASS: ci-only-rabbitmq
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/dms_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: ci-only-postgres
+      REDIS_HOST: localhost
+      RABBITMQ_HOST: localhost
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ci-only-rabbitmq
+    steps:
+      - uses: actions/checkout@v5
+
+      # The JDK production actually builds with is the one in
+      # backend/Dockerfile's build stage (maven:*-eclipse-temurin-<N>);
+      # pom.xml's java.version is only the bytecode target (--release).
+      # Read both from the repo instead of hardcoding them here.
+      - name: Detect Java version
+        id: java
+        run: |
+          jdk="$(sed -n 's/^FROM maven:[^ ]*eclipse-temurin-\([0-9][0-9]*\).*/\1/p' backend/Dockerfile | head -n1)"
+          target="$(sed -n 's:.*<java.version>\([0-9][0-9]*\)</java.version>.*:\1:p' backend/dms-core/pom.xml | head -n1)"
+          [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
+          echo "Build JDK (backend/Dockerfile): $jdk, bytecode target (pom.xml): ${target:-unknown}"
+          echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.jdk }}
+          cache: maven
+          cache-dependency-path: backend/**/pom.xml
+
+      # Same reactor the Dockerfile builds (backend/pom.xml -> dms-core).
+      # `verify` = compile, run the unit tests (surefire), package the jar.
+      - name: Test & build (mvn verify)
+        working-directory: backend
+        run: ./dms-core/mvnw -B -ntp -f pom.xml verify
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/dms-core/target/surefire-reports/
+          retention-days: 7
+
+  # The *IT tests (not part of `mvn verify`): full Spring context against
+  # real Postgres/Redis/RabbitMQ plus a throwaway OpenBao (Transit + AppRole)
+  # and Keycloak (oak-dms realm, bootstrapped) - see
+  # .github/scripts/start-it-services.sh. Separate from `backend` so the
+  # unit tests still report quickly.
+  integration:
+    name: Backend (dms-core) - integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres
+          POSTGRES_DB: dms_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: dms
+          RABBITMQ_DEFAULT_PASS: ci-only-rabbitmq
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/dms_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: ci-only-postgres
+      REDIS_HOST: localhost
+      RABBITMQ_HOST: localhost
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ci-only-rabbitmq
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect Java version
+        id: java
+        run: |
+          jdk="$(sed -n 's/^FROM maven:[^ ]*eclipse-temurin-\([0-9][0-9]*\).*/\1/p' backend/Dockerfile | head -n1)"
+          [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
+          echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.jdk }}
+          cache: maven
+          cache-dependency-path: backend/**/pom.xml
+
+      # Writes OPENBAO_IT_* and KEYCLOAK_* (CI-only, generated per run) to
+      # $GITHUB_ENV for the next step.
+      - name: Start OpenBao and Keycloak
+        run: bash .github/scripts/start-it-services.sh
+
+      - name: Integration tests (*IT)
+        working-directory: backend
+        run: ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-reports
+          path: backend/dms-core/target/surefire-reports/
+          retention-days: 7
+
+  # Text rendering is the one part of dms-core whose correctness depends on
+  # the operating system underneath it rather than on the code. The watermark
+  # renderer draws people's names, and which glyphs exist - and whether a
+  # script joins or runs right to left - is decided by the font packages in
+  # the runtime image, not by anything in this repository.
+  #
+  # The other jobs run on ubuntu-latest, which has a rich font set and a
+  # different libc. They would pass on a CJK or Arabic name that the real
+  # Alpine/musl image cannot draw at all. So these tests run against the
+  # SAME base image and the SAME font packages the Dockerfile installs, both
+  # read out of backend/Dockerfile rather than repeated here - the same
+  # trick the other jobs use for the JDK version, so the two can't drift.
+  #
+  # (A JDK variant of the base image is used because the JRE the runtime
+  # ships has no compiler. Same distro, same libc, same fontconfig, same
+  # packages - everything that decides whether a glyph renders.)
+  rendering:
+    name: Backend (dms-core) - rendering tests in the runtime font stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the runtime base image and font packages from the Dockerfile
+        id: runtime
+        run: |
+          base="$(sed -n 's/^FROM \(eclipse-temurin:[^ ]*\) AS runtime.*/\1/p' backend/Dockerfile | head -n1)"
+          [ -n "$base" ] || { echo "::error::could not read the runtime base image from backend/Dockerfile"; exit 1; }
+          fonts="$(sed -n 's/^ARG WATERMARK_FONT_PACKAGES="\(.*\)"/\1/p' backend/Dockerfile | head -n1)"
+          [ -n "$fonts" ] || { echo "::error::could not read the font packages from backend/Dockerfile"; exit 1; }
+          # The runtime ships a JRE; tests need a compiler.
+          echo "image=${base/-jre-/-jdk-}" >> "$GITHUB_OUTPUT"
+          echo "fonts=$fonts" >> "$GITHUB_OUTPUT"
+          echo "Base: $base -> ${base/-jre-/-jdk-}"
+          echo "Fonts: $fonts"
+
+      - name: Rendering tests inside the runtime font stack
+        run: |
+          docker run --rm \
+            -v "$PWD/backend:/work" -v "$HOME/.m2:/root/.m2" \
+            -w /work "${{ steps.runtime.outputs.image }}" \
+            sh -c '
+              set -e
+              apk add --no-cache fontconfig freetype ${{ steps.runtime.outputs.fonts }}
+              fc-cache -f
+              echo "--- font coverage by script ---"
+              for lang in en el ru ar he zh-cn ja ko hi th bn ta; do
+                printf "  %-6s %s\n" "$lang" "$(fc-list :lang=$lang | wc -l)"
+              done
+              ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test \
+                -Dtest="WatermarkRendererTest,FontProviderTest,FontProviderConcurrencyTest,ExifOrientationTest,ImageWatermarkServiceTest,PdfWatermarkServiceTest,DocxWatermarkServiceTest,XlsxWatermarkServiceTest,PptxWatermarkServiceTest,WatermarkAvailabilityTest,TextSanitizerTest" \
+                -Dsurefire.failIfNoSpecifiedTests=false
+            '
+
+      # Separate from the above on purpose: that step proves the CODE is
+      # right given these fonts, this one proves the IMAGE WE SHIP actually
+      # has them. A missing package would otherwise only surface in
+      # production, as hollow boxes on somebody's document.
+      - name: Build the runtime image and check its font coverage
+        run: |
+          docker build -t dms-core:ci backend
+          docker run --rm --entrypoint sh dms-core:ci -c '
+            missing=""
+            for lang in en el ru ar he zh-cn ja ko hi th bn ta; do
+              count="$(fc-list :lang=$lang | wc -l)"
+              printf "  %-6s %s\n" "$lang" "$count"
+              [ "$count" -gt 0 ] || missing="$missing $lang"
+            done
+            if [ -n "$missing" ]; then
+              echo "::error::the runtime image has no font for:$missing - watermarked names in those scripts would print as empty boxes"
+              exit 1
+            fi
+          '
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendering-reports
+          path: backend/dms-core/target/surefire-reports/
+          retention-days: 7
+
+  frontend:
+    name: Frontend - lint & typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      # frontend/Dockerfile builds on oven/bun:1 (latest 1.x); match it.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # NON-BLOCKING for now: `bun run lint` currently reports 27 existing
+      # errors on develop (react-hooks/set-state-in-effect etc.). Making it
+      # blocking today would fail every PR. Fix those, then delete
+      # `continue-on-error` so lint regressions fail CI.
+      - name: Lint (non-blocking - see comment)
+        continue-on-error: true
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # The production `next build` itself runs inside the Docker image
+      # build below (frontend/Dockerfile), which is the artifact that ships -
+      # building it a second time here would be duplicate work.
+
+  images:
+    name: Docker image - ${{ matrix.name }}
+    # Skipped when deploy.yml calls this workflow: it builds and pushes the
+    # same images itself right after, so building them here would be wasted.
+    if: ${{ !inputs.skip-images }}
+    needs: [backend, integration, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: dms-core
+            context: backend
+          - name: dms-frontend
+            context: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: false
+          load: true
+          tags: ci/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+      # The production bundle must call the API same-origin (/api/...), never
+      # localhost:8080 - that was the original production bug.
+      - name: Check frontend bundle has no localhost API URL
+        if: matrix.name == 'dms-frontend'
+        run: |
+          docker run --rm --entrypoint sh "ci/dms-frontend:${{ github.sha }}" -c '
+            test -f /app/server.js || { echo "::error::/app/server.js missing from image"; exit 1; }
+            if grep -rlE "localhost:(8080|8081)" /app/.next /app/server.js; then
+              echo "::error::production frontend bundle contains a localhost API/Keycloak URL"
+              exit 1
+            fi
+            echo "OK: no localhost:8080/8081 in the production bundle"'
+
+  compose:
+    name: Validate Docker Compose files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Production compose (with the committed template)
+        run: docker compose -f infra/production/docker-compose.yml --env-file infra/production/.env.example config --quiet
+
+      # The local file needs env files that only exist on developer machines
+      # (both gitignored); empty stand-ins are enough to validate its syntax.
+      - name: Local compose
+        run: |
+          touch infra/secrets/dms-core.secrets.env
+          docker compose -f infra/local/docker-compose.yml --env-file infra/local/.env.example config --quiet
+
+      - name: OpenBao compose
+        run: docker compose -f infra/openbao/docker-compose.yml config --quiet
+
+      # The secret-keys.txt / render-secrets.py pair is what every OpenBao
+      # deploy depends on - fail here, not during a production deploy.
+      - name: Secrets renderer
+        run: |
+          python3 - <<'EOF' > /tmp/kv.json
+          import json
+          keys = [l.strip() for l in open("infra/production/secret-keys.txt") if l.strip() and not l.startswith("#")]
+          print(json.dumps({"data": {"data": {k: "ci-value-$not-interpolated" for k in keys}}}))
+          EOF
+          python3 infra/production/render-secrets.py infra/production/secret-keys.txt < /tmp/kv.json > /tmp/secrets.env
+          grep -v '^#' infra/production/.env.example | grep -vFf <(grep -v '^#' infra/production/secret-keys.txt | sed 's/$/=/') > /tmp/config.env
+          docker compose -f infra/production/docker-compose.yml --env-file /tmp/config.env --env-file /tmp/secrets.env config --quiet
+          echo "OK: stripped .env + rendered secrets make a valid production config"

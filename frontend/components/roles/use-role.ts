@@ -52,7 +52,9 @@ interface UseRoleResult {
  * non-null.
  */
 export function useRole(roleId: string): UseRoleResult {
-  const role = useRolesStore((state) => state.roles.find((r) => r.id === roleId))
+  const role = useRolesStore((state) =>
+    state.roles.find((r) => r.id === roleId)
+  )
   const fetchRole = useRolesStore((state) => state.fetchRole)
   // Always starts true and is cleared only once fetchRole (which also
   // resolves this role's real permissions) has completed for the CURRENT
@@ -71,11 +73,22 @@ export function useRole(roleId: string): UseRoleResult {
   // Bumped by `retry()` to re-run the effect below without changing roleId.
   const [retryToken, setRetryToken] = useState(0)
 
-  useEffect(() => {
-    let cancelled = false
+  function resetFetchState() {
     setLoading(true)
     setNotFound(false)
     setError(null)
+  }
+
+  // Navigating to a different role resets during render (against the
+  // last-seen id) rather than in the effect below, which only fetches.
+  const [prevRoleId, setPrevRoleId] = useState(roleId)
+  if (roleId !== prevRoleId) {
+    setPrevRoleId(roleId)
+    resetFetchState()
+  }
+
+  useEffect(() => {
+    let cancelled = false
 
     fetchRole(roleId).then((result) => {
       if (cancelled) return
@@ -94,6 +107,7 @@ export function useRole(roleId: string): UseRoleResult {
   }, [roleId, retryToken])
 
   function retry() {
+    resetFetchState()
     setRetryToken((token) => token + 1)
   }
 

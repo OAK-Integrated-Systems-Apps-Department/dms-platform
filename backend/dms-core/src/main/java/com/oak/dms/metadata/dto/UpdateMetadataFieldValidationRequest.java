@@ -2,7 +2,7 @@ package com.oak.dms.metadata.dto;
 
 import jakarta.validation.constraints.Size;
 
-import com.oak.dms.metadata.MetadataFieldValidation;
+import com.oak.dms.metadata.entity.MetadataFieldValidation;
 
 public record UpdateMetadataFieldValidationRequest(
 

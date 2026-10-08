@@ -1,12 +1,25 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { createPortal } from "react-dom"
 import { Check, ChevronDown, Search, X } from "lucide-react"
 
 const POPOVER_MAX_HEIGHT = 420
 const VIEWPORT_MARGIN = 12
 const MIN_POPOVER_HEIGHT = 200
+
+// Nothing to subscribe to - used with useSyncExternalStore purely to tell
+// the client render (true) apart from server/hydration (false).
+function subscribeNoop() {
+  return () => {}
+}
 
 export interface CheckboxFilterProps {
   /** Label shown on the trigger button and used in placeholder text, e.g. "Module". */
@@ -71,14 +84,14 @@ export function CheckboxFilter({
 }: CheckboxFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false
+  )
   const [position, setPosition] = useState<PopoverPosition | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -98,12 +111,19 @@ export function CheckboxFilter({
     }
   }, [open])
 
-  useLayoutEffect(() => {
+  // Closing resets the search box and popover position - adjusted during
+  // render against the last-seen `open` rather than in the effect below.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (!open) {
       setSearch("")
       setPosition(null)
-      return
     }
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return
 
     function updatePosition() {
       const rect = triggerRef.current?.getBoundingClientRect()
@@ -111,10 +131,14 @@ export function CheckboxFilter({
 
       const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN
       const spaceAbove = rect.top - VIEWPORT_MARGIN
-      const openUpward = spaceBelow < POPOVER_MAX_HEIGHT && spaceAbove > spaceBelow
+      const openUpward =
+        spaceBelow < POPOVER_MAX_HEIGHT && spaceAbove > spaceBelow
 
       const available = openUpward ? spaceAbove : spaceBelow
-      const maxHeight = Math.min(POPOVER_MAX_HEIGHT, Math.max(MIN_POPOVER_HEIGHT, available))
+      const maxHeight = Math.min(
+        POPOVER_MAX_HEIGHT,
+        Math.max(MIN_POPOVER_HEIGHT, available)
+      )
 
       setPosition({
         top: openUpward ? undefined : rect.bottom + 6,
@@ -129,7 +153,11 @@ export function CheckboxFilter({
     // (the options list, the chips tray) — only reposition in response to
     // scrolling/resizing that could move the trigger button.
     function handleScroll(event: Event) {
-      if (popoverRef.current && event.target instanceof Node && popoverRef.current.contains(event.target)) {
+      if (
+        popoverRef.current &&
+        event.target instanceof Node &&
+        popoverRef.current.contains(event.target)
+      ) {
         return
       }
       updatePosition()
@@ -150,13 +178,14 @@ export function CheckboxFilter({
     // without `selected`/`options` here the popover would stay anchored
     // to wherever the trigger was BEFORE that reflow — still rendering,
     // just no longer aligned with the (now-moved) trigger button.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, selected, options])
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return options
-    return options.filter((option) => getLabel(option).toLowerCase().includes(q))
+    return options.filter((option) =>
+      getLabel(option).toLowerCase().includes(q)
+    )
   }, [options, search, getLabel])
 
   function toggleOption(option: string) {

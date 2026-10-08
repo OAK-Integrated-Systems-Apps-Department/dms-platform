@@ -54,6 +54,15 @@ spring:
         order_inserts: true
         order_updates: true
 
+  # Spring's own multipart default is 1MB, which silently capped uploads
+  # before the scan gate existed. Kept in line with
+  # dms.scanning.max-file-size-bytes below; the scan gate enforces the exact
+  # byte limit itself, this just stops the servlet layer rejecting first.
+  servlet:
+    multipart:
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:101MB}
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -181,6 +190,26 @@ app:
     session-minutes: ${IMPERSONATION_SESSION_MINUTES:30}
 
 dms:
+  # Folder/document access (V53/V54): each tenant's folder tree and each
+  # user's access entries, kept between requests until anything that decides
+  # access changes (an access generation moved on by database triggers, V61).
+  # The TTL is only a backstop; 0 turns the cache off.
+  # Office previews (DocumentRenditionService): Word .doc, PowerPoint,
+  # OpenDocument, RTF and Visio files are converted to PDF by the Gotenberg
+  # container on their first preview. Blank = such files are download-only.
+  preview:
+    converter-url: ${PREVIEW_CONVERTER_URL:}
+    timeout: ${PREVIEW_TIMEOUT:PT90S}
+    max-bytes: ${PREVIEW_MAX_BYTES:52428800}
+  # Deleted documents stay in the recycle bin this long (each tenant can set
+  # its own), then the sweep purges them: files and keys destroyed for good.
+  documents:
+    recycle-bin:
+      retention-days: ${RECYCLE_BIN_RETENTION_DAYS:30}
+      purge-interval: ${RECYCLE_BIN_PURGE_INTERVAL:PT1H}
+  access:
+    cache-ttl: ${ACCESS_CACHE_TTL:PT5M}
+    cache-max-entries: ${ACCESS_CACHE_MAX_ENTRIES:10000}
   outbox:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
@@ -229,6 +258,311 @@ dms:
     # Empty means "use ocr-worker's own OCR_PREVIEW_DPI".
     preview-dpi: ${OCR_PREVIEW_DPI:}
 
+  export:
+    # How long a generated export is kept before the Phase 4 auto-purge
+    # (sets export_jobs.expires_at). PLACEHOLDER - the real value is Phase 0
+    # Key Decision #10, still open. See ExportJobProperties.
+    job-ttl: ${EXPORT_JOB_TTL:PT24H}
+    max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
+    max-export-size: ${EXPORT_MAX_SIZE:2GB}
+    max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
+  # Document watermarking (module DW, V68): a watermarked COPY of a document
+  # in its own format. The original is never touched. See WatermarkProperties.
+  watermark:
+    # OFF by default. While off the endpoints are not mapped at all, so they
+    # answer 404. Not the same as the startup font probe failing, which
+    # leaves them mapped and answers 503 WATERMARK_UNAVAILABLE - the
+    # difference tells an operator "not switched on" from "switched on but
+    # the image has no fonts" (see the Dockerfile).
+    enabled: ${WATERMARK_ENABLED:false}
+    # How long a produced copy is kept before WatermarkOutputSweeper deletes
+    # it. Short on purpose: the copy carries a person's name and is a second
+    # place the document's content exists.
+    output-ttl: ${WATERMARK_OUTPUT_TTL:PT24H}
+    max-active-jobs-per-user: ${WATERMARK_MAX_ACTIVE_JOBS_PER_USER:2}
+    # Largest source file per format, checked against DocumentVersion.sizeBytes
+    # BEFORE anything is read. Per format because the cost is not the file,
+    # it is what the library does with it.
+    #
+    # Heap arithmetic, worst case per job: the source byte[] + the output
+    # byte[] + the library's working set. POI holds an OOXML file in memory
+    # several times over (~5-8x for xlsx, less for docx/pptx); PDFBox reads
+    # a PDF far more lazily (~2x). With executor.job-max-size 2 that is
+    #   xlsx  10MB x 8 x 2 threads ~= 160MB
+    #   pptx  15MB x 5 x 2 threads ~= 150MB
+    #   docx  25MB x 4 x 2 threads ~= 200MB
+    #   pdf   25MB x 3 x 2 threads ~= 150MB
+    # so roughly 200MB of headroom covers the worst case. Raise a format's
+    # cap only together with the container's memory limit.
+    #
+    # NOTE: the 10MB xlsx cap is BELOW the 20MB file size the p95-under-5s
+    # target was written against. A spreadsheet between 10MB and 20MB is
+    # refused with 413 rather than being slow. Raise xlsx (and the heap) if
+    # real tenants have workbooks that large.
+    max-bytes:
+      pdf: ${WATERMARK_MAX_BYTES_PDF:25MB}
+      docx: ${WATERMARK_MAX_BYTES_DOCX:25MB}
+      xlsx: ${WATERMARK_MAX_BYTES_XLSX:10MB}
+      pptx: ${WATERMARK_MAX_BYTES_PPTX:15MB}
+      image: ${WATERMARK_MAX_BYTES_IMAGE:25MB}
+    default-max-bytes: ${WATERMARK_DEFAULT_MAX_BYTES:25MB}
+    # POI and PDFBox cannot be interrupted, so a job that overruns is failed
+    # and its thread abandoned - see WatermarkExecutorConfig.
+    format-timeout: ${WATERMARK_FORMAT_TIMEOUT:PT60S}
+    stuck-after: ${WATERMARK_STUCK_AFTER:PT15M}
+    # How often expired copies are deleted (WatermarkOutputSweeper). This
+    # shares the one @Scheduled thread with OutboxRelay (every 2s),
+    # RecycleBinService and KeyRotationScheduler, so each run takes a capped
+    # batch and leaves the rest for the next tick rather than holding that
+    # thread. spring.task.scheduling.pool.size is deliberately NOT changed
+    # by this feature.
+    sweep-interval: ${WATERMARK_SWEEP_INTERVAL:PT15M}
+    style:
+      # The default look, and the range a template or a request may move it
+      # within. These are the real guardrails; V68's CHECK constraints are
+      # deliberately wider, so tightening these is a config change.
+      font-size: ${WATERMARK_FONT_SIZE:40}
+      min-font-size: ${WATERMARK_MIN_FONT_SIZE:8}
+      max-font-size: ${WATERMARK_MAX_FONT_SIZE:200}
+      # Floor is 5, never 0: an invisible watermark is worse than none,
+      # because the person who asked believes their copy is marked.
+      opacity: ${WATERMARK_OPACITY:25}
+      min-opacity: ${WATERMARK_MIN_OPACITY:5}
+      max-opacity: ${WATERMARK_MAX_OPACITY:100}
+      rotation: ${WATERMARK_ROTATION:-45}
+      min-rotation: ${WATERMARK_MIN_ROTATION:-90}
+      max-rotation: ${WATERMARK_MAX_ROTATION:90}
+      color: ${WATERMARK_COLOR:#808080}
+      placement: ${WATERMARK_PLACEMENT:tiled}
+      page-scope: ${WATERMARK_PAGE_SCOPE:all-pages}
+      max-text-length: ${WATERMARK_MAX_TEXT_LENGTH:200}
+      max-token-length: ${WATERMARK_MAX_TOKEN_LENGTH:64}
+    limits:
+      max-pages: ${WATERMARK_MAX_PAGES:2000}
+      max-sheets: ${WATERMARK_MAX_SHEETS:200}
+      max-slides: ${WATERMARK_MAX_SLIDES:500}
+      # Checked from the image header BEFORE decoding - a 50MP decode is
+      # ~200MB of int[] whatever the file on disk weighs.
+      max-image-pixels: ${WATERMARK_MAX_IMAGE_PIXELS:50000000}
+      # A .docx stores no page count - pagination is decided by whatever
+      # lays the document out - so sections, which are what actually cost
+      # work here, are capped instead.
+      max-sections: ${WATERMARK_MAX_SECTIONS:100}
+      max-distinct-page-sizes: ${WATERMARK_MAX_DISTINCT_PAGE_SIZES:4}
+      render-dpi: ${WATERMARK_RENDER_DPI:150}
+      max-render-pixels: ${WATERMARK_MAX_RENDER_PIXELS:16000000}
+      # OOXML package guards, applied by OoxmlGuards on the bytes before POI
+      # opens anything. These are NOT POI's ZipSecureFile statics: those are
+      # JVM-wide and shared with DocumentFingerprints and the import
+      # templates, so this feature does not touch them. POI's own defaults
+      # (min inflate ratio 0.01, max entry 4GB, max 1000 entries) stay in
+      # force underneath. Note 0.01 is STRICTER than the 0.001 here, which
+      # is why applying our value globally would have loosened the guard for
+      # everyone else; what POI does not bound tightly is total inflated
+      # size, and max-uncompressed-bytes is what covers that.
+      min-inflate-ratio: ${WATERMARK_MIN_INFLATE_RATIO:0.001}
+      max-zip-entry-size: ${WATERMARK_MAX_ZIP_ENTRY_SIZE:256MB}
+      max-uncompressed-bytes: ${WATERMARK_MAX_UNCOMPRESSED_BYTES:300MB}
+      max-zip-entries: ${WATERMARK_MAX_ZIP_ENTRIES:2000}
+      # How far an Excel watermark may stretch. A used range is routinely
+      # tens of thousands of columns wide because somebody formatted a whole
+      # row once; a picture sized to all of it would be an unreadable smear
+      # and enormous to render.
+      max-sheet-watermark-columns: ${WATERMARK_MAX_SHEET_COLUMNS:30}
+      max-sheet-watermark-rows: ${WATERMARK_MAX_SHEET_ROWS:60}
+      max-sheet-watermark-pixels: ${WATERMARK_MAX_SHEET_PIXELS:1600}
+    executor:
+      job-core-size: ${WATERMARK_JOB_CORE_SIZE:2}
+      job-max-size: ${WATERMARK_JOB_MAX_SIZE:2}
+      # Full queue is a 503 with Retry-After, not a silent wait.
+      job-queue-capacity: ${WATERMARK_JOB_QUEUE_CAPACITY:20}
+      # Wider than the job pool on purpose: a thread abandoned by a timeout
+      # is never reclaimed, so an equal-sized pool would stall the feature
+      # after two bad files.
+      format-max-size: ${WATERMARK_FORMAT_MAX_SIZE:4}
+      retry-after: ${WATERMARK_RETRY_AFTER:PT30S}
+    rate-limit:
+      # Redis fixed window, per user and per IP. Fails OPEN if Redis is
+      # unreachable - max-active-jobs-per-user is the hard limit and it is
+      # in the database. The preview endpoint, which creates no job and so
+      # has no such backstop, falls back to an in-memory limiter instead.
+      window: ${WATERMARK_RATE_WINDOW:PT1M}
+      watermarks-per-window: ${WATERMARK_RATE_PER_WINDOW:10}
+      previews-per-window: ${WATERMARK_PREVIEW_RATE_PER_WINDOW:30}
+      preview-fallback-per-window: ${WATERMARK_PREVIEW_FALLBACK_PER_WINDOW:30}
+  storage:
+    # Backs the single platform-default StorageLocation (tenant_id NULL)
+    # that StorageLocationBootstrap creates on startup if none exists yet -
+    # see com.oak.dms.storage and docs/storage-architecture.md. A tenant
+    # with its own StorageLocation row overrides this; this is only the
+    # zero-config fallback ("OAK provides storage for the client").
+    default-provider: ${STORAGE_PROVIDER:FILE_SYSTEM}
+    s3:
+      # Blank = real AWS S3's own default endpoint. Set this to a MinIO or
+      # SeaweedFS S3-gateway URL to point the same adapter at either instead.
+      endpoint: ${S3_ENDPOINT:}
+      region: ${S3_REGION:us-east-1}
+      bucket: ${S3_BUCKET:}
+      access-key: ${S3_ACCESS_KEY:}
+      secret-key: ${S3_SECRET_KEY:}
+      # MinIO/SeaweedFS typically need path-style bucket addressing; real
+      # AWS S3 does not (though it still accepts it).
+      path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+      # Server-side encryption, on top of the application's own encryption at
+      # rest: blank, AES256 (SSE-S3) or aws:kms (SSE-KMS). MinIO needs KES for either.
+      server-side-encryption: ${S3_SSE:}
+      kms-key-id: ${S3_SSE_KMS_KEY_ID:}
+    filesystem:
+      base-path: ${STORAGE_FILESYSTEM_BASE_PATH:/data/dms/documents}
+    azure-blob:
+      # No AWS-style "blank = provider default" here - Azure has no single
+      # universal endpoint, so a blank value here means AzureBlobStorageAdapter
+      # has nothing to fall back to for a location that also leaves its own
+      # endpoint blank.
+      endpoint: ${AZURE_STORAGE_ENDPOINT:}
+      container: ${AZURE_STORAGE_CONTAINER:}
+      account-name: ${AZURE_STORAGE_ACCOUNT_NAME:}
+      account-key: ${AZURE_STORAGE_ACCOUNT_KEY:}
+    # Platform-default staging and quarantine locations for the scan gate
+    # (com.oak.dms.scanning - see docs/scanning-architecture.md), seeded by
+    # StorageLocationBootstrap next to the document location above. Each must
+    # be a physically separate target - the bootstrap refuses to start if
+    # either overlaps the document location (same bucket/container, or a
+    # nested base path). Blank bucket/endpoint fall back to the s3.*/
+    # azure-blob.* values above, so set a distinct bucket/container whenever
+    # the provider isn't FILE_SYSTEM. A cloud scan engine needs its staging
+    # location on its own storage: AZURE_DEFENDER => AZURE_BLOB container on a
+    # Defender-protected account, AWS_GUARDDUTY => S3 bucket with a Malware
+    # Protection plan.
+    staging:
+      provider: ${SCAN_STAGING_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_STAGING_BASE_PATH:/data/dms/staging}
+      bucket: ${SCAN_STAGING_BUCKET:}
+      endpoint: ${SCAN_STAGING_ENDPOINT:}
+      region: ${SCAN_STAGING_REGION:}
+      path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
+      # REQUIRED with a cloud scan engine (GuardDuty / Defender reads staged
+      # files in place, so the app can't encrypt them): AES256 or aws:kms.
+      # Azure Blob is always encrypted at rest. Blank = the s3.* setting.
+      server-side-encryption: ${SCAN_STAGING_SSE:}
+      kms-key-id: ${SCAN_STAGING_SSE_KMS_KEY_ID:}
+    quarantine:
+      provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
+      bucket: ${SCAN_QUARANTINE_BUCKET:}
+      endpoint: ${SCAN_QUARANTINE_ENDPOINT:}
+      region: ${SCAN_QUARANTINE_REGION:}
+      path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+      server-side-encryption: ${SCAN_QUARANTINE_SSE:}
+      kms-key-id: ${SCAN_QUARANTINE_SSE_KMS_KEY_ID:}
+  # Encryption at rest (Module DE) - see EncryptionProperties and
+  # docs/storage-architecture.md. Every stored object is encrypted with its
+  # own AES-256-GCM data key, wrapped by the key service.
+  encryption:
+    enabled: ${ENCRYPTION_ENABLED:true}
+    # openbao in production; local-dev = a key file, for development only.
+    provider: ${ENCRYPTION_PROVIDER:local-dev}
+    # Production: true - refuses to start unless OpenBao holds the keys.
+    require-managed-keys: ${ENCRYPTION_REQUIRE_MANAGED_KEYS:false}
+    # Production: true - refuses to start unless OpenBao logs every key access
+    # in an audit device (DE-NFR-006). The policy needs read+sudo on sys/audit.
+    require-audit-device: ${ENCRYPTION_REQUIRE_AUDIT_DEVICE:false}
+    # Unwrapped data keys reused from memory for this long (0 = off), so a bulk
+    # export asks the key service once per key, not per file.
+    key-cache-ttl: ${ENCRYPTION_KEY_CACHE_TTL:PT5M}
+    key-cache-max-entries: ${ENCRYPTION_KEY_CACHE_MAX_ENTRIES:10000}
+    local-dev:
+      key-file: ${ENCRYPTION_LOCAL_DEV_KEY_FILE:${java.io.tmpdir}/dms-encryption/local-dev-keys.json}
+      # A second copy kept in step, restored if the key file is lost. Blank = none.
+      backup-file: ${ENCRYPTION_LOCAL_DEV_BACKUP_FILE:}
+    openbao:
+      address: ${ENCRYPTION_OPENBAO_ADDR:}
+      # approle (production - renewed and re-issued automatically) or token.
+      auth: ${ENCRYPTION_OPENBAO_AUTH:token}
+      token: ${ENCRYPTION_OPENBAO_TOKEN:}
+      role-id: ${ENCRYPTION_OPENBAO_ROLE_ID:}
+      secret-id: ${ENCRYPTION_OPENBAO_SECRET_ID:}
+      app-role-mount: ${ENCRYPTION_OPENBAO_APPROLE_MOUNT:approle}
+      mount: ${ENCRYPTION_OPENBAO_MOUNT:transit}
+      key-name: ${ENCRYPTION_OPENBAO_KEY:dms-documents}
+    # Master-key rotation schedule. Each tenant sets its own interval and
+    # auto-rotate on the key screen; these are the defaults and the checker.
+    rotation:
+      default-interval-days: ${ENCRYPTION_ROTATION_DEFAULT_DAYS:365}
+      check-interval: ${ENCRYPTION_ROTATION_CHECK_INTERVAL:PT6H}
+      remind-every: ${ENCRYPTION_ROTATION_REMIND_EVERY:P7D}
+  import-export:
+    # Bulk import intake limits - see ImportExportProperties.
+    max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
+    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
+    max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
+    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
+    # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
+    worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
+    # ZIP intake and resumable (chunked) upload of large ZIPs.
+    max-archive-size: ${IMPORT_MAX_ARCHIVE_SIZE:2GB}
+    max-archive-entries: ${IMPORT_MAX_ARCHIVE_ENTRIES:5000}
+    max-chunk-size: ${IMPORT_MAX_CHUNK_SIZE:64MB}
+    upload-session-ttl: ${IMPORT_UPLOAD_SESSION_TTL:PT24H}
+    upload-session-dir: ${IMPORT_UPLOAD_SESSION_DIR:${java.io.tmpdir}/dms-upload-sessions}
+  ingestion:
+    # Extensions the ingestion gate accepts - each is verified against the
+    # file's content (magic bytes) by FileTypeInspector, and the client's
+    # Content-Type is ignored. No archive types: this system accepts no
+    # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
+    # docs/scanning-architecture.md).
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff}
+  scanning:
+    # Backs the platform-default ScanEngine (tenant_id NULL) that
+    # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
+    # AZURE_DEFENDER | AWS_GUARDDUTY.
+    default-provider: ${SCAN_PROVIDER:CLAMAV}
+    timeout-seconds: ${SCAN_TIMEOUT_SECONDS:60}
+    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:104857600}
+    # A cloud-scanned file still without a verdict this long after staging is
+    # failed - never promoted.
+    cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
+    # How long a failed file's staged object is kept before it is purged.
+    failed-retention-hours: ${SCAN_FAILED_RETENTION_HOURS:72}
+    # Threat-detected emails (VMSBDI FR-003) - to the uploader, and to every
+    # administrator who can act on quarantine (docm.quarantine.view holders +
+    # the tenant's TENANT_ADMIN users). Sent after the quarantine commits, off
+    # the upload thread; a mail failure never affects the quarantine itself.
+    # Uses spring.mail.* (Mailpit locally, http://localhost:8026).
+    notifications:
+      enabled: ${SCAN_NOTIFY_ENABLED:true}
+      mail-from: ${SCAN_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    retry:
+      poll-interval-ms: ${SCAN_RETRY_POLL_INTERVAL_MS:30000}
+      max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}
+      initial-backoff-seconds: ${SCAN_RETRY_INITIAL_BACKOFF_SECONDS:30}
+      max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
+      lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:300}
+      batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
+    clamav:
+      host: ${CLAMAV_HOST:localhost}
+      port: ${CLAMAV_PORT:3310}
+      connect-timeout-ms: ${CLAMAV_CONNECT_TIMEOUT_MS:5000}
+      chunk-size-bytes: ${CLAMAV_CHUNK_SIZE_BYTES:65536}
+    azure-defender:
+      # Blob Service endpoint of the Defender-protected account that holds the
+      # staging container - verdicts are read from its blob index tags.
+      endpoint: ${AZURE_DEFENDER_BLOB_ENDPOINT:}
+      account-name: ${AZURE_DEFENDER_ACCOUNT_NAME:}
+      account-key: ${AZURE_DEFENDER_ACCOUNT_KEY:}
+      # Sent by Event Grid as X-Oak-Scan-Callback-Secret. Blank disables
+      # the callback endpoint (verdicts then arrive by polling only).
+      callback-secret: ${AZURE_DEFENDER_CALLBACK_SECRET:}
+    aws-guardduty:
+      region: ${AWS_GUARDDUTY_REGION:us-east-1}
+      access-key: ${AWS_GUARDDUTY_ACCESS_KEY:}
+      secret-key: ${AWS_GUARDDUTY_SECRET_KEY:}
+      # Sent by the EventBridge API destination as X-Oak-Scan-Callback-Secret.
+      # Blank disables the callback endpoint.
+      callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
+
 # Naming deliberately mirrors backend/workers/ocr-worker/src/ocr_worker/config.py's
 # MINIO_* env vars -- dms-core writes the source object here, ocr-worker
 # reads it back from the same bucket/key, so the two must agree.
@@ -246,6 +580,16 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  health:
+    # The mail indicator opens a live SMTP connection (and login) on every
+    # /actuator/health call. An external relay being slow, down or rejecting
+    # credentials would then report the whole app DOWN - and the container
+    # HEALTHCHECK (backend/Dockerfile) and deploy.sh treat DOWN as "roll this
+    # release back", even though every other feature still works. Mail
+    # failures are already handled where they happen (logged per send, see
+    # PasswordResetService), so SMTP is deliberately not a health input.
+    mail:
+      enabled: false
 
 springdoc:
   swagger-ui:

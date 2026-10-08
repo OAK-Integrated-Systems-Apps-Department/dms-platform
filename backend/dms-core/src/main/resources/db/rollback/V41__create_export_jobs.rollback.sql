@@ -1,0 +1,11 @@
+-- Manual rollback ("down") for V41__create_export_jobs.sql.
+--
+-- Flyway Community has no undo migrations, and this file deliberately sits
+-- OUTSIDE classpath:db/migration so Flyway never picks it up. It exists so
+-- V41ExportJobsMigrationTest can prove V41 reverses cleanly, and as the
+-- script an operator would run to back V41 out by hand (together with
+-- deleting V41's row from flyway_schema_history, as the test does).
+--
+-- Dropping the table also drops its indexes and constraints; nothing else
+-- references export_jobs yet.
+DROP TABLE IF EXISTS export_jobs;

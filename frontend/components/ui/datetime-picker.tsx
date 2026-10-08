@@ -1,7 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
+import {
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -15,8 +19,18 @@ interface DateTimePickerProps {
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
 const MONTH_LABELS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ]
 
 interface ParsedValue {
@@ -36,7 +50,13 @@ function parseValue(value: string): ParsedValue | null {
   return { year, month: month - 1, day, hour, minute }
 }
 
-function formatValue(year: number, month: number, day: number, hour: number, minute: number): string {
+function formatValue(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): string {
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${year}-${pad(month + 1)}-${pad(day)}T${pad(hour)}:${pad(minute)}`
 }
@@ -55,7 +75,12 @@ function clamp(n: number, min: number, max: number): number {
  * every other custom-styled control in this app (`SearchableSelect`,
  * `MultiSelect`) - same reasoning that drove those two.
  */
-export function DateTimePicker({ value, onChange, placeholder = "Select date & time…", className }: DateTimePickerProps) {
+export function DateTimePicker({
+  value,
+  onChange,
+  placeholder = "Select date & time…",
+  className,
+}: DateTimePickerProps) {
   const parsed = parseValue(value)
   const now = new Date()
 
@@ -68,20 +93,26 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
 
   // Re-seed the calendar's view (month shown) and time spinners from the
   // current value every time the popover opens, so a stale in-progress
-  // pick from a previous open doesn't linger.
-  useEffect(() => {
-    if (!open) return
-    const current = parseValue(value)
-    setViewYear(current?.year ?? now.getFullYear())
-    setViewMonth(current?.month ?? now.getMonth())
-    setHour(current?.hour ?? 0)
-    setMinute(current?.minute ?? 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  // pick from a previous open doesn't linger. Done in the trigger's click
+  // handler (the only thing that opens it) rather than in an effect.
+  function toggleOpen() {
+    if (!open) {
+      const current = parseValue(value)
+      const today = new Date()
+      setViewYear(current?.year ?? today.getFullYear())
+      setViewMonth(current?.month ?? today.getMonth())
+      setHour(current?.hour ?? 0)
+      setMinute(current?.minute ?? 0)
+    }
+    setOpen(!open)
+  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setOpen(false)
       }
     }
@@ -98,7 +129,9 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
     setHour(nextHour)
     setMinute(nextMinute)
     if (parsed) {
-      onChange(formatValue(parsed.year, parsed.month, parsed.day, nextHour, nextMinute))
+      onChange(
+        formatValue(parsed.year, parsed.month, parsed.day, nextHour, nextMinute)
+      )
     }
   }
 
@@ -136,14 +169,21 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
     <div ref={containerRef} className={cn("relative", className)}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className={cn(
           "flex h-[38px] w-full items-center justify-between rounded-btn border bg-muted px-3 text-left text-[13px] text-foreground transition-colors",
-          open ? "border-primary bg-card ring-3 ring-primary/15" : "border-border"
+          open
+            ? "border-primary bg-card ring-3 ring-primary/15"
+            : "border-border"
         )}
       >
-        <span className={cn("truncate", !parsed && "text-[var(--ink-faint)]")}>{triggerLabel}</span>
-        <CalendarIcon size={14} className="pointer-events-none ml-2 shrink-0 text-[var(--ink-faint)]" />
+        <span className={cn("truncate", !parsed && "text-[var(--ink-faint)]")}>
+          {triggerLabel}
+        </span>
+        <CalendarIcon
+          size={14}
+          className="pointer-events-none ml-2 shrink-0 text-[var(--ink-faint)]"
+        />
       </button>
 
       {open && (
@@ -152,13 +192,21 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center justify-between">
-            <button type="button" onClick={goPrevMonth} className="rounded-sm p-1 text-[var(--ink-faint)] hover:bg-muted hover:text-foreground">
+            <button
+              type="button"
+              onClick={goPrevMonth}
+              className="rounded-sm p-1 text-[var(--ink-faint)] hover:bg-muted hover:text-foreground"
+            >
               <ChevronLeft size={14} />
             </button>
             <span className="text-[13px] font-semibold text-foreground">
               {MONTH_LABELS[viewMonth]} {viewYear}
             </span>
-            <button type="button" onClick={goNextMonth} className="rounded-sm p-1 text-[var(--ink-faint)] hover:bg-muted hover:text-foreground">
+            <button
+              type="button"
+              onClick={goNextMonth}
+              className="rounded-sm p-1 text-[var(--ink-faint)] hover:bg-muted hover:text-foreground"
+            >
               <ChevronRight size={14} />
             </button>
           </div>
@@ -172,8 +220,14 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
           <div className="grid grid-cols-7 gap-0.5">
             {cells.map((day, i) => {
               if (day === null) return <div key={`blank-${i}`} />
-              const isSelected = parsed?.year === viewYear && parsed?.month === viewMonth && parsed?.day === day
-              const isToday = now.getFullYear() === viewYear && now.getMonth() === viewMonth && now.getDate() === day
+              const isSelected =
+                parsed?.year === viewYear &&
+                parsed?.month === viewMonth &&
+                parsed?.day === day
+              const isToday =
+                now.getFullYear() === viewYear &&
+                now.getMonth() === viewMonth &&
+                now.getDate() === day
               return (
                 <button
                   key={day}
@@ -181,7 +235,8 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
                   onClick={() => selectDay(day)}
                   className={cn(
                     "flex size-7 items-center justify-center rounded-sm text-[12.5px] text-foreground hover:bg-muted",
-                    isSelected && "bg-primary font-semibold text-primary-foreground hover:bg-primary",
+                    isSelected &&
+                      "bg-primary font-semibold text-primary-foreground hover:bg-primary",
                     !isSelected && isToday && "font-semibold text-primary"
                   )}
                 >
@@ -198,9 +253,11 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
                 min={0}
                 max={23}
                 value={pad(hour)}
-                onChange={(e) => commitTime(clamp(Number(e.target.value), 0, 23), minute)}
+                onChange={(e) =>
+                  commitTime(clamp(Number(e.target.value), 0, 23), minute)
+                }
                 aria-label="Hour"
-                className="h-[30px] w-[42px] rounded-btn border border-border bg-muted px-1 text-center text-[13px] text-foreground outline-none [appearance:textfield] focus-visible:border-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-[30px] w-[42px] [appearance:textfield] rounded-btn border border-border bg-muted px-1 text-center text-[13px] text-foreground outline-none focus-visible:border-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <span className="text-[13px] text-muted-foreground">:</span>
               <input
@@ -208,9 +265,11 @@ export function DateTimePicker({ value, onChange, placeholder = "Select date & t
                 min={0}
                 max={59}
                 value={pad(minute)}
-                onChange={(e) => commitTime(hour, clamp(Number(e.target.value), 0, 59))}
+                onChange={(e) =>
+                  commitTime(hour, clamp(Number(e.target.value), 0, 59))
+                }
                 aria-label="Minute"
-                className="h-[30px] w-[42px] rounded-btn border border-border bg-muted px-1 text-center text-[13px] text-foreground outline-none [appearance:textfield] focus-visible:border-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-[30px] w-[42px] [appearance:textfield] rounded-btn border border-border bg-muted px-1 text-center text-[13px] text-foreground outline-none focus-visible:border-primary [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             </div>
 

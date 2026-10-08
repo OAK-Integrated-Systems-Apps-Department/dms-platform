@@ -1,9 +1,10 @@
 package com.oak.dms.tenant;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.metadata.seed.TenantStarterCatalogService;
 import com.oak.dms.tenant.dto.CreateTenantRequest;
 import com.oak.dms.tenant.dto.UpdateTenantRequest;
 import com.oak.dms.tenant.dto.TenantResponse;
@@ -34,6 +35,7 @@ public class TenantServiceImpl implements TenantService {
     private final TenantRepository tenantRepository;
     private final TenantMapper tenantMapper;
     private final AuditService auditService;
+    private final TenantStarterCatalogService starterCatalogService;
 
     @Override
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -48,7 +50,10 @@ public class TenantServiceImpl implements TenantService {
                 .status(Tenant.TenantStatus.active)
                 .build();
 
-        Tenant saved = tenantRepository.save(tenant);
+        // Flushed so the tenants row exists before the catalogue rows that
+        // reference it; neither has a JPA association to the other.
+        Tenant saved = tenantRepository.saveAndFlush(tenant);
+        starterCatalogService.install(saved.getTenantId());
         log.info("Created tenant {} ({})", saved.getTenantId(), saved.getDomain());
 
         // platformLevel() - this event isn't about the caller's own tenant
@@ -77,6 +82,43 @@ public class TenantServiceImpl implements TenantService {
         Tenant tenant = tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
         return tenantMapper.toResponse(tenant);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TenantResponse> listTenants(Pageable pageable, boolean includeDeactivated) {
+        return includeDeactivated
+                ? tenantRepository.findAllIncludingDeactivated(pageable).map(tenantMapper::toResponse)
+                : listTenants(pageable);
+    }
+
+    @Override
+    @Transactional
+    public TenantResponse reactivateTenant(UUID tenantId) {
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
+        if (tenant.getKeysShreddedAt() != null) {
+            throw new com.oak.dms.folder.FolderException(org.springframework.http.HttpStatus.CONFLICT,
+                    "TENANT_KEYS_SHREDDED", "This organisation's encryption keys were destroyed, so its documents "
+                    + "can never be read again - it can't be reactivated.");
+        }
+        Map<String, Object> previousValue = Map.of("status", tenant.getStatus(), "deactivated", tenant.isDeleted());
+        tenant.setDeleted(false);
+        tenant.setDeletedAt(null);
+        tenant.setStatus(Tenant.TenantStatus.active);
+        tenant.setUpdatedAt(OffsetDateTime.now());
+        Tenant saved = tenantRepository.save(tenant);
+        log.info("Reactivated tenant {}", tenantId);
+        auditService.event(AuditActionCatalog.TENANT_UPDATED)
+                .platformLevel()
+                .objectType(AuditObjectTypes.TENANT)
+                .objectId(tenantId)
+                .resourceName(saved.getTenantName())
+                .outcome(AuditOutcome.SUCCESS)
+                .previousValue(previousValue)
+                .newValue(Map.of("status", saved.getStatus(), "deactivated", false))
+                .log();
+        return tenantMapper.toResponse(saved);
     }
 
     @Override
@@ -124,6 +166,8 @@ public class TenantServiceImpl implements TenantService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
         String tenantName = tenant.getTenantName();
 
+        // From here its users can't sign in, and sessions they already have stop working on their next
+        // request (OrganisationStatusGuard).
         tenant.setDeleted(true);
         tenant.setDeletedAt(OffsetDateTime.now());
         tenant.setStatus(Tenant.TenantStatus.archived);

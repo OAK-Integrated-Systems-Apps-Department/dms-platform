@@ -21,7 +21,7 @@ public final class TenantContext {
      * already been rebound from the real admin's identity to the
      * impersonation target's - the one place in the whole request that
      * still knows who the real, authenticated caller was. {@code null} for
-     * every ordinary, non-impersonated request. {@link com.oak.dms.audit.AuditService}
+     * every ordinary, non-impersonated request. {@link com.oak.dms.audit.service.AuditService}
      * is the only reader: every audit event's {@code impersonated_by}/
      * {@code impersonated_by_display_name} columns come from here, never
      * from a call site (see {@code AuditEventBuilder}, which has no setter
@@ -44,6 +44,14 @@ public final class TenantContext {
      * later, unrelated request on a pooled thread.
      */
     private static final ThreadLocal<List<String>> CURRENT_TARGET_PLATFORM_ROLES_CACHE = new ThreadLocal<>();
+
+    /**
+     * Set by {@link #markBackgroundJob()}: a worker (bulk import, export) acting as the user who
+     * started the job, with no request and so no token. AuthorizationService then resolves the
+     * user's realm roles (TENANT_ADMIN) live from Keycloak, as it does for an impersonation target,
+     * so the job's access checks are the user's own as of now - not as of when they started it.
+     */
+    private static final ThreadLocal<Boolean> CURRENT_BACKGROUND_JOB = new ThreadLocal<>();
 
     private TenantContext() {
     }
@@ -71,6 +79,16 @@ public final class TenantContext {
         CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
     }
 
+    /** After {@link #set(UUID, UUID, String, UUID)}, in a worker acting as that user - see {@link #CURRENT_BACKGROUND_JOB}. */
+    public static void markBackgroundJob() {
+        CURRENT_BACKGROUND_JOB.set(Boolean.TRUE);
+        CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
+    }
+
+    public static boolean isBackgroundJob() {
+        return Boolean.TRUE.equals(CURRENT_BACKGROUND_JOB.get());
+    }
+
     /** Called only by {@code ImpersonationContextFilter}, once per impersonated request, after re-binding the fields above to the target. */
     public static void setImpersonator(UUID impersonatorId, String impersonatorDisplayName) {
         CURRENT_IMPERSONATOR_ID.set(impersonatorId);
@@ -90,6 +108,11 @@ public final class TenantContext {
     /** Null if unset - e.g. context bound via the 2-arg {@link #set(UUID, UUID)} overload, which no production call site uses today. */
     public static UUID getKeycloakIdOrNull() {
         return CURRENT_USER_KEYCLOAK_ID.get();
+    }
+
+    /** The bound tenant, or null outside a request/job (callers that work either way). */
+    public static UUID getTenantIdOrNull() {
+        return CURRENT_TENANT.get();
     }
 
     public static UUID getTenantId() {
@@ -130,5 +153,6 @@ public final class TenantContext {
         CURRENT_IMPERSONATOR_ID.remove();
         CURRENT_IMPERSONATOR_DISPLAY_NAME.remove();
         CURRENT_TARGET_PLATFORM_ROLES_CACHE.remove();
+        CURRENT_BACKGROUND_JOB.remove();
     }
 }

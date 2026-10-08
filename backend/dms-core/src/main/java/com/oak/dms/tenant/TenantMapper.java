@@ -10,5 +10,7 @@ import org.mapstruct.Mapper;
  */
 @Mapper(componentModel = "spring")
 public interface TenantMapper {
+    @org.mapstruct.Mapping(target = "deactivated", source = "deleted")
+    @org.mapstruct.Mapping(target = "deactivatedAt", source = "deletedAt")
     TenantResponse toResponse(Tenant tenant);
 }

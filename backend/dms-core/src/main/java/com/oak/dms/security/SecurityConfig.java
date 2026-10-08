@@ -1,10 +1,11 @@
 package com.oak.dms.security;
 
-import com.oak.dms.audit.AuditRequestContextFilter;
+import com.oak.dms.audit.filter.AuditRequestContextFilter;
 import com.oak.dms.security.auth.CookieBearerTokenResolver;
 import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
+import com.oak.dms.security.rbac.controller.AuditingAccessDeniedHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -74,7 +75,13 @@ public class SecurityConfig {
             "/api/v1/auth/logout",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
-            "/api/v1/auth/reset-password/validate"
+            "/api/v1/auth/reset-password/validate",
+            // Cloud malware-scanner verdict webhooks (Azure Event Grid, AWS
+            // EventBridge) - they can't present a Keycloak JWT, so
+            // ScanCallbackController authenticates them with a shared-secret
+            // header instead, and a callback can only trigger a re-check of
+            // the provider's own verdict, never set one.
+            "/api/v1/scanning/callbacks/*"
     };
 
     @Bean
@@ -144,7 +151,9 @@ public class SecurityConfig {
         // AuditRequestContextFilter, which sets this on every
         // authenticated response so the frontend can thread a related
         // sequence's correlation_id into a subsequent call.
-        configuration.setExposedHeaders(List.of("X-Correlation-Id"));
+        // Content-Disposition likewise, so file downloads (e.g. the bulk
+        // import template) can keep the server-chosen filename.
+        configuration.setExposedHeaders(List.of("X-Correlation-Id", "Content-Disposition"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

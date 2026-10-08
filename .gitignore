@@ -1,12 +1,19 @@
 infra/local/.env
 .idea/
+
+# Root-level local dev env file (real values for running dms-core directly
+# on the host, e.g. via mvnw/IDE) - see .env.example for the same variable
+# names with no real secrets, safe to commit.
+/.env
 infra/secrets/*.env
 !infra/secrets/*.enc.env
 
 # Ignore dms-core encrypted secrets file
 infra/secrets/dms-core.secrets.enc.env
 infra/secrets/dms-core.secrets.env
-# Python build/test artifacts (ocr-worker and scripts/dev). These appear
+
+# Python build/test artifacts (ocr-worker, scripts/dev, and
+# infra/production/render-secrets.py). These appear
 # whenever pytest runs with the source tree bind-mounted into a container,
 # which is how the ocr-worker suite is run -- see its README.
 __pycache__/
@@ -39,3 +46,13 @@ backend/workers/ocr-worker/eval/reports/*-real-detail.json
 # nearly lost to a killed shell); once the report exists it is redundant.
 backend/workers/ocr-worker/eval/reports/*.progress.jsonl
 backend/workers/ocr-worker/eval/reports/*.log
+
+# Production server-side files (infra/production) - real secrets and deploy
+# state live only on the server; see infra/production/.env.example.
+infra/production/.env
+infra/production/dms-core.env
+infra/production/.deploy-history
+infra/production/.deploy.lock
+
+# Development encryption key backup (infra/local) - never commit keys.
+.dms-dev-keys/

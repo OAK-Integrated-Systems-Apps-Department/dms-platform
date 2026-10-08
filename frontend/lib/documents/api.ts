@@ -1,66 +1,400 @@
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
-/** Mirrors com.oak.dms.document.dto.DocumentVersionResponse on the backend. */
-export interface DocumentVersionResponse {
+import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
+
+/** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
+export interface SelectableDocumentTypeDto {
+  documentTypeId: string
+  typeCode: string
+  typeName: string
+}
+
+/** Mirrors backend/dms-core's ScanResultStatus. */
+export type ScanStatus =
+  | "pending"
+  | "clean"
+  | "infected"
+  | "failed"
+  | "unscannable"
+  | "quarantined"
+  | "released_override"
+
+/**
+ * Mirrors backend/dms-core's IngestionTicketResponse. An upload is only a
+ * document once its malware scan passes: 201 = clean and created,
+ * 202 = still being scanned (it appears once clean).
+ */
+export interface IngestionTicketDto {
+  scanResultId: string
+  status: ScanStatus
+  documentId: string | null
+  versionId: string | null
+  originalFilename: string
+  sizeBytes: number | null
+  threatName: string | null
+  message: string | null
+  retrying: boolean
+  submittedAt: string
+  completedAt: string | null
+}
+
+/** Active document types the caller may upload as (needs only docm.documents.create). */
+export async function fetchSelectableDocumentTypes(): Promise<
+  SelectableDocumentTypeDto[]
+> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/document-types/selectable`,
+    undefined,
+    "Could not load document types."
+  )
+}
+
+/**
+ * One file through `POST /api/v1/documents` (multipart). Throws ApiError on
+ * 413 (too large), 415 (type not allowed), 422 (blocked by the malware scan)
+ * and any other failure - `status` tells them apart.
+ */
+export async function uploadDocument(
+  file: File,
+  documentTypeId: string,
+  title: string,
+  folderId?: string | null,
+  /** Checked for duplicates and found none: refuse (409) if the same file arrived meanwhile. */
+  refuseDuplicates = false,
+  /**
+   * Schema field keys OCR should extract, from the Scan Documents field
+   * picker. Omitted for an ordinary upload - the same endpoint either way, so
+   * there is one path into the scan gate rather than two to keep in step.
+   * OCR starts only after the file comes back clean.
+   */
+  requestedFields?: string[]
+): Promise<IngestionTicketDto> {
+  const form = new FormData()
+  form.append("file", file)
+  // No Content-Type header: the browser must set the multipart boundary itself.
+  const params = new URLSearchParams({ documentTypeId, title })
+  if (folderId) params.set("folderId", folderId)
+  if (refuseDuplicates) params.set("refuseDuplicates", "true")
+  if (requestedFields && requestedFields.length > 0) {
+    params.set("requestedFields", JSON.stringify(requestedFields))
+  }
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents?${params.toString()}`,
+    { method: "POST", body: form },
+    "Upload failed."
+  )
+  return response.json() as Promise<IngestionTicketDto>
+}
+
+/** Mirrors DocumentListItem - one row of the document browser. */
+export interface DocumentListItemDto {
   documentId: string
-  versionId: string
   title: string
+  documentTypeId: string
+  documentTypeName: string | null
+  folderId: string | null
+  fileName: string | null
+  sizeBytes: number | null
+  mimeType: string | null
+  versionNumber: number | null
+  ownerUserId: string
+  createdAt: string
+  /** Has its own access list (V54) instead of following its folder. */
+  restricted: boolean
+  /** What the caller may do with it. */
+  myAccess: FolderAccessLevel
+}
+
+/** Mirrors DocumentAccessResponse - who can open a document. */
+export interface DocumentAccessDto {
+  documentId: string
+  /** inherit = follows its folder; restricted = its own list. */
+  mode: "inherit" | "restricted"
+  effectiveMode: "everyone" | "restricted"
+  folderId: string | null
+  inheritedFromFolderId: string | null
+  inheritedFromName: string | null
+  entries: FolderAccessEntryDto[]
+  myAccess: FolderAccessLevel
+  canManage: boolean
+}
+
+export async function fetchDocumentAccess(
+  documentId: string
+): Promise<DocumentAccessDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/access`,
+    undefined,
+    "Could not load who can open this document."
+  )
+}
+
+export async function saveDocumentAccess(
+  documentId: string,
+  mode: "inherit" | "restricted",
+  entries: Pick<
+    FolderAccessEntryDto,
+    "principalType" | "principalId" | "level"
+  >[]
+): Promise<DocumentAccessDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/access`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, entries }),
+    },
+    "Could not save who can open this document."
+  )
+}
+
+export interface DocumentPageDto {
+  content: DocumentListItemDto[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  last: boolean
+}
+
+/**
+ * `GET /api/v1/documents`. `folderId` = that folder; null = documents not in
+ * any folder; `all` = every document (with `q`, a title search). `page` is 0-indexed.
+ */
+export async function fetchDocuments(params: {
+  folderId: string | null
+  all?: boolean
+  q?: string
+  page: number
+  size: number
+}): Promise<DocumentPageDto> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size),
+    sort: "createdAt,desc",
+  })
+  if (params.folderId) search.set("folderId", params.folderId)
+  if (params.all) search.set("all", "true")
+  if (params.q?.trim()) search.set("q", params.q.trim())
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
+    undefined,
+    "Could not load documents."
+  )
+}
+
+/** Documents shared with the caller by name or role (restricted documents they don't own), newest first. */
+export async function fetchSharedWithMe(params: {
+  q?: string
+  page: number
+  size: number
+}): Promise<DocumentPageDto> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size),
+    sort: "createdAt,desc",
+  })
+  if (params.q?.trim()) search.set("q", params.q.trim())
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/shared-with-me?${search.toString()}`,
+    undefined,
+    "Could not load what's shared with you."
+  )
+}
+
+/** Soft-deletes a document (`DELETE /api/v1/documents/{id}`). */
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}`,
+    { method: "DELETE" },
+    "Could not delete the document."
+  )
+}
+
+/** The file for the in-app preview - audited as viewed, not downloaded. */
+export async function previewDocumentFile(
+  documentId: string
+): Promise<{ blob: Blob; contentType: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/content?inline=true`,
+    undefined,
+    "Could not open the document."
+  )
+  const blob = await response.blob()
+  return {
+    blob,
+    contentType: (response.headers.get("Content-Type") ?? blob.type ?? "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase(),
+  }
+}
+
+/**
+ * Office files the browser can't show (Word .doc, PowerPoint, OpenDocument,
+ * RTF, Visio) as a PDF - converted on the server the first time, then kept.
+ */
+export async function previewConvertedPdf(documentId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/preview.pdf`,
+    undefined,
+    "Could not prepare the preview."
+  )
+  return response.blob()
+}
+
+/** One older version's file, for the in-app preview - audited as viewed, not downloaded. */
+export async function previewVersionFile(
+  documentId: string,
+  versionId: string
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/content?inline=true`,
+    undefined,
+    "Could not open that version."
+  )
+  return response.blob()
+}
+
+/** An older version of an Office file as a PDF - converted on the server the first time. */
+export async function previewVersionPdf(
+  documentId: string,
+  versionId: string
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/preview.pdf`,
+    undefined,
+    "Could not prepare the preview."
+  )
+  return response.blob()
+}
+
+/** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
+export async function moveDocuments(
+  documentIds: string[],
+  folderId: string | null
+): Promise<{ moved: number }> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/move`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentIds, folderId }),
+    },
+    "Could not move the documents."
+  )
+}
+
+/** Mirrors DocumentVersionService.VersionItem - one row of a document's history. */
+export interface DocumentVersionDto {
+  versionId: string
+  versionNumber: number
+  /** "1.2" */
+  versionLabel: string
   originalFilename: string
   mimeType: string
   sizeBytes: number
+  versionComment: string | null
+  /** initial_upload, replacement_upload, rollback, ... */
+  createdReason: string
   scanStatus: string
-  ocrStatus: string
+  servable: boolean
   createdAt: string
+  createdBy: string | null
+  createdByName: string | null
+  /** the version that opens and downloads */
+  current: boolean
+  /** SHA-256 of its content */
+  fileHash: string
 }
+
+/** `GET /api/v1/documents/{id}/versions` - newest first. */
+export async function fetchDocumentVersions(
+  documentId: string
+): Promise<DocumentVersionDto[]> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions`,
+    undefined,
+    "Could not load the version history."
+  )
+}
+
+/** `GET /api/v1/documents/{id}/versions/{versionId}/content` - one version's file. */
+export async function downloadDocumentVersion(
+  documentId: string,
+  versionId: string
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/content`,
+    undefined,
+    "Could not download that version."
+  )
+  const blob = await response.blob()
+  const header = response.headers.get("Content-Disposition") ?? ""
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+  return { blob, filename: match ? decodeURIComponent(match[1]) : "document" }
+}
+
+/**
+ * `POST /api/v1/documents/{id}/versions` - a new version, scanned first; it
+ * becomes the current version once clean (201) or when the scan finishes (202).
+ */
+export async function uploadDocumentVersion(
+  documentId: string,
+  file: File,
+  comment?: string
+): Promise<IngestionTicketDto> {
+  const form = new FormData()
+  form.append("file", file)
+  const params = new URLSearchParams()
+  if (comment?.trim()) params.set("comment", comment.trim())
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions?${params.toString()}`,
+    { method: "POST", body: form },
+    "Could not upload the new version."
+  )
+  return response.json() as Promise<IngestionTicketDto>
+}
+
+/** `POST .../versions/{versionId}/restore` - adds a new version with that version's content. */
+export async function restoreDocumentVersion(
+  documentId: string,
+  versionId: string
+): Promise<IngestionTicketDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/restore`,
+    { method: "POST" },
+    "Could not restore that version."
+  )
+}
+
+/** `GET /api/v1/documents/{id}/content` - the current version's file. */
+export async function downloadDocumentFile(
+  documentId: string
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/documents/${documentId}/content`,
+    undefined,
+    "Could not download the document."
+  )
+  const blob = await response.blob()
+  const header = response.headers.get("Content-Disposition") ?? ""
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+  return { blob, filename: match ? decodeURIComponent(match[1]) : "document" }
+}
+
+// ----------------------------------------------------------------- OCR
+// Re-applied from the OCR branch. Its own uploadDocument is gone - uploads
+// go through the scan gate above, which now carries the field selection.
+// Everything here reads a document that already exists.
+
 
 /** A document type's required/optional field values, keyed by field_key --
  * mirrors dms-core's `Map<String, Object>` shape: a string for a
  * single-value field, an array for a multi_select field. */
 export type MetadataValues = Record<string, string | string[]>
 
-/**
- * Uploads a file as a new document's first version. `documentType` picks
- * which zone/field template (if any) ocr-worker applies -- see
- * backend/workers/ocr-worker's README "Zone / structured-field templates".
- * `metadataValues`, if given, is validated against the document type's
- * mandatory fields server-side before anything is written -- the caller
- * should already have checked this client-side (see
- * lib/document-type-fields/api.ts's `fetchDocumentTypeSchema` +
- * `POST .../validate`) for live per-field feedback, this is the backstop.
- *
- * `requestedFields` is the set of field keys the user chose in the upload
- * form's chip picker -- the server validates it's a subset of this
- * document type's visible schema fields and that every mandatory field is
- * included (a `MetadataValidationFailedException` -- same 400 shape as any
- * other metadata validation error -- otherwise). The document is created
- * with `ocrStatus: "processing"` immediately; OCR/field-extraction then
- * runs in the background -- see `fetchOcrStatus` to poll it.
- *
- * No `Content-Type` header is set on purpose: the browser must set the
- * multipart boundary itself when the body is a `FormData` -- overriding it
- * manually is a classic way to accidentally break the upload.
- */
-export async function uploadDocument(
-  file: File,
-  documentType: string,
-  requestedFields: string[],
-  metadataValues?: MetadataValues
-): Promise<DocumentVersionResponse> {
-  const formData = new FormData()
-  formData.append("file", file)
-  formData.append("documentType", documentType)
-  formData.append("requestedFields", JSON.stringify(requestedFields))
-  if (metadataValues && Object.keys(metadataValues).length > 0) {
-    formData.append("metadataValues", JSON.stringify(metadataValues))
-  }
-
-  return apiFetchJson(
-    `${API_BASE_URL}/api/v1/documents`,
-    { method: "POST", body: formData },
-    "Could not upload the document."
-  )
-}
 
 /** Current saved metadata field values for a document (field_key -> value). */
 export async function fetchDocumentMetadata(documentId: string): Promise<MetadataValues> {

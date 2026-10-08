@@ -16,11 +16,21 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * docs/database/V4 4.2, ported into a real migration at V32. This is the
- * exact table ocr-worker's own SQLAlchemy model (DocumentVersion in
- * backend/workers/ocr-worker/src/ocr_worker/models.py) reads/writes:
- * scanStatus/ocrStatus/storageObjectKey/mimeType must stay in sync with
- * that model's column expectations.
+ * docs/database/V4 4.2, ported into V32 alongside {@link Document} - see
+ * that entity's own doc comment for the shared circular-FK/DEFERRABLE
+ * reasoning. {@code storageLocationId}/{@code storageObjectKey} are
+ * deliberately here, not on {@link Document}: each version is a distinct
+ * physical object, so its location and its key within that location belong
+ * on the same row - see docs/storage-architecture.md's "why DocumentVersion,
+ * not Document" section. Neither is ever the sole tenant-isolation boundary
+ * on its own - {@code DocumentServiceImpl} re-validates tenant ownership on
+ * both this row and its storage location before every storage call.
+ * <p>
+ * This is also the exact table ocr-worker's own SQLAlchemy model
+ * (DocumentVersion in backend/workers/ocr-worker/src/ocr_worker/models.py)
+ * reads and writes: {@code scanStatus}/{@code ocrStatus}/
+ * {@code storageObjectKey}/{@code mimeType} must stay in sync with that
+ * model's column expectations.
  */
 @Entity
 @Table(name = "document_versions")
@@ -31,8 +41,19 @@ import java.util.UUID;
 @Builder
 public class DocumentVersion {
 
-    // No @UuidGenerator: see Document.documentId's comment -- the same
-    // reasoning applies here (DocumentServiceImpl assigns versionId itself).
+    /** Scanned clean by the malware scan gate. */
+    public static final String SCAN_STATUS_CLEAN = "clean";
+    /** Released from quarantine by an administrator override despite the scanner's verdict (V40). */
+    public static final String SCAN_STATUS_OVERRIDDEN = "overridden";
+
+    /** Whether this version's bytes may be served - scanned clean, or explicitly released by an administrator. */
+    public boolean isServable() {
+        return SCAN_STATUS_CLEAN.equals(scanStatus) || SCAN_STATUS_OVERRIDDEN.equals(scanStatus);
+    }
+
+    // No @UuidGenerator - same reasoning as Document.documentId: assigned by
+    // DocumentServiceImpl before save() so it can build the matching
+    // Document.latestVersionId/currentVersionId up front.
     @Id
     @Column(name = "version_id", updatable = false, nullable = false)
     private UUID versionId;
@@ -55,6 +76,9 @@ public class DocumentVersion {
     @Column(name = "version_label")
     private String versionLabel;
 
+    @Column(name = "storage_location_id", nullable = false)
+    private UUID storageLocationId;
+
     @Column(name = "storage_object_key", nullable = false)
     private String storageObjectKey;
 
@@ -64,6 +88,7 @@ public class DocumentVersion {
     @Column(name = "mime_type", nullable = false)
     private String mimeType;
 
+    /** SHA-256 hex digest, computed by DocumentServiceImpl from the upload stream before persisting - not a provider ETag. */
     @Column(name = "file_hash", nullable = false)
     private String fileHash;
 
@@ -173,4 +198,12 @@ public class DocumentVersion {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
+
+    /** Set when its document was permanently deleted (V62): the file and its key are destroyed. */
+    @Column(name = "purged_at")
+    private OffsetDateTime purgedAt;
+
+    /** The PDF it is previewed as, when it is an Office file (V64) - beside the original, same location. */
+    @Column(name = "rendition_object_key")
+    private String renditionObjectKey;
 }

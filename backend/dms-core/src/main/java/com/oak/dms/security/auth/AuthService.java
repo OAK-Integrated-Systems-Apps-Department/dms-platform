@@ -1,14 +1,15 @@
 package com.oak.dms.security.auth;
 
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditAuthMethod;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.enums.AuditAuthMethod;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.InvalidCredentialsException;
 import com.oak.dms.common.exception.SessionExpiredException;
 import com.oak.dms.security.auth.dto.KeycloakTokenResponse;
 import com.oak.dms.security.keycloak.KeycloakAdminProperties;
+import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import jakarta.servlet.http.Cookie;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -42,8 +44,10 @@ public class AuthService {
     private final AuthCookieService cookieService;
     private final Keycloak keycloakAdminClient;
     private final KeycloakAdminProperties adminProperties;
+    private final KeycloakUserService keycloakUserService;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final OrganisationStatusGuard organisationStatus;
 
     /**
      * Whether {@code username} needs an OTP code to sign in. Returns false
@@ -58,12 +62,13 @@ public class AuthService {
      */
     public boolean isMfaRequired(String username) {
         try {
-            List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
-                    .users().search(username, true);
-            if (matches.isEmpty()) {
+            // Username OR email, like the login itself - an email-only
+            // lookup miss here would skip the OTP prompt and doom the login.
+            Optional<UserRepresentation> match = keycloakUserService.findByUsernameOrEmail(username);
+            if (match.isEmpty()) {
                 return false;
             }
-            String userId = matches.get(0).getId();
+            String userId = match.get().getId();
             List<CredentialRepresentation> credentials = keycloakAdminClient.realm(adminProperties.getRealm())
                     .users().get(userId).credentials();
             return credentials.stream().anyMatch(c -> "otp".equals(c.getType()));
@@ -100,9 +105,24 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
+        User user = recordLastLogin(username);
+        // The password was right, but a suspended or closed organisation's users don't get a session.
+        Optional<String> inactive = user == null || hasRealmRole(tokens.accessToken(), "PLATFORM_ADMIN")
+                ? Optional.empty() : organisationStatus.inactiveReason(user.getTenantId());
+        if (inactive.isPresent()) {
+            keycloakAuthClient.revokeRefreshToken(tokens.refreshToken());
+            auditService.event(AuditActionCatalog.LOGIN_FAILURE)
+                    .tenantId(user.getTenantId())
+                    .actor(user.getUserId(), user.getDisplayName())
+                    .objectType(AuditObjectTypes.USER)
+                    .resourceName(username)
+                    .outcome(AuditOutcome.DENIED)
+                    .failureReason("organisation not active")
+                    .log();
+            throw new com.oak.dms.common.exception.OrganisationInactiveException(inactive.get());
+        }
         cookieService.writeSessionCookies(response, tokens, rememberMe);
         log.info("Successful login for user '{}'", username);
-        User user = recordLastLogin(username);
 
         // TenantContext isn't bound yet at this point in the request (the
         // session cookies were only just written above) - actor/tenant
@@ -127,6 +147,27 @@ public class AuthService {
     }
 
     /**
+     * Whether a token Keycloak has just issued to us (straight from its token endpoint, so not
+     * re-verified here) carries a realm role.
+     */
+    static boolean hasRealmRole(String accessToken, String role) {
+        try {
+            String[] parts = accessToken.split("\\.");
+            byte[] payload = java.util.Base64.getUrlDecoder().decode(parts[1]);
+            com.fasterxml.jackson.databind.JsonNode roles = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(payload).path("realm_access").path("roles");
+            for (com.fasterxml.jackson.databind.JsonNode r : roles) {
+                if (role.equalsIgnoreCase(r.asText())) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // Unreadable: treat as not having it.
+        }
+        return false;
+    }
+
+    /**
      * Best-effort: resolves {@code username} back to its local {@link User}
      * row (same Admin API username/email search {@link #isMfaRequired} already
      * uses) and stamps {@code last_login_at}. Deliberately never allowed to
@@ -142,12 +183,11 @@ public class AuthService {
      */
     private User recordLastLogin(String username) {
         try {
-            List<UserRepresentation> matches = keycloakAdminClient.realm(adminProperties.getRealm())
-                    .users().search(username, true);
-            if (matches.isEmpty()) {
+            Optional<UserRepresentation> match = keycloakUserService.findByUsernameOrEmail(username);
+            if (match.isEmpty()) {
                 return null;
             }
-            UUID keycloakId = UUID.fromString(matches.get(0).getId());
+            UUID keycloakId = UUID.fromString(match.get().getId());
             return userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).map(user -> {
                 user.setLastLoginAt(OffsetDateTime.now());
                 return userRepository.save(user);

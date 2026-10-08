@@ -8,24 +8,18 @@ import {
   RecentActivityPanel,
   RecentDocumentsPanel,
 } from "@/components/dashboard/panels"
+import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
+import { FolderNameDialog } from "@/components/folders/folder-dialogs"
+import { friendlyMessage } from "@/lib/api-error"
+import { createFolder } from "@/lib/folders/api"
+import { toast } from "sonner"
 import { StatsRow } from "@/components/dashboard/stats-row"
 import { WelcomeHeader } from "@/components/dashboard/welcome-header"
 import { recentDocuments } from "@/components/dashboard/data"
-import type { DocumentFileType, RecentDocument } from "@/components/dashboard/types"
+import type { RecentDocument } from "@/components/dashboard/types"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
-
-function extensionToType(name: string): DocumentFileType {
-  const ext = name.split(".").pop()?.toLowerCase()
-  if (ext === "xlsx" || ext === "xls" || ext === "csv") return "xlsx"
-  if (ext === "docx" || ext === "doc") return "docx"
-  return "pdf"
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { usePermissions } from "@/lib/auth/use-permissions"
 
 /**
  * Home dashboard. The page itself only decides which panels appear and
@@ -35,31 +29,44 @@ function formatSize(bytes: number): string {
 export default function Page() {
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
   const [documents, setDocuments] = useState<RecentDocument[]>(recentDocuments)
+  const { hasPermission } = usePermissions()
+  const canUpload = hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
+  // Each opening gets a fresh sheet (new key) seeded with the picked files.
+  const [upload, setUpload] = useState<{ key: number; files: File[] } | null>(
+    null
+  )
 
+  // Real upload now: the picked files go to the bulk upload panel, which
+  // sends each one through the malware-scanned POST /api/v1/documents.
   function handleUpload(files: FileList) {
-    const uploaded: RecentDocument[] = Array.from(files).map((file, index) => ({
-      id: `upload-${Date.now()}-${index}`,
-      name: file.name,
-      type: extensionToType(file.name),
-      owner: "You",
-      modified: "Just now",
-      size: formatSize(file.size),
-      status: "Pending",
-    }))
-    setDocuments((current) => [...uploaded, ...current])
+    setUpload({ key: Date.now(), files: Array.from(files) })
   }
 
-  function handleCreateFolder(name: string) {
-    const folder: RecentDocument = {
-      id: `folder-${Date.now()}`,
-      name,
-      type: "folder",
-      owner: "You",
-      modified: "Just now",
-      size: "—",
-      status: "Draft",
+  const canCreateFolder = hasPermission(PermissionCodes.DSC_FOLDERS_CREATE)
+  const [newFolder, setNewFolder] = useState<number | null>(null)
+
+  // A real top-level folder in the shared tree; it also shows in the
+  // (sample) recent list so the dashboard reacts straight away.
+  async function handleCreateFolder(name: string): Promise<string | null> {
+    try {
+      const folder = await createFolder(name, null)
+      const row: RecentDocument = {
+        id: `folder-${folder.folderId}`,
+        name: folder.name,
+        type: "folder",
+        owner: "You",
+        modified: "Just now",
+        size: "—",
+        status: "Draft",
+      }
+      setDocuments((current) => [row, ...current])
+      toast.success(`Created "${folder.name}".`, {
+        description: "Open My Documents to add documents to it.",
+      })
+      return null
+    } catch (error) {
+      return friendlyMessage(error, "Could not create the folder.")
     }
-    setDocuments((current) => [folder, ...current])
   }
 
   return (
@@ -68,8 +75,10 @@ export default function Page() {
         firstName={user?.displayName.split(" ")[0] ?? ""}
         dateLabel="Tuesday, August 18, 2026"
         isLoadingName={isUserLoading}
-        onUpload={handleUpload}
-        onCreateFolder={handleCreateFolder}
+        onUpload={canUpload ? handleUpload : undefined}
+        onCreateFolder={
+          canCreateFolder ? () => setNewFolder(Date.now()) : undefined
+        }
       />
 
       <StatsRow />
@@ -80,6 +89,28 @@ export default function Page() {
       </div>
 
       <RecentActivityPanel />
+
+      {upload && (
+        <BulkUploadSheet
+          key={upload.key}
+          open
+          initialFiles={upload.files}
+          onOpenChange={(open) => {
+            if (!open) setUpload(null)
+          }}
+        />
+      )}
+      {newFolder !== null && (
+        <FolderNameDialog
+          key={newFolder}
+          open
+          onOpenChange={(open) => !open && setNewFolder(null)}
+          title="New folder"
+          description="A top-level folder in your organisation's shared folders."
+          confirmLabel="Create folder"
+          onSubmit={handleCreateFolder}
+        />
+      )}
     </DashboardShell>
   )
 }

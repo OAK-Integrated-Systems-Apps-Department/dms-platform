@@ -85,10 +85,17 @@ export function isNetworkError(error: unknown): boolean {
  * or a network failure - see `apiFetch`), or `fallback` if `error` isn't
  * even an `Error`.
  */
+/** The user's organisation is suspended or closed - the server refuses everything they do. */
+export function isOrganisationInactive(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "ORGANISATION_INACTIVE"
+}
+
 export function friendlyMessage(
   error: unknown,
   fallback = "Something went wrong. Please try again."
 ): string {
+  if (isOrganisationInactive(error) && error instanceof Error)
+    return error.message
   if (error instanceof ApiError && error.status === 403) {
     return "You don't have permission to do that."
   }

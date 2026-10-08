@@ -9,6 +9,21 @@
 # from the committed ciphertext in infra/secrets/dms-core.secrets.enc.env
 # (encrypted with OpenBao's Transit engine - see scripts/openbao-encrypt-secrets.sh).
 # The plaintext file is gitignored and should be deleted after `docker compose up`.
+#
+# Public host: every browser-facing URL below (Keycloak's KC_HOSTNAME and
+# token issuer, the web client's redirect URIs/web origins, dms-core's CORS
+# origin and email links, the frontend's API/Keycloak URLs) is built from
+# ONE variable, PUBLIC_HOST - the hostname or IP a browser uses to reach
+# this machine. Defaults to localhost. To deploy on another machine, set it
+# once in infra/local/.env (Compose reads that file automatically):
+#     PUBLIC_HOST=192.168.1.50
+# then `docker compose up -d --force-recreate`. Nothing else needs editing -
+# keycloak-bootstrap re-applies the web client's URLs on every run, so an
+# already-imported realm picks up the new host too.
+# Plain-HTTP caveat: browsers only send Secure cookies over plain HTTP to
+# localhost, so on any other host without HTTPS also set
+#     AUTH_COOKIE_SECURE=false
+# in the same file (never do that behind real HTTPS).
 
 x-secrets-env: &secrets-env
   env_file:
@@ -106,8 +121,11 @@ services:
       # using the "keycloak:8080" service name for the request itself; it
       # only stops KC_HOSTNAME from being used to reject those requests -
       # generated links always use KC_HOSTNAME regardless.
-      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME: http://${PUBLIC_HOST:-localhost}:8081
       KC_HOSTNAME_STRICT: "false"
+      # Substituted into oak-dms-realm.json's ${OAK_DMS_WEB_URL} placeholders
+      # at first import (redirectUris/webOrigins of the oak-dms-web client).
+      OAK_DMS_WEB_URL: http://${PUBLIC_HOST:-localhost}:3000
     ports:
       - "8081:8080"
     volumes:
@@ -133,6 +151,10 @@ services:
       KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_REALM: oak-dms
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
+      # Re-applied to the oak-dms-web client on every run - see bootstrap.sh's
+      # web client URLs section for why the realm import alone isn't enough.
+      KEYCLOAK_WEB_CLIENT_ID: oak-dms-web
+      KEYCLOAK_WEB_CLIENT_URL: http://${PUBLIC_HOST:-localhost}:3000
       # Re-applied on every bootstrap run - see bootstrap.sh's SMTP config
       # section for why this can't just live in oak-dms-realm.json alone.
       KEYCLOAK_SMTP_HOST: mailpit
@@ -148,6 +170,142 @@ services:
       keycloak:
         condition: service_started
 
+  # Optional, standalone S3-compatible backend for exercising
+  # S3ObjectStorageAdapter against a real server without AWS/MinIO - see
+  # docs/storage-architecture.md and SeaweedFsDocumentUploadIT. Not a
+  # dependency of dms-core (which defaults to STORAGE_PROVIDER=FILE_SYSTEM):
+  # register a StorageLocation pointing at this endpoint to use it, e.g.
+  #   provider=S3, endpoint=http://localhost:8333, bucket=dms-seaweedfs-test,
+  #   pathStyleAccess=true, credentialRef=<see .env.example>
+  # No SeaweedFS-specific code exists anywhere in the Java application -
+  # S3ObjectStorageAdapter talks to it exactly the way it talks to AWS S3
+  # or MinIO, via endpointOverride()/forcePathStyle() only.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: oakdms-seaweedfs
+    # Credentials never live in this committed file (see .env.example) -
+    # the S3 identity config SeaweedFS itself needs (-s3.config) is
+    # generated from env vars at container start, into a location inside
+    # the named volume below so it isn't lost between restarts.
+    #
+    # Deliberately env_file only, no environment: entry for these two
+    # variables: an environment: value takes precedence over env_file for
+    # the same key, so a "${SEAWEEDFS_S3_ACCESS_KEY:-changeme}"-style
+    # fallback here would silently WIN over the real value env_file loads
+    # from the root .env (Compose's own ${...} substitution for
+    # environment: never reads that file - only env_file does). Left
+    # unset in .env, this container simply starts with no working
+    # credential (S3 auth rejects everything) rather than a functioning
+    # "changeme" fallback baked into a committed file.
+    env_file:
+      - path: ../../.env
+        required: false
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cat > /data/s3_config.json <<CONFIG
+        {
+          "identities": [
+            {
+              "name": "dms-local",
+              "credentials": [
+                {"accessKey": "$$SEAWEEDFS_S3_ACCESS_KEY", "secretKey": "$$SEAWEEDFS_S3_SECRET_KEY"}
+              ],
+              "actions": ["Read", "Write", "List", "Tagging", "Admin"]
+            }
+          ]
+        }
+        CONFIG
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/data/s3_config.json
+    ports:
+      - "8333:8333" # S3 API - the only port this stack's other services need
+      - "8888:8888" # Filer HTTP API - browsable directory listing for manual local checks only
+    volumes:
+      # Persists both the actual object data and the generated s3_config.json
+      # across container restarts/recreates - see requirement 5/10 below.
+      - seaweedfs_data:/data
+    healthcheck:
+      # A plain TCP check, not an HTTP one: the S3 API legitimately answers
+      # unauthenticated requests with 403 once it's up, and both `wget
+      # --spider` and plain `wget` treat that as a failure (non-2xx),
+      # which would report "unhealthy" even while genuinely serving
+      # requests correctly. `nc -z` only proves something is listening -
+      # exactly what's needed here. 127.0.0.1, not localhost: this image's
+      # S3 API only binds IPv4, and this container resolves "localhost" to
+      # ::1 first, producing a false negative against the IPv6 loopback.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8333"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Malware scanning engine for the ingestion scan gate (com.oak.dms.scanning,
+  # see docs/scanning-architecture.md) - clamd, spoken to over TCP with the
+  # INSTREAM protocol by ClamAvScanAdapter. clamav-debian rather than
+  # clamav/clamav: the latter publishes amd64 only, the former is multi-arch
+  # (Apple Silicon included). Same upstream release.
+  #
+  # Signature updates (VMSBDI-FR-006 / NFR-002): the image's own /init runs
+  # freshclam as a daemon next to clamd, checking FRESHCLAM_CHECKS times a
+  # day. If an update fails, clamd keeps scanning with the last good
+  # definitions - ClamAV's own behaviour, no application code involved.
+  # clamd/freshclam settings are applied by /init from CLAMD_CONF_<Key>/
+  # FRESHCLAM_CONF_<Key> env vars; a mounted freshclam.conf "Checks" line
+  # would be ignored (/init passes --checks explicitly).
+  clamav:
+    image: clamav/clamav-debian:1.4.3
+    container_name: oakdms-clamav
+    <<: *secrets-env
+    environment:
+      FRESHCLAM_CHECKS: "12" # every 2 hours
+      # Kept >= dms.scanning.max-file-size-bytes (100MB), otherwise clamd
+      # answers "INSTREAM size limit exceeded" for files the gate accepted.
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+      CLAMD_CONF_MaxScanSize: 400M
+    ports:
+      - "3310:3310" # clamd - for a host-run dms-core (dms.scanning.clamav.host=localhost)
+    volumes:
+      # The signature database - persisted so a restart doesn't re-download
+      # ~300MB of definitions before clamd can start.
+      - clamav_db:/var/lib/clamav
+    healthcheck:
+      # The image's own check: PING -> PONG on 3310.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # The first start downloads the full signature database before clamd
+      # listens - several minutes on a fresh volume.
+      start_period: 600s
+
+  # Office previews: converts Word/PowerPoint/OpenDocument/RTF/Visio files to
+  # PDF (LibreOffice inside Gotenberg) so they can be shown in the browser -
+  # see dms-core's DocumentRenditionService. Internal only: no ports, and the
+  # Chromium routes (which fetch URLs) are switched off; only dms-core calls it.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: oakdms-gotenberg
+    command:
+      - gotenberg
+      - --chromium-disable-routes=true
+      - --api-timeout=90s
+      - --libreoffice-auto-start=true
+      - --log-level=warn
+    # LibreOffice can use a lot of memory on a large or malformed file - cap it
+    # so a bad upload can't starve the rest of the server. A conversion that
+    # hits the limit fails (the preview says so); the container restarts.
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   dms-core:
     build:
       context: ../../backend
@@ -161,6 +319,16 @@ services:
       # worker has. Same file, not a copy: two files would drift, and the
       # symptom would be a 401 nobody can explain.
       - ../secrets/ocr-worker.secrets.env
+      # Root .env (repo root, gitignored - see .env.example) - loaded here
+      # IN ADDITION to the secrets file above, specifically so a locally
+      # registered StorageLocation's STORAGE_CRED_<ref>_ACCESS_KEY/
+      # _SECRET_KEY pair (see S3ObjectStorageAdapter#resolveCredentials)
+      # reaches this container too. Those variable names are dynamic (one
+      # pair per credentialRef), so unlike every other variable below they
+      # can't be listed as fixed keys in environment:. required: false so
+      # `docker compose up` still works if you haven't created a root .env.
+      - path: ../../.env
+        required: false
     environment:
       SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://postgres:5432/dms_core_db
@@ -170,10 +338,12 @@ services:
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
       REDIS_HOST: redis
+      # Office files are converted to PDF for the preview (DocumentRenditionService).
+      PREVIEW_CONVERTER_URL: http://gotenberg:3000
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
-      KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/oak-dms
+      KEYCLOAK_ISSUER_URI: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/oak-dms/protocol/openid-connect/certs
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
@@ -185,14 +355,60 @@ services:
       # spring.mail.* for why these aren't merged).
       MAIL_HOST: mailpit
       MAIL_PORT: "1025"
-      FRONTEND_BASE_URL: http://localhost:3000
       # Document upload (com.oak.dms.document) writes here; ocr-worker
       # reads the same bucket/key back -- see MinioProperties.
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      FRONTEND_BASE_URL: http://${PUBLIC_HOST:-localhost}:3000
+      CORS_ALLOWED_ORIGINS: http://${PUBLIC_HOST:-localhost}:3000
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      # Object storage (com.oak.dms.storage) - see docs/storage-architecture.md.
+      # STORAGE_PROVIDER/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY/S3_REGION/
+      # S3_PATH_STYLE_ACCESS deliberately NOT listed here (same reasoning as
+      # the seaweedfs service's SEAWEEDFS_S3_* comment above): an
+      # environment: entry takes precedence over env_file for the same key,
+      # and Compose's own ${...} substitution for environment: values never
+      # reads the root .env - only env_file does. Left entirely to env_file
+      # (root .env) - if unset there, application.yml's own defaults apply.
+      #
+      # S3_ENDPOINT is the one exception, hardcoded here on purpose - same
+      # reasoning as DB_URL/RABBITMQ_HOST/REDIS_HOST above. The root .env's
+      # S3_ENDPOINT (http://localhost:8333) is correct for host-side tools
+      # (curl, SeaweedFsDocumentUploadIT) but wrong from inside this
+      # container, where "localhost" means this container, not the
+      # seaweedfs one. "seaweedfs" resolves via Compose's internal DNS.
+      S3_ENDPOINT: http://seaweedfs:8333
+      # Malware scanning (com.oak.dms.scanning) - see docs/scanning-architecture.md.
+      # Staging (/data/dms/staging) and quarantine (/data/dms/quarantine)
+      # default to FILE_SYSTEM on the same documents_data volume below, in
+      # directories separate from /data/dms/documents.
+      CLAMAV_HOST: clamav
+      # Encryption at rest (com.oak.dms.encryption) - see docs/storage-architecture.md.
+      # Locally the data keys are wrapped with a development key file on the
+      # encryption_dev_keys volume below; set ENCRYPTION_PROVIDER=openbao plus
+      # ENCRYPTION_OPENBAO_ADDR/ENCRYPTION_OPENBAO_TOKEN (root .env) to use a real OpenBao instead.
+      # Production sets ENCRYPTION_REQUIRE_MANAGED_KEYS=true.
+      ENCRYPTION_LOCAL_DEV_KEY_FILE: /var/lib/dms-encryption/local-dev-keys.json
+      # A second copy outside Docker (repo/.dms-dev-keys, gitignored): restored
+      # automatically if the encryption_dev_keys volume is ever lost.
+      ENCRYPTION_LOCAL_DEV_BACKUP_FILE: /var/lib/dms-encryption-backup/local-dev-keys.json
     ports:
       - "8080:8080"
+    volumes:
+      # FILE_SYSTEM storage's default STORAGE_FILESYSTEM_BASE_PATH
+      # (/data/dms/documents) - without this, that path only exists in the
+      # container's writable layer, which the Dockerfile now pre-creates
+      # and chowns to oakdms (see backend/Dockerfile) but which Docker
+      # still initializes fresh on every recreated container. A named
+      # volume here makes uploaded objects persist across `docker compose
+      # up`/restarts, same as postgres_data/redis_data/seaweedfs_data below.
+      - documents_data:/data
+      # The development encryption key file. Losing this volume makes every
+      # locally encrypted object unreadable - dms-core refuses to start
+      # rather than quietly creating a new key once encrypted objects exist.
+      - encryption_dev_keys:/var/lib/dms-encryption
+      - ../../.dms-dev-keys:/var/lib/dms-encryption-backup
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,6 +419,10 @@ services:
       keycloak-bootstrap:
         condition: service_completed_successfully
       mailpit:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -312,6 +532,10 @@ services:
       # into the container, so Next's dev server never sees edits.
       # Polling fixes that at the cost of a bit of CPU; harmless if unneeded.
       WATCHPACK_POLLING: "true"
+      # Read by lib/api-config.ts. These URLs are used by the BROWSER, so
+      # they must be the public host, never a docker service name.
+      NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
+      NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
     volumes:
       - ../../frontend:/app
       # Anonymous volume shadows the host's node_modules mount above with
@@ -327,8 +551,12 @@ services:
       - dms-core
 
 volumes:
+  encryption_dev_keys:
   postgres_data:
   redis_data:
   minio_data:
   ocr_worker_models:
   ocr_worker_hf_cache:
+  seaweedfs_data:
+  documents_data:
+  clamav_db:

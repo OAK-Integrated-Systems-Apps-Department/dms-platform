@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { flushSync } from "react-dom"
 import { Check, ChevronDown, Loader2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +35,13 @@ interface UserAccessSummaryProps {
 
 /** A single granted/not-granted status dot — the read-only equivalent of
  * PermissionPicker's interactive `<Checkbox>`. */
-function GrantIndicator({ granted, size }: { granted: boolean; size: 16 | 18 }) {
+function GrantIndicator({
+  granted,
+  size,
+}: {
+  granted: boolean
+  size: 16 | 18
+}) {
   return (
     <span
       className={cn(
@@ -160,12 +167,13 @@ function renderPermissionRow(
 export function UserAccessSummary({
   user,
   onToggleStatus,
-  canManage,
 }: UserAccessSummaryProps) {
   const roles = useRolesStore((state) => state.roles)
   const rolesError = useRolesStore((state) => state.error)
   const fetchRoles = useRolesStore((state) => state.fetchRoles)
-  const fetchRolePermissions = useRolesStore((state) => state.fetchRolePermissions)
+  const fetchRolePermissions = useRolesStore(
+    (state) => state.fetchRolePermissions
+  )
   const { hasAnyPermission } = usePermissions()
   const canViewRoles = hasAnyPermission(
     PermissionCodes.ASM_ROLES_VIEW_ROLE,
@@ -194,12 +202,6 @@ export function UserAccessSummary({
   const [openActions, setOpenActions] = useState<Record<string, boolean>>({})
   const [grantsLoading, setGrantsLoading] = useState(true)
   const [query, setQuery] = useState("")
-  // Set by a Permission Summary badge click, below — scrolls the target
-  // module's entry in the Effective Permissions accordion into view once
-  // it's actually expanded (see the effect right after `grantedModules`).
-  const [scrollTargetModuleCode, setScrollTargetModuleCode] = useState<
-    string | null
-  >(null)
   // Same reasoning as PermissionPicker's own isModuleOpen: while
   // searching, force every module left in the filtered results open
   // (a match would otherwise stay hidden behind its still-collapsed
@@ -242,16 +244,22 @@ export function UserAccessSummary({
   // an admin happened to separately open that specific role's Details/
   // Edit/Permission-Config page earlier in the same session.
   const roleIdsKey = rolesHeld.map((role) => role.id).join(",")
+  // Loading flag set for each new set of held roles during render (against
+  // the last-seen key, null so the first render counts too); the effect
+  // below only does the fetching.
+  const [prevRoleIdsKey, setPrevRoleIdsKey] = useState<string | null>(null)
+  if (roleIdsKey !== prevRoleIdsKey) {
+    setPrevRoleIdsKey(roleIdsKey)
+    setGrantsLoading(rolesHeld.length > 0)
+  }
   useEffect(() => {
-    if (rolesHeld.length === 0) {
-      setGrantsLoading(false)
-      return
-    }
+    if (rolesHeld.length === 0) return
     let cancelled = false
-    setGrantsLoading(true)
-    Promise.all(rolesHeld.map((role) => fetchRolePermissions(role.id))).then(() => {
-      if (!cancelled) setGrantsLoading(false)
-    })
+    Promise.all(rolesHeld.map((role) => fetchRolePermissions(role.id))).then(
+      () => {
+        if (!cancelled) setGrantsLoading(false)
+      }
+    )
     return () => {
       cancelled = true
     }
@@ -283,22 +291,19 @@ export function UserAccessSummary({
       .sort((a, b) => a.group.module.localeCompare(b.group.module))
   }, [permissionGroups, effectivePermissions])
 
-  // Runs after the click handler below has already set `expanded` (and
-  // cleared `query`, so the target module can't be hidden by a stale
-  // search) — by the time this effect fires, that module's accordion
-  // entry has already committed to the DOM, open.
-  useEffect(() => {
-    if (!scrollTargetModuleCode) return
-    document
-      .getElementById(`access-summary-module-${scrollTargetModuleCode}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-    setScrollTargetModuleCode(null)
-  }, [scrollTargetModuleCode])
-
+  // A Permission Summary badge click scrolls the target module's entry in
+  // the Effective Permissions accordion into view. flushSync commits the
+  // expansion (and the cleared `query`, so the target module can't be
+  // hidden by a stale search) to the DOM first, so the entry is already
+  // there, open, by the time it's scrolled to.
   function handleSummaryBadgeClick(moduleCode: string) {
-    setQuery("")
-    setExpanded((prev) => ({ ...prev, [moduleCode]: true }))
-    setScrollTargetModuleCode(moduleCode)
+    flushSync(() => {
+      setQuery("")
+      setExpanded((prev) => ({ ...prev, [moduleCode]: true }))
+    })
+    document
+      .getElementById(`access-summary-module-${moduleCode}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   // Same search as PermissionPicker (shared filterPermissionGroups), run
@@ -391,10 +396,12 @@ export function UserAccessSummary({
       </div>
       {user.platformRoles.length > 0 && (
         <p className="mb-6 text-[12px] text-muted-foreground">
-          {user.platformRoles.join(", ")} {user.platformRoles.length === 1 ? "is a" : "are"}{" "}
-          platform role{user.platformRoles.length === 1 ? "" : "s"}, not a tenant-defined DMS
-          role — the effective-permissions breakdown below reflects only tenant-defined roles,
-          since platform roles grant full access outright rather than a specific permission set.
+          {user.platformRoles.join(", ")}{" "}
+          {user.platformRoles.length === 1 ? "is a" : "are"} platform role
+          {user.platformRoles.length === 1 ? "" : "s"}, not a tenant-defined DMS
+          role — the effective-permissions breakdown below reflects only
+          tenant-defined roles, since platform roles grant full access outright
+          rather than a specific permission set.
         </p>
       )}
 
@@ -491,7 +498,10 @@ export function UserAccessSummary({
                     id={`access-summary-module-${group.moduleCode}`}
                     open={isOpen}
                     onOpenChange={(open) =>
-                      setExpanded((prev) => ({ ...prev, [group.moduleCode]: open }))
+                      setExpanded((prev) => ({
+                        ...prev,
+                        [group.moduleCode]: open,
+                      }))
                     }
                     className={cn(
                       "overflow-hidden rounded-md border border-border",
@@ -519,7 +529,10 @@ export function UserAccessSummary({
                           openActions,
                           isSearching,
                           (actionId, open) =>
-                            setOpenActions((prev) => ({ ...prev, [actionId]: open }))
+                            setOpenActions((prev) => ({
+                              ...prev,
+                              [actionId]: open,
+                            }))
                         )
                       )}
                     </CollapsibleContent>

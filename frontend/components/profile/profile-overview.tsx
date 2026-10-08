@@ -14,8 +14,16 @@ import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { useTenant } from "@/lib/tenants/use-tenant"
 import { updateCurrentUserProfile } from "@/lib/users/api"
 
-import { profileSupplement } from "./data"
+import { formatDateTime } from "@/lib/utils"
+
 import { profileEditFormSchema, type ProfileEditFormValues } from "./schema"
+
+/** Fixed platform role codes from `/me` → display labels; tenant-defined role names are shown as-is. */
+const PLATFORM_ROLE_LABELS: Record<string, string> = {
+  PLATFORM_ADMIN: "Platform Admin",
+  TENANT_ADMIN: "Tenant Admin",
+  MEMBER: "Member",
+}
 
 /**
  * My Profile (S1) — end-user, read-mostly view of their own account:
@@ -53,10 +61,11 @@ export function ProfileOverview() {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<ProfileEditFormValues>({
     resolver: zodResolver(profileEditFormSchema),
     defaultValues: { firstName: "", lastName: "" },
+    mode: "onChange",
   })
 
   // Keeps the form's defaults in sync once the real profile has loaded —
@@ -145,7 +154,7 @@ export function ProfileOverview() {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValid}
               className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSubmitting ? "Saving…" : "Save changes"}
@@ -199,11 +208,15 @@ export function ProfileOverview() {
             Role(s)
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {profileSupplement.roles.map((role) => (
-              <Badge key={role} variant="outline" className="rounded-md">
-                {role}
-              </Badge>
-            ))}
+            {user?.roles?.length ? (
+              user.roles.map((role) => (
+                <Badge key={role} variant="outline" className="rounded-md">
+                  {PLATFORM_ROLE_LABELS[role] ?? role}
+                </Badge>
+              ))
+            ) : (
+              <p className="font-mono text-[12.5px] text-foreground">{isLoading ? "…" : "—"}</p>
+            )}
           </div>
         </div>
         <div>
@@ -219,7 +232,7 @@ export function ProfileOverview() {
             Last Login
           </p>
           <p className="font-mono text-[12.5px] text-foreground">
-            {profileSupplement.lastLogin}
+            {user?.lastLoginAt ? formatDateTime(user.lastLoginAt) : isLoading ? "…" : "—"}
           </p>
         </div>
       </div>

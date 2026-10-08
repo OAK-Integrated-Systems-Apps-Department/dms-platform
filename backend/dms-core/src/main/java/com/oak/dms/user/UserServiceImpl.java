@@ -10,10 +10,10 @@ import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
-import com.oak.dms.audit.AuditActionCatalog;
-import com.oak.dms.audit.AuditObjectTypes;
-import com.oak.dms.audit.AuditOutcome;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.catalog.AuditActionCatalog;
+import com.oak.dms.audit.catalog.AuditObjectTypes;
+import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
@@ -192,7 +192,8 @@ public class UserServiceImpl implements UserService {
         // and UserMapper's own doc comments for why that's "me"-only).
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
-                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
+                authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
+                resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override
@@ -220,7 +221,8 @@ public class UserServiceImpl implements UserService {
                 .log();
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
-                authorizationService.myEffectivePermissionCodes(), resolveImpersonatorDisplayNameOrNull());
+                authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
+                resolveImpersonatorDisplayNameOrNull());
     }
 
     @Override

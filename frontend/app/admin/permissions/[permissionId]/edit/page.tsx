@@ -92,3 +92,13 @@
 //     </DashboardShell>
 //   )
 // }
+
+// Placeholder while the page above is commented out: a page.tsx must export a
+// default component, otherwise `next build` fails with "is not a module" and
+// no production image can be built. This keeps the route as a plain 404 until
+// the implementation above is restored - then delete these lines.
+import { notFound } from "next/navigation"
+
+export default function Page() {
+  notFound()
+}
