@@ -94,7 +94,9 @@ jobs:
           cache-dependency-path: backend/**/pom.xml
 
       # Same reactor the Dockerfile builds (backend/pom.xml -> dms-core).
-      # `verify` = compile, run the unit tests (surefire), package the jar.
+      # `verify` = compile, run the unit tests (surefire), package the jar,
+      # then run the *IT integration tests (failsafe - see dms-core/pom.xml
+      # for the few excluded because they need Keycloak or ClamAV).
       - name: Test & build (mvn verify)
         working-directory: backend
         run: ./dms-core/mvnw -B -ntp -f pom.xml verify
@@ -103,8 +105,10 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: surefire-reports
-          path: backend/dms-core/target/surefire-reports/
+          name: test-reports
+          path: |
+            backend/dms-core/target/surefire-reports/
+            backend/dms-core/target/failsafe-reports/
           retention-days: 7
 
   # The *IT tests (not part of `mvn verify`): full Spring context against

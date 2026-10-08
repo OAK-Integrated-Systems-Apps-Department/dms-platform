@@ -262,6 +262,36 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+              Runs the *IT integration tests in `mvn verify` (surefire only runs
+              *Test). They need the same Postgres/Redis/RabbitMQ CI already
+              provides (DB_URL etc.). Excluded: ITs that need services CI does
+              not run - a live Keycloak admin API (ImpersonationIT,
+              PermissionCodeAuditIT) and a ClamAV daemon (DocumentUploadIT).
+              Run those locally with -Dit.test=... against the full compose stack.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/ImpersonationIT.java</exclude>
+                        <exclude>**/PermissionCodeAuditIT.java</exclude>
+                        <exclude>**/DocumentUploadIT.java</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

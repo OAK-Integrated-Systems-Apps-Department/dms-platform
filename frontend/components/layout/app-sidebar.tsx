@@ -20,6 +20,8 @@ import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+
+import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -70,6 +72,13 @@ export function AppSidebar({
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
   const { isPlatformAdmin } = useIsPlatformAdmin()
+
+  // Live badge for the My Tasks item (see NavItem.liveBadge).
+  const { data: taskCount } = useMyTaskCount()
+  const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
+    // Tasks to decide plus information requests waiting on me (Phase 2).
+    myOpenTasks: (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) || undefined,
+  }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
   // always visible; items that name one are hidden entirely — not shown
@@ -145,6 +154,7 @@ export function AppSidebar({
                     : pathname.startsWith(item.href)
                   : item.label === activeLabel
                 const Icon = item.icon
+                const badge = item.liveBadge ? liveBadges[item.liveBadge] : item.badge
                 const content = (
                   <>
                     <Icon
@@ -152,9 +162,9 @@ export function AppSidebar({
                       className={cn(!isActive && "opacity-85")}
                     />
                     <span className="flex-1">{item.label}</span>
-                    {item.badge != null && (
+                    {badge != null && (
                       <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
-                        {item.badge}
+                        {badge}
                       </span>
                     )}
                   </>

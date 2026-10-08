@@ -6,13 +6,25 @@ import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.DocumentResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.storage.dto.DownloadedObject;
+import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
+import com.oak.dms.storage.exception.StorageConfigurationException;
+import com.oak.dms.storage.repository.StorageLocationRepository;
+import com.oak.dms.storage.service.ObjectStorageServiceFactory;
+import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,9 +36,6 @@ import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.folder.FolderAccessMode;
 import com.oak.dms.folder.FolderAccessService;
 import com.oak.dms.folder.FolderService;
-import com.oak.dms.metadata.repository.DocumentTypeRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -55,13 +64,17 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
+
+    private final DocumentTypeRepository documentTypeRepository;
+    private final UserRepository userRepository;
+    private final StorageLocationRepository storageLocationRepository;
+    private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
     private final AuditService auditService;
     private final FolderService folderService;
     private final FolderAccessService folderAccessService;
     private final DocumentAccessService documentAccessService;
     private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
-    private final DocumentTypeRepository documentTypeRepository;
     private final VersionContent versionContent;
 
     /**
@@ -221,6 +234,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
+
         return documentMapper.toResponse(findVisible(documentId, FolderAccessLevel.view));
     }
 
@@ -233,6 +247,33 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
         return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
+
+        Document document = findOwnedByCallerTenant(documentId);
+        String typeName = documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(document.getDocumentTypeId(), document.getTenantId())
+                .map(DocumentType::getTypeName)
+                .orElse(null);
+        return documentMapper.toResponse(document, typeName);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
+                                                       Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
+        Page<Document> page = documentRepository.search(tenantId, pattern, documentTypeId, excludeDocumentId, pageable);
+        Map<UUID, String> typeNames = new HashMap<>();
+        documentTypeRepository.findAllById(page.map(Document::getDocumentTypeId).toSet()).stream()
+                .filter(t -> tenantId.equals(t.getTenantId()) && !t.isDeleted())
+                .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
+        Map<UUID, String> userNames = new HashMap<>();
+        userRepository.findAllById(page.map(Document::getCreatedBy).filter(Objects::nonNull).toSet()).stream()
+                .filter(u -> tenantId.equals(u.getTenantId()))
+                .forEach(u -> userNames.put(u.getUserId(), u.getDisplayName()));
+        return page.map(d -> new DocumentSummaryResponse(d.getDocumentId(), d.getTitle(),
+                typeNames.get(d.getDocumentTypeId()), d.getLatestVersionId(), d.getCreatedAt(),
+                d.getCreatedBy() == null ? null : userNames.get(d.getCreatedBy())));
     }
 
     @Override

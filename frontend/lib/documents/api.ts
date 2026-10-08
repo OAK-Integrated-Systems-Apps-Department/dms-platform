@@ -6,6 +6,7 @@ import {
   type UploadTransfer,
 } from "@/lib/api-fetch"
 import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
+import type { PageDto } from "@/lib/workflow/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
 export interface SelectableDocumentTypeDto {
@@ -441,4 +442,61 @@ export async function downloadDocumentFile(
   const header = response.headers.get("Content-Disposition") ?? ""
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
   return { blob, filename: match ? decodeURIComponent(match[1]) : "document" }
+}
+
+/** Mirrors backend/dms-core's DocumentResponse - a document's metadata (no content). */
+export interface DocumentDto {
+  documentId: string
+  tenantId: string
+  documentTypeId: string
+  /** Embedded by the backend; null when the type has since been deleted. */
+  documentTypeName: string | null
+  title: string
+  currentVersionId: string | null
+  latestVersionId: string | null
+  publishedVersionId: string | null
+  ownerUserId: string | null
+  status: string
+  createdAt: string
+  updatedAt: string | null
+}
+
+/** `GET /api/v1/ingestion-tickets/{id}` - the uploader polls a 202 upload until its scan finishes. */
+export async function fetchIngestionTicket(scanResultId: string): Promise<IngestionTicketDto> {
+  return apiFetchJson(`${API_BASE_URL}/api/v1/ingestion-tickets/${scanResultId}`, undefined, "Could not check the upload.")
+}
+
+/** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */
+export interface DocumentSummaryDto {
+  documentId: string
+  title: string
+  documentTypeName: string | null
+  latestVersionId: string | null
+  createdAt: string
+  createdByName: string | null
+}
+
+export interface DocumentSearchOptions {
+  documentTypeId?: string
+  /** Left out of the results - e.g. the document under approval when picking supporting documents. */
+  excludeDocumentId?: string
+}
+
+/** `GET /api/v1/documents` - the tenant's documents, newest first; search matches the title. Needs docm.documents.view. `page` is 0-indexed. */
+export async function searchDocuments(
+  search: string,
+  options: DocumentSearchOptions = {},
+  page = 0,
+  size = 20
+): Promise<PageDto<DocumentSummaryDto>> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) })
+  if (search.trim()) params.set("search", search.trim())
+  if (options.documentTypeId) params.set("documentTypeId", options.documentTypeId)
+  if (options.excludeDocumentId) params.set("excludeDocumentId", options.excludeDocumentId)
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents?${params.toString()}`, undefined, "Could not load documents.")
+}
+
+/** `GET /api/v1/documents/{id}` - needs docm.documents.view. */
+export async function fetchDocument(documentId: string): Promise<DocumentDto> {
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents/${documentId}`, undefined, "Could not load this document.")
 }

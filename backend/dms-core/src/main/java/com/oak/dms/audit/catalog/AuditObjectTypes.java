@@ -47,6 +47,7 @@ public final class AuditObjectTypes {
     public static final String SCAN_RESULT = "SCAN_RESULT";
     /** A quarantined infected upload (quarantine_records) - the object of DOCUMENT_QUARANTINED. */
     public static final String QUARANTINE_RECORD = "QUARANTINE_RECORD";
+
     /** One bulk import (import_batches) - the object of every BULK_IMPORT_* event. */
     public static final String IMPORT_BATCH = "IMPORT_BATCH";
     /** A saved import template (import_templates) - the object of every IMPORT_TEMPLATE_* event. */
@@ -55,6 +56,24 @@ public final class AuditObjectTypes {
     public static final String EXPORT_JOB = "EXPORT_JOB";
     /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
     public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
+
+    /** One template-based bulk import (migration_batches) - the object of every BULK_IMPORT_* event. */
+    public static final String MIGRATION_BATCH = "MIGRATION_BATCH";
+    /** A department (V43) - the object of every DEPARTMENT_* event. */
+    public static final String DEPARTMENT = "DEPARTMENT";
+    /** One workflow template version (workflow_templates) - every WORKFLOW_TEMPLATE_* event. */
+    public static final String WORKFLOW_TEMPLATE = "WORKFLOW_TEMPLATE";
+    /** One workflow run (workflow_instances) - submit/stage/outcome/cancel/version events. */
+    public static final String WORKFLOW_INSTANCE = "WORKFLOW_INSTANCE";
+    /** One approver task (workflow_tasks) - claim/release/approve/reject events. */
+    public static final String WORKFLOW_TASK = "WORKFLOW_TASK";
+    /** One information request (workflow_info_requests) - every WORKFLOW_INFO_* event. */
+    public static final String WORKFLOW_INFO_REQUEST = "WORKFLOW_INFO_REQUEST";
+    /** Evidence attached to a workflow run (workflow_supporting_documents). */
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT = "WORKFLOW_SUPPORTING_DOCUMENT";
+    /** A comment on a document (document_comments) - every DOCUMENT_COMMENT_* event. */
+    public static final String DOCUMENT_COMMENT = "DOCUMENT_COMMENT";
+
     /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked

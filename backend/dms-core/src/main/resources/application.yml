@@ -22,6 +22,14 @@ spring:
         order_inserts: true
         order_updates: true
 
+  # Two scheduler threads instead of Boot's one, so a slow ClamAV retry
+  # (ScanRetryScheduler) can't hold up workflow SLA reminders or the outbox
+  # relay, and vice versa. The jobs touch independent tables.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:2}
+
   # Spring's own multipart default is 1MB, which silently capped uploads
   # before the scan gate existed. -1 = no limit, in line with
   # dms.scanning.max-file-size-bytes below; the scan gate enforces any
@@ -330,6 +338,7 @@ dms:
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's
+
     # Content-Type is ignored. The one archive type is zip (see below and
     # docs/scanning-architecture.md); 7z/rar/tar/gz are not accepted.
     allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
@@ -344,6 +353,25 @@ dms:
     # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
     # called, is refused even when the scan finds no malware - nested ZIPs included. Override the
     # list with dms.ingestion.zip-blocked-extensions (DMS_INGESTION_ZIP_BLOCKED_EXTENSIONS, comma-separated).
+
+    # Content-Type is ignored. No archive types: this system accepts no
+    # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
+    # docs/scanning-architecture.md).
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,rtf,txt,csv,png,jpg,jpeg,tif,tiff}
+  # 3.1 Workflow Automation (WorkflowProperties). Task-assigned and outcome
+  # mails go out after the workflow change commits, off the request thread;
+  # a mail failure never affects the workflow. Uses spring.mail.*.
+  workflow:
+    notifications:
+      enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
+      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    # Phase 2: reminders before a task's due time and escalation when it
+    # passes (WorkflowSlaScheduler). Safe with several app instances - each
+    # task is handled under its instance row lock taken FOR UPDATE SKIP LOCKED.
+    sla:
+      enabled: ${WORKFLOW_SLA_ENABLED:true}
+      poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
+      batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

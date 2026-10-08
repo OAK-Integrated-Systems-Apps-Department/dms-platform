@@ -98,6 +98,7 @@ export const PermissionCodes = {
   // Uploading documents (POST /api/v1/documents) - also what the upload
   // panel's document-type picker (/document-types/selectable) requires.
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
+
   DOCM_DOCUMENTS_VIEW: "docm.documents.view",
   DOCM_DOCUMENTS_DELETE: "docm.documents.delete",
   // Moving documents between folders (V51).
@@ -121,4 +122,31 @@ export const PermissionCodes = {
   RBR_RESTORE: "rbr.restore-deleted-documents",
   RBR_PURGE: "rbr.permanently-purge-documents",
   RBR_RETENTION: "rbr.manage-recycle-bin-retention",
+
+  // Reading a document's metadata (GET /api/v1/documents/{id}).
+  DOCM_COMMENTS_CREATE: "docm.document-comments.create",
+
+  // Departments (OTUA) - also the approver pools a workflow stage can route
+  // to. The department list is additionally readable with
+  // WA_TEMPLATES_CREATE/UPDATE so a template designer can pick one.
+  OTUA_DEPARTMENTS_VIEW: "otua.manage-departments.view",
+  OTUA_DEPARTMENTS_CREATE: "otua.manage-departments.create",
+  OTUA_DEPARTMENTS_UPDATE: "otua.manage-departments.update",
+  OTUA_DEPARTMENTS_DELETE: "otua.manage-departments.delete",
+
+  // Workflow Automation (WA) - template design, task decisions, and the
+  // workflow audit trail. Any single WA_TEMPLATES_* code opens the template
+  // screens (list/get), matching the backend's ANY_TEMPLATE_PERMISSION.
+  WA_TEMPLATES_CREATE: "wa.configure-workflow-templates.create",
+  WA_TEMPLATES_UPDATE: "wa.configure-workflow-templates.update",
+  WA_TEMPLATES_DELETE: "wa.configure-workflow-templates.delete",
+  WA_TEMPLATES_TOGGLE_ACTIVE: "wa.configure-workflow-templates.toggle-active",
+  WA_TASK_APPROVE: "wa.approve-reject-workflow-task.approve",
+  WA_TASK_REJECT: "wa.approve-reject-workflow-task.reject",
+  WA_TASK_REASSIGN: "wa.reassign-workflow-task",
+  WA_REQUEST_INFORMATION: "wa.request-workflow-information.create",
+  WA_AUDIT_TRAIL_VIEW: "wa.view-workflow-audit-trail.view",
+  // Document Lifecycle Management - starting a workflow on a document.
+  DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",
+
 } as const

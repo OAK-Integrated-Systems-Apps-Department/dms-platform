@@ -1,4 +1,5 @@
 import {
+  AtSign,
   BarChart3,
   Building2,
   FileStack,
@@ -16,6 +17,7 @@ import {
   Trash2,
   Users,
   Workflow,
+  Waypoints
 } from "lucide-react"
 
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -47,7 +49,11 @@ export const navSections: NavSection[] = [
         ],
       },
       { label: "Recent Pins", icon: Pin },
-      { label: "Workflows", icon: Workflow, badge: 3 },
+      // The caller's workflow approval queue - visible to everyone (anyone
+      // can be named as an approver); the badge is their live open-task count.
+      { label: "My Tasks", icon: Workflow, href: "/tasks", liveBadge: "myOpenTasks" },
+      // Comments that mention me - readable even without document access (Phase 2).
+      { label: "Mentions", icon: AtSign, href: "/mentions" },
       { label: "Search", icon: Search },
       { label: "Reports", icon: BarChart3 },
     ],
@@ -102,6 +108,7 @@ export const navSections: NavSection[] = [
       // part of the granular sweep (see UserController/UserRoleController/
       // RoleController/RolePermissionController) - it still checks the
       // legacy codes, so this nav item must too.
+
       {
         label: "Permissions",
         icon: KeyRound,
@@ -116,6 +123,28 @@ export const navSections: NavSection[] = [
         icon: ScrollText,
         href: "/admin/audit-log",
         permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY,
+      },
+
+      { label: "Permissions", icon: KeyRound, href: "/admin/permissions", permission: [PermissionCodes.LEGACY_ROLE_VIEW, PermissionCodes.LEGACY_ROLE_MANAGE] },
+      { label: "Audit Log", icon: ScrollText, href: "/admin/audit-log", permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY },
+      // Departments double as workflow approver pools.
+      {
+        label: "Departments", icon: Building2, href: "/admin/departments", permission: [
+          PermissionCodes.OTUA_DEPARTMENTS_VIEW,
+          PermissionCodes.OTUA_DEPARTMENTS_CREATE,
+          PermissionCodes.OTUA_DEPARTMENTS_UPDATE,
+          PermissionCodes.OTUA_DEPARTMENTS_DELETE,
+        ]
+      },
+      // Approval chain design (WA). Any single template capability gets you
+      // in - the template page shows only the actions you hold.
+      {
+        label: "Workflow Templates", icon: Waypoints, href: "/admin/workflows", permission: [
+          PermissionCodes.WA_TEMPLATES_CREATE,
+          PermissionCodes.WA_TEMPLATES_UPDATE,
+          PermissionCodes.WA_TEMPLATES_DELETE,
+          PermissionCodes.WA_TEMPLATES_TOGGLE_ACTIVE,
+        ]
       },
       // Malware-scan quarantine review (VMSBDI FR-005). Lives with the other
       // security-control screens in Governance rather than a group of its

@@ -79,6 +79,13 @@ public class User {
     @Builder.Default
     private UserStatus status = UserStatus.active;
 
+    /**
+     * Primary department (V43), or null. Membership of a department approver
+     * pool in a workflow stage is exactly this column - direct members only.
+     */
+    @Column(name = "department_id")
+    private UUID departmentId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
