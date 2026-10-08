@@ -1,10 +1,10 @@
 package com.oak.dms.importexport.template;
 
-import com.oak.dms.importexport.enums.TemplateFormat;
-import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
+import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.dto.MetadataFieldOptionResponse;
 import com.oak.dms.metadata.dto.MetadataFieldValidationResponse;
+import com.oak.dms.importexport.enums.TemplateFormat;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -35,7 +35,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -55,9 +54,6 @@ public class ImportTemplateWriter {
 
     /** How far down the xlsx drop-down lists reach. */
     private static final int VALIDATION_ROWS = 10_000;
-
-    /** Characters that make a raw csv {@code #} line ambiguous to a CSV parser. */
-    private static final Pattern CSV_UNSAFE = Pattern.compile("[\",\r\n]");
 
     /** One data row to write, for failed-rows reports: header -> cell text, plus why it failed. */
     public record RowOut(Map<String, String> cells, String errors) {
@@ -250,17 +246,14 @@ public class ImportTemplateWriter {
         out.write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
         try (Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
              CSVPrinter printer = new CSVPrinter(writer, CSVFormat.DEFAULT)) {
-            printHashLine(writer, printer, TemplateColumns.CSV_MARKER + " documentTypeId=" + schema.documentTypeId()
+            printer.printRecord(TemplateColumns.CSV_MARKER + " documentTypeId=" + schema.documentTypeId()
                     + " schemaVersion=" + schema.schemaVersion());
-            printHashLine(writer, printer,
-                    "# Keep these # lines. One row per file below the header. Don't rename or reorder columns.");
-            printHashLine(writer, printer,
-                    "# " + TemplateColumns.FILENAME + ": required - the file's name as in your ZIP or upload");
-            printHashLine(writer, printer,
-                    "# " + TemplateColumns.TITLE + ": optional - defaults to the file name without its extension");
+            printer.printRecord("# Keep these # lines. One row per file below the header. Don't rename or reorder columns.");
+            printer.printRecord("# " + TemplateColumns.FILENAME + ": required - the file's name as in your ZIP or upload");
+            printer.printRecord("# " + TemplateColumns.TITLE + ": optional - defaults to the file name without its extension");
             for (SchemaField field : fields) {
                 String rules = rules(field.validations());
-                printHashLine(writer, printer, "# " + field.fieldKey() + ": " + field.label() + " - "
+                printer.printRecord("# " + field.fieldKey() + ": " + field.label() + " - "
                         + (field.mandatory() ? "required" : "optional") + " - " + whatToEnter(field)
                         + (rules.isEmpty() ? "" : " - " + rules));
             }
@@ -275,22 +268,6 @@ public class ImportTemplateWriter {
             }
         }
         return out.toByteArray();
-    }
-
-    /**
-     * Writes a {@code #} line unquoted, so the file starts with the marker
-     * itself. commons-csv's minimal quoting would wrap every value starting
-     * with {@code #}. A line holding a comma, quote or line break is still
-     * written as a quoted record, since raw it could open a quoted field that
-     * swallows the header. The reader accepts both forms.
-     */
-    private static void printHashLine(Writer writer, CSVPrinter printer, String line) throws IOException {
-        if (CSV_UNSAFE.matcher(line).find()) {
-            printer.printRecord(line);
-        } else {
-            writer.write(line);
-            writer.write("\r\n");
-        }
     }
 
     // -------------------------------------------------------------- guidance
