@@ -35,6 +35,15 @@ export interface NavItem {
   permission?: string | string[]
   /** Only for platform administrators (cross-tenant) - e.g. managing organisations. */
   platformAdminOnly?: boolean
+  /**
+   * For administrators of either kind - PLATFORM_ADMIN or TENANT_ADMIN.
+   * For screens that are an administrator's job but aren't tied to one
+   * organisation's data, such as System Monitoring. Distinct from
+   * `platformAdminOnly` (strictly cross-tenant) and from `permission`
+   * (a specific capability from the catalogue); the two admin roles are
+   * fixed platform roles from the caller's JWT, not catalogue entries.
+   */
+  adminOnly?: boolean
 }
 
 export interface NavSection {
@@ -42,7 +51,6 @@ export interface NavSection {
   label?: string
   items: NavItem[]
 }
-
 
 export interface AppUser {
   name: string

@@ -456,6 +456,32 @@ management:
     # PasswordResetService), so SMTP is deliberately not a health input.
     mail:
       enabled: false
+  # Scraped by Prometheus at /actuator/prometheus (see infra/monitoring).
+  metrics:
+    tags:
+      # Every series carries these, so one Prometheus can hold several
+      # deployments without their numbers running together.
+      application: ${MANAGEMENT_METRICS_APPLICATION:dms-core}
+      environment: ${MANAGEMENT_METRICS_ENVIRONMENT:local}
+    distribution:
+      # Percentiles for API latency have to be computed server-side from a
+      # histogram: without this, http.server.requests publishes only a count
+      # and a total, and no p95 panel or latency alert is possible.
+      percentiles-histogram:
+        http.server.requests: true
+        # Deliberately NOT a full histogram: Micrometer's default bucket set
+        # is ~69 buckets, and one per scan outcome made this metric 276 of
+        # the 764 series this endpoint publishes - the largest producer here,
+        # for something that fires a few times a minute at most. The explicit
+        # buckets below give the same p95 panel in ~8 series per outcome.
+        dms.document.ingestion: false
+      # Buckets either side of the typical value, so the p95 is meaningful
+      # rather than interpolated across one huge bucket.
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
+        # Scans span milliseconds (a small PDF) to tens of minutes (a 6 GB
+        # ZIP checked file by file), hence the very wide top end.
+        dms.document.ingestion: 250ms,1s,5s,30s,2m,10m,30m
 
 springdoc:
   swagger-ui:

@@ -66,6 +66,16 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health/**",
             "/actuator/info",
+            // Scraped by Prometheus (infra/monitoring), which can't present a
+            // Keycloak JWT. Unauthenticated like /actuator/health above, and
+            // safe for the same reason: dms-core publishes no host port in
+            // production (127.0.0.1 only) and the host nginx deliberately
+            // does not proxy /actuator, so this is reachable from inside the
+            // compose network and an SSH tunnel, never from the network.
+            // It exposes request/JVM/DMS counters - no document content, no
+            // names, no credentials. Anyone adding a public /actuator route
+            // to nginx must put authentication in front of it.
+            "/actuator/prometheus",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

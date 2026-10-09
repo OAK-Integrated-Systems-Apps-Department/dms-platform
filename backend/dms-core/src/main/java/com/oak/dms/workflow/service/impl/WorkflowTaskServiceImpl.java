@@ -50,6 +50,7 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
+    private final com.oak.dms.observability.DmsMetrics dmsMetrics;
 
     /**
      * No explicit lock: guards are read, then one conditional UPDATE that
@@ -189,6 +190,7 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
             // covers this under the stage lock; kept as the backstop's translation.
             throw new WorkflowStateException("WORKFLOW_ALREADY_ACTED_IN_STAGE", "You have already decided this stage");
         }
+        dmsMetrics.recordWorkflowDecision(decision.name());
         if (approve) {
             stage.setApprovedCount(stage.getApprovedCount() + 1);
         } else {

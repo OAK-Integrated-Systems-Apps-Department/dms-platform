@@ -455,6 +455,10 @@ services:
       # they must be the public host, never a docker service name.
       NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
       NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
+      # Grafana for the System Monitoring admin page. Its own port locally
+      # (3000 is this service); in production it is same-origin "/grafana"
+      # behind nginx, baked into the image at build time.
+      NEXT_PUBLIC_GRAFANA_URL: http://${PUBLIC_HOST:-localhost}:3001/grafana
     volumes:
       - ../../frontend:/app
       # Anonymous volume shadows the host's node_modules mount above with
@@ -469,8 +473,202 @@ services:
     depends_on:
       - dms-core
 
+  # ---------------------------------------------------------------------
+  # Monitoring (Prometheus + Grafana). Config lives in infra/monitoring and
+  # is shared with production - see its README. Everything here is additive:
+  # no DMS service depends on any of it, so the stack runs exactly as before
+  # if these are stopped.
+  #
+  #   docker compose stop prometheus grafana cadvisor node-exporter \
+  #       postgres-exporter redis-exporter
+  # ---------------------------------------------------------------------
+
+  # Scrapes every target listed in infra/monitoring/prometheus/prometheus.yml
+  # and evaluates the rules in alerts.yml.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: oakdms-prometheus
+    restart: unless-stopped
+    user: "nobody"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 days locally: enough to look back over a sprint without the
+      # volume growing unbounded on a developer machine.
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle
+      # Lets ${MONITORING_ENVIRONMENT} in prometheus.yml be substituted.
+      - --enable-feature=expand-external-labels
+    environment:
+      MONITORING_ENVIRONMENT: ${MONITORING_ENVIRONMENT:-local}
+      # Identifies this installation once client stacks forward their metrics
+      # to a central Prometheus. "dev" locally; set per client in production.
+      MONITORING_CLIENT: ${MONITORING_CLIENT:-dev}
+    volumes:
+      - ../monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # The dashboard itself. Embedded in the DMS admin UI (System Monitoring),
+  # which is why anonymous Viewer access and embedding are turned on below -
+  # see the security note in infra/monitoring/README.md before changing them.
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: oakdms-grafana
+    restart: unless-stopped
+    environment:
+      # Admin login, for editing outside the embedded view. Local-only
+      # default; production requires the variable to be set explicitly.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Served under /grafana/ so one nginx host can carry both the DMS and
+      # this. Must match the nginx location and the frontend's iframe src.
+      # Built from PUBLIC_HOST like every other browser-facing URL in this
+      # file, so setting PUBLIC_HOST once is still enough to run the stack on
+      # another machine. Grafana redirects to this origin, so a mismatch
+      # leaves the embedded dashboard blank.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://${PUBLIC_HOST:-localhost}:3001/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Embedding: the DMS admin page shows this in an iframe. Grafana sends
+      # X-Frame-Options: deny unless allow_embedding is on, which browsers
+      # honour by blanking the frame.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_COOKIE_SAMESITE: lax
+      # Read-only anonymous access, so the embedded dashboard does not ask a
+      # DMS administrator for a second login. The DMS page that frames it is
+      # already platform-admin only, and Grafana is not published publicly.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      # Nothing to gain from the sign-up/"welcome" furniture in an embed.
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    # 3001 because 3000 is the DMS frontend; Grafana still listens on 3000
+    # inside its own container.
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/grafana/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # Host CPU, RAM, disk, disk I/O, network, uptime. Under Docker Desktop
+  # this reports the Linux VM, not Windows - fine for spotting a container
+  # eating the machine, but the disk figures are the VM's.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: oakdms-node-exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      # Container and virtual filesystems would otherwise swamp the real ones.
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker)($$|/)
+    pid: host
+    volumes:
+      # Plain :ro, not the :ro,rslave the node-exporter docs give for Linux -
+      # Docker Desktop's VM refuses that ("path / is mounted on / but it is
+      # not a shared or slave mount"). The production file, on a real Linux
+      # host, does use rslave so later mounts stay visible.
+      - /:/host:ro
+    expose:
+      - "9100"
+
+  # Per-container CPU, memory, network and restart counts.
+  #
+  # KNOWN GAP on Docker Desktop (Windows/macOS): its storage driver is
+  # "overlayfs", whose layer database cAdvisor cannot read, so it never
+  # resolves a container NAME and the dashboard's Containers row stays empty.
+  # Verified with and without the /var/lib/docker mount below. The production
+  # server uses overlay2, where this works. `docker stats` is the local
+  # substitute. See infra/monitoring/README.md.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: oakdms-cadvisor
+    restart: unless-stopped
+    command:
+      # Without this, cAdvisor also tracks every non-Docker cgroup on the
+      # host and, more importantly, reports series with only an `id` label.
+      # The dashboard groups containers by `name`, so series without one are
+      # invisible - which looks like "cAdvisor is down" rather than
+      # "cAdvisor can't read Docker".
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+    # Reads the Docker socket to name containers. Read-only, and cAdvisor
+    # only ever queries it - but it is still the Docker API, so this service
+    # is never published beyond the host.
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      # Explicit, not just via /var/run above: on Docker Desktop the socket
+      # is the only way cAdvisor can map a cgroup to a container name.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    expose:
+      - "8080"
+    # cAdvisor samples every container constantly; left alone it is often the
+    # heaviest thing in a small stack.
+    mem_limit: 512m
+
+  # PostgreSQL availability, connections, transactions and database sizes.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: oakdms-postgres-exporter
+    restart: unless-stopped
+    <<: *secrets-env
+    environment:
+      # Reads the same superuser the stack already uses locally. In
+      # production this is a dedicated read-only role - see the production
+      # compose file and infra/monitoring/README.md.
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=disable
+      PG_EXPORTER_EXCLUDE_DATABASES: template0,template1
+    expose:
+      - "9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Redis memory, connections, hit/miss rate and command rate.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: oakdms-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      # The local redis runs with --requirepass too (see the redis service);
+      # without this the exporter only ever reports redis_up 0 with NOAUTH.
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    expose:
+      - "9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   encryption_dev_keys:
+  prometheus_data:
+  grafana_data:
   postgres_data:
   redis_data:
   seaweedfs_data:

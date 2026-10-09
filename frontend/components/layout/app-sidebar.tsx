@@ -20,6 +20,7 @@ import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
 
 import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { Dropdown } from "@/components/ui/dropdown"
@@ -72,12 +73,21 @@ export function AppSidebar({
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
   const { isPlatformAdmin } = useIsPlatformAdmin()
+  // The two are mutually exclusive as the backend reports them: /me/platform-roles
+  // includes PLATFORM_ADMIN, while the per-user lookup behind useIsTenantAdmin
+  // deliberately excludes it - so `adminOnly` items have to check both.
+  const { isTenantAdmin } = useIsTenantAdmin()
 
   // Live badge for the My Tasks item (see NavItem.liveBadge).
   const { data: taskCount } = useMyTaskCount()
-  const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
+  const liveBadges: Record<
+    NonNullable<NavItem["liveBadge"]>,
+    number | undefined
+  > = {
     // Tasks to decide plus information requests waiting on me (Phase 2).
-    myOpenTasks: (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) || undefined,
+    myOpenTasks:
+      (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) ||
+      undefined,
   }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
@@ -92,6 +102,7 @@ export function AppSidebar({
       items: section.items.filter(
         (item) =>
           (!item.platformAdminOnly || isPlatformAdmin) &&
+          (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
           (!item.permission ||
             hasAnyPermission(
               ...(Array.isArray(item.permission)
@@ -154,7 +165,9 @@ export function AppSidebar({
                     : pathname.startsWith(item.href)
                   : item.label === activeLabel
                 const Icon = item.icon
-                const badge = item.liveBadge ? liveBadges[item.liveBadge] : item.badge
+                const badge = item.liveBadge
+                  ? liveBadges[item.liveBadge]
+                  : item.badge
                 const content = (
                   <>
                     <Icon

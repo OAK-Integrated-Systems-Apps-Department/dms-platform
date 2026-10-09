@@ -396,6 +396,166 @@ services:
     depends_on:
       - dms-core
 
+  # ---------------------------------------------------------------------
+  # Monitoring (Prometheus + Grafana). Config is shared with infra/local and
+  # lives in infra/monitoring - see its README.
+  #
+  # Nothing in the DMS depends on these, so stopping them degrades nothing;
+  # and like every other service here, none is reachable from the network.
+  # Grafana is published on 127.0.0.1 only and reaches the browser through
+  # the host nginx at /grafana/ (infra/production/nginx/dms.conf); Prometheus
+  # is not proxied at all - SSH tunnel to 9090 if you need the raw query UI.
+  #
+  # deploy.sh does NOT health-gate these (APP_SERVICES is dms-core and
+  # frontend): a monitoring outage must never roll back a good release.
+  # ---------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: oakdms-prometheus
+    restart: unless-stopped
+    user: "nobody"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 30d by default here (vs 15d locally). Raising it costs disk on the
+      # same volume the documents live on - check free space first.
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-8GB}
+      - --web.enable-lifecycle
+      - --enable-feature=expand-external-labels
+    environment:
+      MONITORING_ENVIRONMENT: ${MONITORING_ENVIRONMENT:-production}
+      # This client's short name - the label that will separate them in the
+      # central Prometheus later. Unique per client, and never changed after
+      # the first deploy. .env.example ships it as a bare CHANGE_ME so
+      # deploy.sh blocks until it is set; the fallback here only covers
+      # running this file directly, outside deploy.sh.
+      MONITORING_CLIENT: ${MONITORING_CLIENT:-unset}
+    volumes:
+      - ../monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    # No host port: only Grafana (same network) queries it. Add a
+    # "127.0.0.1:9090:9090" binding temporarily if you need the query UI.
+    expose:
+      - "9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: oakdms-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # Required, no default: an admin password must never fall back to
+      # something guessable on a server. deploy.sh refuses to run while any
+      # CHANGE_ME remains in .env.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      # Public URL the browser uses, through the host nginx.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://192.168.0.10/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Embedded in the DMS admin UI - see the local file and the README for
+      # why anonymous Viewer access is acceptable here and what would make it
+      # unacceptable (publishing Grafana beyond this host).
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_COOKIE_SAMESITE: lax
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-true}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/grafana/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: oakdms-node-exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker)($$|/)
+    pid: host
+    volumes:
+      # rslave here (unlike infra/local): on a real Linux host this keeps
+      # filesystems mounted after the container started visible to it.
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: oakdms-cadvisor
+    restart: unless-stopped
+    command:
+      # Docker containers only, and keep the `name` label the dashboard
+      # groups by - see the note in infra/local/docker-compose.yml.
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+    # Mounts the Docker socket read-only to name containers. That is still
+    # the Docker API, so this is never published - expose: only.
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    expose:
+      - "8080"
+    mem_limit: 512m
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: oakdms-postgres-exporter
+    restart: unless-stopped
+    environment:
+      # A dedicated read-only login, NOT the superuser the local stack uses:
+      # this container only ever reads pg_stat_*, and a metrics exporter is
+      # the wrong place to hold write access. Create it once with:
+      #   CREATE ROLE dms_metrics LOGIN PASSWORD '...';
+      #   GRANT pg_monitor TO dms_metrics;
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_METRICS_USER:-dms_metrics}:${POSTGRES_METRICS_PASSWORD:?POSTGRES_METRICS_PASSWORD is required}@postgres:5432/postgres?sslmode=disable
+      PG_EXPORTER_EXCLUDE_DATABASES: template0,template1
+    expose:
+      - "9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: oakdms-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      # Production Redis requires a password (see the redis service above).
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    expose:
+      - "9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+
 networks:
   # internal: true - no gateway out. Only dms-core and the converter are on it.
   previews:
@@ -411,3 +571,8 @@ volumes:
   seaweedfs_data:
   documents_data:
   clamav_db:
+  # Metrics history and Grafana's own state (users, preferences). The
+  # dashboards themselves are provisioned from disk, so losing this volume
+  # costs history, not configuration.
+  prometheus_data:
+  grafana_data:

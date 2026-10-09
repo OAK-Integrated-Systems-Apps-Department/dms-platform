@@ -1,0 +1,234 @@
+# Alert rules for the OAK DMS stack, evaluated by Prometheus and shown in
+# Grafana (Alerting -> Alert rules -> "Data source-managed").
+#
+# Deliberately NO Alertmanager and no routing: there is nowhere agreed to send
+# a page, and a rule that fires into a void is worse than none because it
+# looks like coverage. These exist to colour the dashboard and to be the
+# single place a real notifier gets wired up later - add an Alertmanager
+# service, point it at these, and every rule below starts delivering.
+#
+# Thresholds are starting points for one modest server, not tuned limits.
+# Every `for:` is long enough to ride out a deploy or a backup window: an
+# alert that fires on every restart gets ignored within a week.
+#
+# Severity convention:
+#   critical - someone cannot use the DMS right now
+#   warning  - heading that way, or degraded; look at it today
+
+groups:
+  # ---------------------------------------------------------------- system
+  - name: dms-system
+    rules:
+      - alert: HostCpuHigh
+        # 100% minus idle, averaged over all cores. 5m so a ClamAV scan of a
+        # large upload (which legitimately pins a core) doesn't page anyone.
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "CPU above 85% for 10 minutes"
+          description: "Host CPU is {{ $value | humanize }}%. Uploads and previews will feel slow."
+
+      - alert: HostMemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Memory above 90% for 10 minutes"
+          description: >-
+            {{ $value | humanize }}% of RAM is in use. The DMS stack has frozen
+            its whole Docker VM this way before - check container limits.
+
+      - alert: HostDiskSpaceLow
+        # Documents, staging copies and ClamAV signatures all land on the same
+        # disk, so this is the one that actually stops uploads working.
+        expr: >-
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+           / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) * 100 < 15
+        for: 15m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "Less than 15% disk free on {{ $labels.mountpoint }}"
+          description: "{{ $value | humanize }}% free. Large uploads stage to disk before they are stored."
+
+      - alert: HostDiskSpaceCritical
+        expr: >-
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+           / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) * 100 < 5
+        for: 5m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Less than 5% disk free on {{ $labels.mountpoint }}"
+          description: "Uploads and Postgres writes will start failing. Free space now."
+
+  # --------------------------------------------------------- availability
+  - name: dms-availability
+    rules:
+      # One rule per service rather than a loop over `up`, so each carries a
+      # message that says what the user will notice.
+      - alert: BackendDown
+        expr: up{job="dms-core"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "DMS backend is not responding"
+          description: "Prometheus cannot scrape dms-core. The whole DMS is likely unusable."
+
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: "Nothing in the DMS works without it - sign-in included."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Caching and session lookups fall back to the database; expect it to feel slower."
+
+      - alert: RabbitMqDown
+        expr: up{job="rabbitmq"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: rabbitmq
+        annotations:
+          summary: "RabbitMQ is unreachable"
+          description: "Bulk imports and exports stop being processed; messages queue up on the producer side."
+
+      - alert: ContainerRestarting
+        # A container whose start time keeps moving is crash-looping. Counts
+        # restarts in the last 15 minutes rather than reading a restart
+        # counter, which cAdvisor does not expose directly.
+        expr: changes(container_start_time_seconds{name!=""}[15m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: containers
+        annotations:
+          summary: "Container {{ $labels.name }} restarted more than twice in 15 minutes"
+          description: "It is probably crash-looping - check `docker logs {{ $labels.name }}`."
+
+      - alert: ContainerMemoryNearLimit
+        # Only for containers that HAVE a limit set; the stack caps clamav,
+        # keycloak, dms-core and gotenberg, and hitting the cap means an
+        # out-of-memory kill rather than a slowdown.
+        expr: >-
+          (container_memory_working_set_bytes{name!=""}
+           / container_spec_memory_limit_bytes{name!=""}) * 100 > 90
+          and container_spec_memory_limit_bytes{name!=""} > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: containers
+        annotations:
+          summary: "{{ $labels.name }} is using over 90% of its memory limit"
+          description: "{{ $value | humanize }}% of its cap. It will be killed if it reaches 100%."
+
+  # ----------------------------------------------------------------- API
+  - name: dms-api
+    rules:
+      - alert: ApiErrorRateHigh
+        # Server-side failures only: 4xx is mostly the client's problem (a
+        # 401 on an expired session is normal traffic, not an incident).
+        # `> 0` guard on the denominator stops an idle night dividing by zero.
+        expr: >-
+          (sum(rate(http_server_requests_seconds_count{job="dms-core",status=~"5.."}[5m]))
+           /
+           sum(rate(http_server_requests_seconds_count{job="dms-core"}[5m]))) * 100 > 5
+          and sum(rate(http_server_requests_seconds_count{job="dms-core"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "More than 5% of API requests are failing"
+          description: "{{ $value | humanize }}% are returning 5xx. Check the dms-core logs."
+
+      - alert: ApiLatencyHigh
+        # p95 from the histogram enabled in application.yml. Uploads are
+        # excluded: a 6 GB upload legitimately holds a request open for
+        # minutes and would keep this firing forever.
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{job="dms-core",uri!~".*documents.*|.*bulk-imports.*"}[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "95th-percentile API response time above 2s"
+          description: "p95 is {{ $value | humanize }}s. The app will feel sluggish."
+
+      - alert: DatabaseConnectionPoolExhausted
+        # HikariCP: threads waiting for a connection means requests are
+        # queueing behind the pool, which looks like a slow app to everyone.
+        expr: hikaricp_connections_pending{job="dms-core"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "Requests are waiting for a database connection"
+          description: "{{ $value }} threads are blocked on the pool. Raise the pool size or find the slow query."
+
+  # --------------------------------------------------- documents and OCR
+  - name: dms-documents
+    rules:
+      - alert: ScanBacklogGrowing
+        # dms_scan_backlog counts rows still pending or quarantined-but-not-
+        # isolated. A handful is normal while large files are scanned; a
+        # sustained pile-up means the scanner or the worker pool is stuck.
+        expr: dms_scan_backlog{status="pending"} > 25
+        for: 20m
+        labels:
+          severity: warning
+          component: scanning
+        annotations:
+          summary: "{{ $value }} uploads are waiting to be scanned"
+          description: "Uploads stay invisible to users until they pass. Check ClamAV and the scan workers."
+
+      - alert: OcrFailuresHigh
+        # NOTE: no OCR worker exists in this codebase yet - document_versions
+        # .ocr_status is written but nothing processes it. This rule is wired
+        # to the real gauge so it starts working the day that worker lands,
+        # and stays silent (the series is 0) until then.
+        expr: dms_ocr_documents{status="failed"} > 20
+        for: 15m
+        labels:
+          severity: warning
+          component: ocr
+        annotations:
+          summary: "{{ $value }} documents failed OCR"
+          description: "Their text will not be searchable. Check the OCR worker once it is deployed."
+
+      - alert: DmsStorageGrowingFast
+        # Doubling-in-a-week growth is usually a runaway import or a loop
+        # re-uploading the same file, both of which fill the disk quietly.
+        expr: predict_linear(dms_storage_bytes[6h], 7 * 24 * 3600) > 2 * dms_storage_bytes
+        for: 1h
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "Stored document bytes are growing unusually fast"
+          description: "At this rate the DMS doubles in size within a week - check for a runaway import."

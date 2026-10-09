@@ -1,0 +1,22 @@
+# Loads every dashboard JSON under /var/lib/grafana/dashboards (mounted from
+# infra/monitoring/grafana/dashboards) on startup and whenever a file changes.
+#
+# allowUiUpdates is false: these dashboards are code. Someone editing panels
+# in the browser and losing the change on the next deploy is worse than
+# being told up front to edit the JSON. "Save as" to a new dashboard still
+# works for ad-hoc exploration.
+apiVersion: 1
+
+providers:
+  - name: OAK DMS
+    orgId: 1
+    folder: OAK DMS
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      # Keeps the folder name above rather than inventing folders from the
+      # directory layout on disk.
+      foldersFromFilesStructure: false

@@ -28,3 +28,23 @@ export const API_BASE_URL =
 export const KEYCLOAK_ACCOUNT_URL =
   process.env.NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL ??
   "http://localhost:8081/realms/oak-dms/account"
+
+/**
+ * Base URL of Grafana, which the System Monitoring admin page embeds (see
+ * infra/monitoring). Same reasoning as API_BASE_URL above: production builds
+ * use the relative "/grafana" and nginx proxies it, so the dashboard is
+ * same-origin and the iframe needs no cross-site cookie. The localhost:3001
+ * default is for `bun dev` and the local compose stack, where Grafana has its
+ * own port (3000 being the frontend's).
+ *
+ * No trailing slash — paths are appended as `${GRAFANA_BASE_URL}/d/...`.
+ */
+export const GRAFANA_BASE_URL =
+  process.env.NEXT_PUBLIC_GRAFANA_URL ?? "http://localhost:3001/grafana"
+
+/**
+ * The provisioned dashboard's uid, fixed in
+ * infra/monitoring/grafana/dashboards/oak-dms-overview.json. Changing it
+ * there means changing it here.
+ */
+export const GRAFANA_DASHBOARD_UID = "oak-dms-overview"

@@ -108,6 +108,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!--
+          Backs /actuator/prometheus, which application.yml has exposed all
+          along - without a registry on the classpath that endpoint simply
+          does not exist. Scraped by infra/monitoring's Prometheus; version
+          managed by the Boot parent.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>

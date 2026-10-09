@@ -1,4 +1,5 @@
 import {
+  Activity,
   AtSign,
   BarChart3,
   Building2,
@@ -17,7 +18,7 @@ import {
   Trash2,
   Users,
   Workflow,
-  Waypoints
+  Waypoints,
 } from "lucide-react"
 
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -51,7 +52,12 @@ export const navSections: NavSection[] = [
       { label: "Recent Pins", icon: Pin },
       // The caller's workflow approval queue - visible to everyone (anyone
       // can be named as an approver); the badge is their live open-task count.
-      { label: "My Tasks", icon: Workflow, href: "/tasks", liveBadge: "myOpenTasks" },
+      {
+        label: "My Tasks",
+        icon: Workflow,
+        href: "/tasks",
+        liveBadge: "myOpenTasks",
+      },
       // Comments that mention me - readable even without document access (Phase 2).
       { label: "Mentions", icon: AtSign, href: "/mentions" },
       { label: "Search", icon: Search },
@@ -180,6 +186,28 @@ export const navSections: NavSection[] = [
         icon: Building2,
         href: "/admin/organisations",
         platformAdminOnly: true,
+      },
+    ],
+  },
+  // Infrastructure, not document governance: this section is about the
+  // server and the services on it, which is why it sits apart from
+  // Governance (users, roles, audit - who may do what with documents)
+  // rather than inside it. Future operations screens - background jobs,
+  // server info, scan engine status - belong here too.
+  {
+    label: "System",
+    items: [
+      // Live stack health (Prometheus + Grafana, see infra/monitoring).
+      // Administrators of either kind: on a single-organisation deployment
+      // the tenant admins are the people who actually operate the server,
+      // so platform-admin-only would hide it from everyone who needs it.
+      // It shows infrastructure figures (CPU, disk, queues) - never
+      // document content - so it is not tenant-scoped data.
+      {
+        label: "System Monitoring",
+        icon: Activity,
+        href: "/admin/monitoring",
+        adminOnly: true,
       },
     ],
   },
