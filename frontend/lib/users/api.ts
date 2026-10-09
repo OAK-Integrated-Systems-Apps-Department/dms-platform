@@ -52,7 +52,11 @@ export interface UserPageResponseDto {
 }
 
 export async function fetchUser(userId: string): Promise<UserResponseDto> {
-  return apiFetchJson(`${API_BASE_URL}/api/v1/users/${userId}`, undefined, "Could not load this user.")
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/${userId}`,
+    undefined,
+    "Could not load this user."
+  )
 }
 
 export async function fetchUserRoles(
@@ -70,7 +74,9 @@ export async function fetchUserRoles(
  * holds in Keycloak — see `UserRecord.platformRoles`'s doc comment for why
  * these are fetched and surfaced separately from `fetchUserRoles`.
  */
-export async function fetchUserPlatformRoles(userId: string): Promise<string[]> {
+export async function fetchUserPlatformRoles(
+  userId: string
+): Promise<string[]> {
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/${userId}/platform-roles`,
     undefined,
@@ -91,6 +97,80 @@ export async function fetchMyPlatformRoles(): Promise<string[]> {
     `${API_BASE_URL}/api/v1/users/me/platform-roles`,
     undefined,
     "Could not load your platform roles."
+  )
+}
+
+/** Mirrors UserController.CurrentIdentityResponse — every field is an optional OIDC claim. */
+export interface CurrentIdentityDto {
+  email: string | null
+  username: string | null
+  firstName: string | null
+  lastName: string | null
+  /** The token's combined `name` claim - often the only name present. */
+  displayName: string | null
+  platformRoles: string[]
+}
+
+/**
+ * Who the caller is, read from their access token via
+ * `GET /api/v1/users/me/identity`.
+ *
+ * Works without tenant context, which is the whole point: a platform
+ * administrator belongs to no tenant and so has no local user row, and
+ * `fetchCurrentUser` answers 401 TENANT_CONTEXT_MISSING for them by design.
+ * This is how My Profile can still show them who they are signed in as.
+ */
+export async function fetchMyIdentity(): Promise<CurrentIdentityDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me/identity`,
+    undefined,
+    "Could not load your account details."
+  )
+}
+
+/**
+ * Changes the caller's own name and email, via `PUT /api/v1/users/me/identity`.
+ *
+ * Applies to Keycloak (which owns the identity) and mirrors onto the local
+ * user row when there is one. Works without tenant context, so a platform
+ * administrator can maintain their account without leaving the DMS.
+ */
+export async function updateMyIdentity(request: {
+  firstName: string
+  lastName: string
+  email: string
+}): Promise<CurrentIdentityDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me/identity`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    "Could not save your account details."
+  )
+}
+
+/**
+ * Changes the caller's own password, via `POST /api/v1/users/me/password`.
+ *
+ * `currentPassword` is genuinely re-checked by the server, so a wrong one
+ * comes back 403 CURRENT_PASSWORD_INCORRECT rather than silently succeeding.
+ * `totp` is only needed by accounts with MFA enrolled.
+ */
+export async function changeMyPassword(request: {
+  currentPassword: string
+  newPassword: string
+  totp?: string
+}): Promise<void> {
+  await apiFetch(
+    `${API_BASE_URL}/api/v1/users/me/password`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    "Could not change your password."
   )
 }
 
@@ -117,7 +197,10 @@ export async function fetchUsersPage(
  * USER_DEACTIVATED entry) and is recorded on the resulting audit event, not
  * stored on the user profile itself.
  */
-export async function deactivateUser(userId: string, reason: string): Promise<void> {
+export async function deactivateUser(
+  userId: string,
+  reason: string
+): Promise<void> {
   await apiFetch(
     `${API_BASE_URL}/api/v1/users/${userId}`,
     {
@@ -340,7 +423,10 @@ export async function syncUserRoles(
     currentGrants = await fetchUserRoles(userId)
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Could not load this user's current roles.",
+      error:
+        err instanceof Error
+          ? err.message
+          : "Could not load this user's current roles.",
     }
   }
 
@@ -360,7 +446,9 @@ export async function syncUserRoles(
     ...toAssign.map((name) => {
       const roleId = roleIdByName.get(name)
       if (!roleId) {
-        return Promise.reject(new Error(`"${name}" isn't in the current role list.`))
+        return Promise.reject(
+          new Error(`"${name}" isn't in the current role list.`)
+        )
       }
       return assignUserRole(userId, roleId)
     }),
@@ -374,10 +462,15 @@ export async function syncUserRoles(
   if (failures.length === 1) {
     const reason = failures[0].reason
     return {
-      error: reason instanceof Error ? reason.message : "Could not update this user's roles.",
+      error:
+        reason instanceof Error
+          ? reason.message
+          : "Could not update this user's roles.",
     }
   }
-  return { error: `${failures.length} role changes could not be applied. Please review and try again.` }
+  return {
+    error: `${failures.length} role changes could not be applied. Please review and try again.`,
+  }
 }
 
 /**
@@ -438,7 +531,9 @@ export function toUserRecord(
     // changed their password under this tracking (including one still on
     // their initial invite-provisioned temporary password) has
     // lastPasswordChangedAt: null, which falls back to "—".
-    lastPasswordChange: user.lastPasswordChangedAt ? user.lastPasswordChangedAt.slice(0, 10) : "—",
+    lastPasswordChange: user.lastPasswordChangedAt
+      ? user.lastPasswordChangedAt.slice(0, 10)
+      : "—",
     activeSessions: 0,
     recentActivity: [],
     mfaEnrolled: user.mfaEnabled,

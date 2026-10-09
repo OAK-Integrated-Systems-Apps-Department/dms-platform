@@ -2,8 +2,11 @@
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { PlatformAdminProfile } from "@/components/profile/platform-admin-profile"
 import { ProfileOverview } from "@/components/profile/profile-overview"
 import { SecurityOverview } from "@/components/profile/security-overview"
+import { ApiError } from "@/lib/api-error"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
 
 /**
  * My Profile (S1) — end-user account overview. Top-level route
@@ -17,6 +20,15 @@ import { SecurityOverview } from "@/components/profile/security-overview"
  * see `SecurityOverview`'s own doc comment.
  */
 export default function ProfilePage() {
+  // A platform administrator belongs to no tenant and so has no local user
+  // row: `GET /api/v1/users/me` answers 401 TENANT_CONTEXT_MISSING for them
+  // by design. Both cards below are built on that call, so without this
+  // branch the one account that administers the platform sees two errors
+  // where its profile should be.
+  const { error } = useCurrentUser()
+  const noLocalProfile =
+    error instanceof ApiError && error.code === "TENANT_CONTEXT_MISSING"
+
   return (
     <DashboardShell>
       <AdminBreadcrumb
@@ -24,17 +36,23 @@ export default function ProfilePage() {
         segments={[{ label: "Dashboard", href: "/" }, { label: "My Profile" }]}
       />
       <div className="mb-[22px] max-w-[640px]">
-          <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-            My Profile
-          </h1>
-          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-            Your account information, role, and tenant.
-          </p>
-        </div>
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+          My Profile
+        </h1>
+        <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          {noLocalProfile
+            ? "Your account details, and where to change them."
+            : "Your account information, role, and tenant."}
+        </p>
+      </div>
+      {noLocalProfile ? (
+        <PlatformAdminProfile />
+      ) : (
         <div className="flex flex-col gap-5">
           <ProfileOverview />
           <SecurityOverview />
         </div>
+      )}
     </DashboardShell>
   )
 }

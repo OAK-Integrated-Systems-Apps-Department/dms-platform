@@ -158,6 +158,15 @@ services:
       # web client URLs section for why the realm import alone isn't enough.
       KEYCLOAK_WEB_CLIENT_ID: oak-dms-web
       KEYCLOAK_WEB_CLIENT_URL: http://${PUBLIC_HOST:-localhost}:3000
+      # Platform superadmin. The realm file creates the account with no
+      # credential; bootstrap.sh sets this one only if it has none yet, so a
+      # password changed in the UI survives every later restart.
+      KEYCLOAK_SUPERADMIN_USERNAME: ${KEYCLOAK_SUPERADMIN_USERNAME:-superadmin@gmail.com}
+      KEYCLOAK_SUPERADMIN_PASSWORD: ${KEYCLOAK_SUPERADMIN_PASSWORD:-SuperAdmin123@}
+      # false here only: a dev machine recreates this realm often and the
+      # change-password prompt on every fresh volume is pure friction.
+      # Production leaves it at the default (true).
+      KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY: ${KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY:-false}
       # Re-applied on every bootstrap run - see bootstrap.sh's SMTP config
       # section for why this can't just live in oak-dms-realm.json alone.
       KEYCLOAK_SMTP_HOST: mailpit
@@ -467,6 +476,12 @@ services:
       # them with host-architecture binaries) - which is exactly the kind
       # of arch mismatch that caused the original "Exec format error".
       - /app/node_modules
+      # Turbopack's dev cache. Anonymous volumes SURVIVE `docker compose up
+      # --build`, so this one outlives the container that made it - and a
+      # cache written before a route existed makes `next dev` answer 404 for
+      # that route forever, with no error in the log and the page.tsx plainly
+      # present in the container. If a route 404s but its file is there:
+      #     docker compose up -d --force-recreate --renew-anon-volumes frontend
       - /app/.next
     ports:
       - "3000:3000"

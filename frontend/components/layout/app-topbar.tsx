@@ -24,6 +24,7 @@ import { IconButton } from "@/components/ui/icon-button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { useAccountIdentity } from "@/lib/auth/use-account-identity"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
@@ -111,7 +112,11 @@ function isUnread(entry: DashboardActivity, seen: string | null, me?: string) {
  */
 export function AppTopbar() {
   const router = useRouter()
-  const { data: user, initials } = useCurrentUser()
+  const { data: user } = useCurrentUser()
+  // Name and initials come from here, not useCurrentUser directly: a platform
+  // administrator has no local user row, and the menu used to render "…" for
+  // them. See useAccountIdentity.
+  const account = useAccountIdentity()
   const { hasPermission } = usePermissions()
   const canSearch = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
   const dashboard = useDashboard()
@@ -182,7 +187,7 @@ export function AppTopbar() {
 
       {canSearch && (
         <TopbarSearch
-          className="min-w-0 max-w-[460px] flex-1"
+          className="max-w-[460px] min-w-0 flex-1"
           onOpen={openPreview}
         />
       )}
@@ -270,7 +275,8 @@ export function AppTopbar() {
           title={unread ? "Recent activity - something new" : "Recent activity"}
           active={notifOpen}
           onClick={() => {
-            if (!notifOpen && activity.length > 0) markSeen(activity[0].occurredAt)
+            if (!notifOpen && activity.length > 0)
+              markSeen(activity[0].occurredAt)
             setNotifOpen((v) => !v)
             setPinOpen(false)
             setAccountOpen(false)
@@ -359,7 +365,7 @@ export function AppTopbar() {
           }}
         >
           <span className="flex size-7 items-center justify-center rounded-full bg-primary font-heading text-[11.5px] font-bold text-primary-foreground">
-            {initials ?? "…"}
+            {account.initials ?? "…"}
           </span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </button>
@@ -367,10 +373,10 @@ export function AppTopbar() {
           <Dropdown width={220} noPad>
             <div className="border-b border-border px-3.5 py-3">
               <div className="text-[13.5px] font-semibold">
-                {user?.displayName ?? "…"}
+                {account.displayName ?? "…"}
               </div>
               <div className="text-[11.5px] text-muted-foreground">
-                {user?.status ?? ""}
+                {account.subtitle}
               </div>
             </div>
             <MenuRow

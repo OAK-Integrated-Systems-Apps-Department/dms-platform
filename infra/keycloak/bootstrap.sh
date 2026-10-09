@@ -205,5 +205,57 @@ if [ -n "${KEYCLOAK_WEB_CLIENT_URL:-}" ]; then
   echo "Web client URLs applied"
 fi
 
+# --- Platform superadmin password --------------------------------------
+# oak-dms-realm.json creates superadmin@gmail.com with the PLATFORM_ADMIN
+# role but DELIBERATELY no credential. It used to carry a committed password,
+# which meant every deployment built from this repo - every client's server -
+# shipped with the same known platform-admin login, and that password was in
+# the git history for good.
+#
+# Set here instead, from the environment, and ONLY when the account has no
+# credential yet. That distinction matters: this script re-runs on every
+# `docker compose up`, so unconditionally setting the password would silently
+# undo the administrator's own password change on the next restart.
+#
+# Without KEYCLOAK_SUPERADMIN_PASSWORD set there is simply no way in as
+# superadmin - which is the right failure. It is loud, it happens at install
+# time, and it cannot be mistaken for a working system.
+if [ -n "${KEYCLOAK_SUPERADMIN_USERNAME:-}" ]; then
+  SUPERADMIN_USER=$(curl -s -f -X GET \
+    "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users?username=$KEYCLOAK_SUPERADMIN_USERNAME&exact=true" \
+    -H "Authorization: Bearer $TOKEN" | jq -r '.[0] // empty')
+
+  if [ -z "$SUPERADMIN_USER" ]; then
+    echo "Superadmin $KEYCLOAK_SUPERADMIN_USERNAME not found in realm $KEYCLOAK_REALM - skipping"
+  else
+    SUPERADMIN_ID=$(echo "$SUPERADMIN_USER" | jq -r '.id')
+    EXISTING_CREDS=$(curl -s -f -X GET \
+      "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users/$SUPERADMIN_ID/credentials" \
+      -H "Authorization: Bearer $TOKEN" | jq 'length')
+
+    if [ "$EXISTING_CREDS" != "0" ]; then
+      echo "Superadmin already has a password - leaving it alone"
+    elif [ -z "${KEYCLOAK_SUPERADMIN_PASSWORD:-}" ]; then
+      echo "WARNING: superadmin has no password and KEYCLOAK_SUPERADMIN_PASSWORD is unset."
+      echo "         Nobody can sign in as the platform administrator."
+      echo "         Set it in your .env and re-run this stack."
+    else
+      # temporary=true forces Keycloak's UPDATE_PASSWORD action at first
+      # login, so whatever was typed into .env during install does not stay
+      # as the permanent credential. Set KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY
+      # to false for a dev machine where that prompt is just friction.
+      TEMPORARY="${KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY:-true}"
+      echo "Setting initial superadmin password (temporary=$TEMPORARY)..."
+      curl -s -f -X PUT \
+        "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users/$SUPERADMIN_ID/reset-password" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg p "$KEYCLOAK_SUPERADMIN_PASSWORD" --argjson t "$TEMPORARY" \
+              '{type: "password", value: $p, temporary: $t}')"
+      echo "Superadmin password set"
+    fi
+  fi
+fi
+
 echo "Bootstrap completed successfully"
 exit 0

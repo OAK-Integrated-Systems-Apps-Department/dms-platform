@@ -165,6 +165,18 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: dms-core-admin
       KEYCLOAK_WEB_CLIENT_ID: oak-dms-web
       KEYCLOAK_WEB_CLIENT_URL: ${PUBLIC_URL}
+      # Platform superadmin. The realm file ships the account WITHOUT a
+      # credential on purpose - it used to carry a committed one, which meant
+      # every client's server had the same known platform-admin login.
+      # bootstrap.sh sets this only when the account has no password yet, so
+      # it is an install-time value, not a reset-on-every-deploy value.
+      # Required: without it nobody can sign in as the platform administrator.
+      KEYCLOAK_SUPERADMIN_USERNAME: ${KEYCLOAK_SUPERADMIN_USERNAME:-superadmin@gmail.com}
+      KEYCLOAK_SUPERADMIN_PASSWORD: ${KEYCLOAK_SUPERADMIN_PASSWORD:?KEYCLOAK_SUPERADMIN_PASSWORD is required}
+      # Left at true: whatever is typed into .env at install must be replaced
+      # by the administrator at first login, so the installer's value is
+      # never the lasting credential.
+      KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY: ${KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY:-true}
       KEYCLOAK_SMTP_HOST: ${SMTP_HOST:-mailpit}
       KEYCLOAK_SMTP_PORT: ${SMTP_PORT:-1025}
       KEYCLOAK_SMTP_FROM: ${SMTP_FROM:-no-reply@oakdms.local}

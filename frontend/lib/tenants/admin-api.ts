@@ -35,6 +35,71 @@ export async function fetchOrganisations(): Promise<OrganisationDto[]> {
   return page.content
 }
 
+/** What onboarding a new client needs: the organisation and its first administrator. */
+export interface ProvisionOrganisationRequest {
+  tenantName: string
+  /** Lowercase hostname, e.g. "acme.oakdms.com" - it doubles as the login domain. */
+  domain: string
+  subscriptionTier: string
+  adminEmail: string
+  adminUsername: string
+  adminFirstName: string
+  adminLastName?: string
+}
+
+export interface ProvisionOrganisationResult {
+  tenant: OrganisationDto
+  admin: { userId: string; email: string; username: string }
+}
+
+/**
+ * Onboards a client: creates the organisation AND its first TENANT_ADMIN in
+ * one atomic call, and emails them to set a password.
+ *
+ * Deliberately this rather than `POST /api/v1/tenants`, which makes an
+ * organisation nobody can log into - there is no other endpoint that can
+ * create a user outside the caller's own tenant or grant TENANT_ADMIN, so a
+ * plain create leaves an organisation that has to be finished by hand in
+ * Keycloak.
+ */
+export async function provisionOrganisation(
+  request: ProvisionOrganisationRequest
+): Promise<ProvisionOrganisationResult> {
+  return apiFetchJson(
+    `${BASE}/provision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    "Could not create the organisation."
+  )
+}
+
+/**
+ * Renames an organisation or changes its tier. `status` is sent unchanged -
+ * suspending and resuming go through `setOrganisationStatus` instead, so an
+ * edit can never alter the lifecycle by accident.
+ */
+export async function updateOrganisation(
+  org: OrganisationDto,
+  changes: { tenantName: string; subscriptionTier: string }
+): Promise<OrganisationDto> {
+  return apiFetchJson(
+    `${BASE}/${org.tenantId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tenantName: changes.tenantName,
+        subscriptionTier: changes.subscriptionTier,
+        status: org.status,
+      }),
+    },
+    "Could not update the organisation."
+  )
+}
+
 /** Suspend, resume or archive - name and tier are sent back unchanged. */
 export async function setOrganisationStatus(
   org: OrganisationDto,

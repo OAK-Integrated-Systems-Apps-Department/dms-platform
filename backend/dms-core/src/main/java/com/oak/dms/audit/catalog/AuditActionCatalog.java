@@ -59,6 +59,8 @@ public final class AuditActionCatalog {
     public static final String LOGOUT = "LOGOUT";
     public static final String PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED";
     public static final String PASSWORD_RESET_COMPLETED = "PASSWORD_RESET_COMPLETED";
+    /** The holder changed their own password from inside the DMS (distinct from a reset via emailed link). */
+    public static final String PASSWORD_CHANGED = "PASSWORD_CHANGED";
     public static final String USER_CREATED = "USER_CREATED";
     public static final String USER_UPDATED = "USER_UPDATED";
     public static final String USER_ROLE_ASSIGNED = "USER_ROLE_ASSIGNED";
@@ -202,6 +204,7 @@ public final class AuditActionCatalog {
             // for why silent session renewal is deliberately not audited.
             Map.entry(PASSWORD_RESET_REQUESTED, new AuditActionSpec("ASM", AuditSeverity.LOW, false)),
             Map.entry(PASSWORD_RESET_COMPLETED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
+            Map.entry(PASSWORD_CHANGED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
             // Impersonation (ImpersonationService) - module ASM: starting a
             // session under someone else's identity is at least as
             // sensitive as a role deletion (HIGH); ending one is routine

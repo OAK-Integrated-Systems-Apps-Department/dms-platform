@@ -324,8 +324,22 @@ for what is collected and how to change a panel or an alert.
   exposure beyond the LAN, then set `PUBLIC_URL=https://…` and
   `AUTH_COOKIE_SECURE=true`.
 - **Seeded Keycloak user.** `infra/local/keycloak/oak-dms-realm.json` creates
-  `superadmin@gmail.com` with a password that is committed in the repo, on a
-  realm's first import. Change that password immediately on any new install.
+  `superadmin@gmail.com` with the `PLATFORM_ADMIN` role and **no password** —
+  the realm file used to carry a committed one, which meant every deployment
+  built from this repo shared the same known platform-admin login.
+  `bootstrap.sh` now sets it from `KEYCLOAK_SUPERADMIN_PASSWORD`, and only
+  when the account has no credential yet, so a password changed later is not
+  reset on the next deploy. It is applied as a *temporary* password in
+  production, so the holder must replace it at first login.
+
+  Set `KEYCLOAK_SUPERADMIN_PASSWORD` in `.env` before the first deploy —
+  unique per client. Without it, bootstrap logs a warning and nobody can sign
+  in as the platform administrator.
+
+  **Servers installed before this change still hold the old committed
+  password.** Reset it once, in the Keycloak admin console
+  (Users → superadmin@gmail.com → Credentials → Reset password), or by
+  deleting that user's credential and re-running `keycloak-bootstrap`.
 - **Keycloak DB user.** Keycloak uses the `postgres` superuser (inherited
   from the local setup). A dedicated `keycloak` role owning only
   `keycloak_db` would be better.

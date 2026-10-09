@@ -20,6 +20,7 @@ import {
   EmptyState,
 } from "@/components/dashboard/dash-card"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { PlatformDashboard } from "@/components/dashboard/platform-dashboard"
 import { DigitalImpact } from "@/components/dashboard/digital-impact"
 import { MetricCards } from "@/components/dashboard/metric-cards"
 import { RecentActivityPanel } from "@/components/dashboard/panels"
@@ -28,7 +29,7 @@ import { RecentDocuments } from "@/components/dashboard/recent-documents"
 import { StorageCard } from "@/components/dashboard/storage-card"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
-import { friendlyMessage } from "@/lib/api-error"
+import { ApiError, friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
@@ -100,7 +101,19 @@ function summaryOf(data: DashboardDto): string {
  * loads, empties and fails on its own.
  */
 export default function Page() {
-  const { data: user, isLoading: isUserLoading } = useCurrentUser()
+  const {
+    data: user,
+    isLoading: isUserLoading,
+    error: userError,
+  } = useCurrentUser()
+  // A platform administrator belongs to no tenant, so everything below -
+  // documents, folders, activity, all of it tenant-scoped - answers 401
+  // TENANT_CONTEXT_MISSING for them. They get the cross-tenant view instead:
+  // which organisations exist and how much each is using. Keyed off the
+  // error rather than the role so the switch happens for exactly the
+  // accounts the tenant dashboard cannot serve, and no others.
+  const noTenant =
+    userError instanceof ApiError && userError.code === "TENANT_CONTEXT_MISSING"
   const { hasPermission, isLoading: permissionsLoading } = usePermissions()
   // Assume access until the permissions arrive, so nothing flashes "no access".
   const canView =
@@ -150,6 +163,24 @@ export default function Page() {
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not download the document."))
     }
+  }
+
+  if (noTenant) {
+    return (
+      <DashboardShell initialActiveLabel="Dashboard">
+        <div className="mb-5 max-w-[720px]">
+          <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+            Platform overview
+          </h1>
+          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+            Every organisation on this installation and how much of the system
+            each is using. Figures only — no document titles, folders or
+            activity.
+          </p>
+        </div>
+        <PlatformDashboard />
+      </DashboardShell>
+    )
   }
 
   return (

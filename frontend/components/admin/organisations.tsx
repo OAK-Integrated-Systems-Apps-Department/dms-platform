@@ -7,7 +7,9 @@ import {
   Flame,
   Loader2,
   Pause,
+  Pencil,
   Play,
+  Plus,
   RotateCcw,
   Trash2,
 } from "lucide-react"
@@ -33,8 +35,10 @@ import {
   deactivateOrganisation,
   destroyOrganisationKeys,
   fetchOrganisations,
+  provisionOrganisation,
   reactivateOrganisation,
   setOrganisationStatus,
+  updateOrganisation,
   type OrganisationDto,
 } from "@/lib/tenants/admin-api"
 
@@ -68,6 +72,8 @@ export function Organisations() {
   const orgs = useQuery({ queryKey: KEY, queryFn: fetchOrganisations })
   const [pending, setPending] = useState<Pending>(null)
   const [shredding, setShredding] = useState<OrganisationDto | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<OrganisationDto | null>(null)
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: KEY })
@@ -86,6 +92,15 @@ export function Organisations() {
 
   return (
     <div className="flex max-w-[1100px] flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12.5px] text-muted-foreground">
+          {orgs.data.length}{" "}
+          {orgs.data.length === 1 ? "organisation" : "organisations"}
+        </p>
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Plus size={14} aria-hidden="true" /> Add organisation
+        </Button>
+      </div>
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[820px] text-[13px]">
           <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
@@ -129,6 +144,17 @@ export function Organisations() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+                      {/* Renaming a deactivated organisation would be
+                          confusing rather than useful - bring it back first. */}
+                      {!org.deactivated && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditing(org)}
+                        >
+                          <Pencil /> Edit
+                        </Button>
+                      )}
                       {!org.deactivated && org.status === "active" && (
                         <Button
                           size="sm"
@@ -223,6 +249,336 @@ export function Organisations() {
           onDone={refresh}
         />
       )}
+
+      {adding && (
+        <AddOrganisationSheet
+          onOpenChange={(open) => !open && setAdding(false)}
+          onDone={refresh}
+        />
+      )}
+
+      {editing && (
+        <EditOrganisationSheet
+          org={editing}
+          onOpenChange={(open) => !open && setEditing(null)}
+          onDone={refresh}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Onboards a client: the organisation and its first administrator together,
+ * via `POST /api/v1/tenants/provision`. Both at once because an organisation
+ * created on its own has nobody who can log into it, and no other endpoint
+ * can create a user inside it afterwards.
+ */
+function AddOrganisationSheet({
+  onOpenChange,
+  onDone,
+}: {
+  onOpenChange: (open: boolean) => void
+  onDone: () => void
+}) {
+  const [form, setForm] = useState({
+    tenantName: "",
+    domain: "",
+    subscriptionTier: "basic",
+    adminEmail: "",
+    adminUsername: "",
+    adminFirstName: "",
+    adminLastName: "",
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const set = (field: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [field]: value }))
+
+  // Mirrors the backend's own @Pattern on domain and adminUsername, so a
+  // typo is caught here rather than coming back as a 400 field error.
+  const domainOk =
+    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(
+      form.domain
+    )
+  const usernameOk = /^[a-zA-Z0-9._-]+$/.test(form.adminUsername)
+  const complete =
+    form.tenantName.trim() !== "" &&
+    form.domain.trim() !== "" &&
+    domainOk &&
+    form.subscriptionTier.trim() !== "" &&
+    form.adminEmail.trim() !== "" &&
+    form.adminUsername.trim() !== "" &&
+    usernameOk &&
+    form.adminFirstName.trim() !== "" &&
+    form.adminUsername.length >= 3
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await provisionOrganisation({
+        ...form,
+        adminLastName: form.adminLastName.trim() || undefined,
+      })
+      toast.success(
+        `${result.tenant.tenantName} created. ${result.admin.email} can set their password from the email just sent.`
+      )
+      onDone()
+      onOpenChange(false)
+    } catch (e) {
+      setError(friendlyMessage(e, "Could not create the organisation."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Sheet open onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-[520px]">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle>Add organisation</SheetTitle>
+          <SheetDescription>
+            Creates the organisation and its first administrator together. They
+            are emailed a link to set their own password — no password is set
+            here.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex flex-col gap-4 overflow-y-auto px-4 py-4">
+          <Field
+            label="Organisation name"
+            value={form.tenantName}
+            onChange={set("tenantName")}
+            placeholder="Acme Ltd"
+          />
+          <Field
+            label="Domain"
+            value={form.domain}
+            onChange={(v) => set("domain")(v.toLowerCase())}
+            placeholder="acme.oakdms.com"
+            hint="Lowercase hostname. Doubles as the organisation's login domain and can't be changed later."
+            error={
+              form.domain !== "" && !domainOk
+                ? "Must be a lowercase hostname, e.g. acme.oakdms.com"
+                : null
+            }
+          />
+          <Field
+            label="Plan"
+            value={form.subscriptionTier}
+            onChange={set("subscriptionTier")}
+            placeholder="basic"
+            hint="Free text — whatever your plans are called."
+          />
+
+          <div className="mt-1 border-t border-border pt-4">
+            <p className="mb-3 text-[12.5px] font-semibold text-foreground">
+              First administrator
+            </p>
+            <div className="flex flex-col gap-4">
+              <Field
+                label="Email"
+                type="email"
+                value={form.adminEmail}
+                onChange={set("adminEmail")}
+                placeholder="admin@acme.com"
+              />
+              <Field
+                label="Username"
+                value={form.adminUsername}
+                onChange={set("adminUsername")}
+                placeholder="acme.admin"
+                error={
+                  form.adminUsername !== "" && !usernameOk
+                    ? "Letters, numbers, dots, hyphens and underscores only"
+                    : null
+                }
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="First name"
+                  value={form.adminFirstName}
+                  onChange={set("adminFirstName")}
+                />
+                <Field
+                  label="Last name"
+                  value={form.adminLastName}
+                  onChange={set("adminLastName")}
+                  optional
+                />
+              </div>
+            </div>
+          </div>
+
+          {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
+        </div>
+
+        <SheetFooter className="border-t border-border">
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void save()} disabled={!complete || saving}>
+              {saving && <Loader2 className="animate-spin" />}
+              {saving ? "Creating…" : "Create organisation"}
+            </Button>
+          </div>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+/**
+ * Rename an organisation or change its plan. Domain is deliberately not
+ * editable - the backend's update request has no field for it, since it is
+ * the login domain and changing it would lock the organisation's users out.
+ */
+function EditOrganisationSheet({
+  org,
+  onOpenChange,
+  onDone,
+}: {
+  org: OrganisationDto
+  onOpenChange: (open: boolean) => void
+  onDone: () => void
+}) {
+  const [tenantName, setTenantName] = useState(org.tenantName)
+  const [subscriptionTier, setSubscriptionTier] = useState(org.subscriptionTier)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const changed =
+    tenantName.trim() !== org.tenantName ||
+    subscriptionTier.trim() !== org.subscriptionTier
+  const complete = tenantName.trim() !== "" && subscriptionTier.trim() !== ""
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      await updateOrganisation(org, {
+        tenantName: tenantName.trim(),
+        subscriptionTier: subscriptionTier.trim(),
+      })
+      toast.success(`${tenantName.trim()} updated.`)
+      onDone()
+      onOpenChange(false)
+    } catch (e) {
+      setError(friendlyMessage(e, "Could not update the organisation."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Sheet open onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-[480px]">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle>Edit {org.tenantName}</SheetTitle>
+          <SheetDescription>
+            Suspending, deactivating and destroying keys stay on the list — this
+            only changes the name and plan.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex flex-col gap-4 overflow-y-auto px-4 py-4">
+          <Field
+            label="Organisation name"
+            value={tenantName}
+            onChange={setTenantName}
+          />
+          <Field
+            label="Plan"
+            value={subscriptionTier}
+            onChange={setSubscriptionTier}
+          />
+          <div>
+            <p className="mb-1 text-[12px] font-medium text-muted-foreground">
+              Domain
+            </p>
+            <p className="font-mono text-[12.5px] text-foreground">
+              {org.domain}
+            </p>
+            <p className="mt-1 text-[11.5px] text-muted-foreground">
+              Can&apos;t be changed — it&apos;s the login domain, and changing
+              it would lock this organisation&apos;s users out.
+            </p>
+          </div>
+          {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
+        </div>
+
+        <SheetFooter className="border-t border-border">
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void save()}
+              disabled={!changed || !complete || saving}
+            >
+              {saving && <Loader2 className="animate-spin" />}
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+/** One labelled input - the two sheets above share the same field layout. */
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  error,
+  optional,
+  type = "text",
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  hint?: string
+  error?: string | null
+  optional?: boolean
+  type?: string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[12px] font-medium text-foreground">
+        {label}
+        {optional && (
+          <span className="ml-1 font-normal text-muted-foreground">
+            (optional)
+          </span>
+        )}
+      </label>
+      <Input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 text-[13px]"
+      />
+      {error ? (
+        <p className="mt-1 text-[11.5px] text-[var(--rust)]">{error}</p>
+      ) : hint ? (
+        <p className="mt-1 text-[11.5px] text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   )
 }
