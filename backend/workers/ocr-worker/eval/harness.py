@@ -50,7 +50,7 @@ from . import schema as schema_mod
 # Infrastructure doubles
 # ----------------------------------------------------------------------
 class InMemoryStorage:
-    """Stands in for `ObjectStorage`.
+    """Stands in for `DocumentContentClient`.
 
     Only the three methods the pipeline actually calls are implemented;
     anything else is a genuine error rather than a silent no-op, so a

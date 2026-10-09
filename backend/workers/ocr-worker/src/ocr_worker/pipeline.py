@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -14,6 +15,7 @@ from .config import OCR_TIMEOUT_EXIT_CODE, Settings
 from .db import session_scope
 from .deadline import DocumentDeadline
 from .errors import (
+    MissingReadGrantError,
     EngineError,
     FileTooLargeError,
     OcrEngineError,
@@ -42,7 +44,7 @@ from . import validation as validation_mod
 from . import routing
 from .orientation import NullOrientationClassifier, OrientationClassifier, decide as decide_orientation
 from .repository import OcrRepository, VersionNotEligible, VersionNotFound
-from .storage import ObjectStorage, ocr_output_key
+from .content_client import DocumentContentClient, ReadGrant
 from .zones import ZoneRegion, validate_normalized_box
 
 logger = logging.getLogger(__name__)
@@ -340,7 +342,7 @@ class OcrPipeline:
         self,
         settings: Settings,
         session_factory: sessionmaker[Session],
-        storage: ObjectStorage,
+        content: DocumentContentClient,
         layout_engine: LayoutEngine,
         ocr_engine: OcrEngine,
         orientation_classifier: OrientationClassifier | None = None,
@@ -355,7 +357,7 @@ class OcrPipeline:
         self._settings = settings
         self._known_vendors_loader = known_vendors_loader
         self._session_factory = session_factory
-        self._storage = storage
+        self._content = content
         self._layout_engine = layout_engine
         self._ocr_engine = ocr_engine
         # Defaults to the no-op rather than to the real model so a test
@@ -450,6 +452,7 @@ class OcrPipeline:
         correlation_id: uuid.UUID | None = None,
         requested_fields: list[FieldSpec] | None = None,
         resolve_fields_from_db: bool = False,
+        read_token: str | None = None,
     ) -> ProcessingOutcome:
         """`requested_fields`, when given (even as an empty list), restricts
         extraction to exactly those fields (see extraction.py's
@@ -481,7 +484,7 @@ class OcrPipeline:
         1. CLAIM -- a compare-and-swap UPDATE (OcrRepository.claim_job), no
            inference. Returns "skipped" if another worker/a still-live
            lease already owns this version's job.
-        2. RUN -- no open transaction at all. MinIO fetch, Docling
+        2. RUN -- no open transaction at all. document fetch, Docling
            conversion, PaddleOCR inference (`_run_inference`).
         3. COMMIT -- a fresh transaction (today's `_finalize_success`/
            `_finalize_failure`), re-fetching the job/version rows since the
@@ -539,7 +542,8 @@ class OcrPipeline:
         try:
             pages, fields, field_results, file_repaired, validation_failures, validation_errors, line_items, rendition = self._run_inference(
                 mime_type=mime_type,
-                storage_object_key=storage_object_key,
+                version_id=version_id,
+                read_token=read_token,
                 original_filename=original_filename,
                 tenant_id=tenant_id,
                 zone_regions=zone_regions,
@@ -582,11 +586,36 @@ class OcrPipeline:
                 page_count=len(pages),
             )
 
+    def _fetch_document(self, *, version_id: uuid.UUID, read_token: str | None) -> bytes:
+        """The document's plaintext bytes, from dms-core.
+
+        Not from object storage: dms-core encrypts every object at rest, so a
+        direct read returns ciphertext. See content_client.py for the two
+        credentials this presents and why the file is written to tmpfs.
+
+        The bytes are read back inside the download's context manager, so the
+        tmpfs file exists for as long as it takes to read it and no longer.
+        The in-memory shape is unchanged from the old MinIO read, so the size
+        guard immediately after this call still does its job.
+        """
+        if not read_token:
+            # A job with no grant cannot read anything. Raised rather than
+            # skipped so the failure is visible and classified, instead of a
+            # version that quietly never gets OCR'd.
+            raise MissingReadGrantError(
+                f"no read grant for version {version_id} - the event predates the internal-read "
+                f"endpoint, or dms-core could not mint one"
+            )
+        grant = ReadGrant(token=read_token, version_id=str(version_id))
+        with self._content.download(grant) as path:
+            return path.read_bytes()
+
     def _run_inference(
         self,
         *,
         mime_type: str,
-        storage_object_key: str,
+        version_id: uuid.UUID,
+        read_token: str | None,
         original_filename: str,
         zone_regions: list,
         requested_fields: list[FieldSpec] | None,
@@ -602,7 +631,7 @@ class OcrPipeline:
         that a real encrypted PDF and a real corrupt PDF both surfaced
         opaque internal exception text with no error code at all).
         """
-        file_bytes = self._storage.get_object_bytes(storage_object_key)
+        file_bytes = self._fetch_document(version_id=version_id, read_token=read_token)
         if len(file_bytes) > self._settings.ocr_max_file_size_bytes:
             raise FileTooLargeError(
                 f"{len(file_bytes)} bytes exceeds ocr_max_file_size_bytes={self._settings.ocr_max_file_size_bytes}"
@@ -1219,7 +1248,7 @@ class OcrPipeline:
     # ------------------------------------------------------------------
     # On-demand synchronous flows (OS-FR-003 named zones, OS-FR-004 rubber-band)
     # ------------------------------------------------------------------
-    def process_zone_request(self, version_id: uuid.UUID, zone_names: list[str] | None, correlation_id: uuid.UUID | None = None) -> ProcessingOutcome:
+    def process_zone_request(self, version_id: uuid.UUID, zone_names: list[str] | None, correlation_id: uuid.UUID | None = None, read_token: str | None = None) -> ProcessingOutcome:
         with session_scope(self._session_factory) as session:
             repo = OcrRepository(session)
             ctx = repo.get_version_for_processing(version_id)
@@ -1239,7 +1268,7 @@ class OcrPipeline:
                 if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
                     raise UnsupportedFormatError(ctx.version.mime_type)
 
-                file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+                file_bytes = self._fetch_document(version_id=ctx.version.version_id, read_token=read_token)
                 with self._layout_engine.load(
                     file_bytes, ctx.version.mime_type, ctx.version.original_filename,
                     max_megapixels=self._settings.ocr_render_max_mp,
@@ -1275,7 +1304,7 @@ class OcrPipeline:
     # ------------------------------------------------------------------
 
     def render_page_png(
-        self, version_id: uuid.UUID, page: int, dpi: int | None = None
+        self, version_id: uuid.UUID, page: int, dpi: int | None = None, read_token: str | None = None
     ) -> "PageRender":
         """One page as a PNG, in the SAME frame the stored bboxes live in.
 
@@ -1301,7 +1330,7 @@ class OcrPipeline:
             ctx = repo.get_version_for_processing(version_id)
             if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
                 raise UnsupportedFormatError(ctx.version.mime_type)
-            file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+            file_bytes = self._fetch_document(version_id=ctx.version.version_id, read_token=read_token)
 
         with self._layout_engine.load(
             file_bytes, ctx.version.mime_type, ctx.version.original_filename,
@@ -1321,7 +1350,8 @@ class OcrPipeline:
             )
 
     def preview_rubber_band(
-        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float],
+        read_token: str | None = None
     ) -> dict:
         """OCR one box and hand back what it says. Nothing is written.
 
@@ -1335,7 +1365,7 @@ class OcrPipeline:
             ctx = repo.get_version_for_processing(version_id)
             if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
                 raise UnsupportedFormatError(ctx.version.mime_type)
-            file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+            file_bytes = self._fetch_document(version_id=ctx.version.version_id, read_token=read_token)
 
         with self._layout_engine.load(
             file_bytes, ctx.version.mime_type, ctx.version.original_filename,
@@ -1371,6 +1401,7 @@ class OcrPipeline:
         page: int,
         box: tuple[float, float, float, float],
         correlation_id: uuid.UUID | None = None,
+        read_token: str | None = None,
     ) -> ProcessingOutcome:
         validate_normalized_box(*box)  # ambiguous/degenerate selection -> ValueError, caller maps to 422
 
@@ -1386,7 +1417,7 @@ class OcrPipeline:
                 if ctx.version.mime_type not in SUPPORTED_MIME_TYPES:
                     raise UnsupportedFormatError(ctx.version.mime_type)
 
-                file_bytes = self._storage.get_object_bytes(ctx.version.storage_object_key)
+                file_bytes = self._fetch_document(version_id=ctx.version.version_id, read_token=read_token)
                 with self._layout_engine.load(
                     file_bytes, ctx.version.mime_type, ctx.version.original_filename,
                     max_megapixels=self._settings.ocr_render_max_mp,
@@ -1449,6 +1480,7 @@ class OcrPipeline:
         validation_failures: list[str] | None = None,
         validation_errors: list[dict] | None = None,
         line_items: list | None = None,
+        read_token: str | None = None,
         rendition: tuple | None = None,
         page_count: int | None = None,
     ) -> ProcessingOutcome:
@@ -1483,13 +1515,13 @@ class OcrPipeline:
         # rule: "the rendition is simply absent" is indistinguishable
         # from "this deployment has renditions turned off", and a user
         # asking why they cannot search a document deserves the reason.
-        rendition_failures = self._store_searchable_pdf(repo=repo, ctx=ctx, rendition=rendition)
+        rendition_failures = self._store_searchable_pdf(repo=repo, ctx=ctx, rendition=rendition,
+                                                       read_token=read_token)
         if rendition_failures:
             flags["searchable_pdf_failed"] = True
             flags["searchable_pdf_failure_reasons"] = rendition_failures
 
         output_id = uuid.uuid4()
-        object_key = ocr_output_key(ctx.version.tenant_id, ctx.version.version_id, output_id)
         output_json = {
             # Added in Phase 2, not bumped: v1 had no version marker at
             # all, so a consumer reading an old artifact sees the key
@@ -1519,7 +1551,13 @@ class OcrPipeline:
             # downgraded -- so a reviewer sees WHY a value is flagged
             # rather than only that it is.
             output_json["validation_errors"] = validation_errors
-        self._storage.put_ocr_output_json(object_key, output_json)
+        # Written through dms-core, not straight to a bucket: OCR output IS the
+        # document's text, so it is encrypted and keyed under the document like
+        # everything else, and the purge path can find it.
+        object_key = self._content.put_output(
+            ReadGrant(token=read_token or "", version_id=str(ctx.version.version_id)),
+            json.dumps(output_json, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
 
         payload = build_ocr_completed_payload(
             tenant_id=ctx.version.tenant_id,
@@ -1569,7 +1607,8 @@ class OcrPipeline:
             )
         return ProcessingOutcome(status="completed", version_id=ctx.version.version_id, output=output_json)
 
-    def _store_searchable_pdf(self, *, repo: OcrRepository, ctx, rendition: tuple | None) -> list[str]:
+    def _store_searchable_pdf(self, *, repo: OcrRepository, ctx, rendition: tuple | None,
+                              read_token: str | None = None) -> list[str]:
         """Upload the rendition and record it (production prompt 3.11).
         Returns the reasons it did not fully happen, empty when it did.
 
@@ -1589,36 +1628,28 @@ class OcrPipeline:
                     ctx.version.version_id, "; ".join(failures),
                 )
             return failures
-        rendition_id = uuid.uuid4()
-        object_key = searchable_pdf.searchable_pdf_key(
-            ctx.version.tenant_id, ctx.version.version_id, rendition_id
-        )
+        # One call, not upload-then-record. dms-core stores the PDF and upserts
+        # the renditions row in the same transaction, so the row can no longer
+        # disagree with what is in storage - which the old two-step could do,
+        # and which the second `except` below used to exist to report.
+        #
+        # It also means the key is dms-core's to choose. The worker no longer
+        # computes one: two definitions of the same key format is how the row
+        # ends up pointing at an object that isn't there.
         try:
-            self._storage.put_rendition(object_key, data)
-        except Exception as exc:  # noqa: BLE001 -- see docstring
-            logger.exception(
-                "Could not upload the searchable PDF for version %s; no rendition recorded",
-                ctx.version.version_id,
-            )
-            failures.append(f"upload: {type(exc).__name__}: {exc}")
-            return failures
-        try:
-            repo.upsert_rendition(
-                tenant_id=ctx.version.tenant_id,
-                version_id=ctx.version.version_id,
-                rendition_type="searchable_pdf",
-                storage_object_key=object_key,
+            object_key = self._content.put_rendition(
+                ReadGrant(token=read_token or "", version_id=str(ctx.version.version_id)), data
             )
             logger.info(
                 "Searchable PDF rendition for version %s: %d bytes at %s",
                 ctx.version.version_id, len(data), object_key,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- see docstring
             logger.exception(
-                "Uploaded the searchable PDF for version %s but could not record the rendition row",
+                "Could not store the searchable PDF for version %s; no rendition recorded",
                 ctx.version.version_id,
             )
-            failures.append(f"record: {type(exc).__name__}: {exc}")
+            failures.append(f"upload: {type(exc).__name__}: {exc}")
         return failures
 
     def _finalize_failure(self, *, repo: OcrRepository, job, ctx, exc: Exception, correlation_id: uuid.UUID | None) -> ProcessingOutcome:
@@ -1642,7 +1673,7 @@ class OcrPipeline:
         # Deliberately TIMEOUT and nothing else. Extending it to every
         # code was tried and is wrong: an in-worker failure is a failure
         # the worker survived long enough to *classify*, and the
-        # classified ones are deterministic. A missing MinIO object
+        # classified ones are deterministic. A document dms-core will not serve
         # (ENGINE_ERROR) fails identically on all four attempts, so the
         # retries buy nothing and cost a pool worker each. The codes that
         # genuinely benefit from a retry are the ones where the process

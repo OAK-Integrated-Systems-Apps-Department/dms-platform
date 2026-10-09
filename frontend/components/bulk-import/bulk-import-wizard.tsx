@@ -59,9 +59,15 @@ export function BulkImportWizard() {
   async function handleCreate(
     template: File,
     folderId: string | null,
-    duplicateAction: DuplicateAction
+    duplicateAction: DuplicateAction,
+    ocrFields: readonly string[]
   ) {
-    const result = await bulkImport.create(template, folderId, duplicateAction)
+    const result = await bulkImport.create(
+      template,
+      folderId,
+      duplicateAction,
+      ocrFields
+    )
     if (result.batch) {
       const { batchId: createdId, totalRecords } = result.batch
       setCreatedNotice(

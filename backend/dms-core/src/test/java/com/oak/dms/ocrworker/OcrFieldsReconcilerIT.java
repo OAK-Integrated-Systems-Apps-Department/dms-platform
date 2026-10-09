@@ -1,19 +1,19 @@
 package com.oak.dms.ocrworker;
 
 import com.oak.dms.document.Document;
-import com.oak.dms.document.DocumentMetadataValueRepository;
+import com.oak.dms.metadata.repository.DocumentMetadataRepository;
 import com.oak.dms.document.DocumentOcrFieldResult;
 import com.oak.dms.document.DocumentOcrFieldResultRepository;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
-import com.oak.dms.metadata.DocumentType;
-import com.oak.dms.metadata.DocumentType.DocumentTypeStatus;
-import com.oak.dms.metadata.DocumentTypeField;
-import com.oak.dms.metadata.DocumentTypeFieldRepository;
-import com.oak.dms.metadata.DocumentTypeRepository;
-import com.oak.dms.metadata.MetadataField;
-import com.oak.dms.metadata.MetadataFieldRepository;
+import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.entity.DocumentType.DocumentTypeStatus;
+import com.oak.dms.metadata.entity.DocumentTypeSchema;
+import com.oak.dms.metadata.repository.DocumentTypeSchemaRepository;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.entity.MetadataField;
+import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import com.oak.dms.user.User;
@@ -57,11 +57,11 @@ class OcrFieldsReconcilerIT {
     @Autowired private UserRepository userRepository;
     @Autowired private DocumentTypeRepository documentTypeRepository;
     @Autowired private MetadataFieldRepository metadataFieldRepository;
-    @Autowired private DocumentTypeFieldRepository documentTypeFieldRepository;
+    @Autowired private DocumentTypeSchemaRepository documentTypeSchemaRepository;
     @Autowired private DocumentRepository documentRepository;
     @Autowired private DocumentVersionRepository documentVersionRepository;
     @Autowired private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
-    @Autowired private DocumentMetadataValueRepository documentMetadataValueRepository;
+    @Autowired private DocumentMetadataRepository documentMetadataRepository;
     @Autowired private ProcessingJobRepository processingJobRepository;
     @Autowired private OcrFieldsReconciler reconciler;
     @Autowired private OcrProperties ocrProperties;
@@ -104,11 +104,15 @@ class OcrFieldsReconcilerIT {
                 .tenantId(tenantId).fieldKey("invoice_number")
                 .label("Invoice Number").dataType("text").build());
 
-        documentTypeFieldRepository.save(DocumentTypeField.builder()
+        // Field mappings live inside the published schema document on this
+        // branch - there is no document_type_fields table any more.
+        documentTypeSchemaRepository.saveAndFlush(DocumentTypeSchema.builder()
                 .tenantId(tenantId)
                 .documentTypeId(documentType.getDocumentTypeId())
-                .fieldId(field.getFieldId())
                 .schemaVersion(documentType.getCurrentSchemaVersion())
+                .fields(List.of(new DocumentTypeSchema.FieldMapping(
+                        UUID.randomUUID(), field.getFieldId(), false, false, false, 10, null, null)))
+                .publishedBy(ownerUserId)
                 .build());
 
         UUID documentId = UUID.randomUUID();
@@ -185,14 +189,18 @@ class OcrFieldsReconcilerIT {
 
         reconciler.reconcileOnce();
 
-        var values = documentMetadataValueRepository
-                .findByDocumentIdAndTenantIdAndDeletedFalse(seeded.documentId(), seeded.tenantId());
-        assertThat(values)
-                .filteredOn(v -> v.getFieldId().equals(seeded.fieldId()))
-                .singleElement()
-                .satisfies(v -> {
-                    assertThat(v.getValueText()).isEqualTo("INV-RECONCILED-7");
-                    assertThat(v.getSource()).isEqualTo("ocr");
+        // document_metadata's field_values map, keyed by field id - V36
+        // replaced the one-row-per-value table this used to read.
+        assertThat(documentMetadataRepository
+                .findById(new com.oak.dms.metadata.entity.DocumentMetadataId(seeded.tenantId(), seeded.documentId())))
+                .get()
+                .extracting(com.oak.dms.metadata.entity.DocumentMetadata::getFieldValues)
+                .satisfies(values -> {
+                    var value = ((java.util.Map<String, com.oak.dms.metadata.entity.DocumentMetadata.FieldValue>) values)
+                            .get(seeded.fieldId().toString());
+                    assertThat(value).as("no OCR value was applied for the seeded field").isNotNull();
+                    assertThat(value.v()).isEqualTo("INV-RECONCILED-7");
+                    assertThat(value.src()).isEqualTo("ocr");
                 });
 
         assertThat(documentVersionRepository.findById(seeded.versionId()))

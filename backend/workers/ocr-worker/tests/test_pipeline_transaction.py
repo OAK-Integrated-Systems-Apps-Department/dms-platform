@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import json
+import tempfile
 import sys
 from pathlib import Path
 
@@ -149,25 +152,111 @@ class FakeOcrEngine:
         return OcrResult(text=self.text, mean_confidence=self.confidence, words=self.words)
 
 
-class FakeStorage:
+class FakeContentClient:
+    """Stands in for `DocumentContentClient`.
+
+    The worker no longer touches object storage: it reads a document's
+    plaintext from dms-core's internal endpoint and PUTs its artifacts back
+    the same way, because every stored object is encrypted and only dms-core
+    holds the keys. This double mirrors that interface -- `download` is a
+    context manager yielding a path to a temporary file, and the two `put_*`
+    methods return the key dms-core chose, which the worker records rather
+    than computing one of its own.
+
+    `written`/`renditions` are still keyed by object key so the assertions
+    that read them are unchanged; the key is now whatever this double hands
+    back, the same way it is now whatever dms-core hands back.
+    """
+
+    OUTPUT_KEY = "ocr/fake/ocr.json"
+    RENDITION_KEY = "ocr/fake/searchable.pdf"
+
     def __init__(self, source_bytes: bytes = b"%PDF-fake%", fail_fetch: bool = False):
         self.written: dict[str, dict] = {}
         self.renditions: dict[str, bytes] = {}
+        self.grants: list[object] = []
         self._source_bytes = source_bytes
         self._fail_fetch = fail_fetch
 
-    def get_object_bytes(self, object_key: str) -> bytes:
+    @contextlib.contextmanager
+    def download(self, grant):
         if self._fail_fetch:
-            raise RuntimeError("object not found in MinIO")
-        return self._source_bytes
+            raise RuntimeError("dms-core would not serve the document")
+        self.grants.append(grant)
+        # A real download writes to tmpfs and deletes on exit. The test only
+        # needs the path contract, so a NamedTemporaryFile reproduces both the
+        # "it is a file on disk" part and the cleanup.
+        handle = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        try:
+            handle.write(self._source_bytes)
+            handle.close()
+            yield Path(handle.name)
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
 
-    def put_ocr_output_json(self, object_key: str, data: dict) -> str:
-        self.written[object_key] = data
-        return object_key
+    def put_output(self, grant, payload: bytes) -> str:
+        self.written[self.OUTPUT_KEY] = json.loads(payload.decode("utf-8"))
+        return self.OUTPUT_KEY
 
-    def put_rendition(self, object_key: str, data: bytes, content_type: str = "application/pdf") -> str:
-        self.renditions[object_key] = data
-        return object_key
+    def put_rendition(self, grant, pdf: bytes) -> str:
+        self.renditions[self.RENDITION_KEY] = pdf
+        return self.RENDITION_KEY
+
+
+# The old name, kept so the many `storage=` call sites below read the same.
+FakeStorage = FakeContentClient
+
+
+TEST_READ_GRANT = "test-read-grant"
+
+
+class _GrantedPipeline:
+    """An `OcrPipeline` that supplies a read grant when the caller does not.
+
+    Every entry point that reads a document now takes a `read_token` -- the
+    short-lived grant dms-core mints for that one job or that one review
+    read -- and raises `MissingReadGrantError` without one, deliberately: a
+    job that cannot read its document must fail visibly rather than quietly
+    produce nothing.
+
+    That rule is what the tests in `test_read_grant_required` (and the
+    `fail_fetch` cases) are *about*, so it must not be weakened in the
+    pipeline itself. Everywhere else the grant is incidental scaffolding, and
+    threading it through sixty-odd call sites would add a constant to each
+    one that says nothing about what the test is checking. This proxy puts
+    the default in one place; a test that passes `read_token=` explicitly
+    still wins.
+    """
+
+    _NEEDS_GRANT = frozenset({
+        "process_version",
+        "process_zone_request",
+        "process_rubber_band_request",
+        "render_page_png",
+        "preview_rubber_band",
+    })
+
+    def __init__(self, pipeline):
+        object.__setattr__(self, "_pipeline", pipeline)
+
+    def __setattr__(self, name, value):
+        # Forwarded, so a test that monkeypatches an internal
+        # (`pipeline._make_deadline = ...`) still patches the object the
+        # pipeline's own `self.` lookups see. A proxy that swallowed the
+        # assignment would make the patch silently do nothing, which is a
+        # worse failure than not having the proxy at all.
+        setattr(self._pipeline, name, value)
+
+    def __getattr__(self, name):
+        attr = getattr(self._pipeline, name)
+        if name not in self._NEEDS_GRANT:
+            return attr
+
+        def with_default_grant(*args, **kwargs):
+            kwargs.setdefault("read_token", TEST_READ_GRANT)
+            return attr(*args, **kwargs)
+
+        return with_default_grant
 
 
 def make_pipeline(
@@ -192,7 +281,7 @@ def make_pipeline(
     pipeline = OcrPipeline(
         settings=settings,
         session_factory=session_factory,
-        storage=storage,
+        content=storage,
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
         # Omitted means the no-op classifier, which is what every test
@@ -200,7 +289,7 @@ def make_pipeline(
         # paddleocr, and no page ever rotated.
         orientation_classifier=orientation_classifier,
     )
-    return pipeline, storage, ocr_engine
+    return _GrantedPipeline(pipeline), storage, ocr_engine
 
 
 # ----------------------------------------------------------------------
@@ -368,7 +457,7 @@ def test_processing_failure_is_recorded_not_silently_dropped(session_factory, se
     outcome = pipeline.process_version(seeded_version["version_id"])
 
     assert outcome.status == "failed"
-    assert "object not found" in outcome.error
+    assert "would not serve the document" in outcome.error
 
     with session_factory() as session:
         version = session.get(DocumentVersion, seeded_version["version_id"])
@@ -376,7 +465,7 @@ def test_processing_failure_is_recorded_not_silently_dropped(session_factory, se
 
         job = session.query(ProcessingJob).filter_by(reference_id=seeded_version["version_id"]).one()
         assert job.status == "failed"
-        assert "object not found" in job.last_error
+        assert "would not serve the document" in job.last_error
 
         event = session.query(OutboxEvent).filter_by(aggregate_id=seeded_version["version_id"]).one()
         assert event.event_type == "document.version.ocr.failed"
@@ -584,7 +673,17 @@ def _page_geometry(width_px=600, height_px=800, width_pt=612.0, height_pt=792.0)
     )
 
 
-def test_a_searchable_pdf_rendition_is_uploaded_and_recorded(session_factory, seeded_version):
+def test_a_searchable_pdf_rendition_is_handed_to_dms_core(session_factory, seeded_version):
+    """The worker builds the searchable PDF and hands it over; dms-core
+    stores it and owns the `renditions` row.
+
+    That split is the point. The worker cannot write the object itself any
+    more - every stored object is encrypted and only dms-core holds the keys
+    - and since dms-core chooses the key as part of accepting the PUT, it is
+    also the only place that can write a row pointing at it. Two definitions
+    of the same key format is exactly how a row ends up pointing at an object
+    that is not there.
+    """
     from ocr_worker.models import Rendition
 
     layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
@@ -596,20 +695,17 @@ def test_a_searchable_pdf_rendition_is_uploaded_and_recorded(session_factory, se
     outcome = pipeline.process_version(seeded_version["version_id"])
     assert outcome.status == "completed"
 
-    assert len(storage.renditions) == 1, "no rendition object was uploaded"
+    assert len(storage.renditions) == 1, "no rendition was handed to dms-core"
     key, data = next(iter(storage.renditions.items()))
     assert data.startswith(b"%PDF")
-    assert key.startswith("tenants/")
+    # The key is whatever dms-core returned, never one the worker made up.
+    assert key == FakeContentClient.RENDITION_KEY
 
+    # And the worker wrote no row of its own: dms-core upserts it inside the
+    # PUT (OcrArtifactWriter), so a row here would be a second, competing
+    # record of the same artifact.
     with session_factory() as session:
-        rows = session.query(Rendition).all()
-    assert len(rows) == 1
-    assert rows[0].rendition_type == "searchable_pdf"
-    assert rows[0].status == "completed"
-    # The row must point at the object that was actually written -- the
-    # upload happens first precisely so this can never dangle.
-    assert rows[0].storage_object_key == key
-    assert key in storage.renditions
+        assert session.query(Rendition).count() == 0
 
 
 def test_the_rendition_text_layer_carries_the_recognised_words(session_factory, seeded_version):
@@ -634,15 +730,25 @@ def test_the_rendition_text_layer_carries_the_recognised_words(session_factory, 
 
 
 def test_a_rerun_replaces_the_rendition_rather_than_appending(session_factory, seeded_version):
-    """V40's unique (version_id, rendition_type). Without it a version
-    accumulates one rendition per run and every reader must know to take
-    the newest."""
-    from ocr_worker.models import Rendition
+    """A re-run must leave ONE rendition, not two.
+
+    The guarantee used to live in V76's unique (version_id, rendition_type)
+    plus the worker's own insert. The worker no longer writes the row, so
+    what it owes now is a key that does not change between runs - and it gets
+    that for free by not choosing one: it PUTs to the same version endpoint
+    both times, dms-core derives the same key from the version, and its
+    upsert collapses the two into one object and one row.
+
+    Here that shows up as: two runs, one entry in the content client, same
+    key both times.
+    """
+    storage = FakeStorage()
 
     for _ in range(2):
         layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
         pipeline, _, _ = make_pipeline(
             session_factory, layout_doc=layout_doc, ocr_text="x", ocr_confidence=0.95,
+            storage=storage,
         )
         with session_factory() as session:
             version = session.get(DocumentVersion, seeded_version["version_id"])
@@ -650,9 +756,7 @@ def test_a_rerun_replaces_the_rendition_rather_than_appending(session_factory, s
             session.commit()
         pipeline.process_version(seeded_version["version_id"])
 
-    with session_factory() as session:
-        rows = session.query(Rendition).all()
-    assert len(rows) == 1
+    assert len(storage.renditions) == 1, "the second run wrote a second object instead of replacing the first"
 
 
 def test_disabling_the_rendition_makes_it_a_no_op(session_factory, seeded_version):
@@ -676,8 +780,8 @@ def test_a_failed_rendition_upload_never_fails_the_document(session_factory, see
     from ocr_worker.models import Rendition
 
     class ExplodingRenditionStorage(FakeStorage):
-        def put_rendition(self, object_key, data, content_type="application/pdf"):
-            raise RuntimeError("MinIO is down")
+        def put_rendition(self, grant, pdf):
+            raise RuntimeError("dms-core refused the rendition")
 
     layout_doc = FakeLayoutDocument(page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(), source_pdf_bytes=_source_pdf())
     pipeline, _, _ = make_pipeline(
@@ -792,8 +896,8 @@ def test_a_rendition_failure_is_recorded_in_the_output_not_silently_dropped(sess
 
 def test_a_failed_upload_is_recorded_with_its_cause(session_factory, seeded_version):
     class ExplodingRenditionStorage(FakeStorage):
-        def put_rendition(self, object_key, data, content_type="application/pdf"):
-            raise RuntimeError("MinIO is down")
+        def put_rendition(self, grant, pdf):
+            raise RuntimeError("dms-core refused the rendition")
 
     layout_doc = FakeLayoutDocument(
         page_count=1, rendered_image=_real_page_image(), geometry=_page_geometry(),
@@ -808,7 +912,7 @@ def test_a_failed_upload_is_recorded_with_its_cause(session_factory, seeded_vers
 
     assert outcome.status == "completed"
     reasons = " ".join(outcome.output["flags"]["searchable_pdf_failure_reasons"])
-    assert "MinIO is down" in reasons
+    assert "dms-core refused the rendition" in reasons
 
 
 def test_a_clean_rendition_sets_no_failure_flag(session_factory, seeded_version):

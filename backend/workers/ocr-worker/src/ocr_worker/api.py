@@ -158,7 +158,7 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         returns the full output JSON (see README's "Output contract")
         directly in the response body -- the primary way to exercise the
         pipeline while scan-worker doesn't exist (see docs/events/
-        ocr-scanning-events.md) and inspect real output without a MinIO
+        ocr-scanning-events.md) and inspect real output without a storage
         round-trip.
         """
         correlation_id = body.correlation_id if body else None
@@ -229,7 +229,12 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         return outcome.output if outcome.status == "completed" else _failure_response(outcome)
 
     @app.get("/ocr/page-image/{version_id}", dependencies=[Depends(require_internal_token)])
-    def ocr_page_image(version_id: uuid.UUID, page: int = 0, dpi: int | None = None):
+    def ocr_page_image(
+        version_id: uuid.UUID,
+        page: int = 0,
+        dpi: int | None = None,
+        x_ocr_job_token: str | None = Header(default=None),
+    ):
         """One page of a document as a PNG, for the review screen.
 
         Read-only: no job is claimed, nothing is written, no event is
@@ -237,7 +242,10 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         proxies it and is the thing that checks the caller owns the
         tenant the version belongs to.
         """
-        future = pool.schedule_render_page(version_id, page, dpi)
+        # The grant dms-core minted while checking the caller's permission and
+        # access. Handed straight back to /internal/v1/ocr when the pool
+        # worker needs the bytes - this service never mints one.
+        future = pool.schedule_render_page(version_id, page, dpi, read_token=x_ocr_job_token)
         try:
             render = future.result()
         except VersionNotFound as exc:
@@ -265,7 +273,10 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         )
 
     @app.post("/ocr/rubber-band/preview", dependencies=[Depends(require_internal_token)])
-    def ocr_rubber_band_preview(body: RubberBandRequest):
+    def ocr_rubber_band_preview(
+        body: RubberBandRequest,
+        x_ocr_job_token: str | None = Header(default=None),
+    ):
         """What does this box say? Nothing is written.
 
         Deliberately NOT /ocr/rubber-band: that one finalizes, replacing
@@ -276,7 +287,8 @@ def create_app(pool: OcrProcessPool, session_factory, rabbitmq_ready_check, sett
         correction instead (Phase 4d).
         """
         future = pool.schedule_preview_rubber_band(
-            body.version_id, body.page, (body.x0, body.y0, body.x1, body.y1)
+            body.version_id, body.page, (body.x0, body.y0, body.x1, body.y1),
+            read_token=x_ocr_job_token,
         )
         try:
             return future.result()

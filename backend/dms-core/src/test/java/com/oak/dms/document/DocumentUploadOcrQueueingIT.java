@@ -1,8 +1,8 @@
 package com.oak.dms.document;
 
-import com.oak.dms.metadata.DocumentType;
-import com.oak.dms.metadata.DocumentTypeRepository;
-import com.oak.dms.metadata.DocumentType.DocumentTypeStatus;
+import com.oak.dms.metadata.entity.DocumentType;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.entity.DocumentType.DocumentTypeStatus;
 import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEvent;

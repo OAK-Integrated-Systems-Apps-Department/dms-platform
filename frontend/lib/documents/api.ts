@@ -546,6 +546,18 @@ export async function fetchReviewQueue(page: number, size: number): Promise<Revi
   )
 }
 
+/**
+ * Documents whose review has already been saved - the counterpart to the
+ * queue. Same row shape, so the same table renders both.
+ */
+export async function fetchSavedReviews(page: number, size: number): Promise<ReviewQueuePage> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/documents/saved-reviews?page=${page}&size=${size}`,
+    undefined,
+    "Could not load saved reviews."
+  )
+}
+
 /** One field on the review screen -- mirrors dms-core ReviewFieldResponse. */
 export interface ReviewField {
   fieldKey: string

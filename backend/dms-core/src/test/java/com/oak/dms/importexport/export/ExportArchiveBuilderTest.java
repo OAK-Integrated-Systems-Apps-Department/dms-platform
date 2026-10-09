@@ -106,8 +106,9 @@ class ExportArchiveBuilderTest {
             assertThat(new String(zip.getInputStream(zip.getEntry("files/0001_inv-1.pdf")).readAllBytes())).isEqualTo("PDF");
             String csv = new String(zip.getInputStream(zip.getEntry("metadata.csv")).readAllBytes(), StandardCharsets.UTF_8);
             List<String> lines = csv.lines().toList();
-            // Field columns follow the form's display order (Tags before Amount).
-            assertThat(lines.get(0)).endsWith("Note,Tags,Amount");
+            // Field columns follow the form's display order (Tags before Amount),
+            // after the OCR columns, which are last among the base columns.
+            assertThat(lines.get(0)).endsWith("Note,OCR status,OCR review,Tags,Amount");
             assertThat(lines.get(1)).contains("Invoice 1", "Invoice", "files/0001_inv-1.pdf", "a; b,12.50");
             // Not scanned: listed, file left out with why; a formula-like title is neutralised.
             assertThat(lines.get(2)).contains("'=HYPERLINK", "File not included: Document " + unscanned);
@@ -142,19 +143,53 @@ class ExportArchiveBuilderTest {
         assertThat(ExportArchiveBuilder.neutralise("plain")).isEqualTo("plain");
     }
 
+    /**
+     * The OCR columns say what the pipeline did and whether a human has signed
+     * the values off - and say nothing at all for a document nobody asked to
+     * OCR, so the sheet never shows "not_required" to a tenant with the
+     * feature off.
+     */
+    @Test
+    void ocrColumns_reportStatusAndReviewState_andStayEmptyWhenOcrNeverRan() throws Exception {
+        UUID reviewed = document("Reviewed", "r.pdf", 1, "completed", false);
+        UUID pending = document("Still in review", "p.pdf", 1, "completed", true);
+        UUID failed = document("Failed", "f.pdf", 1, "failed", false);
+
+        // Metadata-only: no file is fetched, so this exercises the columns alone.
+        Path target = dir.resolve("ocr.zip");
+        builder.build(TENANT, List.of(reviewed, pending, failed, clean), false, TemplateFormat.csv, target, 1_000_000);
+
+        try (ZipFile zip = new ZipFile(target.toFile())) {
+            List<String> lines = new String(zip.getInputStream(zip.getEntry("metadata.csv")).readAllBytes(),
+                    StandardCharsets.UTF_8).lines().toList();
+            assertThat(lines.get(1)).contains("completed,Reviewed,");
+            assertThat(lines.get(2)).contains("completed,Needs review,");
+            // Failed: the status is reported, but nothing claims it was
+            // reviewed - there are no fields to review.
+            assertThat(lines.get(3)).contains("failed,,");
+            // Never OCR'd: both cells empty, no "not_required" leaking out.
+            assertThat(lines.get(4)).contains(",,,a; b,12.50");
+        }
+    }
+
     private static DocumentTypeSchemaResponse.SchemaField schemaField(UUID id, String key, int order) {
-        return new DocumentTypeSchemaResponse.SchemaField(id, key, key, null, "text", "active", false, false, order,
+        return new DocumentTypeSchemaResponse.SchemaField(id, key, key, null, "text", "active", false, false, false, order,
                 null, null, List.of(), List.of());
     }
 
     private UUID document(String title, String filename, long size) {
+        return document(title, filename, size, null, false);
+    }
+
+    private UUID document(String title, String filename, long size, String ocrStatus, boolean requiresReview) {
         UUID id = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
         stored.put(id, Document.builder().documentId(id).tenantId(TENANT).documentTypeId(TYPE).title(title)
                 .currentVersionId(versionId).latestVersionId(versionId).ownerUserId(UUID.randomUUID()).build());
         when(versions.findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, id, TENANT))
                 .thenReturn(Optional.of(DocumentVersion.builder().versionId(versionId).documentId(id).tenantId(TENANT)
-                        .versionNumber(1).originalFilename(filename).sizeBytes(size).build()));
+                        .versionNumber(1).originalFilename(filename).sizeBytes(size)
+                        .ocrStatus(ocrStatus).requiresReview(requiresReview).build()));
         return id;
     }
 }

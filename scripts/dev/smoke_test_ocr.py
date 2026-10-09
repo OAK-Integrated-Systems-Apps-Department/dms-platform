@@ -1,4 +1,27 @@
 #!/usr/bin/env python
+# ---------------------------------------------------------------------------
+# OUT OF DATE as of the OCR/watermarking merge -- this script stages its
+# fixtures by writing straight into MinIO, and both halves of that are gone:
+#
+#   1. MinIO is removed. Objects go through ObjectStorageServiceFactory
+#      (SeaweedFS via the S3 adapter locally); there is no `minio` compose
+#      service to write to any more.
+#   2. Every stored object is ENCRYPTED AT REST. A fixture written straight
+#      into a bucket would be plaintext where ciphertext is expected, and
+#      ocr-worker now fetches documents from dms-core's internal endpoint
+#      rather than from storage -- so it would be handed bytes it cannot
+#      decrypt and fail somewhere unhelpful.
+#
+# Staging a fixture now means going through the upload path, which is the
+# only thing that produces a correctly encrypted object, a scan verdict and
+# a servable version: POST /api/v1/documents. That path publishes
+# document.version.ocr.requested with its read grant by itself, so most of
+# what this script does by hand is no longer needed.
+#
+# Left runnable rather than disabled, deliberately: how (and whether) to
+# rebuild these harnesses is a call for whoever uses them. See
+# docs/ocr/internal-endpoint.md for the shape they would target.
+# ---------------------------------------------------------------------------
 """Required verification script for ocr-worker (see backend/workers/ocr-worker/README.md
 "Required verification"): runs each real fixture in tests/fixtures/ through the
 actual running service via its dev-trigger endpoint and prints the real output

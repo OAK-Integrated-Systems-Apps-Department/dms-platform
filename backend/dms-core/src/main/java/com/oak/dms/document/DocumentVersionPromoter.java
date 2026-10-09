@@ -7,6 +7,7 @@ import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.scanning.service.DocumentPromoter;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
+import com.oak.dms.ocrworker.OcrEnqueueService;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,8 @@ public class DocumentVersionPromoter implements DocumentPromoter {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final StorageLocationResolver storageLocationResolver;
+    private final OcrEnqueueService ocrEnqueueService;
+    private final com.oak.dms.ocrworker.OcrProperties ocrProperties;
 
     @Override
     @Transactional(readOnly = true)
@@ -131,9 +134,57 @@ public class DocumentVersionPromoter implements DocumentPromoter {
             documentRepository.save(document);
         }
 
+        // OCR, if the uploader asked for it. This is the ONLY place it starts.
+        //
+        // Here rather than at upload because here is the first moment all three
+        // things are true at once: the file has a clean verdict, a version row
+        // exists to hang the job off, and we are inside the transaction that
+        // commits both. Starting it any earlier would hand the worker an
+        // unscanned file; any later would need a second transaction that could
+        // fail on its own and leave a clean version nobody ever OCRs.
+        String requested = cleanResult.getOcrRequestedFields();
+        // `dms.ocr.enabled` is checked HERE as well as in OcrEnqueueService,
+        // and the difference matters. The enqueue service declining means
+        // "not now" - it leaves the version pending on purpose, as the
+        // durable marker the backlog sweeper drains. The feature being off
+        // means "not ever on this deployment", and there is no sweeper
+        // running to drain it. Marking the version pending in that case would
+        // leave every uploaded document stuck in a state nothing can move it
+        // out of, which is the opposite of "with it off nothing happens".
+        //
+        // Reached mainly by bulk import, whose batch-level field selection is
+        // stored when the batch is created and could outlive the flag being
+        // turned off mid-import.
+        boolean wantsOcr = ocrProperties.isEnabled()
+                && requested != null && !requested.isBlank() && !"[]".equals(requested.trim());
+        if (wantsOcr) {
+            version.requestedFields(requested)
+                    // 'pending' before the enqueue decides anything. If the
+                    // enqueue declines (OCR off, tenant at its queue limit, or
+                    // an import over its cap) this row IS the durable marker
+                    // the backlog sweeper looks for - pending, with fields
+                    // requested, and no live job.
+                    .ocrStatus("pending");
+        }
+
         // Safe in either order with the document row and the scan result link -
         // the FKs and the V39 gate trigger are all DEFERRABLE INITIALLY DEFERRED.
         documentVersionRepository.save(version.build());
+
+        if (wantsOcr) {
+            boolean queued = ocrEnqueueService.enqueue(tenantId, plan.documentId(), plan.versionId(),
+                    // The scan result id doubles as the correlation id: it ties the OCR
+                    // job back to the exact ingestion that produced the version.
+                    cleanResult.getScanResultId(),
+                    cleanResult.isOcrLowPriority()
+                            ? OcrEnqueueService.Source.bulk_import
+                            : OcrEnqueueService.Source.interactive);
+            if (!queued) {
+                log.info("OCR requested for version {} but not queued now - left for the backlog sweeper",
+                        plan.versionId());
+            }
+        }
+
         log.info("Promoted scan result {} to document {} version {} (tenant {})", cleanResult.getScanResultId(),
                 plan.documentId(), plan.versionId(), tenantId);
     }

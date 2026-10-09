@@ -547,7 +547,7 @@ class BulkImportServiceImplTest {
     private DocumentTypeSchemaResponse schema(int version) {
         return new DocumentTypeSchemaResponse(documentTypeId, "INV", "Invoice", version, List.of(
                 new SchemaField(UUID.randomUUID(), "reference", "Reference", null, "text", "active",
-                        false, false, 10, null, null, List.of(), List.of())));
+                        false, false, false, 10, null, null, List.of(), List.of())));
     }
 
     private DocumentType option(String typeCode, String typeName, DocumentType.DocumentTypeStatus status) {

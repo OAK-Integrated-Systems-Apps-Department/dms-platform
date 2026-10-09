@@ -21,10 +21,13 @@ const DEFAULT_PAGE_SIZE = 25
  * failed or whose result tripped a rule, newest first, each with the
  * reason on the row.
  *
- * Top-level under /documents rather than /admin for the same reason as
- * the upload page: there is no document-specific permission model yet,
- * and any authenticated user may review within their own tenant. The
- * backend scopes every row to `TenantContext.getTenantId()` regardless.
+ * Top-level under /documents rather than /admin: reviewing is daily work for
+ * the people who file documents, not an administrative task.
+ *
+ * Gated twice since the merge - os.review-ocr-exceptions.view-queue to reach
+ * the screen, and document-level access so the list contains only documents
+ * the caller can see. The access filter is applied in the query, not to the
+ * page afterwards, so the count is honest too.
  */
 export default function ReviewQueuePage() {
   usePageTitle("Review Queue")

@@ -67,6 +67,8 @@ export function ImportResultsCard({
         />
       </div>
 
+      <OcrProgressPanel batch={batch} />
+
       {hasFailedRows(batch.status) && (
         <>
           <FailedRowsTable batchId={batch.batchId} />
@@ -79,6 +81,46 @@ export function ImportResultsCard({
         Start a new import
       </Button>
     </StepCard>
+  )
+}
+
+/**
+ * "OCR pending / done / failed" for an import that asked for OCR.
+ *
+ * <p>Renders nothing at all when `batch.ocr` is null - that is "this import
+ * has no OCR", which is different from "its OCR has not started", and a row
+ * of zeroes would say the second when the first is true.
+ *
+ * <p>Progress is measured against `queued`, not `totalRecords`. The per-batch
+ * cap and the tenant's queue limit both stop short of every file, so an import
+ * of 5,000 files with a cap of 500 is legitimately 100% done at 500 - showing
+ * it as 10% would report healthy work as stalled.
+ */
+function OcrProgressPanel({ batch }: { batch: BulkImportStatusResponseDto }) {
+  const ocr = batch.ocr
+  if (!ocr) return null
+
+  const notQueued = batch.successCount - ocr.queued
+  return (
+    <div className="mb-5">
+      <dl className="mb-3 grid gap-3 sm:grid-cols-3">
+        <StatTile label="OCR waiting">{ocr.pending}</StatTile>
+        <StatTile label="OCR done">{ocr.completed}</StatTile>
+        <StatTile label="OCR failed">{ocr.failed}</StatTile>
+      </dl>
+      <ProgressBar
+        value={ocr.completed + ocr.failed}
+        max={ocr.queued}
+        label="OCR finished"
+      />
+      {notQueued > 0 && (
+        <p className="mt-2 text-[12px] leading-[1.5] text-muted-foreground">
+          {notQueued} {notQueued === 1 ? "document was" : "documents were"} imported
+          without OCR because this import reached its OCR limit. You can run OCR
+          on them individually from the document.
+        </p>
+      )}
+    </div>
   )
 }
 

@@ -7,12 +7,20 @@ DMS_EVENTS_DLX = "oak.dms.events.dlx"
 
 ROUTING_KEY_SCAN_COMPLETED = "document.version.scan.completed"
 ROUTING_KEY_OCR_REQUESTED = "document.version.ocr.requested"
+# Bulk import's OCR. Same message shape, separate routing key and separate
+# queue, because the two have different urgency: someone watching a scan
+# upload is waiting for the result, while a 5,000-file import is not. One
+# shared queue would make the import's files arrive first and the
+# interactive one wait behind all of them -- head-of-line blocking that no
+# amount of prefetch tuning fixes, because it is the queue order itself.
+ROUTING_KEY_OCR_REQUESTED_BULK = "document.version.ocr.requested.bulk"
 ROUTING_KEY_OCR_COMPLETED = "document.version.ocr.completed"
 ROUTING_KEY_OCR_FAILED = "document.version.ocr.failed"
 ROUTING_KEY_OCR_DEAD_LETTER = "document.version.ocr.dead-letter"
 
 QUEUE_SCAN_COMPLETED = "ocr-worker.q.scan-completed"
 QUEUE_OCR_REQUESTED = "ocr-worker.q.ocr-requested"
+QUEUE_OCR_REQUESTED_BULK = "ocr-worker.q.ocr-requested-bulk"
 QUEUE_DEAD_LETTER = "ocr-worker.q.dead-letter"
 
 # Exit status a pool worker uses when its own hard per-document watchdog
@@ -198,13 +206,11 @@ class Settings(BaseSettings):
     # elaborate exponential formula.
     ocr_reaper_backoff_base_s: int = 30
 
-    # -- MinIO / object storage --
-    minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
-    minio_secure: bool = False
-    minio_source_bucket: str = "oakdms-documents"
-    minio_ocr_output_bucket: str = "oakdms-ocr-output"
+    # MinIO settings were removed here. This service owns no object storage:
+    # dms-core encrypts every object at rest, so reading a bucket directly
+    # returned ciphertext. Documents are fetched from, and OCR artifacts
+    # written back to, dms-core over the internal endpoint - see
+    # dms_core_base_url below and content_client.py.
 
     # -- OCR behavior (OS-NFR-001/002/003) --
     min_confidence_threshold: float = 0.95
@@ -538,6 +544,25 @@ class Settings(BaseSettings):
     # defense in depth on top of that network boundary, not an
     # authentication scheme -- dms-core is the only intended caller.
     internal_service_token: str = "changeme-local-dev-token"
+
+    # Where dms-core answers, for reading document bytes. This worker no
+    # longer reads object storage itself: dms-core encrypts every object at
+    # rest, so a direct read would return ciphertext. See content_client.py.
+    dms_core_base_url: str = "http://dms-core:8080"
+    dms_core_connect_timeout_s: float = 5.0
+    # Generous: this is a document download, and a large scan over a busy
+    # network legitimately takes a while. The job's own deadline is the real
+    # bound on how long processing may take.
+    dms_core_read_timeout_s: float = 120.0
+
+    # Where downloaded plaintext is written while a job runs.
+    #
+    # MUST be a tmpfs mount in any real deployment. Decrypted document content
+    # on a container's writable layer survives the job, lands in image layers
+    # and snapshots, and is exactly the thing encryption at rest exists to
+    # prevent. content_client.py deletes each file when its job finishes; the
+    # tmpfs is what makes a crash between those two points harmless.
+    ocr_tmp_dir: str = "/dev/shm/ocr"
 
     @property
     def effective_prefetch_count(self) -> int:

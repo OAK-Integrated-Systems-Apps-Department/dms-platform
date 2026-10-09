@@ -317,7 +317,14 @@ class ScanCompletedConsumer:
         version_id, correlation_id = ids
 
         loop = asyncio.get_running_loop()
-        future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
+        # read_token is the grant dms-core minted for this job; without it the
+        # worker cannot read the document (see content_client.py). Absent on a
+        # replayed pre-merge event, which the pipeline reports as a failure
+        # rather than silently skipping OCR.
+        future = self._pool.schedule_process_version(
+            version_id, correlation_id, resolve_fields_from_db=True,
+            read_token=body.get("read_token"),
+        )
         await _await_outcome_and_finalize(
             future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s(),
             session_factory=self._session_factory,
@@ -342,19 +349,37 @@ class OcrRequestedConsumer:
     a second DLQ.
     """
 
-    def __init__(self, settings: Settings, pool: OcrProcessPool, session_factory=None):
+    def __init__(
+        self,
+        settings: Settings,
+        pool: OcrProcessPool,
+        session_factory=None,
+        queue_name: str = QUEUE_OCR_REQUESTED,
+        routing_key: str = ROUTING_KEY_OCR_REQUESTED,
+        prefetch_count: int | None = None,
+    ):
         self._settings = settings
         # Used only to record WHY a pool worker died (see
         # _record_death_cause); the pipeline owns every other DB write.
         self._session_factory = session_factory
         self._pool = pool
+        # Queue and routing key are parameters so the SAME consumer serves
+        # the interactive queue and the bulk-import one. They differ only in
+        # which queue they drain and how many deliveries they hold -- the
+        # message shape, the pipeline and the failure handling are identical,
+        # and duplicating the class to change two strings would mean two
+        # places to fix the next time any of that changes.
+        self._queue_name = queue_name
+        self._routing_key = routing_key
+        self._prefetch_count = prefetch_count
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
 
     async def start(self) -> None:
+        prefetch = self._prefetch_count or self._settings.effective_prefetch_count
         self._connection = await aio_pika.connect_robust(self._settings.rabbitmq_url)
         self._channel = await self._connection.channel()
-        await self._channel.set_qos(prefetch_count=self._settings.effective_prefetch_count)
+        await self._channel.set_qos(prefetch_count=prefetch)
 
         events_exchange = await self._channel.declare_exchange(DMS_EVENTS_EXCHANGE, ExchangeType.TOPIC, durable=True)
         dlx = await self._channel.declare_exchange(DMS_EVENTS_DLX, ExchangeType.TOPIC, durable=True)
@@ -363,19 +388,19 @@ class OcrRequestedConsumer:
         await dead_letter_queue.bind(dlx, routing_key=ROUTING_KEY_OCR_DEAD_LETTER)
 
         main_queue = await self._channel.declare_queue(
-            QUEUE_OCR_REQUESTED,
+            self._queue_name,
             durable=True,
             arguments={
                 "x-dead-letter-exchange": DMS_EVENTS_DLX,
                 "x-dead-letter-routing-key": ROUTING_KEY_OCR_DEAD_LETTER,
             },
         )
-        await main_queue.bind(events_exchange, routing_key=ROUTING_KEY_OCR_REQUESTED)
+        await main_queue.bind(events_exchange, routing_key=self._routing_key)
 
         await main_queue.consume(self._on_message)
         logger.info(
             "OcrRequestedConsumer listening on %s (routing key %s), prefetch=%d",
-            QUEUE_OCR_REQUESTED, ROUTING_KEY_OCR_REQUESTED, self._settings.effective_prefetch_count,
+            self._queue_name, self._routing_key, prefetch,
         )
 
     async def stop(self) -> None:
@@ -385,17 +410,24 @@ class OcrRequestedConsumer:
         # and owned by main.py's lifespan, not by this consumer.
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
-        body = await _decode_event(message, QUEUE_OCR_REQUESTED)
+        body = await _decode_event(message, self._queue_name)
         if body is None:
             return
 
-        ids = await _parse_ids(body, message, QUEUE_OCR_REQUESTED)
+        ids = await _parse_ids(body, message, self._queue_name)
         if ids is None:
             return
         version_id, correlation_id = ids
 
         loop = asyncio.get_running_loop()
-        future = self._pool.schedule_process_version(version_id, correlation_id, resolve_fields_from_db=True)
+        # read_token is the grant dms-core minted for this job; without it the
+        # worker cannot read the document (see content_client.py). Absent on a
+        # replayed pre-merge event, which the pipeline reports as a failure
+        # rather than silently skipping OCR.
+        future = self._pool.schedule_process_version(
+            version_id, correlation_id, resolve_fields_from_db=True,
+            read_token=body.get("read_token"),
+        )
         await _await_outcome_and_finalize(
             future, message, version_id=version_id, loop=loop, task_timeout_s=self._pool.task_timeout_s(),
             session_factory=self._session_factory,

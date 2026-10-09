@@ -3,9 +3,9 @@ package com.oak.dms.document;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.document.dto.SaveReviewRequest;
-import com.oak.dms.metadata.DocumentTypeFieldService;
-import com.oak.dms.metadata.DocumentTypeRepository;
-import com.oak.dms.metadata.MetadataValidationService;
+import com.oak.dms.metadata.service.DocumentTypeFieldService;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.ocrworker.OcrProperties;
@@ -13,7 +13,14 @@ import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.storage.ObjectStorageService;
+import com.oak.dms.document.DocumentMapper;
+import com.oak.dms.folder.AccessPrincipals;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderService;
+import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.ocrworker.OcrEnqueueService;
+import com.oak.dms.scanning.service.IngestionGate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,12 +76,19 @@ class ReviewCorrectionsAreManualTest {
     @Mock private DocumentRepository documentRepository;
     @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
-    @Mock private ObjectStorageService objectStorageService;
+    @Mock private DocumentMapper documentMapper;
+    @Mock private IngestionGate ingestionGate;
+    @Mock private AuditService auditService;
+    @Mock private FolderService folderService;
+    @Mock private FolderAccessService folderAccessService;
+    @Mock private DocumentAccessService documentAccessService;
+    @Mock private AccessPrincipals accessPrincipals;
+    @Mock private VersionContent versionContent;
     @Mock private ProcessingJobRepository processingJobRepository;
     @Mock private DocumentOcrLineItemRepository documentOcrLineItemRepository;
     @Mock private DocumentOcrCorrectionRepository documentOcrCorrectionRepository;
     @Mock private OcrWorkerClient ocrWorkerClient;
-    @Mock private OutboxEventPublisher outboxEventPublisher;
+    @Mock private OcrEnqueueService ocrEnqueueService;
     @Mock private DocumentMetadataService documentMetadataService;
     @Mock private MetadataValidationService metadataValidationService;
     @Mock private OcrProperties ocrProperties;
@@ -95,12 +109,17 @@ class ReviewCorrectionsAreManualTest {
 
     @BeforeEach
     void setUp() {
+        // Constructor order follows the field order in DocumentServiceImpl:
+        // the document/folder/access collaborators first, then the OCR ones.
         service = new DocumentServiceImpl(
-                documentTypeRepository, documentTypeFieldService, documentRepository,
-                documentVersionRepository, documentOcrFieldResultRepository, objectStorageService,
-                processingJobRepository, documentOcrLineItemRepository, documentOcrCorrectionRepository,
-                ocrWorkerClient, outboxEventPublisher, documentMetadataService,
-                metadataValidationService, objectMapper, ocrProperties);
+                documentRepository, documentVersionRepository, documentMapper, ingestionGate,
+                auditService, folderService, folderAccessService, documentAccessService,
+                accessPrincipals, documentTypeRepository, versionContent,
+                documentTypeFieldService, documentOcrFieldResultRepository,
+                documentOcrLineItemRepository, documentOcrCorrectionRepository,
+                processingJobRepository, ocrWorkerClient, ocrEnqueueService,
+                documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
+                new PageImageCache(ocrProperties));
 
         TenantContext.set(tenantId, UUID.randomUUID());
 
@@ -109,6 +128,17 @@ class ReviewCorrectionsAreManualTest {
                 .documentTypeId(documentTypeId).latestVersionId(versionId)
                 .title("Invoice 41").build();
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // The OCR review endpoints go through findVisible now - document-level
+        // folder access on top of the os.* permission - so the tenant-scoped
+        // lookup and the access check both have to answer here. What this test
+        // is about is what saveReview WRITES, so access is granted and the
+        // refusal cases are covered by ReviewEndpointTenantIsolationTest and
+        // the access tests.
+        when(documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId))
+                .thenReturn(Optional.of(document));
+        when(documentAccessService.require(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(document), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(document);
 
         DocumentVersion version = DocumentVersion.builder()
                 .versionId(versionId).documentId(documentId).tenantId(tenantId)

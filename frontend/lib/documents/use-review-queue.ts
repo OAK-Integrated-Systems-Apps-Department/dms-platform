@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
-import { fetchReviewQueue } from "@/lib/documents/api"
+import { fetchReviewQueue, fetchSavedReviews } from "@/lib/documents/api"
 
 /**
  * Server-driven pagination, same reasoning as `useAuditEvents`: the queue
@@ -16,6 +16,19 @@ export function useReviewQueue(page: number, size: number) {
   return useQuery({
     queryKey: ["review-queue", page, size],
     queryFn: () => fetchReviewQueue(page - 1, size),
+    placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * Documents whose review has already been saved. Same shape and same paging
+ * rules as {@link useReviewQueue} - a separate key so the two lists don't
+ * share a cache entry and show each other's rows.
+ */
+export function useSavedReviews(page: number, size: number) {
+  return useQuery({
+    queryKey: ["saved-reviews", page, size],
+    queryFn: () => fetchSavedReviews(page - 1, size),
     placeholderData: keepPreviousData,
   })
 }

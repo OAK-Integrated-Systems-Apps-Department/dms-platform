@@ -15,7 +15,6 @@ from ocr_worker.searchable_pdf import (
     SearchablePdfBuilder,
     boxes_for_overlay,
     result_of,
-    searchable_pdf_key,
 )
 
 # The OCR render these boxes are expressed in: 1000px across a 612pt page.
@@ -266,13 +265,6 @@ class TestResultOf:
         data, failures = result_of(builder)
         assert data is None
         assert len(failures) == 1
-
-
-def test_the_object_key_is_tenant_first():
-    key = searchable_pdf_key("tenant-1", "version-2", "rend-3")
-    assert key.startswith("tenants/tenant-1/")
-    assert key.endswith(".pdf")
-    assert "version-2" in key and "rend-3" in key
 
 
 class TestRotatedPages:

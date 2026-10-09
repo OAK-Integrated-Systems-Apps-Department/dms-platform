@@ -8,6 +8,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -37,22 +39,56 @@ import java.util.UUID;
 @Component
 public class OcrWorkerClient {
 
+    /**
+     * The grant the worker hands straight back to {@code /internal/v1/ocr}
+     * when it needs the document's bytes. Named the same on both legs of the
+     * round trip so there is one header to follow through the logs.
+     */
+    static final String READ_GRANT_HEADER = "X-Ocr-Job-Token";
+
     private final RestClient restClient;
     private final OcrProperties properties;
+    private final OcrJobTokenCodec jobTokenCodec;
 
-    public OcrWorkerClient(OcrProperties properties) {
+    public OcrWorkerClient(OcrProperties properties, OcrJobTokenCodec jobTokenCodec) {
         this.properties = properties;
+        this.jobTokenCodec = jobTokenCodec;
         this.restClient = RestClient.builder()
                 .baseUrl(properties.getWorkerBaseUrl())
                 .defaultHeader("X-Internal-Token", properties.getInternalServiceToken())
                 .build();
     }
 
+    /**
+     * A short-lived grant for a read with no OCR job behind it - the review
+     * screen's page image and region read.
+     *
+     * <p>Minted here, while serving a request that has already passed the
+     * caller's {@code os.*} permission and document-level access, and good for
+     * {@code dms.ocr.adhoc-token-minutes} (default 2). That short life is what
+     * stands in for the live-job check a job grant gets: there is no job to
+     * revoke, so the window is small instead.
+     */
+    private String adhocGrant(UUID versionId, UUID tenantId) {
+        Instant now = Instant.now();
+        return jobTokenCodec.issueAdhoc(versionId, tenantId, now,
+                now.plus(Duration.ofMinutes(properties.getAdhocTokenMinutes())));
+    }
+
     /** A rendered page plus the pixel size the highlights are placed against. */
     public record PageImage(byte[] png, int widthPx, int heightPx, int pageCount) {
     }
 
-    public PageImage fetchPageImage(UUID versionId, int page, Integer dpi) {
+    /**
+     * @param tenantId the version's tenant, used to mint the adhoc read grant
+     *                 the worker presents back to {@code /internal/v1/ocr} -
+     *                 the worker cannot read storage itself. The caller has
+     *                 already passed their {@code os.*} permission and
+     *                 document-level access by the time this is called; that
+     *                 is what the short-lived grant stands for.
+     */
+    public PageImage fetchPageImage(UUID versionId, UUID tenantId, int page, Integer dpi) {
+        String grant = adhocGrant(versionId, tenantId);
         return exchange(() -> {
             var response = restClient.get()
                     .uri(uriBuilder -> {
@@ -62,6 +98,7 @@ public class OcrWorkerClient {
                         }
                         return uriBuilder.build(versionId);
                     })
+                    .header(READ_GRANT_HEADER, grant)
                     .accept(MediaType.IMAGE_PNG)
                     .retrieve()
                     .toEntity(byte[].class);
@@ -83,10 +120,12 @@ public class OcrWorkerClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> previewRubberBand(
-            UUID versionId, int page, double x0, double y0, double x1, double y1) {
+            UUID versionId, UUID tenantId, int page, double x0, double y0, double x1, double y1) {
+        String grant = adhocGrant(versionId, tenantId);
         return exchange(() -> restClient.post()
                 .uri("/ocr/rubber-band/preview")
                 .contentType(MediaType.APPLICATION_JSON)
+                .header(READ_GRANT_HEADER, grant)
                 .body(Map.of(
                         "version_id", versionId.toString(),
                         "page", page,

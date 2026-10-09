@@ -77,8 +77,26 @@ public class ExportArchiveBuilder {
 
     static final String METADATA_ENTRY = "metadata";
     private static final int CHUNK = 200;
+
+    /**
+     * The two OCR columns, appended AFTER every pre-existing base column so
+     * no column anyone already reads changes position.
+     *
+     * <p>There is deliberately no "OCR values" column. A version's extracted
+     * values are written into {@code document_metadata_values} by
+     * {@code DocumentMetadataService#applyOcrFields}, and a reviewer's
+     * corrections are written to the same place by
+     * {@code DocumentServiceImpl#saveReview} - so the per-field metadata
+     * columns this sheet already emits <em>are</em> the reviewed values. A
+     * second copy of them would be a copy that can disagree with the first.
+     * {@link #OCR_REVIEW} is what tells you whether to trust them yet.
+     */
+    static final String OCR_STATUS = "OCR status";
+    static final String OCR_REVIEW = "OCR review";
+
     private static final List<String> BASE_COLUMNS = List.of("Document ID", "Title", "Document type",
-            "File in ZIP", "Original file name", "Size (bytes)", "Version", "Created at", "Note");
+            "File in ZIP", "Original file name", "Size (bytes)", "Version", "Created at", "Note",
+            OCR_STATUS, OCR_REVIEW);
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
@@ -136,6 +154,7 @@ public class ExportArchiveBuilder {
                     row.put("Size (bytes)", version != null ? String.valueOf(version.getSizeBytes()) : "");
                     row.put("Version", version != null ? String.valueOf(version.getVersionNumber()) : "");
                     row.put("Created at", document.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                    addOcr(version, row);
                     addMetadata(tenantId, document.getDocumentId(), row, fieldColumn);
 
                     if (includeFiles) {
@@ -203,6 +222,37 @@ public class ExportArchiveBuilder {
         if (!missing.isEmpty()) {
             documentTypeRepository.findAllById(missing)
                     .forEach(type -> typeNames.put(type.getDocumentTypeId(), type.getTypeName()));
+        }
+    }
+
+    /**
+     * The exported version's OCR state: what the pipeline did, and whether a
+     * human has signed the values off.
+     *
+     * <p>Read off the {@link DocumentVersion} already loaded for the row - no
+     * extra query, so a 10,000-document export costs the same as before.
+     *
+     * <p>Both cells are left out (not blank-filled) when OCR never ran, so
+     * {@code "not_required"} never appears in a sheet; the column simply
+     * stays empty for documents nobody asked to OCR. A tenant with the
+     * feature off therefore gets two empty columns, which is the truthful
+     * rendering of "this does not apply here".
+     */
+    private void addOcr(DocumentVersion version, Map<String, String> row) {
+        if (version == null) {
+            return;
+        }
+        String status = version.getOcrStatus();
+        if (status == null || status.isBlank() || "not_required".equals(status)) {
+            return;
+        }
+        row.put(OCR_STATUS, status);
+        // Only a version that actually produced fields can be said to be
+        // reviewed or not: a failed or still-running one has nothing to
+        // review, and claiming "Reviewed" for it would be a lie the sheet
+        // outlives.
+        if ("completed".equals(status)) {
+            row.put(OCR_REVIEW, version.isRequiresReview() ? "Needs review" : "Reviewed");
         }
     }
 

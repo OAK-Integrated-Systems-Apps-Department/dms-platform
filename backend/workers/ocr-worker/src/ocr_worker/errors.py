@@ -151,3 +151,20 @@ def error_code_of(message: str | None) -> str | None:
     if not separator or code not in KNOWN_ERROR_CODES:
         return None
     return code
+
+
+class MissingReadGrantError(OcrEngineError):
+    """No per-job read grant was supplied, so the document cannot be read.
+
+    Classified as an engine error rather than raised raw so it lands in the
+    review queue with a sentence a human can act on, like every other
+    recognised failure. In practice it means one of three things: a message
+    published before the internal-read endpoint existed and replayed since,
+    dms-core unable to mint a grant (its OCR secret is unset), or a direct
+    call to a worker route that forgot to pass one through.
+
+    Not retryable on its own - a redelivery of the same message carries the
+    same absent grant.
+    """
+
+    code = "MISSING_READ_GRANT"

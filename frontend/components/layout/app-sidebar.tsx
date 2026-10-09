@@ -21,6 +21,7 @@ import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
+import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -76,10 +77,13 @@ export function AppSidebar({
   // still in flight, which keeps a feature-gated item hidden until the
   // answer arrives rather than flashing a link that may not belong here.
   const watermarking = useWatermarkAvailability().data?.present === true
+  const ocr = useOcrAvailability().data === true
 
   function featureOn(feature: NavItem["feature"]): boolean {
     if (!feature) return true
-    return feature === "watermarking" ? watermarking : false
+    if (feature === "watermarking") return watermarking
+    if (feature === "ocr") return ocr
+    return false
   }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are

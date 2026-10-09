@@ -67,11 +67,13 @@ export function useBulkImport(batchId: string | null, enabled = true) {
       template,
       folderId,
       duplicateAction,
+      ocrFields,
     }: {
       template: File
       folderId?: string | null
       duplicateAction?: DuplicateAction
-    }) => createBulkImport(template, folderId, duplicateAction),
+      ocrFields?: readonly string[]
+    }) => createBulkImport(template, folderId, duplicateAction, ocrFields),
     onSuccess: () => invalidate(),
   })
   const submitMutation = useMutation({
@@ -110,7 +112,8 @@ export function useBulkImport(batchId: string | null, enabled = true) {
     create: async (
       template: File,
       folderId?: string | null,
-      duplicateAction?: DuplicateAction
+      duplicateAction?: DuplicateAction,
+      ocrFields?: readonly string[]
     ): Promise<
       | { batch: BulkImportCreatedResponseDto; error: null }
       | { batch: null; error: string }
@@ -121,6 +124,7 @@ export function useBulkImport(batchId: string | null, enabled = true) {
             template,
             folderId,
             duplicateAction,
+            ocrFields,
           }),
           error: null,
         }

@@ -81,7 +81,20 @@ public class SecurityConfig {
             // ScanCallbackController authenticates them with a shared-secret
             // header instead, and a callback can only trigger a re-check of
             // the provider's own verdict, never set one.
-            "/api/v1/scanning/callbacks/*"
+            "/api/v1/scanning/callbacks/*",
+            // ocr-worker reading a document's plaintext bytes. Same reasoning
+            // as the scan callbacks above: the worker has no Keycloak JWT and
+            // no user behind it. It authenticates with TWO factors instead -
+            // the shared X-Internal-Token AND a per-job HMAC grant naming one
+            // version, one tenant and an expiry (OcrJobTokenCodec). Permitted
+            // here only in the sense that Spring Security doesn't demand a
+            // JWT; OcrInternalContentController refuses anything that fails
+            // either factor, and re-checks the job, the tenant and the scan
+            // verdict against the database before serving a byte.
+            //
+            // This path must not be exposed through nginx/ingress - see
+            // docs/ocr/internal-endpoint.md.
+            "/internal/v1/ocr/**"
     };
 
     @Bean

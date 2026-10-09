@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   ClipboardCheck,
+  ClipboardList,
   Droplet,
   FileStack,
   FileText,
@@ -11,6 +12,7 @@ import {
   ListChecks,
   LockKeyhole,
   Pin,
+  ScanLine,
   ScrollText,
   Search,
   Shield,
@@ -65,15 +67,39 @@ export const navSections: NavSection[] = [
         href: "/documents",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
       },
-      // Phase 4b: OCR results a human still has to confirm. Sits with the
-      // other document screens rather than in the top group, which is now
-      // general shortcuts only. No permission gate -- there is no
-      // document-level permission model for review yet, and the endpoint
-      // scopes every row to the caller's own tenant regardless.
+    ],
+  },
+  {
+    // OCR gets its own group rather than sitting among the document screens:
+    // scanning, reviewing and the record of what was reviewed are one job,
+    // done by one person, and burying them under Documents made the review
+    // queue look like a view of the browser rather than a worklist.
+    //
+    // Every item is gated on an os.* capability (seeded by V10) AND feature:
+    // "ocr", because dms.ocr.enabled can be off, and holding the permission is
+    // no reason to show a link to a page with no worker behind it.
+    label: "OCR",
+    items: [
       {
-        label: "Review Queue",
+        label: "Scan documents",
+        icon: ScanLine,
+        href: "/documents/scan",
+        feature: "ocr",
+        permission: PermissionCodes.OS_OCR_TRIGGER,
+      },
+      {
+        label: "Review queue",
         icon: ClipboardCheck,
         href: "/documents/review",
+        feature: "ocr",
+        permission: PermissionCodes.OS_REVIEW_VIEW_QUEUE,
+      },
+      {
+        label: "Saved reviews",
+        icon: ClipboardList,
+        href: "/documents/saved-reviews",
+        feature: "ocr",
+        permission: PermissionCodes.OS_REVIEW_VIEW_QUEUE,
       },
     ],
   },

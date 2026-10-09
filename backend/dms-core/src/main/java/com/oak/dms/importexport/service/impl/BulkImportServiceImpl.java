@@ -75,10 +75,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -166,7 +168,7 @@ public class BulkImportServiceImpl implements BulkImportService {
 
     @Override
     public BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
-                                                 UUID folderId, String duplicateAction) {
+                                                 UUID folderId, String duplicateAction, List<String> ocrFields) {
         String onDuplicate = duplicateAction == null || duplicateAction.isBlank() ? "keep_both" : duplicateAction;
         if (!java.util.Set.of("keep_both", "new_version", "skip").contains(onDuplicate)) {
             throw com.oak.dms.importexport.exception.BulkImportException.badRequest("IMPORT_DUPLICATE_ACTION_INVALID",
@@ -229,6 +231,7 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .importTemplateId(parsed.importTemplateId())
                 .folderId(folderId)
                 .duplicateAction(onDuplicate)
+                .ocrRequestedFields(ocrFieldsJson(documentType, ocrFields))
                 .createdBy(userId)
                 .build());
 
@@ -577,10 +580,11 @@ public class BulkImportServiceImpl implements BulkImportService {
         List<String> missing = importItemRepository.findMissingFilenames(batch.getImportBatchId());
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
                 batch.getStatus().name(), batch.getTotalRecords(), batch.getTotalRecords() - missing.size(),
-                batch.getSuccessCount(), batch.getFailureCount(), missing, batch.getCreatedAt());
+                batch.getSuccessCount(), batch.getFailureCount(), missing, batch.getCreatedAt(),
+                ocrProgress(batch));
     }
 
-    private static BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {
+    private BulkImportStatusResponse toStatusResponse(ImportBatch batch, List<ImportItem> items) {
         // A file handed on to the scan gate has left staging but was received.
         List<String> missingFilenames = items.stream()
                 .filter(item -> item.getStagedObjectKey() == null && item.getScanResultId() == null)
@@ -588,7 +592,33 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .toList();
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
                 batch.getStatus().name(), batch.getTotalRecords(), items.size() - missingFilenames.size(),
-                batch.getSuccessCount(), batch.getFailureCount(), missingFilenames, batch.getCreatedAt());
+                batch.getSuccessCount(), batch.getFailureCount(), missingFilenames, batch.getCreatedAt(),
+                ocrProgress(batch));
+    }
+
+    /**
+     * "OCR pending / done / failed" for the import's progress display.
+     *
+     * <p>Null for a batch that did not ask for OCR, so the screen shows
+     * nothing rather than a row of zeroes that looks like stalled work.
+     *
+     * <p>Counted from {@code document_versions}, the only place that knows
+     * what actually happened: counting {@code processing_jobs} would lose a
+     * finished job that has been cleaned up, and counting the batch's own rows
+     * would say nothing about OCR at all. One grouped query, not one per row.
+     */
+    private BulkImportStatusResponse.OcrProgress ocrProgress(ImportBatch batch) {
+        String requested = batch.getOcrRequestedFields();
+        if (requested == null || requested.isBlank() || "[]".equals(requested.trim())) {
+            return null;
+        }
+        Map<String, Integer> byStatus = importItemRepository.countOcrStatusesForBatch(batch.getImportBatchId())
+                .stream().collect(Collectors.toMap(
+                        row -> String.valueOf(row[0]), row -> ((Number) row[1]).intValue()));
+        int completed = byStatus.getOrDefault("completed", 0);
+        int failed = byStatus.getOrDefault("failed", 0);
+        int pending = byStatus.getOrDefault("pending", 0) + byStatus.getOrDefault("processing", 0);
+        return new BulkImportStatusResponse.OcrProgress(batch.getOcrQueuedCount(), pending, completed, failed);
     }
 
     private static void requireActive(DocumentType documentType) {
@@ -646,6 +676,45 @@ public class BulkImportServiceImpl implements BulkImportService {
         } catch (JsonProcessingException e) {
             log.warn("Unreadable validation_errors on import item {}", item.getImportItemId(), e);
             return List.of();
+        }
+    }
+
+    /**
+     * The batch's "Run OCR on imported files" selection, as the JSON array the
+     * column and the queue message both carry.
+     *
+     * <p>Validated here, at batch creation, against the document type's
+     * OCR-extractable fields - not per file in the worker. A typo in the field
+     * list is the uploader's mistake and they are standing right there; the
+     * alternative is 5,000 files each queued for a field that does not exist,
+     * discovered hours later in a log nobody reads.
+     *
+     * <p>An unknown or non-extractable key is a 400, not a silent drop: a
+     * person who asked for "invoice_total" and got nothing back would conclude
+     * OCR is broken, which is a worse answer than being told the field is not
+     * one OCR can fill.
+     */
+    private String ocrFieldsJson(DocumentType documentType, List<String> ocrFields) {
+        if (ocrFields == null || ocrFields.isEmpty()) {
+            return null;
+        }
+        Set<String> extractable = documentTypeFieldService.getSchema(documentType.getDocumentTypeId()).fields().stream()
+                .filter(DocumentTypeSchemaResponse.SchemaField::ocrExtractable)
+                .map(DocumentTypeSchemaResponse.SchemaField::fieldKey)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        // LinkedHashSet on the way in too: the same key listed twice is one
+        // request, and the order the person chose is the order worth keeping.
+        Set<String> requested = new LinkedHashSet<>(ocrFields);
+        List<String> unknown = requested.stream().filter(key -> !extractable.contains(key)).toList();
+        if (!unknown.isEmpty()) {
+            throw com.oak.dms.importexport.exception.BulkImportException.badRequest("IMPORT_OCR_FIELDS_INVALID",
+                    "These fields can't be filled in by OCR for '" + documentType.getTypeName() + "': "
+                            + String.join(", ", unknown));
+        }
+        try {
+            return objectMapper.writeValueAsString(requested);
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize the import's OCR field selection", e);
         }
     }
 

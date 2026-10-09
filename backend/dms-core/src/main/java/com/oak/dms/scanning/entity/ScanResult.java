@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -163,6 +165,24 @@ public class ScanResult {
     /** The folder a new document lands in once clean (V51); null = not in a folder. */
     @Column(name = "folder_id", updatable = false)
     private UUID folderId;
+
+    /**
+     * Schema field keys OCR should extract once this file is clean (V82), as
+     * raw JSON - same convention as {@code DocumentVersion.requestedFields}.
+     * Null or {@code []} means no OCR was asked for.
+     * <p>
+     * Carried here rather than acted on at upload because OCR must not read an
+     * unscanned file, and with a cloud scanner the clean verdict can arrive
+     * long after the request that made this choice has gone.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "ocr_requested_fields", columnDefinition = "jsonb", updatable = false)
+    private String ocrRequestedFields;
+
+    /** Bulk-import ingestion: OCR goes on the low-priority routing key (V82). */
+    @Column(name = "ocr_low_priority", nullable = false, updatable = false)
+    @Builder.Default
+    private boolean ocrLowPriority = false;
 
     /**
      * Set only on a quarantine release attempt (V40): the original,

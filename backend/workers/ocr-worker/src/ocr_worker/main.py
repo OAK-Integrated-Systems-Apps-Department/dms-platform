@@ -9,12 +9,16 @@ import uvicorn
 from fastapi import FastAPI
 
 from .api import create_app
-from .config import Settings, get_settings
+from .config import (
+    QUEUE_OCR_REQUESTED_BULK,
+    ROUTING_KEY_OCR_REQUESTED_BULK,
+    Settings,
+    get_settings,
+)
 from .consumer import OcrRequestedConsumer, ScanCompletedConsumer
 from .db import make_session_factory
 from .logging_config import configure_logging
 from .reaper import Reaper
-from .storage import ObjectStorage
 from .worker_pool import OcrProcessPool
 
 logger = logging.getLogger(__name__)
@@ -39,7 +43,7 @@ def apply_network_posture(settings: Settings) -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     logger.info(
         "OCR_OFFLINE_MODELS=true: model hubs pinned to the local cache. This worker now "
-        "makes no outbound network call of any kind -- only Postgres, RabbitMQ and MinIO. "
+        "makes no outbound network call of any kind -- only Postgres, RabbitMQ and dms-core. "
         "Model weights must already be present in the mounted caches."
     )
 
@@ -63,12 +67,12 @@ def create_application() -> FastAPI:
         settings.max_attempts_for(None) - 1,
     )
 
-    # session_factory/storage here are lightweight, main-process-only uses
-    # (/readyz's DB ping, ensure_buckets at startup) -- real OCR processing
-    # never touches these; each pool worker builds its own full stack (see
-    # worker_pool.py's _pool_worker_init), never this one.
+    # session_factory here is a lightweight, main-process-only use
+    # (/readyz's DB ping) -- real OCR processing never touches it; each pool
+    # worker builds its own full stack, including its own
+    # DocumentContentClient (see worker_pool.py's _pool_worker_init), never
+    # this one.
     session_factory = make_session_factory(settings)
-    storage = ObjectStorage(settings)
     pool = OcrProcessPool(settings)
     # ocr_requested_consumer is the real production trigger path (Phase 1
     # B.1 -- dms-core's upload/rerun publish document.version.ocr.requested
@@ -77,6 +81,27 @@ def create_application() -> FastAPI:
     # scan-worker doesn't exist yet. Both share the one OcrProcessPool.
     scan_consumer = ScanCompletedConsumer(settings, pool, session_factory)
     ocr_requested_consumer = OcrRequestedConsumer(settings, pool, session_factory)
+    # Bulk import's OCR, on its own queue.
+    #
+    # Separate queue, not a priority field on one queue: a 5,000-file import
+    # publishes 5,000 messages at once, and in a single queue every
+    # interactive scan that arrives afterwards sits behind all of them. That
+    # is head-of-line blocking in the queue order itself, which no prefetch
+    # setting can undo.
+    #
+    # prefetch=1 rather than the pool size. Both consumers feed the SAME
+    # process pool, so the queue split alone would not stop an import from
+    # occupying every pool slot; holding at most one bulk delivery at a time
+    # is what keeps slots free for interactive work. The cost is that bulk
+    # OCR runs roughly one document at a time, which is the right trade: the
+    # import has already finished from the uploader's point of view, and
+    # nobody is watching its OCR.
+    bulk_ocr_consumer = OcrRequestedConsumer(
+        settings, pool, session_factory,
+        queue_name=QUEUE_OCR_REQUESTED_BULK,
+        routing_key=ROUTING_KEY_OCR_REQUESTED_BULK,
+        prefetch_count=1,
+    )
     consumer_state = {"scan_connected": False, "ocr_requested_connected": False}
     # Own session_factory, not the lightweight one above -- kept separate
     # so the reaper's own connection pool usage is visible/attributable on
@@ -86,15 +111,11 @@ def create_application() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        try:
-            storage.ensure_buckets()
-        except Exception:
-            # Same reasoning as the consumer below: a transient MinIO outage
-            # at boot shouldn't take down the whole process. If the bucket
-            # genuinely doesn't exist and MinIO is actually up, the first
-            # real OCR write will surface that loudly instead.
-            logger.exception("Failed to ensure MinIO buckets exist at startup")
-
+        # No bucket set-up any more. This service owns no storage: it reads
+        # documents from, and writes its artifacts back to, dms-core over the
+        # internal endpoint (see content_client.py), because every object is
+        # encrypted at rest and only dms-core holds the keys. There is nothing
+        # left to create here, and nothing to be transiently unavailable.
         try:
             await scan_consumer.start()
             consumer_state["scan_connected"] = True
@@ -111,9 +132,19 @@ def create_application() -> FastAPI:
         except Exception:
             logger.exception("Failed to start OcrRequestedConsumer; API endpoints remain available")
 
+        try:
+            await bulk_ocr_consumer.start()
+        except Exception:
+            # Deliberately NOT part of consumer_state/readyz: bulk import OCR
+            # is background work nobody is waiting on, so its queue being
+            # unavailable must not take the whole service out of rotation and
+            # stop interactive scans being processed.
+            logger.exception("Failed to start the bulk-import OCR consumer; interactive OCR is unaffected")
+
         await reaper.start()
         yield
         await reaper.stop()
+        await bulk_ocr_consumer.stop()
         await ocr_requested_consumer.stop()
         await scan_consumer.stop()
         pool.close()

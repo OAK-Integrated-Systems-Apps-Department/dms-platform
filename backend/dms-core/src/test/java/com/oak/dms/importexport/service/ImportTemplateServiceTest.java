@@ -69,7 +69,7 @@ class ImportTemplateServiceTest {
         when(schemas.getSchema(TYPE)).thenReturn(schema(
                 field("invoice_number", "Invoice Number", "text", true, 10),
                 field("amount", "Amount", "decimal", true, 20),
-                new SchemaField(CURRENCY_ID, "currency", "Currency", null, "dropdown", "active", true, false, 30,
+                new SchemaField(CURRENCY_ID, "currency", "Currency", null, "dropdown", "active", true, false, false, 30,
                         null, null, List.of(new MetadataFieldOptionResponse(UUID.randomUUID(), CURRENCY_ID, null, "LKR",
                         "LKR", 1, "active")), List.of()),
                 field("notes", "Notes", "text", false, 40),
@@ -204,7 +204,7 @@ class ImportTemplateServiceTest {
     }
 
     private static SchemaField field(String key, String label, String type, boolean mandatory, int order, boolean hidden) {
-        return new SchemaField(UUID.randomUUID(), key, label, null, type, "active", mandatory, hidden, order, null, null,
+        return new SchemaField(UUID.randomUUID(), key, label, null, type, "active", mandatory, hidden, false, order, null, null,
                 List.of(), List.of());
     }
 }

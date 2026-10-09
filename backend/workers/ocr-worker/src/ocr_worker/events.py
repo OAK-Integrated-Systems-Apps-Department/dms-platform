@@ -47,7 +47,7 @@ def build_ocr_completed_payload(
     attempt: int,
 ) -> dict[str, Any]:
     """Deliberately slim: the full pages/fields/text detail lives in the
-    single MinIO artifact at extracted_text_ref (see the "Output contract"
+    single stored artifact at extracted_text_ref (see the "Output contract"
     in README.md) -- the event just carries enough for a downstream
     consumer (e.g. a future indexing step, OS-FR-006) to know something
     happened and where to fetch the detail, not a copy of it.

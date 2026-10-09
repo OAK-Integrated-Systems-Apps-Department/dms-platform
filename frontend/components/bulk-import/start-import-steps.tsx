@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Download, Loader2 } from "lucide-react"
 
@@ -22,6 +22,13 @@ import {
   downloadSavedImportTemplate,
   fetchImportTemplates,
 } from "@/lib/import-templates/api"
+import { fetchDocumentTypeSchema } from "@/lib/document-type-fields/api"
+import {
+  FieldChips,
+  defaultRequestedFields,
+  mandatoryRequestedFields,
+} from "@/components/documents/document-fields-form"
+import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
 
 import { cn } from "@/lib/utils"
 
@@ -36,7 +43,8 @@ interface StartImportStepsProps {
   onCreate: (
     template: File,
     folderId: string | null,
-    duplicateAction: DuplicateAction
+    duplicateAction: DuplicateAction,
+    ocrFields: readonly string[]
   ) => Promise<{
     batch: BulkImportCreatedResponseDto | null
     error: string | null
@@ -69,6 +77,47 @@ export function StartImportSteps({
   const [duplicateAction, setDuplicateAction] =
     useState<DuplicateAction>("new_version")
 
+  // -- "Run OCR on imported files" --
+  //
+  // Off by default. OCR is minutes of CPU per document, so an import of
+  // thousands of files must be something somebody asked for, never something
+  // that happens because a checkbox defaulted on.
+  const ocrAvailable = useOcrAvailability()
+  const [runOcr, setRunOcr] = useState(false)
+  const ocrSchemaQuery = useQuery({
+    queryKey: ["document-type-schema", documentTypeId],
+    queryFn: () => fetchDocumentTypeSchema(documentTypeId),
+    enabled: Boolean(documentTypeId) && runOcr,
+    retry: false,
+  })
+  /**
+   * null = untouched, so the schema's own defaults apply and switching
+   * document type simply changes what this computes. Same shape as the scan
+   * upload form's `fieldSelection`, and for the same reason: an eagerly
+   * materialised Set would go stale the moment the type changed.
+   */
+  const [fieldSelection, setFieldSelection] = useState<Set<string> | null>(null)
+  const selectedFields = useMemo(
+    () => fieldSelection ?? defaultRequestedFields(ocrSchemaQuery.data),
+    [fieldSelection, ocrSchemaQuery.data]
+  )
+
+  function handleDocumentTypeChange(next: string) {
+    setDocumentTypeId(next)
+    setSavedTemplateId("")
+    // The previous type's field keys mean nothing for this one.
+    setFieldSelection(null)
+  }
+
+  function toggleField(fieldKey: string) {
+    setFieldSelection((current) => {
+      const next = new Set(current ?? defaultRequestedFields(ocrSchemaQuery.data))
+      if (next.has(fieldKey)) next.delete(fieldKey)
+      else next.add(fieldKey)
+      return next
+    })
+  }
+
   async function handleDownload() {
     if (!documentTypeId) return
     setDownloading(true)
@@ -96,7 +145,8 @@ export function StartImportSteps({
     const { error } = await onCreate(
       template,
       folderId || null,
-      duplicateAction
+      duplicateAction,
+      runOcr ? [...selectedFields] : []
     )
     if (error) setTemplateError(error)
   }
@@ -133,8 +183,7 @@ export function StartImportSteps({
                 }))}
                 selected={documentTypeId}
                 onChange={(value) => {
-                  setDocumentTypeId(value)
-                  setSavedTemplateId("")
+                  handleDocumentTypeChange(value)
                   setDownloadError(null)
                 }}
                 allLabel="Select a document type"
@@ -214,6 +263,71 @@ export function StartImportSteps({
                 : "Every file becomes a new document, even if it's already there."}
           </p>
         </Field>
+        {/*
+          Hidden entirely when OCR is off for this deployment, rather than
+          shown disabled: a checkbox you cannot tick is a question about a
+          feature that does not exist here.
+
+          Also hidden until a document type is picked - the field picker has
+          nothing to offer before then, and asking "which fields?" before
+          "which type?" is the wrong order.
+        */}
+        {ocrAvailable.data && documentTypeId && (
+          <Field label="OCR">
+            <label className="flex items-start gap-2.5 text-[13px] leading-[1.5] text-foreground">
+              <input
+                type="checkbox"
+                checked={runOcr}
+                disabled={creating}
+                onChange={(e) => setRunOcr(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+              />
+              <span>
+                Run OCR on imported files
+                <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                  Each file is read after it passes its virus scan, and its
+                  fields are filled in for review. Imports use a separate,
+                  lower-priority queue, so this never delays a scan someone is
+                  waiting on.
+                </span>
+              </span>
+            </label>
+            {runOcr && (
+              <div className="mt-3">
+                <FieldChips
+                  schema={ocrSchemaQuery.data}
+                  loading={ocrSchemaQuery.isLoading}
+                  selected={selectedFields}
+                  onToggle={toggleField}
+                  onSelectAll={() =>
+                    setFieldSelection(
+                      new Set(
+                        (ocrSchemaQuery.data?.fields ?? []).map((f) => f.fieldKey)
+                      )
+                    )
+                  }
+                  // Clear falls back to the mandatory fields, never to
+                  // nothing: a document type's mandatory fields cannot be
+                  // deselected, and an empty set would be rejected by the
+                  // same MANDATORY_FIELD_NOT_REQUESTED check the scan upload
+                  // hits.
+                  onClear={() =>
+                    setFieldSelection(
+                      mandatoryRequestedFields(ocrSchemaQuery.data)
+                    )
+                  }
+                  disabled={creating}
+                />
+                {ocrSchemaQuery.isError && (
+                  <InlineError>
+                    Could not load this document type&apos;s fields, so OCR
+                    can&apos;t be set up for this import.
+                  </InlineError>
+                )}
+              </div>
+            )}
+          </Field>
+        )}
         <FileDropzone
           accept=".xlsx,.csv"
           disabled={creating}

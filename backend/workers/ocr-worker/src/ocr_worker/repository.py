@@ -652,7 +652,7 @@ class OcrRepository:
         self.session.add(ocr_output)
 
         version.ocr_status = "completed"
-        # Phase 4b: the queue reads this column, not the MinIO artifact.
+        # Phase 4b: the queue reads this column, not the stored artifact.
         # Always written, including the false case -- a re-run that FIXES
         # a document must take it out of the queue, and leaving the old
         # true behind would keep it there forever.

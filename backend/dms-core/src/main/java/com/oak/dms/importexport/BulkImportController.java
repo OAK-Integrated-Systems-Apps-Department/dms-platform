@@ -14,6 +14,7 @@ import com.oak.dms.importexport.dto.ImportTemplateFile;
 import com.oak.dms.importexport.enums.TemplateFormat;
 import com.oak.dms.importexport.service.ImportArchiveIntake;
 import com.oak.dms.importexport.service.BulkImportService;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -86,11 +87,19 @@ public class BulkImportController {
                                                                  UUID folderId,
                                                                  @RequestParam(value = "duplicateAction",
                                                                          defaultValue = "keep_both")
-                                                                 String duplicateAction)
+                                                                 String duplicateAction,
+                                                                 @RequestParam(value = "ocrFields", required = false)
+                                                                 @Parameter(description = "Field keys to extract with "
+                                                                         + "OCR from every file in this batch. Omit "
+                                                                         + "for no OCR. Each file is queued only "
+                                                                         + "after a clean scan verdict, on the "
+                                                                         + "low-priority queue, within the per-batch "
+                                                                         + "cap and the tenant's queue limit.")
+                                                                 List<String> ocrFields)
             throws IOException {
         try (InputStream content = template.getInputStream()) {
             BulkImportCreatedResponse response = bulkImportService.createBatch(template.getOriginalFilename(),
-                    template.getSize(), content, folderId, duplicateAction);
+                    template.getSize(), content, folderId, duplicateAction, ocrFields);
             return ResponseEntity.created(URI.create("/api/v1/bulk-imports/" + response.batchId())).body(response);
         }
     }

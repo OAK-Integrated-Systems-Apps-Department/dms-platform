@@ -24,7 +24,15 @@ public final class OcrErrorMessages {
             Map.entry("TIMEOUT", "OCR took too long to process this document and was stopped."),
             Map.entry("WORKER_CRASH", "OCR processing was interrupted unexpectedly."),
             Map.entry("ENGINE_ERROR", "OCR ran into an unexpected problem processing this document."),
-            Map.entry("LOW_IMAGE_QUALITY", "The image quality was too low for OCR to read reliably.")
+            Map.entry("LOW_IMAGE_QUALITY", "The image quality was too low for OCR to read reliably."),
+            // The worker had no read grant, so it could not fetch the
+            // document's bytes at all (see docs/ocr/internal-endpoint.md).
+            // Worded as a retry rather than a file problem because that is
+            // what it is: the document is fine, the job's permission to read
+            // it had expired or was never issued, and running OCR again
+            // mints a fresh one.
+            Map.entry("MISSING_READ_GRANT",
+                    "OCR couldn't open this document in time. Run OCR on it again.")
     );
 
     private static final String DEFAULT_MESSAGE = "OCR could not process this document.";

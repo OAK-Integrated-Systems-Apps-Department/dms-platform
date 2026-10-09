@@ -57,11 +57,13 @@ class _Pool:
     def is_ready(self):
         return True
 
-    def schedule_render_page(self, version_id, page, dpi=None):
+    def schedule_render_page(self, version_id, page, dpi=None, read_token=None):
+        # read_token is the adhoc grant dms-core mints for this one read -
+        # the worker cannot fetch the document without it.
         self.calls.append(("render", version_id, page, dpi))
         return _Future(self._render, self._exc)
 
-    def schedule_preview_rubber_band(self, version_id, page, box):
+    def schedule_preview_rubber_band(self, version_id, page, box, read_token=None):
         self.calls.append(("preview", version_id, page, box))
         return _Future(self._preview, self._exc)
 

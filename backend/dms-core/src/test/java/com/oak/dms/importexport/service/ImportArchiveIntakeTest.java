@@ -127,7 +127,8 @@ class ImportArchiveIntakeTest {
     }
 
     private static BulkImportStatusResponse status(String status, int filesReceived) {
+        // null OCR progress: this batch did not ask for OCR.
         return new BulkImportStatusResponse(BATCH, UUID.randomUUID(), status, 3, filesReceived, 0, 0, List.of(),
-                OffsetDateTime.now());
+                OffsetDateTime.now(), null);
     }
 }

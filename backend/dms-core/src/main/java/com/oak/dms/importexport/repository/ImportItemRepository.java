@@ -87,4 +87,32 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
         return findPendingCompletions(ImportBatch.ImportBatchStatus.running, ImportItem.ImportItemStatus.pending,
                 pageable);
     }
+
+    /**
+     * {@code [ocr_status, count]} for the documents this batch created, for
+     * the import's "OCR pending / done / failed" display (V84).
+     *
+     * <p>Joined through {@code document_id} to the document's CURRENT version,
+     * not every version: a document someone has since uploaded a new version
+     * of should report that version's OCR state, which is what the review
+     * queue and the document list show too. One grouped query for the whole
+     * batch, so the display costs the same for 10 rows and for 5,000.
+     *
+     * <p>Native, not JPQL: {@code Document}/{@code DocumentVersion} are in the
+     * document module and are deliberately not mapped as associations from an
+     * import item - the link is a recorded id, not ownership. A join through
+     * entities would invent a relationship that the model does not have.
+     */
+    @Query(value = """
+            select v.ocr_status, count(*)
+              from import_items i
+              join documents d on d.document_id = i.document_id
+              join document_versions v on v.version_id = d.current_version_id
+             where i.import_batch_id = :batchId
+               and i.document_id is not null
+               and v.ocr_status is not null
+               and v.ocr_status <> 'not_required'
+             group by v.ocr_status
+            """, nativeQuery = true)
+    List<Object[]> countOcrStatusesForBatch(@Param("batchId") UUID batchId);
 }

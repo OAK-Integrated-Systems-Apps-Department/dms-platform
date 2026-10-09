@@ -4,15 +4,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.RubberBandRequest;
 import com.oak.dms.document.dto.SaveReviewRequest;
-import com.oak.dms.metadata.DocumentTypeFieldService;
-import com.oak.dms.metadata.DocumentTypeRepository;
-import com.oak.dms.metadata.MetadataValidationService;
+import com.oak.dms.metadata.service.DocumentTypeFieldService;
+import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.ocrworker.OcrProperties;
 import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.storage.ObjectStorageService;
+import com.oak.dms.document.DocumentMapper;
+import com.oak.dms.folder.AccessPrincipals;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderService;
+import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.ocrworker.OcrEnqueueService;
+import com.oak.dms.scanning.service.IngestionGate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,12 +71,19 @@ class ReviewEndpointTenantIsolationTest {
     @Mock private DocumentRepository documentRepository;
     @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
-    @Mock private ObjectStorageService objectStorageService;
+    @Mock private DocumentMapper documentMapper;
+    @Mock private IngestionGate ingestionGate;
+    @Mock private AuditService auditService;
+    @Mock private FolderService folderService;
+    @Mock private FolderAccessService folderAccessService;
+    @Mock private DocumentAccessService documentAccessService;
+    @Mock private AccessPrincipals accessPrincipals;
+    @Mock private VersionContent versionContent;
     @Mock private ProcessingJobRepository processingJobRepository;
     @Mock private DocumentOcrLineItemRepository documentOcrLineItemRepository;
     @Mock private DocumentOcrCorrectionRepository documentOcrCorrectionRepository;
     @Mock private OcrWorkerClient ocrWorkerClient;
-    @Mock private OutboxEventPublisher outboxEventPublisher;
+    @Mock private OcrEnqueueService ocrEnqueueService;
     @Mock private DocumentMetadataService documentMetadataService;
     @Mock private MetadataValidationService metadataValidationService;
     @Mock private OcrProperties ocrProperties;
@@ -85,12 +99,17 @@ class ReviewEndpointTenantIsolationTest {
 
     @BeforeEach
     void setUp() {
+        // Constructor order follows the field order in DocumentServiceImpl:
+        // the document/folder/access collaborators first, then the OCR ones.
         service = new DocumentServiceImpl(
-                documentTypeRepository, documentTypeFieldService, documentRepository,
-                documentVersionRepository, documentOcrFieldResultRepository, objectStorageService,
-                processingJobRepository, documentOcrLineItemRepository, documentOcrCorrectionRepository,
-                ocrWorkerClient, outboxEventPublisher, documentMetadataService,
-                metadataValidationService, objectMapper, ocrProperties);
+                documentRepository, documentVersionRepository, documentMapper, ingestionGate,
+                auditService, folderService, folderAccessService, documentAccessService,
+                accessPrincipals, documentTypeRepository, versionContent,
+                documentTypeFieldService, documentOcrFieldResultRepository,
+                documentOcrLineItemRepository, documentOcrCorrectionRepository,
+                processingJobRepository, ocrWorkerClient, ocrEnqueueService,
+                documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
+                new PageImageCache(ocrProperties));
 
         // The document belongs to tenant A. Every test below is tenant B.
         Document document = Document.builder()
@@ -100,6 +119,16 @@ class ReviewEndpointTenantIsolationTest {
                 .title("Tenant A's invoice")
                 .build();
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        // The review queue is access-filtered in the query now, so it asks
+        // for the caller's access view first. "Sees everything" here on
+        // purpose: this test is about the TENANT boundary, and granting the
+        // widest possible document access makes a leak across tenants show up
+        // as a leak rather than being masked by a folder check.
+        // A real view, not a mock: DocumentAccessView is a record whose
+        // seesEverything() is derived from its components, and a stubbed
+        // answer would let the two disagree.
+        when(documentAccessService.forCaller()).thenReturn(new DocumentAccessService.DocumentAccessView(
+                null, java.util.Map.of(), true, false));
 
         TenantContext.set(tenantB, UUID.randomUUID());
     }
@@ -148,7 +177,7 @@ class ReviewEndpointTenantIsolationTest {
 
         // The crux: ocr-worker would have served the page to anyone
         // holding the internal token.
-        verify(ocrWorkerClient, never()).fetchPageImage(any(), anyInt(), any());
+        verify(ocrWorkerClient, never()).fetchPageImage(any(), any(), anyInt(), any());
         verifyNoInteractions(ocrWorkerClient);
     }
 

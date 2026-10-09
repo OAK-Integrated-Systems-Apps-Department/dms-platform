@@ -4,10 +4,13 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Reads/writes {@link DocumentMetadataValue} rows for a document, resolving
- * against its document type's current schema (module 2.7's {@code
- * DocumentTypeFieldService#getSchema}). The first real writer of {@code
- * document_metadata_values} -- see that table's own migration comment.
+ * Reads/writes a document's metadata values, resolving them against its
+ * document type's current schema ({@code DocumentTypeFieldService#getSchema}).
+ *
+ * <p>Storage is the {@code field_values} JSON map on {@code document_metadata}
+ * (V36), keyed by field id. This interface is the by-field-<em>key</em> view
+ * of it that the OCR and review paths need; bulk import and export write and
+ * read the same map directly, by id.
  */
 public interface DocumentMetadataService {
 

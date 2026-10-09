@@ -262,11 +262,11 @@ def boxes_for_overlay(page_result) -> list[tuple[str, tuple]]:
     return boxes
 
 
-def searchable_pdf_key(tenant_id, version_id, rendition_id) -> str:
-    """Object key for the rendition, mirroring `storage.ocr_output_key`'s
-    tenant-first layout so a per-tenant lifecycle policy or a tenant
-    delete stays expressible as a prefix operation."""
-    return f"tenants/{tenant_id}/versions/{version_id}/renditions/{rendition_id}.pdf"
+# searchable_pdf_key was removed here. This service no longer chooses object
+# keys: it hands the PDF to dms-core, which stores it under a key derived from
+# the version and returns that key (see OcrArtifactWriter.keyFor). Two
+# definitions of the same key format is how a renditions row ends up pointing
+# at an object that was written somewhere else.
 
 
 def result_of(builder) -> tuple[bytes | None, list[str]]:

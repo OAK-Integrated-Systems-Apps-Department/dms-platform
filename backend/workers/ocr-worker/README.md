@@ -462,7 +462,7 @@ from "this deployment has renditions switched off", so a failure sets
 ```
 
 in the OCR output, with the cause. The reasons cover per-page failures,
-serialisation, the MinIO upload, and the `renditions` write.
+serialisation, and handing the PDF to dms-core.
 
 **Upload first, row second.** A `renditions` row must never point at an
 object that is not there; the reverse — an object with no row — is
@@ -475,7 +475,7 @@ rendition.
 ## Output contract
 
 Every OCR result (full-document, zone, or rubber-band) is **one JSON
-object**, stored at the MinIO key referenced by
+object**, stored by dms-core at the key referenced by
 `ocr_outputs.extracted_text_ref`, and returned directly (same shape) in
 `POST /ocr/process/{version_id}`'s HTTP response body:
 
@@ -642,7 +642,7 @@ Two things exercise the pipeline without scan-worker -- both have to
 run on the docker network (no published host port, see above):
 
 1. **`scripts/dev/publish_fake_scan_event.py`** -- bootstraps a fixture
-   document/version, uploads a sample file to MinIO, and publishes
+   document/version, uploads a sample file through dms-core, and publishes
    `document.version.scan.completed` by hand.
 2. **`POST /ocr/process/{version_id}`** -- runs the identical pipeline
    synchronously, bypassing RabbitMQ, returning the full output JSON
@@ -755,7 +755,7 @@ confidence scores from actually running the model.
 `scripts/dev/smoke_test_ocr.py` and `scripts/dev/repro_batch.py` both drive
 the **dev-trigger HTTP endpoint**, which is no longer how production
 triggers OCR. `scripts/dev/phase1_verification.py` drives the real path:
-it stages N versions in Postgres + MinIO, inserts
+it stages N versions in Postgres + object storage, inserts
 `document.version.ocr.requested` rows into `outbox_events` so dms-core's
 own `OutboxRelay` publishes them, and then waits on the database for each
 version's terminal state.
@@ -828,10 +828,10 @@ Covers, among others: (a) the native-text path never calls PaddleOCR, (b)
 the image-only path calls PaddleOCR with real image data and produces
 non-empty `blocks`, (c) confidence below threshold sets
 `flags.requires_review`, (d) the DB transaction + outbox write happens
-atomically (mocked DB/MinIO/RabbitMQ; the transactional-write tests run
+atomically (mocked DB/content-client/RabbitMQ; the transactional-write tests run
 against a real in-memory SQLite database via SQLAlchemy, so that sequence
 is actually exercised, not just asserted against mocks). None of the unit
-tests need a live scan-worker, RabbitMQ, MinIO, Postgres, or the real
+tests need a live scan-worker, RabbitMQ, dms-core, Postgres, or the real
 PaddleOCR/Docling models -- they run in well under a second.
 
 ### On-demand zone / rubber-band OCR
@@ -1208,7 +1208,7 @@ the consumer acks and skips, and nothing ever publishes again. The
 reaper's `publish_due_retry` re-requests it once the backoff has elapsed.
 And it is **`TIMEOUT` and nothing else** — extending it to every code was
 tried and reverted: an in-worker failure is one the worker survived long
-enough to *classify*, and those are deterministic. A missing MinIO object
+enough to *classify*, and those are deterministic. A document dms-core will not serve
 (`ENGINE_ERROR`) fails identically on all four attempts, so the retries
 buy nothing and cost a pool worker each.
 
@@ -1288,10 +1288,10 @@ environment) -- whoever has that access should run
 `scripts/openbao-encrypt-secrets.sh infra/secrets/ocr-worker.secrets.env infra/secrets/ocr-worker.secrets.enc.env`
 once.
 
-`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` (for the `minio` compose service,
-which this repo also didn't have before) still live in
-`infra/secrets/dms-core.secrets.env`, since MinIO itself is shared
-infrastructure, not ocr-worker-specific.
+`OCR_JOB_TOKEN_SECRET` (the HMAC key dms-core signs per-job read grants
+with) lives in `infra/secrets/dms-core.secrets.env`: dms-core mints the
+grants and the worker only presents them, so the worker never holds that
+secret. MinIO is gone entirely -- this service owns no object storage.
 
 ## Docker
 

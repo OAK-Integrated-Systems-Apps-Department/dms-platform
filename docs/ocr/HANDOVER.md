@@ -210,7 +210,7 @@ rule: **~3.4 GiB per pool process plus a ~1.5 GiB shared floor.**
 | 2 (default) | ~8.5 GiB | ~4 GiB | **16 GB recommended** |
 | 4 | ~15 GiB | ~4 GiB | **24 GB** |
 
-"Rest of the stack" is Postgres, RabbitMQ, Redis, MinIO, Keycloak,
+"Rest of the stack" is Postgres, RabbitMQ, Redis, SeaweedFS, Keycloak,
 dms-core and the frontend. Do not run the worker on a box sized only for
 its average: inference memory is spiky, and the failure mode is the
 kernel picking a victim.

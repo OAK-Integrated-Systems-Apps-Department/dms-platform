@@ -2,7 +2,7 @@ package com.oak.dms.outbox;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.oak.dms.audit.AuditService;
+import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.messaging.RabbitMqConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

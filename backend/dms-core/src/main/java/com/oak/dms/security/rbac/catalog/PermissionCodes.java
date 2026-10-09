@@ -147,4 +147,23 @@ public final class PermissionCodes {
     // WatermarkTemplateService#delete for the reasoning.
     public static final String DW_WATERMARK_TEMPLATE_CREATE = "dw.configure-watermark-policy.create-template";
     public static final String DW_WATERMARK_TEMPLATE_UPDATE = "dw.configure-watermark-policy.update-template";
+
+    // OCR & Scanning (module OS). These codes are NOT new - V10 has seeded all
+    // seven since the fine-grained catalogue landed, and the Roles screen has
+    // always listed them. What was missing was anything using them: the OCR
+    // branch shipped its routes with no permission check at all. No migration
+    // is needed to start enforcing them, only these constants.
+    //
+    // Note they are granted to no role by default. TENANT_ADMIN and
+    // PLATFORM_ADMIN hold every permission implicitly, so an administrator sees
+    // the OCR screens immediately; everybody else needs an explicit grant,
+    // which is the intended default for a capability that reads document
+    // content.
+    public static final String OS_OCR_TRIGGER = "os.perform-ocr-extraction.trigger";
+    public static final String OS_OCR_EDIT_TEXT = "os.perform-ocr-extraction.edit-text";
+    public static final String OS_OCR_TEMPLATE_CREATE = "os.configure-ocr-zones-templates.create-template";
+    public static final String OS_OCR_TEMPLATE_UPDATE = "os.configure-ocr-zones-templates.update-template";
+    public static final String OS_OCR_TEMPLATE_DELETE = "os.configure-ocr-zones-templates.delete-template";
+    public static final String OS_REVIEW_VIEW_QUEUE = "os.review-ocr-exceptions.view-queue";
+    public static final String OS_REVIEW_RESOLVE = "os.review-ocr-exceptions.resolve";
 }

@@ -1,6 +1,8 @@
 package com.oak.dms.ocrworker;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,4 +24,23 @@ public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, UU
      */
     Optional<ProcessingJob> findTopByReferenceTypeAndReferenceIdAndJobTypeOrderByCreatedAtDesc(
             String referenceType, UUID referenceId, String jobType);
+
+    /**
+     * How much OCR work this tenant already has in flight - the number
+     * {@code OcrEnqueueService} weighs against {@code maxQueuedPerTenant}.
+     * <p>
+     * Counts queued AND processing. Counting only queued would let the limit
+     * be evaded by a slow worker: with ten long-running jobs and an empty
+     * queue it would read zero and admit another two thousand.
+     */
+    // 'ocr' / 'queued' / 'processing' as literals: they are the values V69's
+    // own CHECK constraints allow, so the query and the constraint are read
+    // from the same place. ProcessingJob's constants hold the same strings.
+    @Query("""
+            select count(j) from ProcessingJob j
+            where j.tenantId = :tenantId
+              and j.jobType = 'ocr'
+              and j.status in ('queued', 'processing')
+            """)
+    long countActiveOcrJobsForTenant(@Param("tenantId") UUID tenantId);
 }

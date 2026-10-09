@@ -4,8 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
-import com.oak.dms.metadata.DocumentTypeFieldService;
-import com.oak.dms.metadata.MetadataValidationService;
+import com.oak.dms.metadata.entity.DocumentMetadata;
+import com.oak.dms.metadata.entity.DocumentMetadata.FieldValue;
+import com.oak.dms.metadata.entity.DocumentMetadataId;
+import com.oak.dms.metadata.repository.DocumentMetadataRepository;
+import com.oak.dms.metadata.service.DocumentTypeFieldService;
+import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.security.auth.TenantContext;
@@ -27,7 +31,27 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** See {@link DocumentMetadataService}. */
+/**
+ * See {@link DocumentMetadataService}.
+ *
+ * <h2>Storage model</h2>
+ * Values live in {@code document_metadata} - one row per document, with a
+ * JSONB map of {@code fieldId -> }{@link FieldValue}{@code (v, src, conf)}.
+ *
+ * <p>This class used to write {@code document_metadata_values}, one row per
+ * (document, field, ordinal). That table was dropped by V36, which replaced
+ * it with the map above, and this service was ported onto it as part of the
+ * watermarking/OCR merge. The port is not a compromise: {@code FieldValue}
+ * already carries {@code src} and {@code conf}, which are exactly the two
+ * things the OCR path needs beyond the value itself, and a multi-select is a
+ * {@code List} in one place rather than N rows that have to be re-sorted by
+ * ordinal on every read.
+ *
+ * <p>Everything else is kept deliberately: the alias map, "manual always
+ * wins", the best-effort parse that skips one bad OCR value rather than
+ * losing the batch, the comma-tolerant number parse, and the date formats the
+ * frontend's inputs can actually read back.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -46,8 +70,11 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
             "total_amount", "amount",
             "id_number", "purchase_order_number");
 
+    static final String SOURCE_MANUAL = "manual";
+    static final String SOURCE_OCR = "ocr";
+
     private final DocumentRepository documentRepository;
-    private final DocumentMetadataValueRepository metadataValueRepository;
+    private final DocumentMetadataRepository documentMetadataRepository;
     private final DocumentTypeFieldService documentTypeFieldService;
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
@@ -62,20 +89,24 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         Map<UUID, DocumentTypeSchemaResponse.SchemaField> fieldsById = schema.fields().stream()
                 .collect(Collectors.toMap(DocumentTypeSchemaResponse.SchemaField::fieldId, f -> f));
 
-        Map<UUID, List<DocumentMetadataValue>> rowsByField = metadataValueRepository
-                .findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId).stream()
-                .filter(row -> fieldsById.containsKey(row.getFieldId()))
-                .collect(Collectors.groupingBy(DocumentMetadataValue::getFieldId));
-
+        Map<String, FieldValue> stored = storedValues(tenantId, documentId);
         Map<String, Object> result = new LinkedHashMap<>();
-        for (var entry : rowsByField.entrySet()) {
-            DocumentTypeSchemaResponse.SchemaField field = fieldsById.get(entry.getKey());
-            List<String> values = entry.getValue().stream()
-                    .sorted(java.util.Comparator.comparingInt(DocumentMetadataValue::getValueOrdinal))
-                    .map(row -> displayValue(row, field.dataType()))
-                    .toList();
-            result.put(field.fieldKey(), "multi_select".equals(field.dataType()) ? values : values.get(0));
+        // Schema order, not map order: the form renders these in the order
+        // the fields are configured, and a JSONB map has no order worth
+        // relying on.
+        for (DocumentTypeSchemaResponse.SchemaField field : schema.fields()) {
+            FieldValue value = stored.get(field.fieldId().toString());
+            if (value == null || value.v() == null) {
+                continue;
+            }
+            Object display = displayValue(value.v(), field.dataType());
+            if (display != null) {
+                result.put(field.fieldKey(), display);
+            }
         }
+        // A value whose field is no longer on the type's schema is left out,
+        // same as before - fieldsById is what decides, and the loop above
+        // only walks fields that are in it.
         return result;
     }
 
@@ -85,17 +116,17 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         UUID tenantId = TenantContext.getTenantId();
         Document document = requireDocument(documentId, tenantId);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
-        writeValues(document, tenantId, schema, valuesByFieldKey, "manual", null, enforceMandatory);
+        writeValues(document, tenantId, schema, valuesByFieldKey, SOURCE_MANUAL, null, enforceMandatory);
     }
 
-    // REQUIRES_NEW, not the default REQUIRED: DocumentServiceImpl#runOcr (itself
-    // @Transactional) calls this and deliberately catches any failure so a bad
-    // OCR-mapping never breaks an otherwise-successful OCR response. But
-    // catching a RuntimeException from a call into a *participating*
-    // @Transactional method doesn't undo Spring's markRollbackOnly on the
-    // shared transaction -- the caller's catch would still hit
-    // UnexpectedRollbackException at commit. A separate physical transaction
-    // means a failure/rollback in here is fully contained.
+    // REQUIRES_NEW, not the default REQUIRED: callers (the OCR events consumer
+    // and the reconciler) deliberately catch any failure so a bad OCR-mapping
+    // never breaks an otherwise-successful OCR run. But catching a
+    // RuntimeException from a call into a *participating* @Transactional
+    // method doesn't undo Spring's markRollbackOnly on the shared transaction
+    // -- the caller's catch would still hit UnexpectedRollbackException at
+    // commit. A separate physical transaction means a failure/rollback in here
+    // is fully contained.
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void applyOcrFields(UUID documentId, Map<String, Object> ocrFieldsRaw) {
@@ -106,16 +137,11 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         // "manual" is the only source a re-run must never clobber -- an
         // earlier OCR-sourced value (or no value at all) is fair game for a
         // fresh OCR result to replace, which is what makes re-running OCR
-        // for a field actually update anything after the first pass. Only
-        // one row's source needs checking per field: every row for one
-        // field_id shares the same source (writeValues always replaces the
-        // full set together), so the first one found is representative.
-        Map<UUID, String> sourceByFieldId = metadataValueRepository
-                .findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId).stream()
-                .collect(Collectors.toMap(DocumentMetadataValue::getFieldId, DocumentMetadataValue::getSource, (a, b) -> a));
+        // for a field actually update anything after the first pass.
+        Map<String, FieldValue> stored = storedValues(tenantId, documentId);
 
         // ocr-worker now only ever returns fields it was actually asked to
-        // extract (selectable-OCR-field-extraction) -- field.ocrExtractable()
+        // extract (selectable OCR field extraction) -- field.ocrExtractable()
         // is no longer the right gate here; iterate directly over whatever
         // keys ocr-worker's response actually contains.
         Map<String, DocumentTypeSchemaResponse.SchemaField> fieldsByKey = schema.fields().stream()
@@ -129,7 +155,11 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
             if (field == null) {
                 field = fieldsByKey.get(OCR_FIELD_ALIASES.get(fieldKey));
             }
-            if (field == null || "manual".equals(sourceByFieldId.get(field.fieldId()))) {
+            if (field == null) {
+                continue;
+            }
+            FieldValue existing = stored.get(field.fieldId().toString());
+            if (existing != null && SOURCE_MANUAL.equals(existing.src())) {
                 continue;
             }
             if (entry.getValue() instanceof Map<?, ?> ocrField && ocrField.get("value") instanceof String value && !value.isBlank()) {
@@ -137,14 +167,14 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                 // plain string (see extraction.py's
                 // requested_fields_to_output_dict) so it still fits this
                 // sparse map's `{value, confidence, bbox}` shape -- decode it
-                // back into a real List<String> here so writeValues'
-                // toStringList sees a Collection (one metadata row per
-                // selected value) instead of one row containing the raw
-                // "[\"a\",\"b\"]" text.
+                // back into a real List<String> here so writeValues sees a
+                // Collection and stores a list, instead of one value
+                // containing the raw "[\"a\",\"b\"]" text.
                 Object decodedValue = value;
                 if ("multi_select".equals(field.dataType())) {
                     try {
-                        decodedValue = objectMapper.readValue(value, objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+                        decodedValue = objectMapper.readValue(value,
+                                objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
                     } catch (JsonProcessingException e) {
                         log.warn("Could not decode multi_select OCR value for field '{}' on document {}: {}",
                                 field.fieldKey(), document.getDocumentId(), e.getMessage());
@@ -158,15 +188,16 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
             }
         }
         if (!toApply.isEmpty()) {
-            writeValues(document, tenantId, schema, toApply, "ocr", confidenceByFieldKey, false);
+            writeValues(document, tenantId, schema, toApply, SOURCE_OCR, confidenceByFieldKey, false);
         }
     }
 
     private void writeValues(Document document, UUID tenantId, DocumentTypeSchemaResponse schema,
-                              Map<String, Object> valuesByFieldKey, String source,
-                              Map<String, BigDecimal> confidenceByFieldKey, boolean enforceMandatory) {
+                             Map<String, Object> valuesByFieldKey, String source,
+                             Map<String, BigDecimal> confidenceByFieldKey, boolean enforceMandatory) {
         if (enforceMandatory) {
-            List<ValidationError> errors = metadataValidationService.validate(document.getDocumentTypeId(), null, valuesByFieldKey);
+            List<ValidationError> errors = metadataValidationService
+                    .validate(document.getDocumentTypeId(), null, valuesByFieldKey);
             List<ValidationError> blocking = errors.stream().filter(e -> "error".equals(e.severity())).toList();
             if (!blocking.isEmpty()) {
                 throw new MetadataValidationFailedException(blocking);
@@ -179,65 +210,114 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         // OCR-sourced values are a best-effort batch: ocr-worker's regexes
         // (see extraction.py's _DATE_RE) can hand back a date/number format
         // this schema's field type can't parse. One bad field must not
-        // throw away the other fields OCR got right, so rows are built
-        // (and validated) BEFORE the old value is deleted, and a parse
-        // failure here is skipped rather than propagated -- unlike a manual
-        // save, where the same failure should still reject the whole call
-        // so the user gets clear feedback.
-        boolean bestEffort = "ocr".equals(source);
+        // throw away the other fields OCR got right, so each value is parsed
+        // on its own and a parse failure is skipped rather than propagated --
+        // unlike a manual save, where the same failure should still reject
+        // the whole call so the user gets clear feedback.
+        boolean bestEffort = SOURCE_OCR.equals(source);
+
+        Map<String, FieldValue> merged = new LinkedHashMap<>(storedValues(tenantId, document.getDocumentId()));
+        boolean changed = false;
 
         for (var entry : valuesByFieldKey.entrySet()) {
             DocumentTypeSchemaResponse.SchemaField field = fieldsByKey.get(entry.getKey());
             if (field == null) {
                 continue; // not part of this document type's current schema -- ignore, don't reject
             }
+            String key = field.fieldId().toString();
             List<String> rawValues = toStringList(entry.getValue());
             if (rawValues.isEmpty()) {
                 // A blank value explicitly clears the field -- always applied,
                 // even for an OCR batch, since it's not something that could
                 // have failed to parse.
-                metadataValueRepository.deleteByDocumentIdAndFieldIdAndTenantId(document.getDocumentId(), field.fieldId(), tenantId);
+                changed |= merged.remove(key) != null;
                 continue;
             }
-            BigDecimal confidence = confidenceByFieldKey != null ? confidenceByFieldKey.get(field.fieldKey()) : null;
-
-            List<DocumentMetadataValue> rows = new ArrayList<>();
+            Object typed;
             try {
-                for (int ordinal = 0; ordinal < rawValues.size(); ordinal++) {
-                    rows.add(buildRow(tenantId, document.getDocumentId(), field, rawValues.get(ordinal), ordinal, source, confidence));
-                }
+                typed = "multi_select".equals(field.dataType())
+                        ? rawValues.stream().map(raw -> typedValue(field, raw)).toList()
+                        : typedValue(field, rawValues.get(0));
             } catch (MetadataValidationFailedException e) {
                 if (bestEffort) {
-                    log.warn("Skipping OCR value for field '{}' on document {}: {}", field.fieldKey(), document.getDocumentId(), e.getMessage());
+                    log.warn("Skipping OCR value for field '{}' on document {}: {}",
+                            field.fieldKey(), document.getDocumentId(), e.getMessage());
                     continue;
                 }
                 throw e;
             }
+            BigDecimal confidence = confidenceByFieldKey != null ? confidenceByFieldKey.get(field.fieldKey()) : null;
+            merged.put(key, new FieldValue(typed, source, confidence));
+            changed = true;
+        }
 
-            metadataValueRepository.deleteByDocumentIdAndFieldIdAndTenantId(document.getDocumentId(), field.fieldId(), tenantId);
-            rows.forEach(metadataValueRepository::save);
+        if (changed) {
+            persist(document, tenantId, schema, merged);
         }
     }
 
-    private DocumentMetadataValue buildRow(UUID tenantId, UUID documentId, DocumentTypeSchemaResponse.SchemaField field,
-                                            String rawValue, int ordinal, String source, BigDecimal confidence) {
-        DocumentMetadataValue.DocumentMetadataValueBuilder row = DocumentMetadataValue.builder()
-                .tenantId(tenantId)
-                .documentId(documentId)
-                .fieldId(field.fieldId())
-                .valueOrdinal(ordinal)
-                .source(source)
-                .confidenceScore(confidence);
+    /**
+     * Writes the whole map back, creating the row if this document has no
+     * metadata yet.
+     *
+     * <p>{@code documentTypeId} and {@code schemaVersion} are refreshed on
+     * every write, matching what {@code ImportRecordCreator#writeMetadata}
+     * does: the row records which schema the values were saved against, and a
+     * stale version there is worse than no version - it would make a later
+     * reader resolve the field ids against the wrong field set.
+     */
+    private void persist(Document document, UUID tenantId, DocumentTypeSchemaResponse schema,
+                         Map<String, FieldValue> values) {
+        DocumentMetadataId id = new DocumentMetadataId(tenantId, document.getDocumentId());
+        UUID userId = TenantContext.getUserId();
+        DocumentMetadata metadata = documentMetadataRepository.findById(id)
+                .map(existing -> {
+                    existing.setFieldValues(new java.util.HashMap<>(values));
+                    existing.setDocumentTypeId(document.getDocumentTypeId());
+                    existing.setSchemaVersion(schema.schemaVersion());
+                    existing.setUpdatedBy(userId);
+                    existing.setUpdatedAt(OffsetDateTime.now());
+                    return existing;
+                })
+                .orElseGet(() -> DocumentMetadata.builder()
+                        .id(id)
+                        .documentTypeId(document.getDocumentTypeId())
+                        .schemaVersion(schema.schemaVersion())
+                        .fieldValues(new java.util.HashMap<>(values))
+                        .createdBy(userId)
+                        .build());
+        documentMetadataRepository.save(metadata);
+    }
 
-        switch (field.dataType()) {
-            case "number", "decimal" -> row.valueNumber(parseNumber(field, rawValue));
-            case "date", "datetime" -> row.valueDate(parseDate(field, rawValue));
-            case "boolean" -> row.valueBoolean(Boolean.parseBoolean(rawValue));
-            // user_ref/lookup: stored as text -- no picker UI yet to resolve a
-            // real value_ref_id (see DocumentMetadataValue's own javadoc).
-            default -> row.valueText(rawValue);
-        }
-        return row.build();
+    private Map<String, FieldValue> storedValues(UUID tenantId, UUID documentId) {
+        return documentMetadataRepository.findById(new DocumentMetadataId(tenantId, documentId))
+                .map(DocumentMetadata::getFieldValues)
+                .orElseGet(Map::of);
+    }
+
+    /**
+     * One raw string as the type the JSON column should hold: a
+     * {@link BigDecimal} for numbers, an ISO-8601 string for dates, a
+     * {@link Boolean} for booleans, the string itself otherwise.
+     *
+     * <p>Not the raw string for everything, even though JSONB would accept
+     * it: a decimal stored as text sorts and compares as text, and
+     * {@code "9"} &gt; {@code "10"} is the kind of bug that surfaces as a
+     * wrong search result months later.
+     */
+    private Object typedValue(DocumentTypeSchemaResponse.SchemaField field, String rawValue) {
+        return switch (field.dataType()) {
+            case "number", "decimal" -> parseNumber(field, rawValue);
+            // ISO-8601 text rather than a temporal object: the JSON mapper has
+            // no type information to read it back with, so the string IS the
+            // storage format. displayValue trims it to what the form's input
+            // can parse.
+            case "date", "datetime" -> parseDate(field, rawValue).toString();
+            case "boolean" -> Boolean.parseBoolean(rawValue);
+            // user_ref/lookup: stored as text -- no picker UI yet to resolve
+            // a real reference id.
+            default -> rawValue;
+        };
     }
 
     private BigDecimal parseNumber(DocumentTypeSchemaResponse.SchemaField field, String rawValue) {
@@ -288,21 +368,47 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     }
 
     /**
-     * {@code row.getValueDate()}'s raw {@code OffsetDateTime#toString()} (e.g.
-     * {@code "2026-05-01T00:00Z"}) doesn't match what an {@code <input type="date">}
-     * (wants {@code "yyyy-MM-dd"}) or {@code type="datetime-local"} (wants
-     * {@code "yyyy-MM-ddTHH:mm"}) will parse, so it renders as blank on the
-     * frontend even though the value round-tripped correctly through the DB.
+     * The stored value as the frontend's input will parse it back.
+     *
+     * <p>A stored date is full ISO-8601 (e.g. {@code "2026-05-01T00:00Z"}),
+     * which an {@code <input type="date">} (wants {@code yyyy-MM-dd}) and
+     * {@code type="datetime-local"} (wants {@code yyyy-MM-ddTHH:mm}) both
+     * render as blank. Trimming it here is what makes a value that
+     * round-tripped correctly through the database also round-trip through
+     * the form.
+     *
+     * <p>A multi_select stays a {@code List<String>}; everything else becomes
+     * a single string, which is the shape {@link #getValues} promises.
      */
-    private static String displayValue(DocumentMetadataValue row, String dataType) {
-        if (row.getValueText() != null) return row.getValueText();
-        if (row.getValueNumber() != null) return row.getValueNumber().toPlainString();
-        if (row.getValueDate() != null) {
-            return "datetime".equals(dataType) ? row.getValueDate().toLocalDateTime().toString() : row.getValueDate().toLocalDate().toString();
+    private static Object displayValue(Object stored, String dataType) {
+        if (stored instanceof Collection<?> collection) {
+            return collection.stream().map(v -> String.valueOf(displayScalar(v, dataType))).toList();
         }
-        if (row.getValueBoolean() != null) return row.getValueBoolean().toString();
-        if (row.getValueRefId() != null) return row.getValueRefId().toString();
-        return "";
+        return displayScalar(stored, dataType);
+    }
+
+    private static Object displayScalar(Object stored, String dataType) {
+        if (stored == null) {
+            return null;
+        }
+        if (stored instanceof BigDecimal number) {
+            return number.toPlainString();
+        }
+        if ("date".equals(dataType) || "datetime".equals(dataType)) {
+            try {
+                OffsetDateTime parsed = OffsetDateTime.parse(String.valueOf(stored));
+                return "datetime".equals(dataType)
+                        ? parsed.toLocalDateTime().toString()
+                        : parsed.toLocalDate().toString();
+            } catch (DateTimeParseException e) {
+                // Stored by something that didn't go through typedValue, or
+                // by an older write. Shown as-is rather than hidden: a value
+                // the form cannot parse is still better than a blank field
+                // that looks like no value was ever saved.
+                return String.valueOf(stored);
+            }
+        }
+        return String.valueOf(stored);
     }
 
     private Document requireDocument(UUID documentId, UUID tenantId) {

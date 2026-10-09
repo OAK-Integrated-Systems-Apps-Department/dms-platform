@@ -203,9 +203,10 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
     }
 
     private boolean hasDocumentMetadataValues(UUID fieldId, UUID tenantId) {
-        // Nothing writes document_metadata yet (module 2.5 / A11 will), so
-        // in practice this is false until then and deletion is only blocked
-        // by a schema mapping - but it's a real check, not a placeholder.
+        // document_metadata is written by bulk import, by a manual save and
+        // by OCR (DocumentMetadataServiceImpl), so this is a live check that
+        // really does block deleting a field that documents still carry a
+        // value for - not, as it once was, a check that was always false.
         return documentMetadataRepository.existsByTenantIdAndFieldKey(tenantId, fieldId.toString());
     }
 

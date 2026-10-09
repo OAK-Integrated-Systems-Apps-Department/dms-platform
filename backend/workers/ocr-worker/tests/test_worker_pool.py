@@ -61,15 +61,16 @@ class _FakePipeline:
     def __init__(self):
         self.calls: list[tuple] = []
 
-    def process_version(self, version_id, correlation_id=None, requested_fields=None, resolve_fields_from_db=False):
+    def process_version(self, version_id, correlation_id=None, requested_fields=None,
+                        resolve_fields_from_db=False, read_token=None):
         self.calls.append(("process_version", version_id, correlation_id, requested_fields, resolve_fields_from_db))
         return "version-result"
 
-    def process_zone_request(self, version_id, zone_names, correlation_id=None):
+    def process_zone_request(self, version_id, zone_names, correlation_id=None, read_token=None):
         self.calls.append(("process_zone_request", version_id, zone_names, correlation_id))
         return "zone-result"
 
-    def process_rubber_band_request(self, version_id, page, box, correlation_id=None):
+    def process_rubber_band_request(self, version_id, page, box, correlation_id=None, read_token=None):
         self.calls.append(("process_rubber_band_request", version_id, page, box, correlation_id))
         return "rubber-band-result"
 
@@ -134,7 +135,7 @@ def test_run_process_version_asserts_if_scheduled_before_init(monkeypatch):
 # capping, eager model warm-up (real PaddleOCR/Docling construction --
 # needs the actual installed deps this repo ships, run inside the real
 # container), and readiness tracking. No DB/MinIO reachability required:
-# session_factory/ObjectStorage are both lazily-connecting (see db.py/
+# session_factory/DocumentContentClient are both lazily-connecting (see db.py/
 # storage.py), so only the model-construction step does real work here.
 # ----------------------------------------------------------------------
 @pytest.mark.model

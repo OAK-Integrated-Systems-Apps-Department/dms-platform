@@ -60,7 +60,7 @@ def _pool_worker_init(settings: Settings, threads_per_process: int, ready_counte
     from .ocr_engine import PaddleOcrEngine
     from .orientation import NullOrientationClassifier, PaddleDocOrientationClassifier
     from .pipeline import OcrPipeline
-    from .storage import ObjectStorage
+    from .content_client import DocumentContentClient
 
     global _pipeline
     layout_engine = LayoutEngine(
@@ -93,7 +93,7 @@ def _pool_worker_init(settings: Settings, threads_per_process: int, ready_counte
     _pipeline = OcrPipeline(
         settings=settings,
         session_factory=session_factory,
-        storage=ObjectStorage(settings),
+        content=DocumentContentClient(settings),
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
         orientation_classifier=orientation_classifier,
@@ -122,6 +122,7 @@ def _run_process_version(
     correlation_id: uuid.UUID | None,
     requested_fields: "list[FieldSpec] | None",
     resolve_fields_from_db: bool = False,
+    read_token: str | None = None,
 ) -> "ProcessingOutcome":
     assert _pipeline is not None, "pool worker task ran before its initializer completed"
     return _pipeline.process_version(
@@ -129,6 +130,7 @@ def _run_process_version(
         correlation_id=correlation_id,
         requested_fields=requested_fields,
         resolve_fields_from_db=resolve_fields_from_db,
+        read_token=read_token,
     )
 
 
@@ -193,16 +195,19 @@ def _run_process_rubber_band(
     return _pipeline.process_rubber_band_request(version_id, page, box, correlation_id=correlation_id)
 
 
-def _run_render_page(version_id: uuid.UUID, page: int, dpi: int | None) -> "PageRender":
+def _run_render_page(
+    version_id: uuid.UUID, page: int, dpi: int | None, read_token: str | None = None
+) -> "PageRender":
     assert _pipeline is not None, "pool worker task ran before its initializer completed"
-    return _pipeline.render_page_png(version_id, page, dpi)
+    return _pipeline.render_page_png(version_id, page, dpi, read_token=read_token)
 
 
 def _run_preview_rubber_band(
-    version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+    version_id: uuid.UUID, page: int, box: tuple[float, float, float, float],
+    read_token: str | None = None
 ) -> dict:
     assert _pipeline is not None, "pool worker task ran before its initializer completed"
-    return _pipeline.preview_rubber_band(version_id, page, box)
+    return _pipeline.preview_rubber_band(version_id, page, box, read_token=read_token)
 
 
 
@@ -310,10 +315,15 @@ class OcrProcessPool:
         correlation_id: uuid.UUID | None = None,
         requested_fields: "list[FieldSpec] | None" = None,
         resolve_fields_from_db: bool = False,
+        read_token: str | None = None,
     ) -> ProcessFuture:
+        # read_token is the grant dms-core minted for this job. It is the only
+        # way this worker can read the document's bytes, and it is passed
+        # through to the pipeline rather than stored anywhere: it is a bearer
+        # credential for one version, valid for minutes.
         return self._pool.schedule(
             _run_process_version,
-            args=(version_id, correlation_id, requested_fields, resolve_fields_from_db),
+            args=(version_id, correlation_id, requested_fields, resolve_fields_from_db, read_token),
             timeout=self.task_timeout_s(),
         )
 
@@ -336,7 +346,8 @@ class OcrProcessPool:
         )
 
     def schedule_render_page(
-        self, version_id: uuid.UUID, page: int, dpi: int | None = None
+        self, version_id: uuid.UUID, page: int, dpi: int | None = None,
+        read_token: str | None = None
     ) -> ProcessFuture:
         # A page render is seconds at worst, not the multi-minute budget a
         # whole document gets -- a reviewer waiting on an image should get
@@ -344,15 +355,16 @@ class OcrProcessPool:
         # is still the right place to run it: fitz page rendering is the
         # same native code whose memory the pool exists to isolate.
         return self._pool.schedule(
-            _run_render_page, args=(version_id, page, dpi),
+            _run_render_page, args=(version_id, page, dpi, read_token),
             timeout=self._settings.ocr_preview_timeout_s,
         )
 
     def schedule_preview_rubber_band(
-        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float]
+        self, version_id: uuid.UUID, page: int, box: tuple[float, float, float, float],
+        read_token: str | None = None
     ) -> ProcessFuture:
         return self._pool.schedule(
-            _run_preview_rubber_band, args=(version_id, page, box),
+            _run_preview_rubber_band, args=(version_id, page, box, read_token),
             timeout=self._settings.ocr_preview_timeout_s,
         )
 

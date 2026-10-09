@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, XCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -17,8 +17,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { FolderSelect } from "@/components/folders/folder-select"
 import { getTooltip } from "@/lib/tooltips"
-import { ApiError } from "@/lib/api-error"
 import { fetchDocumentTypeSchema } from "@/lib/document-type-fields/api"
 import { fetchAllDocumentTypes } from "@/lib/document-types/api"
 import {
@@ -27,10 +27,25 @@ import {
   rerunOcr,
   saveDocumentMetadata,
   uploadDocument,
-  type DocumentVersionResponse,
+  type IngestionTicketDto,
   type MetadataValues,
   type OcrStatusResponse,
 } from "@/lib/documents/api"
+
+/**
+ * What the form tracks once the file has been accepted.
+ *
+ * Not a DocumentVersionResponse any more: this upload goes through the
+ * malware scan gate, so there is no version until the file comes back clean.
+ * The ingestion ticket is what exists in the meantime, and with a synchronous
+ * scanner it already carries the ids; with a cloud scanner it is `pending` and
+ * the ticket is what gets polled. OCR starts only after the clean verdict, so
+ * the OCR poll below is enabled only once there is a versionId.
+ */
+interface ScannedVersion {
+  documentId: string
+  versionId: string
+}
 
 type UploadPhase = "idle" | "uploading" | "queued" | "processing" | "done" | "failed"
 
@@ -85,13 +100,26 @@ export function DocumentUploadForm() {
   const activeDocumentTypes = (documentTypesQuery.data ?? []).filter((t) => t.status === "active")
 
   const [file, setFile] = useState<File | null>(null)
+  // "" until the user picks one; the effective type falls back to the
+  // catalogue default below. Derived rather than written by an effect: the
+  // default is a function of the loaded catalogue, not a separate fact.
   const [documentType, setDocumentType] = useState("")
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+  /** Shown as the document's name. Defaults to the filename, which is what people expect. */
+  const [title, setTitle] = useState("")
+  /** Where the document is filed. Null = the top level, same as the browser's upload. */
+  const [folderId, setFolderId] = useState<string | null>(null)
+  // null until the user changes the selection: the OCR field choice is the
+  // schema default until somebody says otherwise, and keeping "untouched"
+  // distinct from "chose exactly the defaults" is what lets the selection
+  // follow a document-type change without an effect writing state.
+  const [fieldSelection, setFieldSelection] = useState<Set<string> | null>(null)
   const [fieldValues, setFieldValues] = useState<MetadataValues>({})
   const [uploading, setUploading] = useState(false)
   const [savingFields, setSavingFields] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [version, setVersion] = useState<DocumentVersionResponse | null>(null)
+  const [version, setVersion] = useState<ScannedVersion | null>(null)
+  /** The gate's answer while it is still 'pending', or when it refused the file. */
+  const [ticket, setTicket] = useState<IngestionTicketDto | null>(null)
   // Bumped on every reset so the native <input type="file"> (whose
   // displayed filename can't be cleared just by resetting file to null --
   // the browser keeps showing it) remounts empty. Real bug found live: with
@@ -111,15 +139,17 @@ export function DocumentUploadForm() {
   const appliedResultKey = useRef<string | null>(null)
 
   // Defaults to GENERAL once the real catalog loads (falling back to
-  // whichever active type comes first if GENERAL isn't configured for
-  // this tenant) -- only when the user hasn't already picked something.
-  useEffect(() => {
-    if (documentType || activeDocumentTypes.length === 0) return
-    const preferred = activeDocumentTypes.find((t) => t.typeCode === "GENERAL") ?? activeDocumentTypes[0]
-    setDocumentType(preferred.typeCode)
-  }, [activeDocumentTypes, documentType])
-
-  const selectedType = activeDocumentTypes.find((t) => t.typeCode === documentType)
+  // whichever active type comes first if GENERAL isn't configured for this
+  // tenant), unless the user has picked something.
+  //
+  // Derived, not written by an effect. The old version set state from an
+  // effect the moment the catalogue arrived, which is a render just to copy
+  // a value that was already computable - and it meant the form briefly had
+  // no type selected at all.
+  const preferredType =
+    activeDocumentTypes.find((t) => t.typeCode === "GENERAL") ?? activeDocumentTypes[0]
+  const effectiveDocumentType = documentType || preferredType?.typeCode || ""
+  const selectedType = activeDocumentTypes.find((t) => t.typeCode === effectiveDocumentType)
   const schemaQuery = useQuery({
     queryKey: ["document-type-schema", selectedType?.documentTypeId],
     queryFn: () => fetchDocumentTypeSchema(selectedType!.documentTypeId),
@@ -127,22 +157,39 @@ export function DocumentUploadForm() {
     retry: false,
   })
 
-  // Clears any leftover field values when the user switches document type
-  // before uploading -- once a version exists, the type is locked to
-  // whatever was actually uploaded, so this no longer applies. The file
-  // itself is untouched by a document-type change either way.
-  useEffect(() => {
-    if (!version) setFieldValues({})
-  }, [documentType, version])
+  /**
+   * The OCR field selection actually in force.
+   *
+   * Untouched (`fieldSelection === null`) means the schema's own defaults, so
+   * switching document type before uploading simply changes what this
+   * computes - no effect, no stale selection. Once the user has chosen, their
+   * set is reconciled against the current schema, which drops keys the new
+   * type doesn't have and keeps the ones it does (reconcileRequestedFields).
+   */
+  const selectedFields = useMemo(
+    () =>
+      fieldSelection === null
+        ? defaultRequestedFields(schemaQuery.data)
+        : reconcileRequestedFields(fieldSelection, schemaQuery.data),
+    [fieldSelection, schemaQuery.data]
+  )
 
-  // Resets the OCR field selection to the new type's defaults whenever its
-  // schema (re)loads, keeping any previously-selected key that's still
-  // valid on the new type -- see reconcileRequestedFields. Only applies
-  // pre-upload; once a version exists the selection is locked in with it.
-  useEffect(() => {
-    if (version) return
-    setSelectedFields((prev) => (prev.size === 0 ? defaultRequestedFields(schemaQuery.data) : reconcileRequestedFields(prev, schemaQuery.data)))
-  }, [schemaQuery.data, version])
+  /**
+   * Switching document type before uploading abandons any values typed
+   * against the old type's fields.
+   *
+   * Done in the change handler rather than an effect on `documentType`: it is
+   * a consequence of the user's action, not state that needs synchronising,
+   * and as an effect it also fired once on mount and cleared values that had
+   * just been restored.
+   */
+  function handleDocumentTypeChange(typeCode: string) {
+    setDocumentType(typeCode)
+    if (!version) {
+      setFieldValues({})
+      setFieldSelection(null)
+    }
+  }
 
   const ocrStatusQuery = useQuery({
     queryKey: ["ocr-status", version?.documentId],
@@ -193,14 +240,36 @@ export function DocumentUploadForm() {
 
   async function handleUpload() {
     if (!file || !documentType) return
+    const selectedType = activeDocumentTypes.find((t) => t.typeCode === documentType)
+    if (!selectedType) return
     setUploadError(null)
     setUploading(true)
     try {
-      const response = await uploadDocument(file, documentType, Array.from(selectedFields))
-      setVersion(response)
+      // The scan gate decides, not us: a clean verdict comes back with the
+      // ids, a cloud scanner answers 'pending', and an infected file is
+      // refused outright. OCR is queued server-side only on the clean path,
+      // so there is nothing to start here either way.
+      const result = await uploadDocument(
+        file,
+        selectedType.documentTypeId,
+        title.trim() || file.name,
+        folderId,
+        false,
+        Array.from(selectedFields)
+      )
+      setTicket(result)
       appliedResultKey.current = null
       userTouchedFields.current = new Set()
-      toast.success("Document uploaded. Running OCR…")
+      if (result.status === "clean" && result.documentId && result.versionId) {
+        setVersion({ documentId: result.documentId, versionId: result.versionId })
+        toast.success("Document uploaded. Running OCR…")
+      } else if (result.status === "pending") {
+        toast.success("Uploaded. Scanning for malware before OCR starts…")
+      } else {
+        const refused = result.message ?? "This file was refused by the malware scan."
+        setUploadError(refused)
+        toast.error(refused)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not upload the document."
       setUploadError(message)
@@ -241,8 +310,11 @@ export function DocumentUploadForm() {
   }
 
   function handleToggleField(fieldKey: string) {
-    setSelectedFields((prev) => {
-      const next = new Set(prev)
+    // Seeds from the effective selection, not from the raw override: the first
+    // toggle has to start from whatever the user can currently see ticked -
+    // the schema defaults - or it would clear everything else.
+    setFieldSelection((prev) => {
+      const next = new Set(prev ?? selectedFields)
       if (next.has(fieldKey)) next.delete(fieldKey)
       else next.add(fieldKey)
       return next
@@ -255,9 +327,11 @@ export function DocumentUploadForm() {
   function handleReset() {
     setFile(null)
     setVersion(null)
+    setTicket(null)
+    setTitle("")
     setUploadError(null)
     setFieldValues({})
-    setSelectedFields(new Set())
+    setFieldSelection(null)
     appliedResultKey.current = null
     userTouchedFields.current = new Set()
     setUploadKey((k) => k + 1)
@@ -279,7 +353,7 @@ export function DocumentUploadForm() {
           {version ? (
             <div className="mb-5 flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-[13px] py-[11px]">
               <p className="text-[13px] text-muted-foreground">
-                Reviewing <span className="font-semibold text-foreground">{version.originalFilename}</span> below.
+                Reviewing <span className="font-semibold text-foreground">{ticket?.originalFilename ?? "this document"}</span> below.
               </p>
               <button
                 type="button"
@@ -307,8 +381,8 @@ export function DocumentUploadForm() {
                   <Label htmlFor="documentType">Document type</Label>
                   <select
                     id="documentType"
-                    value={documentType}
-                    onChange={(e) => setDocumentType(e.target.value)}
+                    value={effectiveDocumentType}
+                    onChange={(e) => handleDocumentTypeChange(e.target.value)}
                     disabled={documentTypesQuery.isLoading || activeDocumentTypes.length === 0}
                     className="h-10 w-full appearance-none rounded-btn border border-[var(--border-strong)] bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card disabled:opacity-70"
                   >
@@ -328,6 +402,26 @@ export function DocumentUploadForm() {
                       : "Determines which zone/field template ocr-worker applies, if any."}
                   </p>
                 </div>
+                <div>
+                  {/*
+                    A scanned document is filed like any other, so the folder
+                    is the uploader's choice here rather than something the
+                    OCR flow decides for them. Left at "no folder" it lands at
+                    the top level, exactly as the browser's own upload does -
+                    the same component, so folder access is enforced the same
+                    way on both screens.
+                  */}
+                  <Label htmlFor="scanFolder">Folder</Label>
+                  <FolderSelect
+                    value={folderId ?? ""}
+                    onChange={(next) => setFolderId(next || null)}
+                    disabled={uploading}
+                    className="w-full"
+                  />
+                  <p className="mt-1.5 text-[12px] text-muted-foreground">
+                    Leave empty to file it at the top level.
+                  </p>
+                </div>
               </div>
 
               <FieldChips
@@ -335,8 +429,8 @@ export function DocumentUploadForm() {
                 loading={schemaQuery.isLoading}
                 selected={selectedFields}
                 onToggle={handleToggleField}
-                onSelectAll={() => setSelectedFields(new Set(visibleFieldsOf(schemaQuery.data).map((f) => f.fieldKey)))}
-                onClear={() => setSelectedFields(mandatoryRequestedFields(schemaQuery.data))}
+                onSelectAll={() => setFieldSelection(new Set(visibleFieldsOf(schemaQuery.data).map((f) => f.fieldKey)))}
+                onClear={() => setFieldSelection(mandatoryRequestedFields(schemaQuery.data))}
               />
             </>
           )}
@@ -366,9 +460,17 @@ export function DocumentUploadForm() {
               <div className="flex items-center gap-2.5">
                 <FileText size={18} className="text-primary" />
                 <div>
-                  <p className="text-[14px] font-semibold text-foreground">{version.originalFilename}</p>
+                  <p className="text-[14px] font-semibold text-foreground">
+                    {ticket?.originalFilename ?? file?.name}
+                  </p>
                   <p className="text-[12px] text-muted-foreground">
-                    {version.mimeType} · {version.sizeBytes.toLocaleString()} bytes · scan: {version.scanStatus}
+                    {/* The scan verdict comes from the gate's ticket; the type
+                        and size from the file the user chose, which is the same
+                        thing and saves the ticket carrying a mime type it has
+                        no other use for. */}
+                    {file?.type || "unknown type"} ·{" "}
+                    {(ticket?.sizeBytes ?? file?.size ?? 0).toLocaleString()} bytes · scan:{" "}
+                    {ticket?.status ?? "pending"}
                   </p>
                 </div>
               </div>

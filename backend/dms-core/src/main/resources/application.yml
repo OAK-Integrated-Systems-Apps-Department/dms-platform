@@ -14,26 +14,6 @@ spring:
       pool:
         size: ${SCHEDULING_POOL_SIZE:2}
 
-  servlet:
-    multipart:
-      # Spring Boot's own default is 1MB for both -- verified live: a real
-      # phone-camera photo of a document (the exact kind of file this
-      # page's own upload hint invites -- "PDF, PNG, JPEG, or TIFF")
-      # routinely exceeds that and was failing with a raw
-      # MaxUploadSizeExceededException the frontend had no specific
-      # handling for, surfacing only a generic "An unexpected error
-      # occurred". Raised well past anything a real scanned document,
-      # multi-page PDF, or un-downscaled phone photo would ever reach --
-      # deliberately NOT disabled outright (Spring supports -1 for that):
-      # DocumentServiceImpl#uploadDocument reads the whole file into a
-      # single in-memory byte[] (`in.readAllBytes()`), so with no cap at
-      # all, one oversized upload can exhaust the JVM heap and take the
-      # whole service down for every tenant, not just fail that one
-      # request. 100MB is far beyond any real document while still being
-      # a real, finite ceiling.
-      max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
-      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:100MB}
-
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/dms_dev}
     username: ${DB_USERNAME:postgres}
@@ -55,9 +35,16 @@ spring:
         order_updates: true
 
   # Spring's own multipart default is 1MB, which silently capped uploads
-  # before the scan gate existed. Kept in line with
-  # dms.scanning.max-file-size-bytes below; the scan gate enforces the exact
-  # byte limit itself, this just stops the servlet layer rejecting first.
+  # before the scan gate existed, and which a real phone-camera photo of a
+  # document routinely exceeds - it surfaced as a raw
+  # MaxUploadSizeExceededException and a generic "An unexpected error
+  # occurred" until GlobalExceptionHandler learned to translate it.
+  #
+  # Kept in line with dms.scanning.max-file-size-bytes below; the scan gate
+  # enforces the exact byte limit itself, this just stops the servlet layer
+  # rejecting first. Deliberately NOT disabled outright (Spring supports -1):
+  # a finite ceiling is what stops one oversized upload exhausting the heap
+  # for every tenant.
   servlet:
     multipart:
       max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
@@ -215,6 +202,35 @@ dms:
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
   ocr:
+    # Master switch for the whole OCR feature. OFF by default.
+    #
+    # Off means nothing is published to the queue, no upload path depends on
+    # ocr-worker being reachable, and the internal read endpoint answers 404.
+    # A deployment that doesn't run the worker should be indistinguishable
+    # from one that never had the feature - in particular an ordinary upload
+    # still scans and lands exactly as it would have.
+    enabled: ${OCR_ENABLED:false}
+    # Backpressure, not a quota. Over this, new OCR requests are declined and
+    # left for the backlog sweeper rather than rejected, so a large import
+    # neither fails nor floods RabbitMQ. Per tenant, so one busy tenant can't
+    # starve the rest.
+    max-queued-per-tenant: ${OCR_MAX_QUEUED_PER_TENANT:2000}
+    # Most files from one Bulk Import batch queued for OCR up front; the rest
+    # are marked held-back and drain through the sweeper.
+    max-per-import-batch: ${OCR_MAX_PER_IMPORT_BATCH:500}
+    backlog-sweep-interval-ms: ${OCR_BACKLOG_SWEEP_INTERVAL_MS:30000}
+    backlog-sweep-batch-size: ${OCR_BACKLOG_SWEEP_BATCH_SIZE:100}
+    # Per-job read grants. ocr-worker cannot read storage directly any more -
+    # objects are encrypted at rest - so it asks dms-core for plaintext over
+    # /internal/v1/ocr, presenting BOTH the shared internal token and a
+    # short-lived HMAC grant naming one job, one version and one tenant.
+    # See OcrJobTokenCodec and docs/ocr/internal-endpoint.md.
+    #
+    # Blank refuses every internal read rather than signing with an empty key.
+    # Its own secret: a leak or rotation here must not touch impersonation or
+    # audit correlation.
+    job-token-secret: ${OCR_JOB_TOKEN_SECRET:}
+    job-token-minutes: ${OCR_JOB_TOKEN_MINUTES:30}
     # Safety net (Phase 1 B.1): GET /{documentId}/ocr-status re-applies OCR
     # field results onto document_metadata_values at poll time, on top of
     # dms-core's own OcrEventsConsumer already doing it off the
@@ -562,15 +578,6 @@ dms:
       # Sent by the EventBridge API destination as X-Oak-Scan-Callback-Secret.
       # Blank disables the callback endpoint.
       callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
-
-# Naming deliberately mirrors backend/workers/ocr-worker/src/ocr_worker/config.py's
-# MINIO_* env vars -- dms-core writes the source object here, ocr-worker
-# reads it back from the same bucket/key, so the two must agree.
-minio:
-  endpoint: ${MINIO_ENDPOINT:localhost:9000}
-  access-key: ${MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${MINIO_SECRET_KEY:minioadmin}
-  source-bucket: ${MINIO_SOURCE_BUCKET:oakdms-documents}
 
 management:
   endpoints:

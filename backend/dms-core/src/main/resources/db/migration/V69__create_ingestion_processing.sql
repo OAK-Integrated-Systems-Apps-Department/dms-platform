@@ -2,51 +2,29 @@
 -- (backend/workers/ocr-worker) reads/writes processing_jobs and
 -- ocr_outputs directly; dms-core does not own writes to those two tables,
 -- but they must exist here since this is the database ocr-worker connects
--- to. upload_sessions/malware_scan_results/renditions are included for
--- schema completeness with V5's spec even though nothing writes to them
--- yet (malware scanning -- scan-worker -- and rendition generation are
--- both still unimplemented elsewhere in this repo).
-
-CREATE TABLE upload_sessions (
-    upload_session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants (tenant_id),
-    initiated_by UUID NOT NULL REFERENCES users (user_id),
-    source VARCHAR(30) NOT NULL,
-    status VARCHAR(30) NOT NULL DEFAULT 'pending',
-    quarantine_object_key VARCHAR(1000),
-    document_id UUID REFERENCES documents (document_id),
-    correlation_id UUID,
-    created_by UUID REFERENCES users (user_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by UUID REFERENCES users (user_id),
-    updated_at TIMESTAMPTZ,
-    is_deleted BOOLEAN NOT NULL DEFAULT false,
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT ck_upload_sessions_source CHECK (source IN ('web', 'mobile', 'desktop', 'api', 'bulk_import')),
-    CONSTRAINT ck_upload_sessions_status CHECK (status IN ('pending', 'uploading', 'quarantined', 'completed', 'failed'))
-);
-
-CREATE INDEX ix_upload_sessions_tenant_id ON upload_sessions (tenant_id);
-CREATE INDEX ix_upload_sessions_initiated_by ON upload_sessions (initiated_by);
-CREATE INDEX ix_upload_sessions_document_id ON upload_sessions (document_id);
-CREATE INDEX ix_upload_sessions_correlation_id ON upload_sessions (correlation_id);
-
-CREATE TABLE malware_scan_results (
-    scan_result_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants (tenant_id),
-    version_id UUID REFERENCES document_versions (version_id),
-    upload_session_id UUID REFERENCES upload_sessions (upload_session_id),
-    scanner_name VARCHAR(255) NOT NULL,
-    scan_status VARCHAR(30) NOT NULL,
-    scan_response TEXT,
-    scanned_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_malware_scan_results_status CHECK (scan_status IN ('clean', 'infected', 'failed', 'quarantined'))
-);
-
-CREATE INDEX ix_malware_scan_results_tenant_id ON malware_scan_results (tenant_id);
-CREATE INDEX ix_malware_scan_results_version_id ON malware_scan_results (version_id);
-CREATE INDEX ix_malware_scan_results_upload_session_id ON malware_scan_results (upload_session_id);
+-- to.
+--
+-- MERGE NOTE (OCR branch into the watermarking lineage): this migration
+-- originally also created upload_sessions and malware_scan_results. Both
+-- are dropped here because the main lineage already builds those
+-- capabilities, and builds them properly:
+--   * upload_sessions      -> V42 (create_bulk_import), a strict superset
+--                             of the version here plus the resumable-upload
+--                             columns (original_filename, total_size_bytes,
+--                             received_bytes, staging_path, expires_at).
+--   * malware_scan_results -> V39 (create_scanning_and_quarantine), a real
+--                             implementation (scan_engines, scan_results,
+--                             quarantine_records) rather than the
+--                             placeholder this file carried. Nothing in
+--                             dms-core or ocr-worker ever read it.
+-- The original header described both as present "for schema completeness
+-- ... even though nothing writes to them yet", so nothing is lost.
+--
+-- `renditions` IS kept: ocr-worker writes one searchable_pdf row per
+-- version to it (see its models.py). It is NOT the same thing as V64's
+-- document_versions.rendition_object_key, which is the preview PDF
+-- DocumentRenditionService makes for Office files. A preview is a picture
+-- of the document; a searchable PDF carries a text layer. Both exist.
 
 CREATE TABLE processing_jobs (
     job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

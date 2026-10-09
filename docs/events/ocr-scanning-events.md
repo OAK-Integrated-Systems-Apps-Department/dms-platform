@@ -165,14 +165,14 @@ Routing key: `document.version.ocr.completed`. Written to `outbox_events` in the
 |---|---|---|
 | `schema_version` | int | `1` |
 | `tenant_id`, `document_id`, `version_id`, `ocr_output_id` | uuid | |
-| `extracted_text_ref` | string | MinIO object key in `minio_ocr_output_bucket` -- the single JSON artifact (see ocr-worker's README "Output contract"), containing the flattened `text`, per-page `method`/`text`/`confidence`/`blocks`, `fields`, and `flags` |
+| `extracted_text_ref` | string | the object key dms-core stored the artifact under (it chooses the key when it accepts the worker's PUT -- see docs/ocr/internal-endpoint.md), through the ordinary encrypted storage layer. The single JSON artifact (see ocr-worker's README "Output contract"), containing the flattened `text`, per-page `method`/`text`/`confidence`/`blocks`, `fields`, and `flags` |
 | `page_count` | int | |
 | `flags` | object | `{"low_confidence": bool, "requires_review": bool}` -- see "Open question: representing low confidence" below |
 | `correlation_id` | uuid \| null | |
 | `attempt` | int | the claiming `processing_jobs` row's `attempts` at the time this outcome was recorded; a consumer compares it against the job's CURRENT `attempts` to skip an outcome the reaper has already superseded with a fresh retry, rather than trusting delivery order |
 | `occurred_at` | ISO-8601 timestamp | |
 
-Deliberately slim: the full per-page detail and structured `fields` live only in the MinIO artifact, not duplicated onto the event -- a downstream consumer (a future indexing step, OS-FR-006) fetches `extracted_text_ref` for that. ocr-worker writes the data; it does not own the search index itself.
+Deliberately slim: the full per-page detail and structured `fields` live only in the stored artifact, not duplicated onto the event -- a downstream consumer (a future indexing step, OS-FR-006) fetches `extracted_text_ref` for that. ocr-worker writes the data; it does not own the search index itself.
 
 ### Per-page `quality` and `flags` (Phase 2 Step 5, added 2026-09-29)
 

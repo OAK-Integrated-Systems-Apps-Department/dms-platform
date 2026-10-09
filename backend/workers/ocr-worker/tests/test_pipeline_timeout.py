@@ -28,6 +28,7 @@ from test_pipeline_transaction import (  # noqa: E402
     FakeLayoutEngine,
     FakeOcrEngine,
     FakeStorage,
+    _GrantedPipeline,
 )
 
 
@@ -52,13 +53,13 @@ def _pipeline(session_factory, layout_doc, storage=None, **setting_overrides):
     settings = Settings(
         min_confidence_threshold=0.95, ocr_languages="en", ocr_render_dpi=200, **setting_overrides
     )
-    return OcrPipeline(
+    return _GrantedPipeline(OcrPipeline(
         settings=settings,
         session_factory=session_factory,
-        storage=storage or FakeStorage(),
+        content=storage or FakeStorage(),
         layout_engine=FakeLayoutEngine(layout_doc),
         ocr_engine=FakeOcrEngine(text="", confidence=0.99),
-    )
+    ))
 
 
 def test_a_document_that_blows_its_page_scaled_budget_is_recorded_as_timeout(session_factory, seeded_version):

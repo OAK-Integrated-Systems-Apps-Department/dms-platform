@@ -37,7 +37,7 @@ export interface NavItem {
    * it. Resolved live in `AppSidebar`; omit for the usual case, where a
    * permission alone decides.
    */
-  feature?: "watermarking"
+  feature?: "watermarking" | "ocr"
 }
 
 export interface NavSection {

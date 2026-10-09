@@ -58,6 +58,27 @@ export interface BulkImportStatusResponseDto {
   /** One entry per row still waiting for its file. */
   missingFilenames: string[]
   createdAt: string
+  /**
+   * OCR progress, or null when this import did not ask for OCR. Null and
+   * all-zeroes mean different things - "no OCR here" vs "OCR hasn't started" -
+   * so the screen must check for null rather than for queued === 0.
+   */
+  ocr: BulkImportOcrProgressDto | null
+}
+
+/**
+ * Progress of a bulk import's OCR.
+ *
+ * `queued` is NOT totalRecords: the per-batch cap and the tenant's queue
+ * limit both stop at a ceiling, so progress is shown against what was
+ * actually queued. Measuring against totalRecords would leave a large import
+ * stuck short of 100% with nothing wrong.
+ */
+export interface BulkImportOcrProgressDto {
+  queued: number
+  pending: number
+  completed: number
+  failed: number
 }
 
 /** One problem with a failed row. `fieldLabel` is the column's display name (null if the problem isn't about one column). */
@@ -263,16 +284,30 @@ export async function fetchBulkImportRowCheck(
 /** What a bulk import does with a file that's already in the DMS (V65). */
 export type DuplicateAction = "new_version" | "keep_both" | "skip"
 
-/** POST /bulk-imports - uploads the filled-in template (.xlsx or .csv) and opens a batch. */
+/**
+ * POST /bulk-imports - uploads the filled-in template (.xlsx or .csv) and opens a batch.
+ *
+ * @param ocrFields field keys to extract with OCR from every file in the
+ *   batch. Empty or omitted means no OCR. The server validates them against
+ *   the document type's OCR-extractable fields and rejects the whole upload
+ *   with IMPORT_OCR_FIELDS_INVALID if one is not - deliberately, so a typo is
+ *   reported to the person who made it instead of silently extracting nothing
+ *   from every file.
+ */
 export async function createBulkImport(
   template: File,
   folderId?: string | null,
-  duplicateAction: DuplicateAction = "keep_both"
+  duplicateAction: DuplicateAction = "keep_both",
+  ocrFields?: readonly string[]
 ): Promise<BulkImportCreatedResponseDto> {
   const body = new FormData()
   body.append("template", template)
   const params = new URLSearchParams({ duplicateAction })
   if (folderId) params.set("folderId", folderId)
+  // Repeated key, not a comma-joined string: Spring binds List<String> from
+  // repeated params, and a field key containing a comma would otherwise split
+  // into two keys that match nothing.
+  for (const key of ocrFields ?? []) params.append("ocrFields", key)
   return apiFetchJson<BulkImportCreatedResponseDto>(
     `${BASE}?${params.toString()}`,
     { method: "POST", body },

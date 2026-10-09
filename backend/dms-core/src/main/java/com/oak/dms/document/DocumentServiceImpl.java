@@ -121,6 +121,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
     private final OcrProperties ocrProperties;
+    private final PageImageCache pageImageCache;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -770,7 +771,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional(readOnly = true)
     public DocumentReviewResponse getReview(UUID documentId) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = requireDocument(documentId, tenantId);
+        // Folder access, not just the tenant: an OCR'd document's extracted
+        // fields are its contents, so "can read the review" has to mean the
+        // same thing as "can read the document". The os.* permission says the
+        // caller may use the review screen at all; this says which documents
+        // they may use it on.
+        Document document = findVisible(documentId, FolderAccessLevel.view);
         DocumentVersion version = documentVersionRepository.findById(document.getLatestVersionId())
                 .orElseThrow(() -> new ResourceNotFoundException("document_versions", document.getLatestVersionId()));
 
@@ -894,24 +900,37 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public OcrWorkerClient.PageImage getPageImage(UUID documentId, int page) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = requireDocument(documentId, tenantId);
+        // A rendered page IS the document, so this needs view on the document
+        // itself, not merely the os.* permission - otherwise the review screen
+        // would be a way to read a page of a document the caller's folder
+        // access hides from them.
+        Document document = findVisible(documentId, FolderAccessLevel.view);
         // The tenant check happens HERE, before the version id leaves
         // dms-core. ocr-worker has no notion of who is asking -- it answers
         // for any version id presented with the internal token -- so this is
         // the only thing standing between one tenant and another's pages.
         DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
-        return ocrWorkerClient.fetchPageImage(version.getVersionId(), page, ocrProperties.getPreviewDpi());
+        // Cached AFTER the access checks above, never instead of them: a hit
+        // and a miss are indistinguishable to the caller, and both require
+        // the same permission and the same folder access to get this far.
+        // Safe to cache at all because a version's bytes are immutable, so a
+        // rendered page of a version is immutable too.
+        Integer dpi = ocrProperties.getPreviewDpi();
+        return pageImageCache.get(tenantId, version.getVersionId(), page, dpi == null ? 0 : dpi,
+                () -> ocrWorkerClient.fetchPageImage(version.getVersionId(), tenantId, page, dpi));
     }
 
     // Not @Transactional, for the same reason as getPageImage above.
     @Override
     public RubberBandResponse readRegion(UUID documentId, RubberBandRequest request) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = requireDocument(documentId, tenantId);
+        // Reading a box returns the text inside it - the same disclosure as a
+        // page image, so the same check.
+        Document document = findVisible(documentId, FolderAccessLevel.view);
         DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
 
         Map<String, Object> answer = ocrWorkerClient.previewRubberBand(
-                version.getVersionId(), request.page(),
+                version.getVersionId(), tenantId, request.page(),
                 request.x0(), request.y0(), request.x1(), request.y1());
 
         Object confidence = answer.get("confidence");
@@ -928,7 +947,14 @@ public class DocumentServiceImpl implements DocumentService {
     public SaveReviewResponse saveReview(UUID documentId, SaveReviewRequest request) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
-        Document document = requireDocument(documentId, tenantId);
+        // edit, not view: a saved review writes corrected values into
+        // document_metadata_values. Someone who may read a document must not
+        // be able to change its metadata through the review screen when they
+        // could not change it through the document form.
+        // os.review-ocr-exceptions.resolve (on the controller) and this check
+        // are both required - one is "may review", the other "may review
+        // THIS".
+        Document document = findVisible(documentId, FolderAccessLevel.edit);
         DocumentVersion version = requireVersion(document.getLatestVersionId(), tenantId);
 
         // The server's own view of what OCR produced, not the client's --
@@ -1099,14 +1125,9 @@ public class DocumentServiceImpl implements DocumentService {
         return null;
     }
 
-    private Document requireDocument(UUID documentId, UUID tenantId) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("documents", documentId));
-        if (!document.getTenantId().equals(tenantId)) {
-            // Deliberately the same 404 as "no such document" -- a 403 would
-            // confirm that this id exists in some other tenant.
-            throw new ResourceNotFoundException("documents", documentId);
-        }
-        return document;
-    }
+    // requireDocument (tenant check only) was removed when the four OCR
+    // entry points moved to findVisible: a tenant-only check let anyone with
+    // an os.* permission reach any document in their tenant, including ones
+    // their folder access hides. findVisible is the same 404-not-403
+    // behaviour, with folder and per-document access applied.
 }
