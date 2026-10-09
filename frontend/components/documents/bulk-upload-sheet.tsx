@@ -114,6 +114,55 @@ function titleFromFilename(name: string): string {
   return (dot > 0 ? name.slice(0, dot) : name).trim() || name
 }
 
+const sameName = (a: string, b: string) =>
+  a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase()
+
+/** "Invoice" -> "Invoice (2)", "Invoice (2)" -> "Invoice (3)" - for a copy kept beside the original. */
+function nextCopyName(title: string): string {
+  const numbered = /^(.*) \((\d+)\)$/.exec(title.trim())
+  return numbered
+    ? `${numbered[1]} (${Number(numbered[2]) + 1})`
+    : `${title.trim()} (2)`
+}
+
+/**
+ * The item with this duplicate choice. "Keep both" needs a name of its own, so
+ * two documents side by side can be told apart - suggested here as "Name (2)"
+ * while the title still matches the existing document's; the user can change it.
+ */
+function withChoice(item: UploadItem, choice: DuplicateChoice): UploadItem {
+  if (!item.duplicate) return item
+  const title =
+    choice === "both" && sameName(item.title, item.duplicate.match.title)
+      ? nextCopyName(item.duplicate.match.title)
+      : item.title
+  return { ...item, title, duplicate: { ...item.duplicate, choice } }
+}
+
+/** "Keep both" with the existing document's own name - not allowed, it would be indistinguishable. */
+function needsNewName(item: UploadItem): boolean {
+  return (
+    item.state.kind === "queued" &&
+    item.duplicate?.choice === "both" &&
+    sameName(
+      item.title || titleFromFilename(item.file.name),
+      item.duplicate.match.title
+    )
+  )
+}
+
+/** The file renamed after its title (same extension), so a kept copy's file name matches it too. */
+function fileNamed(file: File, title: string): File {
+  const dot = file.name.lastIndexOf(".")
+  const name = title.trim() + (dot > 0 ? file.name.slice(dot) : "")
+  return name === file.name
+    ? file
+    : new File([file], name, {
+        type: file.type,
+        lastModified: file.lastModified,
+      })
+}
+
 interface BulkUploadSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -331,13 +380,16 @@ export function BulkUploadSheet({
     const next = all.map((item) => {
       if (!ids.has(item.id)) return item
       const match = found.get(item.id)
-      return {
+      const checkedItem: UploadItem = {
         ...item,
         checked: true,
         duplicate: match
           ? { match, choice: suggestedChoice(match) }
           : undefined,
       }
+      return match
+        ? withChoice(checkedItem, suggestedChoice(match))
+        : checkedItem
     })
     // Duplicates need a decision first; with none, carry straight on.
     if (found.size === 0) handOff(next)
@@ -347,9 +399,7 @@ export function BulkUploadSheet({
   function choose(id: string, choice: DuplicateChoice) {
     setItems((current) =>
       current.map((item) =>
-        item.id === id && item.duplicate
-          ? { ...item, duplicate: { ...item.duplicate, choice } }
-          : item
+        item.id === id && item.duplicate ? withChoice(item, choice) : item
       )
     )
   }
@@ -358,17 +408,13 @@ export function BulkUploadSheet({
     setItems((current) =>
       current.map((item) =>
         item.duplicate && item.state.kind === "queued"
-          ? {
-              ...item,
-              duplicate: {
-                ...item.duplicate,
-                // A version only where the user may add one.
-                choice:
-                  choice === "version" && !item.duplicate.match.canAddVersion
-                    ? "both"
-                    : choice,
-              },
-            }
+          ? withChoice(
+              item,
+              // A version only where the user may add one.
+              choice === "version" && !item.duplicate.match.canAddVersion
+                ? "both"
+                : choice
+            )
           : item
       )
     )
@@ -403,11 +449,16 @@ export function BulkUploadSheet({
           }
         }
         const target = targetOf(item)
+        const title = item.title.trim() || titleFromFilename(item.file.name)
         const request: UploadRequest = {
           kind: "new",
-          file: item.file,
+          // A copy kept beside the original takes its new name as its file name too.
+          file:
+            duplicate?.choice === "both"
+              ? fileNamed(item.file, title)
+              : item.file,
           documentTypeId,
-          title: item.title.trim() || titleFromFilename(item.file.name),
+          title,
           folderId: target,
           // Checked and nothing found: if the same file arrives meanwhile, refuse rather than duplicate.
           refuseDuplicates: item.checked && !duplicate,
@@ -449,7 +500,12 @@ export function BulkUploadSheet({
   const retryable = items.filter((i) => i.state.kind === "failed")
   const waitingForChoice = queued.filter((i) => i.duplicate)
   const problems = items.filter((i) => i.state.kind !== "queued").length
-  const canUpload = Boolean(documentTypeId) && queued.length > 0 && !checking
+  const unnamedCopies = queued.filter(needsNewName).length
+  const canUpload =
+    Boolean(documentTypeId) &&
+    queued.length > 0 &&
+    !checking &&
+    unnamedCopies === 0
 
   function handleOpenChange(next: boolean) {
     if (checking) return // don't close while folders are being made
@@ -662,6 +718,7 @@ export function BulkUploadSheet({
                         match={item.duplicate.match}
                         choice={item.duplicate.choice}
                         disabled={checking}
+                        needsNewName={needsNewName(item)}
                         onChange={(choice) => choose(item.id, choice)}
                       />
                     )}
@@ -726,6 +783,13 @@ export function BulkUploadSheet({
               Choose a document type to upload.
             </p>
           )}
+          {unnamedCopies > 0 && (
+            <p className="text-[12px] text-[var(--rust)]">
+              {unnamedCopies === 1
+                ? "1 file kept beside an existing document needs a different name."
+                : `${unnamedCopies} files kept beside existing documents need different names.`}
+            </p>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
@@ -743,11 +807,14 @@ function DuplicateChoicePicker({
   match,
   choice,
   disabled,
+  needsNewName,
   onChange,
 }: {
   match: DuplicateMatchDto
   choice: DuplicateChoice
   disabled: boolean
+  /** "Keep both" chosen but the name is still the existing document's. */
+  needsNewName: boolean
   onChange: (choice: DuplicateChoice) => void
 }) {
   return (
@@ -791,6 +858,18 @@ function DuplicateChoicePicker({
           )
         })}
       </div>
+      {choice === "both" && (
+        <p
+          className={cn(
+            "mt-2 text-[12px] leading-[1.45]",
+            needsNewName ? "text-[var(--rust)]" : "text-muted-foreground"
+          )}
+        >
+          {needsNewName
+            ? `Give it a different name from "${match.title}" in the title box above, so the two documents can be told apart.`
+            : "Uploaded as a separate document under the name above - change it if you like."}
+        </p>
+      )}
     </div>
   )
 }

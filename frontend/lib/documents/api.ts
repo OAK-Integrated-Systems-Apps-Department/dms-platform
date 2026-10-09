@@ -461,11 +461,6 @@ export interface DocumentDto {
   updatedAt: string | null
 }
 
-/** `GET /api/v1/ingestion-tickets/{id}` - the uploader polls a 202 upload until its scan finishes. */
-export async function fetchIngestionTicket(scanResultId: string): Promise<IngestionTicketDto> {
-  return apiFetchJson(`${API_BASE_URL}/api/v1/ingestion-tickets/${scanResultId}`, undefined, "Could not check the upload.")
-}
-
 /** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */
 export interface DocumentSummaryDto {
   documentId: string

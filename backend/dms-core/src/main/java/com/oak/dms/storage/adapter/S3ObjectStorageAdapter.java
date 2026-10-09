@@ -116,7 +116,10 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
             return new StoredObjectMetadata(objectKey, contentLength, contentType,
                     stripQuotes(response.eTag()), OffsetDateTime.now());
         } catch (Exception e) {
-            log.warn("S3 upload failed for object {} at storage location {}", objectKey, location.getStorageLocationId());
+            // With the exception: the SDK attaches each earlier attempt's failure to it as suppressed,
+            // and the final message alone (e.g. "does not support mark/reset" on a retry) hides why.
+            log.warn("S3 upload failed for object {} at storage location {}", objectKey,
+                    location.getStorageLocationId(), e);
             throw new StorageUploadException(objectKey, e);
         }
     }

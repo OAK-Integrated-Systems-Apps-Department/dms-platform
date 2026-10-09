@@ -66,13 +66,5 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u from User u where u.tenantId = :tenantId")
     Page<User> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
 
-    /** Active users of the tenant matching {@code q} by name, username or email - the folder access picker. */
-    @Query("select u from User u where u.tenantId = :tenantId and u.deleted = false "
-            + "and u.status = com.oak.dms.user.User.UserStatus.active "
-            + "and (lower(u.displayName) like lower(concat('%', :q, '%')) "
-            + "or lower(u.username) like lower(concat('%', :q, '%')) "
-            + "or lower(u.email) like lower(concat('%', :q, '%'))) order by u.displayName")
-    java.util.List<User> searchActive(@Param("tenantId") UUID tenantId, @Param("q") String q, Pageable limit);
-
     java.util.List<User> findAllByUserIdInAndTenantIdAndDeletedFalse(java.util.Collection<UUID> userIds, UUID tenantId);
 }

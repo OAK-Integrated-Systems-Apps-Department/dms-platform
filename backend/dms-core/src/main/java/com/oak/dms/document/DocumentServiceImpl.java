@@ -234,8 +234,8 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
-
-        return documentMapper.toResponse(findVisible(documentId, FolderAccessLevel.view));
+        Document document = findVisible(documentId, FolderAccessLevel.view);
+        return documentMapper.toResponse(document, documentAccessService.forCaller().level(document).name());
     }
 
     /**
@@ -247,13 +247,6 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
         return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
-
-        Document document = findOwnedByCallerTenant(documentId);
-        String typeName = documentTypeRepository
-                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(document.getDocumentTypeId(), document.getTenantId())
-                .map(DocumentType::getTypeName)
-                .orElse(null);
-        return documentMapper.toResponse(document, typeName);
     }
 
     @Override
