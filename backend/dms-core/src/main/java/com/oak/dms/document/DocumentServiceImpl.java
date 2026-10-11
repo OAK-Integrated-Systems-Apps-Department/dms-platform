@@ -71,8 +71,11 @@ public class DocumentServiceImpl implements DocumentService {
         return documentMapper.toResponse(findOwnedByCallerTenant(documentId));
     }
 
+    // NOT readOnly: the DOCUMENT_DOWNLOADED audit row must be written. That
+    // write joins this transaction (see AuditService#persist's
+    // @Transactional), and a readOnly transaction never flushes it.
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
         UUID tenantId = TenantContext.getTenantId();
         Document document = findOwnedByCallerTenant(documentId);
