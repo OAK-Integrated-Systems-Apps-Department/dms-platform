@@ -1,6 +1,7 @@
 import {
   BarChart3,
   FileStack,
+  FileDown,
   FileText,
   FileUp,
   Grid3x3,
@@ -40,6 +41,7 @@ export const navSections: NavSection[] = [
     label: "Documents",
     items: [
       { label: "Bulk Import", icon: FileUp, href: "/documents/bulk-import", permission: PermissionCodes.FIE_BULK_IMPORT_UPLOAD_FILE },
+      { label: "Export", icon: FileDown, href: "/documents/export", permission: PermissionCodes.FIE_BULK_EXPORT_EXECUTE },
     ],
   },
   {

@@ -74,6 +74,10 @@ export const PermissionCodes = {
   // endpoint (template, batch, files, submit, cancel) on this one code.
   FIE_BULK_IMPORT_UPLOAD_FILE: "fie.bulk-import-documents.upload-file",
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
+  // BulkExportController gates every endpoint on BOTH of these: an export
+  // moves documents out, so it must not bypass document-view.
+  FIE_BULK_EXPORT_EXECUTE: "fie.bulk-export-documents.execute-export",
+  DOCM_DOCUMENTS_VIEW: "docm.documents.view",
   // Quarantine review (DOCM - seeded by backend V40, granted to no role by
   // default). OVERRIDE is deliberately separate from RELEASE: it
   // force-releases a file the malware scanner still flags.

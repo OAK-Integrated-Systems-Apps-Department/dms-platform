@@ -70,6 +70,7 @@ const OBJECT_TYPE_OPTIONS = [
   "METADATA_FIELD_OPTION",
   "METADATA_FIELD_VALIDATION",
   "IMPORT_BATCH",
+  "EXPORT_JOB",
 ]
 
 /** Derived from the shared audit-badges.ts label maps, not re-typed here, so the Outcome/Severity dropdown options can't drift from the chip labels built from those same maps below. */

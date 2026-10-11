@@ -75,6 +75,9 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
   { action: "BULK_IMPORT_COMPLETED", module: "FIE", label: "Bulk import completed" },
   { action: "BULK_IMPORT_CANCELLED", module: "FIE", label: "Bulk import cancelled" },
   { action: "BULK_IMPORT_FAILED_ROWS_DOWNLOADED", module: "FIE", label: "Bulk import failed rows downloaded" },
+  { action: "BULK_EXPORT_REQUESTED", module: "FIE", label: "Bulk export requested" },
+  { action: "BULK_EXPORT_COMPLETED", module: "FIE", label: "Bulk export completed" },
+  { action: "BULK_EXPORT_DOWNLOADED", module: "FIE", label: "Bulk export downloaded" },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {

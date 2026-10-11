@@ -8,7 +8,9 @@ import com.oak.dms.importexport.dto.BulkExportPreviewResponse;
 import com.oak.dms.importexport.dto.BulkExportSelection;
 import com.oak.dms.importexport.dto.CreateBulkExportRequest;
 import com.oak.dms.importexport.dto.ExportableDocumentResponse;
+import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.service.BulkExportService;
+import com.oak.dms.importexport.service.BulkImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -30,6 +32,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.io.InputStream;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -57,6 +60,19 @@ public class BulkExportController {
                     + " and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)";
 
     private final BulkExportService bulkExportService;
+    private final BulkImportService bulkImportService;
+
+    /**
+     * The type filter's options. The other type lists need the import or
+     * metadata-management permissions, which an exporter may not hold, so
+     * this serves the same active-types list under the export permissions.
+     */
+    @GetMapping("/bulk-exports/document-types")
+    @PreAuthorize(CAN_EXPORT)
+    @Operation(summary = "List the active document types, for the export screen's type filter")
+    public List<ImportDocumentTypeOption> listDocumentTypes() {
+        return bulkImportService.listDocumentTypes();
+    }
 
     @GetMapping("/bulk-exports/documents")
     @PreAuthorize(CAN_EXPORT)
