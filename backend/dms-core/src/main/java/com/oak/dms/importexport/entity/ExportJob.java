@@ -58,12 +58,22 @@ public class ExportJob {
     @Builder.Default
     private ExportJobStatus status = ExportJobStatus.pending;
 
+    /** Bulk export: documents requested while pending/processing, documents in the ZIP once finished. */
     @Column(name = "document_count", nullable = false)
     @Builder.Default
     private int documentCount = 0;
 
+    /** Requested documents left out of the ZIP (V54) - each listed with its reason inside it. */
+    @Column(name = "skipped_count", nullable = false)
+    @Builder.Default
+    private int skippedCount = 0;
+
     @Column(name = "file_object_key")
     private String fileObjectKey;
+
+    /** Where {@code fileObjectKey} lives (V55) - the tenant's staging location when the ZIP was written. */
+    @Column(name = "file_storage_location_id")
+    private UUID fileStorageLocationId;
 
     @Column(name = "file_size_bytes")
     private Long fileSizeBytes;

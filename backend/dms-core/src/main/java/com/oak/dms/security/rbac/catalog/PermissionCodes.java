@@ -98,6 +98,11 @@ public final class PermissionCodes {
     // File Import/Export - FIE / Bulk Import Documents - see V10's seed migration.
     public static final String FIE_BULK_IMPORT_UPLOAD_FILE = "fie.bulk-import-documents.upload-file";
 
+    // File Import/Export - FIE / Bulk Export Documents - see V10's seed migration.
+    // Every bulk export endpoint also requires DOCM_DOCUMENTS_VIEW; the other
+    // two bulk export codes are deprecated (V53).
+    public static final String FIE_BULK_EXPORT_EXECUTE = "fie.bulk-export-documents.execute-export";
+
     // Audit - ABDR (Comprehensive Audit Management) / View Audit History
     public static final String ABDR_VIEW_AUDIT_HISTORY = "abdr.view-audit-history";
     // Distinct from ABDR_VIEW_AUDIT_HISTORY on purpose - exporting the trail

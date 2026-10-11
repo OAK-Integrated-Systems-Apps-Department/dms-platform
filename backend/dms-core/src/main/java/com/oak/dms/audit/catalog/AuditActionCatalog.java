@@ -115,6 +115,9 @@ public final class AuditActionCatalog {
     public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
     public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
     public static final String BULK_IMPORT_FAILED_ROWS_DOWNLOADED = "BULK_IMPORT_FAILED_ROWS_DOWNLOADED";
+    public static final String BULK_EXPORT_REQUESTED = "BULK_EXPORT_REQUESTED";
+    public static final String BULK_EXPORT_COMPLETED = "BULK_EXPORT_COMPLETED";
+    public static final String BULK_EXPORT_DOWNLOADED = "BULK_EXPORT_DOWNLOADED";
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -313,7 +316,22 @@ public final class AuditActionCatalog {
             Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
-            Map.entry(BULK_IMPORT_FAILED_ROWS_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.LOW, false))
+            Map.entry(BULK_IMPORT_FAILED_ROWS_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.LOW, false)),
+
+            // Bulk export (BulkExportServiceImpl, BulkExportWorker,
+            // BulkExportCleanupJob) - module FIE. One event per export job
+            // lifecycle step; each document read into the ZIP is also
+            // audited as DOCUMENT_DOWNLOADED by the document module, with the
+            // requester as actor. REQUESTED is the user's request;
+            // COMPLETED is the job's final status, set off the request
+            // (system actor) - outcome FAILURE with a failureReason when
+            // nothing could be exported or the job got stuck; DOWNLOADED is
+            // the requester fetching the ZIP. All MEDIUM, unlike the LOW
+            // single-document download: a bulk export moves many documents
+            // and their metadata out of the system at once.
+            Map.entry(BULK_EXPORT_REQUESTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(BULK_EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

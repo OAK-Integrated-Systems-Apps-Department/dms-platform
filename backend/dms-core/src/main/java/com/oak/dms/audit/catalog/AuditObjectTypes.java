@@ -50,6 +50,11 @@ public final class AuditObjectTypes {
     /** A bulk import batch (import_batches) - the object of every BULK_IMPORT_* event. */
     public static final String IMPORT_BATCH = "IMPORT_BATCH";
     /**
+     * A bulk export job (export_jobs) - the object of every BULK_EXPORT_*
+     * event (BulkExportServiceImpl, BulkExportWorker, BulkExportCleanupJob).
+     */
+    public static final String EXPORT_JOB = "EXPORT_JOB";
+    /**
      * Not a business entity like every other constant here - the "object"
      * of an ACCESS_DENIED event (see AuditActionCatalog) is the blocked
      * HTTP request itself (method + path, captured as resourceName),

@@ -229,6 +229,22 @@ dms:
     enforce-mandatory-fields: ${IMPORT_ENFORCE_MANDATORY_FIELDS:false}
     # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
     worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
+    # Bulk export limits - see ImportExportProperties. Requests over a
+    # limit are refused with 400 (409 for the active-export limit).
+    max-documents-per-export: ${EXPORT_MAX_DOCUMENTS:1000}
+    max-export-size: ${EXPORT_MAX_SIZE:2GB}
+    max-active-exports-per-user: ${EXPORT_MAX_ACTIVE_PER_USER:1}
+    # How long a finished export's ZIP can be downloaded, and how long
+    # before that export_job.expiring_soon is published (once).
+    export-file-ttl-hours: ${EXPORT_FILE_TTL_HOURS:24}
+    export-expiry-warning-hours: ${EXPORT_EXPIRY_WARNING_HOURS:2}
+    # Consumers on oak.dms.importexport.bulk-export - see BulkExportMessagingConfig.
+    export-worker-concurrency: ${EXPORT_WORKER_CONCURRENCY:1}
+    # BulkExportCleanupJob: how often it runs (expiry warnings, expiring
+    # ZIPs, stuck jobs), and how long a pending/processing export may go
+    # with no activity before it is failed as stuck.
+    export-cleanup-interval-ms: ${EXPORT_CLEANUP_INTERVAL_MS:900000}
+    stuck-export-hours: ${EXPORT_STUCK_HOURS:2}
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's

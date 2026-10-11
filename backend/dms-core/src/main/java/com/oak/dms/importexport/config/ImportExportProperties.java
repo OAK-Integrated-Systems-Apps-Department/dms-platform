@@ -8,7 +8,8 @@ import org.springframework.util.unit.DataSize;
 
 /**
  * Binds the dms.import-export.* configuration keys limiting bulk import
- * intake - see {@code BulkImportServiceImpl} - and sizing its worker.
+ * intake - see {@code BulkImportServiceImpl} - and sizing its worker, and
+ * the bulk export limits, file lifetime and worker sizing.
  */
 @Component
 @ConfigurationProperties(prefix = "dms.import-export")
@@ -86,4 +87,49 @@ public class ImportExportProperties {
      * declared here so the key is documented with the rest.
      */
     private long batchRecoveryIntervalMs = 900000;
+
+    // ---- Bulk export - see BulkExportServiceImpl, BulkExportWorker and
+    // BulkExportCleanupJob.
+
+    /** Maximum documents in one bulk export. */
+    private int maxDocumentsPerExport = 1000;
+
+    /** Maximum total size of the current versions of one export's documents. */
+    private DataSize maxExportSize = DataSize.ofGigabytes(2);
+
+    /** Exports a user may have pending or processing at once. */
+    private int maxActiveExportsPerUser = 1;
+
+    /** How long a finished export's ZIP can be downloaded before it expires and is deleted. */
+    private int exportFileTtlHours = 24;
+
+    /**
+     * How long before expiry {@code BulkExportCleanupJob} publishes
+     * {@code export_job.expiring_soon} (once per export) for the
+     * notification module.
+     */
+    private int exportExpiryWarningHours = 2;
+
+    /**
+     * Consumers on the bulk export queue - how many exports are built at
+     * once (see {@code BulkExportMessagingConfig}).
+     */
+    private int exportWorkerConcurrency = 1;
+
+    /**
+     * How often {@code BulkExportCleanupJob} runs. Read by its
+     * {@code @Scheduled} placeholder, which carries the same default;
+     * declared here so the key is documented with the rest.
+     */
+    private long exportCleanupIntervalMs = 900000;
+
+    /**
+     * How long a pending or processing export may go with no activity
+     * before {@code BulkExportCleanupJob} fails it as stuck. Activity, not
+     * age: the worker bumps the job's updated_at at every stage and at
+     * least every 50 documents, so a long export that is still moving is
+     * never failed. Set it above the longest expected wait in the export
+     * queue.
+     */
+    private int stuckExportHours = 2;
 }
