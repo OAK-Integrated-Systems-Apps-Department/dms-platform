@@ -68,7 +68,8 @@ public interface BulkImportService {
     BulkImportStatusResponse getStatus(UUID batchId);
 
     /**
-     * The batch's failed items in upload order, each with its problems and a
+     * The batch's failed items in upload order, each with its errors (not
+     * warnings - a failed file never became a document) and a
      * display label for the field each problem is about (resolved against
      * the batch's own schema version).
      */

@@ -52,6 +52,14 @@ export function UploadFilesStep({
   /** Uploads that got no answer and haven't been retried - the server may never have seen them. */
   const failedUploads = entries.filter((entry) => entry.state === "failed").length
   const canSubmit = uploadsAllowed && filesReceived > 0 && !uploading && !submitting
+  /**
+   * Accepted files this session isn't tracking (e.g. uploaded before a
+   * reload). One still in the queue is shown there instead, with its live state.
+   */
+  const entryIds = new Set(entries.map((entry) => entry.id))
+  const serverOnlyFiles = status.acceptedFiles.filter(
+    (file) => file.clientFileId === null || !entryIds.has(file.clientFileId)
+  )
 
   async function submitNow() {
     setSubmitting(true)
@@ -100,12 +108,22 @@ export function UploadFilesStep({
         <div className="mt-3 grid gap-5 md:grid-cols-2">
           <div>
             <h3 className="mb-2 text-[13px] font-semibold">Uploads</h3>
-            {entries.length === 0 ? (
+            {entries.length === 0 && serverOnlyFiles.length === 0 ? (
               <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-[12.5px] text-muted-foreground">
                 No files added yet.
               </p>
             ) : (
               <ul className="max-h-[320px] divide-y divide-border overflow-y-auto rounded-md border border-border">
+                {serverOnlyFiles.map((file) => (
+                  <li key={`server-${file.rowNumber}`} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
+                    <p className="min-w-0 truncate text-[13px] font-medium" title={file.filename}>
+                      {file.filename}
+                    </p>
+                    <Badge variant="default" className="shrink-0">
+                      Accepted
+                    </Badge>
+                  </li>
+                ))}
                 {entries.map((entry) => (
                   <UploadRow key={entry.id} entry={entry} onRetry={onRetry} />
                 ))}

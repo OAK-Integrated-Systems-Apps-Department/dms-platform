@@ -13,6 +13,7 @@ import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
+import com.oak.dms.importexport.dto.ImportAcceptedFile;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
@@ -60,6 +61,8 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -783,9 +786,10 @@ class BulkImportServiceImplTest {
                 tenantId, userId, List.of(ImportBatchStatus.uploading, ImportBatchStatus.queued,
                         ImportBatchStatus.running)))
                 .thenReturn(Optional.of(batch));
+        ImportItem accepted = item(batch, 1, "scans\\a.pdf", UUID.randomUUID(), "imports/key-1");
+        accepted.setClientFileId("client-1");
         when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
-                .thenReturn(List.of(item(batch, 1, "a.pdf", UUID.randomUUID(), "imports/key-1"),
-                        rejectedItem(batch, 2, "b.exe")));
+                .thenReturn(List.of(accepted, rejectedItem(batch, 2, "b.exe"), item(batch, 3, "c.pdf", null, null)));
 
         Optional<BulkImportStatusResponse> active = service().getActive();
 
@@ -794,9 +798,28 @@ class BulkImportServiceImplTest {
             assertThat(response.documentTypeId()).isEqualTo(documentTypeId);
             assertThat(response.createdAt()).isEqualTo(batch.getCreatedAt());
             assertThat(response.status()).isEqualTo("uploading");
-            assertThat(response.filesReceived()).isEqualTo(1);
+            assertThat(response.filesReceived()).isEqualTo(2);
             assertThat(response.rejectedFilenames()).containsExactly("b.exe");
+            assertThat(response.acceptedFiles()).containsExactly(
+                    new ImportAcceptedFile(1, "a.pdf", "client-1"),
+                    new ImportAcceptedFile(3, "c.pdf", null));
         });
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ImportBatchStatus.class, names = {"queued", "running", "completed", "completed_with_errors",
+            "failed", "cancelled"})
+    void getStatus_notUploading_acceptedFilesIsEmptySoThePollStaysLight(ImportBatchStatus status) {
+        ImportBatch batch = batch(status);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdOrderByRowNumberAsc(batch.getImportBatchId()))
+                .thenReturn(List.of(item(batch, 1, "a.pdf", null, null), rejectedItem(batch, 2, "b.exe")));
+
+        BulkImportStatusResponse response = service().getStatus(batch.getImportBatchId());
+
+        assertThat(response.acceptedFiles()).isEmpty();
+        assertThat(response.filesReceived()).isEqualTo(1);
+        assertThat(response.rejectedFilenames()).containsExactly("b.exe");
     }
 
     @Test
@@ -1054,8 +1077,8 @@ class BulkImportServiceImplTest {
                 [{"field":"reference","code":"MANDATORY_FIELD_MISSING","message":"Reference is required","severity":"error"},
                  {"field":"file","code":"SCAN_REJECTED","message":"Malware found","severity":"error"},
                  {"field":"title","code":"TITLE_TOO_LONG","message":"Title too long","severity":"error"},
-                 {"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"Left empty","severity":"warning"},
-                 {"field":"gone_field","code":"DEFAULT_VALUE_INVALID","message":"Not used","severity":"warning"}]
+                 {"field":null,"code":"RECORD_CREATE_FAILED","message":"Could not create","severity":"error"},
+                 {"field":"gone_field","code":"INVALID_VALUE","message":"Not valid","severity":"error"}]
                 """);
         stubOwnBatch(batch);
         when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
@@ -1068,7 +1091,53 @@ class BulkImportServiceImplTest {
         assertThat(problems).extracting(ImportRowProblem::fieldLabel)
                 .containsExactly("Reference", "File", "Title", null, "gone_field");
         assertThat(problems.get(4)).isEqualTo(new ImportRowProblem("gone_field", "gone_field",
-                "DEFAULT_VALUE_INVALID", "Not used", "warning"));
+                "INVALID_VALUE", "Not valid", "error"));
+    }
+
+    @Test
+    void getFailures_failedRowWithWarnings_showsOnlyItsErrorsAndLeavesStoredErrorsAlone() {
+        ImportBatch batch = batch(ImportBatchStatus.completed_with_errors);
+        String stored = """
+                [{"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"Left empty","severity":"warning"},
+                 {"field":"file","code":"SCAN_REJECTED","message":"Malware found","severity":"error"},
+                 {"field":"ref","code":"DEFAULT_VALUE_INVALID","message":"Not used","severity":"warning"}]
+                """;
+        ImportItem scanRejected = failedItem(batch, 1, "a.pdf", stored);
+        ImportItem onlyErrors = failedItem(batch, 2, "b.pdf", """
+                [{"field":"title","code":"TITLE_TOO_LONG","message":"Title too long","severity":"error"}]
+                """);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(scanRejected, onlyErrors));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of());
+
+        List<ImportRowFailure> failures = service().getFailures(batch.getImportBatchId());
+
+        assertThat(failures.get(0).problems()).containsExactly(
+                new ImportRowProblem("file", "File", "SCAN_REJECTED", "Malware found", "error"));
+        assertThat(failures.get(1).problems()).extracting(ImportRowProblem::code).containsExactly("TITLE_TOO_LONG");
+        assertThat(scanRejected.getValidationErrors()).isEqualTo(stored);
+        verify(importItemRepository, never()).save(any());
+        verify(importItemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void getFailures_failedRowWithOnlyWarnings_isStillListedWithNoProblems() {
+        ImportBatch batch = batch(ImportBatchStatus.failed);
+        ImportItem row = failedItem(batch, 4, "d.pdf", """
+                [{"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"Left empty","severity":"warning"}]
+                """);
+        stubOwnBatch(batch);
+        when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(row));
+        when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(Map.of());
+
+        List<ImportRowFailure> failures = service().getFailures(batch.getImportBatchId());
+
+        assertThat(failures).singleElement().satisfies(failure -> {
+            assertThat(failure.rowNumber()).isEqualTo(4);
+            assertThat(failure.problems()).isEmpty();
+        });
     }
 
     @Test
@@ -1104,15 +1173,24 @@ class BulkImportServiceImplTest {
                 """);
         ImportItem twoProblems = failedItem(batch, 3, "a, b.pdf", """
                 [{"field":"reference","code":"TOO_LONG","message":"Value \\"x\\", too long","severity":"error"},
-                 {"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"+1 left empty","severity":"warning"}]
+                 {"field":null,"code":"RECORD_CREATE_FAILED","message":"+1 failed","severity":"error"},
+                 {"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"Left empty","severity":"warning"}]
                 """);
         ImportItem sinhala = failedItem(batch, 4, "ලංකාව.pdf", """
                 [{"field":"file","code":"SCAN_REJECTED","message":"-தவறு","severity":"error"}]
                 """);
         ImportItem noProblems = failedItem(batch, 5, "c.pdf", null);
+        ImportItem scanRejectedWithWarning = failedItem(batch, 6, "d.pdf", """
+                [{"field":"file","code":"SCAN_REJECTED","message":"Malware found","severity":"error"},
+                 {"field":"reference","code":"DEFAULT_VALUE_INVALID","message":"Not used","severity":"warning"}]
+                """);
+        ImportItem onlyWarnings = failedItem(batch, 7, "e.pdf", """
+                [{"field":null,"code":"MANDATORY_FIELD_DEFERRED","message":"Left empty","severity":"warning"}]
+                """);
         stubOwnBatch(batch);
         when(importItemRepository.findAllByImportBatchIdAndStatusOrderByRowNumberAsc(batch.getImportBatchId(),
-                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(formulaName, twoProblems, sinhala, noProblems));
+                ImportItem.ImportItemStatus.failed)).thenReturn(List.of(formulaName, twoProblems, sinhala, noProblems,
+                scanRejectedWithWarning, onlyWarnings));
         when(importSchemaFields.load(tenantId, documentTypeId, 3)).thenReturn(fields(
                 field("reference", "Reference", "text", false, null)));
         stubActiveType(3);
@@ -1125,15 +1203,17 @@ class BulkImportServiceImplTest {
                 Row,File,Field,Problem,Code
                 2,'=HYPERLINK(1+1).pdf,File,'@SUM(1+1),SCAN_REJECTED
                 3,"a, b.pdf",Reference,"Value ""x"", too long",TOO_LONG
-                3,"a, b.pdf",,'+1 left empty,MANDATORY_FIELD_DEFERRED
+                3,"a, b.pdf",,'+1 failed,RECORD_CREATE_FAILED
                 4,ලංකාව.pdf,File,'-தவறு,SCAN_REJECTED
                 5,c.pdf,,,
+                6,d.pdf,File,Malware found,SCAN_REJECTED
+                7,e.pdf,,,
                 """);
         assertThat(csv.filename()).matches("INV-import-failures-\\d{8}-\\d{4}\\.csv");
 
         AuditEventBuilder event = onlyUserEvent(AuditActionCatalog.BULK_IMPORT_FAILED_ROWS_DOWNLOADED, batch);
         assertThat(event.newValue()).asInstanceOf(InstanceOfAssertFactories.MAP).containsExactlyInAnyOrderEntriesOf(
-                Map.of("rowCount", 5, "format", "csv"));
+                Map.of("rowCount", 7, "format", "csv"));
     }
 
     @Test

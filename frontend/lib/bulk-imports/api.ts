@@ -59,6 +59,14 @@ export interface ImportFileReceivedResponseDto {
   totalFiles: number
 }
 
+/** An upload the batch accepted (see `BulkImportStatusResponseDto.acceptedFiles`). */
+export interface BulkImportAcceptedFileDto {
+  rowNumber: number
+  filename: string
+  /** The clientFileId it was uploaded with - matches a queue entry's `id`; null if none was sent. */
+  clientFileId: string | null
+}
+
 /** Response of GET /bulk-imports/{batchId}, /bulk-imports/active and POST .../cancel. */
 export interface BulkImportStatusResponseDto {
   batchId: string
@@ -74,6 +82,8 @@ export interface BulkImportStatusResponseDto {
   failureCount: number
   /** The refused uploads' names, in upload order. */
   rejectedFilenames: string[]
+  /** The accepted uploads, in row order - only while the batch is `uploading`; empty otherwise. */
+  acceptedFiles: BulkImportAcceptedFileDto[]
   createdAt: string
   /** Set on a cancelled batch; null otherwise. */
   cancelReason: BulkImportCancelReason | null

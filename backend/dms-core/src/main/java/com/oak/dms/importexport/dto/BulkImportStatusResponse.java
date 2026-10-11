@@ -11,6 +11,8 @@ import java.util.UUID;
  * @param filesReceived     uploads that were accepted
  * @param filesRejected     uploads that were refused - each is a failed item
  * @param rejectedFilenames the refused uploads' names, in upload order
+ * @param acceptedFiles     the accepted uploads, in row order - only while
+ *                          the batch is {@code uploading}; empty otherwise
  * @param cancelReason      {@code user} or {@code expired} for a cancelled
  *                          batch; null otherwise - and null on a cancelled
  *                          batch means its user cancelled it
@@ -25,6 +27,7 @@ public record BulkImportStatusResponse(
         int successCount,
         int failureCount,
         List<String> rejectedFilenames,
+        List<ImportAcceptedFile> acceptedFiles,
         OffsetDateTime createdAt,
         String cancelReason
 ) {

@@ -13,6 +13,7 @@ import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkImportCreatedResponse;
 import com.oak.dms.importexport.dto.BulkImportStatusResponse;
 import com.oak.dms.importexport.dto.BulkImportSummary;
+import com.oak.dms.importexport.dto.ImportAcceptedFile;
 import com.oak.dms.importexport.dto.ImportDefaultsResponse;
 import com.oak.dms.importexport.dto.ImportDocumentTypeOption;
 import com.oak.dms.importexport.dto.ImportFailuresCsvFile;
@@ -577,10 +578,19 @@ public class BulkImportServiceImpl implements BulkImportService {
                 .filter(BulkImportServiceImpl::isRejected)
                 .map(item -> ImportFilenames.strip(item.getFilenameReference()))
                 .toList();
+        // Only while uploading (to rebuild the Uploads list after a reload) -
+        // the 3-second poll during processing stays light.
+        List<ImportAcceptedFile> acceptedFiles = batch.getStatus() != ImportBatchStatus.uploading
+                ? List.of()
+                : items.stream()
+                        .filter(item -> !isRejected(item))
+                        .map(item -> new ImportAcceptedFile(item.getRowNumber(),
+                                ImportFilenames.strip(item.getFilenameReference()), item.getClientFileId()))
+                        .toList();
         return new BulkImportStatusResponse(batch.getImportBatchId(), batch.getDocumentTypeId(),
                 batch.getStatus().name(), items.size(), items.size() - rejectedFilenames.size(),
                 rejectedFilenames.size(), batch.getSuccessCount(), batch.getFailureCount(), rejectedFilenames,
-                batch.getCreatedAt(), cancelReason(batch));
+                acceptedFiles, batch.getCreatedAt(), cancelReason(batch));
     }
 
     /** An upload refused at intake - saved as a failed item with FILE_REJECTED. */
@@ -631,10 +641,15 @@ public class BulkImportServiceImpl implements BulkImportService {
         return schemaField != null && schemaField.label() != null ? schemaField.label() : field;
     }
 
-    /** An item's errors as the failures report shows them, each with its field's label. */
+    /**
+     * An item's errors as the failures report shows them, each with its
+     * field's label. Warnings are left out: a failed file never became a
+     * document, so e.g. a deferred mandatory field means nothing for it.
+     */
     private static List<ImportRowProblem> toProblems(List<ImportRowError> errors,
                                                      Map<String, ImportField> schemaFields) {
         return errors.stream()
+                .filter(error -> ImportRowError.ERROR.equalsIgnoreCase(error.severity()))
                 .map(error -> new ImportRowProblem(error.field(), fieldLabel(error.field(), schemaFields),
                         error.code(), error.message(), error.severity()))
                 .toList();
