@@ -1,3 +1,5 @@
+import type { BulkImportSummaryDto } from "@/lib/bulk-imports/api"
+
 import type { BulkExportFiltersDto } from "./api"
 
 /**
@@ -62,4 +64,14 @@ export function hasActiveFilters(filters: ExportFilterState): boolean {
       filters.titleContains ||
       filters.importBatchId
   )
+}
+
+/**
+ * Whether an import is worth offering in the import-batch filter: one that
+ * finished and created at least one document. Uploading, queued, running,
+ * cancelled (by the user or expired), failed and zero-success imports
+ * would only ever match nothing.
+ */
+export function isExportableImportBatch(batch: BulkImportSummaryDto): boolean {
+  return (batch.status === "completed" || batch.status === "completed_with_errors") && batch.successCount > 0
 }

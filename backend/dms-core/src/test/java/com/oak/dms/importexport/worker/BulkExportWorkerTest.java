@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.enums.AuditActorType;
 import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.audit.helper.AuditEventBuilder;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.KeycloakIntegrationException;
@@ -69,6 +70,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static com.oak.dms.importexport.AuditTestSupport.currentCorrelationIdOrNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
@@ -172,6 +174,7 @@ class BulkExportWorkerTest {
         Optional<BulkExportWorker.ClaimedExport> claimed = worker.claim(job.getExportJobId());
 
         assertThat(claimed).isPresent();
+        assertThat(claimed.get().correlationId()).isEqualTo(job.getCorrelationId());
         assertThat(job.getStatus()).isEqualTo(ExportJobStatus.processing);
         assertThat(job.getStartedAt()).isNotNull();
         assertThat(job.getUpdatedAt()).isNotNull();
@@ -445,6 +448,122 @@ class BulkExportWorkerTest {
         assertThat(job.getDocumentCount()).isEqualTo(120);
     }
 
+    // ---- audit correlation
+
+    @Test
+    void process_bindsTheJobsCorrelationIdForEveryDownloadAndTheCompletedEvent_thenUnbinds() {
+        ExportableDocumentRow first = row("a.pdf", "clean");
+        ExportableDocumentRow second = row("b.pdf", "clean");
+        job = job(MetadataFormat.xlsx, List.of(first.documentId(), second.documentId()));
+        stubLock();
+        when(query.loadForExport(any())).thenReturn(List.of(first, second));
+        List<UUID> atDownload = new ArrayList<>();
+        when(documentService.downloadDocument(any())).thenAnswer(invocation -> {
+            // What DocumentService's DOCUMENT_DOWNLOADED event would be recorded under.
+            atDownload.add(currentCorrelationIdOrNull());
+            return content("x");
+        });
+        List<UUID> atLog = AuditTestSupport.correlationIdsAtLog(auditService);
+
+        worker.process(claimed());
+
+        assertThat(job.getStatus()).isEqualTo(ExportJobStatus.completed);
+        assertThat(atDownload).containsExactly(job.getCorrelationId(), job.getCorrelationId());
+        assertThat(AuditTestSupport.recorded(auditService)).extracting(AuditEventBuilder::action)
+                .containsExactly(AuditActionCatalog.BULK_EXPORT_COMPLETED);
+        assertThat(atLog).containsExactly(job.getCorrelationId());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+    }
+
+    @Test
+    void process_failedJob_completedEventCarriesTheCorrelationIdToo() {
+        job = job(MetadataFormat.xlsx, List.of(UUID.randomUUID()));
+        stubLock();
+        when(rolePermissionRepository.findEffectivePermissionCodes(userId, tenantId))
+                .thenReturn(List.of(PermissionCodes.DOCM_DOCUMENTS_VIEW));
+        when(keycloakUserService.getPlatformRealmRoles(keycloakId)).thenReturn(List.of("MEMBER"));
+        List<UUID> atLog = AuditTestSupport.correlationIdsAtLog(auditService);
+
+        worker.process(claimed());
+
+        assertThat(job.getStatus()).isEqualTo(ExportJobStatus.failed);
+        assertThat(atLog).containsExactly(job.getCorrelationId());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+    }
+
+    @Test
+    void process_throws_stillUnbindsTheCorrelationId() {
+        job = job(MetadataFormat.xlsx, List.of(UUID.randomUUID()));
+        stubLock();
+        when(rolePermissionRepository.findEffectivePermissionCodes(userId, tenantId)).thenReturn(List.of());
+        List<UUID> atLookup = new ArrayList<>();
+        when(keycloakUserService.getPlatformRealmRoles(keycloakId)).thenAnswer(invocation -> {
+            atLookup.add(currentCorrelationIdOrNull());
+            throw new KeycloakIntegrationException("Keycloak unreachable");
+        });
+
+        assertThatThrownBy(() -> worker.process(claimed())).isInstanceOf(KeycloakIntegrationException.class);
+
+        assertThat(atLookup).containsExactly(job.getCorrelationId());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+    }
+
+    @Test
+    void process_twoJobsOnOneThread_theSecondDoesNotInheritTheFirstsId() {
+        ExportableDocumentRow doc = row("a.pdf", "clean");
+        when(query.loadForExport(any())).thenReturn(List.of(doc));
+        List<UUID> atDownload = new ArrayList<>();
+        when(documentService.downloadDocument(doc.documentId())).thenAnswer(invocation -> {
+            atDownload.add(currentCorrelationIdOrNull());
+            return content("a");
+        });
+
+        job = job(MetadataFormat.csv, List.of(doc.documentId()));
+        stubLock();
+        UUID firstId = job.getCorrelationId();
+        worker.process(claimed());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+
+        job = job(MetadataFormat.csv, List.of(doc.documentId()));
+        stubLock();
+        UUID secondId = job.getCorrelationId();
+        worker.process(claimed());
+
+        assertThat(secondId).isNotEqualTo(firstId);
+        assertThat(atDownload).containsExactly(firstId, secondId);
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+    }
+
+    @Test
+    void process_insideAnotherBinding_restoresItAfterwards() {
+        ExportableDocumentRow doc = row("a.pdf", "clean");
+        job = job(MetadataFormat.csv, List.of(doc.documentId()));
+        stubLock();
+        when(query.loadForExport(any())).thenReturn(List.of(doc));
+        List<UUID> atDownload = new ArrayList<>();
+        when(documentService.downloadDocument(doc.documentId())).thenAnswer(invocation -> {
+            atDownload.add(currentCorrelationIdOrNull());
+            return content("a");
+        });
+        UUID outerId = UUID.randomUUID();
+
+        try (AuditRequestContext.Scope outer = AuditRequestContext.bindBackground(outerId)) {
+            UUID outerRequestId = AuditRequestContext.currentOrNull().getRequestId();
+
+            worker.process(claimed());
+
+            assertThat(atDownload).containsExactly(job.getCorrelationId());
+            assertThat(currentCorrelationIdOrNull()).isEqualTo(outerId);
+            assertThat(AuditRequestContext.currentOrNull().getRequestId()).isEqualTo(outerRequestId);
+            outer.close();
+            assertThat(AuditRequestContext.currentOrNull()).isNull();
+            // Closing again (here, then by try-with-resources) does nothing.
+            outer.close();
+        }
+
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
+    }
+
     // ---- helpers
 
     private ExportJob job(MetadataFormat format, List<UUID> documentIds) {
@@ -470,7 +589,7 @@ class BulkExportWorkerTest {
 
     private BulkExportWorker.ClaimedExport claimed() {
         return new BulkExportWorker.ClaimedExport(job.getExportJobId(), tenantId, userId, job.getMetadataFormat(),
-                job.getRequestParams(), job.getCreatedAt());
+                job.getRequestParams(), job.getCreatedAt(), job.getCorrelationId());
     }
 
     private ExportableDocumentRow row(String filename, String scanStatus) {

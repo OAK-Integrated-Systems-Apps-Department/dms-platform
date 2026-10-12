@@ -3,6 +3,7 @@ package com.oak.dms.importexport.worker;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.enums.AuditActorType;
 import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.audit.helper.AuditEventBuilder;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.importexport.AuditTestSupport;
@@ -197,6 +198,23 @@ class BulkExportCleanupJobTest {
         assertThat(event.action()).isEqualTo(AuditActionCatalog.BULK_EXPORT_COMPLETED);
         assertThat(event.outcome()).isEqualTo(AuditOutcome.FAILURE);
         assertThat(event.actorType()).isEqualTo(AuditActorType.SYSTEM);
+    }
+
+    @Test
+    void failStuck_failureEventCarriesTheJobsCorrelationId_thenUnbinds() {
+        ExportJob job = unfinishedJob(ExportJobStatus.processing, OffsetDateTime.now().minusHours(5),
+                OffsetDateTime.now().minusHours(3));
+        when(exportJobRepository.findInactiveExportIds(any(), any(), any())).thenReturn(List.of(job.getExportJobId()));
+        stubLock(job);
+        List<UUID> atLog = AuditTestSupport.correlationIdsAtLog(auditService);
+
+        cleanupJob.cleanUp();
+
+        assertThat(job.getStatus()).isEqualTo(ExportJobStatus.failed);
+        assertThat(AuditTestSupport.recorded(auditService)).extracting(AuditEventBuilder::outcome)
+                .containsExactly(AuditOutcome.FAILURE);
+        assertThat(atLog).containsExactly(job.getCorrelationId());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
     }
 
     @Test

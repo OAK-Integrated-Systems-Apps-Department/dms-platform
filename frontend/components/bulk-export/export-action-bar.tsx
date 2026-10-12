@@ -4,7 +4,6 @@ import { useState } from "react"
 import { Download } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
 import { InlineError } from "@/components/bulk-import/step-card"
 import { Button } from "@/components/ui/button"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -100,15 +99,13 @@ export function ExportActionBar({ selectedCount, selection, onRequested }: Expor
         <LimitsDialog preview={preview} onClose={() => setPreview(null)} />
       )}
 
-      <ConfirmActionDialog
+      <ExportConfirmDialog
         open={preview !== null && !overLimits}
         onOpenChange={(open) => {
           if (!open) setPreview(null)
         }}
         title={preview ? `Export ${documents(preview.documentCount)} (${formatBytes(preview.totalBytes)})?` : "Export"}
         description={`The files and a ${format === "xlsx" ? "Excel" : "CSV"} metadata sheet are zipped in the background. You can download the ZIP from My exports when it's ready.`}
-        confirmLabel="Export"
-        pendingLabel="Starting…"
         onConfirm={handleConfirm}
       />
     </>
@@ -146,6 +143,76 @@ function LimitsDialog({ preview, onClose }: { preview: BulkExportPreviewDto; onC
             <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
               OK
             </AlertDialogClose>
+          </div>
+        </AlertDialogPopup>
+      </AlertDialogPortal>
+    </AlertDialog>
+  )
+}
+
+interface ExportConfirmDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: string
+  /** Requests the export and resolves with an error message, or null on success. */
+  onConfirm: () => Promise<string | null>
+}
+
+/**
+ * "Export N documents?" - behaves like bulk import's `ConfirmActionDialog`
+ * (error shown inline, closes only once the request succeeds) but styled as
+ * an ordinary action, not a destructive one.
+ */
+function ExportConfirmDialog({ open, onOpenChange, title, description, onConfirm }: ExportConfirmDialogProps) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleConfirm() {
+    setSubmitting(true)
+    const message = await onConfirm()
+    setSubmitting(false)
+    if (message) {
+      setError(message)
+      return
+    }
+    onOpenChange(false)
+  }
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (submitting) return
+        setError(null)
+        onOpenChange(next)
+      }}
+    >
+      <AlertDialogPortal>
+        <AlertDialogPopup className="max-w-[440px]">
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+
+          {error && (
+            <p
+              role="alert"
+              className="mb-4 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-center text-[12.5px] text-[var(--rust)]"
+            >
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-center justify-center gap-2.5">
+            <AlertDialogClose
+              disabled={submitting}
+              className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:opacity-60"
+            >
+              Go back
+            </AlertDialogClose>
+            <Button onClick={handleConfirm} disabled={submitting} className="h-10 px-5">
+              <Download aria-hidden="true" />
+              {submitting ? "Starting…" : "Export"}
+            </Button>
           </div>
         </AlertDialogPopup>
       </AlertDialogPortal>

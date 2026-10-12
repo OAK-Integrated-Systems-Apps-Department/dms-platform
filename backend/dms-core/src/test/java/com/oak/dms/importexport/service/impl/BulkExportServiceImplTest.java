@@ -7,6 +7,7 @@ import com.oak.dms.audit.enums.AuditActorType;
 import com.oak.dms.audit.helper.AuditEventBuilder;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.importexport.AuditTestSupport;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.BulkExportDownload;
@@ -241,6 +242,42 @@ class BulkExportServiceImplTest {
 
         assertThat(response.status()).isEqualTo(ExportJobStatus.pending);
         assertThat(response.downloadAvailable()).isFalse();
+    }
+
+    @Test
+    void request_jobTakesTheRequestsCorrelationId_theOneTheRequestedEventIsRecordedUnder() {
+        BulkExportSelection selection = new BulkExportSelection(List.of(UUID.randomUUID()), null);
+        when(query.totals(any(), any(), any())).thenReturn(new ExportableDocumentQuery.Totals(1, 1));
+        when(query.resolveIds(any(), any(), any(), anyInt())).thenReturn(selection.documentIds());
+        List<UUID> atLog = AuditTestSupport.correlationIdsAtLog(auditService);
+        UUID requestCorrelationId = UUID.randomUUID();
+
+        // Stands in for the request's context, which AuditRequestContextFilter binds.
+        try (AuditRequestContext.Scope scope = AuditRequestContext.bindBackground(requestCorrelationId)) {
+            service.request(new CreateBulkExportRequest(selection, null));
+            assertThat(AuditTestSupport.currentCorrelationIdOrNull()).isEqualTo(requestCorrelationId);
+        }
+
+        ArgumentCaptor<ExportJob> saved = ArgumentCaptor.forClass(ExportJob.class);
+        verify(exportJobRepository).save(saved.capture());
+        assertThat(saved.getValue().getCorrelationId()).isEqualTo(requestCorrelationId);
+        assertThat(atLog).containsExactly(requestCorrelationId);
+    }
+
+    @Test
+    void request_offARequest_jobAndRequestedEventStillShareOneId() {
+        BulkExportSelection selection = new BulkExportSelection(List.of(UUID.randomUUID()), null);
+        when(query.totals(any(), any(), any())).thenReturn(new ExportableDocumentQuery.Totals(1, 1));
+        when(query.resolveIds(any(), any(), any(), anyInt())).thenReturn(selection.documentIds());
+        List<UUID> atLog = AuditTestSupport.correlationIdsAtLog(auditService);
+
+        service.request(new CreateBulkExportRequest(selection, null));
+
+        ArgumentCaptor<ExportJob> saved = ArgumentCaptor.forClass(ExportJob.class);
+        verify(exportJobRepository).save(saved.capture());
+        assertThat(saved.getValue().getCorrelationId()).isNotNull();
+        assertThat(atLog).containsExactly(saved.getValue().getCorrelationId());
+        assertThat(AuditRequestContext.currentOrNull()).isNull();
     }
 
     @Test

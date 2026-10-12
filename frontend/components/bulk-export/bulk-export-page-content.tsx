@@ -10,7 +10,12 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { exportErrorMessage, type BulkExportSelectionDto, type ExportableDocumentDto } from "@/lib/bulk-exports/api"
-import { EMPTY_EXPORT_FILTERS, toApiFilters, type ExportFilterState } from "@/lib/bulk-exports/filters"
+import {
+  EMPTY_EXPORT_FILTERS,
+  isExportableImportBatch,
+  toApiFilters,
+  type ExportFilterState,
+} from "@/lib/bulk-exports/filters"
 import {
   useExportDocumentTypes,
   useExportableDocuments,
@@ -78,7 +83,7 @@ export function BulkExportPageContent() {
   const importBatchOptions = useMemo(
     () =>
       canListImports
-        ? batches.map((batch) => ({
+        ? batches.filter(isExportableImportBatch).map((batch) => ({
             value: batch.batchId,
             label: `${batch.documentTypeName ?? "Unknown type"} · ${formatDateTime(batch.createdAt)} · ${batch.successCount} file${batch.successCount === 1 ? "" : "s"}`,
           }))

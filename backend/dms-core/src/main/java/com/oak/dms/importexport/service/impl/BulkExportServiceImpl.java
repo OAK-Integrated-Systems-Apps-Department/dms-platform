@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.importexport.config.ImportExportProperties;
@@ -143,39 +144,50 @@ public class BulkExportServiceImpl implements BulkExportService {
                 filterValues(selection.filters()), selectionLines(tenantId, selection, documentIds.size()),
                 documentIds, totals.totalBytes());
         OffsetDateTime now = OffsetDateTime.now();
-        // documentCount holds the requested count until the worker sets
-        // what actually went into the ZIP.
-        ExportJob job = exportJobRepository.save(ExportJob.builder()
-                .tenantId(tenantId)
-                .exportType(ExportJob.ExportType.bulk_selection)
-                .metadataFormat(format)
-                .requestParams(params.toJson(objectMapper))
-                .status(ExportJobStatus.pending)
-                .documentCount(documentIds.size())
-                .correlationId(UUID.randomUUID())
-                .createdBy(userId)
-                .createdAt(now)
-                .updatedBy(userId)
-                .updatedAt(now)
-                .build());
+        // The job carries the request's correlation id - the one
+        // BULK_EXPORT_REQUESTED is recorded under - so the worker can bind it
+        // and its events (each DOCUMENT_DOWNLOADED, BULK_EXPORT_COMPLETED)
+        // join the same sequence. Off a request there is none; mint one and
+        // bind it here too so the requested event still matches the job.
+        AuditRequestContext requestContext = AuditRequestContext.currentOrNull();
+        UUID correlationId = requestContext != null ? requestContext.getCorrelationId() : UUID.randomUUID();
+        ExportJob job;
+        try (AuditRequestContext.Scope scope =
+                     requestContext == null ? AuditRequestContext.bindBackground(correlationId) : null) {
+            // documentCount holds the requested count until the worker sets
+            // what actually went into the ZIP.
+            job = exportJobRepository.save(ExportJob.builder()
+                    .tenantId(tenantId)
+                    .exportType(ExportJob.ExportType.bulk_selection)
+                    .metadataFormat(format)
+                    .requestParams(params.toJson(objectMapper))
+                    .status(ExportJobStatus.pending)
+                    .documentCount(documentIds.size())
+                    .correlationId(correlationId)
+                    .createdBy(userId)
+                    .createdAt(now)
+                    .updatedBy(userId)
+                    .updatedAt(now)
+                    .build());
 
-        outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, job.getExportJobId(), REQUESTED_EVENT_TYPE,
-                requestedPayload(job));
+            outboxEventPublisher.publish(tenantId, AGGREGATE_TYPE, job.getExportJobId(), REQUESTED_EVENT_TYPE,
+                    requestedPayload(job));
 
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("documentCount", documentIds.size());
-        details.put("totalBytes", totals.totalBytes());
-        details.put("metadataFormat", format.name());
-        details.put("selectionMode", params.selectionMode());
-        details.put("filters", params.filters());
-        auditService.event(AuditActionCatalog.BULK_EXPORT_REQUESTED)
-                .tenantId(tenantId)
-                .actor(userId, TenantContext.getDisplayNameOrNull())
-                .objectType(AuditObjectTypes.EXPORT_JOB)
-                .objectId(job.getExportJobId())
-                .outcome(AuditOutcome.SUCCESS)
-                .newValue(details)
-                .log();
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("documentCount", documentIds.size());
+            details.put("totalBytes", totals.totalBytes());
+            details.put("metadataFormat", format.name());
+            details.put("selectionMode", params.selectionMode());
+            details.put("filters", params.filters());
+            auditService.event(AuditActionCatalog.BULK_EXPORT_REQUESTED)
+                    .tenantId(tenantId)
+                    .actor(userId, TenantContext.getDisplayNameOrNull())
+                    .objectType(AuditObjectTypes.EXPORT_JOB)
+                    .objectId(job.getExportJobId())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .newValue(details)
+                    .log();
+        }
 
         log.info("Requested bulk export {} for tenant {} ({} documents, {} bytes, {})", job.getExportJobId(),
                 tenantId, documentIds.size(), totals.totalBytes(), format);

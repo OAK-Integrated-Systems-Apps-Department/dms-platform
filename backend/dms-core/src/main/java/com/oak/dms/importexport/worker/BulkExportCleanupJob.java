@@ -1,5 +1,6 @@
 package com.oak.dms.importexport.worker;
 
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.entity.ExportJob;
 import com.oak.dms.importexport.entity.ExportJob.ExportJobStatus;
@@ -47,7 +48,9 @@ import java.util.function.Predicate;
  *       updated_at, which {@link BulkExportWorker} bumps at every stage and
  *       at least every 50 documents - never the job's age, so a long
  *       export that is still moving is left alone. This is also where a
- *       job whose message was dead-lettered ends up.</li>
+ *       job whose message was dead-lettered ends up. Its
+ *       BULK_EXPORT_COMPLETED (FAILURE) is written under the job's
+ *       correlation id, like the worker's events.</li>
  * </ol>
  * Safe to run on several instances at once, the same way as
  * {@link RetainedImportFilePurger}: the candidate lists aren't locked, but
@@ -174,7 +177,11 @@ public class BulkExportCleanupJob {
             }
             log.warn("Failing bulk export {}: {} with no activity since {}", exportJobId, job.getStatus(),
                     lastActivity);
-            completion.markFailed(job, REASON_STUCK, 0);
+            // Under the job's correlation id, so the failure joins the
+            // sequence its request and worker events belong to.
+            try (AuditRequestContext.Scope scope = AuditRequestContext.bindBackground(job.getCorrelationId())) {
+                completion.markFailed(job, REASON_STUCK, 0);
+            }
             return true;
         });
     }

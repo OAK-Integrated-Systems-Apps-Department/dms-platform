@@ -2,6 +2,7 @@ package com.oak.dms.importexport.worker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.audit.filter.AuditRequestContext;
 import com.oak.dms.document.DocumentNotScannedException;
 import com.oak.dms.document.DocumentService;
 import com.oak.dms.document.dto.DownloadedDocument;
@@ -71,10 +72,13 @@ import java.util.zip.ZipOutputStream;
  * <p>Runs as the requester, off any web request: {@link TenantContext} is
  * bound to them (with their display name, so the DOCUMENT_DOWNLOADED event
  * {@code DocumentService#downloadDocument} writes per document names them
- * as actor). Their permission is re-checked first
- * ({@link BulkExportAccessPolicy#requireUserMayExport}): definitively
- * revoked fails the job; a failed lookup is rethrown, so the container
- * retries and then dead-letters the message, and the job is left
+ * as actor), and the job's correlation id - the one its
+ * BULK_EXPORT_REQUESTED event was recorded under - is bound with
+ * {@link AuditRequestContext#bindBackground} for the whole build, so those
+ * events and BULK_EXPORT_COMPLETED join that sequence. Their permission is
+ * re-checked first ({@link BulkExportAccessPolicy#requireUserMayExport}):
+ * definitively revoked fails the job; a failed lookup is rethrown, so the
+ * container retries and then dead-letters the message, and the job is left
  * processing for {@link BulkExportCleanupJob}. Each document is then
  * checked again ({@link BulkExportAccessPolicy#skipReason}) and read
  * through {@code downloadDocument}, so its own checks apply too. A
@@ -153,7 +157,7 @@ public class BulkExportWorker {
      * @param requestedBy null if the requester has been deleted
      */
     record ClaimedExport(UUID exportJobId, UUID tenantId, UUID requestedBy, MetadataFormat format,
-                         String requestParams, OffsetDateTime requestedAt) {
+                         String requestParams, OffsetDateTime requestedAt, UUID correlationId) {
     }
 
     /** What went into the ZIP, and what was left out. */
@@ -221,12 +225,21 @@ public class BulkExportWorker {
             job.setUpdatedAt(now);
             exportJobRepository.save(job);
             return Optional.of(new ClaimedExport(job.getExportJobId(), job.getTenantId(), job.getCreatedBy(),
-                    job.getMetadataFormat(), job.getRequestParams(), job.getCreatedAt()));
+                    job.getMetadataFormat(), job.getRequestParams(), job.getCreatedAt(), job.getCorrelationId()));
         });
     }
 
-    /** Re-checks the requester, then builds and stores the ZIP as them. */
+    /**
+     * Re-checks the requester, then builds and stores the ZIP as them, with
+     * the job's correlation id bound for every audit event on the way.
+     */
     void process(ClaimedExport job) {
+        try (AuditRequestContext.Scope scope = AuditRequestContext.bindBackground(job.correlationId())) {
+            processAsRequester(job);
+        }
+    }
+
+    private void processAsRequester(ClaimedExport job) {
         Optional<User> requester = job.requestedBy() == null ? Optional.empty()
                 : userRepository.findByUserIdAndTenantIdAndDeletedFalse(job.requestedBy(), job.tenantId());
         if (requester.isEmpty()) {

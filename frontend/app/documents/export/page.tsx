@@ -10,21 +10,21 @@ import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 
 /**
- * Export (Module 2.1, bulk export): filter and pick documents, then request
+ * Bulk Export (Module 2.1): filter and pick documents, then request
  * a ZIP of their files plus a metadata sheet, built in the background and
  * downloadable from My exports until it expires. Every endpoint needs both
  * fie.bulk-export-documents.execute-export and docm.documents.view; the
  * sidebar entry only checks the first, so the page explains the second.
  */
 export default function BulkExportPage() {
-  usePageTitle("Export")
+  usePageTitle("Bulk Export")
   const { hasPermission } = usePermissions()
 
   return (
-    <DashboardShell initialActiveLabel="Export">
-      <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Export" }]} />
+    <DashboardShell initialActiveLabel="Bulk Export">
+      <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Bulk Export" }]} />
       <div className="mb-[22px] max-w-[680px]">
-        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Export</h1>
+        <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Bulk Export</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Export documents in bulk: filter and select documents, then download a ZIP of their files with a
           metadata sheet in Excel or CSV.
