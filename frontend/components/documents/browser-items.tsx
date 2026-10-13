@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { ApprovalBadge } from "@/components/documents/approval-badge"
 import type {
   DragBinding,
   DropBinding,
@@ -24,6 +25,7 @@ import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
+import type { DocumentWorkflowStatusDto } from "@/lib/workflow/api"
 
 /** One entry of an item's "…" menu. */
 export interface ItemAction {
@@ -437,6 +439,7 @@ export function DocumentTile({
   onOpen,
   actions,
   drag,
+  approval,
 }: {
   row: DocumentListItemDto
   checked: boolean
@@ -447,6 +450,8 @@ export function DocumentTile({
   actions: ItemAction[]
   /** Drag it (with the rest of the selection) onto a folder to move it. */
   drag?: DragBinding
+  /** Its newest approval, when it has one. */
+  approval?: DocumentWorkflowStatusDto
 }) {
   const kind = fileKind(row.fileName)
   const ext = extensionOf(row.fileName)
@@ -492,6 +497,7 @@ export function DocumentTile({
           <FriendlyDate iso={row.createdAt} />
           {row.sizeBytes !== null && ` · ${formatBytes(row.sizeBytes)}`}
         </p>
+        {approval && <ApprovalBadge status={approval} className="mt-1.5" />}
       </div>
       {onToggle && (
         <input
@@ -530,6 +536,7 @@ export function BrowserList({
   onOpenDocument,
   folderActions,
   documentActions,
+  approvals,
   empty,
   selectable = true,
   folderDrag,
@@ -545,6 +552,8 @@ export function BrowserList({
   onOpenDocument: (row: DocumentListItemDto) => void
   folderActions: (folder: FolderNode) => ItemAction[]
   documentActions: (row: DocumentListItemDto) => ItemAction[]
+  /** Newest approval per document id - absent while loading, or for documents never submitted. */
+  approvals?: Map<string, DocumentWorkflowStatusDto>
   empty: ReactNode
   /** false for a listing without checkboxes. */
   selectable?: boolean
@@ -702,6 +711,7 @@ export function BrowserList({
                             aria-label="Restricted"
                           />
                         )}
+                        <ApprovalBadge status={approvals?.get(row.documentId)} />
                       </p>
                       {row.fileName && (
                         <p className="truncate font-mono text-[11.5px] text-muted-foreground">

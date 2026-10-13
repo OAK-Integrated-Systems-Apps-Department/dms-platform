@@ -6,6 +6,8 @@ import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.entity.Role;
@@ -62,6 +64,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
     private static final Set<String> SUBMITTABLE_DOCUMENT_STATUSES = Set.of("draft", "published");
 
     private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowStageRepository stageRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
@@ -85,6 +88,13 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
 
         Document document = documentRepository.lockByDocumentIdAndTenantId(documentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        // A document the submitter can't open doesn't exist as far as they are concerned (V53/V54),
+        // exactly as on every other document endpoint. Checked after the lock, before anything is read.
+        documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.view);
+        if (document.isTemplate()) {
+            throw new WorkflowValidationException("WORKFLOW_DOCUMENT_IS_TEMPLATE",
+                    "A document template can't be submitted for approval - start a document from it first");
+        }
         if (!SUBMITTABLE_DOCUMENT_STATUSES.contains(document.getStatus())) {
             throw new WorkflowStateException("WORKFLOW_DOCUMENT_NOT_ELIGIBLE",
                     "A " + document.getStatus() + " document cannot be submitted for approval");

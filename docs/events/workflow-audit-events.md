@@ -88,4 +88,4 @@ The timeline records the same facts, in UI terms:
 - **Phase 2, by people:** `delegated`, `reassigned` (reason = the admin's reason), `commented` (detail `commentId`, never the text), `info_requested` (reason = the request's message), `info_provided`, `info_declined`, `info_cancelled` (withdrawn), `info_reassigned`, `supporting_document_added`, `supporting_document_removed`
 - **Phase 2, by the system:** `reminded`, `escalated` (detail `target` or `skipped`), `info_cancelled` when the engine closes a request (detail `automatic: true`, `cause`)
 - `approved` and `rejected` carry `detail.route`, and `detail.delegatedFrom`/`delegatedFromName` when a delegate decided, so the timeline reads "Approved by <delegate>, delegated from <original>" (decision 2).
-- Entries about an information request have `info_request_id` set (V48).
+- Entries about an information request have `info_request_id` set (V79).

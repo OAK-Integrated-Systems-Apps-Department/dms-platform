@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V46__seed_department_permissions.sql.
+-- Manual rollback ("down") for V77__seed_department_permissions.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Removes any role
 -- grants of the seeded codes first, then the permissions, then the action.

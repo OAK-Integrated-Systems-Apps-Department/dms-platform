@@ -467,6 +467,37 @@ export async function fetchDocumentWorkflowInstances(
   )
 }
 
+/**
+ * Mirrors backend/dms-core's DocumentWorkflowStatusResponse - the newest run
+ * of one document, for the badges in a list of documents.
+ */
+export interface DocumentWorkflowStatusDto {
+  documentId: string
+  instanceId: string
+  status: InstanceStatus
+  startedAt: string
+  versionChangedFlag: boolean
+}
+
+/**
+ * `GET /api/v1/workflow/document-status` - the newest run of each of these
+ * documents, in one call (at most 200). Documents the caller can't open, and
+ * documents never submitted, are simply left out.
+ */
+export async function fetchDocumentWorkflowStatuses(
+  documentIds: string[]
+): Promise<DocumentWorkflowStatusDto[]> {
+  if (documentIds.length === 0) return []
+  const params = new URLSearchParams({
+    documentIds: documentIds.slice(0, 200).join(","),
+  })
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/workflow/document-status?${params.toString()}`,
+    undefined,
+    "Could not load approval status."
+  )
+}
+
 // -------------------------------------------------------------------- tasks
 
 /** Mirrors backend/dms-core's MyTaskResponse - one row of the My Tasks queue. poolName is the role/department name for a pool task. */

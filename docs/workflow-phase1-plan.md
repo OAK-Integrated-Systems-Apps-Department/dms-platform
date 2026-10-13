@@ -41,7 +41,7 @@ The schema is designed so that Phase 2 (delegation, reminders and escalation, co
 - **Backend:** `backend/dms-core` is Spring Boot 4.1 on Java 17.
   - Persistence is Spring Data JPA on Hibernate 7, with `ddl-auto: validate` and `open-in-view: false`. Entities must therefore match the migrations exactly.
   - PostgreSQL 18.
-  - Flyway: `src/main/resources/db/migration`, currently up to V42. V35 is missing, so the next number is **V43**.
+  - Flyway: `src/main/resources/db/migration`, which was up to V42 when this plan was written, so these migrations were first written as V43-V46. They were renumbered to **V74-V77** when this work merged with the folders, versioning and templates work that had meanwhile taken V43-V73; every number below is the one that actually shipped.
   - Lombok and MapStruct 1.6.3. The newest modules use hand-written `@Component` mappers in `helper/`.
   - Also used: springdoc, RabbitMQ (`oak.dms.events` exchange), Redis, Keycloak OAuth2 resource server, `spring-boot-starter-mail`.
 - **Frontend:** `frontend/` is Next 16.2 / React 19.2 / TypeScript.
@@ -144,7 +144,7 @@ The schema is designed so that Phase 2 (delegation, reminders and escalation, co
 
 Each migration gets a rollback script `db/rollback/V<n>__<desc>.rollback.sql` and a migration `*Test`.
 
-### V43__create_departments.sql
+### V74__create_departments.sql
 ```sql
 CREATE TABLE departments (
   department_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -172,7 +172,7 @@ CREATE INDEX ix_users_department ON users (tenant_id, department_id) WHERE depar
 ```
 Deeper cycles in the parent hierarchy are prevented in the service by walking up the ancestors before saving.
 
-### V44__create_workflow_templates.sql
+### V75__create_workflow_templates.sql
 ```sql
 CREATE TABLE workflow_templates (
   template_id UUID PK DEFAULT gen_random_uuid(), tenant_id UUID NOT NULL REFERENCES tenants,
@@ -236,7 +236,7 @@ CREATE INDEX ix_workflow_stage_participants_assignee ON workflow_stage_participa
 ```
 The `reminder_before_hours`, `escalation_target` and `escalation_user_id` columns are stored in Phase 1 but have no behaviour until Phase 2.
 
-### V45__create_workflow_runtime.sql
+### V76__create_workflow_runtime.sql
 ```sql
 CREATE TABLE workflow_instances (
   instance_id UUID PK, tenant_id UUID NOT NULL REFERENCES tenants,
@@ -341,14 +341,14 @@ CREATE INDEX ix_workflow_actions_instance ON workflow_actions (instance_id, occu
 REVOKE UPDATE, DELETE ON workflow_actions FROM PUBLIC;   -- mirror V23:79 exactly as written there
 ```
 
-### V46__seed_workflow_and_department_permissions.sql
+### V77__seed_workflow_and_department_permissions.sql
 - Uses the V33/V40 pattern.
 - Adds an `IAM` action `MANAGE_DEPARTMENTS` and the permissions `iam.manage-departments.{view,create,update,delete}`.
 - All `wa.*` and `dlm.submit-documents-for-review` codes already exist, so nothing new is needed for WA.
 - No grants are given to any role, which follows the repo convention.
 
 ### Rollbacks
-`V43…V46.rollback.sql` drop children first:
+`V74…V77.rollback.sql` drop children first:
 1. actions
 2. tasks
 3. the stage-instance FK and stage instances
@@ -359,7 +359,7 @@ REVOKE UPDATE, DELETE ON workflow_actions FROM PUBLIC;   -- mirror V23:79 exactl
 8. `users.department_id`
 9. departments
 
-The V46 rollback deletes the seeded rows.
+The V77 rollback deletes the seeded rows.
 
 ---
 
@@ -556,7 +556,7 @@ Below, `J` = `backend/dms-core/src/main/java/com/oak/dms`, `T` = `backend/dms-co
 - **Parallel:** all four spikes are independent.
 
 ### W2 Schema and migrations (M, medium risk)
-- **Deliverables:** migrations V43–V46 and their rollbacks as described in §2.
+- **Deliverables:** migrations V74–V77 and their rollbacks as described in §2.
 - **Entities:**
   - `J/department/entity/Department.java`
   - `J/workflow/entity/{WorkflowTemplate, WorkflowStage, WorkflowStageParticipant, WorkflowInstance, WorkflowStageInstance, WorkflowTask, WorkflowAction}.java`
@@ -567,7 +567,7 @@ Below, `J` = `backend/dms-core/src/main/java/com/oak/dms`, `T` = `backend/dms-co
   - `J/document/DocumentRepository.java` gets `lockByDocumentIdAndTenantId`.
 - **Business rules:** the CHECKs and partial indexes from §2. Entities must validate against the schema.
 - **Tests:**
-  - `T/workflow/V43DepartmentsMigrationTest`, `V44WorkflowTemplatesMigrationTest`, `V45WorkflowRuntimeMigrationTest` and `V46...MigrationTest`, following the V41 pattern: assert the columns, CHECKs, partial-index predicates and composite FKs, then run the rollback and re-migrate.
+  - `T/workflow/V74DepartmentsMigrationTest`, `V75WorkflowTemplatesMigrationTest`, `V76WorkflowRuntimeMigrationTest` and `V77...MigrationTest`, following the V41 pattern: assert the columns, CHECKs, partial-index predicates and composite FKs, then run the rollback and re-migrate.
   - Extra assertions: a second `active` template for the same type fails with 23505; a second `in_progress` instance for the same document fails; two `active` stage instances fail; a duplicate decision by the same user fails; a reject without a reason fails the CHECK.
 - **Dependencies:** W1. Everything else depends on W2.
 
@@ -886,7 +886,7 @@ Below, `J` = `backend/dms-core/src/main/java/com/oak/dms`, `T` = `backend/dms-co
 ### W20a Tests (L; spread across all steps)
 All of the tests listed per step above, plus:
 - **Unit:** `StageOutcomeEvaluatorTest`, `RequiredCountTest`, `TaskEligibilityTest`, `ApproverResolverTest` (mocked repositories), `WorkflowNotificationMailerTest`, `AuditCatalogWorkflowTest`.
-- **Migration:** `V43`–`V46*MigrationTest`. These are `*Test` classes, so CI runs them.
+- **Migration:** `V74`–`V77*MigrationTest`. These are `*Test` classes, so CI runs them.
 - **IT:**
   - Template, Stage, Submission, Approval, ApprovalConcurrency, SubmitConcurrency, MyTasks, Status/Visibility, VersionChange, TenantIsolation, PermissionMatrix, Department, Notification.
   - These use the existing hand-built MockMvc with `jwt()` helpers (`security/auth/ImpersonationIT.java:388-399`).
@@ -995,7 +995,7 @@ The scenario definitions (A, B, E, F, G, H) were received and are specified in W
 ---
 
 ## Verification (end to end)
-1. **Build the backend:** `mvn clean verify` in `backend/dms-core`, using the bundled Maven per the env memory. All `*Test` classes must pass, including the V43–V46 migration tests.
+1. **Build the backend:** `mvn clean verify` in `backend/dms-core`, using the bundled Maven per the env memory. All `*Test` classes must pass, including the V74–V77 migration tests.
 2. **Run the ITs:** `-Dtest='*Test,*Tests,*IT'` against a scratch DB on the local Postgres (port 5433). `WorkflowApprovalConcurrencyIT` must be green on 5 consecutive runs.
 3. **Manual run** (`spring-boot:run` on `SERVER_PORT=18080` with the frontend dev server; Mailpit at :8026 shows the mails):
    1. Create a department and assign users to it.
@@ -1013,7 +1013,7 @@ The scenario definitions (A, B, E, F, G, H) were received and are specified in W
 
 | Plan said | Built as | Why |
 |---|---|---|
-| Department permissions `iam.manage-departments.*` | `otua.manage-departments.{view,create,update,delete}` (V46, module OTUA) | `IAM` is the *Third-Party Integration* module. Organisation and user administration is `OTUA`. |
+| Department permissions `iam.manage-departments.*` | `otua.manage-departments.{view,create,update,delete}` (V77, module OTUA) | `IAM` is the *Third-Party Integration* module. Organisation and user administration is `OTUA`. |
 | Guard order in §4: instance status checked before stage status | Stage status first, then instance | A halted or finished workflow has no active stage, and `WORKFLOW_STAGE_NOT_ACTIVE` is the precise answer (Scenario H2). The other refusal codes are unchanged. |
 | "Load the task, then lock" (§4 pseudocode) | Parent ids are fetched as **scalar queries**, so the first load of each row is its `FOR UPDATE` | Hibernate returns an entity already in the persistence context unchanged from a lock query. `WorkflowConcurrencyIT` caught two last approvers both reading `approved_count = 0`. The same fix is applied in the version-change listener. |
 | Separate `WorkflowStageService` | Stage operations live in `WorkflowTemplateService`, behind their own `WorkflowStageController` | They share the draft-lock, audit and response building. The API paths are as planned. |

@@ -5,6 +5,8 @@ import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
@@ -12,6 +14,7 @@ import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import com.oak.dms.security.rbac.repository.RoleRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.workflow.dto.DocumentWorkflowStatusResponse;
 import com.oak.dms.workflow.dto.InfoRequestView;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
 import com.oak.dms.workflow.dto.MyTaskResponse;
@@ -57,6 +60,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,6 +94,7 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
     private final WorkflowInfoRequestRepository infoRequestRepository;
     private final WorkflowSupportingDocumentRepository supportingDocumentRepository;
     private final AuthorizationService authorizationService;
+    private final DocumentAccessService documentAccessService;
 
     @Override
     @Transactional(readOnly = true)
@@ -166,6 +171,32 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                         .findByInstanceIdAndTenantIdAndDeletedFalseOrderByAddedAtAsc(instanceId, tenantId)),
                 requests.stream().filter(r -> "open".equals(r.status()) && userId.equals(r.requestedFrom().userId()))
                         .map(InfoRequestView::infoRequestId).toList());
+    }
+
+    /** Gated at the controller by document-view / submit / audit-trail permissions. */
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentWorkflowStatusResponse> documentStatuses(Collection<UUID> documentIds) {
+        UUID tenantId = TenantContext.getTenantId();
+        Set<UUID> wanted = new HashSet<>(documentIds);
+        wanted.remove(null);
+        if (wanted.isEmpty()) {
+            return List.of();
+        }
+        // Only documents the caller can open, so a badge never says a hidden document exists.
+        DocumentAccessView access = documentAccessService.forCaller();
+        Set<UUID> visible = documentRepository.findAllByDocumentIdInAndTenantIdAndDeletedFalse(wanted, tenantId)
+                .stream().filter(access::canSee).map(Document::getDocumentId).collect(Collectors.toSet());
+        if (visible.isEmpty()) {
+            return List.of();
+        }
+        // Newest first, so the first run seen per document is the one shown.
+        Map<UUID, DocumentWorkflowStatusResponse> newest = new LinkedHashMap<>();
+        for (WorkflowInstance i : instanceRepository.findByDocuments(tenantId, visible)) {
+            newest.putIfAbsent(i.getDocumentId(), new DocumentWorkflowStatusResponse(i.getDocumentId(),
+                    i.getInstanceId(), i.getStatus().name(), i.getStartedAt(), i.isVersionChangedFlag()));
+        }
+        return List.copyOf(newest.values());
     }
 
     /** Gated at the controller by document-view / submit / audit-trail permissions. */

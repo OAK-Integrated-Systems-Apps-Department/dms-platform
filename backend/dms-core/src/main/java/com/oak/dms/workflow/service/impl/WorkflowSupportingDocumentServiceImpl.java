@@ -7,6 +7,8 @@ import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
@@ -58,6 +60,7 @@ public class WorkflowSupportingDocumentServiceImpl implements WorkflowSupporting
     private final WorkflowInfoRequestRepository infoRequestRepository;
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
+    private final DocumentAccessService documentAccessService;
     private final TaskRouting taskRouting;
     private final AuthorizationService authorizationService;
     private final WorkflowQueryService queryService;
@@ -130,14 +133,18 @@ public class WorkflowSupportingDocumentServiceImpl implements WorkflowSupporting
     public List<WorkflowSupportingDocument> attach(WorkflowInstance instance, UUID infoRequestId,
                                                    List<SupportingDocumentInput> inputs, UUID actorUserId) {
         if (!authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)) {
-            // Decision 18: access is never bypassed - you can only attach what you can open yourself.
+            // Decision 18: access is never bypassed - you can only attach what you can open
+            // yourself. The permission first, then the document's own access below.
             throw new WorkflowAccessException("WORKFLOW_DOCUMENT_ACCESS_REQUIRED",
                     "You need permission to view documents to attach one");
         }
         UUID tenantId = instance.getTenantId();
+        // The actor is always the caller (standalone attach, or answering an information request).
+        DocumentAccessView access = documentAccessService.forCaller();
         List<WorkflowSupportingDocument> saved = new ArrayList<>();
         for (SupportingDocumentInput input : inputs) {
             Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(input.documentId(), tenantId)
+                    .filter(access::canSee)
                     .orElseThrow(() -> new WorkflowValidationException("WORKFLOW_SUPPORTING_DOCUMENT_INVALID",
                             "The selected document does not exist"));
             if (document.getDocumentId().equals(instance.getDocumentId())) {

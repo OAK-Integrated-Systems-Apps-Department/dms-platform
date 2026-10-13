@@ -23,6 +23,7 @@ import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -70,6 +72,17 @@ public class DashboardService {
             AuditActionCatalog.DOCUMENT_ACCESS_CHANGED, AuditActionCatalog.DOCUMENT_QUARANTINED,
             AuditActionCatalog.FOLDER_CREATED, AuditActionCatalog.FOLDER_RENAMED, AuditActionCatalog.FOLDER_MOVED,
             AuditActionCatalog.FOLDER_DELETED, AuditActionCatalog.FOLDER_ACCESS_CHANGED);
+
+    /**
+     * Approval events worth showing - only ever for a run the caller takes
+     * part in, whatever their audit permission, so the feed can't say who
+     * submitted what.
+     */
+    static final List<String> WORKFLOW_ACTIVITY_ACTIONS = List.of(AuditActionCatalog.WORKFLOW_SUBMITTED,
+            AuditActionCatalog.WORKFLOW_APPROVED, AuditActionCatalog.WORKFLOW_REJECTED);
+
+    /** Not an audited action - a row the feed builds from the caller's own open tasks (see WORKFLOW_ACTIVITY). */
+    static final String WORKFLOW_TASK_ASSIGNED = "WORKFLOW_TASK_ASSIGNED";
 
     /** Calendar months in the usage chart. */
     static final int USAGE_MONTHS = 12;
@@ -355,7 +368,7 @@ public class DashboardService {
 
     /** The newest documents, through the document browser's own listing (and its access rules). */
     private List<RecentDocument> recent(UUID tenantId) {
-        List<DocumentListItem> items = documentService.listDocuments(null, true, null,
+        List<DocumentListItem> items = documentService.listDocuments(null, true, null, null, null,
                 PageRequest.of(0, RECENT_DOCUMENTS, Sort.by(Sort.Direction.DESC, "createdAt"))).getContent();
         Map<UUID, String> names = userNames(tenantId, items.stream().map(DocumentListItem::ownerUserId).toList());
         return items.stream()
@@ -364,11 +377,18 @@ public class DashboardService {
                 .toList();
     }
 
+    /**
+     * The feed: document and folder events in the caller's scope, plus the
+     * approval events of runs they take part in and the approvals waiting on
+     * them - newest first, the two sources merged and cut to
+     * {@link #ACTIVITY_ENTRIES}.
+     */
     private List<Activity> activity(MapSqlParameterSource scope) {
         MapSqlParameterSource params = new MapSqlParameterSource(scope.getValues())
                 .addValue("actions", ACTIVITY_ACTIONS)
+                .addValue("workflowActions", WORKFLOW_ACTIVITY_ACTIONS)
                 .addValue("entries", ACTIVITY_ENTRIES);
-        return jdbc.query("""
+        List<Activity> entries = new ArrayList<>(jdbc.query("""
                 select a.id, a.action, a.object_type, a.object_id, a.resource_name, a.actor_id,
                        coalesce(u.display_name, a.actor_display_name) as actor_name, a.occurred_at
                 from audit_events a
@@ -376,12 +396,87 @@ public class DashboardService {
                 where""" + IN_SCOPE + """
                   and a.action in (:actions)
                 order by a.occurred_at desc
-                limit :entries""", params,
-                (rs, i) -> new Activity(rs.getObject("id", UUID.class), rs.getString("action"),
-                        rs.getString("object_type"), rs.getObject("object_id", UUID.class),
-                        rs.getString("resource_name"), rs.getObject("actor_id", UUID.class),
-                        rs.getString("actor_name"), rs.getObject("occurred_at", OffsetDateTime.class)));
+                limit :entries""", params, ACTIVITY_ROW));
+        entries.addAll(jdbc.query(WORKFLOW_ACTIVITY, params, ACTIVITY_ROW));
+        entries.sort(Comparator.comparing(Activity::occurredAt).reversed());
+        return entries.size() > ACTIVITY_ENTRIES ? List.copyOf(entries.subList(0, ACTIVITY_ENTRIES))
+                : List.copyOf(entries);
     }
+
+    private static final RowMapper<Activity> ACTIVITY_ROW = (rs, i) ->
+            new Activity(rs.getObject("id", UUID.class), rs.getString("action"), rs.getString("object_type"),
+                    rs.getObject("object_id", UUID.class), rs.getString("resource_name"),
+                    rs.getObject("actor_id", UUID.class), rs.getString("actor_name"),
+                    rs.getObject("occurred_at", OffsetDateTime.class));
+
+    /**
+     * Who counts as taking part in a run - the same people
+     * {@code WorkflowQueryService#requireVisible} lets see it: its initiator,
+     * anyone who held or decided one of its tasks, and anyone asked for
+     * information or who attached evidence. Never a bystander, so the feed
+     * leaks nothing even to a caller who may read the whole audit history.
+     */
+    private static final String A_PARTICIPANT = """
+              and (i.initiated_by = :me
+                or exists (select 1 from workflow_tasks t
+                           join workflow_stage_instances si on si.stage_instance_id = t.stage_instance_id
+                           where si.instance_id = i.instance_id and not t.is_deleted
+                             and (t.acted_by = :me or t.claimed_by = :me or t.delegated_to = :me
+                               or t.delegated_from = :me or t.escalated_to = :me
+                               or (t.assignee_type = 'user' and t.assignee_id = :me)))
+                or exists (select 1 from workflow_info_requests r where r.instance_id = i.instance_id
+                             and not r.is_deleted and (r.requested_from = :me or r.requested_by = :me))
+                or exists (select 1 from workflow_supporting_documents sd where sd.instance_id = i.instance_id
+                             and not sd.is_deleted and sd.added_by = :me))
+            """;
+
+    /**
+     * Approval events of runs the caller takes part in, plus one row per open
+     * task waiting on them ({@link #WORKFLOW_TASK_ASSIGNED}, built from the
+     * task itself - there is no audit event for an assignment). The task
+     * routes mirror {@code TaskRouting}.
+     */
+    private static final String WORKFLOW_ACTIVITY = """
+            select a.id, a.action, a.object_type, a.object_id, a.resource_name, a.actor_id,
+                   coalesce(u.display_name, a.actor_display_name) as actor_name, a.occurred_at
+            from audit_events a
+            join workflow_instances i on i.instance_id = a.object_id and i.tenant_id = a.tenant_id
+            left join users u on u.user_id = a.actor_id and u.tenant_id = a.tenant_id
+            where a.tenant_id = :tenant and a.outcome = 'SUCCESS'
+              and a.object_type = 'WORKFLOW_INSTANCE' and a.action in (:workflowActions)
+            """ + A_PARTICIPANT + """
+            union all
+            select t.task_id as id, 'WORKFLOW_TASK_ASSIGNED' as action,
+                   'WORKFLOW_TASK' as object_type, t.task_id as object_id,
+                   d.title as resource_name, i.initiated_by as actor_id, u.display_name as actor_name,
+                   t.created_at as occurred_at
+            from workflow_tasks t
+            join workflow_stage_instances si on si.stage_instance_id = t.stage_instance_id
+            join workflow_instances i on i.instance_id = si.instance_id
+            join documents d on d.document_id = i.document_id and d.tenant_id = i.tenant_id
+            left join users u on u.user_id = i.initiated_by and u.tenant_id = i.tenant_id
+            where t.tenant_id = :tenant and not t.is_deleted
+              and t.status in ('pending', 'claimed', 'awaiting_info')
+              and si.status = 'active' and not si.is_deleted
+              and i.status = 'in_progress' and not i.is_deleted
+              and (t.escalated_to = :me
+                or t.delegated_to = :me
+                or (t.delegated_to is null and t.claimed_by = :me)
+                or (t.delegated_to is null and t.claimed_by is null
+                    and t.assignee_type = 'user' and t.assignee_id = :me)
+                or (t.delegated_to is null and t.claimed_by is null and t.assignee_type = 'role'
+                    and exists (select 1 from user_roles ur join roles r on r.role_id = ur.role_id
+                                where ur.user_id = :me and ur.tenant_id = :tenant and ur.role_id = t.assignee_id
+                                  and not r.is_deleted and r.status = 'active'))
+                or (t.delegated_to is null and t.claimed_by is null and t.assignee_type = 'department'
+                    and exists (select 1 from users me join departments dep
+                                     on dep.department_id = me.department_id
+                                where me.user_id = :me and me.tenant_id = :tenant
+                                  and me.department_id = t.assignee_id
+                                  and not dep.is_deleted and dep.status = 'active')))
+            order by occurred_at desc
+            limit :entries
+            """;
 
     private Map<UUID, String> userNames(UUID tenantId, Collection<UUID> userIds) {
         List<UUID> ids = userIds.stream().filter(Objects::nonNull).distinct().toList();

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Download,
+  FileSearch,
   FolderInput,
   FolderOpen,
   FolderPlus,
@@ -13,6 +14,7 @@ import {
   LayoutGrid,
   List,
   Pencil,
+  Send,
   ShieldCheck,
   Trash2,
   Eye,
@@ -48,6 +50,7 @@ import {
   type AccessTarget,
 } from "@/components/folders/access-sheet"
 import { FolderSelect } from "@/components/folders/folder-select"
+import { SubmitToWorkflowDialog } from "@/components/workflow/submit-to-workflow-button"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { SearchInput } from "@/components/ui/search-input"
@@ -82,6 +85,7 @@ import {
   useBrowserView,
 } from "@/lib/documents/use-browser-view"
 import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
+import { useDocumentWorkflowStatuses } from "@/lib/workflow/use-document-workflow-statuses"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 25
@@ -98,6 +102,7 @@ type Dialog =
   | { kind: "access"; target: AccessTarget; key: number }
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
+  | { kind: "submit-for-approval"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -138,6 +143,9 @@ function FolderView({ folderId }: { folderId: string | null }) {
     export: hasPermission(PermissionCodes.FIE_BULK_EXPORT_EXECUTE),
     versions: hasPermission(PermissionCodes.DVC_VERSIONS_VIEW),
     restoreVersion: hasPermission(PermissionCodes.DVC_VERSIONS_RESTORE),
+    submitForApproval: hasPermission(
+      PermissionCodes.DLM_SUBMIT_DOCUMENTS_FOR_REVIEW
+    ),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
@@ -177,6 +185,8 @@ function FolderView({ folderId }: { folderId: string | null }) {
       }),
   })
   const rows = documents.data?.content ?? []
+  // Where each document on this page stands in its newest approval - one call for the whole page.
+  const approvals = useDocumentWorkflowStatuses(rows.map((r) => r.documentId))
 
   function open(next: string | null) {
     router.push(
@@ -409,8 +419,30 @@ function FolderView({ folderId }: { folderId: string | null }) {
   function documentActions(row: DocumentListItemDto): ItemAction[] {
     const actions: ItemAction[] = [
       { label: "Open", icon: Eye, onSelect: () => setPreview(row) },
+      {
+        label: "View details",
+        icon: FileSearch,
+        onSelect: () => router.push(`/documents/${row.documentId}`),
+      },
       { label: "Download", icon: Download, onSelect: () => void download(row) },
     ]
+    // Submitting is offered only while nothing is already in approval - the same rule the
+    // document page applies to SubmitToWorkflowButton, and the server checks it again.
+    if (
+      can.submitForApproval &&
+      !approvals.isPending &&
+      approvals.data?.get(row.documentId)?.status !== "in_progress"
+    )
+      actions.push({
+        label: "Submit for approval",
+        icon: Send,
+        onSelect: () =>
+          setDialog({
+            kind: "submit-for-approval",
+            row,
+            key: Date.now(),
+          }),
+      })
     if (can.versions)
       actions.push({
         label: "Version history",
@@ -732,6 +764,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
           onOpenDocument={(row) => setPreview(row)}
           folderActions={folderActions}
           documentActions={documentActions}
+          approvals={approvals.data}
           empty={emptyMessage}
           folderDrag={folderDrag}
           folderDrop={dnd.target}
@@ -762,6 +795,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
               onOpen={() => setPreview(row)}
               actions={documentActions(row)}
               drag={documentDrag(row)}
+              approval={approvals.data?.get(row.documentId)}
             />
           ))}
         </ul>
@@ -930,12 +964,23 @@ function FolderView({ folderId }: { folderId: string | null }) {
         />
       )}
 
+      {dialog?.kind === "submit-for-approval" && (
+        <SubmitToWorkflowDialog
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          documentTitle={dialog.row.title}
+          onOpenChange={(open) => !open && setDialog(null)}
+          onSubmitted={refresh}
+        />
+      )}
+
       {preview && (
         <DocumentPreview
           key={preview.documentId}
           row={preview}
           onOpenChange={(open) => !open && setPreview(null)}
           onDownload={() => void download(preview)}
+          onViewDetails={() => router.push(`/documents/${preview.documentId}`)}
         />
       )}
 

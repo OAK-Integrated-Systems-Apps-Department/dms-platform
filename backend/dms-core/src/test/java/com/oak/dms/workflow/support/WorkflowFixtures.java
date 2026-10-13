@@ -3,6 +3,7 @@ package com.oak.dms.workflow.support;
 import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.document.DocumentVersionPromoter;
+import com.oak.dms.document.DocumentVersionService;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.scanning.entity.ScanEngine;
@@ -201,8 +202,18 @@ public class WorkflowFixtures {
 
     /** A new latest version of an existing document - publishes DocumentVersionCreatedEvent like a real upload. */
     public UUID newVersion(UUID tenantId, UUID documentId, User uploader) {
+        return newVersion(tenantId, documentId, uploader, DocumentVersionService.REPLACEMENT_UPLOAD);
+    }
+
+    /**
+     * {@link #newVersion} with the created_reason a given {@code DocumentVersionService} path sends
+     * through the gate - {@code replacement_upload} for an upload over the document,
+     * {@code rollback} for putting an older version back. Picks up at the promoter, the point the
+     * gate reaches once the file has scanned clean, so no ClamAV is needed.
+     */
+    public UUID newVersion(UUID tenantId, UUID documentId, User uploader, String createdReason) {
         return tx.execute(status -> {
-            ScanResult scan = cleanScan(tenantId, uploader.getUserId(), IngestionKind.new_version, "replacement_upload")
+            ScanResult scan = cleanScan(tenantId, uploader.getUserId(), IngestionKind.new_version, createdReason)
                     .targetDocumentId(documentId)
                     .build();
             DocumentPromoter.PromotionPlan plan = promoter.prepare(scan);

@@ -13,6 +13,7 @@ import {
   Download,
   FileArchive,
   FileQuestion,
+  FileSearch,
   Loader2,
   ZoomIn,
   ZoomOut,
@@ -216,6 +217,7 @@ export function DocumentPreview({
   version,
   onOpenChange,
   onDownload,
+  onViewDetails,
 }: {
   row: Pick<
     DocumentListItemDto,
@@ -231,6 +233,8 @@ export function DocumentPreview({
   version?: { versionId: string; label: string; current: boolean }
   onOpenChange: (open: boolean) => void
   onDownload: () => void
+  /** Opens the document's own page (/documents/{id}) - omitted where there is nowhere to go. */
+  onViewDetails?: () => void
 }) {
   const renderer = rendererFor(row.mimeType, row.fileName)
   const kind = fileKind(row.fileName)
@@ -381,6 +385,12 @@ export function DocumentPreview({
                   <ZoomIn />
                 </Button>
               </div>
+            )}
+            {onViewDetails && (
+              <Button size="sm" variant="outline" onClick={onViewDetails}>
+                <FileSearch />
+                View details
+              </Button>
             )}
             <Button size="sm" variant="outline" onClick={onDownload}>
               <Download />

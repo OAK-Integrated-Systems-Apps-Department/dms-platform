@@ -51,24 +51,49 @@ public class FolderAccessService {
      */
     @Transactional(readOnly = true)
     public FolderAccessView forCaller() {
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-        List<Folder> folders = cache.folders(tenantId,
-                () -> folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId));
-        boolean admin = authorizationService.isTenantAdmin();
+        return forUser(TenantContext.getTenantId(), TenantContext.getUserId(), authorizationService.isTenantAdmin());
+    }
+
+    /**
+     * {@link #forCaller()} worked out for someone else - what a mentioned
+     * person or a candidate in a people picker could open. The caller passes
+     * {@code admin} because tenant-admin status comes from Keycloak: one
+     * lookup for a single user ({@code UserPermissions#isTenantAdmin}), or
+     * one list for a whole picker ({@code UserPermissions#tenantAdminIds}).
+     */
+    @Transactional(readOnly = true)
+    public FolderAccessView forUser(UUID tenantId, UUID userId, boolean admin) {
+        return forUser(tenantId, userId, admin, tenantFolders(tenantId));
+    }
+
+    /**
+     * {@link #forUser(UUID, UUID, boolean)} over a folder list already in
+     * hand - for working several people out at once, so the tree is read once
+     * rather than once per person (the cache can't help inside a read-write
+     * transaction, which never stores).
+     */
+    @Transactional(readOnly = true)
+    public FolderAccessView forUser(UUID tenantId, UUID userId, boolean admin, List<Folder> folders) {
         Map<UUID, FolderAccessLevel> granted = Map.of();
-        // Only look the caller's entries up when something is actually restricted.
+        // Only look their entries up when something is actually restricted.
         if (!admin && folders.stream().anyMatch(f -> f.getAccessMode() == FolderAccessMode.restricted)) {
             granted = cache.folderGrants(tenantId, userId, () -> {
                 Map<UUID, FolderAccessLevel> best = new HashMap<>();
                 for (FolderAccessEntry entry : accessRepository.findForPrincipals(tenantId, userId,
-                        principals.callerRoleIds())) {
+                        principals.roleIdsOf(tenantId, userId))) {
                     best.merge(entry.getFolderId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
                 }
                 return best;
             });
         }
         return new FolderAccessView(folders, granted, admin);
+    }
+
+    /** The tenant's live folders, from {@link AccessCache} while nothing access-related has changed. */
+    @Transactional(readOnly = true)
+    public List<Folder> tenantFolders(UUID tenantId) {
+        return cache.folders(tenantId,
+                () -> folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId));
     }
 
     /** Whether the caller is a tenant admin - full access to every folder and document. */

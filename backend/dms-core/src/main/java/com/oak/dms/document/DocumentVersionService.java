@@ -49,6 +49,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DocumentVersionService {
 
+    /** created_reason of a version uploaded over an existing document - what {@link #upload} sends through the gate. */
+    public static final String REPLACEMENT_UPLOAD = "replacement_upload";
+    /** created_reason of a version made by putting an older one back - what {@link #restore} sends through the gate. */
+    public static final String ROLLBACK = "rollback";
+
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final DocumentAccessService documentAccessService;
@@ -121,7 +126,7 @@ public class DocumentVersionService {
     public IngestionTicketResponse upload(UUID documentId, String originalFilename, long contentLength,
                                           InputStream content, String comment) {
         visible(documentId, FolderAccessLevel.edit);
-        return ingestionGate.submit(IngestionRequest.newVersion(documentId, "replacement_upload", originalFilename,
+        return ingestionGate.submit(IngestionRequest.newVersion(documentId, REPLACEMENT_UPLOAD, originalFilename,
                 contentLength, content, clean(comment)));
     }
 
@@ -140,7 +145,7 @@ public class DocumentVersionService {
         DownloadedDocument old = versionContent.open(version);
         IngestionTicketResponse ticket;
         try (InputStream content = old.content()) {
-            ticket = ingestionGate.submit(IngestionRequest.newVersion(documentId, "rollback",
+            ticket = ingestionGate.submit(IngestionRequest.newVersion(documentId, ROLLBACK,
                     version.getOriginalFilename(), version.getSizeBytes(), content,
                     "Restored from version " + label(version)));
         } catch (IOException e) {

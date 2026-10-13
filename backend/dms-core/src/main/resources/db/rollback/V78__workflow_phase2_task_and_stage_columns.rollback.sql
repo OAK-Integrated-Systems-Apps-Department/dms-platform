@@ -1,7 +1,7 @@
--- Manual rollback ("down") for V47__workflow_phase2_task_and_stage_columns.sql.
+-- Manual rollback ("down") for V78__workflow_phase2_task_and_stage_columns.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Re-creates the
--- two V45 indexes with their original predicates. Run the V48 rollback first.
+-- two V76 indexes with their original predicates. Run the V79 rollback first.
 DROP INDEX IF EXISTS ix_workflow_tasks_sla_due;
 DROP INDEX IF EXISTS ix_workflow_tasks_escalated_to;
 DROP INDEX IF EXISTS ix_workflow_tasks_delegated_to;

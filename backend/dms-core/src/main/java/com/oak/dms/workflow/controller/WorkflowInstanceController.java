@@ -2,6 +2,7 @@ package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.workflow.dto.CancelWorkflowRequest;
+import com.oak.dms.workflow.dto.DocumentWorkflowStatusResponse;
 import com.oak.dms.workflow.dto.SubmitWorkflowRequest;
 import com.oak.dms.workflow.dto.SupportingDocumentInput;
 import com.oak.dms.workflow.dto.SupportingDocumentView;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,6 +44,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Workflow instances", description = "Submit documents for approval and track their status")
 public class WorkflowInstanceController {
+
+    private static final int MAX_STATUS_DOCUMENTS = 200;
 
     private final WorkflowSubmissionService submissionService;
     private final WorkflowQueryService queryService;
@@ -86,6 +90,16 @@ public class WorkflowInstanceController {
     public PageResponse<WorkflowInstanceSummaryResponse> documentHistory(@PathVariable("documentId") UUID documentId,
             @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(queryService.documentHistory(documentId, pageable));
+    }
+
+    @GetMapping("/workflow/document-status")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).DLM_SUBMIT_DOCUMENTS_FOR_REVIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_AUDIT_TRAIL_VIEW)")
+    @Operation(summary = "The newest workflow run of each of these documents, for a list of documents",
+            description = "documentIds: at most 200 per call. Documents the caller can't open, and documents never "
+                    + "submitted, are left out.")
+    public List<DocumentWorkflowStatusResponse> documentStatuses(@RequestParam("documentIds") List<UUID> documentIds) {
+        return queryService.documentStatuses(documentIds.size() > MAX_STATUS_DOCUMENTS
+                ? documentIds.subList(0, MAX_STATUS_DOCUMENTS) : documentIds);
     }
 
     @PostMapping("/workflow/instances/{id}/supporting-documents")

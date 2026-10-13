@@ -21,24 +21,6 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     Optional<Document> findByDocumentIdAndTenantIdAndDeletedFalse(UUID documentId, UUID tenantId);
 
 
-    // Document browser - every variant is tenant-scoped and skips deleted documents and templates (V69).
-    Page<Document> findByTenantIdAndDeletedFalseAndTemplateFalse(UUID tenantId, Pageable pageable);
-
-    Page<Document> findByTenantIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(UUID tenantId,
-                                                                                             String title,
-                                                                                             Pageable pageable);
-
-    Page<Document> findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalse(UUID tenantId, UUID folderId,
-                                                                            Pageable pageable);
-
-    Page<Document> findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
-            UUID tenantId, UUID folderId, String title, Pageable pageable);
-
-    Page<Document> findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalse(UUID tenantId, Pageable pageable);
-
-    Page<Document> findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
-            UUID tenantId, String title, Pageable pageable);
-
     // A document type's templates (V69), by name.
     List<Document> findByTenantIdAndTemplateTrueAndDeletedFalseOrderByTitleAsc(UUID tenantId);
 
@@ -46,32 +28,66 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                                                                                 UUID documentTypeId);
 
     // Access-filtered browsing (V53/V54), for callers who can't see everything. A document is
-    // visible when it follows its folder and that folder isn't hidden, or it's restricted and the
-    // caller is on its list. :title '' matches every title.
+    // visible when it follows its folder and that folder isn't hidden, it's restricted and the
+    // caller is on its list, or it is the subject of a workflow the caller takes part in (Phase 2,
+    // DocumentAccessService#workflowReadable). :title '' matches every title.
     String FOLLOWS_FOLDER = "d.accessMode = com.oak.dms.folder.FolderAccessMode.inherit";
     String ON_ITS_LIST = "(d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted and d.documentId in :granted)";
+    String IN_MY_WORKFLOW = "d.documentId in :workflowReadable";
     String LIVE_TITLED = "d.tenantId = :tenantId and d.deleted = false and d.template = false "
             + "and lower(d.title) like lower(concat('%', :title, '%')) ";
+    /** The document picker's optional narrowing - both null means "no filter". */
+    String NARROWED = "and (:documentTypeId is null or d.documentTypeId = :documentTypeId) "
+            + "and (:excludeDocumentId is null or d.documentId <> :excludeDocumentId) ";
 
     /** "All documents": the top level and every folder the caller can see. */
-    @Query("select d from Document d where " + LIVE_TITLED + "and ((" + FOLLOWS_FOLDER
-            + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + ")")
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and ((" + FOLLOWS_FOLDER
+            + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
     Page<Document> findVisible(@Param("tenantId") UUID tenantId, @Param("title") String title,
                                @Param("hidden") Collection<UUID> hiddenFolderIds,
-                               @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+                               @Param("granted") Collection<UUID> grantedDocumentIds,
+                               @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
+                               @Param("documentTypeId") UUID documentTypeId,
+                               @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
 
     /** One folder the caller can see. */
-    @Query("select d from Document d where " + LIVE_TITLED + "and d.folderId = :folderId and (" + FOLLOWS_FOLDER
-            + " or " + ON_ITS_LIST + ")")
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId and ((" + FOLLOWS_FOLDER
+            + ") or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
     Page<Document> findVisibleInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
                                        @Param("folderId") UUID folderId,
-                                       @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+                                       @Param("granted") Collection<UUID> grantedDocumentIds,
+                                       @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
+                                       @Param("documentTypeId") UUID documentTypeId,
+                                       @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
 
     /** The top level. */
-    @Query("select d from Document d where " + LIVE_TITLED + "and d.folderId is null and (" + FOLLOWS_FOLDER
-            + " or " + ON_ITS_LIST + ")")
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null and ((" + FOLLOWS_FOLDER
+            + ") or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
     Page<Document> findVisibleAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
-                                         @Param("granted") Collection<UUID> grantedDocumentIds, Pageable pageable);
+                                         @Param("granted") Collection<UUID> grantedDocumentIds,
+                                         @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
+                                         @Param("documentTypeId") UUID documentTypeId,
+                                         @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+
+    // The same three listings for a caller who sees everything (an admin, or a tenant with nothing
+    // restricted): no access predicate to evaluate, only the browser's own filters.
+
+    /** "All documents" for a caller who sees everything. */
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED)
+    Page<Document> findLive(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                            @Param("documentTypeId") UUID documentTypeId,
+                            @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId")
+    Page<Document> findLiveInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                    @Param("folderId") UUID folderId,
+                                    @Param("documentTypeId") UUID documentTypeId,
+                                    @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null")
+    Page<Document> findLiveAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                      @Param("documentTypeId") UUID documentTypeId,
+                                      @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
 
     /**
      * "Shared with me": restricted documents whose own list names the user or
@@ -152,30 +168,6 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                    @Param("to") OffsetDateTime to,
                                    @Param("hidden") Collection<UUID> hiddenFolderIds,
                                    @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds);
-
-    /**
-     * The tenant's live documents, newest first. search is a lower-cased
-     * {@code %term%} pattern matched against the title (null = no filter);
-     * documentTypeId and excludeDocumentId are optional.
-     */
-    @Query(value = """
-            select d from Document d
-            where d.tenantId = :tenantId and d.deleted = false
-              and (:search is null or lower(d.title) like :search)
-              and (:documentTypeId is null or d.documentTypeId = :documentTypeId)
-              and (:excludeDocumentId is null or d.documentId <> :excludeDocumentId)
-            order by d.createdAt desc, d.documentId
-            """,
-            countQuery = """
-            select count(d) from Document d
-            where d.tenantId = :tenantId and d.deleted = false
-              and (:search is null or lower(d.title) like :search)
-              and (:documentTypeId is null or d.documentTypeId = :documentTypeId)
-              and (:excludeDocumentId is null or d.documentId <> :excludeDocumentId)
-            """)
-    Page<Document> search(@Param("tenantId") UUID tenantId, @Param("search") String search,
-                          @Param("documentTypeId") UUID documentTypeId,
-                          @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
 
     /**
      * Row lock on the document - the first lock of the workflow lock order

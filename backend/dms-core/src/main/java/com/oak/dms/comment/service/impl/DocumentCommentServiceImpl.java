@@ -18,6 +18,8 @@ import com.oak.dms.comment.service.MentionService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
@@ -47,6 +49,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     private final DocumentCommentRepository commentRepository;
     private final CommentMentionRepository mentionRepository;
     private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
     private final WorkflowInstanceRepository instanceRepository;
     private final MentionService mentionService;
     private final CommentMapper mapper;
@@ -172,11 +175,17 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         UUID userId = TenantContext.getUserId();
         DocumentComment comment = commentRepository.findByCommentIdAndTenantId(commentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("DocumentComment", commentId));
-        boolean canView = authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW);
-        if (!canView && !mentionRepository.existsByTenantIdAndCommentIdAndMentionedUserId(tenantId, commentId, userId)) {
-            throw new AccessDeniedException("Not allowed to read comment " + commentId);
+        // Decision 10: someone mentioned in a comment reads that comment even without access to the
+        // document; everyone else needs the permission AND to be able to open the document itself.
+        boolean mentioned = mentionRepository.existsByTenantIdAndCommentIdAndMentionedUserId(tenantId, commentId, userId);
+        if (!mentioned) {
+            if (!authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)) {
+                throw new AccessDeniedException("Not allowed to read comment " + commentId);
+            }
+            findDocument(comment.getDocumentId(), tenantId);
+        } else {
+            findDocumentIgnoringAccess(comment.getDocumentId(), tenantId);
         }
-        findDocument(comment.getDocumentId(), tenantId);
         DocumentComment parent = comment.getParentCommentId() == null ? null
                 : commentRepository.findByCommentIdAndTenantId(comment.getParentCommentId(), tenantId).orElse(null);
         List<DocumentComment> all = new ArrayList<>(List.of(comment));
@@ -191,7 +200,19 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
     // ---------------------------------------------------------------- helpers
 
+    /**
+     * The document, if the caller can open it (V53/V54, plus workflow-scoped
+     * read access). A document they can't open answers 404 here exactly as it
+     * does on every document endpoint - its comments must not say it exists.
+     */
     private Document findDocument(UUID documentId, UUID tenantId) {
+        Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        return documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.view);
+    }
+
+    /** The document without the access check - for a mentioned user reading the one comment they were named in. */
+    private Document findDocumentIgnoringAccess(UUID documentId, UUID tenantId) {
         return documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
     }

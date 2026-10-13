@@ -53,7 +53,12 @@ public class AccessPrincipals {
 
     /** The caller's active role ids, never empty (so they can go straight into an IN clause). */
     public List<UUID> callerRoleIds() {
-        List<UUID> roles = userRoleRepository.findActiveRoleIds(TenantContext.getUserId(), TenantContext.getTenantId());
+        return roleIdsOf(TenantContext.getTenantId(), TenantContext.getUserId());
+    }
+
+    /** {@link #callerRoleIds()} for another user - access worked out on someone else's behalf. */
+    public List<UUID> roleIdsOf(UUID tenantId, UUID userId) {
+        List<UUID> roles = userRoleRepository.findActiveRoleIds(userId, tenantId);
         return roles.isEmpty() ? List.of(NONE) : roles;
     }
 

@@ -22,7 +22,10 @@ import {
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DigitalImpact } from "@/components/dashboard/digital-impact"
 import { MetricCards } from "@/components/dashboard/metric-cards"
-import { RecentActivityPanel } from "@/components/dashboard/panels"
+import {
+  PendingApprovalsPanel,
+  RecentActivityPanel,
+} from "@/components/dashboard/panels"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentDocuments } from "@/components/dashboard/recent-documents"
 import { StorageCard } from "@/components/dashboard/storage-card"
@@ -101,10 +104,19 @@ function summaryOf(data: DashboardDto): string {
  */
 export default function Page() {
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
-  const { hasPermission, isLoading: permissionsLoading } = usePermissions()
+  const {
+    hasAnyPermission,
+    hasPermission,
+    isLoading: permissionsLoading,
+  } = usePermissions()
   // Assume access until the permissions arrive, so nothing flashes "no access".
   const canView =
     permissionsLoading || hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
+  // Only people who can actually decide a task get the approvals panel.
+  const canApprove = hasAnyPermission(
+    PermissionCodes.WA_TASK_APPROVE,
+    PermissionCodes.WA_TASK_REJECT
+  )
   const period = useSyncExternalStore<DashboardPeriod>(
     subscribePeriod,
     readPeriod,
@@ -204,6 +216,7 @@ export default function Page() {
               }
             >
               <AttentionPanel data={data} order={12} />
+              {canApprove && <PendingApprovalsPanel />}
               <div className="flex min-w-0 flex-1 flex-col [&>section]:flex-1">
                 <RecentActivityPanel
                   activity={data?.activity}

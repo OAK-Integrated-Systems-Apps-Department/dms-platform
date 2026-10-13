@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +36,12 @@ public interface WorkflowInstanceRepository extends JpaRepository<WorkflowInstan
     Optional<UUID> findInProgressInstanceId(@Param("tenantId") UUID tenantId, @Param("documentId") UUID documentId);
 
     Page<WorkflowInstance> findByTenantIdAndDocumentIdAndDeletedFalse(UUID tenantId, UUID documentId, Pageable pageable);
+
+    /** Every run of these documents, newest first - the badges in a list of documents. */
+    @Query("select i from WorkflowInstance i where i.tenantId = :tenantId and i.documentId in :documentIds "
+            + "and i.deleted = false order by i.startedAt desc")
+    List<WorkflowInstance> findByDocuments(@Param("tenantId") UUID tenantId,
+                                           @Param("documentIds") Collection<UUID> documentIds);
 
     boolean existsByTemplateId(UUID templateId);
 }

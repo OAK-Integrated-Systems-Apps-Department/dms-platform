@@ -2,6 +2,10 @@ package com.oak.dms.workflow.controller;
 
 import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
+import com.oak.dms.document.Document;
+import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.auth.UserPermissions;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,6 +48,8 @@ public class PeopleLookupController {
 
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
+    private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
     private final UserPermissions userPermissions;
 
     @GetMapping("/lookup")
@@ -51,16 +58,39 @@ public class PeopleLookupController {
             + "T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_APPROVE, "
             + "T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_REJECT, "
             + "T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_REASSIGN)")
-    @Operation(summary = "Search active users of my tenant by name, username or email")
+    @Operation(summary = "Search active users of my tenant by name, username or email",
+            description = "documentId: work hasDocumentAccess out for that one document (the permission plus "
+                    + "folder/document access); without it, the permission alone.")
     @Transactional(readOnly = true)
     public List<PersonOptionResponse> lookup(@RequestParam(required = false) String search,
+                                             @RequestParam(required = false) UUID documentId,
                                              @RequestParam(defaultValue = "20") int limit) {
         UUID tenantId = TenantContext.getTenantId();
         String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
         List<User> users = userRepository.searchActive(tenantId, pattern,
                 PageRequest.of(0, Math.min(Math.max(limit, 1), MAX_LIMIT)));
-        Set<UUID> withAccess = userPermissions.filterHoldingAny(tenantId, users.stream().map(User::getUserId).toList(),
+        List<UUID> userIds = users.stream().map(User::getUserId).toList();
+        Set<UUID> holdPermission = userPermissions.filterHoldingAny(tenantId, userIds,
                 PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        // Named a document? Then "has document access" means that document, for each of them
+        // (V53/V54 plus workflow-scoped read access) - not just the permission. A document the
+        // caller can't open themselves is treated as not named at all, so the flags can never
+        // tell them whether it exists.
+        Document document = documentId == null ? null
+                : documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .filter(documentAccessService.forCaller()::canSee).orElse(null);
+        Set<UUID> withAccess;
+        if (document == null) {
+            withAccess = holdPermission;
+        } else {
+            Map<UUID, DocumentAccessView> access = documentAccessService.forUsers(tenantId, holdPermission);
+            withAccess = new HashSet<>();
+            for (UUID id : holdPermission) {
+                if (access.get(id).canSee(document)) {
+                    withAccess.add(id);
+                }
+            }
+        }
         Map<UUID, String> departments = new HashMap<>();
         departmentRepository.findByDepartmentIdInAndTenantIdAndDeletedFalse(
                         users.stream().map(User::getDepartmentId).filter(Objects::nonNull).toList(), tenantId)
