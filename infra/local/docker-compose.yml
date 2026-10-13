@@ -464,10 +464,15 @@ services:
       # they must be the public host, never a docker service name.
       NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
       NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
-      # Grafana for the System Monitoring admin page. Its own port locally
-      # (3000 is this service); in production it is same-origin "/grafana"
-      # behind nginx, baked into the image at build time.
-      NEXT_PUBLIC_GRAFANA_URL: http://${PUBLIC_HOST:-localhost}:3001/grafana
+      # No NEXT_PUBLIC_GRAFANA_URL any more. The monitoring panels are
+      # same-origin, served by this app's own /monitoring/panels/ route, so
+      # the browser needs no Grafana address - and must not be given one.
+      #
+      # These two are SERVER-side only (no NEXT_PUBLIC_ prefix), read by
+      # that route inside this container. Docker service names, deliberately:
+      # the browser never resolves either of them.
+      GRAFANA_INTERNAL_URL: http://grafana:3000
+      DMS_CORE_INTERNAL_URL: http://dms-core:8080
     volumes:
       - ../../frontend:/app
       # Anonymous volume shadows the host's node_modules mount above with
@@ -542,23 +547,65 @@ services:
       # default; production requires the variable to be set explicitly.
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      # Served under /grafana/ so one nginx host can carry both the DMS and
-      # this. Must match the nginx location and the frontend's iframe src.
-      # Built from PUBLIC_HOST like every other browser-facing URL in this
-      # file, so setting PUBLIC_HOST once is still enough to run the stack on
-      # another machine. Grafana redirects to this origin, so a mismatch
-      # leaves the embedded dashboard blank.
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://${PUBLIC_HOST:-localhost}:3001/grafana/}
+      # Grafana lives UNDER THE DMS, at <app>/monitoring/panels/, and is
+      # reached only through the frontend's proxy route
+      # (frontend/app/monitoring/panels/[...path]/route.ts). Grafana builds
+      # every asset and API URL from this root, so it has to be the public
+      # path the browser uses - not Grafana's own host and port.
+      #
+      # Two things follow. The browser never loads a URL with "grafana" in
+      # it, and - the part that matters - Grafana is no longer something a
+      # browser talks to directly at all.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://${PUBLIC_HOST:-localhost}:3000/monitoring/panels/}
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-      # Embedding: the DMS admin page shows this in an iframe. Grafana sends
-      # X-Frame-Options: deny unless allow_embedding is on, which browsers
-      # honour by blanking the frame.
+      # The panels are framed by the DMS monitoring page. Same-origin now,
+      # since they are served from the app's own path.
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_SECURITY_COOKIE_SAMESITE: lax
-      # Read-only anonymous access, so the embedded dashboard does not ask a
-      # DMS administrator for a second login. The DMS page that frames it is
-      # already platform-admin only, and Grafana is not published publicly.
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
+
+      # Auth proxy: the DMS decides who the caller is, Grafana trusts the
+      # name it is handed in X-WEBAUTH-USER.
+      #
+      # This is what replaced anonymous access. An iframe cannot be asked
+      # for a second login, so the old page had Grafana serve panels to
+      # whoever asked - which meant the DMS page was platform-admin only
+      # while the metrics inside it were readable by anyone who could reach
+      # Grafana's port. Now the proxy route asks dms-core
+      # (/api/v1/monitoring/panel-auth, PLATFORM_ADMIN) and only then
+      # forwards, with the caller's username attached.
+      #
+      # The header is only as trustworthy as the set of callers who can
+      # send it. The proxy route strips any X-WEBAUTH-* a browser supplies,
+      # and in production Grafana publishes no port at all. On this dev
+      # machine port 3001 is still open for convenience, so anything on
+      # your own localhost could set the header - acceptable here, and the
+      # reason the production file does not do it.
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      # Creates the Grafana user on first sight. They are all PLATFORM_ADMIN
+      # on the DMS side; inside Grafana they only ever need to read, and
+      # dashboards are provisioned from infra/monitoring as code anyway.
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_SYNC_TTL: "60"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
+      # Anonymous access is now OFF.
+      #
+      # It was on because the old System Monitoring page framed a Grafana
+      # dashboard, and an iframe cannot ask for a second login - so Grafana
+      # had to serve the panels to whoever asked. The effect was that the
+      # DMS page was platform-admin only while the metrics inside it were
+      # readable by anyone who could reach Grafana's port, which is not the
+      # same thing at all.
+      #
+      # That page now reads Prometheus through dms-core
+      # (/api/v1/monitoring/*), behind the same PLATFORM_ADMIN check as
+      # every other cross-tenant screen, so nothing needs anonymous any
+      # more. The "Full dashboard" link still works - it asks for a Grafana
+      # login, which is the correct behaviour for a separate tool.
+      #
+      # Set GRAFANA_ANONYMOUS_ENABLED=true to put it back.
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
       # Nothing to gain from the sign-up/"welcome" furniture in an embed.
@@ -578,10 +625,70 @@ services:
     depends_on:
       - prometheus
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/grafana/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/monitoring/panels/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
+
+  # Reachability probes for the services that expose no metrics of their own
+  # (Keycloak, SeaweedFS, Gotenberg, ClamAV, Mailpit, the frontend). Without
+  # this, "is it up?" is only answerable for the handful that have exporters
+  # - and the ones that do not are exactly the ones whose failure leaves the
+  # DMS looking healthy while uploads or sign-in quietly stop working.
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: oakdms-blackbox
+    restart: unless-stopped
+    mem_limit: 128m
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ../monitoring/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    # Internal only. It can reach every service on this network, which is
+    # the whole point and also why it is not published.
+    expose:
+      - "9115"
+
+  # Log storage, the counterpart to Prometheus. Queried by dms-core for the
+  # System Monitoring screen's per-service logs; never published.
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: oakdms-loki
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ../monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    expose:
+      - "3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  # Ships every container's logs into Loki. Reads the Docker socket for
+  # discovery - read-only, and into a log shipper rather than into the
+  # application container. See infra/monitoring/promtail/promtail-config.yml.
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: oakdms-promtail
+    restart: unless-stopped
+    mem_limit: 256m
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ../monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/tmp
+    # Wait for Loki to be READY, not merely started. A bare depends_on only
+    # orders the start; Promtail then tried to push before Loki could
+    # resolve, logged a batch error, and sat in retry backoff - so nothing
+    # arrived until it was restarted by hand.
+    depends_on:
+      loki:
+        condition: service_healthy
 
   # Host CPU, RAM, disk, disk I/O, network, uptime. Under Docker Desktop
   # this reports the Linux VM, not Windows - fine for spotting a container
@@ -681,6 +788,8 @@ services:
         condition: service_healthy
 
 volumes:
+  loki_data:
+  promtail_positions:
   encryption_dev_keys:
   prometheus_data:
   grafana_data:

@@ -111,10 +111,11 @@ export function SearchableSelect({
       </button>
 
       {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        // No onClick={stopPropagation}: the outside-click handler already
+        // tests containerRef.contains(), and this panel is inside that
+        // container - so the stop did nothing but make a plain <div> look
+        // like a control to anything reading the markup.
+        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           {searchable && (
             <div className="relative mb-1.5">
               <Search
@@ -134,17 +135,18 @@ export function SearchableSelect({
 
           <div className="max-h-56 overflow-y-auto">
             {showAllOption && (
-              <div
+              <button
+                type="button"
                 onClick={clearSelection}
                 className={cn(
-                  "cursor-pointer truncate rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted",
+                  "w-full cursor-pointer truncate rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted",
                   selected === ""
                     ? "font-semibold text-primary"
                     : "text-foreground"
                 )}
               >
                 {allLabel}
-              </div>
+              </button>
             )}
 
             {filteredOptions.length === 0 && !showAllOption ? (
@@ -155,18 +157,20 @@ export function SearchableSelect({
               filteredOptions.map((option) => {
                 const isSelected = selected === option.value
                 return (
-                  <div
+                  <button
                     key={option.value}
+                    type="button"
+                    aria-current={isSelected}
                     onClick={() => selectOption(option.value)}
                     className={cn(
-                      "cursor-pointer truncate rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted",
+                      "w-full cursor-pointer truncate rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted",
                       isSelected
                         ? "font-semibold text-primary"
                         : "text-foreground"
                     )}
                   >
                     {option.label}
-                  </div>
+                  </button>
                 )
               })
             )}

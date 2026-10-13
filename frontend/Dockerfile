@@ -29,10 +29,8 @@ ARG NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL="/realms/oak-dms/account"
 # Same-origin by default, like the two above: nginx proxies /grafana/ to the
 # Grafana container (infra/production/nginx/dms.conf), so the System
 # Monitoring page can frame it without a cross-site cookie.
-ARG NEXT_PUBLIC_GRAFANA_URL="/grafana"
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL=${NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL}
-ENV NEXT_PUBLIC_GRAFANA_URL=${NEXT_PUBLIC_GRAFANA_URL}
 RUN bun run build
 
 # Turbopack (the default `next build` bundler on Next 16) has known

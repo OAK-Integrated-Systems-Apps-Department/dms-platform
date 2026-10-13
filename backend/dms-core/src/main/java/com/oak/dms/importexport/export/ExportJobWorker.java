@@ -2,6 +2,7 @@ package com.oak.dms.importexport.export;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.common.io.TempFiles;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -163,7 +164,7 @@ public class ExportJobWorker {
                 fail(jobId, "More than " + properties.getMaxDocuments() + " documents match - narrow the export.");
                 return;
             }
-            temp = Files.createTempFile("dms-export-", ".zip");
+            temp = TempFiles.create("dms-export-", ".zip");
             ExportArchiveBuilder.Result result = builder.build(job.getTenantId(), documentIds,
                     request.byFolder() ? request.folderId() : null, temp, properties.getMaxExportSize().toBytes());
 

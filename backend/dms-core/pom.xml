@@ -216,6 +216,43 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!--
+              Test coverage, for SonarQube to read.
+
+              Declared here and not in backend/pom.xml because this module's
+              <parent> is spring-boot-starter-parent, not that aggregator -
+              it groups the modules for building but does not configure
+              them, so nothing declared there reaches this file. A copy of
+              this block is what each worker module will need when it is
+              enabled.
+
+              prepare-agent runs at initialize, before any test does;
+              report runs at verify, after both surefire and failsafe have
+              finished. So `mvn verify` leaves the XML Sonar wants at
+              target/site/jacoco/jacoco.xml - the scanner's default path -
+              without anyone having to ask for it.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

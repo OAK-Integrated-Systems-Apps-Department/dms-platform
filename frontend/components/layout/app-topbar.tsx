@@ -25,6 +25,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useAccountIdentity } from "@/lib/auth/use-account-identity"
+import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
@@ -119,7 +120,12 @@ export function AppTopbar() {
   const account = useAccountIdentity()
   const { hasPermission } = usePermissions()
   const canSearch = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
-  const dashboard = useDashboard()
+  // Gated for the same reason the home page gates it, and it has to be gated
+  // HERE too: react-query enables a query if any mounted observer enables it,
+  // so a top bar that always asked for tenant-scoped figures would put the
+  // platform administrator's guaranteed 401 straight back.
+  const { isTenant } = useDashboardScope()
+  const dashboard = useDashboard(30, isTenant)
   const recent = dashboard.data?.recent ?? []
   const activity = dashboard.data?.activity ?? []
   const seen = useSyncExternalStore(subscribeSeen, readSeen, () => null)

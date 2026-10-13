@@ -371,6 +371,21 @@ dms:
       enabled: ${WORKFLOW_SLA_ENABLED:true}
       poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
       batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
+  # The system-monitoring screen reads Prometheus through dms-core rather
+  # than the browser reading Grafana directly, so the figures sit behind the
+  # same PLATFORM_ADMIN check as every other cross-tenant screen. Prometheus
+  # is addressed by its compose service name and needs no published port.
+  # Blank the URL to switch the screen off; it then says it is unconfigured
+  # rather than showing an error on every tile.
+  monitoring:
+    prometheus-url: ${PROMETHEUS_URL:http://prometheus:9090}
+    # Container logs, for the per-service log view. Same arrangement as
+    # Prometheus: addressed by service name, never published.
+    loki-url: ${LOKI_URL:http://loki:3100}
+    timeout: ${MONITORING_TIMEOUT:PT5S}
+    # Points per chart. The step is derived from this and the window, so a
+    # 7-day chart costs about the same as a 1-hour one.
+    chart-points: ${MONITORING_CHART_POINTS:120}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

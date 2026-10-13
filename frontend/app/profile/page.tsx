@@ -25,6 +25,14 @@ export default function ProfilePage() {
   // by design. Both cards below are built on that call, so without this
   // branch the one account that administers the platform sees two errors
   // where its profile should be.
+  //
+  // FOLLOW-UP: this has the same flash the home dashboard had. While
+  // /users/me is still in flight there is no error yet, so `noLocalProfile`
+  // is false and the tenant profile cards render first, then swap to
+  // PlatformAdminProfile when the 401 arrives. `useDashboardScope` returns
+  // the pending state explicitly for exactly this; the fix here is to wait
+  // on it rather than to read the error alone. Left alone for now because
+  // this page was not in scope for the dashboard fix.
   const { error } = useCurrentUser()
   const noLocalProfile =
     error instanceof ApiError && error.code === "TENANT_CONTEXT_MISSING"

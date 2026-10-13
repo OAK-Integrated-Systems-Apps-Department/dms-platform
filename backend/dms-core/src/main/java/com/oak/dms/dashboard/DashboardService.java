@@ -247,9 +247,14 @@ public class DashboardService {
                 limit :limit""", params.addValue("limit", TOP_FOLDERS),
                 (rs, i) -> new FolderCount(rs.getObject("folder_id", UUID.class), rs.getString("folder_name"),
                         rs.getLong("n"), rs.getLong("bytes")));
-        long inFolders = jdbc.queryForObject("""
+        // requireNonNullElse because queryForObject is declared @Nullable: a
+        // bare `long x = queryForObject(...)` unboxes and would throw NPE
+        // rather than report anything useful. A count() always returns one
+        // non-null row, so the fallback is unreachable - it is here so the
+        // unboxing is explicit instead of implicit.
+        long inFolders = java.util.Objects.requireNonNullElse(jdbc.queryForObject("""
                 select count(*) from documents d join folders f on f.folder_id = d.folder_id and not f.is_deleted
-                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE, params, Long.class);
+                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE, params, Long.class), 0L);
         long notInFolder = documents.total() - inFolders;
         List<FolderCount> foldersWithTop = new ArrayList<>(folders);
         if (notInFolder > 0) {

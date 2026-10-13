@@ -317,6 +317,15 @@ export function ItemMenu({
       ref={ref}
       // Stay visible while open, even when the pointer leaves the tile.
       className={cn("relative", className, open && "z-40 opacity-100")}
+      // Kept deliberately, unlike the identical-looking stops removed from
+      // the select popovers: this one is load-bearing. The whole tile around
+      // it opens the document on click, so without this, using the menu
+      // would also open what the menu is about. It is a propagation barrier,
+      // not an interaction handler - the real control is the <button> below,
+      // and a keyboard activation of it synthesises a click that this stops
+      // just the same. Sonar's S1082 flags it as a click handler on a
+      // non-interactive element; adding a keyboard handler here would be
+      // meaningless, so mark it a false positive rather than "fixing" it.
       onClick={(e) => e.stopPropagation()}
     >
       <button

@@ -1,5 +1,7 @@
 package com.oak.dms.scanning.helper;
 
+import com.oak.dms.common.io.TempFiles;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -100,7 +102,7 @@ public final class ZipArchiveCheck {
     private static <T> T onTempCopy(InputStream content, java.util.function.Function<Path, T> work) {
         Path copy = null;
         try {
-            copy = Files.createTempFile("dms-zip-check-", ".zip");
+            copy = TempFiles.create("dms-zip-check-", ".zip");
             Files.copy(content, copy, StandardCopyOption.REPLACE_EXISTING);
             return work.apply(copy);
         } catch (IOException e) {

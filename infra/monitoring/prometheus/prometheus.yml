@@ -121,9 +121,77 @@ scrape_configs:
   # reason nobody can see anything.
   - job_name: grafana
     # Grafana runs with serve_from_sub_path, so everything it serves -
-    # /metrics included - sits under /grafana.
-    metrics_path: /grafana/metrics
+    # /metrics included - sits under its root URL. That moved from /grafana
+    # to /monitoring/panels when the monitoring screen stopped framing
+    # Grafana directly and started proxying it through the app; this path
+    # has to move with it or the target goes down.
+    metrics_path: /monitoring/panels/metrics
     static_configs:
       - targets: ["grafana:3000"]
         labels:
           service: grafana
+
+  # --- Service reachability (blackbox) ----------------------------------
+  # `up` above only covers services that have an exporter. These are the
+  # ones that do not: a probe is the only way to tell a stopped Keycloak
+  # from a running one, and its failure is the kind that leaves the DMS
+  # looking fine while sign-in, previews or uploads quietly stop working.
+  #
+  # The relabel dance is how blackbox works: the target to probe goes in as
+  # __param_target, the exporter's own address becomes __address__, and the
+  # original target is kept as `instance` so the series names what was
+  # probed rather than naming the prober every time.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_any]
+    static_configs:
+      - targets:
+          - http://frontend:3000/login
+          - http://keycloak:8080/realms/oak-dms
+          - http://seaweedfs:8333/
+          - http://gotenberg:3000/health
+          - http://mailpit:8025/
+        labels:
+          service: reachability
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ClamAV serves no HTTP - 3310 is its own protocol - so the honest check
+  # is whether the port accepts a connection at all.
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - clamav:3310
+        labels:
+          service: reachability
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # --- Log pipeline -----------------------------------------------------
+  # So "the logs are not arriving" is itself visible on the Services board,
+  # rather than being discovered when someone opens a service to read its
+  # logs and finds the last line is from yesterday.
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          service: loki
+  - job_name: promtail
+    static_configs:
+      - targets: ["promtail:9080"]
+        labels:
+          service: promtail

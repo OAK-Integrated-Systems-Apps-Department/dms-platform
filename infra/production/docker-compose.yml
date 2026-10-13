@@ -467,14 +467,23 @@ services:
       # CHANGE_ME remains in .env.
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       # Public URL the browser uses, through the host nginx.
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://192.168.0.10/grafana/}
+      # Grafana is served UNDER THE DMS now, at <app>/monitoring/panels/,
+      # reached only through the frontend's authenticated proxy route. It
+      # builds every asset URL from this root, so it must be the public path
+      # the browser uses. nginx needs no /grafana/ location any more - the
+      # path falls through to the frontend like every other app route.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://192.168.0.10/monitoring/panels/}
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       # Embedded in the DMS admin UI - see the local file and the README for
       # why anonymous Viewer access is acceptable here and what would make it
       # unacceptable (publishing Grafana beyond this host).
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_SECURITY_COOKIE_SAMESITE: lax
-      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-true}
+      # Defaults to OFF - see the long note in infra/local/docker-compose.yml.
+      # The System Monitoring page reads Prometheus through dms-core now, so
+      # nothing needs Grafana to serve metrics without a login. Set
+      # GRAFANA_ANONYMOUS_ENABLED=true only if you deliberately want that.
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -485,15 +494,83 @@ services:
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-    ports:
-      - "127.0.0.1:3001:3000"
+    # No published port, deliberately. Grafana trusts the X-WEBAUTH-USER
+    # header (auth proxy), so anything that can reach it directly can be
+    # whoever it likes. The frontend container is the only thing that needs
+    # to, and it does so over the compose network - so the port is not
+    # published at all here, unlike the dev file where 3001 stays open for
+    # convenience. To look at Grafana on the server, tunnel to it:
+    #   ssh -L 3001:localhost:3001 <host>   (after temporarily adding a port)
+    # or read the dashboards as code in infra/monitoring.
+    expose:
+      - "3000"
     depends_on:
       - prometheus
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/grafana/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/monitoring/panels/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
+
+  # Reachability probes for the services that expose no metrics of their own
+  # (Keycloak, SeaweedFS, Gotenberg, ClamAV, Mailpit, the frontend). Without
+  # this, "is it up?" is only answerable for the handful that have exporters
+  # - and the ones that do not are exactly the ones whose failure leaves the
+  # DMS looking healthy while uploads or sign-in quietly stop working.
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: oakdms-blackbox
+    restart: unless-stopped
+    mem_limit: 128m
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ../monitoring/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    # Internal only. It can reach every service on this network, which is
+    # the whole point and also why it is not published.
+    expose:
+      - "9115"
+
+  # Log storage, the counterpart to Prometheus. Queried by dms-core for the
+  # System Monitoring screen's per-service logs; never published.
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: oakdms-loki
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ../monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    expose:
+      - "3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  # Ships every container's logs into Loki. Reads the Docker socket for
+  # discovery - read-only, and into a log shipper rather than into the
+  # application container. See infra/monitoring/promtail/promtail-config.yml.
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: oakdms-promtail
+    restart: unless-stopped
+    mem_limit: 256m
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ../monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/tmp
+    # Wait for Loki to be READY, not merely started. A bare depends_on only
+    # orders the start; Promtail then tried to push before Loki could
+    # resolve, logged a batch error, and sat in retry backoff - so nothing
+    # arrived until it was restarted by hand.
+    depends_on:
+      loki:
+        condition: service_healthy
 
   node-exporter:
     image: prom/node-exporter:v1.8.2
@@ -574,6 +651,8 @@ networks:
     internal: true
 
 volumes:
+  loki_data:
+  promtail_positions:
   # Same volume keys as infra/local, so a server that was started from the
   # local compose file keeps its data when COMPOSE_PROJECT_NAME matches -
   # see docs/deployment.md "Existing data".

@@ -187,10 +187,10 @@ export function DateTimePicker({
       </button>
 
       {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] left-0 z-30 w-[260px] rounded-md border border-border bg-card p-3 shadow-[var(--ledger-shadow)]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        // No onClick={stopPropagation}: the outside-click handler already
+        // tests containerRef.contains(), and this panel is inside it - the
+        // stop did nothing but make a plain <div> look like a control.
+        <div className="absolute top-[calc(100%+6px)] left-0 z-30 w-[260px] rounded-md border border-border bg-card p-3 shadow-[var(--ledger-shadow)]">
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
