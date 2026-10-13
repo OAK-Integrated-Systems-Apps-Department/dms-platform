@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useId, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { createPortal } from "react-dom"
 import { CircleCheck, CircleX, Radio, X } from "lucide-react"
 
@@ -103,26 +110,40 @@ const SEGMENTS = Array.from({ length: SEG }, (_, i) => {
   }
 })
 
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
+
+function subscribeReducedMotion(onChange: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION)
+  query.addEventListener("change", onChange)
+  return () => query.removeEventListener("change", onChange)
+}
+
+/**
+ * Whether the person asked for less motion. Read through
+ * useSyncExternalStore, so it also follows the setting changing while the
+ * page is open, and the server render (where there is no window to ask)
+ * agrees with the first client render instead of mismatching it.
+ */
+function usePrefersReducedMotion() {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION).matches,
+    () => false
+  )
+}
+
 /** Eases 0 -> target on mount (after `delay`), and glides on later changes. */
 function useCountUp(target: number, delay = 0, ms = 1000) {
-  // Reduced motion is decided once, during the first render, so the value
-  // can START at its target instead of being set to it from inside an effect.
-  const [reduced] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  )
-  const [v, setV] = useState(reduced ? target : 0)
-  const cur = useRef(reduced ? target : 0)
+  const reduced = usePrefersReducedMotion()
+  const [animated, setAnimated] = useState(0)
+  const cur = useRef(0)
   const first = useRef(true)
 
   useEffect(() => {
-    if (reduced) {
-      // Still has to follow later changes - just without the animation.
-      cur.current = target
-      setV(target)
-      return
-    }
+    // Reduced motion draws no animation, so there is nothing to run - and,
+    // unlike the version that set state here, nothing to set. The return
+    // value below is the target itself.
+    if (reduced) return
     const from = cur.current
     const start = performance.now() + (first.current ? delay : 0)
     first.current = false
@@ -135,14 +156,14 @@ function useCountUp(target: number, delay = 0, ms = 1000) {
       const p = Math.min(1, (now - start) / ms)
       const e = 1 - Math.pow(1 - p, 3)
       cur.current = from + (target - from) * e
-      setV(cur.current)
+      setAnimated(cur.current)
       if (p < 1) raf = requestAnimationFrame(step)
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
   }, [target, delay, ms, reduced])
 
-  return v
+  return reduced ? target : animated
 }
 
 /**

@@ -54,6 +54,15 @@ public class PrometheusClient {
         return java.util.Optional.empty();
     }
 
+    /**
+     * Every alert rule with its current state, from {@code /api/v1/rules}.
+     * Returned as the raw map: the shape is Prometheus's, and the one place
+     * that interprets it is {@link AlertsService}.
+     */
+    public Map<String, Object> alertRules() {
+        return get("/api/v1/rules", Map.of("type", "alert"));
+    }
+
     /** One sample from an instant query, with the labels that identify it. */
     public record Sample(Map<String, String> labels, Double value) {
     }

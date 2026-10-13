@@ -572,6 +572,40 @@ services:
       loki:
         condition: service_healthy
 
+  # Delivers what Prometheus's alert rules fire. Without it a rule could fire
+  # and nobody would be told - the monitoring screen shows it, but only to
+  # someone already looking. Reuses the SMTP relay the rest of the stack
+  # sends mail through; the only new setting is WHO receives it.
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: oakdms-alertmanager
+    restart: unless-stopped
+    mem_limit: 128m
+    # Rendered from a template at start (the relay differs per client, and
+    # Alertmanager cannot read the environment itself). Run through sh, so the
+    # script needs no execute bit.
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      # Empty by default: a production stack sends no alert email until it is
+      # told where. Set ALERT_EMAIL_TO in infra/production/.env - one address,
+      # or several separated by commas. The relay itself is the same SMTP_*
+      # the rest of the stack already uses, so there is nothing else to set.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_SMTP_HOST: ${SMTP_HOST:-mailpit}
+      ALERT_SMTP_PORT: ${SMTP_PORT:-1025}
+      ALERT_SMTP_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
+      ALERT_SMTP_USERNAME: ${SMTP_USERNAME:-}
+      ALERT_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      # Shown in the email as a link to the monitoring screen. Optional - the
+      # stack does not know its own public address, so it is not guessed.
+      ALERT_LINK: ${ALERT_LINK:-}
+    volumes:
+      - ../monitoring/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    expose:
+      - "9093"
+
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: oakdms-node-exporter
@@ -651,6 +685,7 @@ networks:
     internal: true
 
 volumes:
+  alertmanager_data:
   loki_data:
   promtail_positions:
   # Same volume keys as infra/local, so a server that was started from the

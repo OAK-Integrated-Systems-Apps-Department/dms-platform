@@ -52,6 +52,7 @@ public class MonitoringController {
     private final MonitoringService monitoringService;
     private final DependencyHealthService dependencyHealthService;
     private final LogsService logsService;
+    private final AlertsService alertsService;
 
     @GetMapping("/snapshot")
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
@@ -83,6 +84,16 @@ public class MonitoringController {
                     + "app) are reachability-probed instead. Anything down sorts first.")
     public MonitoringResponse.ServicesResponse services() {
         return monitoringService.services();
+    }
+
+    @GetMapping("/alerts")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "Every alert rule and whether it is firing",
+            description = "Read from Prometheus. There is no Alertmanager, so nothing else delivers "
+                    + "these - this endpoint is how a firing alert is seen at all. Firing and "
+                    + "broken rules sort first.")
+    public MonitoringResponse.AlertsResponse alerts() {
+        return alertsService.alerts();
     }
 
     @GetMapping("/logs")

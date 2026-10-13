@@ -93,4 +93,33 @@ public final class MonitoringResponse {
     /** @param truncated true when more matched than were returned */
     public record LogsResponse(boolean reachable, String error, List<LogLine> lines, boolean truncated) {
     }
+
+    /**
+     * One alert rule and where it stands.
+     *
+     * @param state    firing, pending (condition true but not for long enough
+     *                 yet) or inactive
+     * @param severity as the rule labels it: critical, warning, or null
+     * @param detail   for a firing or pending rule, the description rendered
+     *                 with the actual value ("7.2% are returning 5xx"); null
+     *                 otherwise, because an inactive rule's description is
+     *                 still an unexpanded template
+     * @param since    epoch seconds the condition first became true; null
+     *                 unless firing or pending
+     * @param broken   true when the rule itself failed to evaluate. That is
+     *                 worse than inactive and must not look the same: a rule
+     *                 that cannot run will never fire.
+     * @param blind    true when the metric the rule reads has no series at all.
+     *                 The rule evaluates fine - it just has nothing to compare -
+     *                 so Prometheus reports it as healthy and inactive, which
+     *                 reads as "all clear" when the truth is "cannot see".
+     * @param requires the selector the rule reads, for saying what is missing
+     */
+    public record AlertRule(String name, String state, String severity, String component,
+                            String summary, String detail, Long since, boolean broken,
+                            boolean blind, String requires) {
+    }
+
+    public record AlertsResponse(boolean reachable, String error, List<AlertRule> rules) {
+    }
 }

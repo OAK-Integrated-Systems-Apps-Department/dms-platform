@@ -9,15 +9,19 @@ import {
   FileStack,
   Gauge,
   HardDrive,
+  HardDriveDownload,
+  Hourglass,
   MemoryStick,
   RefreshCw,
   ShieldAlert,
   Signal,
+  Users,
   Timer,
 } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { AlertsCard } from "@/components/monitoring/alerts-card"
 import { DependencyHealthCard } from "@/components/monitoring/dependency-health"
 import { Gauge as MetricGauge } from "@/components/monitoring/gauge"
 import { PanelFrame } from "@/components/monitoring/panel-frame"
@@ -28,6 +32,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import {
+  fetchAlerts,
   fetchDependencyHealth,
   fetchMonitoringSeries,
   fetchMonitoringServices,
@@ -262,6 +267,12 @@ export default function SystemMonitoringPage() {
     enabled: isPlatformAdmin,
     refetchInterval: REFRESH_MS,
   })
+  const alerts = useQuery({
+    queryKey: ["monitoring", "alerts"],
+    queryFn: fetchAlerts,
+    enabled: isPlatformAdmin,
+    refetchInterval: REFRESH_MS,
+  })
   const health = useQuery({
     queryKey: ["monitoring", "health"],
     queryFn: fetchDependencyHealth,
@@ -371,6 +382,7 @@ export default function SystemMonitoringPage() {
                 void services.refetch()
                 void series.refetch()
                 void health.refetch()
+                void alerts.refetch()
               }}
             >
               <RefreshCw
@@ -446,6 +458,15 @@ export default function SystemMonitoringPage() {
           {health.data && (
             <div className="sm-reveal" style={stagger(2)}>
               <DependencyHealthCard health={health.data} />
+            </div>
+          )}
+
+          {/* Directly under the dependencies, and not tucked below the
+              charts: a firing alert is the most urgent thing this page can
+              say, and nothing else delivers it - there is no Alertmanager. */}
+          {alerts.data && (
+            <div className="sm-reveal" style={stagger(3)}>
+              <AlertsCard alerts={alerts.data} />
             </div>
           )}
 
@@ -571,6 +592,32 @@ export default function SystemMonitoringPage() {
                 label="Storage used"
                 reading={read("storage_bytes")}
                 detail="Live versions only"
+              />,
+              <MetricTile
+                key="disk-free"
+                icon={HardDriveDownload}
+                label="Disk free"
+                reading={read("disk_free")}
+                detail="On the fullest filesystem"
+              />,
+              <MetricTile
+                key="uptime"
+                icon={Hourglass}
+                label="Backend uptime"
+                reading={read("backend_uptime")}
+                detail="Since its last restart"
+              />,
+              <MetricTile
+                key="consumers"
+                icon={Users}
+                label="Queue consumers"
+                reading={read("rabbit_consumers")}
+                detail="Picking up background work"
+                // Zero is the failure: work queues up and is never taken,
+                // while RabbitMQ itself reports healthy.
+                tone={
+                  read("rabbit_consumers")?.value === 0 ? "bad" : undefined
+                }
               />,
             ].map((tile, i) => (
               <div

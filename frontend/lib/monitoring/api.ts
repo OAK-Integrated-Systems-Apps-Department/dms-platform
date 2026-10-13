@@ -2,7 +2,13 @@ import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetchJson } from "@/lib/api-fetch"
 
 /** How a figure should be formatted - mirrors MonitoringMetric.Unit. */
-export type MetricUnit = "COUNT" | "PER_SECOND" | "SECONDS" | "BYTES" | "RATIO"
+export type MetricUnit =
+  | "COUNT"
+  | "PER_SECOND"
+  | "SECONDS"
+  | "BYTES"
+  | "RATIO"
+  | "DURATION"
 
 /** One current figure. `value` is null when Prometheus has no sample - not the same as zero. */
 export interface MonitoringReading {
@@ -90,9 +96,30 @@ export function formatMetric(
       return value < 1 ? `${Math.round(value * 1000)} ms` : `${round(value, 2)} s`
     case "RATIO":
       return `${round(value * 100, 1)}%`
+    case "DURATION":
+      return formatDuration(value)
     default:
       return round(value, Number.isInteger(value) ? 0 : 1).toLocaleString()
   }
+}
+
+/**
+ * "42 s", "17 min", "3 h 05 min", "4 d 2 h". Two units at most: a duration
+ * is read for its order of magnitude, and "4 d 2 h 17 min 9 s" is a number to
+ * decode rather than a fact to take in.
+ */
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)} s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    const rest = minutes % 60
+    return rest ? `${hours} h ${String(rest).padStart(2, "0")} min` : `${hours} h`
+  }
+  const days = Math.floor(hours / 24)
+  const restHours = hours % 24
+  return restHours ? `${days} d ${restHours} h` : `${days} d`
 }
 
 function round(value: number, places: number): number {
@@ -221,5 +248,52 @@ export async function fetchServiceLogs(params: {
     `${API_BASE_URL}/api/v1/monitoring/logs?${query}`,
     undefined,
     "Could not load the logs."
+  )
+}
+
+export type AlertState = "firing" | "pending" | "inactive"
+
+export interface AlertRule {
+  name: string
+  state: AlertState | string
+  /** critical | warning | null */
+  severity: string | null
+  component: string | null
+  summary: string | null
+  /** For a firing or pending rule: the description with the actual value in it. */
+  detail: string | null
+  /** Epoch seconds the condition first became true; null unless firing/pending. */
+  since: number | null
+  /** The rule itself failed to evaluate - it will never fire. Worse than inactive. */
+  broken: boolean
+  /**
+   * The metric the rule reads has no series, so it evaluates fine and has
+   * nothing to compare. Prometheus calls that healthy and inactive.
+   */
+  blind: boolean
+  /** The selector the rule reads - what is missing, when `blind`. */
+  requires: string | null
+}
+
+export interface AlertsResponse {
+  /** False when Prometheus could not be asked: whether anything fires is then unknown. */
+  reachable: boolean
+  error: string | null
+  /** Most urgent first. */
+  rules: AlertRule[]
+}
+
+/**
+ * Every alert rule and whether it is firing, via `GET /api/v1/monitoring/alerts`.
+ *
+ * This is the only place a firing alert is visible: the rules are evaluated
+ * by Prometheus, nothing delivers them (no Alertmanager, no email or chat
+ * route), and Grafana's own alerting screen is deliberately not exposed.
+ */
+export async function fetchAlerts(): Promise<AlertsResponse> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/monitoring/alerts`,
+    undefined,
+    "Could not load the alerts."
   )
 }

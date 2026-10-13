@@ -690,6 +690,35 @@ services:
       loki:
         condition: service_healthy
 
+  # Delivers what Prometheus's alert rules fire. Without it a rule could fire
+  # and nobody would be told - the monitoring screen shows it, but only to
+  # someone already looking. Reuses the SMTP relay the rest of the stack
+  # sends mail through; the only new setting is WHO receives it.
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: oakdms-alertmanager
+    restart: unless-stopped
+    mem_limit: 128m
+    # Rendered from a template at start (the relay differs per client, and
+    # Alertmanager cannot read the environment itself). Run through sh, so the
+    # script needs no execute bit.
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      # Mailpit catches everything locally, so a default recipient is safe
+      # here and lets a developer see what an alert email looks like.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-alerts@oakdms.local}
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-mailpit}
+      ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-1025}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-alerts@oakdms.local}
+      # Shown in the email as a link to the monitoring screen. Optional - the
+      # stack does not know its own public address, so it is not guessed.
+      ALERT_LINK: ${ALERT_LINK:-}
+    volumes:
+      - ../monitoring/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    expose:
+      - "9093"
+
   # Host CPU, RAM, disk, disk I/O, network, uptime. Under Docker Desktop
   # this reports the Linux VM, not Windows - fine for spotting a container
   # eating the machine, but the disk figures are the VM's.
@@ -788,6 +817,7 @@ services:
         condition: service_healthy
 
 volumes:
+  alertmanager_data:
   loki_data:
   promtail_positions:
   encryption_dev_keys:

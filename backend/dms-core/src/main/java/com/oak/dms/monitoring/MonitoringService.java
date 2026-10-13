@@ -69,6 +69,7 @@ public class MonitoringService {
             java.util.Map.entry("grafana", "Grafana"),
             java.util.Map.entry("loki", "Log store"),
             java.util.Map.entry("promtail", "Log shipper"),
+            java.util.Map.entry("alertmanager", "Alert delivery"),
             java.util.Map.entry("frontend", "Web app"),
             java.util.Map.entry("keycloak", "Keycloak"),
             java.util.Map.entry("seaweedfs", "Object storage"),

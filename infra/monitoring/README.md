@@ -116,19 +116,43 @@ prompts for it instead of letting a stack go out anonymous.
 
 ## Two things to know
 
-**Alerts do not notify anyone.** The rules in `alerts.yml` are evaluated and
-shown in Grafana, but there is no Alertmanager and no email or chat route,
-because there was nowhere agreed to send them. They colour the dashboard and
-give a notifier one place to be wired up later. Do not treat them as paging.
+**Alerts are delivered by email, if you say where.** The rules in `alerts.yml`
+are evaluated by Prometheus and sent to Alertmanager, which groups them and
+emails them. It reuses the SMTP relay the rest of the stack already sends mail
+through (`SMTP_*` in `infra/production/.env`); the only new setting is who
+receives them:
 
-**Grafana allows anonymous read-only viewing**, so the embedded dashboard
-doesn't ask a DMS administrator for a second login. That is acceptable only
-because Grafana is not published beyond the host: locally it is a dev
-machine, and in production nginx serves it on the LAN alongside the DMS
-itself. It exposes operational metrics only — no document content, no
-personal data. If your LAN is not trusted, set
-`GRAFANA_ANONYMOUS_ENABLED=false`; the embedded panel then shows Grafana's
-sign-in form and admins log in once per session.
+- `ALERT_EMAIL_TO` - one address, or several separated by commas. **Empty by
+  default in production**, so nothing is sent until you set it. Locally it
+  defaults to `alerts@oakdms.local`, which Mailpit catches.
+- `ALERT_LINK` - optional; put the DMS address in the email as a link to the
+  System Monitoring screen.
+
+Critical alerts repeat hourly while they last, warnings every four hours, and
+a "resolved" email follows when the problem clears. A warning is suppressed
+while a critical alert is firing for the same component. Every message names
+the `client` and `environment` labels, so one inbox can watch several
+installations.
+
+Whether or not email is set up, everything firing is also on the Alerts card
+on the System Monitoring screen. Alertmanager is on the Services board too, so
+"alerts are firing but not being delivered" is itself visible.
+
+**Some rules can be blind.** Every rule declares the metric it reads under
+`annotations.requires`. The screen checks that metric has any series at all:
+a rule whose input does not exist cannot fire, and Prometheus still calls it
+healthy. On Docker Desktop the container rules are the example - cAdvisor
+cannot read containers there - and the Alerts card marks them "no data"
+instead of letting them read as "not firing". Add `requires` to any new rule.
+
+**Grafana is not exposed.** The System Monitoring screen embeds its panels
+through the DMS frontend's own `/monitoring/panels/` route, which asks the
+backend whether the caller is a platform administrator before forwarding
+anything, and hands Grafana the username through its auth proxy. Anonymous
+access is off, nginx has no `/grafana/` location, and in production Grafana
+publishes no port. Do not re-enable anonymous access to make a panel load:
+that is what the route exists to avoid. Container logs (Loki, via Promtail)
+are read the same way, through the backend, and are platform-admin only.
 
 ## Known gaps
 
@@ -142,7 +166,9 @@ sign-in form and admins log in once per session.
   cAdvisor/Docker Desktop limitation, not a configuration mistake here.
   On the production Ubuntu server (`overlay2`) the same config names
   containers correctly. Locally, use `docker stats` instead. Everything
-  else on the dashboard works locally.
+  else on the dashboard works locally. The two alert rules that read these
+  series (`ContainerRestarting`, `ContainerMemoryNearLimit`) cannot fire
+  here either; the Alerts card marks them "no data" rather than "not firing".
 
 - **OCR metrics have nothing behind them yet.** `dms_ocr_documents` reads
   the real `document_versions.ocr_status` column, but no OCR worker exists in
@@ -150,8 +176,13 @@ sign-in form and admins log in once per session.
   version sits at its default status. The panel and the `OcrFailuresHigh`
   alert are wired to the real metric and start meaning something the day that
   worker lands — no change needed here.
-- **No log aggregation.** Metrics say what is wrong; you still need
-  `docker logs` to find out why. Loki would be the natural next step and
-  would slot in beside Prometheus.
+- **Logs are collected, but not redacted.** Promtail ships every container's
+  logs to Loki (14 days), and the System Monitoring screen shows them per
+  service to platform administrators. A log line is free text written by
+  whoever wrote the code, so it can carry anything the service printed -
+  usernames, ids, document titles in an error message. Today's logs hold none
+  of that, but the sample is a dev stack with seven documents. Masking emails
+  and tokens in the Promtail pipeline, and recording each log view in the
+  audit log, are the two obvious hardening steps and neither is done.
 - **Single-node only.** Targets are hardcoded service names. A second server
   needs service discovery rather than a longer `static_configs` list.

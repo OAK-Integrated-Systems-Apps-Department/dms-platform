@@ -825,7 +825,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
           "editorMode": "code",
-          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"dms-core\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"dms-core\"}[5m]))) * 100",
+          "expr": "((sum(rate(http_server_requests_seconds_count{job=\"dms-core\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_requests_seconds_count{job=\"dms-core\"}[5m]))) * 100",
           "instant": false,
           "interval": "",
           "legendFormat": "Error rate",

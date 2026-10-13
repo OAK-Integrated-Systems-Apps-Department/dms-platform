@@ -43,6 +43,14 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+# Where a firing alert is sent. Without this block Prometheus evaluates the
+# rules and tells no one: that was the state of this stack, and the reason a
+# firing alert was visible only to someone already looking at a screen.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   # --- Prometheus itself ------------------------------------------------
   # Not vanity: `up` for this job is how the dashboard knows the monitoring
@@ -195,3 +203,11 @@ scrape_configs:
       - targets: ["promtail:9080"]
         labels:
           service: promtail
+
+  # Alertmanager itself. If it is down, alerts still fire and still show on the
+  # monitoring screen - but none is delivered, and nothing else would say so.
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: alertmanager

@@ -63,6 +63,39 @@ public enum MonitoringMetric {
     DOCUMENTS_STORED("Documents stored", "sum(dms_documents_stored)", Unit.COUNT, false),
     STORAGE_BYTES("Storage used", "sum(dms_storage_bytes)", Unit.BYTES, false),
 
+    /**
+     * Room left, in bytes, on the FULLEST filesystem - the same one the Disk
+     * gauge reads, so the two cannot disagree. A percentage alone says "35%
+     * free", which is 3 GB on a small volume and 350 GB on a large one; the
+     * number that decides whether a large import fits is the absolute one.
+     * <p>
+     * topk(1, used-fraction) picks the fullest filesystem, and the
+     * {@code and on(device, mountpoint)} then reads THAT filesystem's free
+     * bytes rather than the smallest free bytes anywhere - which on Docker
+     * Desktop would be one of several tiny system mounts and say nothing.
+     */
+    DISK_FREE("Disk free",
+            "max(node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|ramfs\"}"
+                    + " and on(device, mountpoint) topk(1, 1 - node_filesystem_avail_bytes"
+                    + "{fstype!~\"tmpfs|overlay|squashfs|ramfs\"} / node_filesystem_size_bytes"
+                    + "{fstype!~\"tmpfs|overlay|squashfs|ramfs\"}))",
+            Unit.BYTES, false),
+
+    /**
+     * The backend's own uptime, not the machine's. The question is "did the
+     * backend restart when nobody meant it to" - a crash-loop or an
+     * out-of-memory kill shows here as a small number, while the host
+     * underneath stays up for months and says nothing.
+     */
+    BACKEND_UPTIME("Backend uptime", "max(process_uptime_seconds{job=\"dms-core\"})", Unit.DURATION, false),
+
+    /**
+     * Consumers attached to the message queues. Zero means background work
+     * - scanning, exports, imports - is being queued and never picked up,
+     * while every health check stays green because RabbitMQ itself is fine.
+     */
+    RABBIT_CONSUMERS("Queue consumers", "sum(rabbitmq_consumers)", Unit.COUNT, false),
+
     // --- Gauges -------------------------------------------------------
     // Only things with a real ceiling belong here. A gauge needs a maximum
     // to be a fraction OF: "72% of the heap" means something, "0.09
@@ -109,7 +142,9 @@ public enum MonitoringMetric {
 
     /** How the figure should be read - the UI formats, it does not guess. */
     public enum Unit {
-        COUNT, PER_SECOND, SECONDS, BYTES, RATIO
+        COUNT, PER_SECOND, SECONDS, BYTES, RATIO,
+        /** A span of time to read as "3 h 05 min", not as a number of seconds. */
+        DURATION
     }
 
     private final String label;

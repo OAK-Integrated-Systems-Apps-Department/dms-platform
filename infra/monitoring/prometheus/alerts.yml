@@ -1,3 +1,14 @@
+# --- `requires` ----------------------------------------------------------
+# Every rule below declares, under annotations, the metric it reads. It is not
+# used by Prometheus. The System Monitoring screen runs it as a query: a rule
+# whose input has NO series cannot ever fire, and without this the screen
+# would list it as "not firing" - which reads as "fine" when the truth is
+# "blind". The container rules are the live example: cAdvisor cannot read
+# containers under Docker Desktop, so on that stack they evaluate nothing.
+#
+# Keep it a plain selector - no thresholds, no functions. Add one to any new
+# rule; a rule without it is simply never reported as blind.
+
 # Alert rules for the OAK DMS stack, evaluated by Prometheus and shown in
 # Grafana (Alerting -> Alert rules -> "Data source-managed").
 #
@@ -28,6 +39,7 @@ groups:
           severity: warning
           component: system
         annotations:
+          requires: 'node_cpu_seconds_total{mode="idle"}'
           summary: "CPU above 85% for 10 minutes"
           description: "Host CPU is {{ $value | humanize }}%. Uploads and previews will feel slow."
 
@@ -38,6 +50,7 @@ groups:
           severity: warning
           component: system
         annotations:
+          requires: 'node_memory_MemAvailable_bytes'
           summary: "Memory above 90% for 10 minutes"
           description: >-
             {{ $value | humanize }}% of RAM is in use. The DMS stack has frozen
@@ -54,6 +67,7 @@ groups:
           severity: warning
           component: storage
         annotations:
+          requires: 'node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}'
           summary: "Less than 15% disk free on {{ $labels.mountpoint }}"
           description: "{{ $value | humanize }}% free. Large uploads stage to disk before they are stored."
 
@@ -66,6 +80,7 @@ groups:
           severity: critical
           component: storage
         annotations:
+          requires: 'node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}'
           summary: "Less than 5% disk free on {{ $labels.mountpoint }}"
           description: "Uploads and Postgres writes will start failing. Free space now."
 
@@ -81,6 +96,7 @@ groups:
           severity: critical
           component: backend
         annotations:
+          requires: 'up{job="dms-core"}'
           summary: "DMS backend is not responding"
           description: "Prometheus cannot scrape dms-core. The whole DMS is likely unusable."
 
@@ -91,6 +107,7 @@ groups:
           severity: critical
           component: postgres
         annotations:
+          requires: 'pg_up'
           summary: "PostgreSQL is unreachable"
           description: "Nothing in the DMS works without it - sign-in included."
 
@@ -101,6 +118,7 @@ groups:
           severity: warning
           component: redis
         annotations:
+          requires: 'redis_up'
           summary: "Redis is unreachable"
           description: "Caching and session lookups fall back to the database; expect it to feel slower."
 
@@ -111,6 +129,7 @@ groups:
           severity: critical
           component: rabbitmq
         annotations:
+          requires: 'up{job="rabbitmq"}'
           summary: "RabbitMQ is unreachable"
           description: "Bulk imports and exports stop being processed; messages queue up on the producer side."
 
@@ -124,6 +143,7 @@ groups:
           severity: warning
           component: containers
         annotations:
+          requires: 'container_start_time_seconds{name!=""}'
           summary: "Container {{ $labels.name }} restarted more than twice in 15 minutes"
           description: "It is probably crash-looping - check `docker logs {{ $labels.name }}`."
 
@@ -140,6 +160,7 @@ groups:
           severity: warning
           component: containers
         annotations:
+          requires: 'container_memory_working_set_bytes{name!=""}'
           summary: "{{ $labels.name }} is using over 90% of its memory limit"
           description: "{{ $value | humanize }}% of its cap. It will be killed if it reaches 100%."
 
@@ -160,6 +181,7 @@ groups:
           severity: critical
           component: backend
         annotations:
+          requires: 'http_server_requests_seconds_count{job="dms-core"}'
           summary: "More than 5% of API requests are failing"
           description: "{{ $value | humanize }}% are returning 5xx. Check the dms-core logs."
 
@@ -176,6 +198,7 @@ groups:
           severity: warning
           component: backend
         annotations:
+          requires: 'http_server_requests_seconds_bucket{job="dms-core"}'
           summary: "95th-percentile API response time above 2s"
           description: "p95 is {{ $value | humanize }}s. The app will feel sluggish."
 
@@ -188,6 +211,7 @@ groups:
           severity: warning
           component: postgres
         annotations:
+          requires: 'hikaricp_connections_pending{job="dms-core"}'
           summary: "Requests are waiting for a database connection"
           description: "{{ $value }} threads are blocked on the pool. Raise the pool size or find the slow query."
 
@@ -204,6 +228,7 @@ groups:
           severity: warning
           component: scanning
         annotations:
+          requires: 'dms_scan_backlog{status="pending"}'
           summary: "{{ $value }} uploads are waiting to be scanned"
           description: "Uploads stay invisible to users until they pass. Check ClamAV and the scan workers."
 
@@ -218,6 +243,7 @@ groups:
           severity: warning
           component: ocr
         annotations:
+          requires: 'dms_ocr_documents{status="failed"}'
           summary: "{{ $value }} documents failed OCR"
           description: "Their text will not be searchable. Check the OCR worker once it is deployed."
 
@@ -230,5 +256,6 @@ groups:
           severity: warning
           component: storage
         annotations:
+          requires: 'dms_storage_bytes'
           summary: "Stored document bytes are growing unusually fast"
           description: "At this rate the DMS doubles in size within a week - check for a runaway import."

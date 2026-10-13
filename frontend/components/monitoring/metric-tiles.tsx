@@ -118,7 +118,14 @@ export function MetricTile({
   points?: MonitoringPoint[]
 }) {
   const formatted = reading ? formatMetric(reading.value, reading.unit) : null
-  const [figure, unit] = formatted ? splitUnit(formatted) : ["—", ""]
+  // A duration is one quantity written in two units ("3 h 05 min"), so it is
+  // shown whole. Splitting it would set a lone "3" large and "h 05 min" small,
+  // which reads as the number three.
+  const [figure, unit] = !formatted
+    ? ["—", ""]
+    : reading?.unit === "DURATION"
+      ? [formatted, ""]
+      : splitUnit(formatted)
 
   const toneColour =
     tone === "bad"
