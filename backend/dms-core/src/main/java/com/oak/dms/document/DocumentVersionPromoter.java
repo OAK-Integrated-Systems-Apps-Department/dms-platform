@@ -1,6 +1,7 @@
 package com.oak.dms.document;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.document.event.DocumentVersionCreatedEvent;
 import com.oak.dms.scanning.entity.ScanResult;
 import com.oak.dms.scanning.enums.IngestionKind;
 import com.oak.dms.scanning.enums.ScanResultStatus;
@@ -11,6 +12,7 @@ import com.oak.dms.ocrworker.OcrEnqueueService;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
     private final StorageLocationResolver storageLocationResolver;
     private final OcrEnqueueService ocrEnqueueService;
     private final com.oak.dms.ocrworker.OcrProperties ocrProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -102,6 +105,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                 .scanStatus(override ? DocumentVersion.SCAN_STATUS_OVERRIDDEN : DocumentVersion.SCAN_STATUS_CLEAN)
                 .createdBy(uploadedBy);
 
+        DocumentVersionCreatedEvent pendingVersionEvent = null;
         if (cleanResult.getIngestionKind() == IngestionKind.new_document) {
             documentRepository.save(Document.builder()
                     .documentId(plan.documentId())
@@ -109,6 +113,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .documentTypeId(cleanResult.getDocumentTypeId())
                     .folderId(cleanResult.getFolderId())
                     .title(cleanResult.getTitle())
+                    .template(DocumentTemplateService.CREATED_REASON.equals(cleanResult.getCreatedReason()))
                     .currentVersionId(plan.versionId())
                     .latestVersionId(plan.versionId())
                     .ownerUserId(uploadedBy)
@@ -122,16 +127,27 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .orElse(null);
             // Minor increment on the latest version; publishing/major-version
             // rules belong to the versioning module once it exists.
+
             int major = latest != null ? latest.getMajorVersion() : 1;
             int minor = latest != null ? latest.getMinorVersion() + 1 : 0;
             version.majorVersion(major).minorVersion(minor).versionLabel(major + "." + minor);
             // The newest clean version is the one opened and downloaded - there's no approval step that
             // could hold it back yet (a restore arrives here too, as a new 'rollback' version).
+
+            version.majorVersion(latest != null ? latest.getMajorVersion() : 1)
+                    .minorVersion(latest != null ? latest.getMinorVersion() + 1 : 0);
+            UUID previousLatest = document.getLatestVersionId();
+
             document.setLatestVersionId(plan.versionId());
             document.setCurrentVersionId(plan.versionId());
             document.setUpdatedBy(uploadedBy);
             document.setUpdatedAt(OffsetDateTime.now());
             documentRepository.save(document);
+            // Synchronous listeners run inside this promotion transaction -
+            // the workflow module flags or restarts an in-flight approval
+            // (decision 10) atomically with the new version.
+            pendingVersionEvent = new DocumentVersionCreatedEvent(tenantId, document.getDocumentId(), previousLatest,
+                    plan.versionId(), uploadedBy);
         }
 
         // OCR, if the uploader asked for it. This is the ONLY place it starts.
@@ -185,6 +201,9 @@ public class DocumentVersionPromoter implements DocumentPromoter {
             }
         }
 
+        if (pendingVersionEvent != null) {
+            eventPublisher.publishEvent(pendingVersionEvent);
+        }
         log.info("Promoted scan result {} to document {} version {} (tenant {})", cleanResult.getScanResultId(),
                 plan.documentId(), plan.versionId(), tenantId);
     }

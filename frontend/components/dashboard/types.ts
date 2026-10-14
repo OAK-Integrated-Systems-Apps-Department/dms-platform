@@ -10,6 +10,13 @@ export interface NavItem {
   icon: LucideIcon
   badge?: number
   /**
+   * A live count to show as the badge instead of a static `badge` -
+   * resolved by `AppSidebar` itself (e.g. "myOpenTasks" = the caller's
+   * open workflow tasks, polled from /workflow/tasks/my/count). Hidden
+   * while zero or still loading.
+   */
+  liveBadge?: "myOpenTasks"
+  /**
    * Real route to navigate to (e.g. "/admin/roles"). When present, the
    * sidebar renders this item as a Next.js `Link` and derives its active
    * state from the current pathname instead of `activeLabel`. Omit for
@@ -38,6 +45,21 @@ export interface NavItem {
    * permission alone decides.
    */
   feature?: "watermarking" | "ocr"
+  /**
+   * For administrators of either kind - PLATFORM_ADMIN or TENANT_ADMIN.
+   * For screens that are an administrator's job but aren't tied to one
+   * organisation's data, such as System Monitoring. Distinct from
+   * `platformAdminOnly` (strictly cross-tenant) and from `permission`
+   * (a specific capability from the catalogue); the two admin roles are
+   * fixed platform roles from the caller's JWT, not catalogue entries.
+   */
+  adminOnly?: boolean
+  /**
+   * Visible to platform administrators, or to anyone holding this permission.
+   * A platform administrator has no tenant and so no resolved permission list,
+   * hence the separate check; tenant admins pass through `hasAnyPermission`.
+   */
+  platformAdminOrPermission?: string
 }
 
 export interface NavSection {
@@ -64,14 +86,6 @@ export interface RecentDocument {
   modified: string
   size: string
   status: DocumentStatus
-}
-
-export interface ApprovalTask {
-  id: string
-  name: string
-  requester: string
-  due: string
-  size: string
 }
 
 export interface ActivityEntry {

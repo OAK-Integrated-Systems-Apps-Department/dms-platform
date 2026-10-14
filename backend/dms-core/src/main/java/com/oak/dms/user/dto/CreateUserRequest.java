@@ -13,8 +13,9 @@ import jakarta.validation.constraints.Size;
 public record CreateUserRequest(
 
         @NotBlank
-        @Email
-        @Size(max = 320)
+        @Email(message = "Enter a valid email address")
+        // Keycloak keeps at most 255 characters of an email (user_entity.email) - longer failed there.
+        @Size(max = 255, message = "An email can be at most 255 characters")
         String email,
 
         /**

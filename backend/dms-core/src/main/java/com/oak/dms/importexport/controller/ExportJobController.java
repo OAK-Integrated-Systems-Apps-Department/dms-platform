@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -112,7 +113,9 @@ public class ExportJobController {
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(export.sizeBytes()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.attachment().filename(export.filename()).build().toString())
+                        // UTF-8 (filename*) so a folder named in Sinhala or Tamil keeps its name.
+                        ContentDisposition.attachment().filename(export.filename(), StandardCharsets.UTF_8)
+                                .build().toString())
                 .body(body);
     }
 }

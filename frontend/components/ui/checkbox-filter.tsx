@@ -11,6 +11,8 @@ import {
 import { createPortal } from "react-dom"
 import { Check, ChevronDown, Search, X } from "lucide-react"
 
+import { cn } from "@/lib/utils"
+
 const POPOVER_MAX_HEIGHT = 420
 const VIEWPORT_MARGIN = 12
 const MIN_POPOVER_HEIGHT = 200
@@ -214,34 +216,40 @@ export function CheckboxFilter({
 
   return (
     <div className="relative">
+      {/* Clear sits OUTSIDE this button, overlapping its right edge. It was
+          a <span role="button"> nested inside, which no keyboard could reach
+          and which is invalid HTML besides - a button may not contain
+          another control. */}
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         style={{ width: triggerWidth }}
-        className="flex h-[38px] items-center justify-between gap-2 rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+        className={cn(
+          "flex h-[38px] items-center gap-2 rounded-btn border border-border bg-muted pl-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card",
+          selected.length > 0 ? "pr-14" : "pr-9"
+        )}
       >
         <span className="truncate">
           <span className="text-[var(--ink-faint)]">{label}: </span>
           {summary}
         </span>
-        <span className="flex shrink-0 items-center gap-1">
-          {selected.length > 0 && (
-            <span
-              role="button"
-              aria-label={`Clear ${label.toLowerCase()} filter`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange([])
-              }}
-              className="flex size-4 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
-            >
-              <X size={12} />
-            </span>
-          )}
-          <ChevronDown size={14} className="text-[var(--ink-faint)]" />
-        </span>
       </button>
+
+      {selected.length > 0 && (
+        <button
+          type="button"
+          aria-label={`Clear ${label.toLowerCase()} filter`}
+          onClick={() => onChange([])}
+          className="absolute top-1/2 right-8 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
+        >
+          <X size={12} />
+        </button>
+      )}
+      <ChevronDown
+        size={14}
+        className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
+      />
 
       {open &&
         mounted &&
@@ -316,6 +324,13 @@ export function CheckboxFilter({
                       // the label's default action avoids that scroll
                       // entirely; keyboard/screen-reader users tabbing
                       // directly to the input below are unaffected.
+                      //
+                      // Sonar's S1082 flags this as a click handler on a
+                      // non-interactive element. It is a false positive: the
+                      // <input type="checkbox"> below is a real control with
+                      // its own onChange, so Tab reaches it and Space toggles
+                      // it. Giving the <label> its own keyboard handler would
+                      // add a second, duplicate way to toggle the same box.
                       onClick={(event) => {
                         event.preventDefault()
                         toggleOption(option)

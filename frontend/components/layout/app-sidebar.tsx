@@ -22,6 +22,9 @@ import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
+import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
+
+import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -72,6 +75,22 @@ export function AppSidebar({
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
   const { isPlatformAdmin } = useIsPlatformAdmin()
+  // The two are mutually exclusive as the backend reports them: /me/platform-roles
+  // includes PLATFORM_ADMIN, while the per-user lookup behind useIsTenantAdmin
+  // deliberately excludes it - so `adminOnly` items have to check both.
+  const { isTenantAdmin } = useIsTenantAdmin()
+
+  // Live badge for the My Tasks item (see NavItem.liveBadge).
+  const { data: taskCount } = useMyTaskCount()
+  const liveBadges: Record<
+    NonNullable<NavItem["liveBadge"]>,
+    number | undefined
+  > = {
+    // Tasks to decide plus information requests waiting on me (Phase 2).
+    myOpenTasks:
+      (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) ||
+      undefined,
+  }
 
   // Cached probe shared with the rest of the app; `undefined` while it is
   // still in flight, which keeps a feature-gated item hidden until the
@@ -101,6 +120,10 @@ export function AppSidebar({
         (item) =>
           (!item.platformAdminOnly || isPlatformAdmin) &&
           featureOn(item.feature) &&
+          (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
+          (!item.platformAdminOrPermission ||
+            isPlatformAdmin ||
+            hasAnyPermission(item.platformAdminOrPermission)) &&
           (!item.permission ||
             hasAnyPermission(
               ...(Array.isArray(item.permission)
@@ -163,6 +186,9 @@ export function AppSidebar({
                     : pathname.startsWith(item.href)
                   : item.label === activeLabel
                 const Icon = item.icon
+                const badge = item.liveBadge
+                  ? liveBadges[item.liveBadge]
+                  : item.badge
                 const content = (
                   <>
                     <Icon
@@ -170,9 +196,9 @@ export function AppSidebar({
                       className={cn(!isActive && "opacity-85")}
                     />
                     <span className="flex-1">{item.label}</span>
-                    {item.badge != null && (
+                    {badge != null && (
                       <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
-                        {item.badge}
+                        {badge}
                       </span>
                     )}
                   </>

@@ -1,7 +1,12 @@
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
-
+import {
+  apiFetch,
+  apiFetchJson,
+  apiUpload,
+  type UploadTransfer,
+} from "@/lib/api-fetch"
 import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
+import type { PageDto } from "@/lib/workflow/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
 export interface SelectableDocumentTypeDto {
@@ -39,6 +44,17 @@ export interface IngestionTicketDto {
   completedAt: string | null
 }
 
+/** Where an upload's scan has got to - polled while it's still pending (202). */
+export async function fetchIngestionTicket(
+  scanResultId: string
+): Promise<IngestionTicketDto> {
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/ingestion-tickets/${scanResultId}`,
+    undefined,
+    "Could not check the virus scan."
+  )
+}
+
 /** Active document types the caller may upload as (needs only docm.documents.create). */
 export async function fetchSelectableDocumentTypes(): Promise<
   SelectableDocumentTypeDto[]
@@ -49,6 +65,15 @@ export async function fetchSelectableDocumentTypes(): Promise<
     "Could not load document types."
   )
 }
+
+/**
+ * Files of any size can be uploaded - the virus scanner checks the ones over
+ * 2 GB in parts. Only an organisation's own scan engine limit can refuse one
+ * (413), and the server's message then says what that limit is; this is the
+ * fallback if it doesn't.
+ */
+export const TOO_LARGE_MESSAGE =
+  "This file is larger than your organisation's upload limit, so it can't be uploaded."
 
 /**
  * One file through `POST /api/v1/documents` (multipart). Throws ApiError on
@@ -68,7 +93,9 @@ export async function uploadDocument(
    * there is one path into the scan gate rather than two to keep in step.
    * OCR starts only after the file comes back clean.
    */
-  requestedFields?: string[]
+  requestedFields?: string[],
+  /** Progress and cancellation - see apiUpload. */
+  transfer?: UploadTransfer
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
@@ -79,12 +106,12 @@ export async function uploadDocument(
   if (requestedFields && requestedFields.length > 0) {
     params.set("requestedFields", JSON.stringify(requestedFields))
   }
-  const response = await apiFetch(
+  return apiUpload<IngestionTicketDto>(
     `${API_BASE_URL}/api/v1/documents?${params.toString()}`,
-    { method: "POST", body: form },
+    form,
+    transfer,
     "Upload failed."
   )
-  return response.json() as Promise<IngestionTicketDto>
 }
 
 /** Mirrors DocumentListItem - one row of the document browser. */
@@ -270,6 +297,48 @@ export async function previewVersionPdf(
   return response.blob()
 }
 
+/** Mirrors backend/dms-core's DocumentRenditionService.SlideDeck - a presentation shown slide by slide. */
+export interface SlideDeckDto {
+  versionId: string
+  slides: number
+  /** The first slide's shape, in points - only the ratio matters. */
+  width: number
+  height: number
+}
+
+function slidesBase(documentId: string, versionId?: string): string {
+  return versionId
+    ? `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/preview/slides`
+    : `${API_BASE_URL}/api/v1/documents/${documentId}/preview/slides`
+}
+
+/** Opens a presentation (.ppt/.pptx/.odp) as slides - converted on first use, audited as viewed. */
+export async function openSlides(
+  documentId: string,
+  versionId?: string
+): Promise<SlideDeckDto> {
+  return apiFetchJson<SlideDeckDto>(
+    slidesBase(documentId, versionId),
+    undefined,
+    "Could not prepare the slides."
+  )
+}
+
+/** One slide (numbered from 1) as a JPEG about `width` pixels wide. */
+export async function slideImage(
+  documentId: string,
+  versionId: string | undefined,
+  slide: number,
+  width: number
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${slidesBase(documentId, versionId)}/${slide}?width=${width}`,
+    undefined,
+    "Could not show this slide."
+  )
+  return response.blob()
+}
+
 /** `POST /api/v1/documents/move` - folderId null takes the documents out of any folder. */
 export async function moveDocuments(
   documentIds: string[],
@@ -343,18 +412,19 @@ export async function downloadDocumentVersion(
 export async function uploadDocumentVersion(
   documentId: string,
   file: File,
-  comment?: string
+  comment?: string,
+  transfer?: UploadTransfer
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
   const params = new URLSearchParams()
   if (comment?.trim()) params.set("comment", comment.trim())
-  const response = await apiFetch(
+  return apiUpload<IngestionTicketDto>(
     `${API_BASE_URL}/api/v1/documents/${documentId}/versions?${params.toString()}`,
-    { method: "POST", body: form },
+    form,
+    transfer,
     "Could not upload the new version."
   )
-  return response.json() as Promise<IngestionTicketDto>
 }
 
 /** `POST .../versions/{versionId}/restore` - adds a new version with that version's content. */
@@ -735,4 +805,56 @@ export async function saveReview(
     },
     "Could not save your review."
   )
+}
+
+/** Mirrors backend/dms-core's DocumentResponse - a document's metadata (no content). */
+export interface DocumentDto {
+  documentId: string
+  tenantId: string
+  documentTypeId: string
+  /** Embedded by the backend; null when the type has since been deleted. */
+  documentTypeName: string | null
+  title: string
+  currentVersionId: string | null
+  latestVersionId: string | null
+  publishedVersionId: string | null
+  ownerUserId: string | null
+  status: string
+  createdAt: string
+  updatedAt: string | null
+}
+
+/** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */
+export interface DocumentSummaryDto {
+  documentId: string
+  title: string
+  documentTypeName: string | null
+  latestVersionId: string | null
+  createdAt: string
+  createdByName: string | null
+}
+
+export interface DocumentSearchOptions {
+  documentTypeId?: string
+  /** Left out of the results - e.g. the document under approval when picking supporting documents. */
+  excludeDocumentId?: string
+}
+
+/** `GET /api/v1/documents` - the tenant's documents, newest first; search matches the title. Needs docm.documents.view. `page` is 0-indexed. */
+export async function searchDocuments(
+  search: string,
+  options: DocumentSearchOptions = {},
+  page = 0,
+  size = 20
+): Promise<PageDto<DocumentSummaryDto>> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) })
+  if (search.trim()) params.set("search", search.trim())
+  if (options.documentTypeId) params.set("documentTypeId", options.documentTypeId)
+  if (options.excludeDocumentId) params.set("excludeDocumentId", options.excludeDocumentId)
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents?${params.toString()}`, undefined, "Could not load documents.")
+}
+
+/** `GET /api/v1/documents/{id}` - needs docm.documents.view. */
+export async function fetchDocument(documentId: string): Promise<DocumentDto> {
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents/${documentId}`, undefined, "Could not load this document.")
 }

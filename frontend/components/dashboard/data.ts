@@ -1,6 +1,6 @@
 import { CheckCircle2, Folder, Upload, Workflow, XCircle } from "lucide-react"
 
-import type { ActivityEntry, AppUser, ApprovalTask, RecentDocument } from "./types"
+import type { ActivityEntry, AppUser, RecentDocument } from "./types"
 
 /**
  * Mock data for the Home dashboard. Swap the contents of these values (or
@@ -59,30 +59,6 @@ export const recentDocuments: RecentDocument[] = [
     modified: "Yesterday",
     size: "1.8 MB",
     status: "Rejected",
-  },
-]
-
-export const pendingApprovals: ApprovalTask[] = [
-  {
-    id: "approval-1",
-    name: "Lease Renewal — Colombo Office.pdf",
-    requester: "Nadia R.",
-    due: "Due today",
-    size: "2.1 MB",
-  },
-  {
-    id: "approval-2",
-    name: "Employee Handbook v4.docx",
-    requester: "Kasun P.",
-    due: "Due tomorrow",
-    size: "760 KB",
-  },
-  {
-    id: "approval-3",
-    name: "Supplier Onboarding — Ceylon Foods.pdf",
-    requester: "Malik S.",
-    due: "Due in 2 days",
-    size: "1.4 MB",
   },
 ]
 

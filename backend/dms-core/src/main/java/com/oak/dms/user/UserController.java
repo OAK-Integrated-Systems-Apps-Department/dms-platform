@@ -2,6 +2,8 @@ package com.oak.dms.user;
 
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.security.auth.AuthorizationService;
+import com.oak.dms.user.dto.ChangeOwnPasswordRequest;
+import com.oak.dms.user.dto.UpdateOwnIdentityRequest;
 import com.oak.dms.user.dto.CreateUserRequest;
 import com.oak.dms.user.dto.DeactivateUserRequest;
 import com.oak.dms.user.dto.ProvisionUserRequest;
@@ -33,6 +35,7 @@ public class UserController {
 
     private final UserService userService;
     private final AuthorizationService authorizationService;
+    private final AccountSelfService accountSelfService;
 
     @PostMapping("/me/provision")
     @Operation(summary = "Self-provision the calling Keycloak principal's local user profile")
@@ -81,6 +84,76 @@ public class UserController {
         return authorizationService.myPlatformRoles();
     }
 
+    @GetMapping("/me/identity")
+    @Operation(summary = "The caller's own identity, read straight from their access token",
+            description = "Works WITHOUT tenant context, which is what separates it from GET /me: a platform "
+                    + "administrator belongs to no tenant and so has no local user row, and GET /me answers "
+                    + "401 TENANT_CONTEXT_MISSING for them by design. They still need to see who they are "
+                    + "signed in as, and where to go to change their name or password - Keycloak owns both, "
+                    + "since there is no local profile to edit. Same source as "
+                    + "/me/platform-roles: the caller's own validated JWT, never a Keycloak admin lookup.")
+    public CurrentIdentityResponse getMyIdentity(JwtAuthenticationToken auth) {
+        Jwt jwt = auth.getToken();
+        return new CurrentIdentityResponse(
+                jwt.getClaimAsString("email"),
+                jwt.getClaimAsString("preferred_username"),
+                jwt.getClaimAsString("given_name"),
+                jwt.getClaimAsString("family_name"),
+                // The realm's token carries the combined "name" claim but not
+                // always given_name/family_name, so this is often the only
+                // human-readable name available. Deliberately NOT split into
+                // first/last here: there is no reliable way to do that across
+                // naming conventions, and guessing wrong is worse than
+                // showing the name as its owner wrote it.
+                jwt.getClaimAsString("name"),
+                authorizationService.myPlatformRoles());
+    }
+
+    @PutMapping("/me/identity")
+    @Operation(summary = "Change the caller's own name and email, in Keycloak and locally",
+            description = "Works WITHOUT tenant context, unlike PUT /me - a platform administrator has no "
+                    + "local user row to update, only a Keycloak account. Keycloak owns the identity and is "
+                    + "written first; the local users row, when there is one, is updated as a mirror. "
+                    + "Deliberately cannot change tenant, roles, status or the MFA flag.")
+    public CurrentIdentityResponse updateMyIdentity(JwtAuthenticationToken auth,
+                                                    @Valid @RequestBody UpdateOwnIdentityRequest request) {
+        Jwt jwt = auth.getToken();
+        accountSelfService.updateIdentity(requireUuidClaim(jwt, jwt.getSubject(), "sub"), request);
+        // Read back from the request rather than the (now stale) token: the
+        // caller's access token still carries the old name until it is refreshed.
+        return new CurrentIdentityResponse(request.email(), jwt.getClaimAsString("preferred_username"),
+                request.firstName(), request.lastName(),
+                (request.firstName() + " " + (request.lastName() == null ? "" : request.lastName())).trim(),
+                authorizationService.myPlatformRoles());
+    }
+
+    @PostMapping("/me/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Change the caller's own password",
+            description = "The current password is re-checked against Keycloak before anything is written - "
+                    + "Keycloak's admin API can set a password without it, so that check is what stops a "
+                    + "stolen session becoming a permanent account takeover. Accounts with MFA enrolled must "
+                    + "also send a current one-time code, because verifying the password means a real token "
+                    + "request. Works without tenant context, like /me/identity.")
+    public void changeMyPassword(JwtAuthenticationToken auth,
+                                 @Valid @RequestBody ChangeOwnPasswordRequest request) {
+        Jwt jwt = auth.getToken();
+        accountSelfService.changePassword(
+                requireUuidClaim(jwt, jwt.getSubject(), "sub"),
+                requireClaim(jwt, jwt.getClaimAsString("preferred_username"), "preferred_username"),
+                request);
+    }
+
+    /**
+     * Who the caller is according to their token. Nullable throughout on
+     * purpose: every field here is an optional OIDC claim, and a missing
+     * name is something the UI should render around, not a 400 - unlike
+     * {@code /me/provision}, which genuinely cannot proceed without them.
+     */
+    public record CurrentIdentityResponse(String email, String username, String firstName, String lastName,
+                                          String displayName, List<String> platformRoles) {
+    }
+
     @PostMapping
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_CREATE)")
     @Operation(summary = "Invite a new user into the caller's tenant")
@@ -117,6 +190,20 @@ public class UserController {
                     + "KeycloakUserService#PLATFORM_ROLE_NAMES for why.")
     public List<String> getPlatformRoles(@PathVariable UUID userId) {
         return userService.getPlatformRoles(userId);
+    }
+
+    public record EmailAvailability(boolean available) {
+    }
+
+    @GetMapping("/email-availability")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).OTUA_USERS_CREATE)")
+    @Operation(summary = "Whether an email is free to give a user",
+            description = "The same check a save makes - another user in the tenant, or any account that signs in "
+                    + "with it. One answer either way, so it can't tell which.")
+    // userId: the user whose email is being changed; left out when inviting a new one.
+    public EmailAvailability emailAvailability(@RequestParam("email") String email,
+                                               @RequestParam(value = "userId", required = false) UUID userId) {
+        return new EmailAvailability(userService.isEmailAvailable(email, userId));
     }
 
     @GetMapping

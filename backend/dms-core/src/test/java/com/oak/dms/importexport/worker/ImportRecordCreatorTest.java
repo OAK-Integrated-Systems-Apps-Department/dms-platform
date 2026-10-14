@@ -339,7 +339,7 @@ class ImportRecordCreatorTest {
         assertThat(item.getScanResultId()).isNull();
         JsonNode error = objectMapper.readTree(item.getValidationErrors()).get(0);
         assertThat(error.get("code").asText()).isEqualTo("SCAN_REJECTED");
-        assertThat(error.get("message").asText()).isEqualTo("File exceeds the maximum upload size of 100 bytes");
+        assertThat(error.get("message").asText()).isEqualTo("This file is larger than the 100 bytes upload limit, so it can't be uploaded.");
         // Left for finalisation to clean up.
         assertThat(item.getStagedObjectKey()).isEqualTo("imports/key-1");
     }

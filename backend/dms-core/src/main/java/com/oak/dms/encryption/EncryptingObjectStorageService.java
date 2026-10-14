@@ -1,5 +1,6 @@
 package com.oak.dms.encryption;
 
+import com.oak.dms.common.io.TempFiles;
 import com.oak.dms.encryption.KeyEncryptionService.DataKey;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.dto.DownloadedObject;
@@ -321,7 +322,7 @@ public class EncryptingObjectStorageService implements ObjectStorageService {
 
     private static Path spool(InputStream content, String objectKey) {
         try {
-            Path file = Files.createTempFile("dms-upload-", ".part");
+            Path file = TempFiles.create("dms-upload-", ".part");
             Files.copy(content, file, StandardCopyOption.REPLACE_EXISTING);
             return file;
         } catch (IOException e) {

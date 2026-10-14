@@ -1,0 +1,29 @@
+# Grafana's Prometheus datasource, provisioned from disk so no one has to
+# click it into existence and so a rebuilt Grafana volume comes back
+# identically configured.
+#
+# The uid is fixed ("prometheus") on purpose rather than auto-generated, so
+# it is the same in every environment: the dashboard selects its datasource
+# through a variable and so does not depend on this, but anything added later
+# that does reference a uid directly will then behave the same locally and in
+# production.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    # Service name on the compose network - Grafana queries it server-side,
+    # so this never has to be reachable from a browser.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Must match prometheus.yml's scrape_interval, or Grafana picks step
+      # values that make graphs look gappy at short time ranges.
+      timeInterval: 15s
+      httpMethod: POST
+      # Lets Grafana show the rules from alerts.yml under Alerting.
+      manageAlerts: true
+      prometheusType: Prometheus

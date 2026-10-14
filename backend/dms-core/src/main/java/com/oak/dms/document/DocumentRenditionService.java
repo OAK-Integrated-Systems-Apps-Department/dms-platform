@@ -31,6 +31,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -48,6 +50,10 @@ import java.util.UUID;
  * document's own: it is a view, audited as DOCUMENT_VIEWED. Files Word, Excel
  * and the browser handle themselves (PDF, .docx, spreadsheets, images, text,
  * email) are rendered in the browser instead.
+ * <p>
+ * Presentations (.ppt, .pptx, .odp) are shown as slides: the same PDF, one page
+ * per slide, drawn as images ({@link #slides}, {@link #slide}) so the viewer can
+ * step through them like a slide show.
  */
 @Slf4j
 @Service
@@ -55,6 +61,26 @@ public class DocumentRenditionService {
 
     /** Extensions converted here - everything else the browser renders itself, or can't be previewed. */
     static final Set<String> CONVERTED = Set.of("doc", "ppt", "pptx", "odt", "odp", "odg", "rtf", "vsd", "vsdx");
+    /** Of those, the presentations - shown slide by slide. */
+    static final Set<String> SLIDES = Set.of("ppt", "pptx", "odp");
+
+    /** What the slide viewer needs first: which version, how many slides, and their shape (points). */
+    public record SlideDeck(UUID versionId, int slides, float width, float height) {
+    }
+
+    /**
+     * The converted PDFs of the last few decks opened, so stepping through slides doesn't fetch
+     * and decrypt the PDF again for every one. Only PDFs up to {@link #CACHED_PDF_MAX_BYTES}.
+     */
+    private static final int CACHED_PDFS = 4;
+    private static final int CACHED_PDF_MAX_BYTES = 64 * 1024 * 1024;
+    private final Map<UUID, byte[]> recentPdfs = Collections.synchronizedMap(
+            new LinkedHashMap<>(CACHED_PDFS, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<UUID, byte[]> eldest) {
+                    return size() > CACHED_PDFS;
+                }
+            });
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
@@ -98,6 +124,10 @@ public class DocumentRenditionService {
         return CONVERTED.contains(extension(filename));
     }
 
+    static boolean slides(String filename) {
+        return SLIDES.contains(extension(filename));
+    }
+
     /**
      * The current version as a PDF - converted on first use, served from storage afterwards.
      * Audited as DOCUMENT_VIEWED.
@@ -108,6 +138,45 @@ public class DocumentRenditionService {
 
     /** @param requestedVersion one of its versions (from the version history); null = the current one */
     public DownloadedDocument preview(UUID documentId, UUID requestedVersion) {
+        Viewed viewed = viewable(documentId, requestedVersion);
+        DownloadedDocument pdf = pdfOf(viewed.version());
+        audit(viewed, "pdf preview");
+        return pdf;
+    }
+
+    /**
+     * A presentation, ready to be shown slide by slide: converted on first use like
+     * {@link #preview}, and audited as DOCUMENT_VIEWED once - here, not for every slide.
+     *
+     * @param requestedVersion one of its versions; null = the current one
+     */
+    public SlideDeck slides(UUID documentId, UUID requestedVersion) {
+        Viewed viewed = viewable(documentId, requestedVersion);
+        requireSlides(viewed.version());
+        SlidePages.Deck deck = SlidePages.describe(pdfBytes(viewed.version()));
+        audit(viewed, "slides");
+        return new SlideDeck(viewed.version().getVersionId(), deck.slides(), deck.width(), deck.height());
+    }
+
+    /**
+     * Slide {@code number} (from 1) as a JPEG about {@code width} pixels wide. Access is checked
+     * for every slide; the view itself was audited when the deck was opened ({@link #slides}).
+     */
+    public byte[] slide(UUID documentId, UUID requestedVersion, int number, int width) {
+        Viewed viewed = viewable(documentId, requestedVersion);
+        requireSlides(viewed.version());
+        try {
+            return SlidePages.render(pdfBytes(viewed.version()), number - 1, width);
+        } catch (IndexOutOfBoundsException e) {
+            throw new ResourceNotFoundException("Slide", number);
+        }
+    }
+
+    private record Viewed(Document document, DocumentVersion version) {
+    }
+
+    /** The document (which the caller must be able to view) and the version to show, if it's converted. */
+    private Viewed viewable(UUID documentId, UUID requestedVersion) {
         Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId,
                         TenantContext.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
@@ -122,19 +191,48 @@ public class DocumentRenditionService {
             throw new FolderException(HttpStatus.BAD_REQUEST, "PREVIEW_NOT_CONVERTED",
                     "This file is shown in the browser as it is - there's nothing to convert.");
         }
+        return new Viewed(document, version);
+    }
 
-        DownloadedDocument pdf = version.getRenditionObjectKey() != null
-                && "completed".equals(version.getRenditionStatus())
+    private static void requireSlides(DocumentVersion version) {
+        if (!slides(version.getOriginalFilename())) {
+            throw new FolderException(HttpStatus.BAD_REQUEST, "PREVIEW_NOT_SLIDES",
+                    "Only presentations are shown as slides.");
+        }
+    }
+
+    private DownloadedDocument pdfOf(DocumentVersion version) {
+        return version.getRenditionObjectKey() != null && "completed".equals(version.getRenditionStatus())
                 ? stored(version)
                 : convert(version);
+    }
+
+    /** The version's PDF in memory - from the recent ones, or stored/converted. */
+    private byte[] pdfBytes(DocumentVersion version) {
+        byte[] cached = recentPdfs.get(version.getVersionId());
+        if (cached != null) {
+            return cached;
+        }
+        byte[] pdf;
+        try (InputStream in = pdfOf(version).content()) {
+            pdf = in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        if (pdf.length <= CACHED_PDF_MAX_BYTES) {
+            recentPdfs.put(version.getVersionId(), pdf);
+        }
+        return pdf;
+    }
+
+    private void audit(Viewed viewed, String as) {
         auditService.event(AuditActionCatalog.DOCUMENT_VIEWED)
                 .objectType(AuditObjectTypes.DOCUMENT)
-                .objectId(documentId)
-                .resourceName(document.getTitle())
+                .objectId(viewed.document().getDocumentId())
+                .resourceName(viewed.document().getTitle())
                 .outcome(AuditOutcome.SUCCESS)
-                .newValue(Map.of("as", "pdf preview", "versionId", versionId))
+                .newValue(Map.of("as", as, "versionId", viewed.version().getVersionId()))
                 .log();
-        return pdf;
     }
 
     private DownloadedDocument stored(DocumentVersion version) {

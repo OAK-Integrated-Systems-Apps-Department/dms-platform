@@ -29,13 +29,19 @@ import java.util.Set;
  * stores a password-protected document. Encrypted PDFs are detected while
  * staging, by {@link EncryptionMarkerInputStream}.
  * <p>
- * <b>Archives are deliberately not accepted</b> - there is no zip/7z/rar/tar
- * entry in the table, and a ZIP container is only accepted when it is
- * structurally an OOXML or ODF document. This is a recorded deviation from
- * VMSBDI-FR-004 ("including embedded/compressed files (e.g., ZIP archives)"):
- * the system accepts no archive uploads, so there are no archives to scan -
- * see docs/scanning-architecture.md. (ClamAV still inspects the zip
- * structure inside OOXML/ODF files as part of its normal scan.)
+ * <b>ZIP is the one archive format accepted</b> ({@code .zip}, stored as
+ * uploaded - never extracted, nothing in it run). Its head must be a ZIP
+ * local file header, and a first entry flagged as encrypted marks it
+ * encrypted here, like a password-protected Office file. The whole archive is
+ * checked once staged ({@link ZipArchiveCheck}) and ClamAV scans every file
+ * inside it. 7z/rar/tar/gz and the rest are still refused. A ZIP container
+ * with an Office or OpenDocument extension must still be that document.
+ * <p>
+ * An Office Open XML file ({@code .docx/.xlsx/.pptx/.vsdx}) is a ZIP whose parts can come in any
+ * order - PowerPoint, Google Slides and OneDrive often write {@code [Content_Types].xml} last, megabytes
+ * in. So the head only has to show a ZIP that is plausibly that package (the marker, or a first entry
+ * that is an OOXML part); the gate then confirms {@code [Content_Types].xml} is in the archive's
+ * index once it's staged ({@link #isOfficeOpenXml}, {@link ZipArchiveCheck#containsEntry}).
  */
 @Component
 public class FileTypeInspector {
@@ -45,6 +51,8 @@ public class FileTypeInspector {
 
     private static final byte[] PDF = "%PDF-".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] ZIP = {'P', 'K', 3, 4};
+    /** An empty ZIP is only its end record - let ZipArchiveCheck say so in words. */
+    private static final byte[] EMPTY_ZIP = {'P', 'K', 5, 6};
     private static final byte[] OLE2 = {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1};
     private static final byte[] RTF = "{\\rtf".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
@@ -61,13 +69,18 @@ public class FileTypeInspector {
     private static final List<String> HEIF_BRANDS = List.of("heic", "heix", "heim", "heis", "mif1", "msf1");
     /** AutoCAD DWG files start "AC10" followed by a two-digit release (AC1015, AC1032, ...). */
     private static final byte[] DWG = "AC10".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] OOXML_MARKER = "[Content_Types].xml".getBytes(StandardCharsets.US_ASCII);
+    /** The OOXML content-types part every Office Open XML package must have. */
+    public static final String OOXML_CONTENT_TYPES = "[Content_Types].xml";
+    private static final byte[] OOXML_MARKER = OOXML_CONTENT_TYPES.getBytes(StandardCharsets.US_ASCII);
+    /** Folders an OOXML package's parts live in - any of them may be the first entry. */
+    private static final List<String> OOXML_PART_PREFIXES = List.of(
+            "_rels/", "docProps/", "customXml/", "word/", "xl/", "ppt/", "visio/");
     private static final byte[] ODF_MIMETYPE_ENTRY = "mimetype".getBytes(StandardCharsets.US_ASCII);
     /** Executable/binary signatures that must never pass as text. */
     private static final List<byte[]> NOT_TEXT = List.of(ZIP, OLE2, PDF, "MZ".getBytes(StandardCharsets.US_ASCII),
             new byte[]{0x7F, 'E', 'L', 'F'});
 
-    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF, GIF, BMP, WEBP, HEIF, DWG, EMAIL, XML, JSON }
+    private enum Family { PDF, OOXML, ODF, OLE2, RTF, TEXT, PNG, JPEG, TIFF, GIF, BMP, WEBP, HEIF, DWG, EMAIL, XML, JSON, ZIP }
 
     private record KnownType(String mimeType, Family family) {
     }
@@ -99,7 +112,7 @@ public class FileTypeInspector {
         // Added with the bulk import work (2026-10): common business formats,
         // each still verified by content. Deliberately NOT added: anything
         // that can carry active content when opened (html/htm/svg - scripts;
-        // docm/xlsm/pptm - macros; js/exe/bat/ps1), and archives (see above).
+        // docm/xlsm/pptm - macros; js/exe/bat/ps1), and archives other than ZIP.
         KNOWN_TYPES.put("msg", new KnownType("application/vnd.ms-outlook", Family.OLE2));
         KNOWN_TYPES.put("eml", new KnownType("message/rfc822", Family.EMAIL));
         KNOWN_TYPES.put("vsd", new KnownType("application/vnd.visio", Family.OLE2));
@@ -115,9 +128,17 @@ public class FileTypeInspector {
         KNOWN_TYPES.put("heic", new KnownType("image/heic", Family.HEIF));
         KNOWN_TYPES.put("heif", new KnownType("image/heif", Family.HEIF));
         KNOWN_TYPES.put("dwg", new KnownType("image/vnd.dwg", Family.DWG));
+        // A ZIP archive, kept as one file (see the class comment).
+        KNOWN_TYPES.put("zip", new KnownType("application/zip", Family.ZIP));
     }
 
     private final Set<String> allowedExtensions;
+
+    /** True for the Office Open XML extensions, whose package the gate confirms once staged. */
+    public static boolean isOfficeOpenXml(String extension) {
+        KnownType known = extension == null ? null : KNOWN_TYPES.get(extension);
+        return known != null && known.family() == Family.OOXML;
+    }
 
     public FileTypeInspector(IngestionProperties ingestionProperties) {
         List<String> configured = ingestionProperties.getAllowedFileTypes().stream()
@@ -152,6 +173,10 @@ public class FileTypeInspector {
             // Password-protected OOXML: Office wraps the encrypted package in an OLE2 container.
             return new DetectedFileType(extension, known.mimeType(), false, true);
         }
+        if (known.family() == Family.ZIP && startsWith(bytes, ZIP) && bytes.length >= 8 && (bytes[6] & 1) != 0) {
+            // General-purpose flag bit 0 of the first entry: encrypted (ZipCrypto or AES) - can't be scanned.
+            return new DetectedFileType(extension, known.mimeType(), false, true);
+        }
         if (!matches(known.family(), bytes)) {
             throw new FileTypeNotAllowedException("The file's content does not match its ." + extension
                     + " extension");
@@ -163,7 +188,8 @@ public class FileTypeInspector {
         return switch (family) {
             // The PDF spec tolerates junk before the header; readers look in the first 1024 bytes.
             case PDF -> indexOf(head, PDF, 1024) >= 0;
-            case OOXML -> startsWith(head, ZIP) && indexOf(head, OOXML_MARKER, head.length) >= 0;
+            case OOXML -> startsWith(head, ZIP)
+                    && (indexOf(head, OOXML_MARKER, head.length) >= 0 || firstEntryIsOoxmlPart(head));
             // ODF requires an uncompressed "mimetype" entry first: name at offset 30 of the first local header.
             case ODF -> startsWith(head, ZIP) && head.length >= 38
                     && Arrays.equals(head, 30, 38, ODF_MIMETYPE_ENTRY, 0, ODF_MIMETYPE_ENTRY.length);
@@ -184,7 +210,22 @@ public class FileTypeInspector {
             case EMAIL -> isText(head) && firstLine(head).matches("[!-9;-~]+:.*");
             case XML -> isText(head) && firstNonBlank(head) == '<';
             case JSON -> isText(head) && (firstNonBlank(head) == '{' || firstNonBlank(head) == '[');
+            // A local file header - or the end record alone, an empty archive ZipArchiveCheck refuses.
+            case ZIP -> (startsWith(head, ZIP) && head.length >= 30) || (startsWith(head, EMPTY_ZIP) && head.length >= 22);
         };
+    }
+
+    /** The first local header's entry name (length at offset 26, name from 30) is an OOXML part. */
+    private static boolean firstEntryIsOoxmlPart(byte[] head) {
+        if (head.length < 30) {
+            return false;
+        }
+        int nameLength = (head[26] & 0xFF) | (head[27] & 0xFF) << 8;
+        if (nameLength == 0 || 30 + nameLength > head.length) {
+            return false;
+        }
+        String name = new String(head, 30, nameLength, StandardCharsets.UTF_8);
+        return OOXML_PART_PREFIXES.stream().anyMatch(name::startsWith);
     }
 
     /** The first non-whitespace character after an optional UTF-8 BOM, or 0. */

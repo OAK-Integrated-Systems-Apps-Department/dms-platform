@@ -15,6 +15,11 @@ interface SearchInputProps {
   /** Show the leading search glyph. Defaults to true. */
   showIcon?: boolean
   "aria-label"?: string
+  /** Anything else for the input itself - keyboard handlers, combobox ARIA (the top bar's search). */
+  inputProps?: Omit<
+    React.InputHTMLAttributes<HTMLInputElement>,
+    "value" | "onChange" | "placeholder" | "className" | "type"
+  >
 }
 
 /**
@@ -31,6 +36,7 @@ export function SearchInput({
   inputClassName,
   showIcon = true,
   "aria-label": ariaLabel,
+  inputProps,
 }: SearchInputProps) {
   return (
     <div className={cn("relative", className)}>
@@ -41,6 +47,7 @@ export function SearchInput({
         />
       )}
       <input
+        {...inputProps}
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}

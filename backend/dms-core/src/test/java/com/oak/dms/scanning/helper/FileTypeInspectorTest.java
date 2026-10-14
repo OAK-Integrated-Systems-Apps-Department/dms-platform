@@ -1,5 +1,6 @@
 package com.oak.dms.scanning.helper;
 
+import com.oak.dms.scanning.dto.DetectedFileType;
 import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -62,12 +63,49 @@ class FileTypeInspectorTest {
     }
 
     @Test
-    void activeContentAndArchives_stayRefused() {
+    void activeContentAndOtherArchives_stayRefused() {
         byte[] html = "<html><script>alert(1)</script></html>".getBytes(StandardCharsets.US_ASCII);
-        for (String name : new String[]{"page.html", "page.htm", "logo.svg", "macro.docm", "run.exe", "a.zip", "x.js"}) {
+        for (String name : new String[]{"page.html", "page.htm", "logo.svg", "macro.docm", "run.exe", "a.7z", "a.rar",
+                "a.tar", "a.gz", "x.js"}) {
             assertThatThrownBy(() -> inspector.inspect(name, html, html.length))
                     .as(name).isInstanceOf(FileTypeNotAllowedException.class).hasMessageContaining("is not allowed");
         }
+    }
+
+    @Test
+    void aZip_isAcceptedByContent_andAnEncryptedFirstEntryIsFlagged() throws Exception {
+        byte[] zip = ZipArchiveCheckTest.zip("readme.txt", "hello");
+        DetectedFileType detected = inspector.inspect("documents.zip", zip, zip.length);
+        assertThat(detected.mimeType()).isEqualTo("application/zip");
+        assertThat(detected.encrypted()).isFalse();
+
+        byte[] locked = Arrays.copyOf(zip, zip.length);
+        locked[6] |= 1; // general-purpose flag bit 0: encrypted
+        assertThat(inspector.inspect("documents.zip", locked, locked.length).encrypted()).isTrue();
+
+        byte[] html = "<html></html>".getBytes(StandardCharsets.US_ASCII);
+        assertThatThrownBy(() -> inspector.inspect("documents.zip", html, html.length))
+                .isInstanceOf(FileTypeNotAllowedException.class).hasMessageContaining("does not match");
+        // An Office document's ZIP container still has to be the document its extension says.
+        assertThatThrownBy(() -> inspector.inspect("report.docx", zip, zip.length))
+                .isInstanceOf(FileTypeNotAllowedException.class);
+    }
+
+    @Test
+    void anOfficeFileWhoseContentTypesPartComesLast_isAcceptedByItsFirstPart() throws Exception {
+        // How PowerPoint, Google Slides and OneDrive often write them: [Content_Types].xml megabytes in.
+        byte[] pptx = ZipArchiveCheckTest.zip("ppt/presentation.xml", "<p:presentation/>".repeat(1000),
+                "[Content_Types].xml", "<Types/>");
+        byte[] head = Arrays.copyOf(pptx, 64);
+        assertThat(inspector.inspect("deck.pptx", head, head.length).mimeType())
+                .isEqualTo("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        assertThat(FileTypeInspector.isOfficeOpenXml("pptx")).isTrue();
+        assertThat(FileTypeInspector.isOfficeOpenXml("zip")).isFalse();
+
+        // A ZIP whose first entry isn't an Office part, and no marker in the head, is still refused here.
+        byte[] notOffice = ZipArchiveCheckTest.zip("photos/a.jpg", "jpeg bytes");
+        assertThatThrownBy(() -> inspector.inspect("deck.pptx", notOffice, notOffice.length))
+                .isInstanceOf(FileTypeNotAllowedException.class);
     }
 
     private static byte[] pad(String head) {

@@ -111,6 +111,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!--
+          Backs /actuator/prometheus, which application.yml has exposed all
+          along - without a registry on the classpath that endpoint simply
+          does not exist. Scraped by infra/monitoring's Prometheus; version
+          managed by the Boot parent.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -221,6 +231,43 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!--
+              Test coverage, for SonarQube to read.
+
+              Declared here and not in backend/pom.xml because this module's
+              <parent> is spring-boot-starter-parent, not that aggregator -
+              it groups the modules for building but does not configure
+              them, so nothing declared there reaches this file. A copy of
+              this block is what each worker module will need when it is
+              enabled.
+
+              prepare-agent runs at initialize, before any test does;
+              report runs at verify, after both surefire and failsafe have
+              finished. So `mvn verify` leaves the XML Sonar wants at
+              target/site/jacoco/jacoco.xml - the scanner's default path -
+              without anyone having to ask for it.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -274,6 +321,36 @@
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+              Runs the *IT integration tests in `mvn verify` (surefire only runs
+              *Test). They need the same Postgres/Redis/RabbitMQ CI already
+              provides (DB_URL etc.). Excluded: ITs that need services CI does
+              not run - a live Keycloak admin API (ImpersonationIT,
+              PermissionCodeAuditIT) and a ClamAV daemon (DocumentUploadIT).
+              Run those locally with -Dit.test=... against the full compose stack.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/ImpersonationIT.java</exclude>
+                        <exclude>**/PermissionCodeAuditIT.java</exclude>
+                        <exclude>**/DocumentUploadIT.java</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

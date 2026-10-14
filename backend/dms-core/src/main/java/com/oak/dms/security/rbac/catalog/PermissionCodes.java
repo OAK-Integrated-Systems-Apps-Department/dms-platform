@@ -49,6 +49,17 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // Pin Important Documents - PID (pins are personal; the limit is the organisation's)
+    public static final String PID_PIN = "pid.pin-unpin-documents.pin";
+    public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";
+    public static final String PID_CONFIGURE_LIMITS = "pid.configure-pin-limits";
+
+    // System monitoring - SHAD (System Health and Administration Dashboard).
+    // Held implicitly by TENANT_ADMIN and PLATFORM_ADMIN like every code; others get them via a role.
+    public static final String SHAD_VIEW_SYSTEM_HEALTH = "shad.view-system-health-dashboard";
+    /** Log lines can carry anything a service printed, so reading them is a grant of its own. */
+    public static final String SHAD_VIEW_SYSTEM_LOGS = "shad.view-system-logs";
+
     // Roles - ASM (Access and Security Management) / Manage Roles & Permissions
     public static final String ASM_ROLES_CREATE_ROLE = "asm.manage-roles-permissions.create-role";
     public static final String ASM_ROLES_UPDATE_ROLE = "asm.manage-roles-permissions.update-role";
@@ -82,6 +93,10 @@ public final class PermissionCodes {
 
     public static final String MDTM_TYPE_FIELD_MAPPING_VIEW = "mdtm.manage-type-field-mapping.view";
     public static final String MDTM_TYPE_FIELD_MAPPING_UPDATE = "mdtm.manage-type-field-mapping.update";
+    // Document templates (V70) - seeing and using them needs only docm.documents.view/create.
+    public static final String MDTM_DOCUMENT_TEMPLATES_CREATE = "mdtm.manage-document-templates.create";
+    public static final String MDTM_DOCUMENT_TEMPLATES_UPDATE = "mdtm.manage-document-templates.update";
+    public static final String MDTM_DOCUMENT_TEMPLATES_DELETE = "mdtm.manage-document-templates.delete";
 
     // Documents - DOCM (Document Management) - see V33's seed migration.
     public static final String DOCM_DOCUMENTS_CREATE = "docm.documents.create";
@@ -109,6 +124,9 @@ public final class PermissionCodes {
     public static final String DE_KEYS_VIEW = "de.manage-encryption-keys.view-key-metadata";
     public static final String DE_KEYS_ROTATE = "de.manage-encryption-keys.rotate-key";
     public static final String DE_KEYS_GENERATE = "de.manage-encryption-keys.generate-key";
+
+    // Writing document comments (V50). Reading them needs DOCM_DOCUMENTS_VIEW.
+    public static final String DOCM_COMMENTS_CREATE = "docm.document-comments.create";
     // Quarantine review (V40) - granted to no role by default.
     // DOCM_QUARANTINE_OVERRIDE is deliberately separate from _RELEASE: it
     // force-releases a file the scanner still flags.
@@ -166,4 +184,33 @@ public final class PermissionCodes {
     public static final String OS_OCR_TEMPLATE_DELETE = "os.configure-ocr-zones-templates.delete-template";
     public static final String OS_REVIEW_VIEW_QUEUE = "os.review-ocr-exceptions.view-queue";
     public static final String OS_REVIEW_RESOLVE = "os.review-ocr-exceptions.resolve";
+
+    // Departments - OTUA, seeded by V46. Back the department approver pools
+    // of workflow stages (3.1 Workflow Automation).
+    public static final String OTUA_DEPARTMENTS_VIEW = "otua.manage-departments.view";
+    public static final String OTUA_DEPARTMENTS_CREATE = "otua.manage-departments.create";
+    public static final String OTUA_DEPARTMENTS_UPDATE = "otua.manage-departments.update";
+    public static final String OTUA_DEPARTMENTS_DELETE = "otua.manage-departments.delete";
+
+    // Workflow Automation - WA, seeded by V10. toggle-active gates activating
+    // and deactivating a template version.
+    public static final String WA_TEMPLATES_CREATE = "wa.configure-workflow-templates.create";
+    public static final String WA_TEMPLATES_UPDATE = "wa.configure-workflow-templates.update";
+    public static final String WA_TEMPLATES_DELETE = "wa.configure-workflow-templates.delete";
+    public static final String WA_TEMPLATES_TOGGLE_ACTIVE = "wa.configure-workflow-templates.toggle-active";
+    public static final String WA_TASK_APPROVE = "wa.approve-reject-workflow-task.approve";
+    public static final String WA_TASK_REJECT = "wa.approve-reject-workflow-task.reject";
+    // An admin moves any open task to another user (Phase 2); holders are
+    // also mailed when a stage has no eligible approver or an escalation
+    // target can't be used.
+    public static final String WA_TASK_REASSIGN = "wa.reassign-workflow-task";
+    // The holder of a task pauses it to ask someone for information (V50).
+    public static final String WA_REQUEST_INFORMATION = "wa.request-workflow-information.create";
+    // Lets a non-participant (e.g. a compliance reviewer) see any instance's
+    // status and timeline.
+    public static final String WA_AUDIT_TRAIL_VIEW = "wa.view-workflow-audit-trail.view";
+
+    // Document Lifecycle - DLM, seeded by V10. Submitting a document into its
+    // document type's active workflow.
+    public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
 }

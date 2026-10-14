@@ -34,21 +34,32 @@ spring:
         order_inserts: true
         order_updates: true
 
+  # Two scheduler threads instead of Boot's one, so a slow ClamAV retry
+  # (ScanRetryScheduler) can't hold up workflow SLA reminders or the outbox
+  # relay, and vice versa. The jobs touch independent tables.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:2}
+
   # Spring's own multipart default is 1MB, which silently capped uploads
   # before the scan gate existed, and which a real phone-camera photo of a
   # document routinely exceeds - it surfaced as a raw
   # MaxUploadSizeExceededException and a generic "An unexpected error
   # occurred" until GlobalExceptionHandler learned to translate it.
   #
-  # Kept in line with dms.scanning.max-file-size-bytes below; the scan gate
-  # enforces the exact byte limit itself, this just stops the servlet layer
-  # rejecting first. Deliberately NOT disabled outright (Spring supports -1):
-  # a finite ceiling is what stops one oversized upload exhausting the heap
-  # for every tenant.
+  # -1 = no limit, in line with dms.scanning.max-file-size-bytes below; the
+  # scan gate enforces any engine's own byte limit itself, this just stops
+  # the servlet layer rejecting first. Needed unlimited (not just a large
+  # finite ceiling) once bulk import's own ZIP/file uploads could reach tens
+  # of GB - see infra/production/nginx/dms.conf's client_max_body_size 0.
+  # Parts over the threshold are spooled to disk, never held in memory - so
+  # the temp directory needs room for the largest file uploaded.
   servlet:
     multipart:
-      max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
-      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:101MB}
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:-1}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:-1}
+      file-size-threshold: ${UPLOAD_FILE_SIZE_THRESHOLD:1MB}
 
   flyway:
     enabled: true
@@ -190,6 +201,23 @@ dms:
     max-bytes: ${PREVIEW_MAX_BYTES:52428800}
   # Deleted documents stay in the recycle bin this long (each tenant can set
   # its own), then the sweep purges them: files and keys destroyed for good.
+  # Digital Impact on the dashboard (DigitalImpactService). Pages are read from the files
+  # (PageCountBackfill); these are the assumptions that turn them into estimates. Defaults are
+  # the low end of published ranges, so the figures understate. Bump calculation-version when
+  # the method changes.
+  impact:
+    calculation-version: ${IMPACT_CALCULATION_VERSION:1}
+    paper-size: ${IMPACT_PAPER_SIZE:A4}
+    paper-width-mm: ${IMPACT_PAPER_WIDTH_MM:210}
+    paper-height-mm: ${IMPACT_PAPER_HEIGHT_MM:297}
+    paper-gsm: ${IMPACT_PAPER_GSM:80}
+    pages-per-sheet: ${IMPACT_PAGES_PER_SHEET:2}
+    co2e-kg-per-kg-paper: ${IMPACT_CO2E_KG_PER_KG_PAPER:1.08}
+    co2e-source: ${IMPACT_CO2E_SOURCE:EPA Victoria, office copy paper - 1.08 to 1.52 kg CO2e/kg; the low end of the range}
+    water-litres-per-kg-paper: ${IMPACT_WATER_LITRES_PER_KG_PAPER:300}
+    water-source: ${IMPACT_WATER_SOURCE:Water Footprint Network, printing and writing paper - 300 to 2600 L/kg; the low end of the range}
+    page-count-interval: ${IMPACT_PAGE_COUNT_INTERVAL:PT2M}
+    page-count-max-bytes: ${IMPACT_PAGE_COUNT_MAX_BYTES:524288000}
   documents:
     recycle-bin:
       retention-days: ${RECYCLE_BIN_RETENTION_DAYS:30}
@@ -280,7 +308,7 @@ dms:
     # Key Decision #10, still open. See ExportJobProperties.
     job-ttl: ${EXPORT_JOB_TTL:PT24H}
     max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
-    max-export-size: ${EXPORT_MAX_SIZE:2GB}
+    max-export-size: ${EXPORT_MAX_SIZE:20GB}
     max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
   # Document watermarking (module DW, V68): a watermarked COPY of a document
   # in its own format. The original is never touched. See WatermarkProperties.
@@ -512,13 +540,13 @@ dms:
   import-export:
     # Bulk import intake limits - see ImportExportProperties.
     max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
-    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:2GB}
+    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:20GB}
     max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
     max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
     # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
     worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
     # ZIP intake and resumable (chunked) upload of large ZIPs.
-    max-archive-size: ${IMPORT_MAX_ARCHIVE_SIZE:2GB}
+    max-archive-size: ${IMPORT_MAX_ARCHIVE_SIZE:20GB}
     max-archive-entries: ${IMPORT_MAX_ARCHIVE_ENTRIES:5000}
     max-chunk-size: ${IMPORT_MAX_CHUNK_SIZE:64MB}
     upload-session-ttl: ${IMPORT_UPLOAD_SESSION_TTL:PT24H}
@@ -526,17 +554,74 @@ dms:
   ingestion:
     # Extensions the ingestion gate accepts - each is verified against the
     # file's content (magic bytes) by FileTypeInspector, and the client's
+
+    # Content-Type is ignored. The one archive type is zip (see below and
+    # docs/scanning-architecture.md); 7z/rar/tar/gz are not accepted.
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
+    # A ZIP is kept as one file - never extracted - and checked whole before it's scanned
+    # (ZipArchiveCheck): refused when damaged, empty, or password-protected (unscannable).
+    # No entry-count or unpacked-size limit by default: a ZIP past what clamd opens of one
+    # archive (dms.scanning.clamav.archive-scan-files / -bytes) is scanned file by file
+    # instead. Set these to refuse larger ZIPs outright.
+    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
+    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
+    # A ZIP holding a program or script (.exe, .msi, .dll, .bat, .ps1, .js, .jar, ... - see
+    # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
+    # called, is refused even when the scan finds no malware - nested ZIPs included. Override the
+    # list with dms.ingestion.zip-blocked-extensions (DMS_INGESTION_ZIP_BLOCKED_EXTENSIONS, comma-separated).
+
     # Content-Type is ignored. No archive types: this system accepts no
     # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
     # docs/scanning-architecture.md).
-    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff}
+  # 3.1 Workflow Automation (WorkflowProperties). Task-assigned and outcome
+  # mails go out after the workflow change commits, off the request thread;
+  # a mail failure never affects the workflow. Uses spring.mail.*.
+  workflow:
+    notifications:
+      enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
+      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    # Phase 2: reminders before a task's due time and escalation when it
+    # passes (WorkflowSlaScheduler). Safe with several app instances - each
+    # task is handled under its instance row lock taken FOR UPDATE SKIP LOCKED.
+    sla:
+      enabled: ${WORKFLOW_SLA_ENABLED:true}
+      poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
+      batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
+  # The system-monitoring screen reads Prometheus through dms-core rather
+  # than the browser reading Grafana directly, so the figures sit behind the
+  # same PLATFORM_ADMIN check as every other cross-tenant screen. Prometheus
+  # is addressed by its compose service name and needs no published port.
+  # Blank the URL to switch the screen off; it then says it is unconfigured
+  # rather than showing an error on every tile.
+  monitoring:
+    prometheus-url: ${PROMETHEUS_URL:http://prometheus:9090}
+    # Container logs, for the per-service log view. Same arrangement as
+    # Prometheus: addressed by service name, never published.
+    loki-url: ${LOKI_URL:http://loki:3100}
+    timeout: ${MONITORING_TIMEOUT:PT5S}
+    # Points per chart. The step is derived from this and the window, so a
+    # 7-day chart costs about the same as a 1-hour one.
+    chart-points: ${MONITORING_CHART_POINTS:120}
+  pins:
+    # How many documents one person may pin (PID-FR-007) until the organisation sets its own
+    # (PUT /api/v1/pins/limit, pid.configure-pin-limits).
+    default-max: ${DMS_PINS_DEFAULT_MAX:20}
+  dashboard:
+    # How long the home dashboard's figures are served from Redis before they are worked
+    # out again (DashboardCache). They scan every document the caller may see - seconds at
+    # millions of documents - so a minute's staleness buys a lot. 0 turns the cache off.
+    cache-seconds: ${DASHBOARD_CACHE_SECONDS:60}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
     # AZURE_DEFENDER | AWS_GUARDDUTY.
     default-provider: ${SCAN_PROVIDER:CLAMAV}
-    timeout-seconds: ${SCAN_TIMEOUT_SECONDS:60}
-    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:104857600}
+    # Long enough for clamd to scan one 2000 MB segment once it has received it.
+    timeout-seconds: ${SCAN_TIMEOUT_SECONDS:900}
+    # No limit (Long.MAX_VALUE). clamd reads at most 2147483645 bytes of one
+    # stream whatever its MaxFileSize says, so a larger file is sent to it in
+    # overlapping segments (clamav.segment-bytes below) and scanned in full.
+    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:9223372036854775807}
     # A cloud-scanned file still without a verdict this long after staging is
     # failed - never promoted.
     cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
@@ -555,13 +640,27 @@ dms:
       max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}
       initial-backoff-seconds: ${SCAN_RETRY_INITIAL_BACKOFF_SECONDS:30}
       max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
-      lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:300}
+      lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:1800}
+      # Added per GB of the file, so a very large file's lease outlasts its scan.
+      lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:120}
       batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
+      # Files scanned/promoted in the background at once (ScanWorkPool) - a busy worker holds
+      # about one CPU core while it copies and encrypts a large file.
+      workers: ${SCAN_RETRY_WORKERS:3}
     clamav:
       host: ${CLAMAV_HOST:localhost}
       port: ${CLAMAV_PORT:3310}
       connect-timeout-ms: ${CLAMAV_CONNECT_TIMEOUT_MS:5000}
       chunk-size-bytes: ${CLAMAV_CHUNK_SIZE_BYTES:65536}
+      # Files larger than this go to clamd in several INSTREAMs. Must stay under
+      # clamd's StreamMaxLength (2047M) and its 2147483645-byte read ceiling.
+      segment-bytes: ${CLAMAV_SEGMENT_BYTES:2097152000}
+      # Each segment repeats this much of the end of the one before (held in memory).
+      segment-overlap-bytes: ${CLAMAV_SEGMENT_OVERLAP_BYTES:16777216}
+      # What clamd opens of one archive - keep equal to its MaxScanSize / MaxFiles. A ZIP
+      # past either is opened by dms-core and each file in it scanned on its own.
+      archive-scan-bytes: ${CLAMAV_ARCHIVE_SCAN_BYTES:4194304000}
+      archive-scan-files: ${CLAMAV_ARCHIVE_SCAN_FILES:10000}
     azure-defender:
       # Blob Service endpoint of the Defender-protected account that holds the
       # staging container - verdicts are read from its blob index tags.
@@ -611,6 +710,32 @@ management:
     # PasswordResetService), so SMTP is deliberately not a health input.
     mail:
       enabled: false
+  # Scraped by Prometheus at /actuator/prometheus (see infra/monitoring).
+  metrics:
+    tags:
+      # Every series carries these, so one Prometheus can hold several
+      # deployments without their numbers running together.
+      application: ${MANAGEMENT_METRICS_APPLICATION:dms-core}
+      environment: ${MANAGEMENT_METRICS_ENVIRONMENT:local}
+    distribution:
+      # Percentiles for API latency have to be computed server-side from a
+      # histogram: without this, http.server.requests publishes only a count
+      # and a total, and no p95 panel or latency alert is possible.
+      percentiles-histogram:
+        http.server.requests: true
+        # Deliberately NOT a full histogram: Micrometer's default bucket set
+        # is ~69 buckets, and one per scan outcome made this metric 276 of
+        # the 764 series this endpoint publishes - the largest producer here,
+        # for something that fires a few times a minute at most. The explicit
+        # buckets below give the same p95 panel in ~8 series per outcome.
+        dms.document.ingestion: false
+      # Buckets either side of the typical value, so the p95 is meaningful
+      # rather than interpolated across one huge bucket.
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
+        # Scans span milliseconds (a small PDF) to tens of minutes (a 6 GB
+        # ZIP checked file by file), hence the very wide top end.
+        dms.document.ingestion: 250ms,1s,5s,30s,2m,10m,30m
 
 springdoc:
   swagger-ui:

@@ -404,6 +404,42 @@ class V47V48ImportExportMigrationTest {
         });
     }
 
+    @Test
+    void v70_templatePermissionsGoToRolesThatManagedTemplates_andNothingElseChanges() throws Exception {
+        withScratchDatabase(url -> {
+            migrate(url, "69");
+            String tenant = UUID.randomUUID().toString();
+            String role = UUID.randomUUID().toString();
+            try (Connection c = connect(url)) {
+                exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('"
+                        + tenant + "', 'V71', 'v71-" + tenant + "', 'standard', 'active')");
+                exec(c, "insert into roles (role_id, tenant_id, role_name, description) values ('" + role + "', '"
+                        + tenant + "', 'Type editor', 't')");
+                // Edits document types (so managed templates until V70), and holds an import-template code.
+                exec(c, "insert into role_permissions (tenant_id, role_id, permission_id) select '" + tenant + "', '"
+                        + role + "', permission_id from permissions where tenant_id is null and permission_code in "
+                        + "('mdtm.manage-content-types.update', 'fie.manage-import-templates.create-template')");
+            }
+            migrate(url, "70");
+            try (Connection c = connect(url)) {
+                assertThat(strings(c, "select p.permission_code from role_permissions rp join permissions p "
+                        + "using (permission_id) where rp.role_id = '" + role + "'")).containsExactlyInAnyOrder(
+                        "mdtm.manage-content-types.update", "fie.manage-import-templates.create-template",
+                        "mdtm.manage-document-templates.create", "mdtm.manage-document-templates.update",
+                        "mdtm.manage-document-templates.delete");
+                assertThat(strings(c, "select action_code from permission_actions where action_code in "
+                        + "('MANAGE_DOCUMENT_TEMPLATES', 'MANAGE_IMPORT_TEMPLATES')")).containsExactlyInAnyOrder(
+                        "MANAGE_DOCUMENT_TEMPLATES", "MANAGE_IMPORT_TEMPLATES");
+                // File Import/Export, import templates included, is untouched.
+                assertThat(strings(c, "select permission_code from permissions where permission_code like 'fie.%' "
+                        + "and tenant_id is null and not is_deprecated")).containsExactlyInAnyOrder(
+                        "fie.bulk-import-documents.upload-file", "fie.bulk-export-documents.execute-export",
+                        "fie.manage-import-templates.create-template", "fie.manage-import-templates.update-template",
+                        "fie.manage-import-templates.delete-template");
+            }
+        });
+    }
+
     private static long generation(Connection c, String tenant) throws SQLException {
         try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
                 "select generation from access_generations where tenant_id = '" + tenant + "'")) {

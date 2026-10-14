@@ -7,7 +7,10 @@ import com.oak.dms.document.DocumentService;
 import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.folder.Folder;
+import com.oak.dms.folder.FolderRepository;
 import com.oak.dms.importexport.enums.TemplateFormat;
+import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
 import com.oak.dms.metadata.entity.DocumentMetadata;
 import com.oak.dms.metadata.entity.DocumentMetadataId;
 import com.oak.dms.metadata.entity.MetadataField;
@@ -15,8 +18,6 @@ import com.oak.dms.metadata.repository.DocumentMetadataRepository;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.metadata.service.DocumentTypeFieldService;
-import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse.SchemaField;
-import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -41,6 +42,7 @@ import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -50,6 +52,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -57,8 +60,9 @@ import java.util.zip.ZipOutputStream;
 /**
  * Writes one export's ZIP to a local file:
  * <pre>
- *   files/0001_&lt;original file name&gt;    each document's current version
- *   metadata.xlsx | metadata.csv            one row per document
+ *   Finance/Invoices/inv-1.pdf     a folder's export: the folder and its subfolders as they are
+ *   inv-1.pdf, inv-1 (2).pdf       a selection of documents: side by side, same names numbered
+ *   metadata.xlsx | metadata.csv   one row per document, always present
  * </pre>
  * Files are read through {@link DocumentService#downloadDocumentFromJob} -
  * the same tenant, scan-gate and servability checks and DOCUMENT_DOWNLOADED
@@ -66,9 +70,10 @@ import java.util.zip.ZipOutputStream;
  * requested and again when it runs (its selection leaves out what was hidden
  * from the requester at either point - see ExportJobWorker), so an export
  * never contains a file the requester couldn't download one by one; and its
- * download is refused once they lose access to any of its documents. A document whose file can't be
- * served (not scanned clean, for one) is still listed, with a note, and
- * its file left out. Needs {@code TenantContext} bound to the requester.
+ * download is refused once they lose access to any of its documents. A
+ * document whose file can't be served (not scanned clean, for one) is still
+ * listed in the manifest, with a note, and its file left out. Needs
+ * {@code TenantContext} bound to the requester.
  */
 @Slf4j
 @Component
@@ -77,6 +82,7 @@ public class ExportArchiveBuilder {
 
     static final String METADATA_ENTRY = "metadata";
     private static final int CHUNK = 200;
+    private static final int MAX_NAME = 150;
 
     /**
      * The two OCR columns, appended AFTER every pre-existing base column so
@@ -100,6 +106,7 @@ public class ExportArchiveBuilder {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
+    private final FolderRepository folderRepository;
     private final DocumentTypeRepository documentTypeRepository;
     private final DocumentMetadataRepository documentMetadataRepository;
     private final MetadataFieldRepository metadataFieldRepository;
@@ -119,15 +126,25 @@ public class ExportArchiveBuilder {
         }
     }
 
-    public Result build(UUID tenantId, List<UUID> documentIds, boolean includeFiles, TemplateFormat format,
-                        Path target, long maxBytes) {
+    /**
+     * @param rootFolderId the folder being exported - its name becomes the top folder of every
+     *                      file path, and its subfolders are kept; null for a selection of
+     *                      documents (files sit side by side, with no folders)
+     * @param includeFiles  whether documents' files are added to the ZIP at all, or just the
+     *                      metadata sheet - a metadata-only export skips the scan-gate /
+     *                      storage reads entirely, so it is far cheaper for a large selection
+     */
+    public Result build(UUID tenantId, List<UUID> documentIds, UUID rootFolderId, boolean includeFiles,
+                        TemplateFormat format, Path target, long maxBytes) {
+        Map<UUID, Folder> folders = rootFolderId == null ? Map.of()
+                : folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId).stream()
+                        .collect(Collectors.toMap(Folder::getFolderId, Function.identity()));
         List<Map<String, String>> rows = new ArrayList<>();
         Map<UUID, String> fieldColumn = new LinkedHashMap<>();
         Map<UUID, String> typeNames = new LinkedHashMap<>(); // insertion order = types as first met
         Set<String> usedEntryNames = new HashSet<>();
         long filesBytes = 0;
         int skipped = 0;
-        int index = 0;
 
         try (OutputStream out = Files.newOutputStream(target); ZipOutputStream zip = new ZipOutputStream(out)) {
             for (int from = 0; from < documentIds.size(); from += CHUNK) {
@@ -144,7 +161,6 @@ public class ExportArchiveBuilder {
                     if (document == null) {
                         continue; // deleted since the export was requested
                     }
-                    index++;
                     DocumentVersion version = version(document, tenantId);
                     Map<String, String> row = new LinkedHashMap<>();
                     row.put("Document ID", document.getDocumentId().toString());
@@ -163,7 +179,8 @@ public class ExportArchiveBuilder {
                             throw new ExportTooLargeException("The files add up to more than the "
                                     + (maxBytes / (1024 * 1024)) + " MB an export may hold. Export fewer documents.");
                         }
-                        String entryName = entryName(index, version, usedEntryNames);
+                        String entryName = entryName(directory(document.getFolderId(), rootFolderId, folders),
+                                version, usedEntryNames);
                         String note = addFile(zip, document.getDocumentId(), entryName);
                         if (note == null) {
                             row.put("File in ZIP", entryName);
@@ -335,22 +352,53 @@ public class ExportArchiveBuilder {
         return String.valueOf(value);
     }
 
-    /** files/0001_name.pdf - numbered so two documents with the same file name never collide. */
-    static String entryName(int index, DocumentVersion version, Set<String> used) {
-        String original = version != null && version.getOriginalFilename() != null ? version.getOriginalFilename() : "file";
-        String base = original.replace('\\', '/');
-        base = base.substring(base.lastIndexOf('/') + 1).replaceAll("[\\p{Cntrl}:*?\"<>|]", "_").trim();
-        if (base.isEmpty() || base.equals(".") || base.equals("..")) {
-            base = "file";
+    /**
+     * "Finance/Invoices/" for a document in Finance › Invoices when Finance is exported - the
+     * path from the exported folder down to the document's own folder. "" for a selection.
+     */
+    static String directory(UUID folderId, UUID rootFolderId, Map<UUID, Folder> folders) {
+        if (rootFolderId == null) {
+            return "";
         }
-        if (base.length() > 150) {
-            base = base.substring(base.length() - 150);
+        List<String> names = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (UUID id = folderId; id != null && seen.add(id); ) {
+            Folder folder = folders.get(id);
+            if (folder == null) {
+                break;
+            }
+            names.add(0, safeName(folder.getFolderName(), "Folder"));
+            if (id.equals(rootFolderId)) {
+                return String.join("/", names) + "/";
+            }
+            id = folder.getParentFolderId();
         }
-        String name = "files/" + String.format(Locale.ROOT, "%04d", index) + "_" + base;
-        while (!used.add(name.toLowerCase(Locale.ROOT))) {
-            name = name + "_";
+        // Not under the root (shouldn't happen for a folder's export) - at the top folder, not lost.
+        Folder root = folders.get(rootFolderId);
+        return safeName(root != null ? root.getFolderName() : null, "Folder") + "/";
+    }
+
+    /** The file's own name inside {@code directory} - "name (2).pdf" when that name is taken there. */
+    static String entryName(String directory, DocumentVersion version, Set<String> used) {
+        String base = safeName(version != null ? version.getOriginalFilename() : null, "file");
+        int dot = base.lastIndexOf('.');
+        String stem = dot > 0 ? base.substring(0, dot) : base;
+        String extension = dot > 0 ? base.substring(dot) : "";
+        String name = directory + base;
+        for (int n = 2; !used.add(name.toLowerCase(Locale.ROOT)); n++) {
+            name = directory + stem + " (" + n + ")" + extension;
         }
         return name;
+    }
+
+    /** A single path segment: no folders smuggled in, no characters Windows or ZIP tools choke on. */
+    static String safeName(String raw, String fallback) {
+        String name = raw == null ? "" : raw.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1).replaceAll("[\\p{Cntrl}:*?\"<>|]", "_").trim();
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            return fallback;
+        }
+        return name.length() > MAX_NAME ? name.substring(name.length() - MAX_NAME) : name;
     }
 
     private static UUID parse(String id) {

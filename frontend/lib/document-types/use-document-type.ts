@@ -9,13 +9,21 @@ import {
   type DocumentTypeFieldMappingItemPayload,
 } from "@/lib/document-type-fields/api"
 
-import { fetchDocumentType, updateDocumentType, type UpdateDocumentTypePayload } from "./api"
+import {
+  fetchDocumentType,
+  updateDocumentType,
+  type UpdateDocumentTypePayload,
+} from "./api"
 
 /**
  * Loads one document type plus its current field mapping — the Edit
  * Document Type screen's "Fields" tab needs both together.
  */
-export function useDocumentType(documentTypeId: string) {
+export function useDocumentType(
+  documentTypeId: string,
+  /** Load the field mapping too - only for callers allowed to see it. */
+  { withFields = true }: { withFields?: boolean } = {}
+) {
   const queryClient = useQueryClient()
 
   const typeQuery = useQuery({
@@ -29,21 +37,27 @@ export function useDocumentType(documentTypeId: string) {
     queryKey: ["document-type", documentTypeId, "fields"],
     queryFn: () => fetchCurrentDocumentTypeFields(documentTypeId),
     retry: false,
-    enabled: Boolean(documentTypeId),
+    enabled: Boolean(documentTypeId) && withFields,
   })
 
   const updateTypeMutation = useMutation({
-    mutationFn: (payload: UpdateDocumentTypePayload) => updateDocumentType(documentTypeId, payload),
+    mutationFn: (payload: UpdateDocumentTypePayload) =>
+      updateDocumentType(documentTypeId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-type", documentTypeId] })
+      queryClient.invalidateQueries({
+        queryKey: ["document-type", documentTypeId],
+      })
       queryClient.invalidateQueries({ queryKey: ["document-types"] })
     },
   })
 
   const replaceFieldsMutation = useMutation({
-    mutationFn: (fields: DocumentTypeFieldMappingItemPayload[]) => replaceDocumentTypeFields(documentTypeId, fields),
+    mutationFn: (fields: DocumentTypeFieldMappingItemPayload[]) =>
+      replaceDocumentTypeFields(documentTypeId, fields),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-type", documentTypeId] })
+      queryClient.invalidateQueries({
+        queryKey: ["document-type", documentTypeId],
+      })
       toast.success("Field mapping published.")
     },
   })
@@ -54,7 +68,9 @@ export function useDocumentType(documentTypeId: string) {
     notFound: typeQuery.isError,
     fields: fieldsQuery.data ?? [],
     fieldsLoading: fieldsQuery.isLoading,
-    updateType: async (payload: UpdateDocumentTypePayload): Promise<string | null> => {
+    updateType: async (
+      payload: UpdateDocumentTypePayload
+    ): Promise<string | null> => {
       try {
         await updateTypeMutation.mutateAsync(payload)
         return null
@@ -62,12 +78,16 @@ export function useDocumentType(documentTypeId: string) {
         return err instanceof Error ? err.message : "Could not save changes."
       }
     },
-    replaceFields: async (fields: DocumentTypeFieldMappingItemPayload[]): Promise<string | null> => {
+    replaceFields: async (
+      fields: DocumentTypeFieldMappingItemPayload[]
+    ): Promise<string | null> => {
       try {
         await replaceFieldsMutation.mutateAsync(fields)
         return null
       } catch (err) {
-        return err instanceof Error ? err.message : "Could not save the field mapping."
+        return err instanceof Error
+          ? err.message
+          : "Could not save the field mapping."
       }
     },
   }

@@ -2,11 +2,13 @@ package com.oak.dms.common.exception;
 
 import com.oak.dms.audit.controller.AccessDeniedAuditor;
 import com.oak.dms.common.dto.ErrorResponse;
+import com.oak.dms.scanning.exception.FileTooLargeException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -77,6 +79,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict",
                         "The request conflicts with an existing resource",
+                        request.getRequestURI()));
+    }
+
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleLockFailure(PessimisticLockingFailureException ex,
+            HttpServletRequest request) {
+        // A row lock wait that hit its timeout, or a deadlock victim - the
+        // other transaction is still in progress. Retryable, so a coded 409
+        // rather than a 500 (workflow transactions bound their waits to 5s,
+        // see WorkflowLocks).
+        log.warn("Lock conflict on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", "CONCURRENT_UPDATE",
+                        "Someone else is changing this right now - please try again",
                         request.getRequestURI()));
     }
 
@@ -231,6 +247,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(ErrorResponse.of(HttpStatus.METHOD_NOT_ALLOWED.value(), "Method Not Allowed",
                         ex.getMethod() + " isn't supported here.", request.getRequestURI()));
+    }
+
+    /** Over spring.servlet.multipart.max-file-size - refused before the scan gate sees it. Same answer as the gate's. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex,
+                                                              HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of(HttpStatus.PAYLOAD_TOO_LARGE.value(), "Payload Too Large", "FILE_TOO_LARGE",
+                        FileTooLargeException.message(ex.getMaxUploadSize() > 0 ? ex.getMaxUploadSize()
+                                : 2_146_435_072L), request.getRequestURI()));
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)

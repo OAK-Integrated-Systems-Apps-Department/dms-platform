@@ -93,7 +93,9 @@ public class ScanCallbackHandler {
                 event.providerScanId());
 
         Duration lease = Duration.ofSeconds(scanProperties.getRetry().getLeaseSeconds());
-        if (Boolean.TRUE.equals(transactionTemplate.execute(status -> scanResultRepository.claimOne(scanResultId, lease)))) {
+        Duration leasePerGb = Duration.ofSeconds(scanProperties.getRetry().getLeaseSecondsPerGb());
+        if (Boolean.TRUE.equals(transactionTemplate.execute(status ->
+                scanResultRepository.claimOne(scanResultId, lease, leasePerGb)))) {
             ingestionProcessor.process(scanResultId);
         }
         // Otherwise another worker holds it; the scheduler picks it up when due.

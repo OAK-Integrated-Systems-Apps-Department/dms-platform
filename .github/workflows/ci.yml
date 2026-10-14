@@ -94,7 +94,9 @@ jobs:
           cache-dependency-path: backend/**/pom.xml
 
       # Same reactor the Dockerfile builds (backend/pom.xml -> dms-core).
-      # `verify` = compile, run the unit tests (surefire), package the jar.
+      # `verify` = compile, run the unit tests (surefire), package the jar,
+      # then run the *IT integration tests (failsafe - see dms-core/pom.xml
+      # for the few excluded because they need Keycloak or ClamAV).
       - name: Test & build (mvn verify)
         working-directory: backend
         run: ./dms-core/mvnw -B -ntp -f pom.xml verify
@@ -103,8 +105,10 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: surefire-reports
-          path: backend/dms-core/target/surefire-reports/
+          name: test-reports
+          path: |
+            backend/dms-core/target/surefire-reports/
+            backend/dms-core/target/failsafe-reports/
           retention-days: 7
 
   # The *IT tests (not part of `mvn verify`): full Spring context against
@@ -304,6 +308,114 @@ jobs:
       # The production `next build` itself runs inside the Docker image
       # build below (frontend/Dockerfile), which is the artifact that ships -
       # building it a second time here would be duplicate work.
+
+  # SonarQube analysis. Runs only when the repository has SONAR_HOST_URL and
+  # SONAR_TOKEN set - a self-hosted server on a developer's localhost is not
+  # reachable from a GitHub runner, so without a server this job would fail
+  # every PR for a reason nobody could fix from the repo. `if` on a var/secret
+  # is the gate; the job is skipped, not failed, when they are absent.
+  #
+  # Separate from the `backend` job rather than bolted onto it: analysis needs
+  # the whole history (fetch-depth: 0) for new-code detection, and a scan that
+  # cannot reach its server must not take the build down with it.
+  sonarqube:
+    name: SonarQube analysis
+    if: ${{ vars.SONAR_HOST_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The same services the `backend` job needs: analysis runs `mvn verify`
+    # to produce the JaCoCo report, and that boots the full Spring context.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres
+          POSTGRES_DB: dms_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: dms
+          RABBITMQ_DEFAULT_PASS: ci-only-rabbitmq
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/dms_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: ci-only-postgres
+      REDIS_HOST: localhost
+      RABBITMQ_HOST: localhost
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ci-only-rabbitmq
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      # Shallow clones make Sonar report every line as new code and lose
+      # blame, so it can no longer tell which issues a pull request added.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect Java version
+        id: java
+        run: |
+          jdk="$(sed -n 's/^FROM maven:[^ ]*eclipse-temurin-\([0-9][0-9]*\).*/\1/p' backend/Dockerfile | head -n1)"
+          [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
+          echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.jdk }}
+          cache: maven
+          cache-dependency-path: backend/**/pom.xml
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}
+          restore-keys: sonar-${{ runner.os }}
+
+      # verify, not test: the JaCoCo report goal is bound to verify, and the
+      # scanner reads that report. `test` alone would upload no coverage.
+      - name: Build and measure coverage
+        working-directory: backend
+        run: ./dms-core/mvnw -B -ntp -f pom.xml verify
+
+      - name: Analyse backend
+        working-directory: backend
+        run: |
+          # Fully-qualified goal, not `sonar:sonar`: prefix resolution only
+          # searches the configured pluginGroups, which do not include
+          # org.sonarsource.scanner.maven, so the short form fails with
+          # "No plugin found for prefix 'sonar'" even though the plugin is
+          # declared in backend/pom.xml - which still supplies the version.
+          ./dms-core/mvnw -B -ntp -f pom.xml \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.token="$SONAR_TOKEN"
+
+      # A separate Sonar project from the backend - see the comment in
+      # frontend/sonar-project.properties for why they cannot share a key.
+      - name: Analyse frontend
+        uses: SonarSource/sonarqube-scan-action@v8
+        with:
+          # Reads frontend/sonar-project.properties; SONAR_HOST_URL and
+          # SONAR_TOKEN come from the job env above.
+          projectBaseDir: frontend
 
   images:
     name: Docker image - ${{ matrix.name }}

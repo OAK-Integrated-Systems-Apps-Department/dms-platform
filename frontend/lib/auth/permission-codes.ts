@@ -69,6 +69,16 @@ export const PermissionCodes = {
 
   MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
   MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
+  MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
+  MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
+  MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
+  // Pin Important Documents (PID). Pins are personal; the limit is the organisation's.
+  PID_PIN: "pid.pin-unpin-documents.pin",
+  PID_UNPIN: "pid.pin-unpin-documents.unpin",
+  PID_CONFIGURE_LIMITS: "pid.configure-pin-limits",
+  // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
+  SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",
+  SHAD_VIEW_SYSTEM_LOGS: "shad.view-system-logs",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a
@@ -95,6 +105,7 @@ export const PermissionCodes = {
   // Uploading documents (POST /api/v1/documents) - also what the upload
   // panel's document-type picker (/document-types/selectable) requires.
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
+
   DOCM_DOCUMENTS_VIEW: "docm.documents.view",
   DOCM_DOCUMENTS_DELETE: "docm.documents.delete",
   // Moving documents between folders (V51).
@@ -138,4 +149,30 @@ export const PermissionCodes = {
   OS_OCR_TEMPLATE_DELETE: "os.configure-ocr-zones-templates.delete-template",
   OS_REVIEW_VIEW_QUEUE: "os.review-ocr-exceptions.view-queue",
   OS_REVIEW_RESOLVE: "os.review-ocr-exceptions.resolve",
+
+  // Reading a document's metadata (GET /api/v1/documents/{id}).
+  DOCM_COMMENTS_CREATE: "docm.document-comments.create",
+
+  // Departments (OTUA) - also the approver pools a workflow stage can route
+  // to. The department list is additionally readable with
+  // WA_TEMPLATES_CREATE/UPDATE so a template designer can pick one.
+  OTUA_DEPARTMENTS_VIEW: "otua.manage-departments.view",
+  OTUA_DEPARTMENTS_CREATE: "otua.manage-departments.create",
+  OTUA_DEPARTMENTS_UPDATE: "otua.manage-departments.update",
+  OTUA_DEPARTMENTS_DELETE: "otua.manage-departments.delete",
+
+  // Workflow Automation (WA) - template design, task decisions, and the
+  // workflow audit trail. Any single WA_TEMPLATES_* code opens the template
+  // screens (list/get), matching the backend's ANY_TEMPLATE_PERMISSION.
+  WA_TEMPLATES_CREATE: "wa.configure-workflow-templates.create",
+  WA_TEMPLATES_UPDATE: "wa.configure-workflow-templates.update",
+  WA_TEMPLATES_DELETE: "wa.configure-workflow-templates.delete",
+  WA_TEMPLATES_TOGGLE_ACTIVE: "wa.configure-workflow-templates.toggle-active",
+  WA_TASK_APPROVE: "wa.approve-reject-workflow-task.approve",
+  WA_TASK_REJECT: "wa.approve-reject-workflow-task.reject",
+  WA_TASK_REASSIGN: "wa.reassign-workflow-task",
+  WA_REQUEST_INFORMATION: "wa.request-workflow-information.create",
+  WA_AUDIT_TRAIL_VIEW: "wa.view-workflow-audit-trail.view",
+  // Document Lifecycle Management - starting a workflow on a document.
+  DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",
 } as const

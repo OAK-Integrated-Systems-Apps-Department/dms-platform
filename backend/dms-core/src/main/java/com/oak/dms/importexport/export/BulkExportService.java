@@ -12,6 +12,7 @@ import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.folder.FolderAccessService;
+import com.oak.dms.folder.FolderRepository;
 import com.oak.dms.importexport.config.ExportJobProperties;
 import com.oak.dms.importexport.dto.CreateExportRequest;
 import com.oak.dms.importexport.dto.ExportJobResponse;
@@ -72,6 +73,7 @@ public class BulkExportService {
     private final FolderAccessService folderAccessService;
     private final DocumentAccessService documentAccessService;
     private final DocumentRepository documentRepository;
+    private final FolderRepository folderRepository;
 
     /** A finished export ready to stream. */
     public record DownloadedExport(String filename, long sizeBytes, java.io.InputStream content) {
@@ -132,7 +134,6 @@ public class BulkExportService {
 
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("exportType", type.name());
-        details.put("metadataFormat", format.name());
         details.put("documentCount", count);
         details.put("documentTypeId", request.documentTypeId());
         details.put("folderId", request.folderId());
@@ -189,7 +190,7 @@ public class BulkExportService {
                 .newValue(Map.of("documentCount", job.getDocumentCount(),
                         "fileSizeBytes", job.getFileSizeBytes() != null ? job.getFileSizeBytes() : object.sizeBytes()))
                 .log();
-        String filename = "export-" + job.getCreatedAt().toLocalDate() + "-" + jobId.toString().substring(0, 8) + ".zip";
+        String filename = filename(job);
         long size = job.getFileSizeBytes() != null ? job.getFileSizeBytes() : object.sizeBytes();
         return new DownloadedExport(filename, size, object.content());
     }
@@ -247,8 +248,12 @@ public class BulkExportService {
         if (request == null) {
             throw BulkImportException.badRequest("EXPORT_INVALID", "Say what to export.");
         }
-        TemplateFormat format = request.metadataFormat() == null || request.metadataFormat().isBlank()
-                ? TemplateFormat.xlsx : TemplateFormat.fromValue(request.metadataFormat());
+        if (!request.filesIncluded()) {
+            throw BulkImportException.badRequest("EXPORT_INVALID",
+                    "Downloads hold the documents' files - there is no metadata-only download.");
+        }
+        // No metadata sheet any more; the column keeps its default for the job row.
+        TemplateFormat format = TemplateFormat.xlsx;
         if (request.byIds()) {
             if (request.documentIds().size() > properties.getMaxDocuments()) {
                 throw BulkImportException.badRequest("EXPORT_TOO_MANY_DOCUMENTS",
@@ -285,6 +290,25 @@ public class BulkExportService {
     private CreateExportRequest forCaller(CreateExportRequest request) {
         DocumentAccessService.DocumentAccessView access = documentAccessService.forCaller();
         return request.withHidden(access.folders().hiddenFolderIds(), documentAccessService.hiddenRestrictedIds(access));
+    }
+
+    /** "Finance.zip" for a folder's download, as Google Drive names it; "documents-2026-10-05.zip" for a selection. */
+    private String filename(ExportJob job) {
+        try {
+            CreateExportRequest request = objectMapper.readValue(job.getRequestParams(), CreateExportRequest.class);
+            if (request.byFolder()) {
+                String name = folderRepository
+                        .findByFolderIdAndTenantIdAndDeletedFalse(request.folderId(), job.getTenantId())
+                        .map(folder -> ExportArchiveBuilder.safeName(folder.getFolderName(), ""))
+                        .orElse("");
+                if (!name.isEmpty()) {
+                    return name + ".zip";
+                }
+            }
+        } catch (JsonProcessingException e) {
+            log.warn("Export job {} has unreadable request_params", job.getExportJobId());
+        }
+        return "documents-" + job.getCreatedAt().toLocalDate() + ".zip";
     }
 
     private String json(CreateExportRequest request) {

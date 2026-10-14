@@ -1,7 +1,17 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Copy, Loader2, RotateCcw, Upload, X } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+import {
+  Copy,
+  Download,
+  Folder,
+  Loader2,
+  RotateCcw,
+  Upload,
+  X,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,8 +26,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { ApiError } from "@/lib/api-error"
-import { uploadDocument, uploadDocumentVersion } from "@/lib/documents/api"
+import { downloadTemplate } from "@/components/document-types/document-type-templates-tab"
+import { friendlyMessage } from "@/lib/api-error"
+import { fetchTemplates, TEMPLATES_KEY } from "@/lib/documents/templates"
 import {
   canCheckSimilar,
   checkDuplicates,
@@ -28,70 +39,70 @@ import {
   type DuplicateChoice,
   type DuplicateMatchDto,
 } from "@/lib/documents/duplicates"
+import type { DroppedFile } from "@/lib/documents/dropped-files"
+import {
+  enqueueUploads,
+  type UploadRequest,
+} from "@/lib/documents/upload-manager"
+import { createFolder } from "@/lib/folders/api"
+import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
 import { cn } from "@/lib/utils"
 import { useSelectableDocumentTypes } from "@/lib/documents/use-selectable-document-types"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 
-/** Files uploaded at the same time - enough to be quick, few enough not to flood the scan gate. */
-const CONCURRENCY = 3
+/** The document type last uploaded with, offered again next time (this browser only). */
+const LAST_TYPE_KEY = "oakdms.upload.lastDocumentType"
 
+function lastDocumentType(): string {
+  try {
+    return window.localStorage.getItem(LAST_TYPE_KEY) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function rememberDocumentType(documentTypeId: string) {
+  try {
+    window.localStorage.setItem(LAST_TYPE_KEY, documentTypeId)
+  } catch {
+    // only a convenience
+  }
+}
+
+/** Only what happens here - uploading itself is shown in the uploads panel. */
 type ItemState =
   | { kind: "queued" }
-  | { kind: "uploading" }
-  | { kind: "uploaded" }
-  | { kind: "versioned" }
-  | { kind: "skipped" }
-  | { kind: "scanning" }
-  | { kind: "blocked"; message: string }
   | { kind: "rejected"; message: string }
   | { kind: "failed"; message: string }
 
 interface UploadItem {
   id: string
   file: File
+  /** The folders it was in inside a dropped folder - recreated under the chosen folder. */
+  dir: string[]
+  /** That recreated folder, once it exists; undefined = the chosen folder. */
+  targetFolderId?: string
   title: string
   state: ItemState
   /** Checked against what's already in the DMS for the chosen folder. */
   checked: boolean
-  /** Why it is waiting again - e.g. the same file arrived meanwhile. */
-  notice?: string
   /** Already there - and what to do about it. */
   duplicate?: { match: DuplicateMatchDto; choice: DuplicateChoice }
 }
 
 const STATE_LABEL: Record<ItemState["kind"], string> = {
   queued: "Ready",
-  uploading: "Uploading…",
-  uploaded: "Uploaded",
-  versioned: "Added as new version",
-  skipped: "Skipped - already there",
-  scanning: "Being scanned",
-  blocked: "Blocked by malware scan",
   rejected: "Not accepted",
   failed: "Failed",
 }
 
-const STATE_VARIANT: Record<
-  ItemState["kind"],
-  "default" | "muted" | "gold" | "rust" | "outline"
-> = {
-  queued: "outline",
-  uploading: "muted",
-  uploaded: "default",
-  versioned: "default",
-  skipped: "muted",
-  scanning: "gold",
-  blocked: "rust",
-  rejected: "rust",
-  failed: "rust",
-}
-
 let nextItemId = 0
 
-function toItems(files: File[]): UploadItem[] {
-  return files.map((file) => ({
+function toItems(files: DroppedFile[]): UploadItem[] {
+  return files.map(({ file, dir }) => ({
     id: `upload-${++nextItemId}`,
     file,
+    dir,
     title: titleFromFilename(file.name),
     state: { kind: "queued" },
     checked: false,
@@ -103,27 +114,53 @@ function titleFromFilename(name: string): string {
   return (dot > 0 ? name.slice(0, dot) : name).trim() || name
 }
 
-/** Maps one upload outcome to what the user sees - see DocumentController#uploadDocument for the codes. */
-function outcomeOf(error: unknown): ItemState {
-  if (error instanceof ApiError) {
-    if (error.status === 422) return { kind: "blocked", message: error.message }
-    if (error.status === 413)
-      return {
-        kind: "rejected",
-        message: "File is larger than the upload limit.",
-      }
-    if (error.status === 415)
-      return { kind: "rejected", message: "This file type is not allowed." }
-    if (error.status === 403)
-      return {
-        kind: "rejected",
-        message: "You don't have permission to upload documents.",
-      }
-    if (error.status === 0)
-      return { kind: "failed", message: "Could not reach the server." }
-    return { kind: "failed", message: error.message }
-  }
-  return { kind: "failed", message: "Upload failed." }
+const sameName = (a: string, b: string) =>
+  a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase()
+
+/** "Invoice" -> "Invoice (2)", "Invoice (2)" -> "Invoice (3)" - for a copy kept beside the original. */
+function nextCopyName(title: string): string {
+  const numbered = /^(.*) \((\d+)\)$/.exec(title.trim())
+  return numbered
+    ? `${numbered[1]} (${Number(numbered[2]) + 1})`
+    : `${title.trim()} (2)`
+}
+
+/**
+ * The item with this duplicate choice. "Keep both" needs a name of its own, so
+ * two documents side by side can be told apart - suggested here as "Name (2)"
+ * while the title still matches the existing document's; the user can change it.
+ */
+function withChoice(item: UploadItem, choice: DuplicateChoice): UploadItem {
+  if (!item.duplicate) return item
+  const title =
+    choice === "both" && sameName(item.title, item.duplicate.match.title)
+      ? nextCopyName(item.duplicate.match.title)
+      : item.title
+  return { ...item, title, duplicate: { ...item.duplicate, choice } }
+}
+
+/** "Keep both" with the existing document's own name - not allowed, it would be indistinguishable. */
+function needsNewName(item: UploadItem): boolean {
+  return (
+    item.state.kind === "queued" &&
+    item.duplicate?.choice === "both" &&
+    sameName(
+      item.title || titleFromFilename(item.file.name),
+      item.duplicate.match.title
+    )
+  )
+}
+
+/** The file renamed after its title (same extension), so a kept copy's file name matches it too. */
+function fileNamed(file: File, title: string): File {
+  const dot = file.name.lastIndexOf(".")
+  const name = title.trim() + (dot > 0 ? file.name.slice(dot) : "")
+  return name === file.name
+    ? file
+    : new File([file], name, {
+        type: file.type,
+        lastModified: file.lastModified,
+      })
 }
 
 interface BulkUploadSheetProps {
@@ -135,39 +172,131 @@ interface BulkUploadSheetProps {
    * opens so it starts fresh.
    */
   initialFiles?: File[]
+  /** Files (and the folders they were in) dragged in from the computer. Read once on mount. */
+  initialDrop?: DroppedFile[]
+  /** May create folders - needed to keep the structure of a dropped folder. */
+  canCreateFolders?: boolean
   /** Folder preselected (e.g. the one being browsed); "" or absent = the top level of My Documents. Read once on mount. */
   initialFolderId?: string
-  /** Called after each upload batch finishes, e.g. to refresh a document list. */
+  /** Called once every file handed to the uploads panel has finished, e.g. to refresh a list. */
   onUploaded?: () => void
 }
 
 /**
  * Upload many files at once, all as one document type (bulk upload without
- * a ZIP). Each file goes through the normal, malware-scanned
- * `POST /api/v1/documents` on its own, CONCURRENCY at a time, and reports
- * its own result - one bad file never stops the others. Per-file metadata
- * and template-based import are the separate Bulk Import feature (Module 2.1).
+ * a ZIP). Here the files get their document type, folder (recreating any
+ * dropped folders) and a duplicate check; then they're handed to the
+ * uploads panel at the bottom right (UploadsPanel), which sends each through
+ * the normal, malware-scanned `POST /api/v1/documents` with a progress bar
+ * while the user carries on. Per-file metadata and template-based import
+ * are the separate Bulk Import feature (Module 2.1).
  */
 export function BulkUploadSheet({
   open,
   onOpenChange,
   initialFiles,
+  initialDrop,
+  canCreateFolders = false,
   initialFolderId,
   onUploaded,
 }: BulkUploadSheetProps) {
-  const [documentTypeId, setDocumentTypeId] = useState("")
+  const [chosenType, setDocumentTypeId] = useState(lastDocumentType)
   const [folderId, setFolderId] = useState(initialFolderId ?? "")
   const [items, setItems] = useState<UploadItem[]>(() =>
-    toItems(initialFiles ?? [])
+    toItems([
+      ...(initialFiles ?? []).map((file) => ({ file, dir: [] })),
+      ...(initialDrop ?? []),
+    ])
   )
-  const [running, setRunning] = useState(false)
   const [checking, setChecking] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const types = useSelectableDocumentTypes(open)
+  const folders = useFolders(open)
+  const queryClient = useQueryClient()
+  const templates = useQuery({
+    queryKey: [...TEMPLATES_KEY, chosenType],
+    queryFn: () => fetchTemplates(chosenType),
+    enabled: open && Boolean(chosenType),
+  })
+  // A remembered type that's no longer selectable isn't offered.
+  const documentTypeId = types.data?.some(
+    (t) => t.documentTypeId === chosenType
+  )
+    ? chosenType
+    : ""
+  const keepsStructure = items.some((item) => item.dir.length > 0)
 
   function addFiles(files: File[]) {
-    setItems((current) => [...current, ...toItems(files)])
+    setItems((current) => [
+      ...current,
+      ...toItems(files.map((file) => ({ file, dir: [] }))),
+    ])
+  }
+
+  /** Where an item goes: its recreated folder, or the chosen one. */
+  function targetOf(item: UploadItem): string | null {
+    return item.targetFolderId ?? (folderId || null)
+  }
+
+  /**
+   * Recreates the dropped folders under the chosen folder - reusing one that
+   * already has the name, as Drive does - and points each file at its own.
+   * Without permission to create folders, everything goes into the chosen
+   * folder instead.
+   */
+  async function placeInFolders(all: UploadItem[]): Promise<UploadItem[]> {
+    const made = new Map<string, string>()
+    const broken = new Map<string, string>()
+    let created = false
+    const placed: UploadItem[] = []
+    for (const item of all) {
+      if (
+        !canCreateFolders ||
+        item.state.kind !== "queued" ||
+        item.dir.length === 0 ||
+        item.targetFolderId
+      ) {
+        placed.push(item)
+        continue
+      }
+      let parent: string | null = folderId || null
+      let failure: string | undefined
+      for (let depth = 1; depth <= item.dir.length && !failure; depth++) {
+        const key = item.dir.slice(0, depth).join("/")
+        failure = broken.get(key)
+        if (failure) break
+        let id = made.get(key)
+        if (!id) {
+          const name = item.dir[depth - 1].trim()
+          const siblings = parent
+            ? (folders.byId.get(parent)?.children ?? [])
+            : folders.roots
+          id = siblings.find(
+            (f) => f.name.toLowerCase() === name.toLowerCase()
+          )?.folderId
+          if (!id) {
+            try {
+              id = (await createFolder(name, parent)).folderId
+              created = true
+            } catch (error) {
+              failure = `Could not create the folder "${name}": ${friendlyMessage(error, "unknown error")}`
+              broken.set(key, failure)
+              break
+            }
+          }
+          made.set(key, id)
+        }
+        parent = id
+      }
+      placed.push(
+        failure
+          ? { ...item, state: { kind: "failed", message: failure } }
+          : { ...item, targetFolderId: parent ?? undefined }
+      )
+    }
+    if (created) void queryClient.invalidateQueries({ queryKey: FOLDERS_KEY })
+    return placed
   }
 
   function update(id: string, patch: Partial<UploadItem>) {
@@ -182,7 +311,12 @@ export function BulkUploadSheet({
     setItems((current) =>
       current.map((item) =>
         item.state.kind === "queued"
-          ? { ...item, checked: false, duplicate: undefined }
+          ? {
+              ...item,
+              checked: false,
+              duplicate: undefined,
+              targetFolderId: undefined,
+            }
           : item
       )
     )
@@ -193,31 +327,40 @@ export function BulkUploadSheet({
    * uploaded). Found duplicates wait for the user's choice; the rest upload.
    */
   async function start() {
-    const unchecked = queued.filter((item) => !item.checked)
+    rememberDocumentType(documentTypeId)
+    setChecking(true)
+    // Dropped folders first, so each file is checked against its own folder.
+    const all = keepsStructure ? await placeInFolders(items) : items
+    const ready = all.filter((item) => item.state.kind === "queued")
+    const unchecked = ready.filter((item) => !item.checked)
     if (unchecked.length === 0) {
-      await runUploads(queued)
+      setChecking(false)
+      handOff(all)
       return
     }
-    setChecking(true)
-    let found: Map<string, DuplicateMatchDto> = new Map()
+    const found = new Map<string, DuplicateMatchDto>()
     try {
-      const hashes = await Promise.all(
-        unchecked.map((item) => sha256Hex(item.file))
-      )
-      const results = await checkDuplicates(
-        folderId || null,
-        unchecked.map((item, i) => ({
-          name: item.file.name,
-          sha256: hashes[i],
-        }))
-      )
-      found = new Map(
-        results.flatMap((result, i) =>
-          result.matches.length > 0
-            ? [[unchecked[i].id, result.matches[0]]]
-            : []
-        ) as [string, DuplicateMatchDto][]
-      )
+      const byFolder = new Map<string | null, UploadItem[]>()
+      for (const item of unchecked) {
+        const target = targetOf(item)
+        byFolder.set(target, [...(byFolder.get(target) ?? []), item])
+      }
+      for (const [target, group] of byFolder) {
+        const hashes = await Promise.all(
+          group.map((item) => sha256Hex(item.file))
+        )
+        const results = await checkDuplicates(
+          target,
+          group.map((item, i) => ({
+            name: item.file.name,
+            sha256: hashes[i],
+          }))
+        )
+        results.forEach((result, i) => {
+          if (result.matches.length > 0)
+            found.set(group[i].id, result.matches[0])
+        })
+      }
       // No exact copy: look for documents with nearly the same text.
       for (const item of unchecked) {
         if (found.has(item.id) || !canCheckSimilar(item.file)) continue
@@ -234,31 +377,29 @@ export function BulkUploadSheet({
       setChecking(false)
     }
     const ids = new Set(unchecked.map((item) => item.id))
-    const next = items.map((item) => {
+    const next = all.map((item) => {
       if (!ids.has(item.id)) return item
       const match = found.get(item.id)
-      return {
+      const checkedItem: UploadItem = {
         ...item,
         checked: true,
-        notice: undefined,
         duplicate: match
           ? { match, choice: suggestedChoice(match) }
           : undefined,
       }
+      return match
+        ? withChoice(checkedItem, suggestedChoice(match))
+        : checkedItem
     })
-    setItems(next)
     // Duplicates need a decision first; with none, carry straight on.
-    if (found.size === 0) {
-      await runUploads(next.filter((item) => item.state.kind === "queued"))
-    }
+    if (found.size === 0) handOff(next)
+    else setItems(next)
   }
 
   function choose(id: string, choice: DuplicateChoice) {
     setItems((current) =>
       current.map((item) =>
-        item.id === id && item.duplicate
-          ? { ...item, duplicate: { ...item.duplicate, choice } }
-          : item
+        item.id === id && item.duplicate ? withChoice(item, choice) : item
       )
     )
   }
@@ -267,96 +408,107 @@ export function BulkUploadSheet({
     setItems((current) =>
       current.map((item) =>
         item.duplicate && item.state.kind === "queued"
-          ? {
-              ...item,
-              duplicate: {
-                ...item.duplicate,
-                // A version only where the user may add one.
-                choice:
-                  choice === "version" && !item.duplicate.match.canAddVersion
-                    ? "both"
-                    : choice,
-              },
-            }
+          ? withChoice(
+              item,
+              // A version only where the user may add one.
+              choice === "version" && !item.duplicate.match.canAddVersion
+                ? "both"
+                : choice
+            )
           : item
       )
     )
   }
 
-  async function runUploads(targets: UploadItem[]) {
-    setRunning(true)
-    const queue = [...targets]
-    async function worker() {
-      for (let next = queue.shift(); next; next = queue.shift()) {
-        const choice = next.duplicate?.choice
-        if (choice === "skip") {
-          update(next.id, { state: { kind: "skipped" } })
-          continue
-        }
-        update(next.id, { state: { kind: "uploading" } })
-        try {
-          const ticket =
-            choice === "version" && next.duplicate
-              ? await uploadDocumentVersion(
-                  next.duplicate.match.documentId,
-                  next.file,
-                  "Uploaded again"
-                )
-              : await uploadDocument(
-                  next.file,
-                  documentTypeId,
-                  next.title.trim() || titleFromFilename(next.file.name),
-                  folderId || null,
-                  // Checked and nothing found: if the same file arrives meanwhile, ask again.
-                  next.checked && !next.duplicate
-                )
-          update(next.id, {
-            state:
-              ticket.status === "pending"
-                ? { kind: "scanning" }
-                : choice === "version"
-                  ? { kind: "versioned" }
-                  : { kind: "uploaded" },
-          })
-        } catch (error) {
-          if (
-            error instanceof ApiError &&
-            error.code === "DUPLICATE_UPLOADED_MEANWHILE"
-          ) {
-            // Someone added the same file a moment ago - check again and let the user choose.
-            update(next.id, {
-              state: { kind: "queued" },
-              checked: false,
-              notice:
-                "The same file was just added by someone else. Upload again to choose what to do.",
-            })
-            continue
-          }
-          update(next.id, { state: outcomeOf(error) })
-        }
-      }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker)
+  /**
+   * Sends the ready files to the uploads panel - they upload there while the
+   * user carries on - and closes, unless a folder couldn't be created for
+   * some of them. "Skip" duplicates are dropped.
+   */
+  function handOff(all: UploadItem[]) {
+    const nameOf = (id: string | null) =>
+      id ? (folders.byId.get(id)?.name ?? "Folder") : "My Documents"
+    const sending = all.filter(
+      (item) =>
+        item.state.kind === "queued" && item.duplicate?.choice !== "skip"
     )
-    setRunning(false)
-    onUploaded?.()
+    enqueueUploads(
+      sending.map((item) => {
+        const duplicate = item.duplicate
+        if (duplicate?.choice === "version") {
+          const request: UploadRequest = {
+            kind: "version",
+            file: item.file,
+            documentId: duplicate.match.documentId,
+            comment: "Uploaded again",
+          }
+          return {
+            request,
+            folderId: duplicate.match.folderId,
+            folderName: duplicate.match.folderName ?? "My Documents",
+          }
+        }
+        const target = targetOf(item)
+        const title = item.title.trim() || titleFromFilename(item.file.name)
+        const request: UploadRequest = {
+          kind: "new",
+          // A copy kept beside the original takes its new name as its file name too.
+          file:
+            duplicate?.choice === "both"
+              ? fileNamed(item.file, title)
+              : item.file,
+          documentTypeId,
+          title,
+          folderId: target,
+          // Checked and nothing found: if the same file arrives meanwhile, refuse rather than duplicate.
+          refuseDuplicates: item.checked && !duplicate,
+        }
+        return {
+          request,
+          folderId: target,
+          folderName: item.targetFolderId
+            ? (item.dir.at(-1) ?? nameOf(target))
+            : nameOf(target),
+        }
+      }),
+      onUploaded
+    )
+    const tooLarge = all.filter((item) => item.state.kind === "rejected")
+    if (tooLarge.length > 0)
+      toast.error(
+        `${tooLarge.length} ${tooLarge.length === 1 ? "file was" : "files were"} left out - larger than the upload limit.`
+      )
+    const failed = all.filter((item) => item.state.kind === "failed")
+    if (failed.length === 0) onOpenChange(false)
+    else setItems(failed)
+  }
+
+  /** Files whose folder couldn't be created - through the folder step again. */
+  async function retry() {
+    setChecking(true)
+    const again = items.map((item) =>
+      item.state.kind === "failed"
+        ? { ...item, state: { kind: "queued" } as ItemState }
+        : item
+    )
+    const placed = keepsStructure ? await placeInFolders(again) : again
+    setChecking(false)
+    handOff(placed)
   }
 
   const queued = items.filter((i) => i.state.kind === "queued")
   const retryable = items.filter((i) => i.state.kind === "failed")
-  const done = items.filter((i) =>
-    ["uploaded", "versioned", "scanning", "skipped"].includes(i.state.kind)
-  ).length
   const waitingForChoice = queued.filter((i) => i.duplicate)
-  const problems = items.filter((i) =>
-    ["blocked", "rejected", "failed"].includes(i.state.kind)
-  ).length
+  const problems = items.filter((i) => i.state.kind !== "queued").length
+  const unnamedCopies = queued.filter(needsNewName).length
   const canUpload =
-    Boolean(documentTypeId) && queued.length > 0 && !running && !checking
+    Boolean(documentTypeId) &&
+    queued.length > 0 &&
+    !checking &&
+    unnamedCopies === 0
 
   function handleOpenChange(next: boolean) {
-    if (running || checking) return // don't close mid-upload
+    if (checking) return // don't close while folders are being made
     onOpenChange(next)
   }
 
@@ -401,6 +553,30 @@ export function BulkUploadSheet({
                 No active document types exist yet.
               </p>
             )}
+            {documentTypeId && (templates.data ?? []).length > 0 && (
+              <div className="mt-2 rounded-md bg-muted/50 px-3 py-2 text-[12.5px]">
+                <p className="mb-1 text-muted-foreground">
+                  Templates for this type - fill one in, then upload it here:
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {(templates.data ?? []).map((template) => (
+                    <li key={template.templateId}>
+                      <button
+                        type="button"
+                        onClick={() => void downloadTemplate(template)}
+                        className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                      >
+                        <Download size={13} aria-hidden="true" />
+                        {template.name}
+                        <span className="font-normal text-muted-foreground">
+                          {template.fileName && `(${template.fileName})`}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div>
@@ -411,8 +587,15 @@ export function BulkUploadSheet({
               value={folderId}
               onChange={changeFolder}
               className="w-full"
-              disabled={running || checking}
+              disabled={checking}
             />
+            {keepsStructure && (
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                {canCreateFolders
+                  ? "The folders you dropped are recreated inside this one, with each file in its own folder."
+                  : "You can't create folders, so every file goes straight into this folder."}
+              </p>
+            )}
           </div>
 
           <div
@@ -424,7 +607,7 @@ export function BulkUploadSheet({
             onDrop={(e) => {
               e.preventDefault()
               setDragOver(false)
-              if (!running) addFiles(Array.from(e.dataTransfer.files))
+              if (!checking) addFiles(Array.from(e.dataTransfer.files))
             }}
             className={`rounded-lg border border-dashed p-6 text-center transition-colors ${
               dragOver
@@ -439,7 +622,7 @@ export function BulkUploadSheet({
               variant="outline"
               size="sm"
               className="mt-2"
-              disabled={running}
+              disabled={checking}
               onClick={() => fileInputRef.current?.click()}
             >
               Choose files
@@ -456,7 +639,7 @@ export function BulkUploadSheet({
             />
           </div>
 
-          {waitingForChoice.length > 0 && !running && (
+          {waitingForChoice.length > 0 && !checking && (
             <div className="flex flex-col gap-2 rounded-lg border border-[var(--gold)] bg-[var(--gold-tint)] p-3 text-[12.5px]">
               <p className="flex items-start gap-2 font-medium text-foreground">
                 <Copy
@@ -519,35 +702,34 @@ export function BulkUploadSheet({
                     <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground">
                       {item.file.name} · {formatBytes(item.file.size)}
                     </p>
+                    {item.dir.length > 0 && canCreateFolders && (
+                      <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-muted-foreground">
+                        <Folder size={12} className="shrink-0" />
+                        {item.dir.join(" / ")}
+                      </p>
+                    )}
                     {"message" in item.state && (
                       <p className="mt-1 text-[12px] text-[var(--rust)]">
                         {item.state.message}
-                      </p>
-                    )}
-                    {item.notice && item.state.kind === "queued" && (
-                      <p className="mt-1 text-[12px] text-[var(--gold)]">
-                        {item.notice}
                       </p>
                     )}
                     {item.duplicate && item.state.kind === "queued" && (
                       <DuplicateChoicePicker
                         match={item.duplicate.match}
                         choice={item.duplicate.choice}
-                        disabled={running}
+                        disabled={checking}
+                        needsNewName={needsNewName(item)}
                         onChange={(choice) => choose(item.id, choice)}
                       />
                     )}
                   </div>
                   <Badge
-                    variant={STATE_VARIANT[item.state.kind]}
-                    className="shrink-0 gap-1.5 rounded-md"
+                    variant={item.state.kind === "queued" ? "outline" : "rust"}
+                    className="shrink-0 rounded-md"
                   >
-                    {item.state.kind === "uploading" && (
-                      <Loader2 className="size-3 animate-spin" />
-                    )}
                     {STATE_LABEL[item.state.kind]}
                   </Badge>
-                  {item.state.kind === "queued" && !running && (
+                  {item.state.kind === "queued" && !checking && (
                     <button
                       type="button"
                       aria-label={`Remove ${item.file.name}`}
@@ -570,23 +752,18 @@ export function BulkUploadSheet({
         <SheetFooter className="border-t border-border">
           {items.length > 0 && (
             <p className="text-[12.5px] text-muted-foreground">
-              {items.length} file{items.length === 1 ? "" : "s"} · {done} done
+              {items.length} file{items.length === 1 ? "" : "s"}
               {problems > 0 && ` · ${problems} with problems`}
             </p>
           )}
           <div className="flex gap-2">
-            {retryable.length > 0 && !running && (
+            {retryable.length > 0 && !checking && (
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  retryable.forEach((i) =>
-                    update(i.id, { state: { kind: "queued" } })
-                  )
-                  void runUploads(retryable)
-                }}
+                onClick={() => void retry()}
               >
-                <RotateCcw /> Retry failed ({retryable.length})
+                <RotateCcw /> Try again ({retryable.length})
               </Button>
             )}
             <Button
@@ -595,21 +772,22 @@ export function BulkUploadSheet({
               onClick={() => void start()}
               className="flex-1"
             >
-              {running || checking ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <Upload />
-              )}
+              {checking ? <Loader2 className="animate-spin" /> : <Upload />}
               {checking
                 ? "Checking for duplicates…"
-                : running
-                  ? "Uploading…"
-                  : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
+                : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
             </Button>
           </div>
           {!documentTypeId && queued.length > 0 && (
             <p className="text-[12px] text-muted-foreground">
               Choose a document type to upload.
+            </p>
+          )}
+          {unnamedCopies > 0 && (
+            <p className="text-[12px] text-[var(--rust)]">
+              {unnamedCopies === 1
+                ? "1 file kept beside an existing document needs a different name."
+                : `${unnamedCopies} files kept beside existing documents need different names.`}
             </p>
           )}
         </SheetFooter>
@@ -629,11 +807,14 @@ function DuplicateChoicePicker({
   match,
   choice,
   disabled,
+  needsNewName,
   onChange,
 }: {
   match: DuplicateMatchDto
   choice: DuplicateChoice
   disabled: boolean
+  /** "Keep both" chosen but the name is still the existing document's. */
+  needsNewName: boolean
   onChange: (choice: DuplicateChoice) => void
 }) {
   return (
@@ -677,6 +858,18 @@ function DuplicateChoicePicker({
           )
         })}
       </div>
+      {choice === "both" && (
+        <p
+          className={cn(
+            "mt-2 text-[12px] leading-[1.45]",
+            needsNewName ? "text-[var(--rust)]" : "text-muted-foreground"
+          )}
+        >
+          {needsNewName
+            ? `Give it a different name from "${match.title}" in the title box above, so the two documents can be told apart.`
+            : "Uploaded as a separate document under the name above - change it if you like."}
+        </p>
+      )}
     </div>
   )
 }

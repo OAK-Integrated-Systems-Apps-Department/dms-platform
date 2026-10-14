@@ -2,6 +2,7 @@ package com.oak.dms.document;
 
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
@@ -12,6 +13,8 @@ import com.oak.dms.document.dto.SaveReviewRequest;
 import com.oak.dms.document.dto.SaveReviewResponse;
 import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +40,14 @@ import java.util.UUID;
  * needs is read back from the version row.
  */
 public interface DocumentService {
+
+    /**
+     * Browser rows for those of {@code documentIds} the caller can see - live, not templates, and
+     * through the same folder and document access rules as the browser. Ones they can't are simply
+     * absent, indistinguishable from ones that don't exist. In no particular order.
+     */
+    java.util.List<com.oak.dms.document.dto.DocumentListItem> visibleItems(java.util.Collection<UUID> documentIds);
+
 
     /**
      * Submits an upload to the scan gate and returns its ingestion ticket.
@@ -119,6 +130,14 @@ public interface DocumentService {
     int moveDocuments(java.util.List<UUID> documentIds, UUID folderId);
 
     DocumentResponse getDocument(UUID documentId);
+
+    /**
+     * The caller's tenant's documents, newest first, optionally narrowed by
+     * a title search and a document type, and leaving out one document
+     * (e.g. the one under approval when picking supporting documents).
+     */
+    Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
+                                                Pageable pageable);
 
     /** Streams the document's current version (falling back to its latest version if none is current yet). */
     DownloadedDocument downloadDocument(UUID documentId);

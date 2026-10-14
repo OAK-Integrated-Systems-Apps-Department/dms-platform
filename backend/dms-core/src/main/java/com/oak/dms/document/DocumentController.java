@@ -8,6 +8,7 @@ import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.document.dto.DocumentListItem;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrRerunRequest;
 import com.oak.dms.document.dto.OcrRerunResponse;
@@ -35,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -90,6 +92,7 @@ public class DocumentController {
 
     /** Shorthand for the permission-code class, which is otherwise named in full on every route. */
     private static final String P = "T(com.oak.dms.security.rbac.catalog.PermissionCodes).";
+    private static final int MAX_PAGE_SIZE = 50;
 
     private final DocumentService documentService;
     private final DocumentAccessService documentAccessService;
@@ -133,6 +136,7 @@ public class DocumentController {
 
     @GetMapping
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+
     @Operation(summary = "Browse documents",
             description = "folderId: one folder's documents; without it, documents not in any folder - or every "
                     + "document with all=true. q searches titles. Newest first by default.")
@@ -210,6 +214,20 @@ public class DocumentController {
     public Map<String, Integer> moveDocuments(@Valid @RequestBody MoveDocumentsRequest request) {
         return Map.of("moved", documentService.moveDocuments(request.documentIds(), request.folderId()));
     }
+    
+    @Operation(summary = "List documents, newest first",
+            description = "search matches the title (case-insensitive); documentTypeId narrows to one type; "
+                    + "excludeDocumentId leaves one document out. size is at most 50.")
+    public PageResponse<DocumentSummaryResponse> listDocuments(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID documentTypeId,
+            @RequestParam(required = false) UUID excludeDocumentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.from(documentService.listDocuments(search, documentTypeId, excludeDocumentId,
+                PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE))));
+
+    }
 
     @GetMapping("/{id}")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
@@ -271,6 +289,47 @@ public class DocumentController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(pdf.filename()) + "\"")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
+    }
+
+    /** A presentation (.ppt, .pptx, .odp) shown slide by slide: how many slides, and their shape. */
+    @GetMapping("/{id}/preview/slides")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Open a presentation as slides - converted on first use; audited as viewed")
+    public DocumentRenditionService.SlideDeck slides(@PathVariable("id") UUID id) {
+        return renditionService.slides(id, null);
+    }
+
+    @GetMapping("/{id}/preview/slides/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "One slide of a presentation as a JPEG about `width` pixels wide")
+    public ResponseEntity<byte[]> slide(@PathVariable("id") UUID id, @PathVariable("number") int number,
+                                        @RequestParam(name = "width", defaultValue = "1280") int width) {
+        return slideImage(renditionService.slide(id, null, number, width));
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/slides")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Open an older version of a presentation as slides")
+    public DocumentRenditionService.SlideDeck versionSlides(@PathVariable("id") UUID id,
+                                                            @PathVariable("versionId") UUID versionId) {
+        return renditionService.slides(id, versionId);
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/slides/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "One slide of an older version of a presentation as a JPEG")
+    public ResponseEntity<byte[]> versionSlide(@PathVariable("id") UUID id, @PathVariable("versionId") UUID versionId,
+                                               @PathVariable("number") int number,
+                                               @RequestParam(name = "width", defaultValue = "1280") int width) {
+        return slideImage(renditionService.slide(id, versionId, number, width));
+    }
+
+    private static ResponseEntity<byte[]> slideImage(byte[] jpeg) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(jpeg);
     }
 
     @GetMapping("/{id}/versions")

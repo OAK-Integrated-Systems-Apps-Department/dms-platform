@@ -1,0 +1,59 @@
+# Alertmanager configuration TEMPLATE - rendered at container start by
+# entrypoint.sh, never read by Alertmanager directly. The __TOKENS__ are
+# replaced from the environment, because Alertmanager has no environment
+# expansion of its own and the SMTP relay differs per client.
+#
+# What this is for: Prometheus evaluates infra/monitoring/prometheus/alerts.yml
+# and, until this existed, nothing delivered the result. A rule could fire and
+# the only trace was the Alerts card on the System Monitoring screen - which
+# someone has to be looking at. Alertmanager is what makes it come to them.
+
+global:
+  smtp_smarthost: "__SMARTHOST__"
+  smtp_from: "__FROM__"
+  smtp_auth_username: "__USERNAME__"
+  # A file, not an inline value, so the password never appears in the rendered
+  # config, in `docker inspect` of the command line, or in a log of the config.
+  smtp_auth_password_file: /tmp/smtp_password
+  smtp_require_tls: __STARTTLS__
+
+# Our own wording, replacing the stock email. The stock one links to
+# "http://<container id>:9093" and "http://<container id>:9090" - addresses
+# nobody can open, which is worse than no link. This sends plain text, names
+# the client and environment (so one inbox can watch several installations),
+# and carries one real link to the monitoring screen if ALERT_LINK is set.
+templates:
+  - /tmp/email.tmpl
+
+route:
+  receiver: default
+  group_by: [alertname, component]
+  # Wait a little before the first message, so a burst - the database going
+  # down takes the API and the queue consumers with it - arrives as ONE email
+  # rather than five.
+  group_wait: 30s
+  group_interval: 5m
+  # How often a still-firing alert is repeated. Critical is repeated hourly,
+  # warnings every four: a warning that is still there after four hours has
+  # not been forgotten by being quiet.
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: default
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A critical alert already says the component is in trouble; the warning
+  # about the same component is the same news again.
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: [component]
+
+# Appended below by entrypoint.sh: `email_configs` when ALERT_EMAIL_TO is set.
+# With it unset the receiver has no destinations at all - alerts are still
+# grouped and shown on the monitoring screen, but nothing is sent anywhere.
+receivers:
+  - name: default

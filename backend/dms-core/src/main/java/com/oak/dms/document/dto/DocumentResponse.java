@@ -7,6 +7,8 @@ public record DocumentResponse(
         UUID documentId,
         UUID tenantId,
         UUID documentTypeId,
+        /** Null when the type has since been deleted. Embedded so viewers without a document-type permission still see it. */
+        String documentTypeName,
         String title,
         UUID currentVersionId,
         UUID latestVersionId,

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import Link from "next/link"
+import { useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -11,7 +10,10 @@ import {
   FolderInput,
   FolderOpen,
   FolderPlus,
+  FolderUp,
   History,
+  Pin,
+  PinOff,
   LayoutGrid,
   List,
   Pencil,
@@ -19,17 +21,25 @@ import {
   Trash2,
   Eye,
   Upload,
+  FilePlus2,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import {
   BrowserList,
   DocumentTile,
   FolderTile,
   type ItemAction,
 } from "@/components/documents/browser-items"
+import {
+  countLabel,
+  DropHint,
+  useBrowserDragDrop,
+  type DragItems,
+} from "@/components/documents/browser-dnd"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
+import { TemplatePickerSheet } from "@/components/documents/template-picker-sheet"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
 import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
@@ -50,7 +60,8 @@ import { TablePagination } from "@/components/ui/table-pagination"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { saveDownloadedFile } from "@/lib/bulk-imports/api"
+import { saveDownloadedFile } from "@/lib/download-file"
+import { usePins } from "@/lib/pins/use-pins"
 import {
   deleteDocument,
   downloadDocumentFile,
@@ -58,9 +69,13 @@ import {
   moveDocuments,
   type DocumentListItemDto,
 } from "@/lib/documents/api"
-import { requestExport } from "@/lib/export-jobs/api"
 import { watermarkSupport } from "@/lib/watermarks/supported"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
+import {
+  fromFolderPicker,
+  type DroppedFile,
+} from "@/lib/documents/dropped-files"
+import { startZipDownload } from "@/lib/documents/upload-manager"
 import {
   createFolder,
   deleteFolder,
@@ -78,6 +93,9 @@ import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 25
+
+/** Keys the upload panel opened by a drop, so each drop starts it fresh. */
+let droppedUploads = 0
 
 type Dialog =
   | { kind: "new-folder"; key: number }
@@ -98,8 +116,14 @@ type Dialog =
  * tiles (grid) or rows (list). Documents can be uploaded at the top level or
  * straight into a folder. Folders can be created,
  * renamed, moved and deleted (when empty); documents uploaded straight into
- * a folder, moved between folders, downloaded, or exported. Every action is
+ * a folder, moved between folders, and downloaded - a folder, or several
+ * documents, as one ZIP of their files. Every action is
  * shown only with its permission and checked again by the server.
+ *
+ * Drag and drop works as in Google Drive: files and folders dragged in from
+ * the computer upload into the open folder (or the folder they're dropped
+ * on, keeping their folder structure), and documents and folders dragged
+ * onto a folder - or onto a folder in the path - move there, with Undo.
  */
 export function DocumentBrowser() {
   // The open folder lives in the URL (?folder=…), so Back, refresh and
@@ -113,6 +137,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
+  const pins = usePins()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
     renameMove: hasPermission(PermissionCodes.DSC_FOLDERS_RENAME_MOVE),
@@ -146,8 +171,16 @@ function FolderView({ folderId }: { folderId: string | null }) {
   const [page, setPage] = useState(1)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<Dialog>(null)
-  const [upload, setUpload] = useState<{ key: number } | null>(null)
+  const [upload, setUpload] = useState<{
+    key: number
+    /** Dragged in from the computer. */
+    files?: DroppedFile[]
+    /** Where they were dropped, when not the open folder. */
+    folderId?: string
+  } | null>(null)
   const [preview, setPreview] = useState<DocumentListItemDto | null>(null)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const folderInputRef = useRef<HTMLInputElement | null>(null)
 
   const current = folderId ? folders.byId.get(folderId) : undefined
   // The top level is open to everyone; inside a folder, the caller's own level applies.
@@ -199,32 +232,24 @@ function FolderView({ folderId }: { folderId: string | null }) {
     }
   }
 
-  async function exportDocuments(
-    request: Parameters<typeof requestExport>[0],
-    label: string
-  ) {
-    try {
-      const job = await requestExport(request)
-      toast.success(
-        `Export of ${job.documentCount} ${job.documentCount === 1 ? "document" : "documents"} started.`,
-        {
-          description: `${label} - download it from My Exports when it's ready.`,
-        }
-      )
-    } catch (error) {
-      toast.error(friendlyMessage(error, "Could not start the export."))
-    }
+  /** A folder as one ZIP, its subfolders kept - prepared in the panel at the bottom right, then saved. */
+  function downloadFolder(folder: FolderNode) {
+    startZipDownload(
+      { folderId: folder.folderId, includeSubfolders: true },
+      `${folder.name}.zip`
+    )
   }
 
-  function exportFolder(folder: FolderNode) {
-    void exportDocuments(
-      {
-        folderId: folder.folderId,
-        includeSubfolders: true,
-        metadataFormat: "xlsx",
-        includeFiles: true,
-      },
-      folder.path
+  /** The selected documents: one is downloaded as it is, several as one ZIP. */
+  function downloadSelected() {
+    const selected = rows.filter((r) => checked.has(r.documentId))
+    if (selected.length === 1) {
+      void download(selected[0])
+      return
+    }
+    startZipDownload(
+      { documentIds: [...checked] },
+      `${checked.size} documents.zip`
     )
   }
 
@@ -234,6 +259,123 @@ function FolderView({ folderId }: { folderId: string | null }) {
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not download the document."))
     }
+  }
+
+  const canMoveDocument = (row: DocumentListItemDto) =>
+    can.moveDocuments && hasAccess(row.myAccess, "edit")
+  const canMoveFolder = (folder: FolderNode) =>
+    can.renameMove && hasAccess(folder.myAccess, "manage")
+
+  const dnd = useBrowserDragDrop({
+    here: current ?? null,
+    canUploadTo: (target) =>
+      can.upload && !missing && hasAccess(target?.myAccess, "edit"),
+    canMoveInto: (items, target) => {
+      const targetId = target?.folderId ?? null
+      if (!hasAccess(target?.myAccess, "edit")) return false
+      // Never into itself or one of its own subfolders.
+      if (targetId && items.folders.some((f) => subtreeIds(f).has(targetId)))
+        return false
+      // Somewhere new for at least one of them.
+      return (
+        (items.documents.length > 0 &&
+          targetId !== (current?.folderId ?? null)) ||
+        items.folders.some((f) => (f.parentFolderId ?? null) !== targetId)
+      )
+    },
+    onUpload: (files, target) => void uploadDropped(files, target),
+    onMove: (items, target) => void moveDragged(items, target),
+  })
+
+  /** A document's drag carries the whole selection when it's part of it. */
+  function documentDrag(row: DocumentListItemDto) {
+    if (!canMoveDocument(row)) return undefined
+    const documents = checked.has(row.documentId)
+      ? rows.filter((r) => checked.has(r.documentId) && canMoveDocument(r))
+      : [row]
+    return dnd.source({ documents, folders: [] })
+  }
+
+  function folderDrag(folder: FolderNode) {
+    return canMoveFolder(folder)
+      ? dnd.source({ documents: [], folders: [folder] })
+      : undefined
+  }
+
+  async function uploadDropped(
+    dropped: Promise<DroppedFile[]>,
+    target: FolderNode | null
+  ) {
+    let files: DroppedFile[]
+    try {
+      files = await dropped
+    } catch {
+      toast.error("Could not read the files you dropped.")
+      return
+    }
+    if (files.length === 0) {
+      toast.error(
+        "There are no files in what you dropped - empty folders aren't uploaded."
+      )
+      return
+    }
+    setUpload({ key: ++droppedUploads, files, folderId: target?.folderId })
+  }
+
+  async function moveDragged(items: DragItems, target: FolderNode | null) {
+    const targetId = target?.folderId ?? null
+    const from = current?.folderId ?? null
+    const documents = targetId === from ? [] : items.documents
+    const folders = items.folders.filter(
+      (f) => (f.parentFolderId ?? null) !== targetId
+    )
+    const movedDocuments: string[] = []
+    const movedFolders: FolderNode[] = []
+    const failed: string[] = []
+    if (documents.length > 0) {
+      try {
+        await moveDocuments(
+          documents.map((d) => d.documentId),
+          targetId
+        )
+        movedDocuments.push(...documents.map((d) => d.documentId))
+      } catch (error) {
+        failed.push(friendlyMessage(error, "Could not move the documents."))
+      }
+    }
+    for (const folder of folders) {
+      try {
+        await moveFolder(folder.folderId, targetId)
+        movedFolders.push(folder)
+      } catch (error) {
+        failed.push(
+          `"${folder.name}": ${friendlyMessage(error, "could not be moved.")}`
+        )
+      }
+    }
+    failed.forEach((message) => toast.error(message))
+    if (movedDocuments.length + movedFolders.length === 0) return
+    if (movedDocuments.length > 0) setChecked(new Set())
+    refresh()
+
+    async function undo() {
+      try {
+        if (movedDocuments.length > 0) await moveDocuments(movedDocuments, from)
+        for (const folder of movedFolders)
+          await moveFolder(folder.folderId, folder.parentFolderId ?? null)
+        toast.success("Moved back.")
+      } catch (error) {
+        toast.error(friendlyMessage(error, "Could not move them back."))
+      }
+      refresh()
+    }
+    const label = countLabel({
+      documents: documents.filter((d) => movedDocuments.includes(d.documentId)),
+      folders: movedFolders,
+    })
+    toast.success(`Moved ${label} to "${target?.name ?? "My Documents"}".`, {
+      action: { label: "Undo", onClick: () => void undo() },
+    })
   }
 
   function folderActions(folder: FolderNode): ItemAction[] {
@@ -246,9 +388,9 @@ function FolderView({ folderId }: { folderId: string | null }) {
     ]
     if (can.export)
       actions.push({
-        label: "Export",
-        icon: FileDown,
-        onSelect: () => exportFolder(folder),
+        label: "Download",
+        icon: Download,
+        onSelect: () => downloadFolder(folder),
       })
     if (can.renameMove && hasAccess(folder.myAccess, "edit"))
       actions.push({
@@ -289,6 +431,13 @@ function FolderView({ folderId }: { folderId: string | null }) {
       { label: "Open", icon: Eye, onSelect: () => setPreview(row) },
       { label: "Download", icon: Download, onSelect: () => void download(row) },
     ]
+    // PID-FR-001: pin from the list (and from search results, which are this list).
+    if (pins.canToggle(row.documentId))
+      actions.push({
+        label: pins.isPinned(row.documentId) ? "Unpin" : "Pin",
+        icon: pins.isPinned(row.documentId) ? PinOff : Pin,
+        onSelect: () => void pins.toggle(row),
+      })
     if (can.versions)
       actions.push({
         label: "Version history",
@@ -326,14 +475,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
         label: "Export",
         icon: FileDown,
         onSelect: () =>
-          void exportDocuments(
-            {
-              documentIds: [row.documentId],
-              metadataFormat: "xlsx",
-              includeFiles: true,
-            },
-            row.title
-          ),
+          startZipDownload({ documentIds: [row.documentId] }, row.title),
       })
     if (can.seeAccess)
       actions.push({
@@ -390,14 +532,31 @@ function FolderView({ folderId }: { folderId: string | null }) {
   const emptyMessage = folderQuery
     ? "Nothing here matches your search."
     : current
-      ? "This folder is empty. Upload documents or create a folder."
-      : "Nothing here yet. Upload documents or create a folder to get started."
+      ? "This folder is empty. Drag files here, upload documents or create a folder."
+      : "Nothing here yet. Drag files here, upload documents or create a folder to get started."
 
   return (
-    <div className="min-w-0">
+    // Fills the window down to the bottom, as in Google Drive, so files can be
+    // dropped anywhere below the list too - not only on it.
+    <div
+      className="relative flex min-h-[calc(100dvh-300px)] min-w-0 flex-col"
+      {...dnd.area.handlers}
+    >
+      {dnd.area.over && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-2 z-10 rounded-xl border-2 border-primary bg-primary/5"
+        />
+      )}
+      <DropHint hint={dnd.hint} />
       <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
         <div className="border-b border-border px-2.5 py-2">
-          <FolderPath trail={trail} onOpen={open} summary={summary} />
+          <FolderPath
+            trail={trail}
+            onOpen={open}
+            summary={summary}
+            dropTarget={dnd.target}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
           {can.createFolder && canEditHere && !missing && (
@@ -420,14 +579,50 @@ function FolderView({ folderId }: { folderId: string | null }) {
               Upload
             </Button>
           )}
+          {can.upload && canEditHere && !missing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => folderInputRef.current?.click()}
+            >
+              <FolderUp />
+              Upload folder
+            </Button>
+          )}
+          <input
+            // webkitdirectory isn't in React's types - set it on the element.
+            ref={(input) => {
+              folderInputRef.current = input
+              input?.setAttribute("webkitdirectory", "")
+            }}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = fromFolderPicker(e.target.files ?? [])
+              e.target.value = ""
+              if (files.length > 0) setUpload({ key: ++droppedUploads, files })
+              else toast.error("That folder has no files to upload.")
+            }}
+          />
           {current && can.export && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => exportFolder(current)}
+              onClick={() => downloadFolder(current)}
             >
-              <FileDown />
-              Export folder
+              <Download />
+              Download
+            </Button>
+          )}
+          {!missing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTemplatesOpen(true)}
+            >
+              <FilePlus2 />
+              New from template
             </Button>
           )}
           {current && can.seeAccess && (
@@ -517,22 +712,9 @@ function FolderView({ folderId }: { folderId: string | null }) {
             </Button>
           )}
           {can.export && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                void exportDocuments(
-                  {
-                    documentIds: [...checked],
-                    metadataFormat: "xlsx",
-                    includeFiles: true,
-                  },
-                  `${checked.size} selected documents`
-                )
-              }
-            >
-              <FileDown />
-              Export selected
+            <Button variant="outline" size="sm" onClick={downloadSelected}>
+              <Download />
+              Download
             </Button>
           )}
           {can.deleteDocuments && (
@@ -600,9 +782,12 @@ function FolderView({ folderId }: { folderId: string | null }) {
           folderActions={folderActions}
           documentActions={documentActions}
           empty={emptyMessage}
+          folderDrag={folderDrag}
+          folderDrop={dnd.target}
+          documentDrag={documentDrag}
         />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
           {emptyMessage}
         </p>
       ) : (
@@ -613,6 +798,8 @@ function FolderView({ folderId }: { folderId: string | null }) {
               folder={folder}
               onOpen={() => open(folder.folderId)}
               actions={folderActions(folder)}
+              drag={folderDrag(folder)}
+              drop={dnd.target(folder)}
             />
           ))}
           {rows.map((row) => (
@@ -623,6 +810,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
               onToggle={() => toggle(row.documentId)}
               onOpen={() => setPreview(row)}
               actions={documentActions(row)}
+              drag={documentDrag(row)}
             />
           ))}
         </ul>
@@ -634,16 +822,6 @@ function FolderView({ folderId }: { folderId: string | null }) {
           onPageChange={setPage}
         />
       )}
-      <p className="mt-4 text-[12px] text-muted-foreground">
-        Uploading many files with their metadata? Use{" "}
-        <Link
-          className="text-primary hover:underline"
-          href="/documents/bulk-import"
-        >
-          Bulk Import
-        </Link>
-        .
-      </p>
 
       {dialog?.kind === "new-folder" && (
         <FolderNameDialog
@@ -830,12 +1008,23 @@ function FolderView({ folderId }: { folderId: string | null }) {
         />
       )}
 
+      <TemplatePickerSheet
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        folderId={current?.folderId ?? null}
+        folderName={current ? `"${current.name}"` : "My Documents"}
+        canCreate={can.upload && canEditHere}
+        onCreated={refresh}
+      />
+
       {upload && (
         <BulkUploadSheet
           key={upload.key}
           open
           onOpenChange={(open) => !open && setUpload(null)}
-          initialFolderId={current?.folderId}
+          initialFolderId={upload.folderId ?? current?.folderId}
+          initialDrop={upload.files}
+          canCreateFolders={can.createFolder}
           onUploaded={refresh}
         />
       )}

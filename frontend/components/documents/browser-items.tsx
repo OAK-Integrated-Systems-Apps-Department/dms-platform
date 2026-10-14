@@ -16,8 +16,13 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import type {
+  DragBinding,
+  DropBinding,
+} from "@/components/documents/browser-dnd"
 import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
+import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
 
@@ -322,6 +327,15 @@ export function ItemMenu({
       ref={ref}
       // Stay visible while open, even when the pointer leaves the tile.
       className={cn("relative", className, open && "z-40 opacity-100")}
+      // Kept deliberately, unlike the identical-looking stops removed from
+      // the select popovers: this one is load-bearing. The whole tile around
+      // it opens the document on click, so without this, using the menu
+      // would also open what the menu is about. It is a propagation barrier,
+      // not an interaction handler - the real control is the <button> below,
+      // and a keyboard activation of it synthesises a click that this stops
+      // just the same. Sonar's S1082 flags it as a click handler on a
+      // non-interactive element; adding a keyboard handler here would be
+      // meaningless, so mark it a false positive rather than "fixing" it.
       onClick={(e) => e.stopPropagation()}
     >
       <button
@@ -384,20 +398,33 @@ export function ItemMenu({
 const TILE =
   "group relative flex h-[196px] flex-col overflow-hidden rounded-lg border bg-card text-left shadow-[var(--ledger-shadow)] transition-colors"
 
+/** A folder with something held over it that can be dropped there. */
+const DROP_OVER = "border-primary bg-primary/10 ring-2 ring-primary"
+
 export function FolderTile({
   folder,
   onOpen,
   actions,
+  drag,
+  drop,
 }: {
   folder: FolderNode
   onOpen: () => void
   actions: ItemAction[]
+  /** Drag it onto another folder to move it. */
+  drag?: DragBinding
+  /** Drop documents, folders or files from the computer onto it. */
+  drop?: DropBinding
 }) {
   return (
     <li
+      {...drag}
+      {...drop?.handlers}
       className={cn(
         TILE,
-        "border-border hover:border-primary/50 hover:bg-muted/40"
+        drop?.over
+          ? DROP_OVER
+          : "border-border hover:border-primary/50 hover:bg-muted/40"
       )}
     >
       <button
@@ -439,6 +466,8 @@ export function DocumentTile({
   onToggle,
   onOpen,
   actions,
+  drag,
+  flag,
 }: {
   row: DocumentListItemDto
   checked: boolean
@@ -447,11 +476,16 @@ export function DocumentTile({
   /** Opens the preview. */
   onOpen: () => void
   actions: ItemAction[]
+  /** Drag it (with the rest of the selection) onto a folder to move it. */
+  drag?: DragBinding
+  /** A small badge shown beside the name - e.g. "Archived". */
+  flag?: ReactNode
 }) {
   const kind = fileKind(row.fileName)
   const ext = extensionOf(row.fileName)
   return (
     <li
+      {...drag}
       className={cn(
         TILE,
         checked
@@ -486,6 +520,8 @@ export function DocumentTile({
             />
           )}
           <span className="truncate">{row.title}</span>
+          <PinnedIndicator documentId={row.documentId} />
+          {flag}
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           <FriendlyDate iso={row.createdAt} />
@@ -531,6 +567,10 @@ export function BrowserList({
   documentActions,
   empty,
   selectable = true,
+  folderDrag,
+  folderDrop,
+  documentDrag,
+  flag,
 }: {
   folders: FolderNode[]
   rows: DocumentListItemDto[]
@@ -544,6 +584,12 @@ export function BrowserList({
   empty: ReactNode
   /** false for a listing without checkboxes. */
   selectable?: boolean
+  /** Drag and drop, as on the tiles - see FolderTile/DocumentTile. */
+  folderDrag?: (folder: FolderNode) => DragBinding | undefined
+  folderDrop?: (folder: FolderNode) => DropBinding | undefined
+  documentDrag?: (row: DocumentListItemDto) => DragBinding | undefined
+  /** A small badge shown beside a document's name - e.g. "Archived". */
+  flag?: (row: DocumentListItemDto) => ReactNode
 }) {
   const allChecked =
     rows.length > 0 && rows.every((r) => checked.has(r.documentId))
@@ -592,50 +638,64 @@ export function BrowserList({
               </td>
             </tr>
           )}
-          {folders.map((folder) => (
-            <tr
-              key={folder.folderId}
-              className="border-b border-border last:border-b-0 hover:bg-muted/40"
-            >
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenFolder(folder)}
-                  className="flex items-center gap-2.5 text-left"
-                >
-                  <FolderGlyph size={24} />
-                  <span className="text-[13.5px] font-semibold hover:underline">
-                    {folder.name}
-                  </span>
-                  {folder.restricted && (
-                    <Lock
-                      size={13}
-                      className="text-muted-foreground"
-                      aria-label="Restricted"
-                    />
-                  )}
-                </button>
-              </td>
-              <td className="px-3 py-2 text-[13px] whitespace-nowrap text-muted-foreground">
-                <FriendlyDate iso={folder.updatedAt ?? folder.createdAt} />
-              </td>
-              <td className="px-3 py-2 text-[13px] text-muted-foreground">
-                Folder
-              </td>
-              <td className="px-3 py-2 text-[12.5px] text-muted-foreground">
-                {itemsLabel(itemCount(folder))}
-              </td>
-              <td className="px-3 py-2">
-                <ItemMenu label={folder.name} actions={folderActions(folder)} />
-              </td>
-            </tr>
-          ))}
+          {folders.map((folder) => {
+            const drop = folderDrop?.(folder)
+            return (
+              <tr
+                key={folder.folderId}
+                {...folderDrag?.(folder)}
+                {...drop?.handlers}
+                className={cn(
+                  "border-b border-border last:border-b-0",
+                  drop?.over
+                    ? "bg-primary/10 outline-2 -outline-offset-2 outline-primary"
+                    : "hover:bg-muted/40"
+                )}
+              >
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenFolder(folder)}
+                    className="flex items-center gap-2.5 text-left"
+                  >
+                    <FolderGlyph size={24} />
+                    <span className="text-[13.5px] font-semibold hover:underline">
+                      {folder.name}
+                    </span>
+                    {folder.restricted && (
+                      <Lock
+                        size={13}
+                        className="text-muted-foreground"
+                        aria-label="Restricted"
+                      />
+                    )}
+                  </button>
+                </td>
+                <td className="px-3 py-2 text-[13px] whitespace-nowrap text-muted-foreground">
+                  <FriendlyDate iso={folder.updatedAt ?? folder.createdAt} />
+                </td>
+                <td className="px-3 py-2 text-[13px] text-muted-foreground">
+                  Folder
+                </td>
+                <td className="px-3 py-2 text-[12.5px] text-muted-foreground">
+                  {itemsLabel(itemCount(folder))}
+                </td>
+                <td className="px-3 py-2">
+                  <ItemMenu
+                    label={folder.name}
+                    actions={folderActions(folder)}
+                  />
+                </td>
+              </tr>
+            )
+          })}
           {rows.map((row) => {
             const kind = fileKind(row.fileName)
             return (
               <tr
                 key={row.documentId}
+                {...documentDrag?.(row)}
                 className={cn(
                   "group border-b border-border last:border-b-0",
                   checked.has(row.documentId)
@@ -680,6 +740,8 @@ export function BrowserList({
                             aria-label="Restricted"
                           />
                         )}
+                        <PinnedIndicator documentId={row.documentId} />
+                        {flag?.(row)}
                       </p>
                       {row.fileName && (
                         <p className="truncate font-mono text-[11.5px] text-muted-foreground">

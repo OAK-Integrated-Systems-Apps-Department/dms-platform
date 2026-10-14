@@ -31,7 +31,7 @@ public class ExportJobProperties {
     private int maxDocuments = 1000;
 
     /** Largest ZIP one export may produce (its files, before compression). */
-    private DataSize maxExportSize = DataSize.ofGigabytes(2);
+    private DataSize maxExportSize = DataSize.ofGigabytes(20);
 
     /** Exports one user may have pending or processing at once. */
     private int maxActiveJobsPerUser = 2;

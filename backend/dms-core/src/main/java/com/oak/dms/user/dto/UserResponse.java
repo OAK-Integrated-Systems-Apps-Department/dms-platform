@@ -64,6 +64,8 @@ public record UserResponse(
         List<String> permissions,
         List<String> roles,
         boolean impersonating,
-        String impersonatorDisplayName
+        String impersonatorDisplayName,
+        /** Primary department (V43), or null. Changed via PUT /api/v1/users/{id}/department. */
+        UUID departmentId
 ) {
 }

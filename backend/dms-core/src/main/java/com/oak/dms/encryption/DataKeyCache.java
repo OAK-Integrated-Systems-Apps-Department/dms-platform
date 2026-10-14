@@ -28,6 +28,20 @@ public class DataKeyCache {
     private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>(256, 0.75f, true);
 
     private record Entry(byte[] key, Instant expires) {
+
+        /*
+         * No content-based equals/hashCode, despite Sonar's S6218. These are
+         * only ever VALUES in the map above - lookup hashes the String key,
+         * never the Entry - so an equals on them would be dead code. And it
+         * would be dangerous dead code: comparing key bytes with
+         * Arrays.equals returns early on the first difference, which is a
+         * timing oracle on a cached data key. See the same note on
+         * KeyEncryptionService.DataKey.
+         */
+        @Override
+        public String toString() {
+            return "Entry[key=<redacted>, expires=" + expires + "]";
+        }
     }
 
     @Autowired

@@ -1,5 +1,6 @@
 package com.oak.dms.metadata.service.impl;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -105,7 +106,7 @@ public class MetadataFieldServiceImpl implements MetadataFieldService {
                 ? null
                 : MetadataField.FieldStatus.valueOf(status);
         String dataTypeFilter = dataType == null || dataType.isBlank() ? null : dataType;
-        String searchFilter = search == null || search.isBlank() ? null : "%" + search.toLowerCase() + "%";
+        String searchFilter = search == null || search.isBlank() ? null : LikePatterns.contains(search);
 
         return metadataFieldRepository
                 .search(TenantContext.getTenantId(), statusFilter, dataTypeFilter, searchFilter, pageable)

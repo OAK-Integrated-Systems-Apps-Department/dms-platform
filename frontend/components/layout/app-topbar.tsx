@@ -1,34 +1,94 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Bell,
-  Bookmark,
   ChevronDown,
+  Clock,
+  FolderOpen,
   HelpCircle,
+  LayoutDashboard,
   LogOut,
-  Pin,
   User,
 } from "lucide-react"
+import { toast } from "sonner"
 
-import { activityFeed, recentDocuments } from "@/components/dashboard/data"
-import { fileIcon } from "@/components/dashboard/file-icon"
+import { activityLook, activityWho } from "@/components/dashboard/activity"
+import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
+import { DocumentPreview } from "@/components/documents/document-preview"
+import { TopbarSearch } from "@/components/layout/topbar-search"
 import { Dropdown, MenuRow } from "@/components/ui/dropdown"
 import { IconButton } from "@/components/ui/icon-button"
-import { SearchInput } from "@/components/ui/search-input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { friendlyMessage } from "@/lib/api-error"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { useAccountIdentity } from "@/lib/auth/use-account-identity"
+import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch } from "@/lib/api-fetch"
 import { ROUTES } from "@/lib/app-config"
+import type { DashboardActivity } from "@/lib/dashboard/api"
+import { useDashboard } from "@/lib/dashboard/use-dashboard"
+import { downloadDocumentFile } from "@/lib/documents/api"
+import { saveDownloadedFile } from "@/lib/download-file"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
+const footerClass =
+  "flex w-full items-center gap-2 border-t border-border px-3.5 py-2.5 text-left text-[12.5px] font-semibold text-primary hover:bg-muted"
+
+/** A document the preview can open - from the search or the recent list. */
+type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
 
 /**
- * Top bar: sidebar toggle, search, help, pinned-documents dropdown,
- * notifications dropdown, and the account menu. Only one dropdown is open
- * at a time.
+ * When this browser last opened the activity menu - in localStorage, so the
+ * unread dot only shows for what's new since (a per-browser convenience; no
+ * notification store exists on the server).
+ */
+const SEEN_KEY = "dms.activity.seen"
+const SEEN_EVENT = "dms-activity-seen"
+
+function subscribeSeen(onChange: () => void) {
+  window.addEventListener("storage", onChange)
+  window.addEventListener(SEEN_EVENT, onChange)
+  return () => {
+    window.removeEventListener("storage", onChange)
+    window.removeEventListener(SEEN_EVENT, onChange)
+  }
+}
+
+function readSeen(): string | null {
+  try {
+    return window.localStorage.getItem(SEEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function markSeen(iso: string) {
+  try {
+    window.localStorage.setItem(SEEN_KEY, iso)
+  } catch {
+    // storage blocked - the dot just shows again next time
+  }
+  window.dispatchEvent(new Event(SEEN_EVENT))
+}
+
+/** Something someone else did since the menu was last opened. */
+function isUnread(entry: DashboardActivity, seen: string | null, me?: string) {
+  if (entry.actorId && entry.actorId === me) return false
+  return seen === null || new Date(entry.occurredAt) > new Date(seen)
+}
+
+/**
+ * Top bar: sidebar toggle, document search, help, the recent-documents
+ * and recent-activity menus (from the dashboard figures, GET
+ * /api/v1/dashboard), and the account menu. Only one dropdown is open at a
+ * time; a document picked from the search or the recent list opens in the
+ * preview right here.
  *
  * The sidebar toggle is the real <SidebarTrigger> now — it reads/writes
  * the sidebar's open state via useSidebar() internally, so this component
@@ -53,12 +113,28 @@ const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
  */
 export function AppTopbar() {
   const router = useRouter()
-  const { data: user, initials } = useCurrentUser()
+  const { data: user } = useCurrentUser()
+  // Name and initials come from here, not useCurrentUser directly: a platform
+  // administrator has no local user row, and the menu used to render "…" for
+  // them. See useAccountIdentity.
+  const account = useAccountIdentity()
+  const { hasPermission } = usePermissions()
+  const canSearch = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
+  // Gated for the same reason the home page gates it, and it has to be gated
+  // HERE too: react-query enables a query if any mounted observer enables it,
+  // so a top bar that always asked for tenant-scoped figures would put the
+  // platform administrator's guaranteed 401 straight back.
+  const { isTenant } = useDashboardScope()
+  const dashboard = useDashboard(30, isTenant)
+  const recent = dashboard.data?.recent ?? []
+  const activity = dashboard.data?.activity ?? []
+  const seen = useSyncExternalStore(subscribeSeen, readSeen, () => null)
+  const unread = activity.some((entry) => isUnread(entry, seen, user?.userId))
+  const [preview, setPreview] = useState<PreviewRow | null>(null)
 
   const [pinOpen, setPinOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
 
   const pinRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
@@ -86,6 +162,20 @@ export function AppTopbar() {
     return () => document.removeEventListener("mousedown", handlePointerDown)
   }, [])
 
+  function openPreview(row: PreviewRow) {
+    setPinOpen(false)
+    setNotifOpen(false)
+    setPreview(row)
+  }
+
+  async function download(documentId: string) {
+    try {
+      saveDownloadedFile(await downloadDocumentFile(documentId))
+    } catch (error) {
+      toast.error(friendlyMessage(error, "Could not download the document."))
+    }
+  }
+
   async function handleLogout() {
     // Best-effort: always navigate to /login regardless of outcome, same
     // as before - a logout call failing (already logged out, network
@@ -101,22 +191,28 @@ export function AppTopbar() {
     <header className="sticky top-0 z-20 flex min-w-0 items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
       <SidebarTrigger className="shrink-0" />
 
-      <SearchInput
-        className="min-w-0 max-w-[460px] flex-1"
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder="Search documents, folders, people…"
-      />
+      {canSearch && (
+        <TopbarSearch
+          className="max-w-[460px] min-w-0 flex-1"
+          onOpen={openPreview}
+        />
+      )}
 
       <div className="flex-1" />
 
-      <IconButton title="Help" className="shrink-0">
+      {/* A real link, so the page can be prefetched and opened in a new tab. */}
+      <Link
+        href="/help"
+        title="Help"
+        aria-label="Help"
+        className="relative flex size-[38px] shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
         <HelpCircle size={17} />
-      </IconButton>
+      </Link>
 
       <div ref={pinRef} className="relative shrink-0">
         <IconButton
-          title="Pinned documents"
+          title="Recent documents"
           active={pinOpen}
           onClick={() => {
             setPinOpen((v) => !v)
@@ -124,59 +220,139 @@ export function AppTopbar() {
             setAccountOpen(false)
           }}
         >
-          <Pin size={17} />
+          <Clock size={17} />
         </IconButton>
         {pinOpen && (
-          <Dropdown title="Pinned documents" width={300}>
-            {recentDocuments.slice(0, 3).map((doc) => {
-              const Icon = fileIcon(doc.type)
-              return (
-                <div key={doc.id} className={rowClass}>
-                  <Icon size={16} className="text-primary" />
-                  <span className="overflow-hidden text-[12.5px] text-ellipsis whitespace-nowrap">
-                    {doc.name}
-                  </span>
-                </div>
-              )
-            })}
+          <Dropdown title="Recent documents" width={320} noPad>
+            {dashboard.isPending ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
+                Loading…
+              </p>
+            ) : recent.length === 0 ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
+                No documents yet.
+              </p>
+            ) : (
+              <div className="py-1.5">
+                {recent.slice(0, 5).map((doc) => {
+                  const kind = fileKind(doc.fileName)
+                  return (
+                    <button
+                      key={doc.documentId}
+                      type="button"
+                      onClick={() => openPreview(doc)}
+                      className={`${rowClass} w-full text-left hover:bg-muted`}
+                    >
+                      <span
+                        className={`flex size-7 shrink-0 items-center justify-center rounded-md ${kind.tone}`}
+                      >
+                        <kind.icon size={14} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block overflow-hidden text-[12.5px] text-ellipsis whitespace-nowrap">
+                          {doc.title}
+                        </span>
+                        <span className="block text-[11px] text-[var(--ink-faint)]">
+                          <FriendlyDate iso={doc.createdAt} />
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <button
+              type="button"
+              className={footerClass}
+              onClick={() => {
+                setPinOpen(false)
+                router.push("/documents")
+              }}
+            >
+              <FolderOpen size={14} />
+              Open My Documents
+            </button>
           </Dropdown>
         )}
       </div>
 
       <div ref={notifRef} className="relative shrink-0">
         <IconButton
-          title="Notifications"
+          title={unread ? "Recent activity - something new" : "Recent activity"}
           active={notifOpen}
           onClick={() => {
+            if (!notifOpen && activity.length > 0)
+              markSeen(activity[0].occurredAt)
             setNotifOpen((v) => !v)
             setPinOpen(false)
             setAccountOpen(false)
           }}
         >
           <Bell size={17} />
-          <span className="absolute top-[7px] right-[7px] size-[7px] rounded-full border-[1.5px] border-card bg-[var(--rust)]" />
+          {unread && (
+            <span className="absolute top-[7px] right-[7px] size-[7px] rounded-full border-[1.5px] border-card bg-[var(--rust)]" />
+          )}
         </IconButton>
         {notifOpen && (
-          <Dropdown title="Notifications" width={320}>
-            {activityFeed.slice(0, 4).map((entry) => {
-              const Icon = entry.icon
-              return (
-                <div key={entry.id} className={rowClass}>
-                  <Icon size={15} className="mt-0.5 shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] text-foreground">
-                      <b>{entry.who}</b> {entry.action}{" "}
-                      <span className="text-muted-foreground">
-                        {entry.target}
+          <Dropdown
+            title={
+              dashboard.data?.usageScope === "organisation"
+                ? "Recent activity in your organisation"
+                : "Your recent activity"
+            }
+            width={340}
+            noPad
+          >
+            {dashboard.isPending ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
+                Loading…
+              </p>
+            ) : activity.length === 0 ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
+                Nothing yet.
+              </p>
+            ) : (
+              <div className="py-1.5">
+                {activity.slice(0, 6).map((entry) => {
+                  const look = activityLook(entry.action)
+                  const Icon = look.icon
+                  return (
+                    <div key={entry.id} className={`${rowClass} items-start`}>
+                      <span
+                        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white"
+                        style={{ background: look.color }}
+                      >
+                        <Icon size={12} />
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12.5px] text-foreground">
+                          <b>{activityWho(entry, user?.userId)}</b> {look.verb}{" "}
+                          {entry.resourceName && (
+                            <span className="break-words text-muted-foreground">
+                              {entry.resourceName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-px text-[11px] text-[var(--ink-faint)]">
+                          <FriendlyDate iso={entry.occurredAt} />
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-px text-[11px] text-[var(--ink-faint)]">
-                      {entry.time}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            )}
+            <button
+              type="button"
+              className={footerClass}
+              onClick={() => {
+                setNotifOpen(false)
+                router.push("/")
+              }}
+            >
+              <LayoutDashboard size={14} />
+              Go to the dashboard
+            </button>
           </Dropdown>
         )}
       </div>
@@ -195,7 +371,7 @@ export function AppTopbar() {
           }}
         >
           <span className="flex size-7 items-center justify-center rounded-full bg-primary font-heading text-[11.5px] font-bold text-primary-foreground">
-            {initials ?? "…"}
+            {account.initials ?? "…"}
           </span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </button>
@@ -203,13 +379,12 @@ export function AppTopbar() {
           <Dropdown width={220} noPad>
             <div className="border-b border-border px-3.5 py-3">
               <div className="text-[13.5px] font-semibold">
-                {user?.displayName ?? "…"}
+                {account.displayName ?? "…"}
               </div>
               <div className="text-[11.5px] text-muted-foreground">
-                {user?.status ?? ""}
+                {account.subtitle}
               </div>
             </div>
-            <MenuRow icon={Bookmark} label="Bookmarks" />
             <MenuRow
               icon={User}
               label="Profile"
@@ -228,6 +403,15 @@ export function AppTopbar() {
           </Dropdown>
         )}
       </div>
+
+      {preview && (
+        <DocumentPreview
+          key={preview.documentId}
+          row={preview}
+          onOpenChange={(open) => !open && setPreview(null)}
+          onDownload={() => void download(preview.documentId)}
+        />
+      )}
     </header>
   )
 }

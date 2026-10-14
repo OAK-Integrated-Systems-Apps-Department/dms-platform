@@ -28,3 +28,21 @@ export const API_BASE_URL =
 export const KEYCLOAK_ACCOUNT_URL =
   process.env.NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL ??
   "http://localhost:8081/realms/oak-dms/account"
+
+/*
+ * GRAFANA_BASE_URL is gone, deliberately.
+ *
+ * The browser no longer has a Grafana address, because it no longer talks
+ * to Grafana. Monitoring panels are served same-origin from this app's own
+ * /monitoring/panels/ route, which authenticates the caller against
+ * dms-core before forwarding anything. Reintroducing a public Grafana URL
+ * would put back both the second login problem and the anonymous-access
+ * hole that route exists to close - see
+ * frontend/app/monitoring/panels/[...path]/route.ts.
+ */
+/**
+ * The provisioned dashboard's uid, fixed in
+ * infra/monitoring/grafana/dashboards/oak-dms-overview.json. Changing it
+ * there means changing it here.
+ */
+export const GRAFANA_DASHBOARD_UID = "oak-dms-overview"

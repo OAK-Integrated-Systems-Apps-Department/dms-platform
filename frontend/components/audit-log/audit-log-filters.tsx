@@ -336,10 +336,10 @@ export function AuditLogFilters({
           </button>
 
           {panelOpen && (
-            <div
-              className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]"
-              onClick={(e) => e.stopPropagation()}
-            >
+            // No onClick={stopPropagation}: the outside-click handler
+            // already tests containerRef.contains(), and this panel is
+            // inside it.
+            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
               <div className="grid max-h-[65vh] grid-cols-2 gap-3 overflow-y-auto pr-1">
                 <Field label="Module">
                   <MultiSelect

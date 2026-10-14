@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileText, Lock, RotateCcw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ConfirmActionDialog } from "@/components/bulk-import/confirm-action-dialog"
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -71,7 +71,7 @@ export function RecycleBin() {
   const { items, retentionDays, byType } = bin.data
 
   return (
-    <div className="flex max-w-[1100px] flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <RetentionBar
         days={retentionDays}
         canEdit={canSetRetention}

@@ -1,0 +1,64 @@
+# Loki: the log store, as Prometheus is the metric store.
+#
+# Single-binary mode with local filesystem storage. This holds one
+# installation's container logs for a couple of weeks - not a fleet - and
+# the clustered deployment buys nothing at that size while adding several
+# moving parts that can fail independently.
+
+auth_enabled: false # Single tenant. Loki is never published; see docker-compose.
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  # Loki logs its own HTTP traffic at info, which means every query from the
+  # monitoring screen writes a line - into the log store it is querying.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-04-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # Container clocks and Docker's own buffering mean a line can arrive a
+  # little out of order or a little late; rejecting those would lose exactly
+  # the lines around a crash, which are the ones worth having.
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_query_lookback: 336h
+  # A burst of logging during an incident must not be dropped as "too fast".
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  # One screen asks for a few hundred lines at a time. This is a ceiling
+  # against a malformed query, not a target.
+  max_entries_limit_per_query: 5000
+  # Fourteen days. Long enough to look into something reported on a Monday
+  # about the Friday before; short enough that a laptop-sized disk survives it.
+  # Enforced by the compactor below - this setting alone deletes nothing.
+  retention_period: 336h
+
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+  retention_enabled: true
+  retention_delete_delay: 2h
+
+analytics:
+  reporting_enabled: false

@@ -26,6 +26,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 #   --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL="/realms/oak-dms/account"
+# Same-origin by default, like the two above: nginx proxies /grafana/ to the
+# Grafana container (infra/production/nginx/dms.conf), so the System
+# Monitoring page can frame it without a cross-site cookie.
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL=${NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL}
 RUN bun run build

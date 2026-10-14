@@ -81,6 +81,18 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
     }
 
     @Override
+    /*
+     * FOLLOW-UP (found 2026-10-07, while lifting the 2047 MB upload limit): one PutObject
+     * takes at most 5 GB, so on an S3 staging or document location an upload over 5 GB
+     * fails here with a StorageUploadException ("Staging upload failed"). FILE_SYSTEM and
+     * Azure Blob (which splits into blocks itself) have no such cap. Not fixed in that
+     * change, which was about the scanner's limit. The fix: above a threshold (say
+     * 100 MB), upload in parts - the SDK's S3TransferManager / multipart upload
+     * (CreateMultipartUpload, UploadPart, CompleteMultipartUpload; abort on failure) -
+     * keeping the server-side encryption settings on the CreateMultipartUpload request.
+     * Note a multipart object's ETag is not an MD5 of its bytes, which matters to
+     * anything comparing ETags (cloud verdict matching uses it only as an identity).
+     */
     public StoredObjectMetadata upload(StorageLocation location, String objectKey, java.io.InputStream content,
                                         long contentLength, String contentType) {
         String bucket = requireBucket(location);
@@ -104,7 +116,10 @@ public class S3ObjectStorageAdapter implements ObjectStorageService {
             return new StoredObjectMetadata(objectKey, contentLength, contentType,
                     stripQuotes(response.eTag()), OffsetDateTime.now());
         } catch (Exception e) {
-            log.warn("S3 upload failed for object {} at storage location {}", objectKey, location.getStorageLocationId());
+            // With the exception: the SDK attaches each earlier attempt's failure to it as suppressed,
+            // and the final message alone (e.g. "does not support mark/reset" on a retry) hides why.
+            log.warn("S3 upload failed for object {} at storage location {}", objectKey,
+                    location.getStorageLocationId(), e);
             throw new StorageUploadException(objectKey, e);
         }
     }

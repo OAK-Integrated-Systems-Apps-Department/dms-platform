@@ -13,23 +13,37 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { cn } from "@/lib/utils"
 
 import { DocumentTypeFieldsTab } from "@/components/document-types/document-type-fields-tab"
+import { DocumentTypeTemplatesTab } from "@/components/document-types/document-type-templates-tab"
 import { useDocumentType } from "@/lib/document-types/use-document-type"
 import { useMetadataFields } from "@/lib/metadata-fields/use-metadata-fields"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 
-type Tab = "details" | "fields"
+type Tab = "details" | "fields" | "templates"
 
-/** Document Type Details (A5) with a Fields tab for editing this type's versioned field mapping (A6). */
+/**
+ * Document Type Details (A5) with a Fields tab for editing this type's versioned field mapping (A6),
+ * and a Templates tab for the ready-made files people start this type's documents from.
+ */
 export default function DocumentTypeDetailPage() {
   const params = useParams<{ typeId: string }>()
-  const { documentType, loading, notFound: typeNotFound, fields, replaceFields } = useDocumentType(params.typeId)
-  const { hasPermission } = usePermissions()
+  const { hasPermission, hasAnyPermission } = usePermissions()
+  const canViewMapping = hasAnyPermission(PermissionCodes.MDTM_TYPE_FIELD_MAPPING_VIEW, PermissionCodes.MDTM_TYPE_FIELD_MAPPING_UPDATE)
+  const { documentType, loading, notFound: typeNotFound, fields, replaceFields } = useDocumentType(params.typeId, {
+    withFields: canViewMapping,
+  })
   const canView = hasPermission(PermissionCodes.MDTM_METADATA_SCHEMA_VIEW_FIELD) || hasPermission(PermissionCodes.MDTM_METADATA_SCHEMA_UPDATE_FIELD)
   const { fields: catalogueFields } = useMetadataFields(canView)
   const canUpdate = hasPermission(PermissionCodes.MDTM_CONTENT_TYPES_UPDATE)
   const canUpdateMapping = hasPermission(PermissionCodes.MDTM_TYPE_FIELD_MAPPING_UPDATE)
+  // Templates have their own permissions (V70) - each button shows only with its own.
+  const templateAccess = {
+    canCreate: hasPermission(PermissionCodes.MDTM_DOCUMENT_TEMPLATES_CREATE),
+    canUpdate: hasPermission(PermissionCodes.MDTM_DOCUMENT_TEMPLATES_UPDATE),
+    canDelete: hasPermission(PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE),
+  }
+  const tabs: Tab[] = canViewMapping ? ["details", "fields", "templates"] : ["details", "templates"]
 
   const [tab, setTab] = useState<Tab>("details")
 
@@ -53,7 +67,15 @@ export default function DocumentTypeDetailPage() {
       {loading ? (
         <LoadingState message="Loading document type…" />
       ) : documentType ? (
-        <PermissionGate permission={[PermissionCodes.MDTM_CONTENT_TYPES_VIEW, PermissionCodes.MDTM_CONTENT_TYPES_UPDATE]}>
+        <PermissionGate
+          permission={[
+            PermissionCodes.MDTM_CONTENT_TYPES_VIEW,
+            PermissionCodes.MDTM_CONTENT_TYPES_UPDATE,
+            PermissionCodes.MDTM_DOCUMENT_TEMPLATES_CREATE,
+            PermissionCodes.MDTM_DOCUMENT_TEMPLATES_UPDATE,
+            PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE,
+          ]}
+        >
           <div className="mb-[22px] flex max-w-[860px] items-start justify-between gap-4">
             <div>
               <div className="mb-2 flex items-center gap-2.5">
@@ -76,7 +98,7 @@ export default function DocumentTypeDetailPage() {
           </div>
 
           <div className="mb-5 flex items-center gap-1 border-b border-border">
-            {(["details", "fields"] as Tab[]).map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t}
                 type="button"
@@ -86,7 +108,7 @@ export default function DocumentTypeDetailPage() {
                   tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
-                {t === "details" ? "Details" : "Fields"}
+                {t === "details" ? "Details" : t === "fields" ? "Fields" : "Templates"}
               </button>
             ))}
           </div>
@@ -99,6 +121,8 @@ export default function DocumentTypeDetailPage() {
               <DetailRow label="Co-editing Enabled" value={documentType.coeditingEnabled ? "Yes" : "No"} />
               <DetailRow label="Schema Version" value={`v${documentType.currentSchemaVersion}`} />
             </div>
+          ) : tab === "templates" ? (
+            <DocumentTypeTemplatesTab documentTypeId={documentType.documentTypeId} {...templateAccess} />
           ) : (
             <DocumentTypeFieldsTab
               currentFields={fields}

@@ -133,6 +133,12 @@ until the status is terminal. Then:
 - The first bytes must match that extension's format: `%PDF-`, OOXML ZIP with
   `[Content_Types].xml`, ODF ZIP with a leading `mimetype` entry, OLE2, RTF,
   PNG, JPEG, TIFF, or text with no NUL bytes and no binary signature.
+- An OOXML package's parts can come in any order (PowerPoint, Google Slides
+  and OneDrive often write `[Content_Types].xml` last). The head only has to
+  show that marker or a first entry that is an OOXML part (`ppt/`, `word/`,
+  `xl/`, `docProps/`, ...). Once the file is staged, the gate confirms
+  `[Content_Types].xml` in the ZIP index (`ZipArchiveCheck.containsEntry`). An
+  index that can't be read is left to the scanner.
 - The client's Content-Type is ignored, and the canonical MIME type is stored.
 
 Unscannable files are marked `unscannable` and rejected (VMSBDI alternate
@@ -148,13 +154,11 @@ flow 4):
 Not detected in Phase 1: encrypted ODF documents and legacy
 `.doc`/`.xls`/`.ppt` encryption. ClamAV still scans those files.
 
-> **Deliberate deviation from VMSBDI-FR-004.** FR-004 asks for scanning of
-> "embedded/compressed files (e.g., ZIP archives)". This system accepts no
-> archive uploads: there is no zip/7z/rar/tar entry in the allowlist, and a
-> ZIP container is accepted only when it is structurally an OOXML/ODF
-> document. There are therefore no archives to scan. This is intentional,
-> not an oversight. (ClamAV still inspects the ZIP structure inside
-> OOXML/ODF files.)
+> **VMSBDI-FR-004 (embedded/compressed files).** ZIP archives are accepted
+> and scanned in full, every file inside included. They're also checked
+> structurally before scanning. See "ZIP archives" in section 9. Other
+> archive formats (7z, rar, tar, gz) are not accepted. A ZIP container with
+> an Office or OpenDocument extension must still be that document.
 
 ## 6. Failure modes - fail closed
 
@@ -240,15 +244,16 @@ Provider prerequisites:
 | Key | Default | Notes |
 |---|---|---|
 | `dms.scanning.default-provider` (`SCAN_PROVIDER`) | `CLAMAV` | seeds the platform-default `scan_engines` row |
-| `dms.scanning.timeout-seconds` / `max-file-size-bytes` | 60 / 100 MB | copied onto the seeded engine row |
-| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 300 s | |
+| `dms.scanning.timeout-seconds` / `max-file-size-bytes` | 900 s / no limit (Long.MAX_VALUE) | copied onto the seeded engine row; timeout is per clamd segment; V72 lifted rows still on 2047 MB (V68) or 100 MB |
+| `dms.scanning.retry.*` | poll 30 s, 10 attempts, backoff 30 s→900 s, lease 1800 s + 120 s per GB | lease outlasts a segmented scan of the file |
+| `dms.scanning.clamav.segment-bytes` / `segment-overlap-bytes` | 2000 MB / 16 MB | files larger than one segment are scanned as overlapping segments |
 | `dms.scanning.cloud-verdict-timeout-minutes`, `failed-retention-hours` | 60, 72 | |
 | `dms.scanning.clamav.host/port` (`CLAMAV_HOST`/`CLAMAV_PORT`) | `localhost:3310` (`clamav` in Docker) | |
 | `dms.scanning.azure-defender.*` | blank | endpoint, account name/key, `AZURE_DEFENDER_CALLBACK_SECRET` |
 | `dms.scanning.aws-guardduty.*` | blank | region, access/secret key (blank → AWS default credential chain), `AWS_GUARDDUTY_CALLBACK_SECRET` |
 | `dms.storage.staging.*` / `dms.storage.quarantine.*` | FILE_SYSTEM `/data/dms/staging`, `/data/dms/quarantine` | platform-default staging/quarantine locations |
 | `dms.ingestion.allowed-file-types` | pdf, doc(x), xls(x), ppt(x), odt/ods/odp/odg, rtf, txt, csv, tsv, md, xml, json, msg, eml, vsd(x), dwg, png, jpg/jpeg, gif, bmp, webp, heic/heif, tif/tiff - each verified by content (FileTypeInspector); never html/svg, macro-enabled Office or archives | |
-| `spring.servlet.multipart.max-file-size` | 100 MB | previously Spring's 1 MB default |
+| `spring.servlet.multipart.max-file-size` / `max-request-size` | -1 / -1 (no limit) | previously Spring's 1 MB default; parts over 1 MB spool to disk |
 
 A tenant `scan_engines.credential_ref` resolves `SCAN_CRED_<REF>_ACCESS_KEY`
 / `_SECRET_KEY` (AWS) or `_ACCOUNT_NAME` / `_ACCOUNT_KEY` (Azure) at call
@@ -261,7 +266,76 @@ time. It is never stored as a raw credential and never logged.
   (`FRESHCLAM_CHECKS`). If an update fails, clamd keeps the last good
   definitions.
 - `clamd` limits are set through the image's `CLAMD_CONF_*` env vars.
-  `StreamMaxLength` must stay ≥ the scan size cap.
+  `StreamMaxLength` and `MaxFileSize` must stay ≥ `clamav.segment-bytes`.
+- **Files over 2 GB.** clamd scans at most 2147483645 bytes of any one stream,
+  whatever `MaxFileSize` says. Its startup log shows
+  `File size limit set to 2147483645 bytes` even when 4000M is configured.
+  Past that it answers `OK` without reading the rest. Checked with a test
+  signature in the last bytes of a 2047 MB stream: it was found.
+  So `ClamAvScanAdapter` sends a larger file as consecutive 2000 MB segments,
+  one `INSTREAM` each (`OverlappingSegments`):
+  - Each segment starts with the last 16 MB of the one before, so a signature
+    that straddles a cut is still whole somewhere.
+  - Any detection in any segment makes the file infected. Otherwise a segment
+    clamd couldn't finish makes it unscannable.
+  - Limitation: segments after the first start mid-file, so clamd's
+    file-format parsing (a PDF's objects, an Office package's parts) covers
+    only the first 2000 MB. Byte-pattern signatures cover the whole file.
+  - The upload request doesn't wait for such a scan. The gate hands the row
+    to the retry scheduler at once, and its lease grows by
+    `lease-seconds-per-gb`.
+
+  `MaxScanSize` (the total read from inside archives) stays at 4000M.
+- **ZIP archives.** `.zip` is the one archive type accepted. It is stored as
+  uploaded, never extracted, and nothing in it is opened or run. On top of the
+  usual checks:
+  1. `FileTypeInspector` needs a ZIP local file header. A first entry marked
+     encrypted makes the upload unscannable at once, like a password-protected
+     Office file.
+  2. Once staged, `ZipArchiveCheck` copies the archive to a private temporary
+     file and opens it by its central directory, the way unzip tools do. It
+     handles every standard layout: ZIP64, comments, and entries whose sizes
+     follow their data (how OneDrive, SharePoint and Google Drive build their
+     download ZIPs). Every entry is read once and its CRC compared, then the
+     temporary copy is deleted.
+
+     The archive is refused (415, with the reason) when it's damaged or
+     truncated, or empty, or uses a compression method other than stored or
+     Deflate. `dms.ingestion.zip-max-entries` / `zip-max-uncompressed-bytes`
+     can refuse larger ZIPs too, but have no limit by default.
+     A password-protected entry anywhere makes it unscannable.
+
+     A ZIP holding a program or script is refused too, even if ClamAV would find
+     nothing in it. Each entry is checked:
+     - by extension, against `dms.ingestion.zip-blocked-extensions` (default
+       `ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS`: .exe, .msi, .dll, .bat,
+       .cmd, .ps1, .vbs, .js, .jar, .sh and similar);
+     - by content, whatever it's called: a Windows program (MZ with a PE
+       header offset), ELF, Mach-O, a Java class, a Windows shortcut, or a
+       `#!` script.
+
+     ZIPs inside the ZIP are checked the same way, up to 3 deep. Office and
+     OpenDocument files, which are ZIPs too, aren't looked into.
+
+     Not caught: an installer renamed to a document extension, because an
+     .msi is an OLE2 file, the same as a .doc. ClamAV still scans it.
+  3. ClamAV scans every file inside, nested archives included. Because of
+     `AlertExceedsMax` and `AlertEncryptedArchive`, anything clamd can't finish
+     comes back `Heuristics.Limits.Exceeded.*` or `Heuristics.Encrypted.*`.
+     `ClamAvScanAdapter` maps both to unscannable, not infected.
+  4. clamd opens at most 10,000 files (`MaxFiles`) and 4000 MB (`MaxScanSize`)
+     of one archive. A ZIP past either (`dms.scanning.clamav.archive-scan-files`
+     / `-bytes`), or larger than one 2000 MB segment, is opened by
+     `ClamAvScanAdapter` instead:
+     - Each file in it goes to clamd as its own stream, in segments if large.
+       clamd still opens archives nested inside it.
+     - The ZIP's own bytes get a segmented pass as well. A limits alert there is
+       expected and ignored, because the contents are covered file by file.
+     - The gate hands such a ZIP to the scheduler, like any file over 2 GB.
+
+  This replaces the earlier deviation from VMSBDI-FR-004, under which no
+  archive uploads were accepted. Other archive formats (7z, rar, tar, gz) are
+  still refused.
 - No new secret is needed locally.
 
 ## 10. Audit events

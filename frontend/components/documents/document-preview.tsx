@@ -1,5 +1,6 @@
 "use client"
 
+import { PinButton } from "@/components/pins/pin-button"
 import {
   useCallback,
   useEffect,
@@ -9,7 +10,15 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Download, Droplet, FileQuestion, Loader2, ZoomIn, ZoomOut } from "lucide-react"
+import {
+  Download,
+  Droplet,
+  FileArchive,
+  FileQuestion,
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
 
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { Button } from "@/components/ui/button"
@@ -35,6 +44,7 @@ import {
   TiffViewer,
   ZoomableImage,
 } from "@/components/documents/preview-viewers"
+import { SlideViewer } from "@/components/documents/slide-viewer"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
 
@@ -49,6 +59,7 @@ type Renderer =
   | "text"
   | "docx"
   | "converted"
+  | "slides"
   | "sheet"
   | "email"
   | "heic"
@@ -58,12 +69,13 @@ type Renderer =
 const BY_EXTENSION: Record<string, Renderer> = {
   pdf: "pdf",
   docx: "docx",
-  // Converted to PDF on the server (DocumentRenditionService).
+  // Converted to PDF on the server (DocumentRenditionService) - presentations
+  // are then shown slide by slide, the rest as the PDF.
   doc: "converted",
-  ppt: "converted",
-  pptx: "converted",
+  ppt: "slides",
+  pptx: "slides",
   odt: "converted",
-  odp: "converted",
+  odp: "slides",
   odg: "converted",
   rtf: "converted",
   vsd: "converted",
@@ -109,6 +121,7 @@ const ZOOMABLE = new Set<Renderer>([
   "heic",
   "tiff",
   "docx",
+  "slides",
   "sheet",
   "email",
   "text",
@@ -153,6 +166,8 @@ function rendererFor(
 function noPreviewReason(fileName: string | null, label: string): string {
   if (extensionOf(fileName) === "dwg")
     return "AutoCAD drawings (.dwg) can't be shown in the browser - open it in AutoCAD or a DWG viewer."
+  if (extensionOf(fileName) === "zip")
+    return "ZIP archives are kept exactly as uploaded - nothing in them is opened or unpacked here. Every file inside was checked for viruses when it was uploaded."
   return `${label} files can't be shown in the browser.`
 }
 
@@ -193,8 +208,8 @@ function useStoredWidth(): [number, (width: number) => void] {
 /**
  * The in-app preview of a document (opened by clicking it). Every type that
  * can be uploaded is shown here except AutoCAD .dwg: PDF, Word, Excel and
- * other spreadsheets, PowerPoint, OpenDocument, RTF, Visio (converted to PDF
- * on the server), email (.eml/.msg), images (HEIC and TIFF too), text. Showing it is audited as DOCUMENT_VIEWED. The file
+ * other spreadsheets, PowerPoint (as slides), OpenDocument, RTF, Visio
+ * (converted to PDF on the server), email (.eml/.msg), images (HEIC and TIFF too), text. Showing it is audited as DOCUMENT_VIEWED. The file
  * is only fetched when it can be shown. The panel is resized sideways by
  * dragging its left edge (or with the arrow keys on that edge).
  */
@@ -263,7 +278,8 @@ export function DocumentPreview({
         blob,
       }
     },
-    enabled: renderer !== null && !tooBigForText,
+    // A slide show fetches its own slides, one at a time.
+    enabled: renderer !== null && renderer !== "slides" && !tooBigForText,
     gcTime: 0,
     staleTime: Infinity,
     retry: false,
@@ -344,7 +360,8 @@ export function DocumentPreview({
                 <FriendlyDate iso={row.createdAt} />
               </SheetDescription>
             </div>
-            {zoomable && file.isSuccess && (
+            <PinButton row={row} />
+            {zoomable && (renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"
                 aria-label="Zoom"
@@ -414,12 +431,20 @@ export function DocumentPreview({
         <div ref={content} className="flex min-h-0 flex-1 flex-col bg-muted/30">
           {renderer === null || tooBigForText ? (
             <NoPreview
+              archive={extensionOf(row.fileName) === "zip"}
               reason={
                 tooBigForText
                   ? "This file is too large to show here."
                   : noPreviewReason(row.fileName, kind.label)
               }
               onDownload={onDownload}
+            />
+          ) : renderer === "slides" ? (
+            <SlideViewer
+              documentId={row.documentId}
+              versionId={version?.versionId}
+              title={row.title}
+              zoom={zoom}
             />
           ) : file.isPending ? (
             <p className="m-auto inline-flex items-center gap-2 text-[13px] text-muted-foreground">
@@ -703,23 +728,39 @@ function Viewer({
 
 function NoPreview({
   reason,
+  archive = false,
   onDownload,
 }: {
   reason: string
+  /** A ZIP: shown as a downloadable archive rather than "no preview". */
+  archive?: boolean
   onDownload: () => void
 }) {
+  const Icon = archive ? FileArchive : FileQuestion
   return (
     <div className="m-auto flex max-w-[420px] flex-col items-center gap-3 p-6 text-center">
-      <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <FileQuestion size={22} />
+      <span
+        className={cn(
+          "flex size-12 items-center justify-center rounded-full",
+          archive
+            ? "bg-[#986f0b]/10 text-[#986f0b]"
+            : "bg-muted text-muted-foreground"
+        )}
+      >
+        <Icon size={22} />
       </span>
-      <p className="text-[14px] font-semibold">No preview available</p>
+      <p className="text-[14px] font-semibold">
+        {archive ? "ZIP archive" : "No preview available"}
+      </p>
       <p className="text-[13px] text-muted-foreground">
-        {reason} Download it to open it on your computer.
+        {reason}{" "}
+        {archive
+          ? "Download it to see the files inside."
+          : "Download it to open it on your computer."}
       </p>
       <Button size="sm" onClick={onDownload}>
         <Download />
-        Download
+        {archive ? "Download ZIP" : "Download"}
       </Button>
     </div>
   )

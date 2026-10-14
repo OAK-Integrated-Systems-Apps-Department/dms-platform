@@ -1,0 +1,41 @@
+# Probes for services that expose no metrics of their own.
+#
+# Prometheus's own `up` only says whether a SCRAPE succeeded, so it covers
+# just the handful of services that have an exporter. Keycloak, SeaweedFS,
+# Gotenberg, ClamAV, Mailpit and the frontend have none - and they are
+# exactly the ones whose failure is least obvious from the outside, because
+# the DMS keeps serving pages while uploads quietly stop working.
+#
+# These probes answer one question each: is it listening and does it respond.
+# Nothing is authenticated and nothing is written, so a probe can never
+# change anything it touches.
+
+modules:
+  # Any response at all means the service is answering. Deliberately lenient
+  # on status: a 401 from Keycloak's root is a healthy Keycloak, and treating
+  # it as down would make this alarm on a working system.
+  http_any:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404]
+      method: GET
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+
+  # For the ones with a real health endpoint, where a 200 means something.
+  http_200:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      method: GET
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+
+  # ClamAV speaks its own protocol on 3310 and serves no HTTP at all, so the
+  # most that can be checked without pretending is that the port accepts a
+  # connection.
+  tcp_connect:
+    prober: tcp
+    timeout: 5s

@@ -386,13 +386,6 @@
       "enabled": true,
       "firstName": "Super",
       "lastName": "Admin",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "SuperAdmin123@",
-          "temporary": false
-        }
-      ],
       "realmRoles": ["PLATFORM_ADMIN"]
     }
   ]

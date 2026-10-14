@@ -6,7 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Binds {@code dms.ingestion.*}. {@code allowedFileTypes} is the
@@ -24,5 +26,20 @@ public class IngestionProperties {
     private List<String> allowedFileTypes = new ArrayList<>(List.of(
             "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "odg",
             "rtf", "txt", "csv", "tsv", "md", "xml", "json", "msg", "eml", "vsd", "vsdx", "dwg",
-            "png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff"));
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff", "zip"));
+
+    /**
+     * A ZIP may hold at most this many entries (ZipArchiveCheck). No limit by default: one with more than
+     * clamd opens of an archive (its MaxFiles) is scanned file by file instead (ClamAvScanAdapter).
+     */
+    private int zipMaxEntries = Integer.MAX_VALUE;
+
+    /** ...and come to at most this much unpacked. No limit by default, for the same reason (clamd's MaxScanSize). */
+    private long zipMaxUncompressedBytes = Long.MAX_VALUE;
+
+    /**
+     * File extensions refused inside a ZIP (programs and scripts), even when the scan finds no malware.
+     * Entries that start like a program are refused whatever they're called (ZipArchiveCheck).
+     */
+    private Set<String> zipBlockedExtensions = new HashSet<>(ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS);
 }

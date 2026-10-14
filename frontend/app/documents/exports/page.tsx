@@ -1,11 +1,9 @@
-import { Suspense } from "react"
+import { redirect } from "next/navigation"
 
-import { ExportsContent } from "./exports-content"
-
-export default function ExportsPage() {
-  return (
-    <Suspense fallback={null}>
-      <ExportsContent />
-    </Suspense>
-  )
+/**
+ * Exports were replaced by Google Drive style downloads in My Documents
+ * (a folder, or several documents, as one ZIP); old links still work.
+ */
+export default function LegacyExportsPage() {
+  redirect("/documents")
 }

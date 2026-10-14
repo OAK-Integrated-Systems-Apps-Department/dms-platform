@@ -1,4 +1,6 @@
 import {
+  Activity,
+  AtSign,
   BarChart3,
   Building2,
   ClipboardCheck,
@@ -20,6 +22,7 @@ import {
   Trash2,
   Users,
   Workflow,
+  Waypoints,
 } from "lucide-react"
 
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -50,8 +53,23 @@ export const navSections: NavSection[] = [
           PermissionCodes.RBR_RETENTION,
         ],
       },
-      { label: "Recent Pins", icon: Pin },
-      { label: "Workflows", icon: Workflow, badge: 3 },
+      // The person's own pinned documents (PID-FR-002), on a page of their own.
+      {
+        label: "Pinned Documents",
+        icon: Pin,
+        href: "/pinned",
+        permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
+      // The caller's workflow approval queue - visible to everyone (anyone
+      // can be named as an approver); the badge is their live open-task count.
+      {
+        label: "My Tasks",
+        icon: Workflow,
+        href: "/tasks",
+        liveBadge: "myOpenTasks",
+      },
+      // Comments that mention me - readable even without document access (Phase 2).
+      { label: "Mentions", icon: AtSign, href: "/mentions" },
       { label: "Search", icon: Search },
       { label: "Reports", icon: BarChart3 },
     ],
@@ -59,8 +77,8 @@ export const navSections: NavSection[] = [
   {
     label: "Documents",
     items: [
-      // Bulk Import, Bulk Export, Import Templates and My Exports are tabs
-      // inside My Documents (DocumentsHub), each on its own /documents/... path.
+      // Bulk Import (with Import Templates under it) is a tab inside My
+      // Documents (DocumentsHub), on its own /documents/... path.
       {
         label: "My Documents",
         icon: FileText,
@@ -155,6 +173,38 @@ export const navSections: NavSection[] = [
         href: "/admin/audit-log",
         permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY,
       },
+      // How many documents one person may pin (PID-FR-007).
+      {
+        label: "Pin Limit",
+        icon: Pin,
+        href: "/admin/pinned-documents",
+        permission: PermissionCodes.PID_CONFIGURE_LIMITS,
+      },
+      // Departments double as workflow approver pools.
+      {
+        label: "Departments",
+        icon: Building2,
+        href: "/admin/departments",
+        permission: [
+          PermissionCodes.OTUA_DEPARTMENTS_VIEW,
+          PermissionCodes.OTUA_DEPARTMENTS_CREATE,
+          PermissionCodes.OTUA_DEPARTMENTS_UPDATE,
+          PermissionCodes.OTUA_DEPARTMENTS_DELETE,
+        ],
+      },
+      // Approval chain design (WA). Any single template capability gets you
+      // in - the template page shows only the actions you hold.
+      {
+        label: "Workflow Templates",
+        icon: Waypoints,
+        href: "/admin/workflows",
+        permission: [
+          PermissionCodes.WA_TEMPLATES_CREATE,
+          PermissionCodes.WA_TEMPLATES_UPDATE,
+          PermissionCodes.WA_TEMPLATES_DELETE,
+          PermissionCodes.WA_TEMPLATES_TOGGLE_ACTIVE,
+        ],
+      },
       // Malware-scan quarantine review (VMSBDI FR-005). Lives with the other
       // security-control screens in Governance rather than a group of its
       // own. Any single quarantine capability gets you in - the detail page
@@ -207,6 +257,26 @@ export const navSections: NavSection[] = [
       },
     ],
   },
+  // Infrastructure, not document governance: this section is about the
+  // server and the services on it, which is why it sits apart from
+  // Governance (users, roles, audit - who may do what with documents)
+  // rather than inside it. Future operations screens - background jobs,
+  // server info, scan engine status - belong here too.
+  {
+    label: "System",
+    items: [
+      // Live stack health (Prometheus + Grafana, see infra/monitoring).
+      // Platform administrators always; tenant admins implicitly; anyone
+      // else through the shad.view-system-health-dashboard permission, which
+      // a tenant admin assigns via a role.
+      {
+        label: "System Monitoring",
+        icon: Activity,
+        href: "/admin/monitoring",
+        platformAdminOrPermission: PermissionCodes.SHAD_VIEW_SYSTEM_HEALTH,
+      },
+    ],
+  },
   {
     label: "Metadata",
     items: [
@@ -233,6 +303,10 @@ export const navSections: NavSection[] = [
           PermissionCodes.MDTM_CONTENT_TYPES_CREATE,
           PermissionCodes.MDTM_CONTENT_TYPES_UPDATE,
           PermissionCodes.MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE,
+          // Template managers reach a type's Templates tab from here.
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_CREATE,
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_UPDATE,
+          PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE,
         ],
       },
       {

@@ -42,6 +42,12 @@ import java.util.UUID;
  * Bulk import intake: download a template, upload the filled-in template
  * to open a batch, upload each file it lists, then submit (or cancel). Every byte goes
  * through {@link BulkImportService}.
+ * <p>
+ * FOLLOW-UP: the app no longer offers Bulk Import - documents are uploaded in My Documents,
+ * starting from a document type's templates (DocumentTemplateService). This API, its import
+ * templates (ImportTemplateController), the RabbitMQ import worker and the fie.bulk-import-documents.* /
+ * fie.manage-import-templates.* permissions are still here and still assignable to roles. Remove
+ * them (with a migration retiring the permissions) once no old batches need finishing.
  */
 @RestController
 @RequestMapping("/api/v1")

@@ -56,3 +56,8 @@ infra/production/.deploy.lock
 
 # Development encryption key backup (infra/local) - never commit keys.
 .dms-dev-keys/
+
+# SonarQube scanner working directory (infra/sonarqube/scan.sh). Holds the
+# scanner's local cache and the report-task.txt that points at the last
+# analysis - regenerated every run, and never useful to anyone else.
+.scannerwork/

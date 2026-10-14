@@ -84,6 +84,28 @@ public interface KeyEncryptionService {
 
     /** @param plaintext never logged or stored */
     record DataKey(byte[] plaintext, String wrapped, int version) {
+
+        /*
+         * Sonar's S6218 asks for equals/hashCode/toString that consider the
+         * array's CONTENT. Deliberately not done here, and the reason is the
+         * point of the class: `plaintext` is key material.
+         *
+         * A content-comparing equals on a secret is a timing oracle -
+         * Arrays.equals returns as soon as two bytes differ, so how long it
+         * takes tells a caller how much of a guess was right. If two data
+         * keys ever do need comparing, it must be with a constant-time
+         * comparison, chosen explicitly at the call site. Identity equality
+         * is the safe default, and nothing compares these today.
+         *
+         * toString IS overridden, to say so out loud. The record default
+         * prints the array reference rather than its contents, so it leaks
+         * nothing - but "leaks nothing by accident" is worth replacing with
+         * "leaks nothing on purpose" for a value that must never reach a log.
+         */
+        @Override
+        public String toString() {
+            return "DataKey[plaintext=<redacted>, wrapped=<redacted>, version=" + version + "]";
+        }
     }
 
     /**

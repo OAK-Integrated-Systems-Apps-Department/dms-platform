@@ -8,9 +8,11 @@ import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.document.dto.DocumentListItem;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
+import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrFieldResultResponse;
 import com.oak.dms.document.dto.OcrRerunResponse;
@@ -29,19 +31,27 @@ import com.oak.dms.folder.FolderAccessService;
 import com.oak.dms.folder.FolderService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.service.DocumentTypeFieldService;
 import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.ocrworker.OcrEnqueueService;
-import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.OcrErrorMessages;
 import com.oak.dms.ocrworker.OcrProperties;
 import com.oak.dms.ocrworker.OcrWorkerClient;
+import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.storage.dto.DownloadedObject;
+import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
+import com.oak.dms.storage.exception.StorageConfigurationException;
+import com.oak.dms.storage.repository.StorageLocationRepository;
+import com.oak.dms.storage.service.ObjectStorageServiceFactory;
+import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -49,7 +59,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -97,13 +106,17 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
+
+    private final DocumentTypeRepository documentTypeRepository;
+    private final UserRepository userRepository;
+    private final StorageLocationRepository storageLocationRepository;
+    private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
     private final AuditService auditService;
     private final FolderService folderService;
     private final FolderAccessService folderAccessService;
     private final DocumentAccessService documentAccessService;
     private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
-    private final DocumentTypeRepository documentTypeRepository;
     private final VersionContent versionContent;
 
     // OCR. Note the absence of an ObjectStorageService: nothing on the OCR
@@ -217,7 +230,7 @@ public class DocumentServiceImpl implements DocumentService {
         Page<Document> page;
         if (!access.seesEverything()) {
             // Folder access (V53) and document access (V54) both apply.
-            String title = q == null ? "" : q;
+            String title = q == null ? "" : LikePatterns.escape(q);
             page = allFolders
                     ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
                     access.grantedIds(), pageable)
@@ -225,19 +238,35 @@ public class DocumentServiceImpl implements DocumentService {
                     ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(), pageable)
                     : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(), pageable);
         } else if (allFolders) {
-            page = q == null ? documentRepository.findByTenantIdAndDeletedFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId, q, pageable);
+            page = q == null ? documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
+                    tenantId, q, pageable);
         } else if (folderId != null) {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalse(tenantId, folderId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTitleContainingIgnoreCase(tenantId,
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalse(tenantId, folderId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(tenantId,
                     folderId, q, pageable);
         } else {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTitleContainingIgnoreCase(
+            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalse(tenantId, pageable)
+                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
                     tenantId, q, pageable);
         }
 
         return toItems(page, access);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentListItem> visibleItems(java.util.Collection<UUID> documentIds) {
+        if (documentIds.isEmpty()) {
+            return List.of();
+        }
+        UUID tenantId = TenantContext.getTenantId();
+        DocumentAccessView access = documentAccessService.forCaller();
+        List<Document> documents = documentRepository
+                .findAllByDocumentIdInAndTenantIdAndDeletedFalse(new LinkedHashSet<>(documentIds), tenantId).stream()
+                .filter(d -> !d.isTemplate() && access.canSee(d))
+                .toList();
+        return toItems(new org.springframework.data.domain.PageImpl<>(documents), access).getContent();
     }
 
     @Override
@@ -322,7 +351,8 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
-        return documentMapper.toResponse(findVisible(documentId, FolderAccessLevel.view));
+        Document document = findVisible(documentId, FolderAccessLevel.view);
+        return documentMapper.toResponse(document, documentAccessService.forCaller().level(document).name());
     }
 
     /**
@@ -334,6 +364,26 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
         return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
+                                                       Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
+        Page<Document> page = documentRepository.search(tenantId, pattern, documentTypeId, excludeDocumentId, pageable);
+        Map<UUID, String> typeNames = new HashMap<>();
+        documentTypeRepository.findAllById(page.map(Document::getDocumentTypeId).toSet()).stream()
+                .filter(t -> tenantId.equals(t.getTenantId()) && !t.isDeleted())
+                .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
+        Map<UUID, String> userNames = new HashMap<>();
+        userRepository.findAllById(page.map(Document::getCreatedBy).filter(Objects::nonNull).toSet()).stream()
+                .filter(u -> tenantId.equals(u.getTenantId()))
+                .forEach(u -> userNames.put(u.getUserId(), u.getDisplayName()));
+        return page.map(d -> new DocumentSummaryResponse(d.getDocumentId(), d.getTitle(),
+                typeNames.get(d.getDocumentTypeId()), d.getLatestVersionId(), d.getCreatedAt(),
+                d.getCreatedBy() == null ? null : userNames.get(d.getCreatedBy())));
     }
 
     @Override
