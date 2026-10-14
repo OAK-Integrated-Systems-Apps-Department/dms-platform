@@ -248,6 +248,7 @@ async function run(id: string) {
             request.title,
             request.folderId,
             request.refuseDuplicates,
+            undefined,
             transfer
           )
     patch(id, { loaded: current.size, ...outcomeOfTicket(ticket, request) })
