@@ -1,5 +1,6 @@
 package com.oak.dms.department.service.impl;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -52,7 +53,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Transactional(readOnly = true)
     public Page<DepartmentResponse> list(Department.DepartmentStatus status, String search, Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
         Page<Department> page = departmentRepository.search(tenantId, status, pattern, pageable);
         Map<UUID, String> parentNames = new HashMap<>();
         Set<UUID> parentIds = new HashSet<>();

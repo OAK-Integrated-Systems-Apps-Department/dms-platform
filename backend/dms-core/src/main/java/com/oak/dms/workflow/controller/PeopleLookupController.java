@@ -1,5 +1,6 @@
 package com.oak.dms.workflow.controller;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.security.auth.TenantContext;
@@ -56,7 +57,7 @@ public class PeopleLookupController {
     public List<PersonOptionResponse> lookup(@RequestParam(required = false) String search,
                                              @RequestParam(defaultValue = "20") int limit) {
         UUID tenantId = TenantContext.getTenantId();
-        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
         List<User> users = userRepository.searchActive(tenantId, pattern,
                 PageRequest.of(0, Math.min(Math.max(limit, 1), MAX_LIMIT)));
         Set<UUID> withAccess = userPermissions.filterHoldingAny(tenantId, users.stream().map(User::getUserId).toList(),

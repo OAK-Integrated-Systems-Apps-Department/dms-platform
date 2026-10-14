@@ -1,5 +1,6 @@
 package com.oak.dms.workflow.service.impl;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.common.exception.ResourceNotFoundException;
@@ -197,7 +198,7 @@ public class WorkflowDelegationServiceImpl implements WorkflowDelegationService 
             throw new WorkflowAccessException("WORKFLOW_NOT_TASK_HOLDER", "Only the person holding this task can delegate it");
         }
 
-        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
         List<User> users = userRepository.searchActive(tenantId, pattern,
                 PageRequest.of(0, Math.max(1, Math.min(limit, MAX_CANDIDATES)) * 2));
         UUID holder = TaskRouting.holder(task);

@@ -1,5 +1,6 @@
 package com.oak.dms.document;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -128,7 +129,7 @@ public class DocumentServiceImpl implements DocumentService {
         Page<Document> page;
         if (!access.seesEverything()) {
             // Folder access (V53) and document access (V54) both apply.
-            String title = q == null ? "" : q;
+            String title = q == null ? "" : LikePatterns.escape(q);
             page = allFolders
                     ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
                     access.grantedIds(), pageable)
@@ -254,7 +255,7 @@ public class DocumentServiceImpl implements DocumentService {
     public Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
                                                        Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
         Page<Document> page = documentRepository.search(tenantId, pattern, documentTypeId, excludeDocumentId, pageable);
         Map<UUID, String> typeNames = new HashMap<>();
         documentTypeRepository.findAllById(page.map(Document::getDocumentTypeId).toSet()).stream()

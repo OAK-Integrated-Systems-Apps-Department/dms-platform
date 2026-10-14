@@ -1,5 +1,6 @@
 package com.oak.dms.folder;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.folder.FolderAccessEntry.PrincipalType;
 import com.oak.dms.folder.dto.FolderDtos.AccessPrincipal;
 import com.oak.dms.folder.dto.FolderDtos.FolderAccessEntryRequest;
@@ -119,10 +120,13 @@ public class AccessPrincipals {
         UUID tenantId = TenantContext.getTenantId();
         String term = q == null ? "" : q.strip();
         List<AccessPrincipal> results = new ArrayList<>();
-        userRepository.searchActive(tenantId, term, PageRequest.of(0, PICKER_LIMIT))
+        // searchActive takes a LIKE pattern (lower-cased, wrapped in %), or null for everyone - the
+        // raw term used to go in, which only ever matched a whole name typed in lower case.
+        userRepository.searchActive(tenantId, term.isEmpty() ? null : LikePatterns.contains(term),
+                PageRequest.of(0, PICKER_LIMIT))
                 .forEach(u -> results.add(new AccessPrincipal(PrincipalType.user.name(), u.getUserId(), nameOf(u),
                         u.getEmail())));
-        roleRepository.searchByName(tenantId, term, PageRequest.of(0, PICKER_LIMIT))
+        roleRepository.searchByName(tenantId, LikePatterns.escape(term), PageRequest.of(0, PICKER_LIMIT))
                 .forEach(r -> results.add(new AccessPrincipal(PrincipalType.role.name(), r.getRoleId(),
                         r.getRoleName(), "Role")));
         return results;
