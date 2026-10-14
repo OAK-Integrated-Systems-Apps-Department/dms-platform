@@ -81,5 +81,10 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", \
             "-Djava.awt.headless=true", "-jar", "app.jar"]
 
+# The "core" group (application.yml) is every health indicator EXCEPT
+# ocrJobToken - an OCR-only misconfiguration must not roll back an
+# otherwise-healthy release the way a lost database connection would.
+# Root /actuator/health (unauthenticated, same as this) still reports
+# ocrJobToken for anyone checking overall system state by hand.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+    CMD wget -qO- http://localhost:8080/actuator/health/core | grep -q '"status":"UP"' || exit 1

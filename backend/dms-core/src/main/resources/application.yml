@@ -587,6 +587,20 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      group:
+        # What the container HEALTHCHECK (backend/Dockerfile) and deploy.sh
+        # actually gate releases on - everything EXCEPT ocrJobToken. OCR is
+        # off by default and, even enabled, is one feature among many: a
+        # deployment with no job-token secret has a real, loudly-logged
+        # problem (see OcrJobTokenHealthIndicator), but it is not "the
+        # backend is broken" the way a lost database connection is, and
+        # must not roll back an otherwise-healthy release the way DOWN from
+        # root /actuator/health would. Root still aggregates every
+        # indicator, ocrJobToken included, for anyone checking overall
+        # system state by hand - only the container probe moved.
+        core:
+          include: "*"
+          exclude: ocrJobToken
   health:
     # The mail indicator opens a live SMTP connection (and login) on every
     # /actuator/health call. An external relay being slow, down or rejecting

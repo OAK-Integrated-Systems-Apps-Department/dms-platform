@@ -139,7 +139,14 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         // earlier OCR-sourced value (or no value at all) is fair game for a
         // fresh OCR result to replace, which is what makes re-running OCR
         // for a field actually update anything after the first pass.
-        Map<String, FieldValue> stored = storedValues(tenantId, documentId);
+        //
+        // Locked (not plain storedValues()), and held for the rest of this
+        // transaction: a manual save racing this exact method is the one
+        // case "manual always wins" exists for, and deciding what is safe
+        // to include in toApply against a read that a concurrent manual
+        // save could invalidate a moment later is the race - see
+        // DocumentMetadataRepository#findByIdForUpdate.
+        Map<String, FieldValue> stored = lockedStoredValues(tenantId, documentId);
 
         // ocr-worker now only ever returns fields it was actually asked to
         // extract (selectable OCR field extraction) -- field.ocrExtractable()
@@ -217,7 +224,10 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
         // the whole call so the user gets clear feedback.
         boolean bestEffort = SOURCE_OCR.equals(source);
 
-        Map<String, FieldValue> merged = new LinkedHashMap<>(storedValues(tenantId, document.getDocumentId()));
+        // Locked, same as applyOcrFields's own read above - this is the
+        // manual-save path's half of the same race when it reaches here
+        // directly (saveValues never reads the row before this point).
+        Map<String, FieldValue> merged = new LinkedHashMap<>(lockedStoredValues(tenantId, document.getDocumentId()));
         boolean changed = false;
 
         for (var entry : valuesByFieldKey.entrySet()) {
@@ -303,6 +313,20 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
 
     private static UUID realUserIdOrNull(UUID userId) {
         return SystemActor.SYSTEM_USER_ID.equals(userId) ? null : userId;
+    }
+
+    /**
+     * {@link #storedValues} under {@code SELECT ... FOR UPDATE}, held for the
+     * rest of the caller's transaction - see
+     * {@link com.oak.dms.metadata.repository.DocumentMetadataRepository#findByIdForUpdate}.
+     * The write paths' entry point into the read-modify-write; {@link #persist}'s
+     * own {@code findById} right after reuses this same locked, managed
+     * instance from the persistence context rather than issuing a second query.
+     */
+    private Map<String, FieldValue> lockedStoredValues(UUID tenantId, UUID documentId) {
+        return documentMetadataRepository.findByIdForUpdate(new DocumentMetadataId(tenantId, documentId))
+                .map(DocumentMetadata::getFieldValues)
+                .orElseGet(Map::of);
     }
 
     private Map<String, FieldValue> storedValues(UUID tenantId, UUID documentId) {

@@ -324,12 +324,27 @@ export function WatermarkTemplateForm({
                     (blank = {WATERMARK_STYLE_DEFAULTS.color})
                   </span>
                 </Label>
-                <Input
-                  id="template-color"
-                  placeholder={WATERMARK_STYLE_DEFAULTS.color}
-                  aria-invalid={Boolean(errors.color)}
-                  {...register("color", { setValueAs: textOrNull })}
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="template-color"
+                    placeholder={WATERMARK_STYLE_DEFAULTS.color}
+                    aria-invalid={Boolean(errors.color)}
+                    {...register("color", { setValueAs: textOrNull })}
+                  />
+                  <input
+                    type="color"
+                    aria-label="Pick watermark colour"
+                    className="size-7 shrink-0 cursor-pointer rounded-btn border border-border bg-transparent p-0"
+                    value={
+                      color && /^#[0-9a-fA-F]{6}$/.test(color)
+                        ? color
+                        : WATERMARK_STYLE_DEFAULTS.color
+                    }
+                    onChange={(event) =>
+                      setValue("color", event.target.value, { shouldValidate: true })
+                    }
+                  />
+                </div>
                 {errors.color && (
                   <p className="mt-1.5 text-[12px] text-destructive">{errors.color.message}</p>
                 )}

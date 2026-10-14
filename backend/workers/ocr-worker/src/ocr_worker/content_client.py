@@ -55,6 +55,17 @@ class ContentUnavailable(RuntimeError):
         super().__init__(message)
         self.status = status
 
+    def __reduce__(self):
+        # pebble's process pool pickles an exception to carry it back from
+        # the worker subprocess to the parent; the default reduction calls
+        # `type(exc)(*exc.args)`, and `args` here is only ever `(message,)`
+        # (status lives on `self`, not in `args`) -- so unpickling raised
+        # "missing 1 required positional argument: 'status'" instead of the
+        # real error, which crashed the whole pool (BrokenProcessPool) for
+        # every job in flight rather than failing just the one that hit a
+        # real, recoverable refusal (401/403/404/5xx) from dms-core.
+        return (self.__class__, (self.status, self.args[0] if self.args else ""))
+
     @property
     def retryable(self) -> bool:
         return self.status == 0 or self.status >= 500
@@ -136,11 +147,11 @@ class DocumentContentClient:
             with contextlib.suppress(OSError):
                 path.unlink()
 
-    def _headers(self, grant: ReadGrant) -> dict[str, str]:
+    def _headers(self, grant: ReadGrant, accept: str = "application/octet-stream") -> dict[str, str]:
         return {
             "X-Internal-Token": self._settings.internal_service_token,
             "X-Ocr-Job-Token": grant.token,
-            "Accept": "application/octet-stream",
+            "Accept": accept,
         }
 
     def put_output(self, grant: ReadGrant, payload: bytes) -> str:
@@ -158,7 +169,13 @@ class DocumentContentClient:
 
     def _put(self, grant: ReadGrant, kind: str, body: bytes, content_type: str) -> str:
         url = f"{self._base_url}/internal/v1/ocr/versions/{grant.version_id}/{kind}"
-        headers = self._headers(grant)
+        # dms-core answers a successful PUT with a JSON {"objectKey": ...}
+        # body, never octet-stream (that Accept default is for the GET below,
+        # which really does want raw document bytes) - asking for a
+        # representation the endpoint cannot produce here turned into Spring
+        # negotiation failing the whole response, which this worker then saw
+        # as an opaque 401 with no hint that Accept was the actual problem.
+        headers = self._headers(grant, accept="application/json")
         headers["Content-Type"] = content_type
         # Content-Length explicitly: dms-core refuses a chunked artifact so it
         # can enforce its size cap before reading anything.

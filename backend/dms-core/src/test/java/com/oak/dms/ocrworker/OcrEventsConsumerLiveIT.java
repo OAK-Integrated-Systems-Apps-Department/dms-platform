@@ -45,6 +45,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (simulating what ocr-worker itself would have already written) and a
  * real one-field schema, then polls document_metadata_values for the
  * result -- the actual thing a human would see change.
+ *
+ * <h2>Run this against an isolated RabbitMQ - not a shared dev broker</h2>
+ * {@code dms-core.q.ocr-events} is one well-known queue name every dms-core
+ * instance listens on by design (production runs several replicas that
+ * MUST compete for the same queue - that is the whole point of horizontal
+ * scaling). This test's own listener is just one more competitor for that
+ * queue. Run it on a machine where another dms-core instance (e.g. the
+ * `oakdms-core` container from {@code infra/local/docker-compose.yml}) is
+ * ALSO connected to the same broker, and RabbitMQ may hand your test's
+ * message to that OTHER instance instead - which processes it against ITS
+ * OWN database, leaves nothing for this test to see, and fails this test
+ * with no exception anywhere (confirmed empirically: this test is
+ * deterministic - passes 100% with no competing consumer attached, fails
+ * 100% with one attached, both repeated across multiple runs). CI is
+ * unaffected (its RabbitMQ is thrown away per job with nothing else
+ * attached) - this is a local-dev-only caveat. Stop any other dms-core
+ * instance pointed at the same broker before running this test by hand.
  */
 @SpringBootTest
 class OcrEventsConsumerLiveIT {

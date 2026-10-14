@@ -154,32 +154,37 @@ class DocumentTypeOcrZone(Base):
     y1: Mapped[float] = mapped_column(Numeric(6, 5))
 
 
-class DocumentTypeField(Base):
-    """dms-core's document-type -> field mapping (module 2.7). Read-only
-    here, and only to resolve `document_versions.requested_fields`
-    (a list of field_key strings) into the `data_type`/`options` the
-    extraction dispatch needs -- see
-    `OcrRepository.resolve_requested_field_specs`.
+class DocumentTypeSchema(Base):
+    """dms-core's document-type -> field mapping (module 2.7), one row per
+    published (document_type_id, schema_version). Read-only here, and only
+    to resolve `document_versions.requested_fields` (a list of field_key
+    strings) into the `data_type`/`options` the extraction dispatch needs --
+    see `OcrRepository.resolve_requested_field_specs`.
 
-    Only the columns that resolution actually uses are mapped; the real
-    table has many more (see dms-core's own DocumentTypeField entity).
+    This replaces the old per-row `document_type_fields` junction table,
+    which dms-core dropped in favour of one JSONB array column per schema
+    version (dms-core's own `DocumentTypeSchema` entity/`FieldMapping`
+    record). A publish never edits a row's `fields` in place -- it archives
+    the previous version and inserts a new one -- so there is no per-field
+    `is_deleted` here the way the old table had one: a field missing from
+    the CURRENT version's array is the same fact the old table's
+    `is_deleted=true` used to represent.
+
+    Only the columns resolution actually uses are mapped; the real table
+    also has `status`/`published_by`/`published_at`/`archived_at`.
     """
 
-    __tablename__ = "document_type_fields"
+    __tablename__ = "document_type_schemas"
 
-    document_type_field_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    schema_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     document_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_types.document_type_id"))
-    field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("metadata_fields.field_id"))
     schema_version: Mapped[int] = mapped_column(default=1)
-    is_hidden: Mapped[bool] = mapped_column(default=False)
-    # Drives `requires_review`'s "any mandatory field not extracted" arm
-    # (production prompt 3.10). Read from the schema rather than from a
-    # hardcoded list here, so a tenant that marks its own field mandatory
-    # gets the review behaviour without a code change.
-    is_mandatory: Mapped[bool] = mapped_column(default=False)
-    display_order: Mapped[int] = mapped_column(default=0)
-    is_deleted: Mapped[bool] = mapped_column(default=False)
+    # One JSON object per mapped field: {"mappingId", "fieldId", "mandatory",
+    # "hidden", "requiresBackfill", "displayOrder", "fieldGroup",
+    # "defaultValueOverride"} -- dms-core's FieldMapping record, serialized
+    # with its Java field names verbatim (camelCase, not snake_case).
+    fields: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class MetadataField(Base):

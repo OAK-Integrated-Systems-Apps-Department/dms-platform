@@ -579,6 +579,7 @@ class OcrPipeline:
                 validation_errors=validation_errors,
                 line_items=line_items,
                 rendition=rendition,
+                read_token=read_token,
                 # A full-document run visits every page, so this IS the
                 # document's page count. A zone or rubber-band run visits
                 # a subset and passes nothing, rather than overwriting the
@@ -1284,6 +1285,7 @@ class OcrPipeline:
                     repo=repo, job=job, ctx=ctx, pages=pages,
                     fields=fields_to_dict(extracted_fields, zone_geometry_by_page),
                     correlation_id=correlation_id,
+                    read_token=read_token,
                 )
             except (VersionNotFound, VersionNotEligible):
                 raise
@@ -1452,7 +1454,8 @@ class OcrPipeline:
                 # to normalize and `bbox_norm` is correctly null.
                 fields = fields_to_dict(extract_structured_fields(result.text, base_confidence=result.mean_confidence))
 
-                return self._finalize_success(repo=repo, job=job, ctx=ctx, pages=pages, fields=fields, correlation_id=correlation_id)
+                return self._finalize_success(repo=repo, job=job, ctx=ctx, pages=pages, fields=fields,
+                                               correlation_id=correlation_id, read_token=read_token)
             except (VersionNotFound, VersionNotEligible):
                 raise
             except Exception as exc:  # noqa: BLE001

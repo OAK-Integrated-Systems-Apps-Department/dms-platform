@@ -183,15 +183,6 @@
             <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
 
-        <!-- Object storage: reads/writes the same MinIO bucket ocr-worker
-             (backend/workers/ocr-worker) uses for source documents. No
-             other module in this codebase talked to MinIO before this. -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>8.5.17</version>
-        </dependency>
-
         <!-- Magic-byte MIME detection at upload (Phase 1 B.5): real gap
              found live, uploadDocument previously trusted MultipartFile#
              getContentType() (a client-supplied header) outright. tika-core

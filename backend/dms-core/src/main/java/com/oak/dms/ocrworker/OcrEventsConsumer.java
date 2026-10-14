@@ -70,6 +70,8 @@ public class OcrEventsConsumer {
         UUID documentId = UUID.fromString((String) payload.get("document_id"));
         UUID versionId = UUID.fromString((String) payload.get("version_id"));
 
+        log.info("OcrEventsConsumer received event_type={} version={} attempt={}", eventType, versionId,
+                payload.get("attempt"));
         if (isStale(versionId, payload.get("attempt"))) {
             log.info("Skipping stale OCR event {} for version {}: a newer attempt has already superseded it", eventType, versionId);
             return;

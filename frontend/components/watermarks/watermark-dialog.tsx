@@ -512,14 +512,16 @@ export function WatermarkDialog({
                           aria-invalid={Boolean(errors.color)}
                           {...register("color")}
                         />
-                        <span
-                          aria-hidden="true"
-                          className="size-7 shrink-0 rounded-btn border border-border"
-                          style={{
-                            backgroundColor: /^#[0-9a-fA-F]{6}$/.test(color)
-                              ? color
-                              : "transparent",
-                          }}
+                        <input
+                          type="color"
+                          aria-label="Pick watermark colour"
+                          className="size-7 shrink-0 cursor-pointer rounded-btn border border-border bg-transparent p-0"
+                          value={
+                            /^#[0-9a-fA-F]{6}$/.test(color) ? color : WATERMARK_STYLE_DEFAULTS.color
+                          }
+                          onChange={(event) =>
+                            setValue("color", event.target.value, { shouldValidate: true })
+                          }
                         />
                       </div>
                       {errors.color && (

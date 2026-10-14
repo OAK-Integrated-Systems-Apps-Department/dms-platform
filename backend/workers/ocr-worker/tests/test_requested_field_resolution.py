@@ -23,7 +23,7 @@ from ocr_worker.models import (
     Base,
     Document,
     DocumentType,
-    DocumentTypeField,
+    DocumentTypeSchema,
     DocumentVersion,
     MetadataField,
     MetadataFieldOption,
@@ -66,18 +66,24 @@ def _seed(
             storage_object_key="k", original_filename="inv.pdf", mime_type="application/pdf",
             scan_status="clean", ocr_status="pending", requested_fields=requested_fields,
         ))
-        for field_key, data_type in fields:
+        mapped_fields = []
+        for order, (field_key, data_type) in enumerate(fields):
             field_id = uuid.uuid4()
             session.add(MetadataField(field_id=field_id, tenant_id=tenant_id, field_key=field_key, data_type=data_type))
-            session.add(DocumentTypeField(
-                tenant_id=tenant_id, document_type_id=document_type_id, field_id=field_id,
-                schema_version=mapping_schema_version,
-            ))
+            mapped_fields.append({
+                "mappingId": str(uuid.uuid4()), "fieldId": str(field_id), "mandatory": False,
+                "hidden": False, "requiresBackfill": False, "displayOrder": (order + 1) * 10,
+                "fieldGroup": None, "defaultValueOverride": None,
+            })
             if data_type == "dropdown":
-                for order, value in enumerate(currency_options):
+                for order2, value in enumerate(currency_options):
                     session.add(MetadataFieldOption(
-                        tenant_id=tenant_id, field_id=field_id, option_value=value, display_order=order,
+                        tenant_id=tenant_id, field_id=field_id, option_value=value, display_order=order2,
                     ))
+        session.add(DocumentTypeSchema(
+            tenant_id=tenant_id, document_type_id=document_type_id,
+            schema_version=mapping_schema_version, fields=mapped_fields,
+        ))
         session.commit()
 
     return {"tenant_id": tenant_id, "document_type_id": document_type_id, "version_id": version_id}

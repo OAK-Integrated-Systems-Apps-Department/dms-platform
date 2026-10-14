@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from conftest import seed_zone  # noqa: E402
 from ocr_worker.config import Settings  # noqa: E402
 from ocr_worker.layout import NativeTextBlock, PageImage, TableBlock, TableCellBlock  # noqa: E402
-from ocr_worker.models import DocumentVersion, OcrOutput, OutboxEvent, ProcessingJob  # noqa: E402
+from ocr_worker.models import DocumentVersion, OutboxEvent, ProcessingJob  # noqa: E402
 from ocr_worker.ocr_engine import OcrResult, WordResult  # noqa: E402
 from ocr_worker.pipeline import OcrPipeline  # noqa: E402
 from ocr_worker.repository import VersionNotEligible  # noqa: E402
@@ -421,7 +421,17 @@ def test_high_confidence_result_does_not_require_review(session_factory, seeded_
 # ----------------------------------------------------------------------
 # (d) DB transaction + outbox write happen atomically
 # ----------------------------------------------------------------------
-def test_success_writes_ocr_output_and_outbox_event_atomically(session_factory, seeded_version):
+def test_success_writes_ocr_status_and_outbox_event_atomically(session_factory, seeded_version):
+    """V83 moved ocr_outputs ownership to dms-core: OcrArtifactWriter
+    upserts that row when the worker's PUT /output call succeeds, before
+    `OcrRepository.complete_success` ever runs - so this worker no longer
+    writes one itself (it used to, via a plain non-upserting INSERT, which
+    after V83 unconditionally collided with the row dms-core had just
+    written - verified live, see repository.py#complete_success). Nothing
+    in this in-memory test simulates that HTTP call, so there is no
+    ocr_outputs row to assert on here any more; `document_versions
+    .ocr_status` and the outbox event are what this worker still owns.
+    """
     layout_doc = FakeLayoutDocument(page_count=1, native_text_by_page={})
     pipeline, storage, ocr_engine = make_pipeline(
         session_factory, layout_doc=layout_doc, ocr_text="Total: 950.00", ocr_confidence=0.99,
@@ -432,9 +442,6 @@ def test_success_writes_ocr_output_and_outbox_event_atomically(session_factory, 
     with session_factory() as session:
         version = session.get(DocumentVersion, seeded_version["version_id"])
         assert version.ocr_status == "completed"
-
-        ocr_outputs = session.query(OcrOutput).filter_by(version_id=seeded_version["version_id"]).all()
-        assert len(ocr_outputs) == 1
 
         jobs = session.query(ProcessingJob).filter_by(reference_id=seeded_version["version_id"]).all()
         assert len(jobs) == 1

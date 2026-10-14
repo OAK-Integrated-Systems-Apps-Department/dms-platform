@@ -17,13 +17,12 @@ from .models import (
     DocumentOcrCorrection,
     DocumentOcrFieldResult,
     DocumentType,
-    DocumentTypeField,
+    DocumentTypeSchema,
     DocumentTypeOcrZone,
     DocumentVersion,
     MetadataField,
     MetadataFieldOption,
     DocumentOcrLineItem,
-    OcrOutput,
     OutboxEvent,
     ProcessingJob,
     Rendition,
@@ -70,6 +69,19 @@ class VersionContext:
     document: Document
     document_type_id: uuid.UUID
     document_type_name: str
+
+
+@dataclass
+class _ResolvedField:
+    """One metadata_fields row joined against its current-schema mapping's
+    `mandatory` flag -- the same shape the old `document_type_fields` SQL
+    join produced as a plain Row, now assembled in Python since the mapping
+    lives in a JSONB array rather than a joinable table."""
+    field_id: uuid.UUID
+    field_key: str
+    data_type: str
+    is_ocr_extractable: bool
+    is_mandatory: bool
 
 
 class OcrRepository:
@@ -199,24 +211,51 @@ class OcrRepository:
         if not keys:
             return None
 
-        rows = self.session.execute(
-            select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type,
-                   MetadataField.is_ocr_extractable, DocumentTypeField.is_mandatory)
-            .join(DocumentTypeField, DocumentTypeField.field_id == MetadataField.field_id)
-            .join(DocumentType, DocumentType.document_type_id == DocumentTypeField.document_type_id)
+        # document_type_fields (one row per mapped field) was dropped in
+        # favour of one JSONB array column per published schema version --
+        # see DocumentTypeSchema's docstring. Fetch the CURRENT version's
+        # array (pinned to document_types.current_schema_version, same as
+        # the old join did) and index it by field_id in Python; the field
+        # catalog join (tenant-scoped, field_key IN keys) stays in SQL.
+        schema_fields = self.session.execute(
+            select(DocumentTypeSchema.fields)
+            .join(DocumentType, DocumentType.document_type_id == DocumentTypeSchema.document_type_id)
             .where(
-                DocumentTypeField.document_type_id == document_type_id,
-                DocumentTypeField.tenant_id == version.tenant_id,
-                DocumentTypeField.schema_version == DocumentType.current_schema_version,
-                DocumentTypeField.is_deleted.is_(False),
-                MetadataField.tenant_id == version.tenant_id,
-                MetadataField.is_deleted.is_(False),
-                MetadataField.field_key.in_(keys),
+                DocumentTypeSchema.document_type_id == document_type_id,
+                DocumentTypeSchema.tenant_id == version.tenant_id,
+                DocumentTypeSchema.schema_version == DocumentType.current_schema_version,
             )
-        ).all()
-        by_key = {row.field_key: row for row in rows}
+        ).scalar_one_or_none()
 
-        option_backed_ids = [row.field_id for row in rows if row.data_type in OPTION_BACKED_DATA_TYPES]
+        # mappings keyed by field_id (string, as stored in the JSONB) -- the
+        # only per-field fact resolution still needs out of the mapping is
+        # "mandatory" (requires_review's "any mandatory field not
+        # extracted" arm). A document type with no published schema row at
+        # all resolves nothing, same as the old join resolving zero rows.
+        mandatory_by_field_id = {m["fieldId"]: bool(m.get("mandatory")) for m in (schema_fields or [])}
+        if not mandatory_by_field_id:
+            by_key: dict[str, object] = {}
+        else:
+            rows = self.session.execute(
+                select(MetadataField.field_id, MetadataField.field_key, MetadataField.data_type,
+                       MetadataField.is_ocr_extractable)
+                .where(
+                    MetadataField.tenant_id == version.tenant_id,
+                    MetadataField.is_deleted.is_(False),
+                    MetadataField.field_key.in_(keys),
+                    MetadataField.field_id.in_([uuid.UUID(fid) for fid in mandatory_by_field_id]),
+                )
+            ).all()
+            by_key = {
+                row.field_key: _ResolvedField(
+                    field_id=row.field_id, field_key=row.field_key, data_type=row.data_type,
+                    is_ocr_extractable=row.is_ocr_extractable,
+                    is_mandatory=mandatory_by_field_id[str(row.field_id)],
+                )
+                for row in rows
+            }
+
+        option_backed_ids = [f.field_id for f in by_key.values() if f.data_type in OPTION_BACKED_DATA_TYPES]
         options_by_field_id: dict[uuid.UUID, list[str]] = {}
         if option_backed_ids:
             option_rows = self.session.execute(
@@ -641,16 +680,20 @@ class OcrRepository:
         event_payload: dict,
         review: dict | None = None,
         page_count: int | None = None,
-    ) -> OcrOutput:
-        ocr_output = OcrOutput(
-            tenant_id=version.tenant_id,
-            version_id=version.version_id,
-            extracted_text_ref=extracted_text_ref,
-            language=language,
-            status="completed",
-        )
-        self.session.add(ocr_output)
-
+    ) -> None:
+        # V83 moved ownership of ocr_outputs to dms-core: the PUT /output
+        # call this method's caller already made (OcrArtifactWriter#
+        # upsertOcrOutput, an INSERT ... ON CONFLICT (version_id) DO UPDATE)
+        # already wrote this row before complete_success ever runs. This
+        # function used to insert its own row too - a plain, non-upserting
+        # INSERT - which was fine when ocr-worker was the only writer, but
+        # after V83 it unconditionally collides with the row dms-core just
+        # wrote, failing uq_ocr_outputs_version on every real run (verified
+        # live: the job token, content fetch and both artifact PUTs all
+        # succeed, and THIS insert is what then crashes the job, leaving
+        # ocr_status stuck at 'pending' forever despite the artifacts being
+        # safely stored). extracted_text_ref/language are dms-core's to
+        # record now; nothing here still needs to write them.
         version.ocr_status = "completed"
         # Phase 4b: the queue reads this column, not the stored artifact.
         # Always written, including the false case -- a re-run that FIXES
@@ -688,7 +731,6 @@ class OcrRepository:
             )
         )
         self.session.flush()
-        return ocr_output
 
     def upsert_field_results(
         self,
