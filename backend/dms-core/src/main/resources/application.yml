@@ -386,6 +386,10 @@ dms:
     # Points per chart. The step is derived from this and the window, so a
     # 7-day chart costs about the same as a 1-hour one.
     chart-points: ${MONITORING_CHART_POINTS:120}
+  pins:
+    # How many documents one person may pin (PID-FR-007) until the organisation sets its own
+    # (PUT /api/v1/pins/limit, pid.configure-pin-limits).
+    default-max: ${DMS_PINS_DEFAULT_MAX:20}
   dashboard:
     # How long the home dashboard's figures are served from Redis before they are worked
     # out again (DashboardCache). They scan every document the caller may see - seconds at

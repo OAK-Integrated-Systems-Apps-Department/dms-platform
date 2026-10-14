@@ -49,6 +49,11 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // Pin Important Documents - PID (pins are personal; the limit is the organisation's)
+    public static final String PID_PIN = "pid.pin-unpin-documents.pin";
+    public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";
+    public static final String PID_CONFIGURE_LIMITS = "pid.configure-pin-limits";
+
     // System monitoring - SHAD (System Health and Administration Dashboard).
     // Held implicitly by TENANT_ADMIN and PLATFORM_ADMIN like every code; others get them via a role.
     public static final String SHAD_VIEW_SYSTEM_HEALTH = "shad.view-system-health-dashboard";

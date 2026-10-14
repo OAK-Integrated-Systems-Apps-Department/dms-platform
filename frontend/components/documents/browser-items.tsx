@@ -22,6 +22,7 @@ import type {
 } from "@/components/documents/browser-dnd"
 import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
+import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
 
@@ -496,6 +497,7 @@ export function DocumentTile({
             />
           )}
           <span className="truncate">{row.title}</span>
+          <PinnedIndicator documentId={row.documentId} />
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           <FriendlyDate iso={row.createdAt} />
@@ -711,6 +713,7 @@ export function BrowserList({
                             aria-label="Restricted"
                           />
                         )}
+                        <PinnedIndicator documentId={row.documentId} />
                       </p>
                       {row.fileName && (
                         <p className="truncate font-mono text-[11.5px] text-muted-foreground">

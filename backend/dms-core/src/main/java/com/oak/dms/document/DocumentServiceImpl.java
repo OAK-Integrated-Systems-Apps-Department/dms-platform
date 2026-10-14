@@ -155,6 +155,21 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<DocumentListItem> visibleItems(java.util.Collection<UUID> documentIds) {
+        if (documentIds.isEmpty()) {
+            return List.of();
+        }
+        UUID tenantId = TenantContext.getTenantId();
+        DocumentAccessView access = documentAccessService.forCaller();
+        List<Document> documents = documentRepository
+                .findAllByDocumentIdInAndTenantIdAndDeletedFalse(new LinkedHashSet<>(documentIds), tenantId).stream()
+                .filter(d -> !d.isTemplate() && access.canSee(d))
+                .toList();
+        return toItems(new org.springframework.data.domain.PageImpl<>(documents), access).getContent();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<DocumentListItem> listSharedWithMe(String query, Pageable pageable) {
         DocumentAccessView access = documentAccessService.forCaller();
         String title = query == null ? "" : query.strip();

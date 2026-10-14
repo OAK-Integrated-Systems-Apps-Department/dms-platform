@@ -148,6 +148,11 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
     label: "Organisation keys destroyed",
   },
   {
+    action: "PIN_LIMIT_CHANGED",
+    module: "PID",
+    label: "Pin limit changed",
+  },
+  {
     action: "DOCUMENT_TYPE_CREATED",
     module: "MDTM",
     label: "Document type created",
@@ -596,6 +601,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   SHAD: "System Health and Administration Dashboard",
   MDTM: "Metadata and Document-Type Management",
   DE: "Document Encryption",
+  PID: "Pin Important Documents",
   DOCM: "Document Management",
   FIE: "File Import/Export",
   RBR: "Recycle Bin and Recovery",

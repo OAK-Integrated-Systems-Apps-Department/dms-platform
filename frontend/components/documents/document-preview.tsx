@@ -1,5 +1,6 @@
 "use client"
 
+import { PinButton } from "@/components/pins/pin-button"
 import {
   useCallback,
   useEffect,
@@ -345,6 +346,7 @@ export function DocumentPreview({
                 <FriendlyDate iso={row.createdAt} />
               </SheetDescription>
             </div>
+            <PinButton row={row} />
             {zoomable && (renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"

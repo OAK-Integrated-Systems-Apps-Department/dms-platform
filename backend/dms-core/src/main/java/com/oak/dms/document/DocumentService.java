@@ -22,6 +22,14 @@ import java.util.UUID;
 public interface DocumentService {
 
     /**
+     * Browser rows for those of {@code documentIds} the caller can see - live, not templates, and
+     * through the same folder and document access rules as the browser. Ones they can't are simply
+     * absent, indistinguishable from ones that don't exist. In no particular order.
+     */
+    java.util.List<com.oak.dms.document.dto.DocumentListItem> visibleItems(java.util.Collection<UUID> documentIds);
+
+
+    /**
      * Submits an upload to the scan gate and returns its ingestion ticket.
      * With a synchronous engine (ClamAV) the ticket is usually already
      * {@code clean} (with a documentId) or rejected; with a cloud scanner it

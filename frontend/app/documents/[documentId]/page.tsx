@@ -8,6 +8,7 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
+import { PinButton } from "@/components/pins/pin-button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
@@ -67,6 +68,7 @@ export default function DocumentPage() {
               <div className="mb-2 flex flex-wrap items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{document.title}</h1>
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
+                <PinButton row={{ documentId: document.documentId, title: document.title }} />
               </div>
               <p className="text-[13px] text-muted-foreground">
                 {document.documentTypeName ?? "—"} · Created {formatDateTime(document.createdAt)}

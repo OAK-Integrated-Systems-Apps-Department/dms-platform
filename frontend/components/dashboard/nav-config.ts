@@ -49,7 +49,13 @@ export const navSections: NavSection[] = [
           PermissionCodes.RBR_RETENTION,
         ],
       },
-      { label: "Recent Pins", icon: Pin },
+      // The dashboard's own Pinned documents section (PID-FR-002); the anchor scrolls to it.
+      {
+        label: "Pinned Documents",
+        icon: Pin,
+        href: "/#pinned-documents",
+        permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
       // The caller's workflow approval queue - visible to everyone (anyone
       // can be named as an approver); the badge is their live open-task count.
       {
@@ -128,6 +134,13 @@ export const navSections: NavSection[] = [
         icon: ScrollText,
         href: "/admin/audit-log",
         permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY,
+      },
+      // How many documents one person may pin (PID-FR-007).
+      {
+        label: "Pin Limit",
+        icon: Pin,
+        href: "/admin/pinned-documents",
+        permission: PermissionCodes.PID_CONFIGURE_LIMITS,
       },
       // Departments double as workflow approver pools.
       {

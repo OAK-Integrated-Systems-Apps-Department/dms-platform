@@ -136,6 +136,8 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
     public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** The organisation's cap on how many documents one person may pin (PID). */
+    public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
@@ -402,6 +404,7 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),

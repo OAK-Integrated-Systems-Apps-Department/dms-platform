@@ -10,6 +10,8 @@ import {
   FolderPlus,
   FolderUp,
   History,
+  Pin,
+  PinOff,
   LayoutGrid,
   List,
   Pencil,
@@ -56,6 +58,7 @@ import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { saveDownloadedFile } from "@/lib/download-file"
+import { usePins } from "@/lib/pins/use-pins"
 import {
   deleteDocument,
   downloadDocumentFile,
@@ -128,6 +131,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
+  const pins = usePins()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
     renameMove: hasPermission(PermissionCodes.DSC_FOLDERS_RENAME_MOVE),
@@ -411,6 +415,13 @@ function FolderView({ folderId }: { folderId: string | null }) {
       { label: "Open", icon: Eye, onSelect: () => setPreview(row) },
       { label: "Download", icon: Download, onSelect: () => void download(row) },
     ]
+    // PID-FR-001: pin from the list (and from search results, which are this list).
+    if (pins.canToggle(row.documentId))
+      actions.push({
+        label: pins.isPinned(row.documentId) ? "Unpin" : "Pin",
+        icon: pins.isPinned(row.documentId) ? PinOff : Pin,
+        onSelect: () => void pins.toggle(row),
+      })
     if (can.versions)
       actions.push({
         label: "Version history",

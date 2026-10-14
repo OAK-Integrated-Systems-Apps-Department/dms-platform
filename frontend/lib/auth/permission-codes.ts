@@ -72,6 +72,10 @@ export const PermissionCodes = {
   MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
   MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
   MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
+  // Pin Important Documents (PID). Pins are personal; the limit is the organisation's.
+  PID_PIN: "pid.pin-unpin-documents.pin",
+  PID_UNPIN: "pid.pin-unpin-documents.unpin",
+  PID_CONFIGURE_LIMITS: "pid.configure-pin-limits",
   // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
   SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",
   SHAD_VIEW_SYSTEM_LOGS: "shad.view-system-logs",
