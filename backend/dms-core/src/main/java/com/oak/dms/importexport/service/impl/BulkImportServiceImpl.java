@@ -114,6 +114,11 @@ public class BulkImportServiceImpl implements BulkImportService {
             ImportTemplateWorkbook.TITLE_KEY, "Title");
     /** ImportRowValidator's code for a row whose file hasn't arrived. */
     private static final String FILE_MISSING = "FILE_MISSING";
+    // The status response is read by a browser, not a paged screen of its
+    // own - a batch of thousands of rows can skip thousands of files, and
+    // the response must stay a bounded size regardless. skippedTotal in the
+    // DTO carries the rest.
+    private static final int OCR_SKIPPED_FILENAMES_LIMIT = 100;
     private static final TypeReference<List<ImportRowError>> ROW_ERRORS = new TypeReference<>() {
     };
 
@@ -618,7 +623,13 @@ public class BulkImportServiceImpl implements BulkImportService {
         int completed = byStatus.getOrDefault("completed", 0);
         int failed = byStatus.getOrDefault("failed", 0);
         int pending = byStatus.getOrDefault("pending", 0) + byStatus.getOrDefault("processing", 0);
-        return new BulkImportStatusResponse.OcrProgress(batch.getOcrQueuedCount(), pending, completed, failed);
+        List<String> skippedFilenames = importItemRepository.findOcrSkippedFilenames(batch.getImportBatchId(),
+                org.springframework.data.domain.PageRequest.of(0, OCR_SKIPPED_FILENAMES_LIMIT));
+        int skippedTotal = skippedFilenames.size() < OCR_SKIPPED_FILENAMES_LIMIT
+                ? skippedFilenames.size()
+                : (int) importItemRepository.countOcrSkippedFilenames(batch.getImportBatchId());
+        return new BulkImportStatusResponse.OcrProgress(batch.getOcrQueuedCount(), pending, completed, failed,
+                skippedFilenames, skippedTotal);
     }
 
     private static void requireActive(DocumentType documentType) {

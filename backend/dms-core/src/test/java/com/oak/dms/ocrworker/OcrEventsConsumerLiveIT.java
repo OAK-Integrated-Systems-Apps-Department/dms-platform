@@ -73,6 +73,8 @@ class OcrEventsConsumerLiveIT {
     private ProcessingJobRepository processingJobRepository;
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     /** The one row this test leaves behind that outlives its usefulness: an
      * active (`processing`) processing_jobs row holds V36's partial unique
@@ -156,7 +158,16 @@ class OcrEventsConsumerLiveIT {
         // real uploadDocument method gets this for free since both inserts
         // already share its one @Transactional method; this test needs an
         // explicit transaction wrapping both saves to get the same effect.
+        // V39's scan gate: a version needs a document-purpose location and a
+        // clean scan result linked to it, or the deferred trigger rejects the
+        // insert at commit. See ScanGateFixture.
+        UUID locationId = ScanGateFixture.documentLocation(jdbc, tenantId);
+        // scan_results.document_version_id -> document_versions.version_id is
+        // also a DEFERRABLE FK, so the scan result insert has to share this
+        // same transaction too - not run and committed beforehand.
         new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            ScanGateFixture.cleanScanResult(jdbc, tenantId, versionId, documentType.getDocumentTypeId(), ownerUserId,
+                    "live-it.pdf", "application/pdf", "deadbeef");
             documentRepository.save(Document.builder()
                     .documentId(documentId)
                     .tenantId(tenantId)
@@ -177,6 +188,7 @@ class OcrEventsConsumerLiveIT {
                     .originalFilename("live-it.pdf")
                     .mimeType("application/pdf")
                     .fileHash("deadbeef")
+                    .storageLocationId(locationId)
                     .sizeBytes(123)
                     .createdReason("initial_upload")
                     .scanStatus("clean")

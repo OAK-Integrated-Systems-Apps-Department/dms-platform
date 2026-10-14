@@ -245,8 +245,13 @@ class DocumentUploadIT {
         UUID documentTypeId = createDocumentType(tenant.tenantId());
         byte[] content = "minutes of the board meeting".getBytes(StandardCharsets.UTF_8);
         DocumentResponse doc = uploadClean(documentTypeId, "Minutes", "minutes.txt", content);
-        versionService.upload(doc.documentId(), "minutes-v2.txt", content.length, new ByteArrayInputStream(content),
-                null);
+        // Different bytes for v2. This branch refuses a new version identical
+        // to the current one (DuplicateUploadException) - correct, and not
+        // what this test is about: it needs two versions, each with its own
+        // stored object and key, to prove the purge destroys both.
+        byte[] revised = "minutes of the board meeting, as amended".getBytes(StandardCharsets.UTF_8);
+        versionService.upload(doc.documentId(), "minutes-v2.txt", revised.length,
+                new ByteArrayInputStream(revised), null);
 
         documentService.deleteDocument(doc.documentId());
         var bin = recycleBin.list();

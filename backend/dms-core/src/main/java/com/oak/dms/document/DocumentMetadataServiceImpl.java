@@ -12,6 +12,7 @@ import com.oak.dms.metadata.service.DocumentTypeFieldService;
 import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
+import com.oak.dms.audit.helper.SystemActor;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -269,7 +270,18 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     private void persist(Document document, UUID tenantId, DocumentTypeSchemaResponse schema,
                          Map<String, FieldValue> values) {
         DocumentMetadataId id = new DocumentMetadataId(tenantId, document.getDocumentId());
-        UUID userId = TenantContext.getUserId();
+        // document_metadata.created_by/updated_by are real FKs to users(user_id).
+        // The OCR background path (OcrEventsConsumer, OcrFieldsReconciler) binds
+        // TenantContext to SystemActor.SYSTEM_USER_ID - a reserved constant with
+        // NO users row behind it (V24 seeded one; V37 removed it; see
+        // SystemActor.javadoc: "Never assign this id to a real user"). That
+        // sentinel is safe for audit_events.actor_id (no FK there) but would
+        // violate this FK, so it is written as null here instead - the same
+        // "system did this, not a person" fact audit_events records a
+        // different way. The old document_metadata_values table this method
+        // replaced had no created_by/updated_by column at all, so this
+        // collision could not have shown up before the port.
+        UUID userId = realUserIdOrNull(TenantContext.getUserId());
         DocumentMetadata metadata = documentMetadataRepository.findById(id)
                 .map(existing -> {
                     existing.setFieldValues(new java.util.HashMap<>(values));
@@ -287,6 +299,10 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
                         .createdBy(userId)
                         .build());
         documentMetadataRepository.save(metadata);
+    }
+
+    private static UUID realUserIdOrNull(UUID userId) {
+        return SystemActor.SYSTEM_USER_ID.equals(userId) ? null : userId;
     }
 
     private Map<String, FieldValue> storedValues(UUID tenantId, UUID documentId) {

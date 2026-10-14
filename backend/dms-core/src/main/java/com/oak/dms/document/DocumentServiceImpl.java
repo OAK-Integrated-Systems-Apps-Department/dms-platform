@@ -422,8 +422,12 @@ public class DocumentServiceImpl implements DocumentService {
     public OcrRerunResponse prepareRerun(UUID versionId, List<String> fields) {
         UUID tenantId = TenantContext.getTenantId();
         DocumentVersion version = requireVersion(versionId, tenantId);
-        Document document = documentRepository.findById(version.getDocumentId())
-                .orElseThrow(() -> new ResourceNotFoundException("documents", version.getDocumentId()));
+        // edit, not view, and not merely the tenant: a re-run overwrites the
+        // document's OCR-sourced metadata values, so it needs the same access
+        // as changing them by hand. The os.ocr.trigger permission on the
+        // controller says "may re-run OCR"; this says "may re-run it on THIS
+        // document" - the same pair as every other OCR entry point.
+        Document document = findVisible(version.getDocumentId(), FolderAccessLevel.edit);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
 
         List<String> requested = fields != null ? fields : List.of();
@@ -440,6 +444,27 @@ public class DocumentServiceImpl implements DocumentService {
             effective.addAll(requested);
         }
         List<String> effectiveList = new ArrayList<>(effective);
+        if (effectiveList.isEmpty()) {
+            // "Re-run everything already requested" on a version that was
+            // never asked for anything - the case a bulk import leaves behind
+            // when a file falls past the per-batch OCR cap. Marking it
+            // 'pending' with an empty field set would strand it: the backlog
+            // sweeper only drains versions whose requested_fields is NOT
+            // '[]', so nothing would ever pick it up and the document would
+            // sit in the queue for good.
+            //
+            // Refused with a message that says what to do instead, rather
+            // than silently doing nothing, because from the caller's side
+            // "I pressed Run OCR and nothing happened" is the same symptom
+            // as a broken worker.
+            // Same exception type validateRequestedFields above raises, so a
+            // bad field selection and an absent one reach the caller in one
+            // shape rather than two.
+            throw new MetadataValidationFailedException(List.of(new ValidationError(
+                    "requestedFields", "OCR_NO_FIELDS_REQUESTED",
+                    "Choose which fields OCR should extract - this version has no field selection to re-run.",
+                    "error")));
+        }
 
         version.setRequestedFields(writeJson(effectiveList));
         version.setOcrStatus("pending");

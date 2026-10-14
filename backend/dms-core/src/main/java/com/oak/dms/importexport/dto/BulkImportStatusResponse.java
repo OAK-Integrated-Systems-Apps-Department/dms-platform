@@ -40,7 +40,21 @@ public record BulkImportStatusResponse(
      *                  sweeper is still holding)
      * @param completed OCR finished and its fields applied
      * @param failed    OCR ran and could not produce a result
+     * @param skippedFilenames the first {@code skippedTotal} (capped - see
+     *                  {@code BulkImportServiceImpl#OCR_SKIPPED_FILENAMES_LIMIT})
+     *                  files the per-batch cap turned away, by name, in the
+     *                  template's own row order. Named rather than counted so
+     *                  the person can find them and run OCR on them
+     *                  individually (POST /documents/{versionId}/ocr) - a bare
+     *                  number tells them something was skipped without
+     *                  telling them what. Capped rather than the full list: an
+     *                  import of thousands of rows can skip thousands of
+     *                  files, and this response is read by a browser, not a
+     *                  paged screen of its own.
+     * @param skippedTotal how many files were skipped in all - may be larger
+     *                  than {@code skippedFilenames.size()}.
      */
-    public record OcrProgress(int queued, int pending, int completed, int failed) {
+    public record OcrProgress(int queued, int pending, int completed, int failed,
+                              List<String> skippedFilenames, int skippedTotal) {
     }
 }

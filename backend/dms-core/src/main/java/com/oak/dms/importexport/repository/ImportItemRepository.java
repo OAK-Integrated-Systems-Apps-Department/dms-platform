@@ -115,4 +115,50 @@ public interface ImportItemRepository extends JpaRepository<ImportItem, UUID> {
              group by v.ocr_status
             """, nativeQuery = true)
     List<Object[]> countOcrStatusesForBatch(@Param("batchId") UUID batchId);
+
+    /**
+     * Filenames of this batch's documents that were imported WITHOUT OCR,
+     * because the batch hit {@code dms.ocr.max-per-import-batch} (V84).
+     *
+     * <p>Derived, not stored: a document of a batch that asked for OCR, whose
+     * current version never had any requested, is by definition one the cap
+     * turned away. That avoids a per-item column whose only job would be to
+     * record something the data already says - and a column could drift from
+     * the truth, whereas this cannot.
+     *
+     * <p>Only the caller checks whether the batch asked for OCR at all; for a
+     * batch that did not, every row matches and the list is meaningless, so
+     * {@code BulkImportServiceImpl} calls this only when
+     * {@code ocr_requested_fields} is set.
+     *
+     * <p>Ordered by row number so the list reads in the same order as the
+     * person's own spreadsheet. Bounded by {@code pageable} - a batch can be
+     * thousands of rows, and the status response this feeds is read by a
+     * browser, not paged UI of its own; the caller pairs this with
+     * {@link #countOcrSkippedFilenames} so the response can still say how
+     * many more there are.
+     */
+    @Query(value = """
+            select i.filename_reference
+              from import_items i
+              join documents d on d.document_id = i.document_id
+              join document_versions v on v.version_id = d.current_version_id
+             where i.import_batch_id = :batchId
+               and i.document_id is not null
+               and (v.ocr_status is null or v.ocr_status = 'not_required')
+             order by i.row_number
+            """, nativeQuery = true)
+    List<String> findOcrSkippedFilenames(@Param("batchId") UUID batchId, Pageable pageable);
+
+    /** The total count behind {@link #findOcrSkippedFilenames}, unbounded. */
+    @Query(value = """
+            select count(*)
+              from import_items i
+              join documents d on d.document_id = i.document_id
+              join document_versions v on v.version_id = d.current_version_id
+             where i.import_batch_id = :batchId
+               and i.document_id is not null
+               and (v.ocr_status is null or v.ocr_status = 'not_required')
+            """, nativeQuery = true)
+    long countOcrSkippedFilenames(@Param("batchId") UUID batchId);
 }

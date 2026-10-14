@@ -85,6 +85,27 @@ public class OcrEnqueueService {
             log.debug("OCR is disabled - not queueing version {}", versionId);
             return false;
         }
+        if (!jobTokenCodec.isConfigured()) {
+            // OCR is switched on but has no grant secret, so no job can be
+            // given a credential to read its document with.
+            //
+            // DECLINED, not thrown. This method runs inside the promotion
+            // transaction that creates the DocumentVersion, so an exception
+            // here fails the whole UPLOAD - the person loses their document
+            // because an optional feature is misconfigured. Found exactly
+            // that way: a real end-to-end upload came back "the scan service
+            // is temporarily unavailable" with an IllegalStateException from
+            // the token codec buried underneath.
+            //
+            // Declining instead leaves the version 'pending' with its
+            // requested fields and no live job - the same durable marker the
+            // queue-limit path leaves - so once the secret is set, the
+            // backlog sweeper picks these up with nothing lost.
+            log.error("dms.ocr.job-token-secret is not set, so no OCR grant can be issued - version {} is held "
+                    + "back. Uploads are unaffected; set the secret and the backlog sweeper will pick it up.",
+                    versionId);
+            return false;
+        }
         if (isAlreadyActive(versionId)) {
             // Re-run of a version whose job is still queued or processing. Not
             // a decline and not a second job: the existing one will pick up the

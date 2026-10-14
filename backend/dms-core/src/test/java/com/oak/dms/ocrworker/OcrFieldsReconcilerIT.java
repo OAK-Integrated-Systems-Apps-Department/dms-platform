@@ -66,6 +66,7 @@ class OcrFieldsReconcilerIT {
     @Autowired private OcrFieldsReconciler reconciler;
     @Autowired private OcrProperties ocrProperties;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private UUID createdJobId;
 
@@ -117,9 +118,18 @@ class OcrFieldsReconcilerIT {
 
         UUID documentId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
-        // documents.current_version_id <-> document_versions.document_id are
-        // mutual DEFERRABLE FKs (V32); both inserts must share one transaction.
+        // V39's scan gate: a version may only exist with a document-purpose
+        // location and a clean scan result linked to it. Written first so the
+        // deferred trigger finds them at commit.
+        UUID locationId = ScanGateFixture.documentLocation(jdbc, tenantId);
+        // documents.current_version_id <-> document_versions.document_id, and
+        // scan_results.document_version_id -> document_versions.version_id, are
+        // all DEFERRABLE FKs - every row that participates has to go in the
+        // SAME transaction, or the FK is checked (and fails) at the earlier
+        // one.s own commit, well before the version exists.
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            ScanGateFixture.cleanScanResult(jdbc, tenantId, versionId, documentType.getDocumentTypeId(), ownerUserId,
+                    "reconciler-it.pdf", "application/pdf", "deadbeef");
             documentRepository.save(Document.builder()
                     .documentId(documentId).tenantId(tenantId)
                     .documentTypeId(documentType.getDocumentTypeId())
@@ -133,6 +143,7 @@ class OcrFieldsReconcilerIT {
                             .formatted(tenantId, documentId, versionId))
                     .originalFilename("reconciler-it.pdf").mimeType("application/pdf")
                     .fileHash("deadbeef").sizeBytes(123).createdReason("initial_upload")
+                    .storageLocationId(locationId)
                     .scanStatus("clean")
                     // The state a dropped .completed event leaves behind:
                     // OCR finished and wrote its results, but nothing ever

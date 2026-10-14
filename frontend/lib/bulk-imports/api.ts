@@ -79,6 +79,15 @@ export interface BulkImportOcrProgressDto {
   pending: number
   completed: number
   failed: number
+  /**
+   * The first `skippedTotal` (capped server-side) files the per-batch OCR
+   * cap turned away, by name, in the template's own row order. Named rather
+   * than counted so they can be found and run individually — a bare number
+   * says something was skipped without saying what.
+   */
+  skippedFilenames: string[]
+  /** How many files were skipped in all — may exceed `skippedFilenames.length`. */
+  skippedTotal: number
 }
 
 /** One problem with a failed row. `fieldLabel` is the column's display name (null if the problem isn't about one column). */

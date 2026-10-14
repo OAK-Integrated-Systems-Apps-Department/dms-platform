@@ -100,7 +100,9 @@ function OcrProgressPanel({ batch }: { batch: BulkImportStatusResponseDto }) {
   const ocr = batch.ocr
   if (!ocr) return null
 
-  const notQueued = batch.successCount - ocr.queued
+  const skipped = ocr.skippedFilenames ?? []
+  const skippedTotal = ocr.skippedTotal ?? skipped.length
+  const skippedMoreCount = skippedTotal - skipped.length
   return (
     <div className="mb-5">
       <dl className="mb-3 grid gap-3 sm:grid-cols-3">
@@ -113,12 +115,39 @@ function OcrProgressPanel({ batch }: { batch: BulkImportStatusResponseDto }) {
         max={ocr.queued}
         label="OCR finished"
       />
-      {notQueued > 0 && (
-        <p className="mt-2 text-[12px] leading-[1.5] text-muted-foreground">
-          {notQueued} {notQueued === 1 ? "document was" : "documents were"} imported
-          without OCR because this import reached its OCR limit. You can run OCR
-          on them individually from the document.
-        </p>
+      {skippedTotal > 0 && (
+        <div className="mt-3 rounded-lg border border-border bg-muted/30 px-3.5 py-3">
+          <p className="text-[12.5px] leading-[1.5] text-foreground">
+            <span className="font-semibold">
+              {skippedTotal} {skippedTotal === 1 ? "file was" : "files were"} imported
+              without OCR
+            </span>{" "}
+            because this import reached its OCR limit. They are in the DMS and
+            complete — only OCR was skipped. Open any of them and choose{" "}
+            <span className="font-medium">Run OCR</span> to extract its fields.
+          </p>
+          {/*
+            Named, not just counted. A count tells someone that something was
+            skipped without telling them which, which leaves them to diff an
+            import of thousands of rows by hand.
+
+            Scrollable rather than paginated: this is a reference list someone
+            copies from, and a cap with its own "show more" would be a second
+            thing to click through for no benefit. The list itself is still
+            capped server-side (skippedFilenames), so skippedMoreCount covers
+            the rest with a count rather than silently truncating.
+          */}
+          <ul className="mt-2 max-h-40 overflow-y-auto font-mono text-[11.5px] leading-[1.6] text-muted-foreground">
+            {skipped.map((filename) => (
+              <li key={filename}>{filename}</li>
+            ))}
+          </ul>
+          {skippedMoreCount > 0 && (
+            <p className="mt-1 text-[11.5px] leading-[1.5] text-muted-foreground">
+              + {skippedMoreCount} more not shown
+            </p>
+          )}
+        </div>
       )}
     </div>
   )

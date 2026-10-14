@@ -3,6 +3,10 @@ package com.oak.dms.document;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.entity.DocumentType.DocumentTypeStatus;
+import com.oak.dms.metadata.entity.DocumentTypeSchema;
+import com.oak.dms.metadata.entity.MetadataField;
+import com.oak.dms.metadata.repository.DocumentTypeSchemaRepository;
+import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEvent;
@@ -53,6 +57,10 @@ class DocumentUploadOcrQueueingIT {
     @Autowired
     private DocumentTypeRepository documentTypeRepository;
     @Autowired
+    private MetadataFieldRepository metadataFieldRepository;
+    @Autowired
+    private DocumentTypeSchemaRepository documentTypeSchemaRepository;
+    @Autowired
     private DocumentVersionRepository documentVersionRepository;
     @Autowired
     private ProcessingJobRepository processingJobRepository;
@@ -80,8 +88,12 @@ class DocumentUploadOcrQueueingIT {
 
         mockMvc.perform(multipart("/api/v1/documents")
                         .file(file)
-                        .param("documentType", "general")
-                        .with(jwt().jwt(builder -> builder.subject(keycloakId.toString())).authorities()))
+                        .param("documentTypeId", createdDocumentTypeId.toString())
+                        .param("title", "OCR queueing IT")
+                        .param("requestedFields", "[\"" + createdFieldKey + "\"]")
+                        .with(jwt().jwt(builder -> builder.subject(keycloakId.toString())
+                                .claim("tenant_id", tenantId.toString()))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))))
                 .andExpect(status().isCreated());
 
         List<DocumentVersion> versions = documentVersionRepository.findAll().stream()
@@ -137,12 +149,19 @@ class DocumentUploadOcrQueueingIT {
         // what must never appear is "failed", and errorCode/friendlyError
         // (B.6) must stay absent while nothing has failed.
         mockMvc.perform(get("/api/v1/documents/" + version.getDocumentId() + "/ocr-status")
-                        .with(jwt().jwt(builder -> builder.subject(keycloakId.toString())).authorities()))
+                        .with(jwt().jwt(builder -> builder.subject(keycloakId.toString())
+                                .claim("tenant_id", tenantId.toString()))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(org.hamcrest.Matchers.oneOf("queued", "processing", "completed")))
                 .andExpect(jsonPath("$.errorCode").doesNotExist())
                 .andExpect(jsonPath("$.friendlyError").doesNotExist());
     }
+
+    /** Set by the tenant fixture; the upload request needs it. */
+    private UUID createdDocumentTypeId;
+    /** Set by the tenant fixture; the upload request.s requestedFields needs it. */
+    private String createdFieldKey;
 
     private UUID createTenantUserAndDocumentType(UUID keycloakId) {
         Tenant tenant = tenantRepository.save(Tenant.builder()
@@ -152,7 +171,7 @@ class DocumentUploadOcrQueueingIT {
                 .status(Tenant.TenantStatus.active)
                 .build());
 
-        userRepository.save(User.builder()
+        UUID ownerUserId = userRepository.save(User.builder()
                 .tenantId(tenant.getTenantId())
                 .keycloakId(keycloakId)
                 .email(keycloakId + "@b1-upload-test.invalid")
@@ -161,7 +180,7 @@ class DocumentUploadOcrQueueingIT {
                 .lastName("UploadTest")
                 .displayName("B1 UploadTest")
                 .status(User.UserStatus.active)
-                .build());
+                .build()).getUserId();
 
         // No documentTypeId set -- unlike Document/Tenant/User (client-
         // generated UUIDs), DocumentType's @Id uses Hibernate's own
@@ -170,11 +189,34 @@ class DocumentUploadOcrQueueingIT {
         // call merge() (an UPDATE) instead of persist() (an INSERT),
         // failing with a StaleObjectStateException since no such row
         // exists yet to update.
-        documentTypeRepository.save(DocumentType.builder()
+        // Kept: the upload API takes documentTypeId (a UUID), not the type
+        // code the OCR branch used to send.
+        createdDocumentTypeId = documentTypeRepository.save(DocumentType.builder()
                 .tenantId(tenant.getTenantId())
                 .typeCode("GENERAL")
                 .typeName("General")
                 .status(DocumentTypeStatus.active)
+                .build()).getDocumentTypeId();
+
+        // This branch only queues OCR for fields the uploader explicitly
+        // selected (requestedFields) - unlike the old OCR branch, which
+        // queued unconditionally. One ocrExtractable field, published into
+        // the type.s schema, is what the upload call below asks OCR to read.
+        createdFieldKey = "invoice_number";
+        MetadataField field = metadataFieldRepository.save(MetadataField.builder()
+                .tenantId(tenant.getTenantId())
+                .fieldKey(createdFieldKey)
+                .label("Invoice Number")
+                .dataType("text")
+                .ocrExtractable(true)
+                .build());
+        documentTypeSchemaRepository.saveAndFlush(DocumentTypeSchema.builder()
+                .tenantId(tenant.getTenantId())
+                .documentTypeId(createdDocumentTypeId)
+                .schemaVersion(1)
+                .fields(List.of(new DocumentTypeSchema.FieldMapping(
+                        UUID.randomUUID(), field.getFieldId(), false, false, false, 10, null, null)))
+                .publishedBy(ownerUserId)
                 .build());
 
         return tenant.getTenantId();
