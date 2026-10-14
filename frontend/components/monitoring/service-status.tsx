@@ -12,6 +12,7 @@ import { createPortal } from "react-dom"
 import { CircleCheck, CircleX, Radio, X } from "lucide-react"
 
 import { ServiceLogs } from "@/components/monitoring/service-logs"
+import { useMonitoringAccess } from "@/lib/auth/use-monitoring-access"
 import { cn } from "@/lib/utils"
 import type { ServiceStatus } from "@/lib/monitoring/api"
 
@@ -399,6 +400,7 @@ function ServiceDetail({
   data: number[]
   onClose: () => void
 }) {
+  const { canViewLogs } = useMonitoringAccess()
   const statusColor = service.up ? COLOR.good : COLOR.bad
   const pct = readingOf(service)
   const min = data.length ? Math.min(...data) : pct
@@ -451,7 +453,9 @@ function ServiceDetail({
       <Sparkline data={data} color={statusColor} />
       {/* The service id is the compose service name, which is also the
           `service` label Promtail puts on every log line - so no lookup. */}
-      <ServiceLogs serviceId={String(service.id)} serviceLabel={service.label} />
+      {canViewLogs && (
+        <ServiceLogs serviceId={String(service.id)} serviceLabel={service.label} />
+      )}
     </div>
   )
 }

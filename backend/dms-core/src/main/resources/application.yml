@@ -386,6 +386,11 @@ dms:
     # Points per chart. The step is derived from this and the window, so a
     # 7-day chart costs about the same as a 1-hour one.
     chart-points: ${MONITORING_CHART_POINTS:120}
+  dashboard:
+    # How long the home dashboard's figures are served from Redis before they are worked
+    # out again (DashboardCache). They scan every document the caller may see - seconds at
+    # millions of documents - so a minute's staleness buys a lot. 0 turns the cache off.
+    cache-seconds: ${DASHBOARD_CACHE_SECONDS:60}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |

@@ -25,6 +25,17 @@ services:
     image: postgres:18-alpine
     container_name: oakdms-postgres
     restart: unless-stopped
+    # Memory ceiling. Mostly page cache, which the kernel reclaims under pressure, so this is a
+    # ceiling on a runaway query rather than a squeeze on normal work. 4g because the dashboard
+    # and listing queries scan millions of rows (measured: 16 s of database time at 3.7M
+    # documents) and have to run from memory, not disk.
+    mem_limit: ${POSTGRES_MEM_LIMIT:-4g}
+    # What Postgres is told it has - its defaults (128MB shared buffers, 4MB sort memory)
+    # assume a small machine. Keep shared_buffers about a quarter of POSTGRES_MEM_LIMIT and
+    # effective_cache_size about three quarters if you change the limit.
+    command: ["postgres", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}",
+              "-c", "effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-3GB}",
+              "-c", "work_mem=16MB", "-c", "maintenance_work_mem=256MB"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -47,6 +58,9 @@ services:
     # so the rabbitmq_data volume is reused across container recreations.
     hostname: rabbitmq
     restart: unless-stopped
+    # Memory ceiling. ~70 MB used idle. RabbitMQ blocks publishers at 40% of its limit, so this
+    # leaves ~400 MB of backlog before that happens.
+    mem_limit: 1g
     environment:
       RABBITMQ_DEFAULT_USER: dms
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
@@ -65,6 +79,8 @@ services:
     image: redis:7-alpine
     container_name: oakdms-redis
     restart: unless-stopped
+    # Memory ceiling. ~15 MB used idle.
+    mem_limit: 512m
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - redis_data:/data
@@ -82,6 +98,8 @@ services:
     image: axllent/mailpit:v1.27
     container_name: oakdms-mailpit
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 128m
     ports:
       - "127.0.0.1:8026:8025"
     healthcheck:
@@ -94,6 +112,8 @@ services:
     image: quay.io/keycloak/keycloak:26.7.0
     container_name: oakdms-keycloak
     restart: unless-stopped
+    # Memory ceiling. ~0.4 GB used idle.
+    mem_limit: ${KEYCLOAK_MEM_LIMIT:-1536m}
     # Production mode. --import-realm only creates the realm if it does not
     # exist yet (IGNORE_EXISTING); keycloak-bootstrap below re-applies the
     # settings that must track this deployment (web client URLs, SMTP).
@@ -199,6 +219,8 @@ services:
     image: chrislusf/seaweedfs:3.97
     container_name: oakdms-seaweedfs
     restart: unless-stopped
+    # Memory ceiling. ~85 MB used idle.
+    mem_limit: 1g
     environment:
       SEAWEEDFS_S3_ACCESS_KEY: ${SEAWEEDFS_S3_ACCESS_KEY:?SEAWEEDFS_S3_ACCESS_KEY is required}
       SEAWEEDFS_S3_SECRET_KEY: ${SEAWEEDFS_S3_SECRET_KEY:?SEAWEEDFS_S3_SECRET_KEY is required}
@@ -309,6 +331,11 @@ services:
     image: ${DMS_CORE_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-core}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
     container_name: oakdms-core
     restart: unless-stopped
+    # Memory ceiling. The JVM sizes its heap as 75% of THIS (MaxRAMPercentage in backend/Dockerfile),
+    # so with no limit it meant 75% of the whole server. 2560m gives a ~1.9 GB heap
+    # against ~0.4 GB used idle. Raise DMS_CORE_MEM_LIMIT for a client with very
+    # large imports; the heap follows automatically.
+    mem_limit: ${DMS_CORE_MEM_LIMIT:-2560m}
     # default: every other service; previews: the Office converter (Gotenberg) only.
     networks:
       - default
@@ -400,6 +427,10 @@ services:
     image: ${FRONTEND_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-frontend}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
     container_name: oakdms-frontend
     restart: unless-stopped
+    # Memory ceiling. A standalone Next.js server, which typically idles well under
+    # 200 MB - an expectation, NOT a measurement: only the dev server runs on the
+    # machine this was sized on. Check `docker stats` after the first deploy.
+    mem_limit: 512m
     # The API URL is baked into this image at build time as same-origin
     # "/api" (frontend/Dockerfile) - nothing host-specific to set here.
     ports:
@@ -425,6 +456,8 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: oakdms-prometheus
     restart: unless-stopped
+    # Memory ceiling. ~130 MB for ~14k series; this covers an order of magnitude more.
+    mem_limit: 1g
     user: "nobody"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -460,6 +493,8 @@ services:
     image: grafana/grafana:11.5.1
     container_name: oakdms-grafana
     restart: unless-stopped
+    # Memory ceiling. ~200 MB used.
+    mem_limit: 512m
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       # Required, no default: an admin password must never fall back to
@@ -610,6 +645,8 @@ services:
     image: prom/node-exporter:v1.8.2
     container_name: oakdms-node-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 64m
     command:
       - --path.rootfs=/host
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker)($$|/)
@@ -651,6 +688,8 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: oakdms-postgres-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 128m
     environment:
       # A dedicated read-only login, NOT the superuser the local stack uses:
       # this container only ever reads pg_stat_*, and a metrics exporter is
@@ -669,6 +708,8 @@ services:
     image: oliver006/redis_exporter:v1.67.0
     container_name: oakdms-redis-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 64m
     environment:
       REDIS_ADDR: redis://redis:6379
       # Production Redis requires a password (see the redis service above).

@@ -103,6 +103,9 @@ export function AppSidebar({
         (item) =>
           (!item.platformAdminOnly || isPlatformAdmin) &&
           (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
+          (!item.platformAdminOrPermission ||
+            isPlatformAdmin ||
+            hasAnyPermission(item.platformAdminOrPermission)) &&
           (!item.permission ||
             hasAnyPermission(
               ...(Array.isArray(item.permission)

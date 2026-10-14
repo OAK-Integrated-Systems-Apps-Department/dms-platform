@@ -33,6 +33,13 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: oakdms-postgres
+    # Memory ceiling, mostly page cache the kernel reclaims under pressure. 3g rather than the
+    # 1.5g it had: dashboard scans over a few million documents do not fit in less and
+    # then run from disk. The -c settings tell Postgres what it has - the defaults
+    # (128MB of shared buffers, 4MB of sort memory) assume a much smaller machine.
+    mem_limit: 3g
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=2GB",
+              "-c", "work_mem=16MB", "-c", "maintenance_work_mem=256MB"]
     <<: *secrets-env
     environment:
       POSTGRES_USER: postgres
@@ -52,6 +59,8 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: oakdms-rabbitmq
+    # Memory ceiling.
+    mem_limit: 1g
     <<: *secrets-env
     environment:
       RABBITMQ_DEFAULT_USER: dms
@@ -68,6 +77,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: oakdms-redis
+    # Memory ceiling.
+    mem_limit: 512m
     <<: *secrets-env
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     ports:
@@ -90,6 +101,8 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     container_name: oakdms-mailpit
+    # Memory ceiling.
+    mem_limit: 128m
     ports:
       - "8026:8025" # web UI (8025 is taken locally by dms-core sometimes; keeping 8026 to avoid clashing)
       - "1026:1025" # SMTP - matches the realm's smtpServer.port below
@@ -195,6 +208,8 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     container_name: oakdms-seaweedfs
+    # Memory ceiling.
+    mem_limit: 1g
     # Credentials never live in this committed file (see .env.example) -
     # the S3 identity config SeaweedFS itself needs (-s3.config) is
     # generated from env vars at container start, into a location inside
@@ -453,6 +468,12 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile.dev
     container_name: oakdms-frontend
+    # Memory ceiling. The Next.js DEV server (Turbopack) is by far the heaviest thing here - about
+    # 2 GB after a few hours - and its memory only ever grows until restarted.
+    # Uncapped it competes with the rest of the stack for the Docker VM's 7.8 GB,
+    # which is what froze the VM earlier. A production build is far lighter
+    # (typically ~150 MB, though not measured here).
+    mem_limit: 3g
     environment:
       PORT: "3000"
       # Some Docker/OS combos (bind mounts on Windows/WSL2 or certain
@@ -509,6 +530,8 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: oakdms-prometheus
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 1g
     user: "nobody"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -542,6 +565,8 @@ services:
     image: grafana/grafana:11.5.1
     container_name: oakdms-grafana
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 512m
     environment:
       # Admin login, for editing outside the embedded view. Local-only
       # default; production requires the variable to be set explicitly.
@@ -726,6 +751,8 @@ services:
     image: prom/node-exporter:v1.8.2
     container_name: oakdms-node-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 64m
     command:
       - --path.rootfs=/host
       # Container and virtual filesystems would otherwise swamp the real ones.
@@ -787,6 +814,8 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: oakdms-postgres-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 128m
     <<: *secrets-env
     environment:
       # Reads the same superuser the stack already uses locally. In
@@ -805,6 +834,8 @@ services:
     image: oliver006/redis_exporter:v1.67.0
     container_name: oakdms-redis-exporter
     restart: unless-stopped
+    # Memory ceiling.
+    mem_limit: 64m
     environment:
       REDIS_ADDR: redis://redis:6379
       # The local redis runs with --requirepass too (see the redis service);

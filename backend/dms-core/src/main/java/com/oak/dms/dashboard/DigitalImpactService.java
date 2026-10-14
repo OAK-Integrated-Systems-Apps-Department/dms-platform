@@ -167,7 +167,7 @@ public class DigitalImpactService {
 
             // Where the period's pages came from, by kind of file.
             Map<String, long[]> byKind = new LinkedHashMap<>();
-            jdbc.query("select lower(substring(v.original_filename from '\\.([^.]+)$')) as ext,"
+            jdbc.query("select " + DashboardService.EXTENSION + " as ext,"
                             + " sum(v.page_count) as pages, count(*) as files " + versionsOf
                             + " and v.page_count is not null"
                             + " and (v.created_at at time zone :zone)::date between :from and :to group by 1",

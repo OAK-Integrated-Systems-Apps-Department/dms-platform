@@ -15,8 +15,8 @@ import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
  * about them.
  *
  * Instead, this route is the only way in. It asks dms-core whether the
- * caller may see monitoring (the same PLATFORM_ADMIN check as every other
- * cross-tenant screen), and if so forwards to Grafana with the caller's name
+ * caller may see monitoring (platform admin, or a role carrying
+ * shad.view-system-health-dashboard), and if so forwards to Grafana with the caller's name
  * in `X-WEBAUTH-USER`. Grafana's auth proxy trusts that header - which is
  * safe exactly because Grafana accepts it from nothing else: it is not
  * published, and GF_AUTH_PROXY_WHITELIST limits who may set it.

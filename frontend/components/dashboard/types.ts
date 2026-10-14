@@ -44,6 +44,12 @@ export interface NavItem {
    * fixed platform roles from the caller's JWT, not catalogue entries.
    */
   adminOnly?: boolean
+  /**
+   * Visible to platform administrators, or to anyone holding this permission.
+   * A platform administrator has no tenant and so no resolved permission list,
+   * hence the separate check; tenant admins pass through `hasAnyPermission`.
+   */
+  platformAdminOrPermission?: string
 }
 
 export interface NavSection {

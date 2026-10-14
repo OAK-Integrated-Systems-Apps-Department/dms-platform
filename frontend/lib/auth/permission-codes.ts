@@ -72,6 +72,9 @@ export const PermissionCodes = {
   MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
   MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
   MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
+  // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
+  SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",
+  SHAD_VIEW_SYSTEM_LOGS: "shad.view-system-logs",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a

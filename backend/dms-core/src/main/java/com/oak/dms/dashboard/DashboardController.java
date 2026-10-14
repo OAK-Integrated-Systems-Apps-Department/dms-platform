@@ -24,8 +24,8 @@ import java.time.ZoneOffset;
 @Tag(name = "Dashboard", description = "The home dashboard's figures for the caller")
 public class DashboardController {
 
-    private final DashboardService dashboardService;
-    private final DigitalImpactService digitalImpactService;
+    // Through the cache: the figures scan every document the caller may see (see DashboardCache).
+    private final DashboardCache dashboardCache;
 
     /**
      * @param timeZone the browser's IANA time zone (e.g. Asia/Colombo), so the days are the caller's own
@@ -35,7 +35,7 @@ public class DashboardController {
     @Operation(summary = "Documents, storage, usage per day, types, formats, folders, most opened, security and activity")
     public DashboardResponse dashboard(@RequestParam(name = "timeZone", required = false) String timeZone,
                                        @RequestParam(name = "days", defaultValue = "30") int days) {
-        return dashboardService.forCaller(zone(timeZone), days);
+        return dashboardCache.dashboard(zone(timeZone), days);
     }
 
     /**
@@ -54,7 +54,7 @@ public class DashboardController {
                                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                         @RequestParam(name = "to", required = false)
                                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return digitalImpactService.forCaller(zone(timeZone), days, from, to);
+        return dashboardCache.impact(zone(timeZone), days, from, to);
     }
 
     static ZoneId zone(String timeZone) {

@@ -57,8 +57,8 @@ export type MonitoringRange = (typeof MONITORING_RANGES)[number]
  * System metrics, via `GET /api/v1/monitoring/*`.
  *
  * Read through dms-core rather than from Prometheus or Grafana directly, so
- * the same PLATFORM_ADMIN check that guards every other cross-tenant screen
- * guards these - and neither Prometheus nor Grafana has to be reachable from
+ * the same authorisation check (platform admin, or the system-health
+ * permission) guards these - and neither Prometheus nor Grafana has to be reachable from
  * a browser at all.
  */
 export async function fetchMonitoringSnapshot(): Promise<MonitoringSnapshot> {

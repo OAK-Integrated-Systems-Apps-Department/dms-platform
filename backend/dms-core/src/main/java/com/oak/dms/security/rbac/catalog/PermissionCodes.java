@@ -49,6 +49,12 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // System monitoring - SHAD (System Health and Administration Dashboard).
+    // Held implicitly by TENANT_ADMIN and PLATFORM_ADMIN like every code; others get them via a role.
+    public static final String SHAD_VIEW_SYSTEM_HEALTH = "shad.view-system-health-dashboard";
+    /** Log lines can carry anything a service printed, so reading them is a grant of its own. */
+    public static final String SHAD_VIEW_SYSTEM_LOGS = "shad.view-system-logs";
+
     // Roles - ASM (Access and Security Management) / Manage Roles & Permissions
     public static final String ASM_ROLES_CREATE_ROLE = "asm.manage-roles-permissions.create-role";
     public static final String ASM_ROLES_UPDATE_ROLE = "asm.manage-roles-permissions.update-role";

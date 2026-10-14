@@ -198,16 +198,14 @@ export const navSections: NavSection[] = [
     label: "System",
     items: [
       // Live stack health (Prometheus + Grafana, see infra/monitoring).
-      // Administrators of either kind: on a single-organisation deployment
-      // the tenant admins are the people who actually operate the server,
-      // so platform-admin-only would hide it from everyone who needs it.
-      // It shows infrastructure figures (CPU, disk, queues) - never
-      // document content - so it is not tenant-scoped data.
+      // Platform administrators always; tenant admins implicitly; anyone
+      // else through the shad.view-system-health-dashboard permission, which
+      // a tenant admin assigns via a role.
       {
         label: "System Monitoring",
         icon: Activity,
         href: "/admin/monitoring",
-        adminOnly: true,
+        platformAdminOrPermission: PermissionCodes.SHAD_VIEW_SYSTEM_HEALTH,
       },
     ],
   },

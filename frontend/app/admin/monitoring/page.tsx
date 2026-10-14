@@ -30,7 +30,7 @@ import { MetricTile } from "@/components/monitoring/metric-tiles"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
-import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+import { useMonitoringAccess } from "@/lib/auth/use-monitoring-access"
 import {
   fetchAlerts,
   fetchDependencyHealth,
@@ -243,8 +243,8 @@ function MonitoringSkeleton() {
  * with anonymous Viewer access so the iframe would render without a second
  * login - which made every metric readable by anyone who could reach
  * Grafana's port, whatever the DMS thought about them. Read through
- * dms-core, the same figures sit behind the same PLATFORM_ADMIN check as
- * every other cross-tenant screen, and neither Prometheus nor Grafana needs
+ * dms-core, the same figures sit behind one authorisation check (platform
+ * admin, or the shad.view-system-health-dashboard permission), and neither Prometheus nor Grafana needs
  * to be reachable from a browser at all.
  *
  * Grafana keeps the jobs it is better at - alert rules, ad-hoc exploration,
@@ -252,31 +252,31 @@ function MonitoringSkeleton() {
  */
 export default function SystemMonitoringPage() {
   usePageTitle("System Monitoring")
-  const { isPlatformAdmin, isPending } = useIsPlatformAdmin()
+  const { canView, isPending } = useMonitoringAccess()
   const [range, setRange] = useState<MonitoringRange>("6h")
 
   const snapshot = useQuery({
     queryKey: ["monitoring", "snapshot"],
     queryFn: fetchMonitoringSnapshot,
-    enabled: isPlatformAdmin,
+    enabled: canView,
     refetchInterval: REFRESH_MS,
   })
   const services = useQuery({
     queryKey: ["monitoring", "services"],
     queryFn: fetchMonitoringServices,
-    enabled: isPlatformAdmin,
+    enabled: canView,
     refetchInterval: REFRESH_MS,
   })
   const alerts = useQuery({
     queryKey: ["monitoring", "alerts"],
     queryFn: fetchAlerts,
-    enabled: isPlatformAdmin,
+    enabled: canView,
     refetchInterval: REFRESH_MS,
   })
   const health = useQuery({
     queryKey: ["monitoring", "health"],
     queryFn: fetchDependencyHealth,
-    enabled: isPlatformAdmin,
+    enabled: canView,
     refetchInterval: REFRESH_MS,
   })
   // Only for the tile sparklines - the charts further down are Grafana's.
@@ -285,7 +285,7 @@ export default function SystemMonitoringPage() {
   const series = useQuery({
     queryKey: ["monitoring", "series", range],
     queryFn: () => fetchMonitoringSeries(range),
-    enabled: isPlatformAdmin,
+    enabled: canView,
     refetchInterval: REFRESH_MS,
   })
 
@@ -341,7 +341,7 @@ export default function SystemMonitoringPage() {
             is true right now; the charts say how it got there.
           </p>
         </div>
-        {isPlatformAdmin && (
+        {canView && (
           <div className="flex items-center gap-1.5">
             <div
               role="radiogroup"
@@ -401,15 +401,16 @@ export default function SystemMonitoringPage() {
 
       {isPending ? (
         <LoadingState message="Checking your access…" />
-      ) : !isPlatformAdmin ? (
+      ) : !canView ? (
         <div className="sm-reveal rounded-xl border border-border bg-card px-6 py-16 text-center">
           <p className="text-[14px] font-semibold">
-            System monitoring is for platform administrators
+            You don&apos;t have access to system monitoring
           </p>
           <p className="mx-auto mt-1.5 max-w-[420px] text-[12.5px] leading-[1.6] text-muted-foreground">
             These figures cover the whole installation — the host, the
-            database and every organisation on it — so they are not scoped to
-            any one organisation.
+            database and every organisation on it — so it needs its own
+            permission. Ask your administrator to give you a role with
+            &ldquo;View System Health Dashboard&rdquo;.
           </p>
         </div>
       ) : snapshot.isPending ? (

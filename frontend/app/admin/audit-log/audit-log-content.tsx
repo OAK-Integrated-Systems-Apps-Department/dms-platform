@@ -89,6 +89,12 @@ export function AuditLogContent() {
       setFilters((current) => ({ ...current, correlationId }))
       setPage(1)
     }
+    // `?module=DE` - e.g. Encryption Keys' "View key activity" link.
+    const moduleCode = searchParams.get("module")
+    if (moduleCode) {
+      setFilters((current) => ({ ...current, modules: [moduleCode] }))
+      setPage(1)
+    }
   }
 
   function handleFiltersChange(update: Partial<AuditLogFilterState>) {
