@@ -73,6 +73,9 @@ class ReviewCorrectionsAreManualTest {
 
     @Mock private DocumentTypeRepository documentTypeRepository;
     @Mock private DocumentTypeFieldService documentTypeFieldService;
+    @Mock private com.oak.dms.user.UserRepository userRepository;
+    @Mock private com.oak.dms.storage.repository.StorageLocationRepository storageLocationRepository;
+    @Mock private com.oak.dms.storage.service.ObjectStorageServiceFactory objectStorageServiceFactory;
     @Mock private DocumentRepository documentRepository;
     @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
@@ -112,9 +115,10 @@ class ReviewCorrectionsAreManualTest {
         // Constructor order follows the field order in DocumentServiceImpl:
         // the document/folder/access collaborators first, then the OCR ones.
         service = new DocumentServiceImpl(
-                documentRepository, documentVersionRepository, documentMapper, ingestionGate,
+                documentRepository, documentVersionRepository, documentMapper, documentTypeRepository,
+                userRepository, storageLocationRepository, objectStorageServiceFactory, ingestionGate,
                 auditService, folderService, folderAccessService, documentAccessService,
-                accessPrincipals, documentTypeRepository, versionContent,
+                accessPrincipals, versionContent,
                 documentTypeFieldService, documentOcrFieldResultRepository,
                 documentOcrLineItemRepository, documentOcrCorrectionRepository,
                 processingJobRepository, ocrWorkerClient, ocrEnqueueService,

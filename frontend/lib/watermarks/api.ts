@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
-import { type DownloadedFile } from "@/lib/bulk-imports/api"
+import { type DownloadedFile } from "@/lib/download-file"
 
 const TEMPLATES = `${API_BASE_URL}/api/v1/watermark-templates`
 const JOBS = `${API_BASE_URL}/api/v1/watermark-jobs`

@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { saveDownloadedFile } from "@/lib/bulk-imports/api"
+import { saveDownloadedFile } from "@/lib/download-file"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { downloadWatermark } from "@/lib/watermarks/api"
 import { describeWatermarkError } from "@/lib/watermarks/watermark-errors"

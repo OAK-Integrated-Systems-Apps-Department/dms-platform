@@ -154,22 +154,6 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Real bug found live: a document photo/scan that exceeds
-     * spring.servlet.multipart.max-file-size (see application.yml's own
-     * comment -- Spring Boot's silent default is 1MB, easily exceeded by
-     * a real phone-camera photo of a document) was falling through to the
-     * generic handleUnexpected below, surfacing only "An unexpected error
-     * occurred" with no indication the file itself was the problem.
-     */
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex, HttpServletRequest request) {
-        log.warn("Upload exceeded max size on {}: {}", request.getRequestURI(), ex.getMessage());
-        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
-                .body(ErrorResponse.of(HttpStatus.CONTENT_TOO_LARGE.value(), "Content Too Large",
-                        "This file is too large to upload. Please choose a smaller file.", request.getRequestURI()));
-    }
-
-    /**
      * Anything that already carries the right status AND a sentence meant
      * for a person -- today, the ocr-worker proxy routes (see
      * {@code OcrWorkerClient}).

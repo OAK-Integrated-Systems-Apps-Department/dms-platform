@@ -2,15 +2,17 @@ spring:
   application:
     name: dms-core
 
+  # Spring Boot's default scheduler is a SINGLE thread shared by every
+  # @Scheduled method. Until Phase 2 there was only one (OutboxRelay,
+  # every 2s), so that was fine. OcrFieldsReconciler is the second, and
+  # its tick can do real work -- a schema lookup plus a
+  # delete-then-insert per field, for up to dms.ocr.batch-size versions.
+  # On one thread, a slow reconciler tick delays the relay, and the
+  # relay is the mechanism every OCR job is triggered by. Also covers
+  # ScanRetryScheduler (ClamAV retry) and workflow SLA reminders, which
+  # touch independent tables and shouldn't block each other either.
   task:
     scheduling:
-      # Spring Boot's default scheduler is a SINGLE thread shared by every
-      # @Scheduled method. Until Phase 2 there was only one (OutboxRelay,
-      # every 2s), so that was fine. OcrFieldsReconciler is the second, and
-      # its tick can do real work -- a schema lookup plus a
-      # delete-then-insert per field, for up to dms.ocr.batch-size versions.
-      # On one thread, a slow reconciler tick delays the relay, and the
-      # relay is the mechanism every OCR job is triggered by.
       pool:
         size: ${SCHEDULING_POOL_SIZE:2}
 
@@ -33,14 +35,6 @@ spring:
         jdbc.batch_size: 50
         order_inserts: true
         order_updates: true
-
-  # Two scheduler threads instead of Boot's one, so a slow ClamAV retry
-  # (ScanRetryScheduler) can't hold up workflow SLA reminders or the outbox
-  # relay, and vice versa. The jobs touch independent tables.
-  task:
-    scheduling:
-      pool:
-        size: ${SCHEDULER_POOL_SIZE:2}
 
   # Spring's own multipart default is 1MB, which silently capped uploads
   # before the scan gate existed, and which a real phone-camera photo of a

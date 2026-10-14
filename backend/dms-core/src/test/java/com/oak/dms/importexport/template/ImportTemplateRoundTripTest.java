@@ -38,8 +38,8 @@ public class ImportTemplateRoundTripTest {
                 field("invoice_no", "text", true, false, "active",
                         List.of(), List.of(rule("max_length", "12", "error"))),
                 field("amount", "decimal", false, false, "active", List.of(), List.of()),
-                new SchemaField(statusId, "state", "State", null, "dropdown", "active", false, false, 3, null, null,
-                        List.of(option(statusId, "open", "Open"), option(statusId, "closed", "Closed")), List.of()),
+                new SchemaField(statusId, "state", "State", null, "dropdown", "active", false, false, false, 3, null,
+                        null, List.of(option(statusId, "open", "Open"), option(statusId, "closed", "Closed")), List.of()),
                 field("issued_on", "date", false, false, "active", List.of(), List.of()),
                 field("paid", "boolean", false, false, "active", List.of(), List.of()),
                 field("internal_ref", "text", false, true, "active", List.of(), List.of()),
@@ -49,7 +49,7 @@ public class ImportTemplateRoundTripTest {
     static SchemaField field(String key, String type, boolean mandatory, boolean hidden, String status,
                              List<MetadataFieldOptionResponse> options, List<MetadataFieldValidationResponse> rules) {
         return new SchemaField(UUID.randomUUID(), key, key.replace('_', ' '), null, type, status, mandatory, hidden,
-                0, null, null, options, rules);
+                false, 0, null, null, options, rules);
     }
 
     static MetadataFieldOptionResponse option(UUID fieldId, String value, String label) {
