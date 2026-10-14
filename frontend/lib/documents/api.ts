@@ -466,6 +466,11 @@ export interface DocumentDto {
   status: string
   createdAt: string
   updatedAt: string | null
+  /** The current-or-latest version's file, for the preview/download on the detail page. Null if it has no version yet. */
+  fileName: string | null
+  mimeType: string | null
+  sizeBytes: number | null
+  versionNumber: number | null
 }
 
 /** `GET /api/v1/documents/{id}` - needs docm.documents.view. */

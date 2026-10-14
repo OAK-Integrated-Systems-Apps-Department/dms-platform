@@ -14,6 +14,7 @@ import com.oak.dms.security.rbac.entity.Role;
 import com.oak.dms.security.rbac.repository.RoleRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.workflow.dto.SupportingDocumentInput;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
@@ -37,6 +38,7 @@ import com.oak.dms.workflow.repository.WorkflowStageParticipantRepository;
 import com.oak.dms.workflow.repository.WorkflowStageRepository;
 import com.oak.dms.workflow.service.ApproverResolver;
 import com.oak.dms.workflow.service.WorkflowSubmissionService;
+import com.oak.dms.workflow.service.WorkflowSupportingDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -74,6 +76,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
+    private final WorkflowSupportingDocumentService supportingDocumentService;
     private final AuthorizationService authorizationService;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -81,7 +84,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
 
     @Override
     @Transactional
-    public UUID submit(UUID documentId) {
+    public UUID submit(UUID documentId, List<SupportingDocumentInput> supportingDocuments) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
         locks.applyLockTimeout();
@@ -107,7 +110,13 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
         WorkflowTemplate template = templateSelector.selectFor(document)
                 .orElseThrow(() -> new WorkflowValidationException("WORKFLOW_NO_ACTIVE_TEMPLATE",
                         "No active workflow template is configured for this document's type"));
-        return start(document, template, userId).getInstanceId();
+        WorkflowInstance instance = start(document, template, userId);
+        // Same transaction (decision 11): an invalid attachment rolls the whole submission back.
+        // attach() enforces the supporting-document rules and records each as supporting_document_added.
+        if (supportingDocuments != null && !supportingDocuments.isEmpty()) {
+            supportingDocumentService.attach(instance, null, supportingDocuments, userId);
+        }
+        return instance.getInstanceId();
     }
 
     @Override

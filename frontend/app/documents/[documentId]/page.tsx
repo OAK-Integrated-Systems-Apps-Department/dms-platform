@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
-import { ChevronRight } from "lucide-react"
+import { toast } from "sonner"
+import { ChevronRight, Download, Eye } from "lucide-react"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
@@ -11,9 +12,12 @@ import { Badge } from "@/components/ui/badge"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
+import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
-import { ApiError } from "@/lib/api-error"
+import { ApiError, friendlyMessage } from "@/lib/api-error"
+import { downloadDocumentFile } from "@/lib/documents/api"
 import { useDocument } from "@/lib/documents/use-document"
+import { saveDownloadedFile } from "@/lib/download-file"
 import { usePageTitle } from "@/lib/use-page-title"
 import { formatDateTime } from "@/lib/utils"
 import { useDocumentWorkflowHistory } from "@/lib/workflow/use-document-workflow-history"
@@ -36,8 +40,18 @@ export default function DocumentPage() {
   const current = runs.find((run) => run.status === "in_progress") ?? runs[0]
   const inProgress = current?.status === "in_progress"
   const instance = useWorkflowInstance(current?.instanceId)
+  const preview = useDocumentPreview()
 
   usePageTitle(document ? document.title : "Document")
+
+  async function downloadFile() {
+    if (!document) return
+    try {
+      saveDownloadedFile(await downloadDocumentFile(document.documentId))
+    } catch (error) {
+      toast.error(friendlyMessage(error, "Could not download the document."))
+    }
+  }
 
   if (isError && error instanceof ApiError && error.status === 404) {
     notFound()
@@ -89,6 +103,34 @@ export default function DocumentPage() {
                   <Field label="Latest Version" value={document.latestVersionId ?? "—"} mono />
                   <Field label="Published Version" value={document.publishedVersionId ?? "—"} mono />
                 </dl>
+                {document.latestVersionId && (
+                  <div className="mt-4 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        preview.open({
+                          documentId: document.documentId,
+                          title: document.title,
+                          fileName: document.fileName,
+                          mimeType: document.mimeType,
+                          sizeBytes: document.sizeBytes,
+                          documentTypeName: document.documentTypeName,
+                          createdAt: document.createdAt,
+                        })
+                      }
+                      className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary/10 px-3.5 py-2 text-[13px] font-semibold text-primary"
+                    >
+                      <Eye size={15} /> Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void downloadFile()}
+                      className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground"
+                    >
+                      <Download size={15} /> Download
+                    </button>
+                  </div>
+                )}
               </Panel>
 
               {current ? (
@@ -147,6 +189,7 @@ export default function DocumentPage() {
               <DiscussionPanel documentId={document.documentId} />
             </div>
           </div>
+          {preview.element}
         </>
       )}
     </DashboardShell>

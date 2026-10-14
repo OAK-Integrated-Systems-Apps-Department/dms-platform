@@ -1,6 +1,7 @@
 package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
+import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.workflow.dto.CancelWorkflowRequest;
 import com.oak.dms.workflow.dto.DocumentWorkflowStatusResponse;
 import com.oak.dms.workflow.dto.SubmitWorkflowRequest;
@@ -19,7 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,7 +34,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -57,7 +62,7 @@ public class WorkflowInstanceController {
             description = "All-or-nothing. 409 WORKFLOW_ALREADY_IN_PROGRESS / WORKFLOW_DOCUMENT_NOT_ELIGIBLE; "
                     + "422 WORKFLOW_NO_ACTIVE_TEMPLATE / WORKFLOW_NO_ELIGIBLE_APPROVERS / WORKFLOW_INITIATOR_IS_APPROVER.")
     public ResponseEntity<WorkflowInstanceResponse> submit(@Valid @RequestBody SubmitWorkflowRequest request) {
-        UUID instanceId = submissionService.submit(request.documentId());
+        UUID instanceId = submissionService.submit(request.documentId(), request.supportingDocuments());
         return ResponseEntity.status(HttpStatus.CREATED).body(queryService.getInstance(instanceId));
     }
 
@@ -119,11 +124,43 @@ public class WorkflowInstanceController {
         return supportingDocumentService.list(id);
     }
 
+    @GetMapping("/workflow/instances/{id}/supporting-documents/{supportingDocumentId}/content")
+    @Operation(summary = "Open a supporting document's pinned version in the browser",
+            description = "Streams the pinned document_version_id (decision 17), not the document's current version. "
+                    + "Allowed for a viewer who can see the run and open the document (docm.documents.view plus their "
+                    + "own access); no dvc.versions.view is needed.")
+    public ResponseEntity<StreamingResponseBody> supportingDocumentContent(@PathVariable("id") UUID id,
+            @PathVariable("supportingDocumentId") UUID supportingDocumentId) {
+        DownloadedDocument downloaded = supportingDocumentService.content(id, supportingDocumentId);
+        StreamingResponseBody body = outputStream -> {
+            try (InputStream content = downloaded.content()) {
+                content.transferTo(outputStream);
+            }
+        };
+        String contentType = downloaded.contentType() != null && !downloaded.contentType().isBlank()
+                ? downloaded.contentType()
+                : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
+                // Shown in the page - never let the browser guess a riskier type.
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
     @DeleteMapping("/workflow/instances/{id}/supporting-documents/{supportingDocumentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Remove a supporting document I attached")
     public void removeSupportingDocument(@PathVariable("id") UUID id,
                                          @PathVariable("supportingDocumentId") UUID supportingDocumentId) {
         supportingDocumentService.remove(id, supportingDocumentId);
+    }
+
+    private static String sanitizeForHeader(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "download";
+        }
+        return filename.replaceAll("[\\r\\n\"]", "_");
     }
 }

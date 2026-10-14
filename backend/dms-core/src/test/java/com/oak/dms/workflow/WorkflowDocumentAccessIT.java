@@ -234,15 +234,22 @@ class WorkflowDocumentAccessIT extends WorkflowApiSupport {
                 Map.of("documentId", secret, "source", "linked_existing"), 422).get("code").asString())
                 .isEqualTo("WORKFLOW_SUPPORTING_DOCUMENT_INVALID");
 
-        // The owner can, and the approver then sees it listed but cannot open it.
+        // The owner can, and the approver then sees it listed but cannot open it: workflow-scoped read
+        // covers only the document under approval, not its supporting documents (decision 18).
         postAs("/api/v1/workflow/instances/" + instanceId + "/supporting-documents", owner,
                 Map.of("documentId", secret, "source", "linked_existing"), 201);
         JsonNode mine = get200("/api/v1/workflow/instances/" + instanceId + "/supporting-documents", owner);
         assertThat(mine).hasSize(1);
         assertThat(mine.get(0).get("canOpen").asBoolean()).isTrue();
+        // Visible to its owner, the file fields are handed out so the shared viewer can render it.
+        assertThat(mine.get(0).get("fileName").asString()).isEqualTo("contract.pdf");
+
         JsonNode theirs = get200("/api/v1/workflow/instances/" + instanceId + "/supporting-documents", approver);
         assertThat(theirs.get(0).get("title").asString()).isEqualTo("Price list (owner only)");
         assertThat(theirs.get(0).get("canOpen").asBoolean()).isFalse();
+        // No access, no file fields - the UI shows the title and note alone, no viewer.
+        assertThat(theirs.get(0).get("fileName").isNull()).isTrue();
+        call(get("/api/v1/documents/" + secret), fx.jwtFor(approver), null, 404);
     }
 
     // ----------------------------------------------- list badges and dashboard

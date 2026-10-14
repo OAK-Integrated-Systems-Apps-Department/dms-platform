@@ -7,6 +7,8 @@ import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
+import com.oak.dms.document.DocumentVersionService;
+import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.security.auth.AuthorizationService;
@@ -60,6 +62,7 @@ public class WorkflowSupportingDocumentServiceImpl implements WorkflowSupporting
     private final WorkflowInfoRequestRepository infoRequestRepository;
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
+    private final DocumentVersionService documentVersionService;
     private final DocumentAccessService documentAccessService;
     private final TaskRouting taskRouting;
     private final AuthorizationService authorizationService;
@@ -96,6 +99,26 @@ public class WorkflowSupportingDocumentServiceImpl implements WorkflowSupporting
         queryService.requireVisible(instanceId);
         return views(tenantId, supportingRepository.findByInstanceIdAndTenantIdAndDeletedFalseOrderByAddedAtAsc(
                 instanceId, tenantId));
+    }
+
+    @Override
+    @Transactional
+    public DownloadedDocument content(UUID instanceId, UUID supportingDocumentId) {
+        UUID tenantId = TenantContext.getTenantId();
+        // The run must be visible to the caller (404 otherwise), exactly as for the supporting-document list.
+        queryService.requireVisible(instanceId);
+        WorkflowSupportingDocument doc = supportingRepository
+                .findBySupportingDocumentIdAndTenantIdAndDeletedFalse(supportingDocumentId, tenantId)
+                .filter(d -> d.getInstanceId().equals(instanceId))
+                .orElseThrow(() -> new ResourceNotFoundException("WorkflowSupportingDocument", supportingDocumentId));
+        if (!authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)) {
+            // canOpen is docm.documents.view plus the caller's own access (decision 18) - no per-run grant.
+            throw new WorkflowAccessException("WORKFLOW_DOCUMENT_ACCESS_REQUIRED",
+                    "You need permission to view documents to open this evidence");
+        }
+        // The pinned version (decision 17), never the document's current one. DocumentVersionService checks
+        // the caller's document access (require view) and serves one specific version without dvc.versions.view.
+        return documentVersionService.preview(doc.getDocumentId(), doc.getDocumentVersionId());
     }
 
     @Override

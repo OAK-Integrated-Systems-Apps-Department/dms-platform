@@ -348,6 +348,7 @@ export interface WorkflowInstanceDto {
 /** Mirrors backend/dms-core's SupportingDocumentView. canOpen: the viewer holds docm.documents.view. */
 export interface SupportingDocumentDto {
   supportingDocumentId: string
+  instanceId: string
   documentId: string
   title: string | null
   versionId: string
@@ -358,6 +359,10 @@ export interface SupportingDocumentDto {
   addedAt: string
   infoRequestId: string | null
   canOpen: boolean
+  /** The pinned version's file, for the shared viewer. Populated only when canOpen; null otherwise. */
+  fileName: string | null
+  mimeType: string | null
+  sizeBytes: number | null
 }
 
 /** Mirrors backend/dms-core's InfoRequestView. */
@@ -427,9 +432,20 @@ export interface WorkflowInstanceSummaryDto {
   versionChangedFlag: boolean
 }
 
-/** Starts the document type's active workflow on this document. */
-export async function submitDocumentToWorkflow(documentId: string): Promise<WorkflowInstanceDto> {
-  return apiFetchJson(`${BASE}/instances`, jsonInit("POST", { documentId }), "Could not submit this document for approval.")
+/**
+ * Starts the document type's active workflow on this document, optionally
+ * attaching supporting documents in the same transaction. An invalid
+ * attachment fails the whole submission - nothing is created.
+ */
+export async function submitDocumentToWorkflow(
+  documentId: string,
+  supportingDocuments?: SupportingDocumentInput[]
+): Promise<WorkflowInstanceDto> {
+  return apiFetchJson(
+    `${BASE}/instances`,
+    jsonInit("POST", { documentId, supportingDocuments }),
+    "Could not submit this document for approval."
+  )
 }
 
 export async function fetchWorkflowInstance(instanceId: string): Promise<WorkflowInstanceDto> {
@@ -714,4 +730,18 @@ export async function removeSupportingDocument(instanceId: string, supportingDoc
     { method: "DELETE" },
     "Could not remove the document."
   )
+}
+
+/**
+ * The supporting document's PINNED version bytes (decision 17) - what was attached, not the
+ * document's current version. Served to anyone who can see the run and open the document; no
+ * dvc.versions.view needed.
+ */
+export async function fetchSupportingDocumentContent(instanceId: string, supportingDocumentId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `${BASE}/instances/${instanceId}/supporting-documents/${supportingDocumentId}/content`,
+    undefined,
+    "Could not open this supporting document."
+  )
+  return response.blob()
 }

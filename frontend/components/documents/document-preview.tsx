@@ -215,6 +215,8 @@ function useStoredWidth(): [number, (width: number) => void] {
 export function DocumentPreview({
   row,
   version,
+  contentSource,
+  contentKey,
   onOpenChange,
   onDownload,
   onViewDetails,
@@ -231,12 +233,25 @@ export function DocumentPreview({
   >
   /** An older version from the history; absent = the current version. */
   version?: { versionId: string; label: string; current: boolean }
+  /**
+   * Fetch the raw bytes yourself instead of the documents/* endpoints - e.g. a workflow supporting
+   * document's pinned version. Server-side PDF conversion and slide rendering aren't available this
+   * way, so Office files that need converting show as "can't be shown here" with a download.
+   */
+  contentSource?: () => Promise<Blob>
+  /** Cache key for contentSource (e.g. the supporting-document id), so two previews of the same document don't collide. */
+  contentKey?: string
   onOpenChange: (open: boolean) => void
   onDownload: () => void
   /** Opens the document's own page (/documents/{id}) - omitted where there is nowhere to go. */
   onViewDetails?: () => void
 }) {
-  const renderer = rendererFor(row.mimeType, row.fileName)
+  const nativeRenderer = rendererFor(row.mimeType, row.fileName)
+  // Pinned/external content comes as raw bytes only - the server can't convert or slice it here.
+  const renderer =
+    contentSource && (nativeRenderer === "converted" || nativeRenderer === "slides")
+      ? null
+      : nativeRenderer
   const kind = fileKind(row.fileName)
   const [width, setWidth] = useStoredWidth()
   const [dragging, setDragging] = useState(false)
@@ -250,17 +265,19 @@ export function DocumentPreview({
     queryKey: [
       "document-preview",
       row.documentId,
-      version?.versionId ?? "current",
+      contentKey ?? version?.versionId ?? "current",
     ],
     queryFn: async () => {
       // Office files the browser can't read come as a PDF made on the server.
-      const blob = version
-        ? renderer === "converted"
-          ? await previewVersionPdf(row.documentId, version.versionId)
-          : await previewVersionFile(row.documentId, version.versionId)
-        : renderer === "converted"
-          ? await previewConvertedPdf(row.documentId)
-          : (await previewDocumentFile(row.documentId)).blob
+      const blob = contentSource
+        ? await contentSource()
+        : version
+          ? renderer === "converted"
+            ? await previewVersionPdf(row.documentId, version.versionId)
+            : await previewVersionFile(row.documentId, version.versionId)
+          : renderer === "converted"
+            ? await previewConvertedPdf(row.documentId)
+            : (await previewDocumentFile(row.documentId)).blob
       return {
         url: URL.createObjectURL(blob),
         text: renderer === "text" ? await blob.text() : null,

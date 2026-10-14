@@ -2,7 +2,9 @@ package com.oak.dms.workflow.support;
 
 import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
+import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionPromoter;
+import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.document.DocumentVersionService;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
@@ -24,6 +26,7 @@ import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.enums.StorageProvider;
 import com.oak.dms.storage.repository.StorageLocationRepository;
+import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import com.oak.dms.user.User;
@@ -34,6 +37,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -69,6 +73,8 @@ public class WorkflowFixtures {
     private final ScanEngineRepository scanEngineRepository;
     private final ScanResultRepository scanResultRepository;
     private final DocumentVersionPromoter promoter;
+    private final DocumentVersionRepository documentVersionRepository;
+    private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate tx;
 
@@ -78,7 +84,8 @@ public class WorkflowFixtures {
                             DepartmentRepository departmentRepository, DocumentTypeRepository documentTypeRepository,
                             StorageLocationRepository storageLocationRepository,
                             ScanEngineRepository scanEngineRepository, ScanResultRepository scanResultRepository,
-                            DocumentVersionPromoter promoter, JdbcTemplate jdbcTemplate,
+                            DocumentVersionPromoter promoter, DocumentVersionRepository documentVersionRepository,
+                            ObjectStorageServiceFactory objectStorageServiceFactory, JdbcTemplate jdbcTemplate,
                             PlatformTransactionManager transactionManager) {
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
@@ -91,8 +98,24 @@ public class WorkflowFixtures {
         this.scanEngineRepository = scanEngineRepository;
         this.scanResultRepository = scanResultRepository;
         this.promoter = promoter;
+        this.documentVersionRepository = documentVersionRepository;
+        this.objectStorageServiceFactory = objectStorageServiceFactory;
         this.jdbcTemplate = jdbcTemplate;
         this.tx = new TransactionTemplate(transactionManager);
+    }
+
+    /**
+     * Writes real bytes for a version through the app's own storage (so the content endpoints can serve
+     * them in an IT - the promoter records metadata but never stores bytes). Uploaded via resolve(), the
+     * same path the readers use, so encryption at rest round-trips.
+     */
+    public void putVersionContent(UUID versionId, byte[] bytes) {
+        DocumentVersion version = documentVersionRepository.findById(versionId).orElseThrow();
+        StorageLocation location = storageLocationRepository
+                .findByStorageLocationIdAndDeletedFalse(version.getStorageLocationId()).orElseThrow();
+        objectStorageServiceFactory.resolve(location)
+                .upload(location, version.getStorageObjectKey(), new ByteArrayInputStream(bytes), bytes.length,
+                        version.getMimeType());
     }
 
     /** A tenant with document + staging storage locations (paths are never written to). */

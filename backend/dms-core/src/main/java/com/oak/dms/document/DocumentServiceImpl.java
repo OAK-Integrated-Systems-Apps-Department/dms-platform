@@ -61,7 +61,6 @@ public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
-    private final DocumentMapper documentMapper;
 
     private final DocumentTypeRepository documentTypeRepository;
     private final StorageLocationRepository storageLocationRepository;
@@ -230,7 +229,21 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
         Document document = findVisible(documentId, FolderAccessLevel.view);
-        return documentMapper.toResponse(document, typeNameOf(document));
+        UUID versionId = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        DocumentVersion version = versionId == null ? null
+                : documentVersionRepository.findById(versionId)
+                        .filter(v -> document.getTenantId().equals(v.getTenantId())).orElse(null);
+        // The file fields come from the current-or-latest version, as in the list (toItems), so the
+        // detail page can preview and download the document with the shared viewer.
+        return new DocumentResponse(document.getDocumentId(), document.getTenantId(), document.getDocumentTypeId(),
+                typeNameOf(document), document.getTitle(), document.getCurrentVersionId(), document.getLatestVersionId(),
+                document.getPublishedVersionId(), document.getOwnerUserId(), document.getStatus(),
+                document.getCreatedAt(), document.getUpdatedAt(), document.getFolderId(),
+                version != null ? version.getOriginalFilename() : null,
+                version != null ? version.getMimeType() : null,
+                version != null ? version.getSizeBytes() : null,
+                version != null ? version.getVersionNumber() : null);
     }
 
     /** The document's type name, or null once the type has been deleted - embedded so viewers without a document-type permission still see it. */

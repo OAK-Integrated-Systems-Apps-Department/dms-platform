@@ -11,6 +11,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -29,6 +30,7 @@ import java.util.function.Predicate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mockingDetails;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -77,6 +79,15 @@ public abstract class WorkflowApiSupport {
 
     protected JsonNode get200(String path, User as) throws Exception {
         return call(get(path), fx.jwtFor(as), null, 200);
+    }
+
+    /** A raw GET that resolves async streaming (StreamingResponseBody), for binary/content endpoints. */
+    protected MockHttpServletResponse getRaw(String path, JwtRequestPostProcessor as) throws Exception {
+        MvcResult result = mvc.perform(get(path).with(as)).andReturn();
+        if (result.getRequest().isAsyncStarted()) {
+            result = mvc.perform(asyncDispatch(result)).andReturn();
+        }
+        return result.getResponse();
     }
 
     protected JsonNode postAs(String path, User as, Object body, int expectedStatus) throws Exception {
@@ -129,6 +140,15 @@ public abstract class WorkflowApiSupport {
 
     protected JsonNode submit(User as, UUID documentId, int expectedStatus) throws Exception {
         return postAs("/api/v1/workflow/instances", as, Map.of("documentId", documentId), expectedStatus);
+    }
+
+    /** Submit with supporting documents attached in the same transaction (each entry a SupportingDocumentInput map). */
+    protected JsonNode submit(User as, UUID documentId, List<? extends Map<String, Object>> supportingDocuments,
+                              int expectedStatus) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("documentId", documentId);
+        body.put("supportingDocuments", supportingDocuments);
+        return postAs("/api/v1/workflow/instances", as, body, expectedStatus);
     }
 
     protected JsonNode approve(User as, UUID taskId, int expectedStatus) throws Exception {

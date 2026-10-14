@@ -32,6 +32,10 @@ import java.util.UUID;
  * of an active department), minus the approve/reject permission - reading
  * the document you were asked to approve needs no extra permission, and the
  * task would not exist if the pool were wrong.
+ * <p>Workflow-scoped read covers only the instance's own document, never its
+ * supporting documents: evidence is seen only by someone with their own access
+ * to it (decision 18), so a participant who can't otherwise open a supporting
+ * document gets its title and note alone.
  */
 @Component
 @RequiredArgsConstructor
