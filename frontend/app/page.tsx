@@ -25,7 +25,6 @@ import { DigitalImpact } from "@/components/dashboard/digital-impact"
 import { MetricCards } from "@/components/dashboard/metric-cards"
 import { RecentActivityPanel } from "@/components/dashboard/panels"
 import { QuickActions } from "@/components/dashboard/quick-actions"
-import { PinnedDocuments } from "@/components/dashboard/pinned-documents"
 import { RecentDocuments } from "@/components/dashboard/recent-documents"
 import { StorageCard } from "@/components/dashboard/storage-card"
 import { DocumentPreview } from "@/components/documents/document-preview"
@@ -237,17 +236,6 @@ export default function Page() {
           )}
 
           <QuickActions />
-
-          {/* Pinned documents: the person's own shortcuts, right under the quick actions. */}
-          {canView && (
-            <div id="pinned-documents" className="scroll-mt-20">
-              <PinnedDocuments
-                onOpen={setPreview}
-                onDownload={(doc) => void download(doc.documentId)}
-                order={10}
-              />
-            </div>
-          )}
 
           {/* How efficiently - Environmental Impact - beside what needs attention and the latest activity. */}
           <div className="mb-5 grid items-stretch gap-5 lg:grid-cols-3">

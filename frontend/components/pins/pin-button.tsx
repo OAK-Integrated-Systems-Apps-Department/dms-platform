@@ -30,7 +30,7 @@ export function PinButton({
       type="button"
       aria-pressed={pinned}
       aria-label={pinned ? `Unpin ${row.title}` : `Pin ${row.title}`}
-      title={pinned ? "Unpin" : "Pin to your dashboard"}
+      title={pinned ? "Unpin" : "Pin to your Pinned documents"}
       onClick={(event) => {
         event.stopPropagation()
         void toggle(row)

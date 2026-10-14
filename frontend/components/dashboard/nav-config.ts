@@ -49,11 +49,11 @@ export const navSections: NavSection[] = [
           PermissionCodes.RBR_RETENTION,
         ],
       },
-      // The dashboard's own Pinned documents section (PID-FR-002); the anchor scrolls to it.
+      // The person's own pinned documents (PID-FR-002), on a page of their own.
       {
         label: "Pinned Documents",
         icon: Pin,
-        href: "/#pinned-documents",
+        href: "/pinned",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
       },
       // The caller's workflow approval queue - visible to everyone (anyone

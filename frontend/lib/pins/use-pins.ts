@@ -27,7 +27,7 @@ export type PinTarget = Pick<DocumentListItemDto, "documentId" | "title"> &
 
 /**
  * The signed-in user's pinned documents, shared by every place that shows a
- * pin: the dashboard section, the document list, the preview.
+ * pin: the Pinned documents page, the document list, the preview.
  *
  * One query serves all of them - a person's pins are bounded by the limit, so
  * "is this document pinned?" is a set lookup, never a request per row. Pinning

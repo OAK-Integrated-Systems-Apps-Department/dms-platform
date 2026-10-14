@@ -447,6 +447,7 @@ export function DocumentTile({
   onOpen,
   actions,
   drag,
+  flag,
 }: {
   row: DocumentListItemDto
   checked: boolean
@@ -457,6 +458,8 @@ export function DocumentTile({
   actions: ItemAction[]
   /** Drag it (with the rest of the selection) onto a folder to move it. */
   drag?: DragBinding
+  /** A small badge shown beside the name - e.g. "Archived". */
+  flag?: ReactNode
 }) {
   const kind = fileKind(row.fileName)
   const ext = extensionOf(row.fileName)
@@ -498,6 +501,7 @@ export function DocumentTile({
           )}
           <span className="truncate">{row.title}</span>
           <PinnedIndicator documentId={row.documentId} />
+          {flag}
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           <FriendlyDate iso={row.createdAt} />
@@ -546,6 +550,7 @@ export function BrowserList({
   folderDrag,
   folderDrop,
   documentDrag,
+  flag,
 }: {
   folders: FolderNode[]
   rows: DocumentListItemDto[]
@@ -563,6 +568,8 @@ export function BrowserList({
   folderDrag?: (folder: FolderNode) => DragBinding | undefined
   folderDrop?: (folder: FolderNode) => DropBinding | undefined
   documentDrag?: (row: DocumentListItemDto) => DragBinding | undefined
+  /** A small badge shown beside a document's name - e.g. "Archived". */
+  flag?: (row: DocumentListItemDto) => ReactNode
 }) {
   const allChecked =
     rows.length > 0 && rows.every((r) => checked.has(r.documentId))
@@ -714,6 +721,7 @@ export function BrowserList({
                           />
                         )}
                         <PinnedIndicator documentId={row.documentId} />
+                        {flag?.(row)}
                       </p>
                       {row.fileName && (
                         <p className="truncate font-mono text-[11.5px] text-muted-foreground">

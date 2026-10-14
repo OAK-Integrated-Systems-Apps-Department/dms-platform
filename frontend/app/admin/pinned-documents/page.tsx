@@ -23,7 +23,7 @@ const MAX = 200
 
 /**
  * Pinned documents (Module PID): how many documents one person in this organisation may pin.
- * Pins themselves are personal and live on each person's dashboard; this is the one setting the
+ * Pins themselves are personal and live on each person's Pinned documents page; this is the one setting the
  * organisation controls (PID-FR-007).
  */
 export default function PinnedDocumentsSettingsPage() {
@@ -42,8 +42,8 @@ export default function PinnedDocumentsSettingsPage() {
           Pinned documents
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          People pin the documents they use most, and those appear in their own
-          Pinned documents section on the dashboard. Pins are personal - nobody
+          People pin the documents they use most, and those appear on their own
+          Pinned documents page. Pins are personal - nobody
           sees anyone else&apos;s, and a pin never gives access to a document.
         </p>
       </div>
