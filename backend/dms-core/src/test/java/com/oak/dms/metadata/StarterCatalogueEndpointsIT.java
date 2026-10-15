@@ -61,7 +61,7 @@ class StarterCatalogueEndpointsIT {
         bindUserIn(tenantId);
 
         Set<UUID> ownFieldIds = fieldIds(tenantId);
-        assertThat(ownFieldIds).hasSize(25).doesNotContainAnyElementsOf(fieldIds(otherTenantId));
+        assertThat(ownFieldIds).hasSize(24).doesNotContainAnyElementsOf(fieldIds(otherTenantId));
 
         UUID contractId = documentTypeService.listDocumentTypes(Pageable.unpaged()).stream()
                 .filter(t -> t.typeCode().equals("CONTRACT"))
@@ -69,23 +69,21 @@ class StarterCatalogueEndpointsIT {
                 .findFirst().orElseThrow();
 
         assertThat(documentTypeFieldService.getCurrentFields(contractId))
-                .hasSize(13)
+                .hasSize(12)
                 .allSatisfy(f -> assertThat(ownFieldIds).contains(f.fieldId()))
                 .extracting(DocumentTypeFieldResponse::fieldKey)
                 .startsWith("contract_party", "contract_value", "contract_start_date", "contract_end_date");
 
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(contractId);
         assertThat(schema.schemaVersion()).isEqualTo(1);
-        assertThat(schema.fields()).hasSize(13)
+        assertThat(schema.fields()).hasSize(12)
                 .allSatisfy(f -> assertThat(ownFieldIds).contains(f.fieldId()));
-        assertThat(schema.fields().stream().filter(f -> f.fieldKey().equals("classification_level")).findFirst()
-                .orElseThrow().options()).hasSize(4);
 
         assertThat(metadataValidationService.validate(contractId, null, Map.of()))
                 .filteredOn(e -> e.errorCode().equals("MANDATORY_FIELD_MISSING"))
                 .extracting(ValidationError::fieldKey)
                 .containsExactlyInAnyOrder("contract_party", "contract_value", "contract_start_date",
-                        "contract_end_date", "classification_level", "retention_class");
+                        "contract_end_date", "retention_class");
     }
 
     private Set<UUID> fieldIds(UUID tenantId) {

@@ -4,13 +4,13 @@ import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.security.auth.TenantContext;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -41,15 +41,42 @@ import java.util.UUID;
  * and each row's own {@code tenant_id} is bound per version - the same pattern
  * {@code OcrFieldsReconciler} uses. Nothing here reads {@code TenantContext}
  * without setting it first.
+ *
+ * <h2>Why {@code queueOne} uses a TransactionTemplate, not {@code @Transactional}</h2>
+ * {@code queueOne} used to be {@code @Transactional(REQUIRES_NEW)}, called as
+ * {@code queueOne(version)} from {@link #sweep()} on the same bean - a plain
+ * Java call that never goes through the Spring AOP proxy, so the annotation
+ * was silently never applied. {@link OcrEnqueueService#enqueue} requires an
+ * existing transaction ({@code MANDATORY}) and found none, threw on every
+ * single version, and the {@code catch} below swallowed it and counted the
+ * version as queued anyway - so this sweeper reported success while queueing
+ * nothing, for every tenant, from the day it was written. Same trap
+ * {@code WatermarkOutputSweeper#purge} documents and avoids the same way:
+ * a {@link TransactionTemplate} built from the injected
+ * {@link PlatformTransactionManager} actually starts a transaction no matter
+ * who calls the method.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OcrBacklogSweeper {
 
     private final DocumentVersionRepository documentVersionRepository;
     private final OcrEnqueueService ocrEnqueueService;
     private final OcrProperties properties;
+    private final TransactionTemplate newTransaction;
+
+    public OcrBacklogSweeper(DocumentVersionRepository documentVersionRepository,
+                             OcrEnqueueService ocrEnqueueService,
+                             OcrProperties properties,
+                             PlatformTransactionManager transactionManager) {
+        this.documentVersionRepository = documentVersionRepository;
+        this.ocrEnqueueService = ocrEnqueueService;
+        this.properties = properties;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        // REQUIRES_NEW: one held-back version whose document has since been
+        // purged must not roll back the rest of the batch - see queueOne.
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
 
     @Scheduled(fixedDelayString = "${dms.ocr.backlog-sweep-interval-ms:30000}")
     public void sweep() {
@@ -77,8 +104,7 @@ public class OcrBacklogSweeper {
         log.info("OCR backlog sweep: {} of {} held-back versions queued", queued, held.size());
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected boolean queueOne(DocumentVersion version) {
+    private boolean queueOne(DocumentVersion version) {
         UUID tenantId = version.getTenantId();
         TenantContext.set(tenantId, null);
         try {
@@ -86,8 +112,9 @@ public class OcrBacklogSweeper {
             // swept, whatever batch it came from is long finished, and the
             // low-priority queue exists to stop an import starving live work -
             // not to punish the import's files forever.
-            return ocrEnqueueService.enqueue(tenantId, version.getDocumentId(), version.getVersionId(),
-                    null, OcrEnqueueService.Source.interactive);
+            return Boolean.TRUE.equals(newTransaction.execute(status ->
+                    ocrEnqueueService.enqueue(tenantId, version.getDocumentId(), version.getVersionId(),
+                            null, OcrEnqueueService.Source.interactive)));
         } catch (RuntimeException e) {
             log.warn("Could not queue held-back OCR for version {}: {}", version.getVersionId(), e.toString());
             // Treated as "keep going": a single bad row (a purged document, a

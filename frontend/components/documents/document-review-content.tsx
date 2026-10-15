@@ -167,7 +167,11 @@ export function DocumentReviewContent({ documentId }: { documentId: string }) {
       const result = await saveReview(documentId, payload)
       // The queue's contents just changed, and the document's own review
       // state with it -- both caches are stale the moment this returns.
+      // Saved Reviews is stale too: every save either adds this document to
+      // that list for the first time, or changes the resolved/unresolved
+      // state it shows there.
       await queryClient.invalidateQueries({ queryKey: ["review-queue"] })
+      await queryClient.invalidateQueries({ queryKey: ["saved-reviews"] })
       await queryClient.invalidateQueries({ queryKey: ["document-review", documentId] })
 
       if (result.requiresReview) {

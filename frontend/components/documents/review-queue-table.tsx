@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, ChevronRight, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ChevronRight, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { formatDateTime } from "@/lib/utils"
@@ -56,6 +56,12 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
             )}
             {rows.map((row) => {
               const failed = row.ocrStatus === "failed"
+              // On the queue, every row is here because requiresReview is
+              // still true (or OCR failed) - see findReviewQueue. On Saved
+              // Reviews, which lists anything EVER reviewed regardless of
+              // outcome, a row can genuinely be settled already: this is
+              // what distinguishes "still needs another look" from "done."
+              const resolved = !failed && !row.requiresReview
               return (
                 <tr
                   key={row.versionId}
@@ -72,6 +78,8 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
                     <div className="flex items-start gap-2">
                       {failed ? (
                         <XCircle size={14} className="mt-[3px] shrink-0 text-[var(--rust)]" />
+                      ) : resolved ? (
+                        <CheckCircle2 size={14} className="mt-[3px] shrink-0 text-[var(--gold-foreground)]" />
                       ) : (
                         <AlertTriangle size={14} className="mt-[3px] shrink-0 text-[var(--gold-foreground)]" />
                       )}
@@ -79,8 +87,8 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
                     </div>
                   </td>
                   <td className="px-3 py-3">
-                    <Badge variant={failed ? "rust" : "gold"}>
-                      {failed ? "OCR failed" : "Needs review"}
+                    <Badge variant={failed ? "rust" : resolved ? "muted" : "gold"}>
+                      {failed ? "OCR failed" : resolved ? "Resolved" : "Needs review"}
                     </Badge>
                   </td>
                   <td className="px-3 py-3 font-mono text-[12.5px] text-muted-foreground">

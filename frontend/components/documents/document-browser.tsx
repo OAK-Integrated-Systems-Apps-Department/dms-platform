@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   List,
   Pencil,
+  ScanLine,
   ShieldCheck,
   Trash2,
   Eye,
@@ -43,6 +44,7 @@ import { TemplatePickerSheet } from "@/components/documents/template-picker-shee
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
 import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
+import { OcrScanDialog } from "@/components/ocr/ocr-scan-dialog"
 import { FolderPath } from "@/components/documents/folder-path"
 import {
   ActionDialog,
@@ -71,6 +73,7 @@ import {
 } from "@/lib/documents/api"
 import { watermarkSupport } from "@/lib/watermarks/supported"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
+import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
 import {
   fromFolderPicker,
   type DroppedFile,
@@ -107,6 +110,7 @@ type Dialog =
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
   | { kind: "watermark"; row: DocumentListItemDto; key: number }
+  | { kind: "ocr"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -149,6 +153,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
     versions: hasPermission(PermissionCodes.DVC_VERSIONS_VIEW),
     restoreVersion: hasPermission(PermissionCodes.DVC_VERSIONS_RESTORE),
     viewDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW),
+    ocrTrigger: hasPermission(PermissionCodes.OS_OCR_TRIGGER),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
@@ -164,6 +169,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
     unavailableMessage: null,
     templates: [],
   }
+  const ocrAvailable = useOcrAvailability().data ?? false
 
   const view = useBrowserView()
   const folders = useFolders()
@@ -468,6 +474,16 @@ function FolderView({ folderId }: { folderId: string | null }) {
         disabled: !support.supported || !watermark.usable,
         hint: support.reason ?? watermark.unavailableMessage ?? undefined,
         onSelect: () => setDialog({ kind: "watermark", row, key: Date.now() }),
+      })
+    }
+    // OCR re-run overwrites the document's OCR-sourced metadata, so it
+    // needs edit access, not just view - the same pairing the backend
+    // enforces (os.perform-ocr-extraction.trigger PLUS edit on the row).
+    if (ocrAvailable && can.ocrTrigger && hasAccess(row.myAccess, "edit")) {
+      actions.push({
+        label: "OCR scan",
+        icon: ScanLine,
+        onSelect: () => setDialog({ kind: "ocr", row, key: Date.now() }),
       })
     }
     if (can.export)
@@ -985,6 +1001,17 @@ function FolderView({ folderId }: { folderId: string | null }) {
           documentId={dialog.row.documentId}
           documentTitle={dialog.row.title}
           templates={watermark.templates}
+          open
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === "ocr" && (
+        <OcrScanDialog
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          documentTitle={dialog.row.title}
+          documentTypeId={dialog.row.documentTypeId}
           open
           onOpenChange={(open) => !open && setDialog(null)}
         />

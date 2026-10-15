@@ -547,8 +547,14 @@ services:
       # deleted when it finishes. tmpfs, not the container's writable layer:
       # plaintext on a real filesystem survives the job and ends up in image
       # layers and snapshots, which is what encryption at rest exists to
-      # prevent. mode=1700 so only the worker's own user can read it.
-      - /dev/shm/ocr:size=512m,mode=1700
+      # prevent. mode=1700 so only the worker's own user can read it - which
+      # needs uid/gid set explicitly: without them a tmpfs mount is owned by
+      # root (the mount namespace's creator), not the container's USER
+      # (oakdms, uid 100/gid 101 per the Dockerfile's `adduser --system`),
+      # so mode=1700 alone locked the worker itself out with
+      # "PermissionError: [Errno 13] Permission denied: '/dev/shm/ocr/...'"
+      # on every single job.
+      - /dev/shm/ocr:size=512m,mode=1700,uid=100,gid=101
     depends_on:
       postgres:
         condition: service_healthy
