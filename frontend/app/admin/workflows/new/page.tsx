@@ -28,6 +28,12 @@ export default function NewWorkflowTemplatePage() {
         description: values.description.trim() || undefined,
         documentTypeId: values.documentTypeId,
         onDocumentChange: values.onDocumentChange,
+        defaultReminderBeforeHours: values.defaultReminderBeforeHours,
+        defaultInactivityReminderHours: values.defaultInactivityReminderHours,
+        defaultEscalateAfterReminderHours: values.defaultEscalateAfterReminderHours,
+        defaultEscalationTarget: values.defaultEscalationTarget,
+        defaultEscalationUserId:
+          values.defaultEscalationTarget === "named_user" ? values.defaultEscalationUserId : null,
       })
       queryClient.invalidateQueries({ queryKey: ["workflow", "templates"] })
       toast.success(`Template "${template.name}" created as a draft. Add its stages next.`)

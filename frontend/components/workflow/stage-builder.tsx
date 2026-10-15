@@ -15,6 +15,7 @@ import {
 import type { UpsertStagePayload, WorkflowStageDto, WorkflowTemplateDto } from "@/lib/workflow/api"
 
 import { StageCard } from "./stage-card"
+import type { TemplateReminderDefaults } from "./schema"
 
 interface StageBuilderProps {
   template: WorkflowTemplateDto
@@ -37,6 +38,13 @@ export function StageBuilder({ template, editable, busy, onAdd, onUpdate, onDele
   const [pendingDelete, setPendingDelete] = useState<WorkflowStageDto | null>(null)
 
   const stages = template.stages.slice().sort((a, b) => a.stageOrder - b.stageOrder)
+  // What a stage inherits when it leaves a reminder/escalation setting empty.
+  const templateDefaults: TemplateReminderDefaults = {
+    reminderBeforeHours: template.defaultReminderBeforeHours,
+    inactivityReminderHours: template.defaultInactivityReminderHours,
+    escalateAfterReminderHours: template.defaultEscalateAfterReminderHours,
+    escalationTarget: template.defaultEscalationTarget,
+  }
 
   function move(index: number, delta: -1 | 1) {
     const ids = stages.map((s) => s.stageId)
@@ -64,6 +72,7 @@ export function StageBuilder({ template, editable, busy, onAdd, onUpdate, onDele
           total={stages.length}
           editable={editable}
           busy={busy}
+          templateDefaults={templateDefaults}
           onSave={async (payload) => (await onUpdate(stage.stageId, payload)) !== null}
           onDelete={() => setPendingDelete(stage)}
           onMoveUp={() => move(index, -1)}
@@ -78,6 +87,7 @@ export function StageBuilder({ template, editable, busy, onAdd, onUpdate, onDele
           total={stages.length + 1}
           editable
           busy={busy}
+          templateDefaults={templateDefaults}
           onSave={async (payload) => {
             const ok = (await onAdd(payload)) !== null
             if (ok) setAdding(false)

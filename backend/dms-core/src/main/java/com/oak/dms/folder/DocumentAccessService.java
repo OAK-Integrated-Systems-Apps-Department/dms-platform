@@ -15,6 +15,7 @@ import com.oak.dms.folder.dto.FolderDtos.UpdateFolderAccessRequest;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.auth.UserPermissions;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +53,7 @@ public class DocumentAccessService {
     private final AccessCache cache;
     private final DocumentApprovals approvals;
     private final UserPermissions userPermissions;
+    private final ApplicationEventPublisher events;
 
     /**
      * The caller's access to folders and to restricted documents, worked out once per request.
@@ -264,8 +266,8 @@ public class DocumentAccessService {
             }
         }
 
-        Map<String, Object> previous = AccessPrincipals.snapshot(document.getAccessMode(),
-                grants(accessRepository.findByTenantIdAndDocumentIdOrderByCreatedAtAsc(tenantId, documentId)));
+        List<Grant> before = grants(accessRepository.findByTenantIdAndDocumentIdOrderByCreatedAtAsc(tenantId, documentId));
+        Map<String, Object> previous = AccessPrincipals.snapshot(document.getAccessMode(), before);
         document.setAccessMode(mode);
         document.setUpdatedAt(OffsetDateTime.now());
         document.setUpdatedBy(TenantContext.getUserId());
@@ -288,6 +290,9 @@ public class DocumentAccessService {
                 .previousValue(previous)
                 .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
                 .log();
+        // Tell whoever is newly on the list that the document was shared with them (3.2, N10).
+        AccessGrantedEvent.of("document", documentId, document.getTitle(), before, wanted.values())
+                .ifPresent(events::publishEvent);
         return getAccess(documentId);
     }
 

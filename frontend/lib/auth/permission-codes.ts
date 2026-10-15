@@ -149,4 +149,9 @@ export const PermissionCodes = {
   // Document Lifecycle Management - starting a workflow on a document.
   DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",
 
+  // Notifications (3.2) - tenant-admin settings and the delivery log.
+  NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
+  NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",
+  NOTIF_DELIVERY_LOG_RETRY: "notif.delivery-log.retry",
+
 } as const

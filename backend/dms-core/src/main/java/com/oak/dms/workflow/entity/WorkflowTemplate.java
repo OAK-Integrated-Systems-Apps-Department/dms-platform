@@ -1,5 +1,6 @@
 package com.oak.dms.workflow.entity;
 
+import com.oak.dms.workflow.enums.EscalationTarget;
 import com.oak.dms.workflow.enums.OnDocumentChange;
 import com.oak.dms.workflow.enums.TemplateStatus;
 import jakarta.persistence.Column;
@@ -66,6 +67,25 @@ public class WorkflowTemplate {
     @Column(name = "on_document_change", nullable = false)
     @Builder.Default
     private OnDocumentChange onDocumentChange = OnDocumentChange.flag_only;
+
+    // 3.2 Notification reminder/escalation defaults (N-FR-003/004/006); stages
+    // may override. null = no default (that rule off unless a stage sets it).
+    @Column(name = "default_reminder_before_hours")
+    private Integer defaultReminderBeforeHours;
+
+    @Column(name = "default_inactivity_reminder_hours")
+    private Integer defaultInactivityReminderHours;
+
+    @Column(name = "default_escalate_after_reminder_hours")
+    private Integer defaultEscalateAfterReminderHours;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "default_escalation_target", nullable = false)
+    @Builder.Default
+    private EscalationTarget defaultEscalationTarget = EscalationTarget.none;
+
+    @Column(name = "default_escalation_user_id")
+    private UUID defaultEscalationUserId;
 
     @Column(name = "created_by")
     private UUID createdBy;

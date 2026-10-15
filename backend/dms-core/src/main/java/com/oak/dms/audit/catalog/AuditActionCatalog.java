@@ -178,6 +178,14 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_COMMENT_UPDATED = "DOCUMENT_COMMENT_UPDATED";
     public static final String DOCUMENT_COMMENT_DELETED = "DOCUMENT_COMMENT_DELETED";
 
+    // Notifications (3.2) - module NOTIF. The main trail gets only these few;
+    // every delivery attempt goes to the append-only notification_delivery_attempts table.
+    public static final String NOTIFICATION_DELIVERY_FAILED = "NOTIFICATION_DELIVERY_FAILED";
+    public static final String NOTIFICATION_RECIPIENT_NO_EMAIL = "NOTIFICATION_RECIPIENT_NO_EMAIL";
+    public static final String NOTIFICATION_SETTING_CHANGED = "NOTIFICATION_SETTING_CHANGED";
+    public static final String NOTIFICATION_PREFERENCE_CHANGED = "NOTIFICATION_PREFERENCE_CHANGED";
+    public static final String NOTIFICATION_DELIVERY_RETRIED = "NOTIFICATION_DELIVERY_RETRIED";
+
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -459,7 +467,14 @@ public final class AuditActionCatalog {
             // Document comments - module DOCM. Rows carry ids and length, never the body.
             Map.entry(DOCUMENT_COMMENT_CREATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_COMMENT_UPDATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
-            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false))
+            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+
+            // Notifications (3.2) - module NOTIF
+            Map.entry(NOTIFICATION_DELIVERY_FAILED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_RECIPIENT_NO_EMAIL, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_SETTING_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_PREFERENCE_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.LOW, false)),
+            Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false))
 
     );
 

@@ -77,6 +77,14 @@ public class WorkflowStage {
     @Column(name = "escalation_user_id")
     private UUID escalationUserId;
 
+    /** Inactivity reminder threshold (3.2, N-FR-003); null = inherit the template default. */
+    @Column(name = "inactivity_reminder_hours")
+    private Integer inactivityReminderHours;
+
+    /** Hours after the inactivity reminder before escalating (3.2, N-FR-004); null = inherit the template default. */
+    @Column(name = "escalate_after_reminder_hours")
+    private Integer escalateAfterReminderHours;
+
     /** Whether approvers in this stage may pause their task to request information (V47, decision 19). */
     @Column(name = "allow_info_requests", nullable = false)
     @Builder.Default

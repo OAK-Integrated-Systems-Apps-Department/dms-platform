@@ -54,7 +54,8 @@ class DocumentAccessServiceTest {
     private final com.oak.dms.document.DocumentApprovals approvals = mock(com.oak.dms.document.DocumentApprovals.class);
     private final DocumentAccessService service = new DocumentAccessService(folderAccess, entries, documents,
             new AccessPrincipals(userRoles, users, mock(RoleRepository.class)), audit, new AccessCache(mock(org.springframework.jdbc.core.JdbcTemplate.class), java.time.Duration.ZERO, 10),
-            approvals, mock(com.oak.dms.security.auth.UserPermissions.class));
+            approvals, mock(com.oak.dms.security.auth.UserPermissions.class),
+            mock(org.springframework.context.ApplicationEventPublisher.class));
 
     private final Folder open = Folder.builder().folderId(UUID.randomUUID()).tenantId(TENANT).folderName("Open")
             .accessMode(FolderAccessMode.inherit).build();

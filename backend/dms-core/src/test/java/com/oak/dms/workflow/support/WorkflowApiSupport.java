@@ -1,16 +1,14 @@
 package com.oak.dms.workflow.support;
 
+import com.oak.dms.notification.dispatch.NotificationDispatcher;
+import com.oak.dms.notification.support.NotificationMailSupport;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.user.User;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.mockito.invocation.Invocation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -40,7 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * with a real Jwt principal per user, JSON in and out, and a captured
  * {@link JavaMailSender} for the after-commit notification mails.
  */
-public abstract class WorkflowApiSupport {
+public abstract class WorkflowApiSupport extends NotificationMailSupport {
 
     @Autowired
     protected WebApplicationContext context;
@@ -48,9 +46,8 @@ public abstract class WorkflowApiSupport {
     protected JsonMapper json;
     @Autowired
     protected WorkflowFixtures fx;
-
-    @MockitoBean
-    protected JavaMailSender mailSender;
+    @Autowired
+    protected NotificationDispatcher notificationDispatcher;
 
     protected MockMvc mvc;
 
@@ -229,32 +226,58 @@ public abstract class WorkflowApiSupport {
 
     // ---------------------------------------------------------------- mail
 
-    protected List<SimpleMailMessage> sentMails() {
-        List<SimpleMailMessage> mails = new ArrayList<>();
-        for (Invocation invocation : mockingDetails(mailSender).getInvocations()) {
-            for (Object arg : invocation.getArguments()) {
-                if (arg instanceof SimpleMailMessage m) {
-                    mails.add(m);
-                }
-            }
+    /**
+     * A captured email from GreenMail, exposing the same getters the old
+     * {@code SimpleMailMessage}-based assertions used (3.2, N8). Email now
+     * goes out via the notification dispatcher as HTML + text; {@link #getText()}
+     * returns the whole body (text + html parts joined by GreenMail).
+     */
+    public record CapturedMail(String subject, String text, String[] to) {
+        public String getSubject() {
+            return subject;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public String[] getTo() {
+            return to;
+        }
+    }
+
+    protected List<CapturedMail> sentMails() {
+        List<CapturedMail> mails = new ArrayList<>();
+        for (var m : allMail()) {
+            mails.add(new CapturedMail(subjectOf(m), bodyOf(m), recipients(m).toArray(new String[0])));
         }
         return mails;
     }
 
-    /** Mail goes out after commit on another thread - wait for it (up to 5 s). */
-    protected SimpleMailMessage awaitMail(Predicate<SimpleMailMessage> match) throws InterruptedException {
+    /**
+     * Notifications are written in the triggering transaction; email is sent by
+     * the dispatcher, which is off in tests - so drive it each poll and wait for
+     * the matching mail (up to 5 s).
+     */
+    protected CapturedMail awaitMail(Predicate<CapturedMail> match) throws InterruptedException {
         for (int i = 0; i < 50; i++) {
-            for (SimpleMailMessage m : sentMails()) {
+            notificationDispatcher.runOnce();
+            for (CapturedMail m : sentMails()) {
                 if (match.test(m)) {
                     return m;
                 }
             }
             Thread.sleep(100);
         }
-        throw new AssertionError("No matching mail; sent: " + sentMails());
+        throw new AssertionError("No matching mail; sent: "
+                + sentMails().stream().map(CapturedMail::getSubject).toList());
     }
 
-    protected static Predicate<SimpleMailMessage> to(User user) {
+    protected static Predicate<CapturedMail> to(User user) {
         return m -> m.getTo() != null && List.of(m.getTo()).contains(user.getEmail());
+    }
+
+    protected static Predicate<CapturedMail> subject(String part) {
+        return m -> m.getSubject() != null && m.getSubject().contains(part);
     }
 }

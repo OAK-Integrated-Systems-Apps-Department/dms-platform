@@ -1,5 +1,6 @@
 import type {
   CompletionRule,
+  EscalationTarget,
   InfoRequestStatus,
   InstanceStatus,
   OnDocumentChange,
@@ -105,6 +106,13 @@ export const REJECTION_RULE_LABELS: Record<RejectionRule, string> = {
 export const ON_DOCUMENT_CHANGE_LABELS: Record<OnDocumentChange, string> = {
   flag_only: "Flag only",
   restart: "Restart",
+}
+
+/** Who a task escalates to (3.2). On a stage, "none" means "use the template's default". */
+export const ESCALATION_TARGET_LABELS: Record<EscalationTarget, string> = {
+  none: "None",
+  department_head: "Department head",
+  named_user: "A named person",
 }
 
 /** Timeline wording per action - "{actor} {label}". */

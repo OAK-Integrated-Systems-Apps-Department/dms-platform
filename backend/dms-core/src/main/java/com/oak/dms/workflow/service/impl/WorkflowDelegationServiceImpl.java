@@ -106,6 +106,7 @@ public class WorkflowDelegationServiceImpl implements WorkflowDelegationService 
             task.setDelegatedTo(delegateUserId);
             task.setDelegatedAt(now);
         }
+        task.setLastActivityAt(now);
         task.setUpdatedBy(userId);
         task.setUpdatedAt(now);
         taskRepository.saveAndFlush(task);
@@ -162,6 +163,7 @@ public class WorkflowDelegationServiceImpl implements WorkflowDelegationService 
             task.setDelegatedTo(targetUserId);
             task.setDelegatedAt(now);
         }
+        task.setLastActivityAt(now);
         task.setUpdatedBy(userId);
         task.setUpdatedAt(now);
         taskRepository.saveAndFlush(task);

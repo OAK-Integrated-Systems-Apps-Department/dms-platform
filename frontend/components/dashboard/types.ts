@@ -15,7 +15,7 @@ export interface NavItem {
    * open workflow tasks, polled from /workflow/tasks/my/count). Hidden
    * while zero or still loading.
    */
-  liveBadge?: "myOpenTasks"
+  liveBadge?: "myOpenTasks" | "myUnreadNotifications"
   /**
    * Real route to navigate to (e.g. "/admin/roles"). When present, the
    * sidebar renders this item as a Next.js `Link` and derives its active

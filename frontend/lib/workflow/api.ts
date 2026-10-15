@@ -105,7 +105,13 @@ export interface WorkflowStageDto {
   completionRule: CompletionRule
   rejectionRule: RejectionRule
   slaHours: number | null
+  /** The due-date reminder: this many hours before the task is due. null = inherit the template default. */
   reminderBeforeHours: number | null
+  /** The inactivity reminder: hours with no activity on the task. null = inherit the template default. */
+  inactivityReminderHours: number | null
+  /** Hours after the inactivity reminder before escalating. null = inherit the template default. */
+  escalateAfterReminderHours: number | null
+  /** "none" inherits the template's default target. */
   escalationTarget: EscalationTarget | null
   escalationUserId: string | null
   /** Whether approvers may pause their task to request information (default true). */
@@ -124,6 +130,12 @@ export interface WorkflowTemplateDto {
   documentTypeId: string
   documentTypeName: string | null
   onDocumentChange: OnDocumentChange
+  /** Reminder / escalation defaults for every stage of this template; a stage's own value overrides them. */
+  defaultReminderBeforeHours: number | null
+  defaultInactivityReminderHours: number | null
+  defaultEscalateAfterReminderHours: number | null
+  defaultEscalationTarget: EscalationTarget
+  defaultEscalationUserId: string | null
   hasInstances: boolean
   stages: WorkflowStageDto[]
   createdAt: string
@@ -137,7 +149,16 @@ export interface WorkflowTemplateFilters {
   search?: string
 }
 
-export interface CreateWorkflowTemplatePayload {
+/** The template-level reminder/escalation defaults (3.2). Replaced as a whole: leave one out and it is cleared. */
+export interface TemplateReminderDefaultsPayload {
+  defaultReminderBeforeHours?: number | null
+  defaultInactivityReminderHours?: number | null
+  defaultEscalateAfterReminderHours?: number | null
+  defaultEscalationTarget?: EscalationTarget | null
+  defaultEscalationUserId?: string | null
+}
+
+export interface CreateWorkflowTemplatePayload extends TemplateReminderDefaultsPayload {
   name: string
   code: string
   description?: string
@@ -145,7 +166,7 @@ export interface CreateWorkflowTemplatePayload {
   onDocumentChange?: OnDocumentChange
 }
 
-export interface UpdateWorkflowTemplatePayload {
+export interface UpdateWorkflowTemplatePayload extends TemplateReminderDefaultsPayload {
   name: string
   description: string | null
   documentTypeId: string
@@ -165,6 +186,9 @@ export interface UpsertStagePayload {
   rejectionRule: RejectionRule
   slaHours?: number | null
   reminderBeforeHours?: number | null
+  /** null / omitted = inherit the template default. */
+  inactivityReminderHours?: number | null
+  escalateAfterReminderHours?: number | null
   escalationTarget?: EscalationTarget | null
   escalationUserId?: string | null
   allowInfoRequests?: boolean

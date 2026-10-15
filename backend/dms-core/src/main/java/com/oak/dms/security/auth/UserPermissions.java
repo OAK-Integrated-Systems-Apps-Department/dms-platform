@@ -80,17 +80,34 @@ public class UserPermissions {
         return result;
     }
 
+    /**
+     * After a failed Keycloak lookup, how long to answer "nobody" at once instead of waiting out another
+     * timeout. The failure path already answers "nobody" (fails closed), so this changes only how fast, never
+     * what: it stops a slow or down Keycloak from stalling every request that asks - approvals now write their
+     * notifications, access check included, inside the user's own transaction.
+     */
+    private static final long KEYCLOAK_FAILURE_BACKOFF_MILLIS = 30_000;
+
+    private volatile long keycloakFailedAtMillis;
+
     /** Users of the tenant holding the TENANT_ADMIN realm role; empty when Keycloak can't be reached. */
     public Set<UUID> tenantAdminIds(UUID tenantId) {
         Set<UUID> ids = new HashSet<>();
+        long failedAt = keycloakFailedAtMillis;
+        if (failedAt != 0 && System.currentTimeMillis() - failedAt < KEYCLOAK_FAILURE_BACKOFF_MILLIS) {
+            return ids;   // Keycloak just failed: same answer as a failure, without the wait
+        }
         try {
             for (UUID keycloakId : keycloakUserService.listRealmRoleMemberIds(TENANT_ADMIN_ROLE)) {
                 userRepository.findByKeycloakIdAndDeletedFalse(keycloakId)
                         .filter(u -> tenantId.equals(u.getTenantId()))
                         .ifPresent(u -> ids.add(u.getUserId()));
             }
+            keycloakFailedAtMillis = 0;
         } catch (RuntimeException e) {
-            log.warn("Could not list tenant admins from Keycloak: {}", e.getMessage());
+            keycloakFailedAtMillis = System.currentTimeMillis();
+            log.warn("Could not list tenant admins from Keycloak (answering \"none\" for the next {} s): {}",
+                    KEYCLOAK_FAILURE_BACKOFF_MILLIS / 1000, e.getMessage());
         }
         return ids;
     }

@@ -14,6 +14,7 @@ import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,7 @@ public class FolderAccessService {
     private final AuthorizationService authorizationService;
     private final AuditService auditService;
     private final AccessCache cache;
+    private final ApplicationEventPublisher events;
 
     /**
      * The caller's access to every folder of their tenant. The folder tree and the caller's entries
@@ -158,8 +160,8 @@ public class FolderAccessService {
             }
         }
 
-        Map<String, Object> previous = AccessPrincipals.snapshot(folder.getAccessMode(),
-                grants(accessRepository.findByTenantIdAndFolderIdOrderByCreatedAtAsc(tenantId, folderId)));
+        List<Grant> before = grants(accessRepository.findByTenantIdAndFolderIdOrderByCreatedAtAsc(tenantId, folderId));
+        Map<String, Object> previous = AccessPrincipals.snapshot(folder.getAccessMode(), before);
         folder.setAccessMode(mode);
         folder.setUpdatedAt(OffsetDateTime.now());
         folder.setUpdatedBy(TenantContext.getUserId());
@@ -182,6 +184,9 @@ public class FolderAccessService {
                 .previousValue(previous)
                 .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
                 .log();
+        // Tell whoever is newly on the list that the folder was shared with them (3.2, N10).
+        AccessGrantedEvent.of("folder", folderId, folder.getFolderName(), before, wanted.values())
+                .ifPresent(events::publishEvent);
         return getAccess(folderId);
     }
 

@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.mail.SimpleMailMessage;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
@@ -48,10 +47,6 @@ class WorkflowPhase2NotificationIT extends WorkflowApiSupport {
         stage.put("escalationUserId", escalationUser);
         activeTemplate(w.admin(), "MAIL", w.contractTypeId(), "flag_only", List.of(stage));
         return submit(w.chamath(), w.contractDocumentId(), 201);
-    }
-
-    private static java.util.function.Predicate<SimpleMailMessage> subject(String part) {
-        return m -> m.getSubject() != null && m.getSubject().contains(part);
     }
 
     @Test
@@ -115,7 +110,7 @@ class WorkflowPhase2NotificationIT extends WorkflowApiSupport {
         User outsider = fx.user(w.tenantId(), "Outsider");
         UUID root = id(postAs("/api/v1/documents/" + w.contractDocumentId() + "/comments", w.chamath(),
                 Map.of("body", "See @[Outsider](user:" + outsider.getUserId() + ")"), 201), "commentId");
-        SimpleMailMessage mention = awaitMail(to(outsider).and(subject("mentioned you")));
+        CapturedMail mention = awaitMail(to(outsider).and(subject("mentioned you")));
         assertThat(mention.getText()).contains("See @Outsider").doesNotContain("/documents/");
         for (int i = 0; i < 50 && fx.count("select count(*) from comment_mentions where comment_id = ?"
                 + " and notified_at is not null", root) == 0; i++) {

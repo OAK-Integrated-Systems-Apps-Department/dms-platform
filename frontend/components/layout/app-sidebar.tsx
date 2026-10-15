@@ -22,6 +22,7 @@ import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 
 import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
+import { useUnreadCount } from "@/lib/notifications/use-notifications"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -75,9 +76,12 @@ export function AppSidebar({
 
   // Live badge for the My Tasks item (see NavItem.liveBadge).
   const { data: taskCount } = useMyTaskCount()
+  const unreadNotifications = useUnreadCount().data ?? 0
   const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
     // Tasks to decide plus information requests waiting on me (Phase 2).
     myOpenTasks: (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) || undefined,
+    // Unread notifications in the inbox (3.2).
+    myUnreadNotifications: unreadNotifications || undefined,
   }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are

@@ -8,11 +8,13 @@ import { AlertTriangle, ChevronDown } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
-import { useDocumentTypeOptions } from "@/lib/workflow/use-participant-options"
+import { useDocumentTypeOptions, useUserOptions } from "@/lib/workflow/use-participant-options"
 import { cn } from "@/lib/utils"
 
+import { HoursInput, ReminderHelp } from "./reminder-fields"
 import {
   createTemplateSchema,
   updateTemplateSchema,
@@ -46,7 +48,18 @@ export function CreateWorkflowTemplateForm({ onSubmit }: CreateFormProps) {
 
   const { register, handleSubmit, control, formState: { errors, isSubmitting, isValid } } = useForm<CreateTemplateFormValues>({
     resolver: zodResolver(createTemplateSchema),
-    defaultValues: { name: "", code: "", description: "", documentTypeId: "", onDocumentChange: "flag_only" },
+    defaultValues: {
+      name: "",
+      code: "",
+      description: "",
+      documentTypeId: "",
+      onDocumentChange: "flag_only",
+      defaultReminderBeforeHours: null,
+      defaultInactivityReminderHours: null,
+      defaultEscalateAfterReminderHours: null,
+      defaultEscalationTarget: "none",
+      defaultEscalationUserId: null,
+    },
     mode: "onChange",
   })
 
@@ -209,7 +222,138 @@ function SharedFields({
         />
         <p className="mt-2 text-[12.5px] leading-[1.55] text-muted-foreground">{ON_CHANGE_HELP[onDocumentChange]}</p>
       </div>
+
+      <ReminderDefaults control={ctl} errors={errors} />
     </>
+  )
+}
+
+const ESCALATION_OPTIONS = [
+  { value: "none" as const, label: "None" },
+  { value: "department_head" as const, label: "Department head" },
+  { value: "named_user" as const, label: "Named person" },
+]
+
+const ESCALATION_HELP = {
+  none: "No default escalation. A stage can still set its own target.",
+  department_head:
+    "Stages with no target of their own escalate to the department head (a department pool task: that department's head; otherwise the head of the submitter's department).",
+  named_user: "Stages with no target of their own escalate to this person.",
+}
+
+/**
+ * The template's reminder and escalation defaults (3.2, N-FR-006 - per workflow type). Every stage uses them unless
+ * it sets its own value on its stage card; the stage cards show what they inherit from here.
+ */
+function ReminderDefaults({
+  control,
+  errors,
+}: {
+  control: Control<UpdateTemplateFormValues>
+  errors: FieldErrors<UpdateTemplateFormValues>
+}) {
+  const target = useWatch({ control, name: "defaultEscalationTarget" })
+  const users = useUserOptions(target === "named_user")
+
+  return (
+    <div className="mt-6 flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">
+      <div>
+        <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Reminder &amp; escalation defaults
+        </p>
+        <p className="mt-1 text-[12.5px] text-muted-foreground">
+          Used by every stage of this template unless the stage sets its own. Leave a box empty for no default.
+        </p>
+      </div>
+      <ReminderHelp />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Controller
+          name="defaultReminderBeforeHours"
+          control={control}
+          render={({ field }) => (
+            <div>
+              <Label htmlFor="template-default-reminder">Due-date reminder: hours before due</Label>
+              <HoursInput
+                id="template-default-reminder"
+                max={8759}
+                value={field.value}
+                onChange={field.onChange}
+                invalid={Boolean(errors.defaultReminderBeforeHours)}
+              />
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                Only for stages with SLA hours, and only when shorter than the stage&apos;s SLA.
+              </p>
+              {errors.defaultReminderBeforeHours && <FieldError message={errors.defaultReminderBeforeHours.message} />}
+            </div>
+          )}
+        />
+        <Controller
+          name="defaultInactivityReminderHours"
+          control={control}
+          render={({ field }) => (
+            <div>
+              <Label htmlFor="template-default-inactivity">Inactivity reminder: hours without activity</Label>
+              <HoursInput
+                id="template-default-inactivity"
+                value={field.value}
+                onChange={field.onChange}
+                invalid={Boolean(errors.defaultInactivityReminderHours)}
+              />
+              {errors.defaultInactivityReminderHours && <FieldError message={errors.defaultInactivityReminderHours.message} />}
+            </div>
+          )}
+        />
+        <Controller
+          name="defaultEscalateAfterReminderHours"
+          control={control}
+          render={({ field }) => (
+            <div>
+              <Label htmlFor="template-default-escalate-after">Escalate after the inactivity reminder: hours</Label>
+              <HoursInput
+                id="template-default-escalate-after"
+                value={field.value}
+                onChange={field.onChange}
+                invalid={Boolean(errors.defaultEscalateAfterReminderHours)}
+              />
+              {errors.defaultEscalateAfterReminderHours && (
+                <FieldError message={errors.defaultEscalateAfterReminderHours.message} />
+              )}
+            </div>
+          )}
+        />
+      </div>
+
+      <div>
+        <Label>Default escalation target</Label>
+        <Controller
+          name="defaultEscalationTarget"
+          control={control}
+          render={({ field }) => (
+            <SegmentedControl value={field.value} onChange={field.onChange} options={ESCALATION_OPTIONS} />
+          )}
+        />
+        <p className="mt-2 text-[12.5px] text-muted-foreground">{ESCALATION_HELP[target]}</p>
+        {target === "named_user" && (
+          <Controller
+            name="defaultEscalationUserId"
+            control={control}
+            render={({ field }) => (
+              <div className="mt-3 sm:w-[320px]">
+                <SearchableSelect
+                  options={(users.data ?? []).map((u) => ({ value: u.value, label: u.hint ? `${u.label} (${u.hint})` : u.label }))}
+                  selected={field.value ?? ""}
+                  onChange={(value) => field.onChange(value || null)}
+                  allLabel={users.isPending ? "Loading people…" : "Choose a person"}
+                  searchPlaceholder="Search people"
+                />
+                {errors.defaultEscalationUserId && <FieldError message={errors.defaultEscalationUserId.message} />}
+              </div>
+            )}
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
