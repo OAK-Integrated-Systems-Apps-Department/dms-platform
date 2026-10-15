@@ -151,6 +151,8 @@ public final class AuditActionCatalog {
     public static final String WATERMARK_COMPLETED = "WATERMARK_COMPLETED";
     public static final String WATERMARK_FAILED = "WATERMARK_FAILED";
     public static final String WATERMARK_RESULT_DOWNLOADED = "WATERMARK_RESULT_DOWNLOADED";
+    /** Changing whether a plain download is watermarked by default, and with which template (V103). */
+    public static final String WATERMARK_DEFAULTS_UPDATED = "WATERMARK_DEFAULTS_UPDATED";
 
     public static final String DEPARTMENT_CREATED = "DEPARTMENT_CREATED";
     public static final String DEPARTMENT_UPDATED = "DEPARTMENT_UPDATED";
@@ -445,6 +447,9 @@ public final class AuditActionCatalog {
             // moment a copy of a document leaves the system - one carrying
             // the name of the person who took it.
             Map.entry(WATERMARK_RESULT_DOWNLOADED, new AuditActionSpec("DW", AuditSeverity.HIGH, false)),
+            // Changes the policy for every future plain download, not any
+            // copy already made - same MEDIUM as a template edit.
+            Map.entry(WATERMARK_DEFAULTS_UPDATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
 
             // Departments (DepartmentController) - module OTUA. They define
             // who sits in a department approver pool, hence MEDIUM.

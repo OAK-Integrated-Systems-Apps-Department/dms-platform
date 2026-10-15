@@ -90,6 +90,7 @@ class ReviewEndpointTenantIsolationTest {
     @Mock private DocumentMetadataService documentMetadataService;
     @Mock private MetadataValidationService metadataValidationService;
     @Mock private OcrProperties ocrProperties;
+    @Mock private com.oak.dms.watermark.service.WatermarkDefaultsService watermarkDefaultsService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -113,7 +114,7 @@ class ReviewEndpointTenantIsolationTest {
                 documentOcrLineItemRepository, documentOcrCorrectionRepository,
                 processingJobRepository, ocrWorkerClient, ocrEnqueueService,
                 documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
-                new PageImageCache(ocrProperties));
+                new PageImageCache(ocrProperties), watermarkDefaultsService);
 
         // The document belongs to tenant A. Every test below is tenant B.
         Document document = Document.builder()

@@ -58,6 +58,8 @@ public final class AuditObjectTypes {
     public static final String WATERMARK_TEMPLATE = "WATERMARK_TEMPLATE";
     /** One requested watermarked copy (watermark_jobs) - the object of the other WATERMARK_* events. */
     public static final String WATERMARK_JOB = "WATERMARK_JOB";
+    /** A tenant's download-watermarking policy (tenant_watermark_settings) - object id is the tenant id. */
+    public static final String TENANT_WATERMARK_SETTINGS = "TENANT_WATERMARK_SETTINGS";
     /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
     public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
 

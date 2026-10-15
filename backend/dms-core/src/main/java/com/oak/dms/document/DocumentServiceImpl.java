@@ -52,6 +52,7 @@ import com.oak.dms.storage.exception.StorageConfigurationException;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.watermark.service.WatermarkDefaultsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -59,6 +60,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -135,6 +138,11 @@ public class DocumentServiceImpl implements DocumentService {
     private final ObjectMapper objectMapper;
     private final OcrProperties ocrProperties;
     private final PageImageCache pageImageCache;
+
+    // Default download watermarking (V103) - see downloadDocument/withDefaultWatermark below.
+    // Deliberately NOT used by previewDocument or downloadDocumentFromJob (bulk/ZIP export is
+    // out of scope for this feature).
+    private final WatermarkDefaultsService watermarkDefaultsService;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -363,7 +371,13 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
-        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null);
+        // true: only the plain, user-facing download gets the tenant's
+        // default watermark - never the preview below, and never the
+        // bulk/ZIP export path (downloadDocumentFromJob), which is out of
+        // scope for this feature (see BulkExportService/startZipDownload -
+        // a known gap, not an oversight).
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null,
+                true);
     }
 
     @Override
@@ -389,17 +403,32 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional
     public DownloadedDocument previewDocument(UUID documentId) {
-        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_VIEWED, null);
+        // false: a preview (inline=true) is shown in the page, not downloaded
+        // - the default-watermark policy is about the download action only.
+        return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_VIEWED, null,
+                false);
     }
 
     @Override
     @Transactional
     public DownloadedDocument downloadDocumentFromJob(UUID documentId, String job) {
-        return serve(findOwnedByCallerTenant(documentId), AuditActionCatalog.DOCUMENT_DOWNLOADED, job);
+        return serve(findOwnedByCallerTenant(documentId), AuditActionCatalog.DOCUMENT_DOWNLOADED, job, false);
     }
 
-    /** The document's current (or latest) servable version, audited as {@code action}. */
-    private DownloadedDocument serve(Document document, String action, String job) {
+    /**
+     * The document's current (or latest) servable version, audited as
+     * {@code action}.
+     *
+     * @param applyDefaultWatermark true only for the plain download path -
+     *                              see {@code DocumentController#downloadDocument}
+     *                              and {@link WatermarkDefaultsService}. When
+     *                              true and the tenant has configured it, the
+     *                              bytes returned are watermarked rather than
+     *                              the original; this never fails the
+     *                              download even if watermarking can't be
+     *                              applied.
+     */
+    private DownloadedDocument serve(Document document, String action, String job, boolean applyDefaultWatermark) {
         UUID tenantId = TenantContext.getTenantId();
         UUID documentId = document.getDocumentId();
 
@@ -411,6 +440,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .orElseThrow(() -> new ResourceNotFoundException("DocumentVersion", versionId));
 
         DownloadedDocument downloaded = versionContent.open(version);
+        if (applyDefaultWatermark) {
+            downloaded = withDefaultWatermark(downloaded, document, version);
+        }
 
         var event = auditService.event(action)
                 .objectType(AuditObjectTypes.DOCUMENT)
@@ -422,6 +454,33 @@ public class DocumentServiceImpl implements DocumentService {
         }
         event.log();
         return downloaded;
+    }
+
+    /**
+     * Reads the whole file into memory and, if this tenant has opted into
+     * default download watermarking for a supported file type, replaces it
+     * with the watermarked rendering. {@link WatermarkDefaultsService}
+     * itself never throws - any reason it can't apply the watermark falls
+     * back to the original bytes - so this never turns a working download
+     * into a failure.
+     */
+    private DownloadedDocument withDefaultWatermark(DownloadedDocument downloaded, Document document,
+                                                     DocumentVersion version) {
+        byte[] original;
+        try (InputStream content = downloaded.content()) {
+            original = content.readAllBytes();
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not read document " + document.getDocumentId()
+                    + " for download", e);
+        }
+
+        DocumentContentReader.VersionDetails details = new DocumentContentReader.VersionDetails(
+                document.getDocumentId(), version.getVersionId(), version.getVersionNumber(), document.getTitle(),
+                version.getOriginalFilename(), version.getMimeType(), version.getSizeBytes());
+        byte[] result = watermarkDefaultsService.applyIfConfigured(original, details);
+
+        return new DownloadedDocument(new ByteArrayInputStream(result), result.length,
+                downloaded.contentType(), downloaded.filename());
     }
 
     @Override
