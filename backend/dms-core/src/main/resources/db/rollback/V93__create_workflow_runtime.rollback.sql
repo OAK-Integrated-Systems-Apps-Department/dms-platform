@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V76__create_workflow_runtime.sql.
+-- Manual rollback ("down") for V93__create_workflow_runtime.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Children first;
 -- the circular instance -> current stage FK is dropped before its target.

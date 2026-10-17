@@ -4,7 +4,7 @@
 --
 -- See docs/notification-plan.md (N2, N11). Points worth knowing:
 --   * workflow_stages already has reminder_before_hours / escalation_target
---     / escalation_user_id (V75) for the DUE-DATE rule. These new columns are
+--     / escalation_user_id (V92) for the DUE-DATE rule. These new columns are
 --     for the INACTIVITY rule (N-FR-003/004), distinctly named so nothing is
 --     duplicated.
 --   * Template columns are the defaults; stage columns override (NULL =

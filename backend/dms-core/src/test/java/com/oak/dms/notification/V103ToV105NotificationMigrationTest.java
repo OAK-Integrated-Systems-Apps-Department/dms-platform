@@ -18,23 +18,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V82-V84 (3.2 Notification: core tables + seeds, workflow reminder/escalation
+ * V103–V105 (3.2 Notification: core tables + seeds, workflow reminder/escalation
  * columns, permissions) up and down on a throwaway database - the same harness
- * and seed approach as {@link com.oak.dms.workflow.V78ToV81WorkflowPhase2MigrationTest}.
+ * and seed approach as {@link com.oak.dms.workflow.V95ToV98WorkflowPhase2MigrationTest}.
  * Proves the new CHECKs bite, the append-only trigger rejects UPDATE/DELETE
  * even for the owning role the test connects as (plan Deviation #1), the
  * dedupe unique holds, the category and permission seeds landed, and that the
- * three rollback scripts reverse cleanly and V82-V84 re-apply.
+ * three rollback scripts reverse cleanly and V103–V105 re-apply.
  */
-class V82ToV84NotificationMigrationTest {
+class V103ToV105NotificationMigrationTest {
 
     private static final String DB_URL = env("DB_URL", "jdbc:postgresql://localhost:5433/dms_dev");
     private static final String DB_USERNAME = env("DB_USERNAME", "postgres");
     private static final String DB_PASSWORD = env("DB_PASSWORD", "password");
     private static final String[] ROLLBACKS = {
-            "/db/rollback/V84__seed_notification_permissions.rollback.sql",
-            "/db/rollback/V83__add_workflow_notification_config_columns.rollback.sql",
-            "/db/rollback/V82__create_notification_core.rollback.sql"};
+            "/db/rollback/V105__seed_notification_permissions.rollback.sql",
+            "/db/rollback/V104__add_workflow_notification_config_columns.rollback.sql",
+            "/db/rollback/V103__create_notification_core.rollback.sql"};
     private static final String[] TABLES = {"notification_categories", "tenant_notification_settings",
             "user_notification_preferences", "notifications", "notification_deliveries",
             "notification_delivery_attempts"};
@@ -44,12 +44,12 @@ class V82ToV84NotificationMigrationTest {
     @Test
     void up_addsTablesColumnsSeedsAndConstraints_thatBite() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "81");
+            migrate(url, "102");
             Ids ids;
             try (Connection c = connect(url)) {
                 ids = seed(c);
             }
-            migrate(url, "84");
+            migrate(url, "105");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table).isTrue();
@@ -135,12 +135,12 @@ class V82ToV84NotificationMigrationTest {
     @Test
     void down_removesEverythingCleanly_andUpCanBeReapplied() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "84");
+            migrate(url, "105");
             try (Connection c = connect(url); Statement s = c.createStatement()) {
                 for (String script : ROLLBACKS) {
                     s.execute(read(script));
                 }
-                s.execute("delete from flyway_schema_history where version in ('82', '83', '84')");
+                s.execute("delete from flyway_schema_history where version in ('103', '104', '105')");
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after rollback").isFalse();
                 }
@@ -154,12 +154,12 @@ class V82ToV84NotificationMigrationTest {
                             .as(code).isZero();
                 }
             }
-            migrate(url, "84");
+            migrate(url, "105");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after re-applying").isTrue();
                 }
-                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('82','83','84')"
+                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('103','104','105')"
                         + " and success")).isEqualTo(3);
             }
         });
@@ -178,10 +178,10 @@ class V82ToV84NotificationMigrationTest {
         String template = uuid();
         String stage = uuid();
         exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('" + tenant
-                + "', 'V82 tenant', 'v82-" + tenant + ".invalid', 'standard', 'active')");
+                + "', 'V103 tenant', 'v103-" + tenant + ".invalid', 'standard', 'active')");
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
-                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v82-" + user + "@test.invalid', 'v82-"
-                + user + "', 'V82', 'V82', 'active')");
+                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v103-" + user + "@test.invalid', 'v103-"
+                + user + "', 'V103', 'V103', 'active')");
         exec(c, "insert into document_types (document_type_id, tenant_id, type_code, type_name) values ('" + type + "', '"
                 + tenant + "', 'CONTRACT', 'Contract')");
         exec(c, "insert into workflow_templates (template_id, tenant_id, document_type_id, name, code, status) values ('"
@@ -237,7 +237,7 @@ class V82ToV84NotificationMigrationTest {
     }
 
     private static String read(String script) throws Exception {
-        try (InputStream in = V82ToV84NotificationMigrationTest.class.getResourceAsStream(script)) {
+        try (InputStream in = V103ToV105NotificationMigrationTest.class.getResourceAsStream(script)) {
             assertThat(in).as(script + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }

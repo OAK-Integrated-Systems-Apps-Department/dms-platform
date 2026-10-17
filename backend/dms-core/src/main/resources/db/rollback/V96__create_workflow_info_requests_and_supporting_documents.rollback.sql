@@ -1,8 +1,8 @@
--- Manual rollback ("down") for V79__create_workflow_info_requests_and_supporting_documents.sql.
+-- Manual rollback ("down") for V96__create_workflow_info_requests_and_supporting_documents.sql.
 --
--- Outside classpath:db/migration, so Flyway never runs it. Restoring the V76
+-- Outside classpath:db/migration, so Flyway never runs it. Restoring the V93
 -- action-type CHECK fails (on purpose) while any action still uses a value
--- V79 added; delete or keep those rows deliberately first.
+-- V96 added; delete or keep those rows deliberately first.
 ALTER TABLE workflow_actions DROP CONSTRAINT IF EXISTS ck_workflow_actions_action_type;
 ALTER TABLE workflow_actions ADD CONSTRAINT ck_workflow_actions_action_type CHECK (action_type IN (
     'submitted', 'claimed', 'released', 'approved', 'rejected',

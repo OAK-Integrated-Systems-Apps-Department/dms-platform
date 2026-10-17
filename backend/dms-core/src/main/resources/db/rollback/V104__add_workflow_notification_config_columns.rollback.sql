@@ -1,8 +1,8 @@
--- Manual rollback ("down") for V83__add_workflow_notification_config_columns.sql.
+-- Manual rollback ("down") for V104__add_workflow_notification_config_columns.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Add-only migration,
 -- so this simply drops the index, constraints and columns it added. Run the
--- V84 rollback first.
+-- V105 rollback first.
 DROP INDEX IF EXISTS ix_workflow_tasks_inactivity;
 
 ALTER TABLE workflow_tasks

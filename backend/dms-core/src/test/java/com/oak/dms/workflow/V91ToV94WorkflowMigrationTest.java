@@ -18,24 +18,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V74-V77 (departments, workflow configuration, workflow runtime, department
+ * V91-V94 (departments, workflow configuration, workflow runtime, department
  * permissions) up and down on a throwaway database - the V41ExportJobsMigrationTest
  * harness. Proves the partial unique indexes that carry the locked decisions
  * (one active template per type, one in-progress instance per document, one
  * active stage per instance, one decision per user per stage) actually bite,
- * and that the four rollback scripts reverse cleanly and V74-V77 re-apply.
+ * and that the four rollback scripts reverse cleanly and V91-V94 re-apply.
  * Named *Test so CI runs it (only needs Postgres with CREATE DATABASE).
  */
-class V74ToV77WorkflowMigrationTest {
+class V91ToV94WorkflowMigrationTest {
 
     private static final String DB_URL = env("DB_URL", "jdbc:postgresql://localhost:5433/dms_dev");
     private static final String DB_USERNAME = env("DB_USERNAME", "postgres");
     private static final String DB_PASSWORD = env("DB_PASSWORD", "password");
     private static final String[] ROLLBACKS = {
-            "/db/rollback/V77__seed_department_permissions.rollback.sql",
-            "/db/rollback/V76__create_workflow_runtime.rollback.sql",
-            "/db/rollback/V75__create_workflow_templates.rollback.sql",
-            "/db/rollback/V74__create_departments.rollback.sql"};
+            "/db/rollback/V94__seed_department_permissions.rollback.sql",
+            "/db/rollback/V93__create_workflow_runtime.rollback.sql",
+            "/db/rollback/V92__create_workflow_templates.rollback.sql",
+            "/db/rollback/V91__create_departments.rollback.sql"};
     private static final String[] TABLES = {"departments", "workflow_templates", "workflow_stages",
             "workflow_stage_participants", "workflow_instances", "workflow_stage_instances", "workflow_tasks",
             "workflow_actions"};
@@ -43,13 +43,13 @@ class V74ToV77WorkflowMigrationTest {
     @Test
     void up_createsTablesConstraintsAndThePartialUniqueIndexes() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "73");
+            migrate(url, "90");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
-                    assertThat(tableExists(c, table)).as(table + " before V74").isFalse();
+                    assertThat(tableExists(c, table)).as(table + " before V91").isFalse();
                 }
             }
-            migrate(url, "77");
+            migrate(url, "94");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table).isTrue();
@@ -113,12 +113,12 @@ class V74ToV77WorkflowMigrationTest {
     @Test
     void down_removesEverythingCleanly_andUpCanBeReapplied() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "77");
+            migrate(url, "94");
             try (Connection c = connect(url); Statement s = c.createStatement()) {
                 for (String script : ROLLBACKS) {
                     s.execute(read(script));
                 }
-                s.execute("delete from flyway_schema_history where version in ('74', '75', '76', '77')");
+                s.execute("delete from flyway_schema_history where version in ('91', '92', '93', '94')");
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after rollback").isFalse();
                 }
@@ -127,12 +127,12 @@ class V74ToV77WorkflowMigrationTest {
                 assertThat(count(c, "select count(*) from permissions where permission_code like 'otua.manage-departments.%'"))
                         .isZero();
             }
-            migrate(url, "77");
+            migrate(url, "94");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after re-applying").isTrue();
                 }
-                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('74','75','76','77')"
+                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('91','92','93','94')"
                         + " and success")).isEqualTo(4);
             }
         });
@@ -164,16 +164,16 @@ class V74ToV77WorkflowMigrationTest {
         String task = uuid();
         String task2 = uuid();
         exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('" + tenant
-                + "', 'V74 tenant', 'v74-" + tenant + ".invalid', 'standard', 'active')");
+                + "', 'V91 tenant', 'v91-" + tenant + ".invalid', 'standard', 'active')");
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
-                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v74-" + user + "@test.invalid', 'v74-"
-                + user + "', 'V74', 'V74', 'active')");
+                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v91-" + user + "@test.invalid', 'v91-"
+                + user + "', 'V91', 'V91', 'active')");
         exec(c, "insert into document_types (document_type_id, tenant_id, type_code, type_name) values ('" + type + "', '"
                 + tenant + "', 'CONTRACT', 'Contract')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
                 + " values ('" + location + "', '" + tenant + "', 'v43', 'FILE_SYSTEM', 'document', '/tmp/v43', 'active')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
-                + " values ('" + staging + "', '" + tenant + "', 'v74-staging', 'FILE_SYSTEM', 'staging', '/tmp/v43s', 'active')");
+                + " values ('" + staging + "', '" + tenant + "', 'v91-staging', 'FILE_SYSTEM', 'staging', '/tmp/v43s', 'active')");
         exec(c, "insert into scan_engines (scan_engine_id, tenant_id, name, provider, scan_mode, timeout_seconds,"
                 + " max_file_size_bytes, status) values ('" + engine + "', '" + tenant + "', 'v43', 'CLAMAV',"
                 + " 'pre_store_stream', 60, 1000, 'active')");
@@ -272,7 +272,7 @@ class V74ToV77WorkflowMigrationTest {
     }
 
     private static String read(String script) throws Exception {
-        try (InputStream in = V74ToV77WorkflowMigrationTest.class.getResourceAsStream(script)) {
+        try (InputStream in = V91ToV94WorkflowMigrationTest.class.getResourceAsStream(script)) {
             assertThat(in).as(script + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }

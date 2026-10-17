@@ -20,8 +20,8 @@
 --     this adds a BEFORE UPDATE/DELETE trigger that RAISEs, so immutability
 --     holds even for the owning/superuser role the migration tests run as
 --     (plan Deviation #1). REVOKE is kept too, matching the house pattern.
---   * Migration numbers V82-V84 are the next free ones after V81; if develop
---     also consumes V82+, renumber at merge (plan Risk R-1).
+--   * Migration numbers V103–V105 are the next free ones after V102; if develop
+--     also consumes V103+, renumber at merge (plan Risk R-1).
 
 -- =====================================================================
 -- notification_categories  (global catalogue, seeded here)
@@ -177,7 +177,7 @@ CREATE INDEX ix_notification_delivery_attempts_tenant_id ON notification_deliver
 CREATE INDEX ix_notification_delivery_attempts_delivery ON notification_delivery_attempts (delivery_id, attempt_number);
 
 -- Append-only enforcement: trigger binds even the owner (plan Deviation #1),
--- REVOKE matches the house pattern (audit_events V23, workflow_actions V76).
+-- REVOKE matches the house pattern (audit_events V23, workflow_actions V93).
 CREATE FUNCTION notification_attempts_immutable() RETURNS trigger
     LANGUAGE plpgsql AS $$
 BEGIN

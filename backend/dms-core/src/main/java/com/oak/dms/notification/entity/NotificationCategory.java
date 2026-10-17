@@ -16,7 +16,7 @@ import lombok.Setter;
 import java.time.OffsetDateTime;
 
 /**
- * Global notification category catalogue (3.2), seeded by V82. The tier and
+ * Global notification category catalogue (3.2), seeded by V103. The tier and
  * default decide email behaviour before any tenant/user preference applies.
  */
 @Entity

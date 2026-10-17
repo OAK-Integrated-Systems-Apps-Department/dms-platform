@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * Appends one row to the immutable {@code notification_delivery_attempts} table
  * for every send attempt (3.2, N-FR-005 / N-NFR-005). The table blocks
- * UPDATE/DELETE (trigger + REVOKE, V82), so this is insert-only.
+ * UPDATE/DELETE (trigger + REVOKE, V103), so this is insert-only.
  */
 @Component
 public class NotificationAttemptLog {

@@ -74,7 +74,7 @@ never 403). Composite `(tenant_id, pk)` unique + composite FKs everywhere.
 the workflow-scoped read). Precedent for access-aware mail: `comment_mentions.had_document_access`
 gates the doc link in mention mail. Reuse this exactly.
 
-**Schema** — `V81` is latest; next is **V82**. `workflow_stages` **already has**
+**Schema** — `V102` is latest after the Feat/bulk-import-export merge; next is **V103** (originally written as V81/V82; renumbered at merge). `workflow_stages` **already has**
 `reminder_before_hours`, `escalation_target`, `escalation_user_id` → new stage columns must
 be distinctly named. `workflow_templates` has **no** reminder/escalation columns.
 `workflow_tasks` has `due_at`, `reminder_sent_at`, `escalated_at`, `escalated_to` but **no**
@@ -108,7 +108,7 @@ read `node_modules/next/dist/docs/` before writing frontend code.
    accepted requirement deviation in traceability.** (Deviation #3.)
 4. **N-FR-005 "document's audit trail"** — satisfied by the append-only attempts table
    (every attempt) + selective main-audit entries (decision 6). Two-layer logging.
-5. **Migration numbers** — V82–V84 used now; `develop` may also consume V82+. Flag at merge
+5. **Migration numbers** — V103–V105 used now; `develop` may also consume V103+. Flag at merge
    and renumber if collision (brief decision 9). (Risk R-1.)
 
 ---
@@ -119,7 +119,7 @@ Three migrations + matching rollbacks + one migration test. All tables carry
 `tenant_id NOT NULL`, composite `UNIQUE (tenant_id, <pk>)`, composite FKs, and the standard
 audit block where noted (`created_by/at`, `updated_by/at`, `is_deleted`, `deleted_at`).
 
-### V82 — `V82__create_notification_core.sql`
+### V103 — `V103__create_notification_core.sql`
 Tables (exact columns per brief section 3; key constraints shown):
 
 - **`notification_categories`** (global, `tenant_id` NULL): `category_code` PK,
@@ -158,9 +158,9 @@ Tables (exact columns per brief section 3; key constraints shown):
     BEFORE UPDATE OR DELETE ON notification_delivery_attempts
     FOR EACH ROW EXECUTE FUNCTION notification_attempts_immutable();
   ```
-- **Category seed** (in V82, `ON CONFLICT DO NOTHING`): all rows in the mapping table below.
+- **Category seed** (in V103, `ON CONFLICT DO NOTHING`): all rows in the mapping table below.
 
-### V83 — `V83__add_workflow_notification_config_columns.sql`
+### V104 — `V104__add_workflow_notification_config_columns.sql`
 - `workflow_templates` ADD: `default_reminder_before_hours INT` (CHECK >0),
   `default_inactivity_reminder_hours INT` (CHECK >0), `default_escalate_after_reminder_hours INT`
   (CHECK >0), `default_escalation_target VARCHAR(20) DEFAULT 'none'` CHECK IN
@@ -172,7 +172,7 @@ Tables (exact columns per brief section 3; key constraints shown):
   Backfill `last_activity_at = COALESCE(claimed_at, acted_at, created_at)` for open rows.
   Partial index `(last_activity_at) WHERE status IN ('pending','claimed') AND is_deleted=false`.
 
-### V84 — `V84__seed_notification_permissions.sql`
+### V105 — `V105__seed_notification_permissions.sql`
 New module `NOTIF` (+ actions) and permission codes (seeded, granted to no role):
 - `notif.notification-settings.manage` — tenant admin: category email defaults + reminder defaults.
 - `notif.delivery-log.view` — admin: delivery log with filters.
@@ -181,13 +181,13 @@ New module `NOTIF` (+ actions) and permission codes (seeded, granted to no role)
 `/mentions/my` and `/tasks` gate on identity, not a permission.)
 
 ### Rollbacks
-`rollback/V82__create_notification_core.rollback.sql` (drop trigger+function, tables in FK
-order), `rollback/V83__...rollback.sql` (drop columns/indexes/constraints, restore prior
-index predicates), `rollback/V84__...rollback.sql` (delete seeded permissions/actions/module).
+`rollback/V103__create_notification_core.rollback.sql` (drop trigger+function, tables in FK
+order), `rollback/V104__...rollback.sql` (drop columns/indexes/constraints, restore prior
+index predicates), `rollback/V105__...rollback.sql` (delete seeded permissions/actions/module).
 Each header documents reverse run order and uses `IF EXISTS`.
 
 ### Migration test
-`backend/.../notification/V82ToV84NotificationMigrationTest.java` (mirrors
+`backend/.../notification/V103ToV105NotificationMigrationTest.java` (mirrors
 `V78ToV81WorkflowPhase2MigrationTest`): applies up; asserts CHECK constraints bite
 (bad tier/status rejected), the attempts trigger rejects UPDATE/DELETE **as the test's
 postgres role**, unique/dedupe constraints hold, category + permission seeds landed; runs
@@ -348,10 +348,10 @@ Each step: goal · files · APIs · rules/edge cases · deps · tests · size ·
 
 ### N2 — Migrations, entities, repositories, seeds, permissions, migration test
 - **Goal:** schema + JPA layer + seeds in place.
-- **Files:** `db/migration/V82,V83,V84` + 3 rollbacks; entities `notification/entity/*` (6);
+- **Files:** `db/migration/V103,V104,V105` + 3 rollbacks; entities `notification/entity/*` (6);
   enums `notification/enums/{NotificationTier,DeliveryStatus,DeliveryOutcome,NotificationChannel}`;
   repos `notification/repository/*` (6); `workflow` entity edits (template/stage/task new
-  fields); permission constants in `security/.../PermissionCodes`; `V82ToV84NotificationMigrationTest`.
+  fields); permission constants in `security/.../PermissionCodes`; `V103ToV105NotificationMigrationTest`.
 - **Rules:** composite FK + tenant unique; attempts repo exposes **no** update/delete; dedupe_key NOT NULL.
 - **Deps:** none. **Tests:** migration test (up/down/re-apply, constraints, trigger rejects UPDATE/DELETE). **Size:** L. **Risk:** migration-number collision with develop (R-1).
 
@@ -424,7 +424,7 @@ Each step: goal · files · APIs · rules/edge cases · deps · tests · size ·
 - **Files:** listeners/hooks for `document.status-changed` (on status-change event/promoter),
   `workflow.new-version` (on `DocumentVersionPromoter` mid-approval event), `document.shared`
   (on folder/document access-grant), approaching-deadline (already the reminder); seed those
-  categories (in V82). **Guide:** `docs/notification-developer-guide.md` — how to add a category
+  categories (in V103). **Guide:** `docs/notification-developer-guide.md` — how to add a category
   + call the service, with DOT-FR-006 / OMD-FR-016 / SHAD-FR-009 / CRG-FR-006 as worked examples.
 - **Deps:** N3–N9. **Tests:** each new trigger creates the right notification. **Size:** M. **Risk:** M.
 
@@ -514,7 +514,7 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
 
 ## Risks & open questions
 
-- **R-1 Migration-number collision** with `develop` (V82+). Flag at merge; renumber if needed.
+- **R-1 Migration-number collision** with `develop` (V103+). Flag at merge; renumber if needed.
 - **R-2 Concurrency** (dispatcher + extended SLA scan). Mitigation: SKIP LOCKED + lease, scalar
   id lookups (no load-before-lock, per memory rule), run concurrency tests 5× after any change.
 - **R-3 Content regression** migrating 23 emails to HTML. Mitigation: per-mail content tests
@@ -569,21 +569,21 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
 ## Progress log
 
 ### N2 — Migrations, entities, repositories, seeds, permissions, migration test ✅
-- **Migrations:** `V82__create_notification_core.sql` (6 tables + 18-row category seed +
-  append-only trigger/function + REVOKE), `V83__add_workflow_notification_config_columns.sql`
+- **Migrations:** `V103__create_notification_core.sql` (6 tables + 18-row category seed +
+  append-only trigger/function + REVOKE), `V104__add_workflow_notification_config_columns.sql`
   (template/stage/task columns + backfill + inactivity index),
-  `V84__seed_notification_permissions.sql` (NOTIF module/actions + 3 permission codes).
-- **Rollbacks:** `rollback/V82,V83,V84__*.rollback.sql`.
+  `V105__seed_notification_permissions.sql` (NOTIF module/actions + 3 permission codes).
+- **Rollbacks:** `rollback/V103,V104,V105__*.rollback.sql`.
 - **Entities:** `notification/entity/{NotificationCategory,TenantNotificationSetting,
   UserNotificationPreference,Notification,NotificationDelivery,NotificationDeliveryAttempt}`;
   extended `workflow/entity/{WorkflowTemplate,WorkflowStage,WorkflowTask}` with the new fields.
 - **Enums:** `notification/enums/{NotificationTier,NotificationChannel,DeliveryStatus,DeliveryOutcome}`.
 - **Repositories:** `notification/repository/*` (6; attempts repo uses narrow `Repository` marker — no mutators).
 - **Permissions:** added `NOTIF_*` constants to `security/rbac/catalog/PermissionCodes`.
-- **Tests:** `test/.../notification/V82ToV84NotificationMigrationTest` (up: tables/seeds/CHECKs
+- **Tests:** `test/.../notification/V103ToV105NotificationMigrationTest` (up: tables/seeds/CHECKs
   bite, append-only trigger rejects UPDATE+DELETE as owner, dedupe unique, workflow CHECKs;
   down: rollbacks reverse + re-apply). **Result: 2/2 green** on dms-workflow-pg:5435 (fresh dms_phase2_it).
-- **Deviations:** #1 (trigger+REVOKE) applied. Fixed V84 rollback: `role_permissions` keys on
+- **Deviations:** #1 (trigger+REVOKE) applied. Fixed V105 rollback: `role_permissions` keys on
   `permission_id` (not `permission_code`) — matched the V81 rollback pattern.
 - Backend `clean test-compile` green.
 
@@ -626,7 +626,7 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
   settings CRUD services + no-email audit come with N7/N12.
 
 ### N7 — Two-layer logging ✅
-- **Attempts table:** append-only (trigger + REVOKE) proven by the V82–V84 migration test
+- **Attempts table:** append-only (trigger + REVOKE) proven by the V103–V105 migration test
   (rejects UPDATE+DELETE as owner); every attempt appended via `NotificationAttemptLog`.
 - **Main audit (selective):** added catalog actions `NOTIFICATION_DELIVERY_FAILED /
   _RECIPIENT_NO_EMAIL / _SETTING_CHANGED / _PREFERENCE_CHANGED / _DELIVERY_RETRIED` (module NOTIF)
@@ -762,7 +762,7 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
   test additionally repeats 5x inside every run = 25 repeats).
 - **Frontend:** `bun run typecheck` - 1 error, pre-existing and unrelated (a stale generated `.next/dev/types`
   reference to a commented-out admin page); `eslint` on every new/changed file - clean.
-- **Rebuilt the running app** (`docker compose up -d --build dms-core frontend`): Flyway applied V82-V84 to
+- **Rebuilt the running app** (`docker compose up -d --build dms-core frontend`): Flyway applied the notification migrations (then numbered V82-V84, now V103–V105) to
   `dms_core_db` ("now at version v84"), `/actuator/health` UP, `/api/v1/notifications/**` and
   `/api/v1/admin/notifications/**` routed and secured (401 unauthenticated), no dispatcher errors in the log.
 - **No git command that changes anything was run;** everything is uncommitted on `feature/chamath/workflow-notification`.

@@ -1,7 +1,7 @@
--- Manual rollback ("down") for V82__create_notification_core.sql.
+-- Manual rollback ("down") for V103__create_notification_core.sql.
 --
--- Outside classpath:db/migration, so Flyway never runs it. Run the V84 and
--- V83 rollbacks first (reverse order), then this one. Drops child tables
+-- Outside classpath:db/migration, so Flyway never runs it. Run the V105 and
+-- V104 rollbacks first (reverse order), then this one. Drops child tables
 -- before parents.
 DROP TABLE IF EXISTS notification_delivery_attempts;
 DROP FUNCTION IF EXISTS notification_attempts_immutable();

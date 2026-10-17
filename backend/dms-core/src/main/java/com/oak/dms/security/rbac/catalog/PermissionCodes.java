@@ -214,7 +214,7 @@ public final class PermissionCodes {
     // document type's active workflow.
     public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
 
-    // Notifications - NOTIF (3.2), seeded by V84. Granted to no role by
+    // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own
     // preferences gate on identity, not a permission.
     public static final String NOTIF_SETTINGS_MANAGE = "notif.notification-settings.manage";

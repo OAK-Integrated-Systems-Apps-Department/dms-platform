@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V81__seed_workflow_phase2_permissions.sql.
+-- Manual rollback ("down") for V98__seed_workflow_phase2_permissions.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Removes any role
 -- grants of the seeded codes first, then the permissions, then the actions.

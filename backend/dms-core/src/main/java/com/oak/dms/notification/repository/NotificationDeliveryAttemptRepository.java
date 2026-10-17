@@ -10,7 +10,7 @@ import java.util.UUID;
  * Append-only: deliberately extends the narrow {@link Repository} marker, NOT
  * {@code JpaRepository}, so no update/delete/saveAll mutator is exposed - only
  * {@code save} (an INSERT) and read methods. The DB also blocks UPDATE/DELETE
- * with a trigger + REVOKE (V82). N-FR-005 / N-NFR-005.
+ * with a trigger + REVOKE (V103). N-FR-005 / N-NFR-005.
  */
 public interface NotificationDeliveryAttemptRepository extends Repository<NotificationDeliveryAttempt, UUID> {
 

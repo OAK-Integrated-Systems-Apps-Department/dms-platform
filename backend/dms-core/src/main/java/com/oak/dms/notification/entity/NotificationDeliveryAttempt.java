@@ -20,7 +20,7 @@ import java.util.UUID;
 
 /**
  * One append-only attempt record (3.2, N-FR-005 / N-NFR-005). The table blocks
- * UPDATE/DELETE with a trigger + REVOKE (V82), and this entity is never
+ * UPDATE/DELETE with a trigger + REVOKE (V103), and this entity is never
  * updated or deleted - its repository exposes no mutators. Included in the
  * compliance export.
  */

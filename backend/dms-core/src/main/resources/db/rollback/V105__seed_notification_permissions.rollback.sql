@@ -1,9 +1,9 @@
--- Manual rollback ("down") for V84__seed_notification_permissions.sql.
+-- Manual rollback ("down") for V105__seed_notification_permissions.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Removes any role
 -- grants of the seeded codes first (role_permissions keys on permission_id,
--- like the V81 rollback), then the permissions, then the NOTIF actions and
--- module. Run this before the V83/V82 rollbacks.
+-- like the V98 rollback), then the permissions, then the NOTIF actions and
+-- module. Run this before the V104/V103 rollbacks.
 DELETE FROM role_permissions
 WHERE permission_id IN (SELECT permission_id FROM permissions
                         WHERE permission_code IN ('notif.notification-settings.manage',

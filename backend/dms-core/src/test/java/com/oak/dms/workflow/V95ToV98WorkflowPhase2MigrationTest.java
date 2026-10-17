@@ -18,24 +18,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V78-V81 (Phase 2: task/stage columns, information requests and supporting
+ * V95-V98 (Phase 2: task/stage columns, information requests and supporting
  * documents, comments and mentions, permissions) up and down on a throwaway
- * database - the V74ToV77WorkflowMigrationTest harness and seed graph.
+ * database - the V91ToV94WorkflowMigrationTest harness and seed graph.
  * Proves the new CHECKs bite (awaiting_info needs a holder, the SLA pause
  * only while awaiting_info, a decline needs a reason, one supporting row
  * per version), that the re-created index predicates include awaiting_info,
- * and that the four rollback scripts reverse cleanly and V78-V81 re-apply.
+ * and that the four rollback scripts reverse cleanly and V95-V98 re-apply.
  */
-class V78ToV81WorkflowPhase2MigrationTest {
+class V95ToV98WorkflowPhase2MigrationTest {
 
     private static final String DB_URL = env("DB_URL", "jdbc:postgresql://localhost:5433/dms_dev");
     private static final String DB_USERNAME = env("DB_USERNAME", "postgres");
     private static final String DB_PASSWORD = env("DB_PASSWORD", "password");
     private static final String[] ROLLBACKS = {
-            "/db/rollback/V81__seed_workflow_phase2_permissions.rollback.sql",
-            "/db/rollback/V80__create_document_comments.rollback.sql",
-            "/db/rollback/V79__create_workflow_info_requests_and_supporting_documents.rollback.sql",
-            "/db/rollback/V78__workflow_phase2_task_and_stage_columns.rollback.sql"};
+            "/db/rollback/V98__seed_workflow_phase2_permissions.rollback.sql",
+            "/db/rollback/V97__create_document_comments.rollback.sql",
+            "/db/rollback/V96__create_workflow_info_requests_and_supporting_documents.rollback.sql",
+            "/db/rollback/V95__workflow_phase2_task_and_stage_columns.rollback.sql"};
     private static final String[] TABLES = {"workflow_info_requests", "workflow_supporting_documents",
             "document_comments", "comment_mentions"};
     private static final String[] PERMISSIONS = {"wa.request-workflow-information.create",
@@ -44,12 +44,12 @@ class V78ToV81WorkflowPhase2MigrationTest {
     @Test
     void up_addsColumnsTablesAndConstraints_thatBite() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "77");
+            migrate(url, "94");
             Ids ids;
             try (Connection c = connect(url)) {
                 ids = seed(c);
             }
-            migrate(url, "81");
+            migrate(url, "98");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table).isTrue();
@@ -158,12 +158,12 @@ class V78ToV81WorkflowPhase2MigrationTest {
     @Test
     void down_removesEverythingCleanly_andUpCanBeReapplied() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "81");
+            migrate(url, "98");
             try (Connection c = connect(url); Statement s = c.createStatement()) {
                 for (String script : ROLLBACKS) {
                     s.execute(read(script));
                 }
-                s.execute("delete from flyway_schema_history where version in ('78', '79', '80', '81')");
+                s.execute("delete from flyway_schema_history where version in ('95', '96', '97', '98')");
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after rollback").isFalse();
                 }
@@ -178,12 +178,12 @@ class V78ToV81WorkflowPhase2MigrationTest {
                             .as(code).isZero();
                 }
             }
-            migrate(url, "81");
+            migrate(url, "98");
             try (Connection c = connect(url)) {
                 for (String table : TABLES) {
                     assertThat(tableExists(c, table)).as(table + " after re-applying").isTrue();
                 }
-                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('78','79','80','81')"
+                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('95','96','97','98')"
                         + " and success")).isEqualTo(4);
             }
         });
@@ -192,8 +192,8 @@ class V78ToV81WorkflowPhase2MigrationTest {
     private static String insertUser(Connection c, String tenant) throws SQLException {
         String user = uuid();
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
-                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v78-" + user + "@test.invalid', 'v78-"
-                + user + "', 'V78', 'V78', 'active')");
+                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v95-" + user + "@test.invalid', 'v95-"
+                + user + "', 'V95', 'V95', 'active')");
         return user;
     }
 
@@ -232,16 +232,16 @@ class V78ToV81WorkflowPhase2MigrationTest {
         String task = uuid();
         String task2 = uuid();
         exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('" + tenant
-                + "', 'V78 tenant', 'v78-" + tenant + ".invalid', 'standard', 'active')");
+                + "', 'V95 tenant', 'v95-" + tenant + ".invalid', 'standard', 'active')");
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
-                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v78-" + user + "@test.invalid', 'v78-"
-                + user + "', 'V78', 'V78', 'active')");
+                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v95-" + user + "@test.invalid', 'v95-"
+                + user + "', 'V95', 'V95', 'active')");
         exec(c, "insert into document_types (document_type_id, tenant_id, type_code, type_name) values ('" + type + "', '"
                 + tenant + "', 'CONTRACT', 'Contract')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
                 + " values ('" + location + "', '" + tenant + "', 'v47', 'FILE_SYSTEM', 'document', '/tmp/v47', 'active')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
-                + " values ('" + staging + "', '" + tenant + "', 'v78-staging', 'FILE_SYSTEM', 'staging', '/tmp/v47s', 'active')");
+                + " values ('" + staging + "', '" + tenant + "', 'v95-staging', 'FILE_SYSTEM', 'staging', '/tmp/v47s', 'active')");
         exec(c, "insert into scan_engines (scan_engine_id, tenant_id, name, provider, scan_mode, timeout_seconds,"
                 + " max_file_size_bytes, status) values ('" + engine + "', '" + tenant + "', 'v47', 'CLAMAV',"
                 + " 'pre_store_stream', 60, 1000, 'active')");
@@ -340,7 +340,7 @@ class V78ToV81WorkflowPhase2MigrationTest {
     }
 
     private static String read(String script) throws Exception {
-        try (InputStream in = V78ToV81WorkflowPhase2MigrationTest.class.getResourceAsStream(script)) {
+        try (InputStream in = V95ToV98WorkflowPhase2MigrationTest.class.getResourceAsStream(script)) {
             assertThat(in).as(script + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }

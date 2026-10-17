@@ -1,6 +1,6 @@
 -- 3.2 Notification - new permission module, actions and codes.
 --
--- Seeded like V81: granted to no role; TENANT_ADMIN/PLATFORM_ADMIN hold them
+-- Seeded like V98: granted to no role; TENANT_ADMIN/PLATFORM_ADMIN hold them
 -- implicitly, as they do every permission (AuthorizationService). A tenant
 -- admin grants them to other roles at runtime.
 --
@@ -11,7 +11,7 @@
 -- Own inbox and own preferences need no permission code - they gate on
 -- identity, like /mentions/my and /tasks.
 
--- The NOTIF module does not exist yet (unlike WA/DOCM in V81), so create it first.
+-- The NOTIF module does not exist yet (unlike WA/DOCM in V98), so create it first.
 INSERT INTO permission_modules (module_code, module_name, description)
 VALUES ('NOTIF', 'Notifications', 'Notification settings and delivery administration')
 ON CONFLICT (module_code) DO NOTHING;
@@ -44,6 +44,6 @@ BEGIN
         ON CONFLICT (permission_code) WHERE tenant_id IS NULL DO NOTHING
         RETURNING 1)
     SELECT count(*) INTO n FROM inserted;
-    RAISE NOTICE 'V84: % notification permission(s) seeded (granted to no role)', n;
+    RAISE NOTICE 'V105: % notification permission(s) seeded (granted to no role)', n;
 END;
 $$;

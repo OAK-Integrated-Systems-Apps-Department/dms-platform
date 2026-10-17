@@ -79,7 +79,7 @@ atomically with the business change. Keep that phase when adding new triggers.
 
 ## Add a new category
 
-1. **Seed it** in a new migration (next free `V<n>`), following `V82`'s category seed:
+1. **Seed it** in a new migration (next free `V<n>`), following `V103`'s category seed:
    ```sql
    INSERT INTO notification_categories (category_code, module, tier, default_email_enabled, display_name, description)
    VALUES ('reports.schedule.delivered', 'reports', 'optional', false, 'Scheduled report ready', '...')
