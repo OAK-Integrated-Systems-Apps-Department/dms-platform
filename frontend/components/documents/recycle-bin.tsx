@@ -71,7 +71,7 @@ export function RecycleBin() {
   const { items, retentionDays, byType } = bin.data
 
   return (
-    <div className="flex max-w-[1100px] flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <RetentionBar
         days={retentionDays}
         canEdit={canSetRetention}

@@ -1,0 +1,39 @@
+-- A 'processing' processing_jobs row MUST carry a lease.
+--
+-- V36 added lease_expires_at and the reaper that depends on it, but nothing
+-- enforced the pairing. The reaper's scan is
+-- `status = 'processing' AND lease_expires_at < now()`, and in SQL a
+-- comparison against NULL is NULL, not true -- so a 'processing' row with
+-- no lease was invisible to the reaper *forever*. It never got requeued,
+-- never got dead-lettered, and kept holding V36's
+-- uq_processing_jobs_active_ocr_ref slot for its version, which blocks
+-- every future OCR job for that version.
+--
+-- Nothing in production wrote that shape: ocr-worker's claim_job sets
+-- status, attempts, started_at and lease_expires_at in one UPDATE. The
+-- only writer that did was a test fixture
+-- (OcrEventsConsumerLiveIT, which hand-built a 'processing' row to
+-- exercise OcrEventsConsumer's staleness check), and four such rows had
+-- accumulated in the local database across runs -- see
+-- docs/ocr/phase1-closeout.md, "Still open after this" #3. That fixture now
+-- sets both columns and deletes its row afterwards, and the reaper grew a
+-- fallback that catches a leaseless row by started_at/created_at.
+--
+-- This constraint is the part that means none of those three has to be
+-- remembered. It is a CHECK rather than `lease_expires_at NOT NULL`
+-- because the column is legitimately NULL for every other status: a
+-- 'queued' row has no lease yet (and reap_requeue explicitly clears it),
+-- and a completed/failed/dead_letter row has no lease any more.
+--
+-- Rows violating this must be dealt with before applying it -- ALTER TABLE
+-- ... ADD CONSTRAINT validates existing rows and fails the whole migration
+-- otherwise. On the local dev database the four leftovers above were moved
+-- to 'dead_letter' by hand first (non-destructive: the rows are kept as
+-- history, they just stop being active). To find them:
+--
+--   SELECT job_id, job_type, status, attempts, started_at, created_at
+--   FROM processing_jobs
+--   WHERE status = 'processing' AND lease_expires_at IS NULL;
+ALTER TABLE processing_jobs
+    ADD CONSTRAINT ck_processing_jobs_processing_has_lease
+    CHECK (status <> 'processing' OR lease_expires_at IS NOT NULL);

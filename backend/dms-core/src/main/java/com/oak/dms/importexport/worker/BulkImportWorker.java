@@ -112,16 +112,32 @@ public class BulkImportWorker {
     /** What processing needs from the claimed batch, read while it was locked. */
     /** @param folderId where the batch's documents are filed; null = not in a folder */
     /** @param duplicateAction keep_both, new_version or skip - see ImportBatch#duplicateAction */
+    /**
+     * @param ocrRequestedFields the batch's "Run OCR on imported files"
+     *                           selection as raw JSON (V84), or null/{@code []}
+     *                           for no OCR
+     */
     record ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
-                        UUID folderId, String duplicateAction) {
+                        UUID folderId, String duplicateAction, String ocrRequestedFields) {
 
         ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion) {
-            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, null, "keep_both");
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, null, "keep_both", null);
         }
 
         ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
                      UUID folderId) {
-            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, folderId, "keep_both");
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, folderId, "keep_both", null);
+        }
+
+        ClaimedBatch(UUID importBatchId, UUID tenantId, UUID createdBy, UUID documentTypeId, int schemaVersion,
+                     UUID folderId, String duplicateAction) {
+            this(importBatchId, tenantId, createdBy, documentTypeId, schemaVersion, folderId, duplicateAction, null);
+        }
+
+        /** Whether this batch asked for OCR at all - null and {@code []} both mean no. */
+        boolean wantsOcr() {
+            return ocrRequestedFields != null && !ocrRequestedFields.isBlank()
+                    && !"[]".equals(ocrRequestedFields.trim());
         }
     }
 
@@ -191,7 +207,7 @@ public class BulkImportWorker {
             }
             return Optional.of(new ClaimedBatch(batch.getImportBatchId(), batch.getTenantId(), batch.getCreatedBy(),
                     batch.getDocumentTypeId(), batch.getSchemaVersion(), batch.getFolderId(),
-                    batch.getDuplicateAction()));
+                    batch.getDuplicateAction(), batch.getOcrRequestedFields()));
         });
     }
 

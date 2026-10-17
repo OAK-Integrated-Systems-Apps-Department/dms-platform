@@ -20,6 +20,7 @@ import {
   EmptyState,
 } from "@/components/dashboard/dash-card"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { PlatformDashboard } from "@/components/dashboard/platform-dashboard"
 import { DigitalImpact } from "@/components/dashboard/digital-impact"
 import { MetricCards } from "@/components/dashboard/metric-cards"
 import {
@@ -31,9 +32,11 @@ import { RecentDocuments } from "@/components/dashboard/recent-documents"
 import { StorageCard } from "@/components/dashboard/storage-card"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import {
   DASHBOARD_PERIODS,
@@ -104,6 +107,19 @@ function summaryOf(data: DashboardDto): string {
  */
 export default function Page() {
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
+  // A platform administrator belongs to no tenant, so everything below -
+  // documents, folders, activity, all of it tenant-scoped - answers 401
+  // TENANT_CONTEXT_MISSING for them. They get the cross-tenant view instead.
+  //
+  // `scopePending` matters as much as the choice itself: until /users/me has
+  // answered, neither dashboard is known to be the right one, and rendering
+  // the tenant one on the guess that it probably is was what made the wrong
+  // dashboard flash up on every reload. See useDashboardScope.
+  const {
+    isPending: scopePending,
+    isPlatform: noTenant,
+    isTenant,
+  } = useDashboardScope()
   const {
     hasAnyPermission,
     hasPermission,
@@ -122,7 +138,10 @@ export default function Page() {
     readPeriod,
     () => 30
   )
-  const dashboard = useDashboard(period)
+  // Held until the account is known to have a tenant: this endpoint is
+  // tenant-scoped, so firing it while the scope is still pending means a
+  // guaranteed 401 for every platform administrator on every page load.
+  const dashboard = useDashboard(period, isTenant)
   const data = dashboard.data
   const [preview, setPreview] = useState<PreviewRow | null>(null)
 
@@ -135,13 +154,13 @@ export default function Page() {
         page: 0,
         size: RECENT_ROWS,
       }),
-    enabled: canView && !permissionsLoading,
+    enabled: isTenant && canView && !permissionsLoading,
     staleTime: 30_000,
   })
   const shared = useQuery({
     queryKey: ["documents", "shared-count"],
     queryFn: () => fetchSharedWithMe({ page: 0, size: 1 }),
-    enabled: canView && !permissionsLoading,
+    enabled: isTenant && canView && !permissionsLoading,
     staleTime: 60_000,
   })
 
@@ -162,6 +181,36 @@ export default function Page() {
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not download the document."))
     }
+  }
+
+  // Neither dashboard yet. The shell and the sidebar are the same either
+  // way, so they render immediately and only the content area waits - which
+  // is what stops the page rebuilding itself under the reader a moment after
+  // it appears.
+  if (scopePending) {
+    return (
+      <DashboardShell initialActiveLabel="Dashboard">
+        <LoadingState message="Loading your dashboard…" />
+      </DashboardShell>
+    )
+  }
+
+  if (noTenant) {
+    return (
+      <DashboardShell initialActiveLabel="Dashboard">
+        <div className="mb-5 max-w-[720px]">
+          <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+            Platform overview
+          </h1>
+          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+            Every organisation on this installation and how much of the system
+            each is using. Figures only — no document titles, folders or
+            activity.
+          </p>
+        </div>
+        <PlatformDashboard />
+      </DashboardShell>
+    )
   }
 
   return (

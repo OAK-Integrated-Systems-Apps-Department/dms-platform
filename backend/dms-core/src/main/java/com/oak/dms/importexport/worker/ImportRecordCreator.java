@@ -7,6 +7,7 @@ import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.document.DocumentService;
 import com.oak.dms.importexport.entity.ImportItem;
 import com.oak.dms.importexport.entity.ImportItem.ImportItemStatus;
+import com.oak.dms.importexport.repository.ImportBatchRepository;
 import com.oak.dms.importexport.repository.ImportItemRepository;
 import com.oak.dms.importexport.storage.StagedImportFiles;
 import com.oak.dms.importexport.validation.ImportField;
@@ -92,6 +93,8 @@ public class ImportRecordCreator {
     private final DuplicateFinder duplicates;
     private final DocumentVersionService versions;
     private final DocumentRepository documentRepository;
+    private final ImportBatchRepository importBatchRepository;
+    private final com.oak.dms.ocrworker.OcrProperties ocrProperties;
 
     public ImportRecordCreator(DocumentService documentService,
                                IngestionGate ingestionGate,
@@ -105,7 +108,9 @@ public class ImportRecordCreator {
                                FolderAccessService folderAccess,
                                DuplicateFinder duplicates,
                                DocumentVersionService versions,
-                               DocumentRepository documentRepository) {
+                               DocumentRepository documentRepository,
+                               ImportBatchRepository importBatchRepository,
+                               com.oak.dms.ocrworker.OcrProperties ocrProperties) {
         this.documentService = documentService;
         this.ingestionGate = ingestionGate;
         this.documentMetadataRepository = documentMetadataRepository;
@@ -119,6 +124,8 @@ public class ImportRecordCreator {
         this.duplicates = duplicates;
         this.versions = versions;
         this.documentRepository = documentRepository;
+        this.importBatchRepository = importBatchRepository;
+        this.ocrProperties = ocrProperties;
     }
 
     /**
@@ -232,13 +239,25 @@ public class ImportRecordCreator {
          * audit writes are serialized across the whole system - the practical
          * ceiling on bulk throughput, by design of the tamper-evident chain.
          */
+        // "Run OCR on imported files" (V84), decided per file because the cap
+        // is a count: the 501st file of a 5,000-row import is imported
+        // normally and simply does not get OCR. Claiming the slot BEFORE the
+        // gate call, not after, is what makes the cap hold - the gate can take
+        // minutes per file and several rows run concurrently, so a check-then-
+        // act would let the batch overshoot by the width of that window.
+        List<String> ocrFields = batch.wantsOcr() ? claimOcrSlot(batch, item) : List.of();
+
         IngestionTicketResponse ticket;
         try {
             ticket = versionOf != null
+                    // A new version of an existing document is new bytes, so
+                    // it gets its own OCR run - it does not inherit the
+                    // previous version's results, which were extracted from a
+                    // different file.
                     ? versions.upload(versionOf, item.getFilenameReference(), item.getStagedSizeBytes(), content,
-                    "Uploaded again by bulk import")
+                    "Uploaded again by bulk import", ocrFields, true)
                     : documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
-                    item.getStagedSizeBytes(), content, batch.folderId());
+                    item.getStagedSizeBytes(), content, batch.folderId(), ocrFields);
         } catch (ApiException e) {
             if (!isRejection(e)) {
                 throw e;
@@ -263,6 +282,60 @@ public class ImportRecordCreator {
             importItemRepository.save(accepted);
         });
         return Optional.of(ticket);
+    }
+
+    /**
+     * Takes one of the batch's OCR slots, or returns an empty selection when
+     * they are all gone.
+     *
+     * <h2>Why a cap at all</h2>
+     * OCR is minutes per document, not milliseconds. Without a cap, one
+     * 5,000-file import would hold the OCR queue for days and every
+     * interactive scan behind it would wait. {@code
+     * dms.ocr.max-per-import-batch} (default 500) is the ceiling on what a
+     * single import may claim; files beyond it are imported normally, with no
+     * OCR requested, and the import itself is never failed for it.
+     *
+     * <h2>Why the counter is a database UPDATE, not a field</h2>
+     * Rows of one batch are processed by whichever worker claimed it, and a
+     * redelivered batch message re-runs rows that already went through. A
+     * counter in memory would reset on restart and hand a redelivered batch a
+     * second full allowance. The conditional UPDATE below is atomic, so two
+     * threads racing for the last slot cannot both get it: exactly one sees
+     * {@code rows == 1}.
+     *
+     * <p>Note this counts <em>slots claimed</em>, not jobs that reached the
+     * queue. A file whose scan comes back infected has claimed a slot it will
+     * never use. Deliberate: the alternative is to decrement on every failure
+     * path, and a cap that leaks a few slots on quarantined files is a far
+     * smaller problem than a cap that can be bypassed by a miscounted
+     * decrement.
+     */
+    private List<String> claimOcrSlot(BulkImportWorker.ClaimedBatch batch, ImportItem item) {
+        int cap = ocrProperties.getMaxPerImportBatch();
+        int claimed = importBatchRepository.claimOcrSlot(batch.importBatchId(), cap);
+        if (claimed == 0) {
+            log.info("Bulk import batch {}: row {} is past the per-batch OCR cap of {}; imported without OCR",
+                    batch.importBatchId(), item.getRowNumber(), cap);
+            return List.of();
+        }
+        return parseFieldKeys(batch.ocrRequestedFields());
+    }
+
+    /**
+     * The batch's selection as a list. Stored as JSON so the queue message and
+     * the database hold the same text; a malformed value means no OCR rather
+     * than a failed import - a bad field list must not cost someone their
+     * 5,000-file upload.
+     */
+    private List<String> parseFieldKeys(String json) {
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+        } catch (IOException e) {
+            log.warn("Ignoring unreadable OCR field selection on a bulk import batch: {}", e.toString());
+            return List.of();
+        }
     }
 
     /**

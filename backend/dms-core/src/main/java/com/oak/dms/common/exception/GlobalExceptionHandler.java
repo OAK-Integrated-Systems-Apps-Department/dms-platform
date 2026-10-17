@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -149,6 +150,34 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of(HttpStatus.FORBIDDEN.value(), "Forbidden",
                         "You do not have permission to perform this action",
+                        request.getRequestURI()));
+    }
+
+    /**
+     * Anything that already carries the right status AND a sentence meant
+     * for a person -- today, the ocr-worker proxy routes (see
+     * {@code OcrWorkerClient}).
+     * <p>
+     * Without this, Spring renders these as a ProblemDetail, whose text
+     * lives in `detail` rather than `message`. Every client here reads
+     * `message` (see the frontend's api-fetch), so the carefully-chosen
+     * sentence would be dropped on the floor and the user would get the
+     * generic fallback instead -- the exact failure mode this uniform
+     * shape exists to prevent.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        log.warn("Upstream-mapped failure on {}: {} {}", request.getRequestURI(), status.value(), ex.getReason());
+        return ResponseEntity.status(status)
+                .body(ErrorResponse.of(status.value(), status.getReasonPhrase(),
+                        // A reason is always set by the code that throws
+                        // these. The fallback is here so a future thrower
+                        // that forgets one still cannot leak a class name.
+                        ex.getReason() != null ? ex.getReason() : "Something went wrong. Please try again.",
                         request.getRequestURI()));
     }
 

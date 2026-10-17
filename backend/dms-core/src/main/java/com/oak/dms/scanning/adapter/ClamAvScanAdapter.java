@@ -1,5 +1,6 @@
 package com.oak.dms.scanning.adapter;
 
+import com.oak.dms.common.io.TempFiles;
 import com.oak.dms.scanning.dto.ScanTarget;
 import com.oak.dms.scanning.dto.ScanVerdict;
 import com.oak.dms.scanning.entity.ScanEngine;
@@ -139,7 +140,7 @@ public class ClamAvScanAdapter implements ScanService {
         ScanProperties.ClamAv settings = scanProperties.getClamav();
         Path copy = null;
         try {
-            copy = Files.createTempFile("dms-zip-scan-", ".zip");
+            copy = TempFiles.create("dms-zip-scan-", ".zip");
             InputStream staged = openStaged(target);
             try {
                 Files.copy(staged, copy, StandardCopyOption.REPLACE_EXISTING);

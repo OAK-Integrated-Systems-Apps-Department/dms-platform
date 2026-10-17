@@ -1,5 +1,6 @@
 "use client"
 
+import { PinButton } from "@/components/pins/pin-button"
 import {
   useCallback,
   useEffect,
@@ -11,6 +12,7 @@ import {
 import { useQuery } from "@tanstack/react-query"
 import {
   Download,
+  Droplet,
   FileArchive,
   FileQuestion,
   FileSearch,
@@ -220,6 +222,9 @@ export function DocumentPreview({
   onOpenChange,
   onDownload,
   onViewDetails,
+  onWatermark,
+  watermarkDisabled,
+  watermarkHint,
 }: {
   row: Pick<
     DocumentListItemDto,
@@ -245,6 +250,16 @@ export function DocumentPreview({
   onDownload: () => void
   /** Opens the document's own page (/documents/{id}) - omitted where there is nowhere to go. */
   onViewDetails?: () => void
+  /**
+   * Opens the watermark dialog. Absent = no button at all, which is how
+   * the caller expresses "the feature is off here, or this user can't view
+   * documents" - the two cases where offering it would be a lie.
+   */
+  onWatermark?: () => void
+  /** Shown but not usable - an unsupported file type, or the renderer being unavailable. */
+  watermarkDisabled?: boolean
+  /** Why it's disabled. */
+  watermarkHint?: string
 }) {
   const nativeRenderer = rendererFor(row.mimeType, row.fileName)
   // Pinned/external content comes as raw bytes only - the server can't convert or slice it here.
@@ -366,6 +381,7 @@ export function DocumentPreview({
                 <FriendlyDate iso={row.createdAt} />
               </SheetDescription>
             </div>
+            <PinButton row={row} />
             {zoomable && (renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"
@@ -407,6 +423,29 @@ export function DocumentPreview({
               <Button size="sm" variant="outline" onClick={onViewDetails}>
                 <FileSearch />
                 View details
+              </Button>
+            )}
+            {onWatermark && (
+              <Button
+                size="sm"
+                variant="outline"
+                // aria-disabled rather than disabled so the reason stays
+                // reachable: a disabled button takes no focus and shows no
+                // title, which would leave a keyboard user with a greyed
+                // control and no explanation.
+                aria-disabled={watermarkDisabled}
+                title={watermarkHint}
+                onClick={() => {
+                  if (watermarkDisabled) return
+                  onWatermark()
+                }}
+                className={watermarkDisabled ? "cursor-not-allowed opacity-60" : undefined}
+              >
+                <Droplet />
+                Add watermark
+                {watermarkDisabled && watermarkHint && (
+                  <span className="sr-only">. {watermarkHint}</span>
+                )}
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={onDownload}>

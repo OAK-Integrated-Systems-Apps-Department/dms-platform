@@ -101,16 +101,29 @@ export function RoleMultiSelect({
 
   return (
     <div ref={containerRef} className="relative">
+      {/* This box cannot itself be a <button>: it holds the chips, and each
+          chip has its own remove button - a control may not contain another.
+          So the box stays a plain <div> and an invisible button fills it,
+          sitting UNDER the chips in paint order so their remove buttons
+          still take the click. Clicking a chip's body no longer toggles the
+          panel, which is the one behaviour this costs. */}
       <div
-        onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-btn border bg-muted py-2 pr-9 pl-2.5",
-          "cursor-pointer transition-colors",
+          "relative flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-btn border bg-muted py-2 pr-9 pl-2.5",
+          "transition-colors",
           open
             ? "border-primary bg-card ring-3 ring-primary/15"
             : "border-[var(--border-strong)]"
         )}
       >
+        <button
+          type="button"
+          aria-label="Select one or more roles"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          onClick={() => setOpen((v) => !v)}
+          className="absolute inset-0 cursor-pointer rounded-btn"
+        />
         {selected.length === 0 && (
           <span className="px-0.5 py-[3px] text-[13.5px] text-[var(--ink-faint)]">
             Select one or more roles…
@@ -119,7 +132,7 @@ export function RoleMultiSelect({
         {selected.map((role) => (
           <span
             key={role}
-            className="bg-primary-tint inline-flex items-center gap-1.5 rounded-[6px] border border-primary py-[3px] pr-1.5 pl-2.5 text-[12px] font-semibold text-[var(--primary-dark,var(--primary))]"
+            className="bg-primary-tint relative inline-flex items-center gap-1.5 rounded-[6px] border border-primary py-[3px] pr-1.5 pl-2.5 text-[12px] font-semibold text-[var(--primary-dark,var(--primary))]"
           >
             {role}
             <button
@@ -138,10 +151,9 @@ export function RoleMultiSelect({
       </div>
 
       {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        // No onClick={stopPropagation}: the outside-click handler already
+        // tests containerRef.contains(), and this panel is inside it.
+        <div className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           <div className="relative mb-1.5">
             <Search
               size={13}
@@ -166,10 +178,13 @@ export function RoleMultiSelect({
               filteredOptions.map((role) => {
                 const isSelected = selected.includes(role)
                 return (
-                  <div
+                  <button
                     key={role}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
                     onClick={() => toggleRole(role)}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
                   >
                     <span
                       className={cn(
@@ -188,7 +203,7 @@ export function RoleMultiSelect({
                       )}
                     </span>
                     {role}
-                  </div>
+                  </button>
                 )
               })
             )}

@@ -1,5 +1,6 @@
 package com.oak.dms.document;
 
+import com.oak.dms.common.io.TempFiles;
 import com.oak.dms.security.auth.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,7 +79,7 @@ public class PageCountBackfill {
                     : new UUID(0, 0));
             Path copy = null;
             try (InputStream in = versionContent.open(version).content()) {
-                copy = Files.createTempFile("dms-pages-", "." + PageCounter.extension(version.getOriginalFilename()));
+                copy = TempFiles.create("dms-pages-", "." + PageCounter.extension(version.getOriginalFilename()));
                 Files.copy(in, copy, StandardCopyOption.REPLACE_EXISTING);
                 pages = PageCounter.count(version.getOriginalFilename(), copy.toFile());
             } catch (Exception e) {

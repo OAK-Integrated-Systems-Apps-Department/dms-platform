@@ -1,5 +1,6 @@
 package com.oak.dms.importexport.service;
 
+import com.oak.dms.common.io.TempFiles;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.importexport.config.ImportExportProperties;
 import com.oak.dms.importexport.dto.ImportArchiveReceivedResponse;
@@ -70,7 +71,7 @@ public class ImportArchiveIntake {
         requireWithinLimit(archive.getSize());
         Path temp = null;
         try {
-            temp = Files.createTempFile("dms-import-", ".zip");
+            temp = TempFiles.create("dms-import-", ".zip");
             archive.transferTo(temp);
             return unpack(batchId, temp);
         } catch (IOException e) {

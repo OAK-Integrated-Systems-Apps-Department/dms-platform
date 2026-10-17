@@ -32,8 +32,36 @@ roles:
     deactivate: Deactivate
     delete: Delete
 
+
 permissions:
   actions:
     view: View
     edit: Edit
     delete: Delete
+# OCR & review. Two screens share this vocabulary -- the upload form's
+# per-field badges and the review screen's field cards describe the SAME
+# five extraction statuses, so their wording lives together here rather
+# than drifting apart in two components.
+documents:
+  ocr:
+    badge: OCR will try to read this field off the document
+    rerunField: Run OCR again for just this field
+    rerunAll: Run OCR again for every selected field
+    confidence: How sure OCR is of this reading. Below 60% it is flagged for a human to check
+  status:
+    extracted: OCR read this off the document and is confident in it
+    lowConfidence: OCR read this, but is not confident. Check it against the page before relying on it
+    notFound: OCR looked for this and found nothing on the document
+    notExtractable: Not something a document states -- your organisation assigns it, so OCR never looks for it
+    notExtractableMandatory: Required, but not something a document states. Type it in -- accepting cannot fill it
+    defaulted: Nothing on the page said this, so your tenant's default was applied
+    accepted: You confirmed OCR's value for this field
+    corrected: You changed this value. The original is kept for accuracy reporting
+  review:
+    accept: Confirm OCR's value is correct
+    acceptEmptyMandatory: This field is required and empty -- accepting agrees it is empty, which will not clear it from the queue. Type a value instead
+    edit: Type the correct value yourself
+    reExtract: Draw a box on the page to re-read this field from it
+    highlight: Where on the page OCR read this value. Click it to jump to that field
+    saveDisabled: Accept or correct at least one field first
+    save: Record your decisions. The document leaves the queue once nothing is outstanding

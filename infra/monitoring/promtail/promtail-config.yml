@@ -1,0 +1,69 @@
+# Promtail: ships every container's logs to Loki.
+#
+# Discovery goes through the Docker API rather than by reading
+# /var/lib/docker/containers directly. Two reasons: the files are named by
+# container ID, so a file-based scrape can only label a log with a 64-character
+# hash and never with "oakdms-core"; and this host runs Docker Desktop, whose
+# overlayfs storage driver already defeated cAdvisor's attempt to read that
+# directory (see the note on the cadvisor service). The API works regardless
+# of storage driver.
+#
+# That does mean Promtail reads the Docker socket. It is mounted read-only,
+# and it is mounted into THIS container - a log shipper with no network
+# exposure - never into dms-core, which serves the internet. The same
+# trade-off the cadvisor service already makes.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  # Survives a restart, so a bounce does not re-ship everything it already
+  # sent - which would double every line around the restart, exactly when
+  # the log is being read.
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+
+    relabel_configs:
+      # Docker reports the name with a leading slash ("/oakdms-core").
+      - source_labels: [__meta_docker_container_name]
+        regex: "/?(.*)"
+        target_label: container
+      # The compose service name, which is what the monitoring screen knows
+      # a service by - "dms-core" rather than "oakdms-core".
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+      # Only this stack. Without it, Promtail would also ship the logs of
+      # anything else running on the developer's machine.
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        regex: (local|production)
+        action: keep
+
+    pipeline_stages:
+      # Spring Boot writes a multi-line stack trace as many lines. Joining
+      # them onto the line that started it is the difference between reading
+      # an exception and reading forty fragments of one.
+      - multiline:
+          # A new entry starts with a timestamp; anything else continues the
+          # previous one.
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+          max_lines: 200
+      # Level, where a line declares one, so the UI can colour and filter by
+      # it. Lines that match nothing keep their text and simply have no
+      # level, which is correct - inventing one would be worse.
+      - regex:
+          expression: '(?i)\b(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b'
+      - labels:
+          level:

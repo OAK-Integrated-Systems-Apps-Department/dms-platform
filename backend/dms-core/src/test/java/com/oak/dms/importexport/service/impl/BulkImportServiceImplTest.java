@@ -303,6 +303,48 @@ class BulkImportServiceImplTest {
     }
 
     @Test
+    void getStatus_ocrSkippedFilenames_isBoundedAndCarriesTheTotal() {
+        ImportBatch batch = batch(ImportBatchStatus.running);
+        batch.setOcrRequestedFields("[\"invoice_number\"]");
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(
+                batch.getImportBatchId(), tenantId, userId)).thenReturn(Optional.of(batch));
+        when(importItemRepository.findMissingFilenames(batch.getImportBatchId())).thenReturn(List.of());
+        when(importItemRepository.countOcrStatusesForBatch(batch.getImportBatchId())).thenReturn(List.of());
+        // The repository itself enforces the page size - the service only
+        // has to notice the page came back full and ask for the real total.
+        List<String> page = List.of("a.pdf", "b.pdf");
+        when(importItemRepository.findOcrSkippedFilenames(eq(batch.getImportBatchId()), any()))
+                .thenReturn(page);
+        when(importItemRepository.countOcrSkippedFilenames(batch.getImportBatchId())).thenReturn(5000L);
+
+        BulkImportStatusResponse response = service(realWorkbook).getStatus(batch.getImportBatchId());
+
+        assertThat(response.ocr()).isNotNull();
+        assertThat(response.ocr().skippedFilenames()).containsExactly("a.pdf", "b.pdf");
+        assertThat(response.ocr().skippedTotal()).isEqualTo(5000);
+    }
+
+    @Test
+    void getStatus_ocrSkippedFilenames_underTheCap_totalMatchesTheListExactly() {
+        ImportBatch batch = batch(ImportBatchStatus.running);
+        batch.setOcrRequestedFields("[\"invoice_number\"]");
+        when(importBatchRepository.findByImportBatchIdAndTenantIdAndCreatedByAndDeletedFalse(
+                batch.getImportBatchId(), tenantId, userId)).thenReturn(Optional.of(batch));
+        when(importItemRepository.findMissingFilenames(batch.getImportBatchId())).thenReturn(List.of());
+        when(importItemRepository.countOcrStatusesForBatch(batch.getImportBatchId())).thenReturn(List.of());
+        when(importItemRepository.findOcrSkippedFilenames(eq(batch.getImportBatchId()), any()))
+                .thenReturn(List.of("only-one.pdf"));
+
+        BulkImportStatusResponse response = service(realWorkbook).getStatus(batch.getImportBatchId());
+
+        assertThat(response.ocr().skippedFilenames()).containsExactly("only-one.pdf");
+        assertThat(response.ocr().skippedTotal()).isEqualTo(1);
+        // Under the cap, the real total is already in hand from the page -
+        // no need for a second query.
+        verify(importItemRepository, never()).countOcrSkippedFilenames(any());
+    }
+
+    @Test
     void receiveFile_virusFoundAtIntake_isRefusedAndTheRowStaysWithoutAFile() {
         ImportBatch batch = batch(ImportBatchStatus.uploading);
         ImportItem item = item(batch, 2, "a.pdf", null, null);
@@ -547,7 +589,7 @@ class BulkImportServiceImplTest {
     private DocumentTypeSchemaResponse schema(int version) {
         return new DocumentTypeSchemaResponse(documentTypeId, "INV", "Invoice", version, List.of(
                 new SchemaField(UUID.randomUUID(), "reference", "Reference", null, "text", "active",
-                        false, false, 10, null, null, List.of(), List.of())));
+                        false, false, false, 10, null, null, List.of(), List.of())));
     }
 
     private DocumentType option(String typeCode, String typeName, DocumentType.DocumentTypeStatus status) {

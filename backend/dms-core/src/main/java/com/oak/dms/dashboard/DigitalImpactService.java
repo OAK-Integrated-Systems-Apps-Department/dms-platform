@@ -122,6 +122,13 @@ public class DigitalImpactService {
             params.addValue("everything", access.seesEverything())
                     .addValue("hidden", DashboardService.nonEmpty(access.folders().hiddenFolderIds()))
                     .addValue("granted", access.grantedIds());
+            // Sonar's S2077 flags every query below as "dynamically formatted
+            // SQL". It is concatenation, but not of anything a caller
+            // controls: VISIBLE is a `static final String` literal, and this
+            // is the only variable part. Every actual value - tenant, user,
+            // dates, the access list - arrives as a bound :named parameter
+            // through `params`, never spliced into the text. Nothing here is
+            // reachable by injection; the findings are false positives.
             String versionsOf = """
                     from document_versions v join documents d on d.document_id = v.document_id
                     where not v.is_deleted and v.purged_at is null and""" + DashboardService.VISIBLE;
@@ -131,9 +138,15 @@ public class DigitalImpactService {
                     params, rs -> {
                         pagesPerDay.put(rs.getObject("day", LocalDate.class), rs.getLong("pages"));
                     });
-            pagesBefore = jdbc.queryForObject("select coalesce(sum(v.page_count), 0) " + versionsOf
-                    + " and (v.created_at at time zone :zone)::date between :previousFrom and :previousTo",
-                    params, Long.class);
+            // requireNonNullElse because queryForObject is declared @Nullable
+            // and these assign to a primitive long - without it the unboxing
+            // is implicit and an empty result set would surface as an NPE
+            // instead of a zero. coalesce()+sum() always yields one non-null
+            // row, so the fallback is unreachable by design, not by luck.
+            pagesBefore = java.util.Objects.requireNonNullElse(
+                    jdbc.queryForObject("select coalesce(sum(v.page_count), 0) " + versionsOf
+                            + " and (v.created_at at time zone :zone)::date between :previousFrom and :previousTo",
+                            params, Long.class), 0L);
             coverage = jdbc.queryForObject("""
                     select count(*) as versions,
                            count(*) filter (where v.page_count is not null) as counted,
@@ -148,12 +161,13 @@ public class DigitalImpactService {
                     params, (rs, i) -> new Coverage(rs.getLong("versions"), rs.getLong("counted"),
                             rs.getLong("from_file"), rs.getLong("reported"), rs.getLong("no_pages"),
                             rs.getLong("pending"), rs.getLong("unscanned")));
-            allTimePages = jdbc.queryForObject("select coalesce(sum(v.page_count), 0) " + versionsOf,
-                    params, Long.class);
+            allTimePages = java.util.Objects.requireNonNullElse(
+                    jdbc.queryForObject("select coalesce(sum(v.page_count), 0) " + versionsOf,
+                            params, Long.class), 0L);
 
             // Where the period's pages came from, by kind of file.
             Map<String, long[]> byKind = new LinkedHashMap<>();
-            jdbc.query("select lower(substring(v.original_filename from '\\.([^.]+)$')) as ext,"
+            jdbc.query("select " + DashboardService.EXTENSION + " as ext,"
                             + " sum(v.page_count) as pages, count(*) as files " + versionsOf
                             + " and v.page_count is not null"
                             + " and (v.created_at at time zone :zone)::date between :from and :to group by 1",

@@ -25,6 +25,7 @@ public record DocumentTypeSchemaResponse(
             String status,
             boolean mandatory,
             boolean hidden,
+            boolean ocrExtractable,
             int displayOrder,
             String fieldGroup,
             String defaultValue,

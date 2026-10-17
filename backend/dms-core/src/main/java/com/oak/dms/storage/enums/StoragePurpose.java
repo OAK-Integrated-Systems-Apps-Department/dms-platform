@@ -8,8 +8,13 @@ package com.oak.dms.storage.enums;
  * <ul>
  *   <li>{@code document} - where promoted (scanned, clean) document versions live.
  *   The only purpose any document read path ever resolves.</li>
- *   <li>{@code staging} - where an upload waits while it is scanned. Written and
- *   read only by {@code com.oak.dms.scanning}.</li>
+ *   <li>{@code staging} - short-lived files that are not document versions.
+ *   Two users now: an upload waiting to be scanned ({@code com.oak.dms.scanning}),
+ *   and a watermarked copy waiting to be downloaded
+ *   ({@code com.oak.dms.watermark}, under {@code {tenantId}/tmp/watermarks/},
+ *   deleted on expiry by {@code WatermarkOutputSweeper}). It used to say
+ *   "written and read only by com.oak.dms.scanning", which stopped being
+ *   true when watermarking landed.</li>
  *   <li>{@code quarantine} - where infected files are isolated. Written only by
  *   {@code com.oak.dms.scanning}; nothing in Phase 1 reads it.</li>
  * </ul>

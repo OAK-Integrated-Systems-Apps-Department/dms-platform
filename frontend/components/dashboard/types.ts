@@ -35,6 +35,31 @@ export interface NavItem {
   permission?: string | string[]
   /** Only for platform administrators (cross-tenant) - e.g. managing organisations. */
   platformAdminOnly?: boolean
+  /**
+   * An optional feature that must be switched on for this deployment before
+   * the item appears, on top of any `permission`. Needed where holding the
+   * permission isn't enough because the whole module can be turned off
+   * server-side: `dms.watermark.enabled=false` unmaps the endpoints, so a
+   * tenant admin would otherwise keep a link to a page with nothing behind
+   * it. Resolved live in `AppSidebar`; omit for the usual case, where a
+   * permission alone decides.
+   */
+  feature?: "watermarking" | "ocr"
+  /**
+   * For administrators of either kind - PLATFORM_ADMIN or TENANT_ADMIN.
+   * For screens that are an administrator's job but aren't tied to one
+   * organisation's data, such as System Monitoring. Distinct from
+   * `platformAdminOnly` (strictly cross-tenant) and from `permission`
+   * (a specific capability from the catalogue); the two admin roles are
+   * fixed platform roles from the caller's JWT, not catalogue entries.
+   */
+  adminOnly?: boolean
+  /**
+   * Visible to platform administrators, or to anyone holding this permission.
+   * A platform administrator has no tenant and so no resolved permission list,
+   * hence the separate check; tenant admins pass through `hasAnyPermission`.
+   */
+  platformAdminOrPermission?: string
 }
 
 export interface NavSection {
@@ -42,7 +67,6 @@ export interface NavSection {
   label?: string
   items: NavItem[]
 }
-
 
 export interface AppUser {
   name: string

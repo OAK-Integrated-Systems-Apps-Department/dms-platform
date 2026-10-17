@@ -1,8 +1,12 @@
 import {
+  Activity,
   AtSign,
   BarChart3,
   Bell,
   Building2,
+  ClipboardCheck,
+  ClipboardList,
+  Droplet,
   FileStack,
   FileText,
   Grid3x3,
@@ -11,6 +15,7 @@ import {
   ListChecks,
   LockKeyhole,
   Pin,
+  ScanLine,
   ScrollText,
   Search,
   Shield,
@@ -18,7 +23,7 @@ import {
   Trash2,
   Users,
   Workflow,
-  Waypoints
+  Waypoints,
 } from "lucide-react"
 
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -49,12 +54,28 @@ export const navSections: NavSection[] = [
           PermissionCodes.RBR_RETENTION,
         ],
       },
-      { label: "Recent Pins", icon: Pin },
+      // The person's own pinned documents (PID-FR-002), on a page of their own.
+      {
+        label: "Pinned Documents",
+        icon: Pin,
+        href: "/pinned",
+        permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
       // The caller's workflow approval queue - visible to everyone (anyone
       // can be named as an approver); the badge is their live open-task count.
-      { label: "My Tasks", icon: Workflow, href: "/tasks", liveBadge: "myOpenTasks" },
+      {
+        label: "My Tasks",
+        icon: Workflow,
+        href: "/tasks",
+        liveBadge: "myOpenTasks",
+      },
       // The notification inbox (3.2); the badge is the live unread count.
-      { label: "Inbox", icon: Bell, href: "/inbox", liveBadge: "myUnreadNotifications" },
+      {
+        label: "Inbox",
+        icon: Bell,
+        href: "/inbox",
+        liveBadge: "myUnreadNotifications",
+      },
       // Comments that mention me - readable even without document access (Phase 2).
       { label: "Mentions", icon: AtSign, href: "/mentions" },
       { label: "Search", icon: Search },
@@ -71,6 +92,40 @@ export const navSections: NavSection[] = [
         icon: FileText,
         href: "/documents",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
+    ],
+  },
+  {
+    // OCR gets its own group rather than sitting among the document screens:
+    // scanning, reviewing and the record of what was reviewed are one job,
+    // done by one person, and burying them under Documents made the review
+    // queue look like a view of the browser rather than a worklist.
+    //
+    // Every item is gated on an os.* capability (seeded by V10) AND feature:
+    // "ocr", because dms.ocr.enabled can be off, and holding the permission is
+    // no reason to show a link to a page with no worker behind it.
+    label: "OCR",
+    items: [
+      {
+        label: "Scan documents",
+        icon: ScanLine,
+        href: "/documents/scan",
+        feature: "ocr",
+        permission: PermissionCodes.OS_OCR_TRIGGER,
+      },
+      {
+        label: "Review queue",
+        icon: ClipboardCheck,
+        href: "/documents/review",
+        feature: "ocr",
+        permission: PermissionCodes.OS_REVIEW_VIEW_QUEUE,
+      },
+      {
+        label: "Saved reviews",
+        icon: ClipboardList,
+        href: "/documents/saved-reviews",
+        feature: "ocr",
+        permission: PermissionCodes.OS_REVIEW_VIEW_QUEUE,
       },
     ],
   },
@@ -126,6 +181,13 @@ export const navSections: NavSection[] = [
         href: "/admin/audit-log",
         permission: PermissionCodes.ABDR_VIEW_AUDIT_HISTORY,
       },
+      // How many documents one person may pin (PID-FR-007).
+      {
+        label: "Pin Limit",
+        icon: Pin,
+        href: "/admin/pinned-documents",
+        permission: PermissionCodes.PID_CONFIGURE_LIMITS,
+      },
       // Departments double as workflow approver pools.
       {
         label: "Departments",
@@ -166,6 +228,23 @@ export const navSections: NavSection[] = [
           PermissionCodes.DOCM_QUARANTINE_OVERRIDE,
         ],
       },
+      // The named watermark texts users can pick when asking for a
+      // watermarked copy (Module DW). Either template capability gets you in;
+      // the list itself hides what you can't do, and built-in templates are
+      // read-only for everyone. `feature` as well as `permission` because
+      // dms.watermark.enabled can be off server-side, and holding the
+      // permission is then still not a reason to show a link to a page with
+      // nothing behind it.
+      {
+        label: "Watermark Templates",
+        icon: Droplet,
+        href: "/admin/watermarks",
+        feature: "watermarking",
+        permission: [
+          PermissionCodes.DW_WATERMARK_TEMPLATE_CREATE,
+          PermissionCodes.DW_WATERMARK_TEMPLATE_UPDATE,
+        ],
+      },
       // Encryption at rest (Module DE): the master key, rotation, re-wrapping.
       {
         label: "Encryption Keys",
@@ -194,6 +273,26 @@ export const navSections: NavSection[] = [
         icon: Building2,
         href: "/admin/organisations",
         platformAdminOnly: true,
+      },
+    ],
+  },
+  // Infrastructure, not document governance: this section is about the
+  // server and the services on it, which is why it sits apart from
+  // Governance (users, roles, audit - who may do what with documents)
+  // rather than inside it. Future operations screens - background jobs,
+  // server info, scan engine status - belong here too.
+  {
+    label: "System",
+    items: [
+      // Live stack health (Prometheus + Grafana, see infra/monitoring).
+      // Platform administrators always; tenant admins implicitly; anyone
+      // else through the shad.view-system-health-dashboard permission, which
+      // a tenant admin assigns via a role.
+      {
+        label: "System Monitoring",
+        icon: Activity,
+        href: "/admin/monitoring",
+        platformAdminOrPermission: PermissionCodes.SHAD_VIEW_SYSTEM_HEALTH,
       },
     ],
   },

@@ -6,15 +6,20 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Download,
   FileSearch,
+  Droplet,
+  FileDown,
   FolderInput,
   FolderOpen,
   FolderPlus,
   FolderUp,
   History,
+  Pin,
+  PinOff,
   LayoutGrid,
   List,
   Pencil,
   Send,
+  ScanLine,
   ShieldCheck,
   Trash2,
   Eye,
@@ -40,6 +45,8 @@ import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { TemplatePickerSheet } from "@/components/documents/template-picker-sheet"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
+import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
+import { OcrScanDialog } from "@/components/ocr/ocr-scan-dialog"
 import { FolderPath } from "@/components/documents/folder-path"
 import {
   ActionDialog,
@@ -59,6 +66,7 @@ import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { saveDownloadedFile } from "@/lib/download-file"
+import { usePins } from "@/lib/pins/use-pins"
 import {
   deleteDocument,
   downloadDocumentFile,
@@ -66,6 +74,9 @@ import {
   moveDocuments,
   type DocumentListItemDto,
 } from "@/lib/documents/api"
+import { watermarkSupport } from "@/lib/watermarks/supported"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
+import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
 import {
   fromFolderPicker,
   type DroppedFile,
@@ -103,6 +114,8 @@ type Dialog =
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
   | { kind: "submit-for-approval"; row: DocumentListItemDto; key: number }
+  | { kind: "watermark"; row: DocumentListItemDto; key: number }
+  | { kind: "ocr"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -133,6 +146,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
+  const pins = usePins()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
     renameMove: hasPermission(PermissionCodes.DSC_FOLDERS_RENAME_MOVE),
@@ -146,12 +160,24 @@ function FolderView({ folderId }: { folderId: string | null }) {
     submitForApproval: hasPermission(
       PermissionCodes.DLM_SUBMIT_DOCUMENTS_FOR_REVIEW
     ),
+    viewDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW),
+    ocrTrigger: hasPermission(PermissionCodes.OS_OCR_TRIGGER),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
       PermissionCodes.DSC_FOLDER_ACCESS_ASSIGN
     ),
   }
+
+  // One cached probe for the whole screen - every row's menu reads the
+  // same answer rather than asking per document.
+  const watermark = useWatermarkAvailability().data ?? {
+    present: false,
+    usable: false,
+    unavailableMessage: null,
+    templates: [],
+  }
+  const ocrAvailable = useOcrAvailability().data ?? false
 
   const view = useBrowserView()
   const folders = useFolders()
@@ -443,6 +469,13 @@ function FolderView({ folderId }: { folderId: string | null }) {
             key: Date.now(),
           }),
       })
+    // PID-FR-001: pin from the list (and from search results, which are this list).
+    if (pins.canToggle(row.documentId))
+      actions.push({
+        label: pins.isPinned(row.documentId) ? "Unpin" : "Pin",
+        icon: pins.isPinned(row.documentId) ? PinOff : Pin,
+        onSelect: () => void pins.toggle(row),
+      })
     if (can.versions)
       actions.push({
         label: "Version history",
@@ -459,6 +492,38 @@ function FolderView({ folderId }: { folderId: string | null }) {
             ids: [row.documentId],
             key: Date.now(),
           }),
+      })
+    // Watermarking needs only document-view: the copy it produces is of a
+    // document the caller can already read, and it never replaces the
+    // original. The row is shown disabled rather than hidden for a file
+    // type the renderer can't handle, so "why isn't this here?" has an
+    // answer; the whole action disappears only when the feature is off.
+    if (watermark.present && can.viewDocuments) {
+      const support = watermarkSupport(row)
+      actions.push({
+        label: "Add watermark",
+        icon: Droplet,
+        disabled: !support.supported || !watermark.usable,
+        hint: support.reason ?? watermark.unavailableMessage ?? undefined,
+        onSelect: () => setDialog({ kind: "watermark", row, key: Date.now() }),
+      })
+    }
+    // OCR re-run overwrites the document's OCR-sourced metadata, so it
+    // needs edit access, not just view - the same pairing the backend
+    // enforces (os.perform-ocr-extraction.trigger PLUS edit on the row).
+    if (ocrAvailable && can.ocrTrigger && hasAccess(row.myAccess, "edit")) {
+      actions.push({
+        label: "OCR scan",
+        icon: ScanLine,
+        onSelect: () => setDialog({ kind: "ocr", row, key: Date.now() }),
+      })
+    }
+    if (can.export)
+      actions.push({
+        label: "Export",
+        icon: FileDown,
+        onSelect: () =>
+          startZipDownload({ documentIds: [row.documentId] }, row.title),
       })
     if (can.seeAccess)
       actions.push({
@@ -974,6 +1039,28 @@ function FolderView({ folderId }: { folderId: string | null }) {
         />
       )}
 
+      {dialog?.kind === "watermark" && (
+        <WatermarkDialog
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          documentTitle={dialog.row.title}
+          templates={watermark.templates}
+          open
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === "ocr" && (
+        <OcrScanDialog
+          key={dialog.key}
+          documentId={dialog.row.documentId}
+          documentTitle={dialog.row.title}
+          documentTypeId={dialog.row.documentTypeId}
+          open
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      )}
+
       {preview && (
         <DocumentPreview
           key={preview.documentId}
@@ -981,6 +1068,15 @@ function FolderView({ folderId }: { folderId: string | null }) {
           onOpenChange={(open) => !open && setPreview(null)}
           onDownload={() => void download(preview)}
           onViewDetails={() => router.push(`/documents/${preview.documentId}`)}
+          onWatermark={
+            watermark.present && can.viewDocuments
+              ? () => setDialog({ kind: "watermark", row: preview, key: Date.now() })
+              : undefined
+          }
+          watermarkHint={
+            watermarkSupport(preview).reason ?? watermark.unavailableMessage ?? undefined
+          }
+          watermarkDisabled={!watermarkSupport(preview).supported || !watermark.usable}
         />
       )}
 

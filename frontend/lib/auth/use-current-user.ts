@@ -44,7 +44,8 @@ export interface CurrentUser {
   impersonatorDisplayName: string | null
 }
 
-function initialsOf(displayName: string): string {
+/** "Ada Lovelace" -> "AL". Exported so the account-menu fallback derives initials the same way. */
+export function initialsOf(displayName: string): string {
   const parts = displayName.trim().split(/\s+/)
   const first = parts[0]?.[0] ?? ""
   const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : ""
@@ -52,7 +53,11 @@ function initialsOf(displayName: string): string {
 }
 
 async function fetchCurrentUser(): Promise<CurrentUser> {
-  return apiFetchJson(`${API_BASE_URL}/api/v1/users/me`, undefined, "Could not load your profile.")
+  return apiFetchJson(
+    `${API_BASE_URL}/api/v1/users/me`,
+    undefined,
+    "Could not load your profile."
+  )
 }
 
 /**

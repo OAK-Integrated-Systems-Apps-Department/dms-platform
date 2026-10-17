@@ -228,7 +228,7 @@ class ImportTemplateWorkbookTest {
 
     private static SchemaField field(String key, String label, String helpText, String dataType, boolean mandatory,
                                      boolean hidden, int displayOrder, List<MetadataFieldOptionResponse> options) {
-        return new SchemaField(UUID.randomUUID(), key, label, helpText, dataType, "active", mandatory, hidden,
+        return new SchemaField(UUID.randomUUID(), key, label, helpText, dataType, "active", mandatory, hidden, false,
                 displayOrder, null, null, options, List.of());
     }
 

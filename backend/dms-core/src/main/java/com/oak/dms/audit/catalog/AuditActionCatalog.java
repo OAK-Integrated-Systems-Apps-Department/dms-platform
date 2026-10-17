@@ -59,6 +59,8 @@ public final class AuditActionCatalog {
     public static final String LOGOUT = "LOGOUT";
     public static final String PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED";
     public static final String PASSWORD_RESET_COMPLETED = "PASSWORD_RESET_COMPLETED";
+    /** The holder changed their own password from inside the DMS (distinct from a reset via emailed link). */
+    public static final String PASSWORD_CHANGED = "PASSWORD_CHANGED";
     public static final String USER_CREATED = "USER_CREATED";
     public static final String USER_UPDATED = "USER_UPDATED";
     public static final String USER_ROLE_ASSIGNED = "USER_ROLE_ASSIGNED";
@@ -134,12 +136,21 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
     public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** The organisation's cap on how many documents one person may pin (PID). */
+    public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
     public static final String EXPORT_REQUESTED = "EXPORT_REQUESTED";
     public static final String EXPORT_COMPLETED = "EXPORT_COMPLETED";
     public static final String EXPORT_DOWNLOADED = "EXPORT_DOWNLOADED";
+    public static final String WATERMARK_TEMPLATE_CREATED = "WATERMARK_TEMPLATE_CREATED";
+    public static final String WATERMARK_TEMPLATE_UPDATED = "WATERMARK_TEMPLATE_UPDATED";
+    public static final String WATERMARK_TEMPLATE_DELETED = "WATERMARK_TEMPLATE_DELETED";
+    public static final String WATERMARK_REQUESTED = "WATERMARK_REQUESTED";
+    public static final String WATERMARK_COMPLETED = "WATERMARK_COMPLETED";
+    public static final String WATERMARK_FAILED = "WATERMARK_FAILED";
+    public static final String WATERMARK_RESULT_DOWNLOADED = "WATERMARK_RESULT_DOWNLOADED";
 
     public static final String DEPARTMENT_CREATED = "DEPARTMENT_CREATED";
     public static final String DEPARTMENT_UPDATED = "DEPARTMENT_UPDATED";
@@ -210,6 +221,7 @@ public final class AuditActionCatalog {
             // for why silent session renewal is deliberately not audited.
             Map.entry(PASSWORD_RESET_REQUESTED, new AuditActionSpec("ASM", AuditSeverity.LOW, false)),
             Map.entry(PASSWORD_RESET_COMPLETED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
+            Map.entry(PASSWORD_CHANGED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
             // Impersonation (ImpersonationService) - module ASM: starting a
             // session under someone else's identity is at least as
             // sensitive as a role deletion (HIGH); ending one is routine
@@ -407,6 +419,7 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
@@ -421,6 +434,25 @@ public final class AuditActionCatalog {
             Map.entry(EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false)),
 
+            // Watermarking (WatermarkTemplateService / WatermarkService /
+            // WatermarkJobWorker) - module DW, the module code V7 seeded for
+            // it. Template changes are MEDIUM: they decide what every future
+            // copy will say, but affect no copy already produced.
+            Map.entry(WATERMARK_TEMPLATE_CREATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_UPDATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_DELETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            // REQUESTED carries the resolved text and is written in the
+            // request thread, which is the only place impersonation is
+            // captured - the worker runs as the effective user with no
+            // "acting as" of its own, so the two later events reference the
+            // job id and join back to this one.
+            Map.entry(WATERMARK_REQUESTED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_COMPLETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_FAILED, new AuditActionSpec("DW", AuditSeverity.LOW, false)),
+            // HIGH for the same reason as EXPORT_DOWNLOADED: this is the
+            // moment a copy of a document leaves the system - one carrying
+            // the name of the person who took it.
+            Map.entry(WATERMARK_RESULT_DOWNLOADED, new AuditActionSpec("DW", AuditSeverity.HIGH, false)),
 
             // Departments (DepartmentController) - module OTUA. They define
             // who sits in a department approver pool, hence MEDIUM.
@@ -475,7 +507,6 @@ public final class AuditActionCatalog {
             Map.entry(NOTIFICATION_SETTING_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
             Map.entry(NOTIFICATION_PREFERENCE_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.LOW, false)),
             Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false))
-
     );
 
     private AuditActionCatalog() {

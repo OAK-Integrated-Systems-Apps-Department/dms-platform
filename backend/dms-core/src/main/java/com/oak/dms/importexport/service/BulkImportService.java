@@ -66,8 +66,22 @@ public interface BulkImportService {
      * @param duplicateAction what to do with a row whose file is already in the DMS: keep_both,
      *                        new_version or skip (V65)
      */
+    default BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
+                                                  UUID folderId, String duplicateAction) {
+        return createBatch(templateFilename, templateSize, template, folderId, duplicateAction, null);
+    }
+
+    /**
+     * @param duplicateAction what to do with a row whose file is already in the DMS: keep_both,
+     *                        new_version or skip (V65)
+     * @param ocrFields       "Run OCR on imported files" (V84): the field keys to extract from every
+     *                        file in the batch, or null/empty for no OCR. Validated against the
+     *                        document type's OCR-extractable fields here, at batch creation, so a
+     *                        typo is reported to the person who typed it rather than failing
+     *                        silently per file hours later.
+     */
     BulkImportCreatedResponse createBatch(String templateFilename, long templateSize, InputStream template,
-                                          UUID folderId, String duplicateAction);
+                                          UUID folderId, String duplicateAction, List<String> ocrFields);
 
     /**
      * Checks a still-uploading batch's rows now - data types, mandatory

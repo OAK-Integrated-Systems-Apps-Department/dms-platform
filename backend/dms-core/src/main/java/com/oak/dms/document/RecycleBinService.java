@@ -75,6 +75,8 @@ public class RecycleBinService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final JdbcTemplate jdbc;
+    private final OcrArtifactWriter ocrArtifactWriter;
+    private final PageImageCache pageImageCache;
     private final TransactionTemplate transactions;
     private final int defaultRetentionDays;
 
@@ -82,6 +84,7 @@ public class RecycleBinService {
                              DocumentAccessService documentAccessService,
                              StorageLocationRepository storageLocationRepository, ObjectStorageServiceFactory storage,
                              UserRepository userRepository, AuditService auditService, JdbcTemplate jdbc,
+                             OcrArtifactWriter ocrArtifactWriter, PageImageCache pageImageCache,
                              PlatformTransactionManager transactionManager,
                              @Value("${dms.documents.recycle-bin.retention-days:30}") int defaultRetentionDays) {
         this.documentRepository = documentRepository;
@@ -92,6 +95,8 @@ public class RecycleBinService {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.jdbc = jdbc;
+        this.ocrArtifactWriter = ocrArtifactWriter;
+        this.pageImageCache = pageImageCache;
         this.transactions = new TransactionTemplate(transactionManager);
         this.defaultRetentionDays = defaultRetentionDays;
     }
@@ -335,6 +340,26 @@ public class RecycleBinService {
                     // already gone
                 }
             }
+            // And everything OCR derived from it. OCR output IS the document's
+            // text and the searchable PDF IS the document, so a purge that
+            // left them behind would leave the document behind under another
+            // name. Each key is deleted explicitly - see OcrArtifactWriter.
+            //
+            // Deliberately NOT swallowed. A failure here must stop the purge
+            // before `purged_at` is set, because once it is set this document
+            // is out of the sweep's query for good - a swallowed failure would
+            // strand the document's text in storage permanently, and the log
+            // line saying so would scroll away. Letting it throw leaves the
+            // document in the bin, and `purgeExpired` retries it next hour
+            // ("Could not purge deleted document ... - will try again").
+            // Re-running is safe: deleting an object that is already gone is a
+            // no-op, which is the same property the file deletion above
+            // relies on.
+            ocrArtifactWriter.deleteFor(version);
+            // And any page image of it still held in memory. A page image is
+            // the document as a picture; a purged document must not stay
+            // readable in a cache for the rest of the process's life.
+            pageImageCache.invalidate(version.getVersionId());
             files++;
         }
         transactions.executeWithoutResult(status -> {

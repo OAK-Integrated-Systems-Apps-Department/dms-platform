@@ -49,6 +49,17 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // Pin Important Documents - PID (pins are personal; the limit is the organisation's)
+    public static final String PID_PIN = "pid.pin-unpin-documents.pin";
+    public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";
+    public static final String PID_CONFIGURE_LIMITS = "pid.configure-pin-limits";
+
+    // System monitoring - SHAD (System Health and Administration Dashboard).
+    // Held implicitly by TENANT_ADMIN and PLATFORM_ADMIN like every code; others get them via a role.
+    public static final String SHAD_VIEW_SYSTEM_HEALTH = "shad.view-system-health-dashboard";
+    /** Log lines can carry anything a service printed, so reading them is a grant of its own. */
+    public static final String SHAD_VIEW_SYSTEM_LOGS = "shad.view-system-logs";
+
     // Roles - ASM (Access and Security Management) / Manage Roles & Permissions
     public static final String ASM_ROLES_CREATE_ROLE = "asm.manage-roles-permissions.create-role";
     public static final String ASM_ROLES_UPDATE_ROLE = "asm.manage-roles-permissions.update-role";
@@ -142,6 +153,37 @@ public final class PermissionCodes {
     // viewing it on-screen, and the seeded catalog (V10) already reserves a
     // separate code for it rather than folding it into "view".
     public static final String ABDR_EXPORT_AUDIT_REPORTS = "abdr.export-audit-reports";
+
+    // Document Watermarking - DW. Both codes were seeded by V10 and the
+    // module by V7, long before any Java referenced them. Phase 1 uses only
+    // these two: APPLYING a watermark is gated on DOCM_DOCUMENTS_VIEW (plus
+    // the folder's own view level, and DVC_VERSIONS_VIEW when the request
+    // names a specific version), because a watermarked copy shows the
+    // person exactly what an ordinary download already would.
+    // The catalogue has no delete-template code and this deliberately
+    // doesn't add one - deleting reuses UPDATE, see
+    // WatermarkTemplateService#delete for the reasoning.
+    public static final String DW_WATERMARK_TEMPLATE_CREATE = "dw.configure-watermark-policy.create-template";
+    public static final String DW_WATERMARK_TEMPLATE_UPDATE = "dw.configure-watermark-policy.update-template";
+
+    // OCR & Scanning (module OS). These codes are NOT new - V10 has seeded all
+    // seven since the fine-grained catalogue landed, and the Roles screen has
+    // always listed them. What was missing was anything using them: the OCR
+    // branch shipped its routes with no permission check at all. No migration
+    // is needed to start enforcing them, only these constants.
+    //
+    // Note they are granted to no role by default. TENANT_ADMIN and
+    // PLATFORM_ADMIN hold every permission implicitly, so an administrator sees
+    // the OCR screens immediately; everybody else needs an explicit grant,
+    // which is the intended default for a capability that reads document
+    // content.
+    public static final String OS_OCR_TRIGGER = "os.perform-ocr-extraction.trigger";
+    public static final String OS_OCR_EDIT_TEXT = "os.perform-ocr-extraction.edit-text";
+    public static final String OS_OCR_TEMPLATE_CREATE = "os.configure-ocr-zones-templates.create-template";
+    public static final String OS_OCR_TEMPLATE_UPDATE = "os.configure-ocr-zones-templates.update-template";
+    public static final String OS_OCR_TEMPLATE_DELETE = "os.configure-ocr-zones-templates.delete-template";
+    public static final String OS_REVIEW_VIEW_QUEUE = "os.review-ocr-exceptions.view-queue";
+    public static final String OS_REVIEW_RESOLVE = "os.review-ocr-exceptions.resolve";
 
     // Departments - OTUA, seeded by V46. Back the department approver pools
     // of workflow stages (3.1 Workflow Automation).

@@ -90,6 +90,31 @@ public class ImportBatch {
     @Builder.Default
     private String duplicateAction = "keep_both";
 
+    /**
+     * "Run OCR on imported files" (V84): a JSON array of field_keys to extract
+     * from every file in this batch, or null/{@code []} for no OCR.
+     * <p>
+     * Raw JSON rather than a {@code List<String>}: it is handed to ocr-worker
+     * verbatim as the message's {@code requested_fields}, and holding it as
+     * the same text the queue carries is what makes that round trip lossless.
+     * Same convention as {@code ScanResult#ocrRequestedFields}.
+     */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "ocr_requested_fields", updatable = false)
+    private String ocrRequestedFields;
+
+    /**
+     * How many of this batch's files have been queued for OCR (V84).
+     * <p>
+     * Durable rather than in-memory because it enforces
+     * {@code dms.ocr.max-per-import-batch}: a worker that restarts half way
+     * through a 5,000-row import, or a redelivered batch message, must not
+     * get a fresh allowance.
+     */
+    @Column(name = "ocr_queued_count", nullable = false)
+    @Builder.Default
+    private int ocrQueuedCount = 0;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

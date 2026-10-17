@@ -2,6 +2,20 @@ spring:
   application:
     name: dms-core
 
+  # Spring Boot's default scheduler is a SINGLE thread shared by every
+  # @Scheduled method. Until Phase 2 there was only one (OutboxRelay,
+  # every 2s), so that was fine. OcrFieldsReconciler is the second, and
+  # its tick can do real work -- a schema lookup plus a
+  # delete-then-insert per field, for up to dms.ocr.batch-size versions.
+  # On one thread, a slow reconciler tick delays the relay, and the
+  # relay is the mechanism every OCR job is triggered by. Also covers
+  # ScanRetryScheduler (ClamAV retry) and workflow SLA reminders, which
+  # touch independent tables and shouldn't block each other either.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:2}
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/dms_dev}
     username: ${DB_USERNAME:postgres}
@@ -22,20 +36,19 @@ spring:
         order_inserts: true
         order_updates: true
 
-  # Two scheduler threads instead of Boot's one, so a slow ClamAV retry
-  # (ScanRetryScheduler) can't hold up workflow SLA reminders or the outbox
-  # relay, and vice versa. The jobs touch independent tables.
-  task:
-    scheduling:
-      pool:
-        size: ${SCHEDULER_POOL_SIZE:2}
-
   # Spring's own multipart default is 1MB, which silently capped uploads
-  # before the scan gate existed. -1 = no limit, in line with
-  # dms.scanning.max-file-size-bytes below; the scan gate enforces any
-  # engine's own byte limit itself. Parts over the threshold are spooled to
-  # disk, never held in memory - so the temp directory needs room for the
-  # largest file uploaded.
+  # before the scan gate existed, and which a real phone-camera photo of a
+  # document routinely exceeds - it surfaced as a raw
+  # MaxUploadSizeExceededException and a generic "An unexpected error
+  # occurred" until GlobalExceptionHandler learned to translate it.
+  #
+  # -1 = no limit, in line with dms.scanning.max-file-size-bytes below; the
+  # scan gate enforces any engine's own byte limit itself, this just stops
+  # the servlet layer rejecting first. Needed unlimited (not just a large
+  # finite ceiling) once bulk import's own ZIP/file uploads could reach tens
+  # of GB - see infra/production/nginx/dms.conf's client_max_body_size 0.
+  # Parts over the threshold are spooled to disk, never held in memory - so
+  # the temp directory needs room for the largest file uploaded.
   servlet:
     multipart:
       max-file-size: ${UPLOAD_MAX_FILE_SIZE:-1}
@@ -210,6 +223,79 @@ dms:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
+  ocr:
+    # Master switch for the whole OCR feature. OFF by default.
+    #
+    # Off means nothing is published to the queue, no upload path depends on
+    # ocr-worker being reachable, and the internal read endpoint answers 404.
+    # A deployment that doesn't run the worker should be indistinguishable
+    # from one that never had the feature - in particular an ordinary upload
+    # still scans and lands exactly as it would have.
+    enabled: ${OCR_ENABLED:false}
+    # Backpressure, not a quota. Over this, new OCR requests are declined and
+    # left for the backlog sweeper rather than rejected, so a large import
+    # neither fails nor floods RabbitMQ. Per tenant, so one busy tenant can't
+    # starve the rest.
+    max-queued-per-tenant: ${OCR_MAX_QUEUED_PER_TENANT:2000}
+    # Most files from one Bulk Import batch queued for OCR up front; the rest
+    # are marked held-back and drain through the sweeper.
+    max-per-import-batch: ${OCR_MAX_PER_IMPORT_BATCH:500}
+    backlog-sweep-interval-ms: ${OCR_BACKLOG_SWEEP_INTERVAL_MS:30000}
+    backlog-sweep-batch-size: ${OCR_BACKLOG_SWEEP_BATCH_SIZE:100}
+    # Per-job read grants. ocr-worker cannot read storage directly any more -
+    # objects are encrypted at rest - so it asks dms-core for plaintext over
+    # /internal/v1/ocr, presenting BOTH the shared internal token and a
+    # short-lived HMAC grant naming one job, one version and one tenant.
+    # See OcrJobTokenCodec and docs/ocr/internal-endpoint.md.
+    #
+    # Blank refuses every internal read rather than signing with an empty key.
+    # Its own secret: a leak or rotation here must not touch impersonation or
+    # audit correlation.
+    job-token-secret: ${OCR_JOB_TOKEN_SECRET:}
+    job-token-minutes: ${OCR_JOB_TOKEN_MINUTES:30}
+    # Safety net (Phase 1 B.1): GET /{documentId}/ocr-status re-applies OCR
+    # field results onto document_metadata_values at poll time, on top of
+    # dms-core's own OcrEventsConsumer already doing it off the
+    # document.version.ocr.completed event. It exists because the consumer
+    # path had never been proven end to end -- and it MASKED a real defect
+    # for a whole phase (the relay's double-encoded payloads meant the
+    # consumer never ran at all, and nobody noticed because polling kept
+    # the UI correct; see docs/ocr/phase1-verification.md "Defects found").
+    #
+    # Turning this off is how that masking is ruled out: with it false, any
+    # metadata value that appears MUST have come from the event path. It is
+    # a config flag rather than a commented-out block specifically so that
+    # proof can be re-run at any time, not just once.
+    poll-reapply-enabled: ${OCR_POLL_REAPPLY_ENABLED:true}
+
+    # OcrFieldsReconciler (Phase 2) -- the replacement for the safety net
+    # above, and the reason it can eventually be removed. Where the poll
+    # re-apply only rescues a document somebody opens, and does it
+    # silently, the reconciler finds every completed version whose fields
+    # were never applied and logs a warning naming each one. A healthy
+    # system produces no warnings; each one that appears is a
+    # document.version.ocr.completed event that genuinely went missing.
+    reconciler-enabled: ${OCR_RECONCILER_ENABLED:true}
+    reconciler-interval-ms: ${OCR_RECONCILER_INTERVAL_MS:60000}
+    # Must comfortably exceed the normal path's latency (ocr-worker commit
+    # -> outbox relay's 2s poll -> listener), so a warning means the event
+    # never arrived rather than that it is still in flight.
+    stale-after-minutes: ${OCR_RECONCILER_STALE_AFTER_MINUTES:10}
+    batch-size: ${OCR_RECONCILER_BATCH_SIZE:50}
+
+    # The review screen (Phase 4c) is the only thing dms-core calls
+    # ocr-worker over HTTP for: a rendered page image and "what does this
+    # box say". Both are read-only and both have a human waiting, which is
+    # why they are not queued work like everything else.
+    #
+    # ocr-worker publishes no port; this is a container-network address by
+    # design, and the token is the same shared secret ocr-worker checks on
+    # every route.
+    worker-base-url: ${OCR_WORKER_BASE_URL:http://ocr-worker:8090}
+    internal-service-token: ${INTERNAL_SERVICE_TOKEN:}
+    # Empty means "use ocr-worker's own OCR_PREVIEW_DPI".
+    preview-dpi: ${OCR_PREVIEW_DPI:}
+
   export:
     # How long a generated export is kept before the Phase 4 auto-purge
     # (sets export_jobs.expires_at). PLACEHOLDER - the real value is Phase 0
@@ -218,6 +304,130 @@ dms:
     max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
     max-export-size: ${EXPORT_MAX_SIZE:20GB}
     max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
+  # Document watermarking (module DW, V68): a watermarked COPY of a document
+  # in its own format. The original is never touched. See WatermarkProperties.
+  watermark:
+    # OFF by default. While off the endpoints are not mapped at all, so they
+    # answer 404. Not the same as the startup font probe failing, which
+    # leaves them mapped and answers 503 WATERMARK_UNAVAILABLE - the
+    # difference tells an operator "not switched on" from "switched on but
+    # the image has no fonts" (see the Dockerfile).
+    enabled: ${WATERMARK_ENABLED:false}
+    # How long a produced copy is kept before WatermarkOutputSweeper deletes
+    # it. Short on purpose: the copy carries a person's name and is a second
+    # place the document's content exists.
+    output-ttl: ${WATERMARK_OUTPUT_TTL:PT24H}
+    max-active-jobs-per-user: ${WATERMARK_MAX_ACTIVE_JOBS_PER_USER:2}
+    # Largest source file per format, checked against DocumentVersion.sizeBytes
+    # BEFORE anything is read. Per format because the cost is not the file,
+    # it is what the library does with it.
+    #
+    # Heap arithmetic, worst case per job: the source byte[] + the output
+    # byte[] + the library's working set. POI holds an OOXML file in memory
+    # several times over (~5-8x for xlsx, less for docx/pptx); PDFBox reads
+    # a PDF far more lazily (~2x). With executor.job-max-size 2 that is
+    #   xlsx  10MB x 8 x 2 threads ~= 160MB
+    #   pptx  15MB x 5 x 2 threads ~= 150MB
+    #   docx  25MB x 4 x 2 threads ~= 200MB
+    #   pdf   25MB x 3 x 2 threads ~= 150MB
+    # so roughly 200MB of headroom covers the worst case. Raise a format's
+    # cap only together with the container's memory limit.
+    #
+    # NOTE: the 10MB xlsx cap is BELOW the 20MB file size the p95-under-5s
+    # target was written against. A spreadsheet between 10MB and 20MB is
+    # refused with 413 rather than being slow. Raise xlsx (and the heap) if
+    # real tenants have workbooks that large.
+    max-bytes:
+      pdf: ${WATERMARK_MAX_BYTES_PDF:25MB}
+      docx: ${WATERMARK_MAX_BYTES_DOCX:25MB}
+      xlsx: ${WATERMARK_MAX_BYTES_XLSX:10MB}
+      pptx: ${WATERMARK_MAX_BYTES_PPTX:15MB}
+      image: ${WATERMARK_MAX_BYTES_IMAGE:25MB}
+    default-max-bytes: ${WATERMARK_DEFAULT_MAX_BYTES:25MB}
+    # POI and PDFBox cannot be interrupted, so a job that overruns is failed
+    # and its thread abandoned - see WatermarkExecutorConfig.
+    format-timeout: ${WATERMARK_FORMAT_TIMEOUT:PT60S}
+    stuck-after: ${WATERMARK_STUCK_AFTER:PT15M}
+    # How often expired copies are deleted (WatermarkOutputSweeper). This
+    # shares the one @Scheduled thread with OutboxRelay (every 2s),
+    # RecycleBinService and KeyRotationScheduler, so each run takes a capped
+    # batch and leaves the rest for the next tick rather than holding that
+    # thread. spring.task.scheduling.pool.size is deliberately NOT changed
+    # by this feature.
+    sweep-interval: ${WATERMARK_SWEEP_INTERVAL:PT15M}
+    style:
+      # The default look, and the range a template or a request may move it
+      # within. These are the real guardrails; V68's CHECK constraints are
+      # deliberately wider, so tightening these is a config change.
+      font-size: ${WATERMARK_FONT_SIZE:40}
+      min-font-size: ${WATERMARK_MIN_FONT_SIZE:8}
+      max-font-size: ${WATERMARK_MAX_FONT_SIZE:200}
+      # Floor is 5, never 0: an invisible watermark is worse than none,
+      # because the person who asked believes their copy is marked.
+      opacity: ${WATERMARK_OPACITY:25}
+      min-opacity: ${WATERMARK_MIN_OPACITY:5}
+      max-opacity: ${WATERMARK_MAX_OPACITY:100}
+      rotation: ${WATERMARK_ROTATION:-45}
+      min-rotation: ${WATERMARK_MIN_ROTATION:-90}
+      max-rotation: ${WATERMARK_MAX_ROTATION:90}
+      color: ${WATERMARK_COLOR:#808080}
+      placement: ${WATERMARK_PLACEMENT:tiled}
+      page-scope: ${WATERMARK_PAGE_SCOPE:all-pages}
+      max-text-length: ${WATERMARK_MAX_TEXT_LENGTH:200}
+      max-token-length: ${WATERMARK_MAX_TOKEN_LENGTH:64}
+    limits:
+      max-pages: ${WATERMARK_MAX_PAGES:2000}
+      max-sheets: ${WATERMARK_MAX_SHEETS:200}
+      max-slides: ${WATERMARK_MAX_SLIDES:500}
+      # Checked from the image header BEFORE decoding - a 50MP decode is
+      # ~200MB of int[] whatever the file on disk weighs.
+      max-image-pixels: ${WATERMARK_MAX_IMAGE_PIXELS:50000000}
+      # A .docx stores no page count - pagination is decided by whatever
+      # lays the document out - so sections, which are what actually cost
+      # work here, are capped instead.
+      max-sections: ${WATERMARK_MAX_SECTIONS:100}
+      max-distinct-page-sizes: ${WATERMARK_MAX_DISTINCT_PAGE_SIZES:4}
+      render-dpi: ${WATERMARK_RENDER_DPI:150}
+      max-render-pixels: ${WATERMARK_MAX_RENDER_PIXELS:16000000}
+      # OOXML package guards, applied by OoxmlGuards on the bytes before POI
+      # opens anything. These are NOT POI's ZipSecureFile statics: those are
+      # JVM-wide and shared with DocumentFingerprints and the import
+      # templates, so this feature does not touch them. POI's own defaults
+      # (min inflate ratio 0.01, max entry 4GB, max 1000 entries) stay in
+      # force underneath. Note 0.01 is STRICTER than the 0.001 here, which
+      # is why applying our value globally would have loosened the guard for
+      # everyone else; what POI does not bound tightly is total inflated
+      # size, and max-uncompressed-bytes is what covers that.
+      min-inflate-ratio: ${WATERMARK_MIN_INFLATE_RATIO:0.001}
+      max-zip-entry-size: ${WATERMARK_MAX_ZIP_ENTRY_SIZE:256MB}
+      max-uncompressed-bytes: ${WATERMARK_MAX_UNCOMPRESSED_BYTES:300MB}
+      max-zip-entries: ${WATERMARK_MAX_ZIP_ENTRIES:2000}
+      # How far an Excel watermark may stretch. A used range is routinely
+      # tens of thousands of columns wide because somebody formatted a whole
+      # row once; a picture sized to all of it would be an unreadable smear
+      # and enormous to render.
+      max-sheet-watermark-columns: ${WATERMARK_MAX_SHEET_COLUMNS:30}
+      max-sheet-watermark-rows: ${WATERMARK_MAX_SHEET_ROWS:60}
+      max-sheet-watermark-pixels: ${WATERMARK_MAX_SHEET_PIXELS:1600}
+    executor:
+      job-core-size: ${WATERMARK_JOB_CORE_SIZE:2}
+      job-max-size: ${WATERMARK_JOB_MAX_SIZE:2}
+      # Full queue is a 503 with Retry-After, not a silent wait.
+      job-queue-capacity: ${WATERMARK_JOB_QUEUE_CAPACITY:20}
+      # Wider than the job pool on purpose: a thread abandoned by a timeout
+      # is never reclaimed, so an equal-sized pool would stall the feature
+      # after two bad files.
+      format-max-size: ${WATERMARK_FORMAT_MAX_SIZE:4}
+      retry-after: ${WATERMARK_RETRY_AFTER:PT30S}
+    rate-limit:
+      # Redis fixed window, per user and per IP. Fails OPEN if Redis is
+      # unreachable - max-active-jobs-per-user is the hard limit and it is
+      # in the database. The preview endpoint, which creates no job and so
+      # has no such backstop, falls back to an in-memory limiter instead.
+      window: ${WATERMARK_RATE_WINDOW:PT1M}
+      watermarks-per-window: ${WATERMARK_RATE_PER_WINDOW:10}
+      previews-per-window: ${WATERMARK_PREVIEW_RATE_PER_WINDOW:30}
+      preview-fallback-per-window: ${WATERMARK_PREVIEW_FALLBACK_PER_WINDOW:30}
   storage:
     # Backs the single platform-default StorageLocation (tenant_id NULL)
     # that StorageLocationBootstrap creates on startup if none exists yet -
@@ -371,6 +581,30 @@ dms:
       enabled: ${WORKFLOW_SLA_ENABLED:true}
       poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
       batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
+  # The system-monitoring screen reads Prometheus through dms-core rather
+  # than the browser reading Grafana directly, so the figures sit behind the
+  # same PLATFORM_ADMIN check as every other cross-tenant screen. Prometheus
+  # is addressed by its compose service name and needs no published port.
+  # Blank the URL to switch the screen off; it then says it is unconfigured
+  # rather than showing an error on every tile.
+  monitoring:
+    prometheus-url: ${PROMETHEUS_URL:http://prometheus:9090}
+    # Container logs, for the per-service log view. Same arrangement as
+    # Prometheus: addressed by service name, never published.
+    loki-url: ${LOKI_URL:http://loki:3100}
+    timeout: ${MONITORING_TIMEOUT:PT5S}
+    # Points per chart. The step is derived from this and the window, so a
+    # 7-day chart costs about the same as a 1-hour one.
+    chart-points: ${MONITORING_CHART_POINTS:120}
+  pins:
+    # How many documents one person may pin (PID-FR-007) until the organisation sets its own
+    # (PUT /api/v1/pins/limit, pid.configure-pin-limits).
+    default-max: ${DMS_PINS_DEFAULT_MAX:20}
+  dashboard:
+    # How long the home dashboard's figures are served from Redis before they are worked
+    # out again (DashboardCache). They scan every document the caller may see - seconds at
+    # millions of documents - so a minute's staleness buys a lot. 0 turns the cache off.
+    cache-seconds: ${DASHBOARD_CACHE_SECONDS:60}
   scanning:
     # Backs the platform-default ScanEngine (tenant_id NULL) that
     # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
@@ -446,6 +680,20 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      group:
+        # What the container HEALTHCHECK (backend/Dockerfile) and deploy.sh
+        # actually gate releases on - everything EXCEPT ocrJobToken. OCR is
+        # off by default and, even enabled, is one feature among many: a
+        # deployment with no job-token secret has a real, loudly-logged
+        # problem (see OcrJobTokenHealthIndicator), but it is not "the
+        # backend is broken" the way a lost database connection is, and
+        # must not roll back an otherwise-healthy release the way DOWN from
+        # root /actuator/health would. Root still aggregates every
+        # indicator, ocrJobToken included, for anyone checking overall
+        # system state by hand - only the container probe moved.
+        core:
+          include: "*"
+          exclude: ocrJobToken
   health:
     # The mail indicator opens a live SMTP connection (and login) on every
     # /actuator/health call. An external relay being slow, down or rejecting
@@ -456,6 +704,32 @@ management:
     # PasswordResetService), so SMTP is deliberately not a health input.
     mail:
       enabled: false
+  # Scraped by Prometheus at /actuator/prometheus (see infra/monitoring).
+  metrics:
+    tags:
+      # Every series carries these, so one Prometheus can hold several
+      # deployments without their numbers running together.
+      application: ${MANAGEMENT_METRICS_APPLICATION:dms-core}
+      environment: ${MANAGEMENT_METRICS_ENVIRONMENT:local}
+    distribution:
+      # Percentiles for API latency have to be computed server-side from a
+      # histogram: without this, http.server.requests publishes only a count
+      # and a total, and no p95 panel or latency alert is possible.
+      percentiles-histogram:
+        http.server.requests: true
+        # Deliberately NOT a full histogram: Micrometer's default bucket set
+        # is ~69 buckets, and one per scan outcome made this metric 276 of
+        # the 764 series this endpoint publishes - the largest producer here,
+        # for something that fires a few times a minute at most. The explicit
+        # buckets below give the same p95 panel in ~8 series per outcome.
+        dms.document.ingestion: false
+      # Buckets either side of the typical value, so the p95 is meaningful
+      # rather than interpolated across one huge bucket.
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
+        # Scans span milliseconds (a small PDF) to tens of minutes (a 6 GB
+        # ZIP checked file by file), hence the very wide top end.
+        dms.document.ingestion: 250ms,1s,5s,30s,2m,10m,30m
 
 springdoc:
   swagger-ui:

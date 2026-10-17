@@ -1,0 +1,16 @@
+# Overlay for `phase1_closeout_verification.py fields` (Phase 1 open item #3).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.closeout-fields.yml up -d dms-core
+#
+# Restore with: docker compose -f docker-compose.yml up -d dms-core
+services:
+  dms-core:
+    environment:
+      # Proves dms-core's OcrEventsConsumer path on its own merits. With
+      # the poll-time safety net on, document_metadata_values gets written
+      # by GET /ocr-status regardless of whether the .completed event ever
+      # arrived -- which is exactly how the OutboxRelay double-encoding
+      # defect survived a whole phase unnoticed (see
+      # docs/ocr/phase1-verification.md, "Defects found" #1). The check
+      # refuses to run unless this is false.
+      OCR_POLL_REAPPLY_ENABLED: "false"

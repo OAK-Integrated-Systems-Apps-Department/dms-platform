@@ -1,0 +1,242 @@
+{
+  "variant": "baseline",
+  "generated_at": "2026-10-01T08:10:48.580919+00:00",
+  "settings": {
+    "ocr_render_dpi": 200,
+    "ocr_languages": "en",
+    "min_confidence_threshold": 0.95,
+    "field_low_confidence_threshold": 0.6,
+    "ocr_max_pages": 50,
+    "ocr_timeout_base_s": 60.0,
+    "ocr_timeout_per_page_s": 45.0,
+    "ocr_orientation_enabled": true,
+    "ocr_orientation_min_confidence": 0.6,
+    "ocr_render_max_mp": 1.81,
+    "ocr_routing_enabled": true,
+    "ocr_routing_max_garbage_ratio": 0.3,
+    "ocr_routing_min_plausibility": 0.5,
+    "ocr_routing_min_uncovered_image": 0.15
+  },
+  "wall_clock_s": 462.0,
+  "memory": {
+    "samples": 109,
+    "interval_s": 2.0,
+    "peak_source": "cgroup.memory.peak",
+    "peak_reset_supported": false,
+    "peak_bytes": 3353387008,
+    "peak_gib": 3.123,
+    "sampled_peak_gib": 1.959,
+    "cgroup_peak_gib": 3.123,
+    "p95_gib": 1.893,
+    "median_gib": 1.656,
+    "limit_gib": null,
+    "note": "single-process measurement; production runs OCR_WORKER_PROCESSES=2, each with its own model set"
+  },
+  "sets": {
+    "real": {
+      "set": "real",
+      "synthetic": false,
+      "documents": 21,
+      "documents_with_reference_text": 0,
+      "unusable_reference_text": [],
+      "types": [
+        "INVOICE"
+      ],
+      "conditions": [
+        "real"
+      ],
+      "status_totals": {
+        "completed": 21
+      },
+      "preprocessing": {
+        "orientation": {
+          "pages_total": 22,
+          "pages_classified": 16,
+          "pages_native_text": 6,
+          "upright_pages": 0,
+          "upright_pages_rotated": 0,
+          "rotated_pages": 0,
+          "rotated_pages_corrected": 0,
+          "by_applied_angle": {
+            "0": 15,
+            "270": 1
+          },
+          "wrongly_rotated": [],
+          "false_rotation_rate": null,
+          "correction_rate": null
+        }
+      },
+      "headline": {
+        "field_accuracy": 0.8989,
+        "extracted_precision": 0.9643,
+        "cer_mean": null,
+        "wer_mean": null,
+        "cer_p95": null,
+        "field_exact_match_mean": 0.8865
+      },
+      "latency": {
+        "per_document_s": {
+          "n": 21,
+          "p50": 22.458,
+          "p95": 38.506,
+          "max": 39.488,
+          "total": 461.154
+        },
+        "per_page_s": {
+          "n": 21,
+          "p50": 22.458,
+          "p95": 38.506,
+          "max": 39.488,
+          "total": 455.475
+        }
+      },
+      "fields": {
+        "amount": {
+          "expected": 21,
+          "produced": 19,
+          "correct": 19,
+          "precision": 1.0,
+          "recall": 0.9048,
+          "f1": 0.95,
+          "exact_match": 0.9048,
+          "status_extracted": 19,
+          "status_extracted_correct": 19,
+          "extracted_precision": 1.0
+        },
+        "currency": {
+          "expected": 10,
+          "produced": 10,
+          "correct": 10,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "exact_match": 1.0,
+          "status_extracted": 1,
+          "status_extracted_correct": 1,
+          "extracted_precision": 1.0
+        },
+        "invoice_date": {
+          "expected": 21,
+          "produced": 19,
+          "correct": 18,
+          "precision": 0.9474,
+          "recall": 0.8571,
+          "f1": 0.9,
+          "exact_match": 0.8571,
+          "status_extracted": 19,
+          "status_extracted_correct": 18,
+          "extracted_precision": 0.9474
+        },
+        "invoice_number": {
+          "expected": 14,
+          "produced": 14,
+          "correct": 13,
+          "precision": 0.9286,
+          "recall": 0.9286,
+          "f1": 0.9286,
+          "exact_match": 0.9286,
+          "status_extracted": 14,
+          "status_extracted_correct": 13,
+          "extracted_precision": 0.9286
+        },
+        "purchase_order_number": {
+          "expected": 2,
+          "produced": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "exact_match": 1.0,
+          "status_extracted": 2,
+          "status_extracted_correct": 2,
+          "extracted_precision": 1.0
+        },
+        "vendor_supplier_name": {
+          "expected": 21,
+          "produced": 21,
+          "correct": 18,
+          "precision": 0.8571,
+          "recall": 0.8571,
+          "f1": 0.8571,
+          "exact_match": 0.8571,
+          "status_extracted": 1,
+          "status_extracted_correct": 1,
+          "extracted_precision": 1.0
+        }
+      },
+      "by_condition": {
+        "real": {
+          "docs": 21,
+          "failed": 0,
+          "cer_mean": null,
+          "wer_mean": null,
+          "field_exact_match": 0.8865,
+          "latency_p50": 22.46,
+          "latency_p95": 38.51
+        }
+      },
+      "by_type": {
+        "INVOICE": {
+          "docs": 21,
+          "failed": 0,
+          "cer_mean": null,
+          "wer_mean": null,
+          "field_exact_match": 0.8865,
+          "latency_p50": 22.46,
+          "latency_p95": 38.51
+        }
+      },
+      "review_flag": {
+        "tp": 8,
+        "fp": 12,
+        "fn": 0,
+        "tn": 1,
+        "precision": 0.4,
+        "recall": 1.0,
+        "flagged": 20,
+        "documents_with_an_error": 8,
+        "reasons": {
+          "missing_mandatory_field": 20,
+          "poor_image_quality": 14
+        },
+        "missing_mandatory": {
+          "vendor_supplier_name": 20,
+          "currency": 9,
+          "invoice_number": 7,
+          "invoice_date": 2,
+          "amount": 2
+        }
+      },
+      "by_population": {
+        "printed": {
+          "documents": 19,
+          "fields_expected": 81,
+          "fields_correct": 75,
+          "field_accuracy": 0.9259,
+          "extracted_precision": 0.9811
+        },
+        "handwritten": {
+          "documents": 2,
+          "fields_expected": 8,
+          "fields_correct": 5,
+          "field_accuracy": 0.625,
+          "extracted_precision": 0.6667
+        }
+      },
+      "searchable_pdf": {
+        "attempted": 21,
+        "succeeded": 21,
+        "failed": 0,
+        "success_rate": 1.0,
+        "failure_reasons": {}
+      }
+    }
+  },
+  "real_pending": [
+    "4400051211-2-2-1",
+    "MOM_NatureSpices_2026_08_14",
+    "new-prescription-2"
+  ],
+  "real_problems": [],
+  "documents": []
+}

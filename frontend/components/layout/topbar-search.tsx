@@ -144,6 +144,12 @@ export function TopbarSearch({
                     aria-selected={i === active}
                     onMouseEnter={() => setActive(i)}
                     onMouseDown={(event) => event.preventDefault()}
+                    // Sonar's S1082 flags this click handler. False positive:
+                    // this is a combobox, so the keyboard lives on the input
+                    // (role="combobox", aria-activedescendant, arrow keys and
+                    // Enter in its onKeyDown) - which is the correct pattern.
+                    // An option in a listbox must NOT be separately
+                    // focusable; this handler is only the mouse affordance.
                     onClick={() => pick(row)}
                     className={cn(
                       "flex cursor-pointer items-center gap-2.5 px-3.5 py-2",

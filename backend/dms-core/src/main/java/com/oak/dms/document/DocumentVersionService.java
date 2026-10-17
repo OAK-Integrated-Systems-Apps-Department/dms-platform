@@ -125,9 +125,40 @@ public class DocumentVersionService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public IngestionTicketResponse upload(UUID documentId, String originalFilename, long contentLength,
                                           InputStream content, String comment) {
+        return upload(documentId, originalFilename, contentLength, content, comment, null, false);
+    }
+
+    /**
+     * As {@link #upload(UUID, String, String, long, InputStream, String)}, with an OCR field
+     * selection for the new version.
+     *
+     * @param requestedFields field keys for OCR to extract, or null/empty for no OCR. Queued by
+     *                        {@link DocumentVersionPromoter} only after a clean verdict - a new
+     *                        version is a new set of bytes, so it gets its own OCR run rather
+     *                        than inheriting the previous version's results.
+     *                        <p>
+     *                        <b>Taken as given.</b> Unlike {@code DocumentServiceImpl#withOcr},
+     *                        this does not re-check the keys against the document type's schema,
+     *                        because its only caller - {@code ImportRecordCreator} - validated
+     *                        the batch's selection once at batch creation
+     *                        ({@code BulkImportServiceImpl#ocrFieldsJson}) and every row of the
+     *                        batch shares it. A new caller that has NOT already validated must
+     *                        validate before calling, or an unknown key reaches ocr-worker and
+     *                        silently extracts nothing.
+     * @param lowPriority     true for bulk import, which routes to the separate low-priority
+     *                        queue so an import cannot starve an interactive scan
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse upload(UUID documentId, String originalFilename, long contentLength,
+                                          InputStream content, String comment,
+                                          List<String> requestedFields, boolean lowPriority) {
         visible(documentId, FolderAccessLevel.edit);
-        return ingestionGate.submit(IngestionRequest.newVersion(documentId, REPLACEMENT_UPLOAD, originalFilename,
-                contentLength, content, clean(comment)));
+        IngestionRequest request = IngestionRequest.newVersion(documentId, REPLACEMENT_UPLOAD, originalFilename,
+                contentLength, content, clean(comment));
+        return ingestionGate.submit(
+                requestedFields == null || requestedFields.isEmpty()
+                        ? request
+                        : request.withOcr(requestedFields, lowPriority));
     }
 
     /**

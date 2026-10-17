@@ -1,0 +1,30 @@
+{
+  "doc_id": "policy-phone_photo_perspective-00",
+  "type_code": "POLICY",
+  "condition": "phone_photo_perspective",
+  "filename": "policy-phone_photo_perspective-00.jpg",
+  "mime_type": "image/jpeg",
+  "degraded": true,
+  "expected_page_count": 1,
+  "set": "synthetic",
+  "fields": {
+    "classification_level": "internal",
+    "department": "Operations",
+    "retention_class": "long_term",
+    "effective_date": "2026-01-13",
+    "expiry_date": "2029-01-12",
+    "review_due_date": "2027-01-13",
+    "description": "Bulk purchase of packaging materials for the export division.",
+    "author": "K. Jayasuriya",
+    "keywords": [
+      "governance",
+      "security"
+    ],
+    "tags": [
+      "archive",
+      "renewal"
+    ],
+    "reference_number": "REF-PL-05572"
+  },
+  "reference_text": "Oak Holdings Ltd\n15 Harbour Road, Colombo 03\nVAT Reg. GB 384 2910 55\nINTERNAL POLICY\nClassification:\nInternal\nDepartment:\nOperations\nRetention Class:\nLong Term\nEffective Date:\n13/01/2026\nExpiry Date:\n12/01/2029\nReview Due Date:\n13/01/2027\nDescription:\nBulk purchase of packaging materials for the export division.\nAuthor:\nK. Jayasuriya\nKeywords:\ngovernance, security\nTags:\narchive, renewal\nReference Number: REF-PL-05572\nRemittance: Bank of Ceylon, Colombo 03, sort 77-11-04, account 8830142297, ref as above.\nRegistered in England and Wales no. 04482137. VAT registration GB 384 2910 55.\nLate payment interest accrues at 8% above base rate per annum under the Late Payment of\nCommercial Debts (Interest) Act 1998. Goods remain our property until paid in full.\nTerms: payment due within 30 days of the invoice date."
+}

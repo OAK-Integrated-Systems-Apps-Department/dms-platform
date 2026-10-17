@@ -1,5 +1,6 @@
 package com.oak.dms.workflow.service.impl;
 
+import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
@@ -82,7 +83,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     public Page<WorkflowTemplateSummaryResponse> list(TemplateStatus status, UUID documentTypeId, String search,
                                                       Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        String pattern = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
         Specification<WorkflowTemplate> spec = (root, query, cb) -> {
             List<Predicate> p = new ArrayList<>();
             p.add(cb.equal(root.get("tenantId"), tenantId));

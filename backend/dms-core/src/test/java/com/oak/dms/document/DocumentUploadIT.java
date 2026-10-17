@@ -78,6 +78,10 @@ class DocumentUploadIT {
     @Autowired
     private RecycleBinService recycleBin;
     @Autowired
+    private OcrArtifactWriter ocrArtifactWriter;
+    @Autowired
+    private DocumentVersionRepository documentVersionRepository;
+    @Autowired
     private com.oak.dms.tenant.TenantService tenantService;
 
     @TempDir
@@ -138,6 +142,14 @@ class DocumentUploadIT {
         UUID documentTypeId = createDocumentType(tenant.tenantId());
         byte[] content = "a contract that must not outlive the customer".getBytes(StandardCharsets.UTF_8);
         DocumentResponse doc = uploadClean(documentTypeId, "Contract", "contract.txt", content);
+        // OCR output is the contract's text. It must be shredded with
+        // everything else, not left as the one readable copy - which it would
+        // be if it were stored outside the encryption layer, as it was when
+        // the worker owned its own bucket.
+        DocumentVersion version = jdbcVersion(doc.documentId());
+        String ocrKey = ocrArtifactWriter.write(version, OcrArtifactWriter.Artifact.output,
+                new ByteArrayInputStream(content), content.length, "application/json");
+        StorageLocation ocrLocation = storageLocationRepository.findById(version.getStorageLocationId()).orElseThrow();
         TenantContext.clear();
         String name = tenantRepository.findById(tenant.tenantId()).orElseThrow().getTenantName();
 
@@ -158,6 +170,16 @@ class DocumentUploadIT {
                 + "and (shredded_at is null or wrapped_key <> 'shredded')", Integer.class, tenant.tenantId())).isZero();
         // The bytes are still in storage - and are only ciphertext no key can open.
         assertThat(storedBytes(doc.documentId())).isNotEqualTo(content);
+        // Same for the OCR output: its wrapped key was covered by the
+        // tenant-wide shred (it went through the encrypting layer, so it has a
+        // storage_object_keys row at all), and what is left on disk is not the
+        // text.
+        assertThat(jdbc.queryForObject("select wrapped_key from storage_object_keys where storage_location_id = ? "
+                + "and object_key = ?", String.class, version.getStorageLocationId(), ocrKey)).isEqualTo("shredded");
+        try (var raw = objectStorageServiceFactory.resolveUnencrypted(ocrLocation)
+                .download(ocrLocation, ocrKey).content()) {
+            assertThat(raw.readAllBytes()).isNotEqualTo(content);
+        }
         TenantContext.set(tenant.tenantId(), tenant.userId());
         // Fails plainly - never the ciphertext served as if it were the file.
         assertThatThrownBy(() -> {
@@ -223,8 +245,13 @@ class DocumentUploadIT {
         UUID documentTypeId = createDocumentType(tenant.tenantId());
         byte[] content = "minutes of the board meeting".getBytes(StandardCharsets.UTF_8);
         DocumentResponse doc = uploadClean(documentTypeId, "Minutes", "minutes.txt", content);
-        versionService.upload(doc.documentId(), "minutes-v2.txt", content.length, new ByteArrayInputStream(content),
-                null);
+        // Different bytes for v2. This branch refuses a new version identical
+        // to the current one (DuplicateUploadException) - correct, and not
+        // what this test is about: it needs two versions, each with its own
+        // stored object and key, to prove the purge destroys both.
+        byte[] revised = "minutes of the board meeting, as amended".getBytes(StandardCharsets.UTF_8);
+        versionService.upload(doc.documentId(), "minutes-v2.txt", revised.length,
+                new ByteArrayInputStream(revised), null);
 
         documentService.deleteDocument(doc.documentId());
         var bin = recycleBin.list();
@@ -260,6 +287,97 @@ class DocumentUploadIT {
                 .doesNotContain(doc.documentId());
         assertThatThrownBy(() -> recycleBin.restore(doc.documentId())).isInstanceOf(ResourceNotFoundException.class);
         assertThat(auditCount("DOCUMENT_PURGED", doc.documentId())).isEqualTo(1);
+    }
+
+    /**
+     * A purge has to take everything OCR derived from the document with it,
+     * not just the original file.
+     *
+     * <p>The reason this needs its own test rather than riding on the one
+     * above: OCR output <em>is</em> the document's text and a searchable PDF
+     * <em>is</em> the document, under different keys. A purge that destroyed
+     * the original and left those behind would report success while leaving a
+     * readable copy of a permanently deleted document in storage - the exact
+     * failure the whole key-ownership design in {@link OcrArtifactWriter}
+     * exists to prevent, and one no existing assertion would have caught.
+     *
+     * <p>Every artifact and row created here is a real one, written through
+     * the same code path the worker's PUT uses, so the test fails if that
+     * path ever starts choosing keys the purge cannot derive.
+     */
+    @Test
+    void aPurge_destroysTheOcrOutputAndSearchablePdfAndEveryRowDerivedFromThem() throws Exception {
+        TenantFixture tenant = createTenantWithFileSystemStorage();
+        TenantContext.set(tenant.tenantId(), tenant.userId());
+        UUID documentTypeId = createDocumentType(tenant.tenantId());
+        byte[] content = "invoice total 412.00".getBytes(StandardCharsets.UTF_8);
+        DocumentResponse doc = uploadClean(documentTypeId, "Invoice", "invoice.txt", content);
+        DocumentVersion version = jdbcVersion(doc.documentId());
+
+        String outputKey = ocrArtifactWriter.write(version, OcrArtifactWriter.Artifact.output,
+                new ByteArrayInputStream("{\"text\":\"invoice total 412.00\"}".getBytes(StandardCharsets.UTF_8)),
+                29, "application/json");
+        String pdfKey = ocrArtifactWriter.write(version, OcrArtifactWriter.Artifact.searchable_pdf,
+                new ByteArrayInputStream("%PDF-1.4 searchable".getBytes(StandardCharsets.UTF_8)),
+                19, "application/pdf");
+        seedOcrRows(tenant, doc.documentId(), version.getVersionId());
+
+        StorageLocation location = storageLocationRepository.findById(version.getStorageLocationId()).orElseThrow();
+        assertThat(objectStorageServiceFactory.resolveUnencrypted(location).exists(location, outputKey)).isTrue();
+        assertThat(objectStorageServiceFactory.resolveUnencrypted(location).exists(location, pdfKey)).isTrue();
+
+        documentService.deleteDocument(doc.documentId());
+        recycleBin.purgeNow(doc.documentId());
+
+        // The objects themselves, and the wrapped key each was encrypted
+        // with - the same two assertions the original file gets.
+        for (String key : java.util.List.of(outputKey, pdfKey)) {
+            assertThat(objectStorageServiceFactory.resolveUnencrypted(location).exists(location, key))
+                    .as("OCR artifact %s survived the purge", key).isFalse();
+            assertThat(jdbc.queryForObject("select count(*) from storage_object_keys where storage_location_id = ? "
+                    + "and object_key = ?", Integer.class, version.getStorageLocationId(), key)).isZero();
+        }
+
+        // And every row that records or derives from them. Listed one by one
+        // rather than looped, so a failure names the table that leaked.
+        UUID versionId = version.getVersionId();
+        assertThat(rowCount("ocr_outputs", versionId)).isZero();
+        assertThat(rowCount("renditions", versionId)).isZero();
+        assertThat(rowCount("document_ocr_field_results", versionId)).isZero();
+        assertThat(rowCount("document_ocr_line_items", versionId)).isZero();
+        assertThat(rowCount("document_ocr_corrections", versionId)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from processing_jobs where reference_type = 'document_versions' "
+                + "and reference_id = ?", Integer.class, versionId)).isZero();
+    }
+
+    private int rowCount(String table, UUID versionId) {
+        return jdbc.queryForObject("select count(*) from " + table + " where version_id = ?", Integer.class, versionId);
+    }
+
+    /**
+     * One row in each table the review screen reads, so the purge has
+     * something to fail to delete in every one of them.
+     */
+    private void seedOcrRows(TenantFixture tenant, UUID documentId, UUID versionId) {
+        jdbc.update("insert into document_ocr_field_results (tenant_id, document_id, version_id, field_key, value, "
+                + "confidence, status) values (?, ?, ?, 'total', '412.00', 0.91, 'extracted')",
+                tenant.tenantId(), documentId, versionId);
+        jdbc.update("insert into document_ocr_line_items (tenant_id, document_id, version_id, line_number, "
+                + "description, line_total) values (?, ?, ?, 0, 'Consulting', 412.00)",
+                tenant.tenantId(), documentId, versionId);
+        jdbc.update("insert into document_ocr_corrections (tenant_id, document_id, version_id, field_key, action, "
+                + "original_value, corrected_value, corrected_by) "
+                + "values (?, ?, ?, 'total', 'accepted', '412.00', '412.00', ?)",
+                tenant.tenantId(), documentId, versionId, tenant.userId());
+        jdbc.update("insert into processing_jobs (tenant_id, job_type, reference_type, reference_id, status) "
+                + "values (?, 'ocr', 'document_versions', ?, 'completed')", tenant.tenantId(), versionId);
+    }
+
+    /** The document's current version, as the purge path will see it. */
+    private DocumentVersion jdbcVersion(UUID documentId) {
+        UUID versionId = jdbc.queryForObject("select current_version_id from documents where document_id = ?",
+                UUID.class, documentId);
+        return documentVersionRepository.findById(versionId).orElseThrow();
     }
 
     @Test

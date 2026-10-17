@@ -23,6 +23,7 @@ import type {
 } from "@/components/documents/browser-dnd"
 import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
+import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
 import type { DocumentWorkflowStatusDto } from "@/lib/workflow/api"
@@ -33,6 +34,15 @@ export interface ItemAction {
   icon: LucideIcon
   onSelect: () => void
   danger?: boolean
+  /**
+   * Shown but not selectable. Use this only when the action exists for
+   * this user but not for this item (an unsupported file type, say) - an
+   * action they simply don't have permission for is left out entirely, so
+   * the menu never advertises what they can't be given.
+   */
+  disabled?: boolean
+  /** Why it's disabled. Becomes the row's title, so the reason is reachable on hover and on focus. */
+  hint?: string
 }
 
 interface FileKind {
@@ -319,6 +329,15 @@ export function ItemMenu({
       ref={ref}
       // Stay visible while open, even when the pointer leaves the tile.
       className={cn("relative", className, open && "z-40 opacity-100")}
+      // Kept deliberately, unlike the identical-looking stops removed from
+      // the select popovers: this one is load-bearing. The whole tile around
+      // it opens the document on click, so without this, using the menu
+      // would also open what the menu is about. It is a propagation barrier,
+      // not an interaction handler - the real control is the <button> below,
+      // and a keyboard activation of it synthesises a click that this stops
+      // just the same. Sonar's S1082 flags it as a click handler on a
+      // non-interactive element; adding a keyboard handler here would be
+      // meaningless, so mark it a false positive rather than "fixing" it.
       onClick={(e) => e.stopPropagation()}
     >
       <button
@@ -345,20 +364,31 @@ export function ItemMenu({
               key={action.label}
               type="button"
               role="menuitem"
+              // aria-disabled, not disabled: a disabled button can't be
+              // focused, so a keyboard user would never reach the row and
+              // never hear why the action isn't available.
+              aria-disabled={action.disabled}
+              title={action.hint}
               onClick={() => {
+                if (action.disabled) return
                 setPosition(null)
                 action.onSelect()
               }}
               style={{ height: MENU_ROW }}
               className={cn(
                 "flex w-full items-center gap-2.5 px-3 text-left text-[13px] whitespace-nowrap",
-                action.danger
-                  ? "text-destructive hover:bg-destructive/10"
-                  : "text-foreground hover:bg-muted"
+                action.disabled
+                  ? "cursor-not-allowed text-muted-foreground opacity-60"
+                  : action.danger
+                    ? "text-destructive hover:bg-destructive/10"
+                    : "text-foreground hover:bg-muted"
               )}
             >
               <action.icon size={15} className="shrink-0" />
               {action.label}
+              {action.disabled && action.hint && (
+                <span className="sr-only">. {action.hint}</span>
+              )}
             </button>
           ))}
         </div>
@@ -440,6 +470,7 @@ export function DocumentTile({
   actions,
   drag,
   approval,
+  flag,
 }: {
   row: DocumentListItemDto
   checked: boolean
@@ -452,6 +483,8 @@ export function DocumentTile({
   drag?: DragBinding
   /** Its newest approval, when it has one. */
   approval?: DocumentWorkflowStatusDto
+  /** A small badge shown beside the name - e.g. "Archived". */
+  flag?: ReactNode
 }) {
   const kind = fileKind(row.fileName)
   const ext = extensionOf(row.fileName)
@@ -492,6 +525,8 @@ export function DocumentTile({
             />
           )}
           <span className="truncate">{row.title}</span>
+          <PinnedIndicator documentId={row.documentId} />
+          {flag}
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           <FriendlyDate iso={row.createdAt} />
@@ -542,6 +577,7 @@ export function BrowserList({
   folderDrag,
   folderDrop,
   documentDrag,
+  flag,
 }: {
   folders: FolderNode[]
   rows: DocumentListItemDto[]
@@ -561,6 +597,8 @@ export function BrowserList({
   folderDrag?: (folder: FolderNode) => DragBinding | undefined
   folderDrop?: (folder: FolderNode) => DropBinding | undefined
   documentDrag?: (row: DocumentListItemDto) => DragBinding | undefined
+  /** A small badge shown beside a document's name - e.g. "Archived". */
+  flag?: (row: DocumentListItemDto) => ReactNode
 }) {
   const allChecked =
     rows.length > 0 && rows.every((r) => checked.has(r.documentId))
@@ -712,6 +750,8 @@ export function BrowserList({
                           />
                         )}
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
+                        <PinnedIndicator documentId={row.documentId} />
+                        {flag?.(row)}
                       </p>
                       {row.fileName && (
                         <p className="truncate font-mono text-[11.5px] text-muted-foreground">

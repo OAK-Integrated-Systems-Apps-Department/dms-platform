@@ -47,6 +47,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -299,6 +300,21 @@ public class IngestionGateImpl implements IngestionGate {
                     .targetDocumentId(request.targetDocumentId())
                     .title(request.title())
                     .versionComment(request.versionComment())
+                    // The OCR request rides on the scan result, not on a
+                    // separate table, because it has to survive the gap
+                    // between "file accepted" and "verdict clean" - which
+                    // with a cloud scanner is minutes to hours, across
+                    // restarts. This row is the only thing that exists for
+                    // the whole of that gap.
+                    //
+                    // It is read by DocumentVersionPromoter, the one class
+                    // that creates a DocumentVersion, so OCR is requested
+                    // exactly once per version and only after a clean
+                    // verdict. An infected file is quarantined with its OCR
+                    // request still attached and never acted on, because no
+                    // version is ever created for it.
+                    .ocrRequestedFields(toJson(request.ocrRequestedFields()))
+                    .ocrLowPriority(request.ocrLowPriority())
                     .createdBy(userId)
                     .createdAt(now)
                     .build());
@@ -422,5 +438,38 @@ public class IngestionGateImpl implements IngestionGate {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available on this JVM", e);
         }
+    }
+
+    /**
+     * The OCR field selection as the JSON array the column, the queue message
+     * and ocr-worker's {@code requested_fields} all carry.
+     *
+     * <p>Null for "no OCR" rather than {@code "[]"}: both are treated the same
+     * downstream, and leaving the column NULL keeps a row that never asked for
+     * OCR visibly distinct from one that asked for nothing.
+     *
+     * <p>Written with a plain {@code String.join} rather than Jackson because
+     * a field key is {@code [a-z0-9_]} by the metadata field rules - there is
+     * nothing here to escape, and reaching for a serializer would mean this
+     * class holds an ObjectMapper for one line. The keys are validated against
+     * the document type's schema before they reach here (see
+     * {@code DocumentServiceImpl#withOcr} and
+     * {@code BulkImportServiceImpl#ocrFieldsJson}); anything containing a
+     * quote or backslash is rejected there, and defensively again here.
+     */
+    private static String toJson(java.util.List<String> fieldKeys) {
+        if (fieldKeys == null || fieldKeys.isEmpty()) {
+            return null;
+        }
+        List<String> safe = fieldKeys.stream()
+                .filter(key -> key != null && !key.isBlank())
+                .map(String::trim)
+                .filter(key -> key.indexOf('"') < 0 && key.indexOf('\\') < 0)
+                .distinct()
+                .toList();
+        if (safe.isEmpty()) {
+            return null;
+        }
+        return safe.stream().collect(java.util.stream.Collectors.joining("\",\"", "[\"", "\"]"));
     }
 }

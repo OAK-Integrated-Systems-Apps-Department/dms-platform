@@ -20,6 +20,9 @@ import type { NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
+import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
+import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
+import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
 
 import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { useUnreadCount } from "@/lib/notifications/use-notifications"
@@ -73,29 +76,58 @@ export function AppSidebar({
   const pathname = usePathname()
   const { hasAnyPermission } = usePermissions()
   const { isPlatformAdmin } = useIsPlatformAdmin()
+  // The two are mutually exclusive as the backend reports them: /me/platform-roles
+  // includes PLATFORM_ADMIN, while the per-user lookup behind useIsTenantAdmin
+  // deliberately excludes it - so `adminOnly` items have to check both.
+  const { isTenantAdmin } = useIsTenantAdmin()
 
   // Live badge for the My Tasks item (see NavItem.liveBadge).
   const { data: taskCount } = useMyTaskCount()
   const unreadNotifications = useUnreadCount().data ?? 0
-  const liveBadges: Record<NonNullable<NavItem["liveBadge"]>, number | undefined> = {
+  const liveBadges: Record<
+    NonNullable<NavItem["liveBadge"]>,
+    number | undefined
+  > = {
     // Tasks to decide plus information requests waiting on me (Phase 2).
-    myOpenTasks: (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) || undefined,
+    myOpenTasks:
+      (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) ||
+      undefined,
     // Unread notifications in the inbox (3.2).
     myUnreadNotifications: unreadNotifications || undefined,
+  }
+
+  // Cached probe shared with the rest of the app; `undefined` while it is
+  // still in flight, which keeps a feature-gated item hidden until the
+  // answer arrives rather than flashing a link that may not belong here.
+  const watermarking = useWatermarkAvailability().data?.present === true
+  const ocr = useOcrAvailability().data === true
+
+  function featureOn(feature: NavItem["feature"]): boolean {
+    if (!feature) return true
+    if (feature === "watermarking") return watermarking
+    if (feature === "ocr") return ocr
+    return false
   }
 
   // Items with no `permission` set (Dashboard, Search, Audit Log, ...) are
   // always visible; items that name one are hidden entirely — not shown
   // disabled or left to 403 on click — for anyone who can't satisfy it,
   // same reasoning as every action-button gate elsewhere (see
-  // `usePermissions`). Sections that end up with zero visible items are
-  // dropped too, rather than rendering an empty group header.
+  // `usePermissions`). An item may also name a `feature`, which has to be
+  // switched on for this deployment as well. Sections that end up with zero
+  // visible items are dropped too, rather than rendering an empty group
+  // header.
   const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter(
         (item) =>
           (!item.platformAdminOnly || isPlatformAdmin) &&
+          featureOn(item.feature) &&
+          (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
+          (!item.platformAdminOrPermission ||
+            isPlatformAdmin ||
+            hasAnyPermission(item.platformAdminOrPermission)) &&
           (!item.permission ||
             hasAnyPermission(
               ...(Array.isArray(item.permission)
@@ -158,7 +190,9 @@ export function AppSidebar({
                     : pathname.startsWith(item.href)
                   : item.label === activeLabel
                 const Icon = item.icon
-                const badge = item.liveBadge ? liveBadges[item.liveBadge] : item.badge
+                const badge = item.liveBadge
+                  ? liveBadges[item.liveBadge]
+                  : item.badge
                 const content = (
                   <>
                     <Icon

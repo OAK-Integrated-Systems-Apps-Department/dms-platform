@@ -1,0 +1,213 @@
+# Prometheus for the OAK DMS stack. Mounted read-only into the prometheus
+# container by infra/local and infra/production compose files - the same file
+# serves both, because every target below is a Compose service name resolved
+# on the stack's own network, and those names are identical in the two
+# environments. Anything that does differ between them is an env var read via
+# the ${VAR} syntax below (Prometheus expands those itself when started with
+# --enable-feature=expand-external-labels, which is why only external_labels
+# uses them).
+#
+# Nothing here is published to the network: Prometheus binds to 127.0.0.1 in
+# production and is reached only through Grafana (same Docker network) or an
+# SSH tunnel. See infra/monitoring/README.md.
+
+global:
+  # 15s is the usual compromise: fine enough that a 1-minute alert window has
+  # four samples to work with, coarse enough that a year of these series is
+  # still small. Raising it means re-tuning every `rate(...[1m])` below.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    # Lets one Grafana (or a future federated Prometheus) tell deployments
+    # apart. Set MONITORING_ENVIRONMENT=production on the server.
+    environment: "${MONITORING_ENVIRONMENT}"
+    # Which client's installation this is - every DMS is deployed as its own
+    # stack per client, so this is what tells them apart once their metrics
+    # are forwarded to a central Prometheus (remote_write, not configured
+    # yet - see infra/monitoring/README.md).
+    #
+    # Note external labels are NOT stored in the local database - Prometheus
+    # attaches them only when data LEAVES (remote_write, federation, alerts
+    # to an Alertmanager). So neither of these shows up in local queries or
+    # on this stack's own Grafana, and that is expected, not a fault.
+    #
+    # Worth setting per client now even though nothing forwards yet: the day
+    # remote_write is switched on, every stack is already reporting under the
+    # right name, instead of a fleet that all arrives labelled "unset" and
+    # has to be corrected one .env at a time. Unique per client, and left
+    # alone once central monitoring is live - changing it then splits that
+    # client into two unrelated timelines.
+    client: "${MONITORING_CLIENT}"
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+# Where a firing alert is sent. Without this block Prometheus evaluates the
+# rules and tells no one: that was the state of this stack, and the reason a
+# firing alert was visible only to someone already looking at a screen.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # --- Prometheus itself ------------------------------------------------
+  # Not vanity: `up` for this job is how the dashboard knows the monitoring
+  # stack is alive at all, and prometheus_* series surface a scrape backlog
+  # before it turns into gaps in every other panel.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # --- DMS backend ------------------------------------------------------
+  # Spring Boot Actuator + Micrometer. The endpoint is unauthenticated by
+  # design (see SecurityConfig.PUBLIC_ENDPOINTS) and reachable only inside
+  # this network. Gives JVM, HTTP, HikariCP and the dms_* business metrics.
+  - job_name: dms-core
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["dms-core:8080"]
+        labels:
+          service: dms-core
+
+  # --- Host / server ----------------------------------------------------
+  # CPU, RAM, disk, disk I/O, network, uptime. In Docker Desktop (local) this
+  # reports the Linux VM rather than Windows itself - close enough to spot a
+  # container eating the box, but the local disk figures are the VM's.
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: host
+
+  # --- Containers -------------------------------------------------------
+  # Per-container CPU, memory, network and restart counts for every service
+  # in the stack, keyed by the container name cAdvisor reads from Docker.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: containers
+    metric_relabel_configs:
+      # cAdvisor emits a series per container per filesystem per core. Without
+      # this, it is by far the largest producer here and most of it is never
+      # graphed. Keep only what the dashboard and alerts actually read.
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_usage_bytes|memory_working_set_bytes|spec_memory_limit_bytes|network_(receive|transmit)_bytes_total|start_time_seconds|last_seen|fs_usage_bytes|fs_limit_bytes)"
+        action: keep
+      # Drop the synthetic root cgroup, which double-counts everything else.
+      - source_labels: [id]
+        regex: "/"
+        action: drop
+
+  # --- PostgreSQL -------------------------------------------------------
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  # --- Redis ------------------------------------------------------------
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  # --- RabbitMQ ---------------------------------------------------------
+  # No exporter needed: rabbitmq_prometheus ships with the official image and
+  # is enabled by default from 3.8 on, serving 15692 inside the network.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+        labels:
+          service: rabbitmq
+
+  # --- Grafana ----------------------------------------------------------
+  # So "the dashboard is down" is itself visible, rather than being the
+  # reason nobody can see anything.
+  - job_name: grafana
+    # Grafana runs with serve_from_sub_path, so everything it serves -
+    # /metrics included - sits under its root URL. That moved from /grafana
+    # to /monitoring/panels when the monitoring screen stopped framing
+    # Grafana directly and started proxying it through the app; this path
+    # has to move with it or the target goes down.
+    metrics_path: /monitoring/panels/metrics
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana
+
+  # --- Service reachability (blackbox) ----------------------------------
+  # `up` above only covers services that have an exporter. These are the
+  # ones that do not: a probe is the only way to tell a stopped Keycloak
+  # from a running one, and its failure is the kind that leaves the DMS
+  # looking fine while sign-in, previews or uploads quietly stop working.
+  #
+  # The relabel dance is how blackbox works: the target to probe goes in as
+  # __param_target, the exporter's own address becomes __address__, and the
+  # original target is kept as `instance` so the series names what was
+  # probed rather than naming the prober every time.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_any]
+    static_configs:
+      - targets:
+          - http://frontend:3000/login
+          - http://keycloak:8080/realms/oak-dms
+          - http://seaweedfs:8333/
+          - http://gotenberg:3000/health
+          - http://mailpit:8025/
+        labels:
+          service: reachability
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ClamAV serves no HTTP - 3310 is its own protocol - so the honest check
+  # is whether the port accepts a connection at all.
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - clamav:3310
+        labels:
+          service: reachability
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # --- Log pipeline -----------------------------------------------------
+  # So "the logs are not arriving" is itself visible on the Services board,
+  # rather than being discovered when someone opens a service to read its
+  # logs and finds the last line is from yesterday.
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          service: loki
+  - job_name: promtail
+    static_configs:
+      - targets: ["promtail:9080"]
+        labels:
+          service: promtail
+
+  # Alertmanager itself. If it is down, alerts still fire and still show on the
+  # monitoring screen - but none is delivered, and nothing else would say so.
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: alertmanager

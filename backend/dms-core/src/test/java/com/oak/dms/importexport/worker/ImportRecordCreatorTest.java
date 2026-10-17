@@ -49,6 +49,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -90,11 +91,15 @@ class ImportRecordCreatorTest {
     private final com.oak.dms.document.DocumentVersionService versions =
             mock(com.oak.dms.document.DocumentVersionService.class);
 
+    private final com.oak.dms.importexport.repository.ImportBatchRepository importBatchRepository =
+            mock(com.oak.dms.importexport.repository.ImportBatchRepository.class);
+
     private final ImportRecordCreator creator = new ImportRecordCreator(documentService, ingestionGate,
             documentMetadataRepository, importItemRepository,
             new StagedImportFiles(storageLocationRepository, objectStorageServiceFactory),
             new ImportValueConverter(), new ImportUsers(mock(UserRepository.class)), objectMapper, transactionManager,
-            folderAccess, duplicates, versions, mock(com.oak.dms.document.DocumentRepository.class));
+            folderAccess, duplicates, versions, mock(com.oak.dms.document.DocumentRepository.class),
+            importBatchRepository, new com.oak.dms.ocrworker.OcrProperties());
 
     @BeforeEach
     void setUp() {
@@ -117,7 +122,7 @@ class ImportRecordCreatorTest {
         stub(item);
         UUID documentId = UUID.randomUUID();
         when(documentService.uploadDocumentFromJob(eq(documentTypeId), eq("Q3 report"), eq("Q3 report.pdf"), eq(1024L),
-                any(), isNull())).thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
+                any(), isNull(), any())).thenReturn(ticket(ScanResultStatus.clean, documentId, null, null));
 
         creator.createRecord(batch, item.getImportItemId(), fields);
 
@@ -143,7 +148,7 @@ class ImportRecordCreatorTest {
         stub(item);
         InputStream[] handedOver = new InputStream[1];
         IngestionTicketResponse pending = ticket(ScanResultStatus.pending, null, null, null);
-        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any())).thenAnswer(invocation -> {
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any())).thenAnswer(invocation -> {
             handedOver[0] = invocation.getArgument(4);
             return pending;
         });
@@ -167,7 +172,7 @@ class ImportRecordCreatorTest {
         ImportItem item = stagedItem();
         stub(item);
         IngestionTicketResponse pending = ticket(ScanResultStatus.pending, null, null, null);
-        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any())).thenReturn(pending);
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any())).thenReturn(pending);
 
         creator.createRecord(batch, item.getImportItemId(), fields);
 
@@ -224,7 +229,7 @@ class ImportRecordCreatorTest {
         JsonNode error = objectMapper.readTree(item.getValidationErrors()).get(0);
         assertThat(error.get("code").asText()).isEqualTo("ACCESS_REVOKED");
         assertThat(error.get("message").asText()).contains("no longer have edit access");
-        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
     }
 
     private BulkImportWorker.ClaimedBatch batchThat(String duplicateAction) {
@@ -250,7 +255,7 @@ class ImportRecordCreatorTest {
         JsonNode error = objectMapper.readTree(item.getValidationErrors()).get(0);
         assertThat(error.get("code").asText()).isEqualTo("DUPLICATE_SKIPPED");
         assertThat(error.get("message").asText()).contains("already in the DMS as 'Contract'");
-        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
     }
 
     @Test
@@ -266,7 +271,7 @@ class ImportRecordCreatorTest {
         assertThat(item.getDocumentId()).isEqualTo(existing.documentId());
         assertThat(objectMapper.readTree(item.getValidationErrors()).get(0).get("message").asText())
                 .contains("Identical to 'Contract'");
-        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
         verify(versions, never()).upload(any(), any(), anyLong(), any(), any());
     }
 
@@ -276,20 +281,25 @@ class ImportRecordCreatorTest {
         stub(item);
         var existing = match(false, false, true, true);
         when(duplicates.find(any(), any(), any())).thenReturn(List.of(existing));
-        when(versions.upload(any(), any(), anyLong(), any(), any())).thenThrow(new RuntimeException("stop here"));
+        when(versions.upload(any(), any(), anyLong(), any(), any(), any(), anyBoolean())).thenThrow(new RuntimeException("stop here"));
 
         assertThatThrownBy(() -> creator.createRecord(batchThat("new_version"), item.getImportItemId(), fields))
                 .hasMessageContaining("stop here");
 
-        verify(versions).upload(eq(existing.documentId()), eq("Q3 report.pdf"), anyLong(), any(), any());
-        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        // The 7-arg overload: a new version of an existing document gets its
+        // own OCR request (new bytes, so the previous version's results do
+        // not carry over), on the low-priority queue because this is an
+        // import.
+        verify(versions).upload(eq(existing.documentId()), eq("Q3 report.pdf"), anyLong(), any(), any(),
+                any(), eq(true));
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
     }
 
     @Test
     void duplicates_keepBoth_doesntEvenLook() {
         ImportItem item = stagedItem();
         stub(item);
-        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any()))
                 .thenThrow(new RuntimeException("stop here"));
 
         assertThatThrownBy(() -> creator.createRecord(batchThat("keep_both"), item.getImportItemId(), fields))
@@ -313,14 +323,14 @@ class ImportRecordCreatorTest {
         assertThat(item.getStatus()).isEqualTo(ImportItemStatus.failed);
         assertThat(objectMapper.readTree(item.getValidationErrors()).get(0).get("message").asText())
                 .contains("target folder was deleted");
-        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any());
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
     }
 
     @Test
     void createRecord_gateRejectsFile_failsItemWithoutScanResult() throws Exception {
         ImportItem item = stagedItem();
         stub(item);
-        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any()))
                 .thenThrow(new FileTooLargeException(100));
 
         creator.createRecord(batch, item.getImportItemId(), fields);
@@ -338,7 +348,7 @@ class ImportRecordCreatorTest {
     void createRecord_gatePlatformFailure_propagatesAndLeavesItemPending() {
         ImportItem item = stagedItem();
         stub(item);
-        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any()))
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "Storage unavailable") { });
 
         assertThatThrownBy(() -> creator.createRecord(batch, item.getImportItemId(), fields))

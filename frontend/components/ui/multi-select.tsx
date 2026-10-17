@@ -106,43 +106,46 @@ export function MultiSelect({
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
+      {/* Clear sits OUTSIDE this button, overlapping its right edge. It was
+          a <span role="button"> nested inside, which no keyboard could reach
+          and which is invalid HTML besides - a button may not contain
+          another control. The padding below keeps the label clear of both
+          overlapping icons. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-[38px] w-full items-center justify-between rounded-btn border bg-muted px-3 text-left text-[13.5px] text-foreground transition-colors",
+          "flex h-[38px] w-full items-center rounded-btn border bg-muted pl-3 text-left text-[13.5px] text-foreground transition-colors",
+          selected.length > 0 ? "pr-14" : "pr-9",
           open
             ? "border-primary bg-card ring-3 ring-primary/15"
             : "border-border"
         )}
       >
         <span className="truncate">{triggerLabel}</span>
-        <span className="ml-2 flex shrink-0 items-center gap-1">
-          {selected.length > 0 && (
-            <span
-              role="button"
-              aria-label={`Clear ${allLabel.toLowerCase()}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange([])
-              }}
-              className="flex size-4 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
-            >
-              <X size={12} />
-            </span>
-          )}
-          <ChevronDown
-            size={14}
-            className="pointer-events-none text-[var(--ink-faint)]"
-          />
-        </span>
       </button>
 
-      {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
-          onClick={(e) => e.stopPropagation()}
+      {selected.length > 0 && (
+        <button
+          type="button"
+          aria-label={`Clear ${allLabel.toLowerCase()}`}
+          onClick={() => onChange([])}
+          className="absolute top-1/2 right-8 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
         >
+          <X size={12} />
+        </button>
+      )}
+      <ChevronDown
+        size={14}
+        className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
+      />
+
+      {open && (
+        // No onClick={stopPropagation} here: the outside-click handler above
+        // already tests containerRef.contains(), and this panel is inside
+        // that container - so the stop was doing nothing except making a
+        // plain <div> look like a control.
+        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           {searchable && (
             <div className="relative mb-1.5">
               <Search
@@ -162,9 +165,10 @@ export function MultiSelect({
 
           <div className="max-h-56 overflow-y-auto">
             {showAllOption && (
-              <div
+              <button
+                type="button"
                 onClick={clearAll}
-                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
               >
                 <span
                   className={cn(
@@ -183,7 +187,7 @@ export function MultiSelect({
                   )}
                 </span>
                 {allLabel}
-              </div>
+              </button>
             )}
 
             {filteredOptions.length === 0 && !showAllOption ? (
@@ -194,10 +198,13 @@ export function MultiSelect({
               filteredOptions.map((option) => {
                 const isSelected = selected.includes(option.value)
                 return (
-                  <div
+                  <button
                     key={option.value}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
                     onClick={() => toggleValue(option.value)}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
                   >
                     <span
                       className={cn(
@@ -216,7 +223,7 @@ export function MultiSelect({
                       )}
                     </span>
                     <span className="truncate">{option.label}</span>
-                  </div>
+                  </button>
                 )
               })
             )}

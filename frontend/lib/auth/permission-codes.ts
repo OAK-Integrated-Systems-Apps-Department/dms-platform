@@ -72,6 +72,13 @@ export const PermissionCodes = {
   MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
   MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
   MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
+  // Pin Important Documents (PID). Pins are personal; the limit is the organisation's.
+  PID_PIN: "pid.pin-unpin-documents.pin",
+  PID_UNPIN: "pid.pin-unpin-documents.unpin",
+  PID_CONFIGURE_LIMITS: "pid.configure-pin-limits",
+  // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
+  SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",
+  SHAD_VIEW_SYSTEM_LOGS: "shad.view-system-logs",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a
@@ -122,6 +129,26 @@ export const PermissionCodes = {
   RBR_RESTORE: "rbr.restore-deleted-documents",
   RBR_PURGE: "rbr.permanently-purge-documents",
   RBR_RETENTION: "rbr.manage-recycle-bin-retention",
+  // Watermarking (DW), seeded by V68. Asking for a watermarked COPY needs
+  // only DOCM_DOCUMENTS_VIEW - these two are about administering the
+  // tenant's templates. There is deliberately no separate "delete template"
+  // code: the backend gates delete on update as well.
+  DW_WATERMARK_TEMPLATE_CREATE: "dw.configure-watermark-policy.create-template",
+  DW_WATERMARK_TEMPLATE_UPDATE: "dw.configure-watermark-policy.update-template",
+  // OCR & Scanning (OS), seeded by V10 long before the OCR feature was built -
+  // the branch that built it shipped with no permission checks at all, so
+  // these codes existed in the catalogue and the Roles screen without
+  // anything using them. They are enforced now; no migration was needed.
+  // Granted to no role by default: an administrator sees the OCR screens
+  // because TENANT_ADMIN holds everything implicitly, everyone else needs an
+  // explicit grant, which is right for a capability that reads content.
+  OS_OCR_TRIGGER: "os.perform-ocr-extraction.trigger",
+  OS_OCR_EDIT_TEXT: "os.perform-ocr-extraction.edit-text",
+  OS_OCR_TEMPLATE_CREATE: "os.configure-ocr-zones-templates.create-template",
+  OS_OCR_TEMPLATE_UPDATE: "os.configure-ocr-zones-templates.update-template",
+  OS_OCR_TEMPLATE_DELETE: "os.configure-ocr-zones-templates.delete-template",
+  OS_REVIEW_VIEW_QUEUE: "os.review-ocr-exceptions.view-queue",
+  OS_REVIEW_RESOLVE: "os.review-ocr-exceptions.resolve",
 
   // Reading a document's metadata (GET /api/v1/documents/{id}).
   DOCM_COMMENTS_CREATE: "docm.document-comments.create",
@@ -153,5 +180,4 @@ export const PermissionCodes = {
   NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
   NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",
   NOTIF_DELIVERY_LOG_RETRY: "notif.delivery-log.retry",
-
 } as const

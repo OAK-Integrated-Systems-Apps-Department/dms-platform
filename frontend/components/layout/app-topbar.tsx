@@ -23,7 +23,8 @@ import { IconButton } from "@/components/ui/icon-button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
-import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { useAccountIdentity } from "@/lib/auth/use-account-identity"
+import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch } from "@/lib/api-fetch"
@@ -69,10 +70,18 @@ type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
  */
 export function AppTopbar() {
   const router = useRouter()
-  const { data: user, initials } = useCurrentUser()
+  // Name and initials come from here, not useCurrentUser directly: a platform
+  // administrator has no local user row, and the menu used to render "…" for
+  // them. See useAccountIdentity.
+  const account = useAccountIdentity()
   const { hasPermission } = usePermissions()
   const canSearch = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
-  const dashboard = useDashboard()
+  // Gated for the same reason the home page gates it, and it has to be gated
+  // HERE too: react-query enables a query if any mounted observer enables it,
+  // so a top bar that always asked for tenant-scoped figures would put the
+  // platform administrator's guaranteed 401 straight back.
+  const { isTenant } = useDashboardScope()
+  const dashboard = useDashboard(30, isTenant)
   const recent = dashboard.data?.recent ?? []
   const unreadCount = useUnreadCount().data ?? 0
   const notifications = useNotifications(0, 6)
@@ -141,7 +150,7 @@ export function AppTopbar() {
 
       {canSearch && (
         <TopbarSearch
-          className="min-w-0 max-w-[460px] flex-1"
+          className="max-w-[460px] min-w-0 flex-1"
           onOpen={openPreview}
         />
       )}
@@ -319,7 +328,7 @@ export function AppTopbar() {
           }}
         >
           <span className="flex size-7 items-center justify-center rounded-full bg-primary font-heading text-[11.5px] font-bold text-primary-foreground">
-            {initials ?? "…"}
+            {account.initials ?? "…"}
           </span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </button>
@@ -327,10 +336,10 @@ export function AppTopbar() {
           <Dropdown width={220} noPad>
             <div className="border-b border-border px-3.5 py-3">
               <div className="text-[13.5px] font-semibold">
-                {user?.displayName ?? "…"}
+                {account.displayName ?? "…"}
               </div>
               <div className="text-[11.5px] text-muted-foreground">
-                {user?.status ?? ""}
+                {account.subtitle}
               </div>
             </div>
             <MenuRow

@@ -1,9 +1,11 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
+  CheckCircle2,
   KeyRound,
   Loader2,
   LockKeyhole,
@@ -24,7 +26,7 @@ import {
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { RotationScheduleCard } from "@/components/encryption/rotation-schedule-card"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -132,7 +134,7 @@ function EncryptionKeys() {
   const unencryptedTotal = s.unencryptedDocuments + s.unencryptedOtherFiles
 
   return (
-    <div className="flex max-w-[1100px] flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <KeyCard status={s} />
 
       <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -299,6 +301,8 @@ function EncryptionKeys() {
 
 function KeyCard({ status }: { status: EncryptionStatusDto }) {
   const key = status.key
+  const { hasPermission } = usePermissions()
+  const canSeeActivity = hasPermission(PermissionCodes.ABDR_VIEW_AUDIT_HISTORY)
   return (
     <section className="rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
@@ -320,9 +324,20 @@ function KeyCard({ status }: { status: EncryptionStatusDto }) {
               : "New files are stored without encryption. Already-encrypted documents stay encrypted and readable."}
           </p>
         </div>
+        {canSeeActivity && (
+          // Who rotated, re-wrapped or changed the schedule, and when - the
+          // audit log filtered to the encryption module (DE).
+          <Link
+            href="/admin/audit-log?module=DE"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            View key activity
+          </Link>
+        )}
       </div>
+      <CoverageSummary status={status} />
       {key ? (
-        <dl className="mt-4 grid gap-3 sm:grid-cols-4">
+        <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatTile label="Key service">
             {key.managed ? "OpenBao Transit" : "Development key file"}
           </StatTile>
@@ -334,6 +349,29 @@ function KeyCard({ status }: { status: EncryptionStatusDto }) {
           <StatTile label="Current version">v{key.latestVersion}</StatTile>
           <StatTile label="Oldest usable version">
             v{key.minDecryptionVersion}
+          </StatTile>
+          <StatTile label="Last rotated">
+            {status.rotation.lastRotatedAt ? (
+              <FriendlyDate iso={status.rotation.lastRotatedAt} />
+            ) : status.rotation.keySince ? (
+              // Never rotated: the key's age is when it was first used.
+              <span title="Never rotated since it was created">
+                Never · since <FriendlyDate iso={status.rotation.keySince} />
+              </span>
+            ) : (
+              "—"
+            )}
+          </StatTile>
+          <StatTile label="Next rotation due">
+            {status.rotation.intervalDays === null ? (
+              <span className="text-muted-foreground">No schedule</span>
+            ) : status.rotation.due ? (
+              <span className="text-[var(--rust)]">Overdue</span>
+            ) : status.rotation.nextDueAt ? (
+              <FriendlyDate iso={status.rotation.nextDueAt} />
+            ) : (
+              "—"
+            )}
           </StatTile>
         </dl>
       ) : (
@@ -353,6 +391,69 @@ function KeyCard({ status }: { status: EncryptionStatusDto }) {
         </p>
       )}
     </section>
+  )
+}
+
+/**
+ * One line that answers "is everything protected?" - the four tiles below it
+ * say why. Red: files sitting unencrypted. Amber: all encrypted, but some
+ * still wrapped by an older key version (readable, just not on the current
+ * key). Green otherwise. "Encrypted" counts what is stored encrypted at all,
+ * so an organisation that has not stored anything yet reads as empty rather
+ * than as 0% or 100%.
+ */
+function CoverageSummary({ status }: { status: EncryptionStatusDto }) {
+  const unencrypted = status.unencryptedDocuments + status.unencryptedOtherFiles
+  const total = status.encryptedObjects + unencrypted
+  const older = status.objectsOnOlderVersions
+
+  if (total === 0) {
+    return (
+      <p className="mt-4 text-[12.5px] text-muted-foreground">
+        Nothing is stored yet, so there is nothing to encrypt.
+      </p>
+    )
+  }
+
+  const tone =
+    unencrypted > 0 ? "bad" : older > 0 || !status.enabled ? "warn" : "good"
+  const percent = Math.floor((status.encryptedObjects / total) * 100)
+  const colour = {
+    good: "text-[var(--status-good)]",
+    warn: "text-[var(--gold)]",
+    bad: "text-[var(--rust)]",
+  }[tone]
+  const Icon = tone === "good" ? CheckCircle2 : AlertTriangle
+
+  let headline: string
+  if (unencrypted > 0) {
+    headline = `${unencrypted.toLocaleString()} ${unencrypted === 1 ? "file is" : "files are"} not encrypted`
+  } else if (older > 0) {
+    headline = `Everything is encrypted, but ${older.toLocaleString()} ${older === 1 ? "key is" : "keys are"} still on an older key version`
+  } else {
+    headline = "Everything is encrypted, on the current key"
+  }
+
+  return (
+    <div
+      className="mt-4 rounded-lg border border-border bg-muted/30 px-3.5 py-3"
+      role="status"
+    >
+      <p className={`flex items-center gap-2 text-[13px] font-semibold ${colour}`}>
+        <Icon size={15} className="shrink-0" />
+        {headline}
+        <span className="ml-auto font-normal text-muted-foreground tabular-nums">
+          {percent}% of {total.toLocaleString()} files encrypted
+        </span>
+      </p>
+      <div className="mt-2">
+        <ProgressBar
+          value={status.encryptedObjects}
+          max={total}
+          label="Files encrypted"
+        />
+      </div>
+    </div>
   )
 }
 

@@ -1,0 +1,6 @@
+projectKey=oak-dms-backend
+serverUrl=http://localhost:9000
+serverVersion=26.9.0.129388
+dashboardUrl=http://localhost:9000/dashboard?id=oak-dms-backend
+ceTaskId=90b0ba88-4c44-4542-9da4-42e00afe0be0
+ceTaskUrl=http://localhost:9000/api/ce/task?id=90b0ba88-4c44-4542-9da4-42e00afe0be0

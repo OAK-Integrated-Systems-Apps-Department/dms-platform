@@ -54,6 +54,10 @@ public final class AuditObjectTypes {
     public static final String IMPORT_TEMPLATE = "IMPORT_TEMPLATE";
     /** One bulk export (export_jobs) - the object of every EXPORT_* event. */
     public static final String EXPORT_JOB = "EXPORT_JOB";
+    /** A watermark template (watermark_templates) - the object of every WATERMARK_TEMPLATE_* event. */
+    public static final String WATERMARK_TEMPLATE = "WATERMARK_TEMPLATE";
+    /** One requested watermarked copy (watermark_jobs) - the object of the other WATERMARK_* events. */
+    public static final String WATERMARK_JOB = "WATERMARK_JOB";
     /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
     public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
 
