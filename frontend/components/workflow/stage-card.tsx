@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils"
 import type { UpsertStagePayload, WorkflowStageDto } from "@/lib/workflow/api"
 
 import { ASSIGNEE_TYPE_ICON, ParticipantPicker } from "./participant-picker"
-import { stageSchema, type StageFormValues } from "./schema"
+import { CollapsibleSection, HoursInput, HowRemindersWork, InheritableHours } from "./reminder-fields"
+import { buildStageSchema, type StageFormValues, type TemplateReminderDefaults } from "./schema"
 
 const COMPLETION_OPTIONS = [
   { value: "all" as const, label: "All" },
@@ -48,10 +49,11 @@ const ESCALATION_OPTIONS = [
 ]
 
 const ESCALATION_HELP = {
-  none: "Nothing happens at the due time; the task just shows as overdue.",
+  none: "No escalation target: nothing happens at the due time and the task just shows as overdue.",
   department_head:
     "A department pool task goes to that department's head; a user or role task to the head of the submitter's department. The original approvers can still act.",
-  named_user: "At the due time this person can also approve or reject. The original approvers can still act.",
+  named_user:
+    "This person can also approve or reject once the task escalates (at the due time, or after the inactivity reminder). The original approvers can still act.",
 }
 
 const ICON_BUTTON =
@@ -64,6 +66,8 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
     rejectionRule: stage?.rejectionRule ?? "halt_immediately",
     slaHours: stage?.slaHours ?? null,
     reminderBeforeHours: stage?.reminderBeforeHours ?? null,
+    inactivityReminderHours: stage?.inactivityReminderHours ?? null,
+    escalateAfterReminderHours: stage?.escalateAfterReminderHours ?? null,
     escalationTarget: stage?.escalationTarget ?? "none",
     escalationUserId: stage?.escalationUserId ?? null,
     allowInfoRequests: stage?.allowInfoRequests ?? true,
@@ -82,6 +86,8 @@ function toPayload(values: StageFormValues, canConfigureSignature: boolean): Ups
     rejectionRule: values.rejectionRule,
     slaHours: values.slaHours,
     reminderBeforeHours: values.reminderBeforeHours,
+    inactivityReminderHours: values.inactivityReminderHours,
+    escalateAfterReminderHours: values.escalateAfterReminderHours,
     escalationTarget: values.escalationTarget,
     escalationUserId: values.escalationTarget === "named_user" ? values.escalationUserId : null,
     allowInfoRequests: values.allowInfoRequests,
@@ -98,6 +104,36 @@ function toPayload(values: StageFormValues, canConfigureSignature: boolean): Ups
   }
 }
 
+/**
+ * What the stage will actually use. The due-date reminder and escalation target are the stage's own; the two
+ * inactivity hours fall back to the template default (mirrors the backend's resolution).
+ */
+function effectiveReminders(
+  stage: Pick<
+    StageFormValues,
+    "reminderBeforeHours" | "inactivityReminderHours" | "escalateAfterReminderHours" | "escalationTarget"
+  >,
+  defaults: TemplateReminderDefaults | null
+) {
+  return {
+    reminderBefore: stage.reminderBeforeHours,
+    inactivity: stage.inactivityReminderHours ?? defaults?.inactivityReminderHours ?? null,
+    escalateAfter: stage.escalateAfterReminderHours ?? defaults?.escalateAfterReminderHours ?? null,
+    target: stage.escalationTarget,
+  }
+}
+
+/** One line for the collapsed "Reminders & escalation" section, e.g. "Reminder 24h before due · Inactivity 72h · Escalates to Department head". */
+function remindersSummary(effective: ReturnType<typeof effectiveReminders>): string {
+  const parts = [
+    effective.reminderBefore != null ? `Reminder ${effective.reminderBefore}h before due` : null,
+    effective.inactivity != null ? `Inactivity ${effective.inactivity}h` : null,
+    effective.target === "department_head" ? "Escalates to Department head" : null,
+    effective.target === "named_user" ? "Escalates to a named person" : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(" · ") : "None set"
+}
+
 interface StageCardProps {
   /** null for a new, not-yet-saved stage (which starts in edit mode). */
   stage: WorkflowStageDto | null
@@ -106,6 +142,8 @@ interface StageCardProps {
   /** False once the template is no longer a draft - the card is then read-only. */
   editable: boolean
   busy: boolean
+  /** What an inactivity field left empty on this stage inherits - the template's defaults. */
+  templateDefaults?: TemplateReminderDefaults | null
   onSave: (payload: UpsertStagePayload) => Promise<boolean>
   onDelete?: () => void
   onMoveUp?: () => void
@@ -120,12 +158,13 @@ interface StageCardProps {
  * starts) and are sent as one PUT on Save, replacing the whole participant
  * list - so another card saving meanwhile can never clobber them.
  */
-export function StageCard({ stage, position, total, editable, busy, onSave, onDelete, onMoveUp, onMoveDown, onCancelNew }: StageCardProps) {
+export function StageCard({ stage, position, total, editable, busy, templateDefaults = null, onSave, onDelete, onMoveUp, onMoveDown, onCancelNew }: StageCardProps) {
   const isNew = stage === null
   const [draft, setDraft] = useState<StageFormValues | null>(() => (isNew ? toFormValues(null) : null))
   const [errors, setErrors] = useState<Partial<Record<keyof StageFormValues, string>>>({})
   const { hasPermission } = usePermissions()
   const canConfigureSignature = hasPermission(PermissionCodes.DSI_CONFIGURE_WORKFLOW_RULES)
+  const [remindersOpen, setRemindersOpen] = useState(false)
 
   function update(patch: Partial<StageFormValues>) {
     setDraft((current) => (current ? { ...current, ...patch } : current))
@@ -133,7 +172,7 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
 
   async function handleSave() {
     if (!draft) return
-    const parsed = stageSchema.safeParse(draft)
+    const parsed = buildStageSchema(templateDefaults).safeParse(draft)
     if (!parsed.success) {
       const next: Partial<Record<keyof StageFormValues, string>> = {}
       for (const issue of parsed.error.issues) {
@@ -141,21 +180,34 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
         if (!next[key]) next[key] = issue.message
       }
       setErrors(next)
+      setRemindersOpen(true)   // an error in the collapsed section would be invisible
       return
     }
     setErrors({})
     const ok = await onSave(toPayload(parsed.data, canConfigureSignature))
-    if (ok && !isNew) setDraft(null)
+    if (ok && !isNew) {
+      setDraft(null)
+      setRemindersOpen(false)
+    }
   }
 
   function handleCancel() {
     setErrors({})
+    setRemindersOpen(false)
     if (isNew) onCancelNew?.()
     else setDraft(null)
   }
 
   const users = useUserOptions(Boolean(draft) && draft?.escalationTarget === "named_user")
   const values = draft ?? toFormValues(stage)
+  const effective = effectiveReminders(values, templateDefaults)
+  // The template's escalate-after is inherited, but with no "Escalate to" on this stage it can never fire.
+  const inertTemplateEscalateAfter =
+    values.escalateAfterReminderHours == null &&
+    templateDefaults?.escalateAfterReminderHours != null &&
+    values.escalationTarget === "none"
+      ? templateDefaults.escalateAfterReminderHours
+      : null
   const entries = values.participants.length
   const showMajorityWarning = values.completionRule === "majority" && entries > 0 && entries <= 2
 
@@ -173,9 +225,10 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             <p className="text-[12px] text-muted-foreground">
               {COMPLETION_RULE_LABELS[stage.completionRule]} must approve · {REJECTION_RULE_LABELS[stage.rejectionRule]}
               {stage.slaHours ? ` · SLA ${stage.slaHours}h` : ""}
-              {stage.reminderBeforeHours ? ` · Reminder ${stage.reminderBeforeHours}h before` : ""}
-              {stage.escalationTarget === "department_head" ? " · Escalates to department head" : ""}
-              {stage.escalationTarget === "named_user" ? " · Escalates to a named person" : ""}
+              {effective.reminderBefore ? ` · Reminder ${effective.reminderBefore}h before` : ""}
+              {effective.inactivity ? ` · Inactivity reminder ${effective.inactivity}h` : ""}
+              {effective.target === "department_head" ? " · Escalates to department head" : ""}
+              {effective.target === "named_user" ? " · Escalates to a named person" : ""}
             </p>
           )}
         </div>
@@ -258,37 +311,103 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             {errors.participants && <p className="mt-1.5 text-[12px] text-destructive">{errors.participants}</p>}
           </div>
 
-          <div className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">
-            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-              Reminders, escalation &amp; information requests
-            </p>
-            <div className="sm:w-[240px]">
-              <Label htmlFor={`stage-reminder-${stage?.stageId ?? "new"}`}>
-                Remind Hours Before Due <span className="text-[var(--ink-faint)] normal-case">(optional)</span>
-              </Label>
-              <Input
-                id={`stage-reminder-${stage?.stageId ?? "new"}`}
-                type="number"
-                min={1}
-                disabled={draft.slaHours == null}
-                value={draft.reminderBeforeHours ?? ""}
-                aria-invalid={Boolean(errors.reminderBeforeHours)}
-                onChange={(e) => update({ reminderBeforeHours: e.target.value === "" ? null : Number(e.target.value) })}
+          <label className="flex items-start gap-3">
+            <Switch
+              checked={draft.allowInfoRequests}
+              onCheckedChange={(allowInfoRequests) => update({ allowInfoRequests })}
+              className="mt-0.5"
+            />
+            <span className="text-[13px] text-foreground">
+              Allow information requests
+              <span className="block text-[12px] text-muted-foreground">
+                Approvers can pause their task to ask someone for a document or an answer; the SLA clock stops meanwhile.
+              </span>
+            </span>
+          </label>
+
+          {canConfigureSignature ? (
+            <label className="flex items-start gap-3">
+              <Switch
+                checked={draft.requiresSignature}
+                onCheckedChange={(requiresSignature) => update({ requiresSignature })}
+                className="mt-0.5"
               />
-              {draft.slaHours == null && (
-                <p className="mt-1.5 text-[12px] text-muted-foreground">Set SLA hours first.</p>
-              )}
+              <span className="text-[13px] text-foreground">
+                Requires digital signature
+                <span className="block text-[12px] text-muted-foreground">
+                  Approving this stage needs an explicit signature (password, and an authenticator code if enabled) -
+                  the plain Approve action is refused.
+                </span>
+              </span>
+            </label>
+          ) : (
+            <p className="text-[12.5px] text-muted-foreground">
+              Requires digital signature: <strong className="text-foreground">{draft.requiresSignature ? "On" : "Off"}</strong>
+              <span className="block text-[12px]">Only someone who can configure signature workflow rules may change this.</span>
+            </p>
+          )}
+
+          <CollapsibleSection
+            title="Reminders & escalation"
+            summary={remindersSummary(effective)}
+            attention={inertTemplateEscalateAfter != null ? "Check" : undefined}
+            open={remindersOpen}
+            onOpenChange={setRemindersOpen}
+          >
+            <p className="text-[12.5px] text-muted-foreground">
+              Remind approvers before a task is due or when it sits idle, and escalate if nobody acts. <HowRemindersWork />
+            </p>
+
+            <div className="sm:w-[300px]">
+              <Label htmlFor={`stage-reminder-${stage?.stageId ?? "new"}`}>
+                Due-Date Reminder: Hours Before Due <span className="text-[var(--ink-faint)] normal-case">(optional)</span>
+              </Label>
+              <HoursInput
+                id={`stage-reminder-${stage?.stageId ?? "new"}`}
+                max={8759}
+                disabled={draft.slaHours == null}
+                value={draft.reminderBeforeHours}
+                invalid={Boolean(errors.reminderBeforeHours)}
+                onChange={(reminderBeforeHours) => update({ reminderBeforeHours })}
+              />
+              {draft.slaHours == null && <p className="mt-1.5 text-[12px] text-muted-foreground">Set SLA hours first.</p>}
               {errors.reminderBeforeHours && <p className="mt-1.5 text-[12px] text-destructive">{errors.reminderBeforeHours}</p>}
             </div>
 
+            <InheritableHours
+              id={`stage-inactivity-${stage?.stageId ?? "new"}`}
+              label="Inactivity Reminder: Hours Without Activity"
+              value={draft.inactivityReminderHours}
+              inheritedValue={templateDefaults?.inactivityReminderHours ?? null}
+              onChange={(inactivityReminderHours) => update({ inactivityReminderHours })}
+              error={errors.inactivityReminderHours}
+            />
+
+            <InheritableHours
+              id={`stage-escalate-after-${stage?.stageId ?? "new"}`}
+              label="Escalate After The Inactivity Reminder: Hours"
+              value={draft.escalateAfterReminderHours}
+              inheritedValue={templateDefaults?.escalateAfterReminderHours ?? null}
+              onChange={(escalateAfterReminderHours) => update({ escalateAfterReminderHours })}
+              error={errors.escalateAfterReminderHours}
+              help="Needs an inactivity reminder and an escalation target."
+            />
+
             <div>
-              <Label>Escalate When Overdue To</Label>
+              <Label>Escalate To</Label>
               <SegmentedControl
                 value={draft.escalationTarget}
                 onChange={(escalationTarget) => update({ escalationTarget })}
                 options={ESCALATION_OPTIONS}
               />
               <p className="mt-2 text-[12.5px] text-muted-foreground">{ESCALATION_HELP[draft.escalationTarget]}</p>
+              {inertTemplateEscalateAfter != null && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3 py-2 text-[12.5px] text-[var(--gold-foreground)]">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  The template&apos;s escalate-after ({inertTemplateEscalateAfter} h) has no effect on this stage because no
+                  &quot;Escalate to&quot; is set. Choose who to escalate to, or leave it as is if this stage should not escalate.
+                </p>
+              )}
               {errors.escalationTarget && <p className="mt-1.5 text-[12px] text-destructive">{errors.escalationTarget}</p>}
               {draft.escalationTarget === "named_user" && (
                 <div className="mt-3 sm:w-[320px]">
@@ -303,43 +422,7 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
                 </div>
               )}
             </div>
-
-            <label className="flex items-start gap-3">
-              <Switch
-                checked={draft.allowInfoRequests}
-                onCheckedChange={(allowInfoRequests) => update({ allowInfoRequests })}
-                className="mt-0.5"
-              />
-              <span className="text-[13px] text-foreground">
-                Allow information requests
-                <span className="block text-[12px] text-muted-foreground">
-                  Approvers can pause their task to ask someone for a document or an answer; the SLA clock stops meanwhile.
-                </span>
-              </span>
-            </label>
-
-            {canConfigureSignature ? (
-              <label className="flex items-start gap-3">
-                <Switch
-                  checked={draft.requiresSignature}
-                  onCheckedChange={(requiresSignature) => update({ requiresSignature })}
-                  className="mt-0.5"
-                />
-                <span className="text-[13px] text-foreground">
-                  Requires digital signature
-                  <span className="block text-[12px] text-muted-foreground">
-                    Approving this stage needs an explicit signature (password, and an authenticator code if enabled) -
-                    the plain Approve action is refused.
-                  </span>
-                </span>
-              </label>
-            ) : (
-              <p className="text-[12.5px] text-muted-foreground">
-                Requires digital signature: <strong className="text-foreground">{draft.requiresSignature ? "On" : "Off"}</strong>
-                <span className="block text-[12px]">Only someone who can configure signature workflow rules may change this.</span>
-              </p>
-            )}
-          </div>
+          </CollapsibleSection>
 
           <div className="flex items-center justify-end gap-2.5 border-t border-dashed border-border pt-4">
             <button
@@ -400,17 +483,28 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
                 <Clock size={12} /> Due {stage.slaHours} hours after the stage starts.
               </p>
             )}
-            {stage.reminderBeforeHours && (
+            {effective.reminderBefore != null && stage.slaHours != null && (
               <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <BellRing size={12} /> Approvers are reminded {stage.reminderBeforeHours} hours before it is due.
+                <BellRing size={12} /> Approvers are reminded {effective.reminderBefore} hours before it is due.
               </p>
             )}
-            {stage.escalationTarget !== "none" && stage.escalationTarget && (
+            {effective.inactivity != null && (
               <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <TrendingUp size={12} />{" "}
-                {stage.escalationTarget === "department_head"
-                  ? "Escalates to the department head when overdue."
-                  : "Escalates to a named person when overdue."}
+                <BellRing size={12} /> Approvers are reminded after {effective.inactivity} hours without activity
+                {stage.inactivityReminderHours == null ? " (template default)." : "."}
+              </p>
+            )}
+            {effective.target !== "none" && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <TrendingUp size={12} /> Escalates to{" "}
+                {effective.target === "department_head" ? "the department head" : "a named person"}
+                {stage.slaHours != null ? " when overdue" : ""}
+                {effective.inactivity != null && effective.escalateAfter != null
+                  ? `${stage.slaHours != null ? ", or" : " "} ${effective.escalateAfter} hours after the inactivity reminder${
+                      stage.escalateAfterReminderHours == null ? " (template default)" : ""
+                    }`
+                  : ""}
+                {"."}
               </p>
             )}
             {!stage.allowInfoRequests && (

@@ -186,4 +186,9 @@ export const PermissionCodes = {
   DSI_MANAGE_CERTIFICATES: "dsi.manage-signature-configuration.manage-certificates",
   DSI_CONFIGURE_WORKFLOW_RULES: "dsi.manage-signature-configuration.configure-workflow-rules",
   DSI_UNLOCK_SIGNED_DOCUMENTS: "dsi.unlock-signed-documents.unlock",
+
+  // Notifications (3.2) - tenant-admin settings and the delivery log.
+  NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
+  NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",
+  NOTIF_DELIVERY_LOG_RETRY: "notif.delivery-log.retry",
 } as const

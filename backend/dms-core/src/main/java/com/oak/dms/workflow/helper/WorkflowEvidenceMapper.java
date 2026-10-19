@@ -1,7 +1,11 @@
 package com.oak.dms.workflow.helper;
 
+import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.document.DocumentVersion;
 import com.oak.dms.document.DocumentVersionRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import com.oak.dms.user.UserRepository;
@@ -32,7 +36,8 @@ import java.util.stream.Collectors;
  * Response views of information requests and supporting documents, built
  * with batched lookups. Shared by the request, supporting-document and
  * status services (which would otherwise depend on each other).
- * canOpen is the current viewer's docm.documents.view (decision 18).
+ * canOpen is the current viewer's docm.documents.view (decision 18) and
+ * their own access to that one supporting document (V53/V54).
  */
 @Component
 @RequiredArgsConstructor
@@ -44,24 +49,41 @@ public class WorkflowEvidenceMapper {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final UserRepository userRepository;
+    private final DocumentAccessService documentAccessService;
     private final AuthorizationService authorizationService;
 
     public List<SupportingDocumentView> supportingViews(UUID tenantId, List<WorkflowSupportingDocument> documents) {
         if (documents.isEmpty()) {
             return List.of();
         }
-        boolean canOpen = authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        boolean hasPermission = authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        DocumentAccessView access = hasPermission ? documentAccessService.forCaller() : null;
         Map<UUID, String> titles = new HashMap<>();
-        documentRepository.findAllById(documents.stream().map(WorkflowSupportingDocument::getDocumentId).toList())
-                .forEach(d -> titles.put(d.getDocumentId(), d.getTitle()));
-        Map<UUID, Integer> versionNumbers = new HashMap<>();
+        Set<UUID> openable = new HashSet<>();
+        for (Document d : documentRepository.findAllById(
+                documents.stream().map(WorkflowSupportingDocument::getDocumentId).toList())) {
+            titles.put(d.getDocumentId(), d.getTitle());
+            if (access != null && tenantId.equals(d.getTenantId()) && !d.isDeleted() && access.canSee(d)) {
+                openable.add(d.getDocumentId());
+            }
+        }
+        Map<UUID, DocumentVersion> versions = new HashMap<>();
         versionRepository.findAllById(documents.stream().map(WorkflowSupportingDocument::getDocumentVersionId).toList())
-                .forEach(v -> versionNumbers.put(v.getVersionId(), v.getVersionNumber()));
+                .forEach(v -> versions.put(v.getVersionId(), v));
         Map<UUID, String> names = names(tenantId, documents.stream().map(WorkflowSupportingDocument::getAddedBy).toList());
-        return documents.stream().map(d -> new SupportingDocumentView(d.getSupportingDocumentId(), d.getDocumentId(),
-                titles.get(d.getDocumentId()), d.getDocumentVersionId(), versionNumbers.get(d.getDocumentVersionId()),
-                d.getSource().name(), d.getNote(), new UserRef(d.getAddedBy(), names.get(d.getAddedBy())),
-                d.getAddedAt(), d.getInfoRequestId(), canOpen)).toList();
+        return documents.stream().map(d -> {
+            boolean canOpen = openable.contains(d.getDocumentId());
+            DocumentVersion version = versions.get(d.getDocumentVersionId());
+            // The file fields feed the shared viewer and are given out only when the viewer may open the
+            // document (decision 18) - a locked supporting document shows title and note alone.
+            return new SupportingDocumentView(d.getSupportingDocumentId(), d.getInstanceId(), d.getDocumentId(),
+                    titles.get(d.getDocumentId()), d.getDocumentVersionId(),
+                    version != null ? version.getVersionNumber() : null, d.getSource().name(), d.getNote(),
+                    new UserRef(d.getAddedBy(), names.get(d.getAddedBy())), d.getAddedAt(), d.getInfoRequestId(), canOpen,
+                    canOpen && version != null ? version.getOriginalFilename() : null,
+                    canOpen && version != null ? version.getMimeType() : null,
+                    canOpen && version != null ? version.getSizeBytes() : null);
+        }).toList();
     }
 
     /** Each request with the supporting documents sent in answer to it. */

@@ -49,7 +49,8 @@ class FolderAccessServiceTest {
     private final AuditService audit = mock(AuditService.class);
     private final FolderAccessService service =
             new FolderAccessService(folders, entries, new AccessPrincipals(userRoles, users, roles), authz, audit,
-                    new AccessCache(mock(org.springframework.jdbc.core.JdbcTemplate.class), java.time.Duration.ZERO, 10));
+                    new AccessCache(mock(org.springframework.jdbc.core.JdbcTemplate.class), java.time.Duration.ZERO, 10),
+                    mock(org.springframework.context.ApplicationEventPublisher.class));
 
     private final Folder finance = Folder.builder().folderId(UUID.randomUUID()).tenantId(TENANT)
             .folderName("Finance").accessMode(FolderAccessMode.restricted).build();

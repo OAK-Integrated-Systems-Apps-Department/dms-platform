@@ -25,6 +25,7 @@ import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
 import { useIsTenantAdmin } from "@/lib/auth/use-is-tenant-admin"
 
 import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
+import { useUnreadCount } from "@/lib/notifications/use-notifications"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
   Sidebar,
@@ -82,6 +83,7 @@ export function AppSidebar({
 
   // Live badge for the My Tasks item (see NavItem.liveBadge).
   const { data: taskCount } = useMyTaskCount()
+  const unreadNotifications = useUnreadCount().data ?? 0
   const liveBadges: Record<
     NonNullable<NavItem["liveBadge"]>,
     number | undefined
@@ -90,6 +92,8 @@ export function AppSidebar({
     myOpenTasks:
       (taskCount ? taskCount.open + (taskCount.requestsForMe ?? 0) : 0) ||
       undefined,
+    // Unread notifications in the inbox (3.2).
+    myUnreadNotifications: unreadNotifications || undefined,
   }
 
   // Cached probe shared with the rest of the app; `undefined` while it is

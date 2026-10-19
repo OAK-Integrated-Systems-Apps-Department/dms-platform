@@ -12,7 +12,6 @@ import com.oak.dms.common.sql.LikePatterns;
 import com.oak.dms.document.dto.DocumentListItem;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
-import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrFieldResultResponse;
 import com.oak.dms.document.dto.OcrRerunResponse;
@@ -52,7 +51,6 @@ import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.exception.StorageConfigurationException;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
-import com.oak.dms.user.UserRepository;
 import com.oak.dms.watermark.service.WatermarkDefaultsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -109,10 +107,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
-    private final DocumentMapper documentMapper;
 
     private final DocumentTypeRepository documentTypeRepository;
-    private final UserRepository userRepository;
     private final StorageLocationRepository storageLocationRepository;
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
     private final IngestionGate ingestionGate;
@@ -121,6 +117,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final FolderAccessService folderAccessService;
     private final DocumentAccessService documentAccessService;
     private final com.oak.dms.folder.AccessPrincipals accessPrincipals;
+    private final DocumentApprovals approvals;
     private final VersionContent versionContent;
 
     // OCR. Note the absence of an ObjectStorageService: nothing on the OCR
@@ -232,35 +229,32 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<DocumentListItem> listDocuments(UUID folderId, boolean allFolders, String query, Pageable pageable) {
+    public Page<DocumentListItem> listDocuments(UUID folderId, boolean allFolders, String query, UUID documentTypeId,
+                                                UUID excludeDocumentId, Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        String q = query == null || query.isBlank() ? null : query.strip();
+        String title = query == null || query.isBlank() ? "" : LikePatterns.escape(query.strip());
         DocumentAccessView access = documentAccessService.forCaller();
         if (folderId != null && !allFolders) {
             folderAccessService.require(access.folders(), folderId, FolderAccessLevel.view);
         }
         Page<Document> page;
         if (!access.seesEverything()) {
-            // Folder access (V53) and document access (V54) both apply.
-            String title = q == null ? "" : LikePatterns.escape(q);
+            // Folder access (V53), document access (V54) and workflow-scoped read access all apply.
             page = allFolders
                     ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
-                    access.grantedIds(), pageable)
+                    access.grantedIds(), access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable)
                     : folderId != null
-                    ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(), pageable)
-                    : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(), pageable);
+                    ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(),
+                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable)
+                    : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(),
+                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable);
         } else if (allFolders) {
-            page = q == null ? documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
-                    tenantId, q, pageable);
+            page = documentRepository.findLive(tenantId, title, documentTypeId, excludeDocumentId, pageable);
         } else if (folderId != null) {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalse(tenantId, folderId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(tenantId,
-                    folderId, q, pageable);
+            page = documentRepository.findLiveInFolder(tenantId, title, folderId, documentTypeId, excludeDocumentId,
+                    pageable);
         } else {
-            page = q == null ? documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalse(tenantId, pageable)
-                    : documentRepository.findByTenantIdAndFolderIdIsNullAndDeletedFalseAndTemplateFalseAndTitleContainingIgnoreCase(
-                    tenantId, q, pageable);
+            page = documentRepository.findLiveAtTopLevel(tenantId, title, documentTypeId, excludeDocumentId, pageable);
         }
 
         return toItems(page, access);
@@ -285,7 +279,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional(readOnly = true)
     public Page<DocumentListItem> listSharedWithMe(String query, Pageable pageable) {
         DocumentAccessView access = documentAccessService.forCaller();
-        String title = query == null ? "" : query.strip();
+        String title = query == null ? "" : LikePatterns.escape(query.strip());
         Page<Document> page = documentRepository.findSharedWith(TenantContext.getTenantId(), title,
                 TenantContext.getUserId(), accessPrincipals.callerRoleIds(), pageable);
         return toItems(page, access);
@@ -367,7 +361,30 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional(readOnly = true)
     public DocumentResponse getDocument(UUID documentId) {
         Document document = findVisible(documentId, FolderAccessLevel.view);
-        return documentMapper.toResponse(document, documentAccessService.forCaller().level(document).name());
+        UUID versionId = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        DocumentVersion version = versionId == null ? null
+                : documentVersionRepository.findById(versionId)
+                        .filter(v -> document.getTenantId().equals(v.getTenantId())).orElse(null);
+        // The file fields come from the current-or-latest version, as in the list (toItems), so the
+        // detail page can preview and download the document with the shared viewer.
+        return new DocumentResponse(document.getDocumentId(), document.getTenantId(), document.getDocumentTypeId(),
+                typeNameOf(document), document.getTitle(), document.getCurrentVersionId(), document.getLatestVersionId(),
+                document.getPublishedVersionId(), document.getOwnerUserId(), document.getStatus(),
+                document.getCreatedAt(), document.getUpdatedAt(), document.getFolderId(),
+                version != null ? version.getOriginalFilename() : null,
+                version != null ? version.getMimeType() : null,
+                version != null ? version.getSizeBytes() : null,
+                version != null ? version.getVersionNumber() : null,
+                document.getSignatureLockedAt(), document.getSignatureLockedVersionId());
+    }
+
+    /** The document's type name, or null once the type has been deleted - embedded so viewers without a document-type permission still see it. */
+    private String typeNameOf(Document document) {
+        return documentTypeRepository
+                .findByDocumentTypeIdAndTenantIdAndDeletedFalse(document.getDocumentTypeId(), document.getTenantId())
+                .map(DocumentType::getTypeName)
+                .orElse(null);
     }
 
     /**
@@ -385,26 +402,6 @@ public class DocumentServiceImpl implements DocumentService {
         // bytes below are back - not here, since it's a different policy.
         return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null,
                 true);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
-                                                       Pageable pageable) {
-        UUID tenantId = TenantContext.getTenantId();
-        String pattern = search == null || search.isBlank() ? null : LikePatterns.contains(search.trim());
-        Page<Document> page = documentRepository.search(tenantId, pattern, documentTypeId, excludeDocumentId, pageable);
-        Map<UUID, String> typeNames = new HashMap<>();
-        documentTypeRepository.findAllById(page.map(Document::getDocumentTypeId).toSet()).stream()
-                .filter(t -> tenantId.equals(t.getTenantId()) && !t.isDeleted())
-                .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
-        Map<UUID, String> userNames = new HashMap<>();
-        userRepository.findAllById(page.map(Document::getCreatedBy).filter(Objects::nonNull).toSet()).stream()
-                .filter(u -> tenantId.equals(u.getTenantId()))
-                .forEach(u -> userNames.put(u.getUserId(), u.getDisplayName()));
-        return page.map(d -> new DocumentSummaryResponse(d.getDocumentId(), d.getTitle(),
-                typeNames.get(d.getDocumentTypeId()), d.getLatestVersionId(), d.getCreatedAt(),
-                d.getCreatedBy() == null ? null : userNames.get(d.getCreatedBy())));
     }
 
     @Override
@@ -494,6 +491,11 @@ public class DocumentServiceImpl implements DocumentService {
     public void deleteDocument(UUID documentId) {
         Document document = findVisible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
+        // A document under approval must not vanish from under its approvers (3.1 Phase 2).
+        if (approvals.inProgress(document.getTenantId(), documentId)) {
+            throw new DocumentStateException("DOCUMENT_IN_APPROVAL",
+                    "This document is in an approval. Cancel the approval first.");
+        }
 
         document.setDeleted(true);
         document.setDeletedAt(OffsetDateTime.now());

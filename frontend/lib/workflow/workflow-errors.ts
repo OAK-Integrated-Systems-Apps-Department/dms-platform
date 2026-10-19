@@ -38,6 +38,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   WORKFLOW_INVALID_ASSIGNEE: "One of the participants no longer exists or is inactive.",
   WORKFLOW_DUPLICATE_PARTICIPANT: "The same participant is listed twice in this stage.",
   WORKFLOW_INVALID_STAGE: "This stage no longer exists on the template.",
+  WORKFLOW_INVALID_TEMPLATE_DEFAULTS:
+    "The reminder defaults aren't valid: escalation needs an inactivity reminder, and a named person needs someone chosen.",
   WORKFLOW_INVALID_STAGE_ORDER: "The stage order is out of date. Reload the page and try again.",
   WORKFLOW_DOCUMENT_TYPE_INVALID: "Pick an active document type.",
   WORKFLOW_DOCUMENT_TYPE_LOCKED: "The document type can only be changed on version 1 of a template.",

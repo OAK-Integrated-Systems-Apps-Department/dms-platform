@@ -64,7 +64,7 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, UUID
     @Query("""
             update WorkflowTask t
             set t.status = com.oak.dms.workflow.enums.TaskStatus.claimed, t.claimedBy = :userId, t.claimedAt = :now,
-                t.updatedBy = :userId, t.updatedAt = :now
+                t.lastActivityAt = :now, t.updatedBy = :userId, t.updatedAt = :now
             where t.taskId = :taskId and t.tenantId = :tenantId
               and t.status = com.oak.dms.workflow.enums.TaskStatus.pending
               and t.assigneeType <> com.oak.dms.workflow.enums.AssigneeType.user

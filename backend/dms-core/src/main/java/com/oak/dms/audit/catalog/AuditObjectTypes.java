@@ -69,6 +69,10 @@ public final class AuditObjectTypes {
     public static final String MIGRATION_BATCH = "MIGRATION_BATCH";
     /** A department (V43) - the object of every DEPARTMENT_* event. */
     public static final String DEPARTMENT = "DEPARTMENT";
+    /** One notification delivery (notification_deliveries) - the object of NOTIFICATION_* events (3.2). */
+    public static final String NOTIFICATION_DELIVERY = "NOTIFICATION_DELIVERY";
+    /** A notification category setting/preference (3.2) - the object of setting/preference-change events. */
+    public static final String NOTIFICATION_SETTING = "NOTIFICATION_SETTING";
     /** One workflow template version (workflow_templates) - every WORKFLOW_TEMPLATE_* event. */
     public static final String WORKFLOW_TEMPLATE = "WORKFLOW_TEMPLATE";
     /** One workflow run (workflow_instances) - submit/stage/outcome/cancel/version events. */

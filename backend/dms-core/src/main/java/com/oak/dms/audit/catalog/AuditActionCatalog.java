@@ -208,6 +208,14 @@ public final class AuditActionCatalog {
     public static final String SIGNING_KEY_CREATED = "SIGNING_KEY_CREATED";
     public static final String SIGNING_KEY_REVOKED = "SIGNING_KEY_REVOKED";
 
+    // Notifications (3.2) - module NOTIF. The main trail gets only these few;
+    // every delivery attempt goes to the append-only notification_delivery_attempts table.
+    public static final String NOTIFICATION_DELIVERY_FAILED = "NOTIFICATION_DELIVERY_FAILED";
+    public static final String NOTIFICATION_RECIPIENT_NO_EMAIL = "NOTIFICATION_RECIPIENT_NO_EMAIL";
+    public static final String NOTIFICATION_SETTING_CHANGED = "NOTIFICATION_SETTING_CHANGED";
+    public static final String NOTIFICATION_PREFERENCE_CHANGED = "NOTIFICATION_PREFERENCE_CHANGED";
+    public static final String NOTIFICATION_DELIVERY_RETRIED = "NOTIFICATION_DELIVERY_RETRIED";
+
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -526,7 +534,14 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_SIGNATURE_LOCKED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_SIGNATURE_UNLOCKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
             Map.entry(SIGNING_KEY_CREATED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
-            Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true))
+            Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+
+            // Notifications (3.2) - module NOTIF
+            Map.entry(NOTIFICATION_DELIVERY_FAILED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_RECIPIENT_NO_EMAIL, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_SETTING_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_PREFERENCE_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.LOW, false)),
+            Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

@@ -3,19 +3,14 @@
 import { useState } from "react"
 import { Loader2, Send } from "lucide-react"
 
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogPopup,
-  AlertDialogPortal,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useWorkflowActions } from "@/lib/workflow/use-workflow-actions"
 
 import type { WorkflowInstanceDto } from "@/lib/workflow/api"
+
+import { SupportingDocumentPicker, type PickedSupportingDocument } from "./supporting-document-picker"
+import { WorkflowFormDialog } from "./workflow-form-dialog"
 
 interface SubmitToWorkflowButtonProps {
   documentId: string
@@ -33,15 +28,10 @@ interface SubmitToWorkflowButtonProps {
  */
 export function SubmitToWorkflowButton({ documentId, documentTitle, hidden, onSubmitted }: SubmitToWorkflowButtonProps) {
   const { hasPermission } = usePermissions()
-  const { submit, isActing } = useWorkflowActions()
+  const { isActing } = useWorkflowActions()
   const [confirming, setConfirming] = useState(false)
 
   if (hidden || !hasPermission(PermissionCodes.DLM_SUBMIT_DOCUMENTS_FOR_REVIEW)) return null
-
-  async function handleConfirm() {
-    const instance = await submit(documentId)
-    if (instance) onSubmitted?.(instance)
-  }
 
   return (
     <>
@@ -56,32 +46,78 @@ export function SubmitToWorkflowButton({ documentId, documentTitle, hidden, onSu
       </button>
 
       {confirming && (
-        <AlertDialog open onOpenChange={(open) => !open && setConfirming(false)}>
-          <AlertDialogPortal>
-            <AlertDialogPopup className="sm:max-w-md">
-              <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <Send size={20} aria-hidden="true" />
-              </span>
-              <AlertDialogTitle>Submit for approval?</AlertDialogTitle>
-              <AlertDialogDescription>
-                <strong className="font-semibold text-foreground">{documentTitle}</strong> will go through its document
-                type&apos;s approval workflow, starting with the first stage&apos;s approvers.
-              </AlertDialogDescription>
-              <div className="flex items-center justify-center gap-2.5">
-                <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
-                  Cancel
-                </AlertDialogClose>
-                <AlertDialogClose
-                  onClick={() => void handleConfirm()}
-                  className="rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
-                >
-                  Submit
-                </AlertDialogClose>
-              </div>
-            </AlertDialogPopup>
-          </AlertDialogPortal>
-        </AlertDialog>
+        <SubmitToWorkflowDialog
+          documentId={documentId}
+          documentTitle={documentTitle}
+          onOpenChange={(open) => !open && setConfirming(false)}
+          onSubmitted={onSubmitted}
+        />
       )}
     </>
+  )
+}
+
+interface SubmitToWorkflowDialogProps {
+  documentId: string
+  documentTitle: string
+  onOpenChange: (open: boolean) => void
+  onSubmitted?: (instance: WorkflowInstanceDto) => void
+}
+
+/**
+ * The confirmation on its own, for callers with their own trigger - the row
+ * menu in My Documents. Same call and same refusals as the button; whoever
+ * renders it checks dlm.submit-documents-for-review first. Supporting documents
+ * are optional and attached in the same transaction - an invalid one fails the
+ * whole submission, and the dialog stays open so it can be fixed.
+ */
+export function SubmitToWorkflowDialog({
+  documentId,
+  documentTitle,
+  onOpenChange,
+  onSubmitted,
+}: SubmitToWorkflowDialogProps) {
+  const { submit } = useWorkflowActions()
+  const [documents, setDocuments] = useState<PickedSupportingDocument[]>([])
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleConfirm() {
+    setSubmitting(true)
+    const instance = await submit(
+      documentId,
+      documents.map(({ documentId, documentVersionId, source, note }) => ({ documentId, documentVersionId, source, note }))
+    )
+    setSubmitting(false)
+    if (instance) {
+      onSubmitted?.(instance)
+      onOpenChange(false)
+    }
+  }
+
+  return (
+    <WorkflowFormDialog
+      icon={Send}
+      title="Submit for approval?"
+      description={
+        <>
+          <strong className="font-semibold text-foreground">{documentTitle}</strong> will go through its document
+          type&apos;s approval workflow, starting with the first stage&apos;s approvers.
+        </>
+      }
+      confirmLabel="Submit"
+      canConfirm
+      submitting={submitting}
+      onConfirm={() => void handleConfirm()}
+      onOpenChange={onOpenChange}
+    >
+      <div className="flex flex-col gap-2">
+        <p className="text-[12px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Supporting documents (optional)</p>
+        <p className="text-[12px] text-muted-foreground">
+          Attach evidence for the approvers. It isn&apos;t approved itself, and later versions of it don&apos;t affect this
+          workflow.
+        </p>
+        <SupportingDocumentPicker value={documents} onChange={setDocuments} excludeDocumentId={documentId} />
+      </div>
+    </WorkflowFormDialog>
   )
 }

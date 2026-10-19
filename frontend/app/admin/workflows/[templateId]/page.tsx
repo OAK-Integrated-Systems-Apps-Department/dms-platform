@@ -122,6 +122,8 @@ export default function WorkflowTemplatePage() {
                             description: template.description ?? "",
                             documentTypeId: template.documentTypeId,
                             onDocumentChange: template.onDocumentChange,
+                            defaultInactivityReminderHours: template.defaultInactivityReminderHours,
+                            defaultEscalateAfterReminderHours: template.defaultEscalateAfterReminderHours,
                           }}
                           documentTypeLocked={template.versionNumber > 1}
                           onSubmit={async (values) =>
@@ -130,6 +132,8 @@ export default function WorkflowTemplatePage() {
                               description: values.description.trim() || null,
                               documentTypeId: values.documentTypeId,
                               onDocumentChange: values.onDocumentChange,
+                              defaultInactivityReminderHours: values.defaultInactivityReminderHours,
+                              defaultEscalateAfterReminderHours: values.defaultEscalateAfterReminderHours,
                             })) !== null
                           }
                         />
@@ -138,6 +142,8 @@ export default function WorkflowTemplatePage() {
                           <Field label="Description" value={template.description || "—"} />
                           <Field label="Document Type" value={template.documentTypeName ?? "—"} />
                           <Field label="When The Document Changes" value={ON_DOCUMENT_CHANGE_LABELS[template.onDocumentChange]} />
+                          <Field label="Inactivity Reminder Default" value={hoursLabel(template.defaultInactivityReminderHours, "without activity")} />
+                          <Field label="Escalate After Reminder Default" value={hoursLabel(template.defaultEscalateAfterReminderHours, "after the inactivity reminder")} />
                           <Field label="Used By A Workflow" value={template.hasInstances ? "Yes" : "No"} />
                           <Field label="Created" value={formatDateTime(template.createdAt)} />
                           <Field label="Updated" value={template.updatedAt ? formatDateTime(template.updatedAt) : "—"} />
@@ -173,6 +179,11 @@ export default function WorkflowTemplatePage() {
       )}
     </DashboardShell>
   )
+}
+
+/** "48 hours without activity", or a dash when the template has no default. */
+function hoursLabel(hours: number | null, what: string): string {
+  return hours == null ? "—" : `${hours} ${hours === 1 ? "hour" : "hours"} ${what}`
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {

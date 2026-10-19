@@ -215,7 +215,7 @@ public final class PermissionCodes {
     public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
 
     // 1.4 Digital Signature Integration - DSI, seeded by V10 (except
-    // UNLOCK, seeded by V105). INTERNAL signing only - deliberately no
+    // UNLOCK, seeded by V107). INTERNAL signing only - deliberately no
     // constant for dsi.sign-documents.request-external-signature or
     // dsi.manage-signature-configuration.configure-provider (both V10 rows,
     // unused by anything in this feature - external signers and a
@@ -225,4 +225,11 @@ public final class PermissionCodes {
     public static final String DSI_MANAGE_CERTIFICATES = "dsi.manage-signature-configuration.manage-certificates";
     public static final String DSI_CONFIGURE_WORKFLOW_RULES = "dsi.manage-signature-configuration.configure-workflow-rules";
     public static final String DSI_UNLOCK_SIGNED_DOCUMENTS = "dsi.unlock-signed-documents.unlock";
+
+    // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
+    // default; tenant admins hold them implicitly. Own inbox and own
+    // preferences gate on identity, not a permission.
+    public static final String NOTIF_SETTINGS_MANAGE = "notif.notification-settings.manage";
+    public static final String NOTIF_DELIVERY_LOG_VIEW = "notif.delivery-log.view";
+    public static final String NOTIF_DELIVERY_LOG_RETRY = "notif.delivery-log.retry";
 }

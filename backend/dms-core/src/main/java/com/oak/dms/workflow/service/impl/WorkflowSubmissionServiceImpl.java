@@ -6,12 +6,15 @@ import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.entity.Role;
 import com.oak.dms.security.rbac.repository.RoleRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.workflow.dto.SupportingDocumentInput;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
@@ -35,6 +38,7 @@ import com.oak.dms.workflow.repository.WorkflowStageParticipantRepository;
 import com.oak.dms.workflow.repository.WorkflowStageRepository;
 import com.oak.dms.workflow.service.ApproverResolver;
 import com.oak.dms.workflow.service.WorkflowSubmissionService;
+import com.oak.dms.workflow.service.WorkflowSupportingDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -62,6 +66,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
     private static final Set<String> SUBMITTABLE_DOCUMENT_STATUSES = Set.of("draft", "published");
 
     private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowStageRepository stageRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
@@ -71,6 +76,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
+    private final WorkflowSupportingDocumentService supportingDocumentService;
     private final AuthorizationService authorizationService;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -78,13 +84,20 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
 
     @Override
     @Transactional
-    public UUID submit(UUID documentId) {
+    public UUID submit(UUID documentId, List<SupportingDocumentInput> supportingDocuments) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
         locks.applyLockTimeout();
 
         Document document = documentRepository.lockByDocumentIdAndTenantId(documentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        // A document the submitter can't open doesn't exist as far as they are concerned (V53/V54),
+        // exactly as on every other document endpoint. Checked after the lock, before anything is read.
+        documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.view);
+        if (document.isTemplate()) {
+            throw new WorkflowValidationException("WORKFLOW_DOCUMENT_IS_TEMPLATE",
+                    "A document template can't be submitted for approval - start a document from it first");
+        }
         if (!SUBMITTABLE_DOCUMENT_STATUSES.contains(document.getStatus())) {
             throw new WorkflowStateException("WORKFLOW_DOCUMENT_NOT_ELIGIBLE",
                     "A " + document.getStatus() + " document cannot be submitted for approval");
@@ -97,7 +110,13 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
         WorkflowTemplate template = templateSelector.selectFor(document)
                 .orElseThrow(() -> new WorkflowValidationException("WORKFLOW_NO_ACTIVE_TEMPLATE",
                         "No active workflow template is configured for this document's type"));
-        return start(document, template, userId).getInstanceId();
+        WorkflowInstance instance = start(document, template, userId);
+        // Same transaction (decision 11): an invalid attachment rolls the whole submission back.
+        // attach() enforces the supporting-document rules and records each as supporting_document_added.
+        if (supportingDocuments != null && !supportingDocuments.isEmpty()) {
+            supportingDocumentService.attach(instance, null, supportingDocuments, userId);
+        }
+        return instance.getInstanceId();
     }
 
     @Override

@@ -137,8 +137,10 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     "A workflow template with code " + code + " already exists - create a new version of it instead");
         }
         requireActiveDocumentType(request.documentTypeId(), tenantId);
+        Defaults defaults = checkDefaults(request.defaultInactivityReminderHours(),
+                request.defaultEscalateAfterReminderHours());
 
-        WorkflowTemplate saved = templateRepository.saveAndFlush(WorkflowTemplate.builder()
+        WorkflowTemplate saved = templateRepository.saveAndFlush(applyDefaults(WorkflowTemplate.builder()
                 .tenantId(tenantId)
                 .documentTypeId(request.documentTypeId())
                 .name(request.name().trim())
@@ -148,7 +150,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                 .status(TemplateStatus.draft)
                 .onDocumentChange(request.onDocumentChange() == null ? OnDocumentChange.flag_only : request.onDocumentChange())
                 .createdBy(TenantContext.getUserId())
-                .build());
+                .build(), defaults));
         audit(AuditActionCatalog.WORKFLOW_TEMPLATE_CREATED, saved).newValue(snapshot(saved)).log();
         return toResponse(saved);
     }
@@ -167,9 +169,13 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
             requireActiveDocumentType(request.documentTypeId(), tenantId);
             template.setDocumentTypeId(request.documentTypeId());
         }
+        Defaults defaults = checkDefaults(request.defaultInactivityReminderHours(),
+                request.defaultEscalateAfterReminderHours());
+        requireStageOverridesStillValid(template, defaults.inactivity());
         template.setName(request.name().trim());
         template.setDescription(blankToNull(request.description()));
         template.setOnDocumentChange(request.onDocumentChange());
+        applyDefaults(template, defaults);
         touch(template);
         templateRepository.save(template);
         audit(AuditActionCatalog.WORKFLOW_TEMPLATE_UPDATED, template)
@@ -203,6 +209,8 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     .versionNumber(nextVersion)
                     .status(TemplateStatus.draft)
                     .onDocumentChange(source.getOnDocumentChange())
+                    .defaultInactivityReminderHours(source.getDefaultInactivityReminderHours())
+                    .defaultEscalateAfterReminderHours(source.getDefaultEscalateAfterReminderHours())
                     .createdBy(userId)
                     .build());
         } catch (DataIntegrityViolationException e) {
@@ -222,6 +230,8 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     .rejectionRule(stage.getRejectionRule())
                     .slaHours(stage.getSlaHours())
                     .reminderBeforeHours(stage.getReminderBeforeHours())
+                    .inactivityReminderHours(stage.getInactivityReminderHours())
+                    .escalateAfterReminderHours(stage.getEscalateAfterReminderHours())
                     .escalationTarget(stage.getEscalationTarget())
                     .escalationUserId(stage.getEscalationUserId())
                     .allowInfoRequests(stage.isAllowInfoRequests())
@@ -345,7 +355,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     @Transactional
     public WorkflowTemplateResponse addStage(UUID templateId, UpsertWorkflowStageRequest request) {
         WorkflowTemplate template = lockDraft(templateId);
-        validateStage(request, template.getTenantId());
+        validateStage(request, template);
         List<WorkflowStage> stages = liveStages(template);
         int order = stages.stream().mapToInt(WorkflowStage::getStageOrder).max().orElse(0) + 1;
         WorkflowStage stage = stageRepository.saveAndFlush(applyStage(WorkflowStage.builder()
@@ -362,7 +372,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     @Transactional
     public WorkflowTemplateResponse updateStage(UUID templateId, UUID stageId, UpsertWorkflowStageRequest request) {
         WorkflowTemplate template = lockDraft(templateId);
-        validateStage(request, template.getTenantId());
+        validateStage(request, template);
         WorkflowStage stage = findStage(template, stageId);
         applyStage(stage, request);
         stage.setUpdatedBy(TenantContext.getUserId());
@@ -465,7 +475,22 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         }
     }
 
-    private void validateStage(UpsertWorkflowStageRequest request, UUID tenantId) {
+    private void validateStage(UpsertWorkflowStageRequest request, WorkflowTemplate template) {
+        UUID tenantId = template.getTenantId();
+        // Escalation after the inactivity reminder needs an inactivity reminder to follow - the stage's
+        // own, or the template default it inherits.
+        Integer effectiveInactivity = request.inactivityReminderHours() != null
+                ? request.inactivityReminderHours() : template.getDefaultInactivityReminderHours();
+        if (request.escalateAfterReminderHours() != null && effectiveInactivity == null) {
+            throw new WorkflowValidationException("WORKFLOW_INVALID_STAGE",
+                    "escalateAfterReminderHours needs an inactivity reminder - set inactivityReminderHours on the "
+                            + "stage, or a default inactivity reminder on the template");
+        }
+        if (request.escalateAfterReminderHours() != null
+                && (request.escalationTarget() == null || request.escalationTarget() == EscalationTarget.none)) {
+            throw new WorkflowValidationException("WORKFLOW_INVALID_STAGE",
+                    "escalateAfterReminderHours needs an escalation target - choose who to escalate to on the stage");
+        }
         if (request.reminderBeforeHours() != null
                 && (request.slaHours() == null || request.reminderBeforeHours() >= request.slaHours())) {
             throw new WorkflowValidationException("WORKFLOW_INVALID_STAGE",
@@ -521,6 +546,56 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                 requireAssignee(p.getAssigneeType(), p.getAssigneeId(), template.getTenantId());
             }
         }
+        try {
+            requireStageOverridesStillValid(template, template.getDefaultInactivityReminderHours());
+        } catch (WorkflowValidationException e) {
+            throw new WorkflowValidationException("WORKFLOW_TEMPLATE_INVALID", e.getMessage());
+        }
+    }
+
+    /** A template's inactivity defaults, checked (N-FR-006). */
+    private record Defaults(Integer inactivity, Integer escalateAfter) {
+    }
+
+    /**
+     * Positive hours are enforced by bean validation on the request. Here: escalation follows the inactivity
+     * reminder, so escalate-after needs an inactivity reminder.
+     */
+    private Defaults checkDefaults(Integer inactivity, Integer escalateAfter) {
+        if (escalateAfter != null && inactivity == null) {
+            throw new WorkflowValidationException("WORKFLOW_INVALID_TEMPLATE_DEFAULTS",
+                    "defaultEscalateAfterReminderHours needs defaultInactivityReminderHours - escalation follows "
+                            + "the inactivity reminder");
+        }
+        return new Defaults(inactivity, escalateAfter);
+    }
+
+    private static WorkflowTemplate applyDefaults(WorkflowTemplate template, Defaults d) {
+        template.setDefaultInactivityReminderHours(d.inactivity());
+        template.setDefaultEscalateAfterReminderHours(d.escalateAfter());
+        return template;
+    }
+
+    private static WorkflowTemplate.WorkflowTemplateBuilder applyDefaults(WorkflowTemplate.WorkflowTemplateBuilder b,
+                                                                          Defaults d) {
+        return b.defaultInactivityReminderHours(d.inactivity())
+                .defaultEscalateAfterReminderHours(d.escalateAfter());
+    }
+
+    /**
+     * A stage that sets its own escalate-after hours inherits its inactivity reminder from the template when it
+     * has none of its own - so the template's inactivity default can't be removed from under it.
+     */
+    private void requireStageOverridesStillValid(WorkflowTemplate template, Integer templateInactivity) {
+        for (WorkflowStage stage : liveStages(template)) {
+            if (stage.getEscalateAfterReminderHours() != null && stage.getInactivityReminderHours() == null
+                    && templateInactivity == null) {
+                throw new WorkflowValidationException("WORKFLOW_INVALID_TEMPLATE_DEFAULTS",
+                        "Stage \"" + stage.getName() + "\" sets its own escalate-after hours, which needs an "
+                                + "inactivity reminder - keep the template's default inactivity reminder or set one "
+                                + "on that stage");
+            }
+        }
     }
 
     private WorkflowStage applyStage(WorkflowStage stage, UpsertWorkflowStageRequest request) {
@@ -530,6 +605,8 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         stage.setRejectionRule(request.rejectionRule());
         stage.setSlaHours(request.slaHours());
         stage.setReminderBeforeHours(request.reminderBeforeHours());
+        stage.setInactivityReminderHours(request.inactivityReminderHours());
+        stage.setEscalateAfterReminderHours(request.escalateAfterReminderHours());
         stage.setEscalationTarget(target);
         stage.setEscalationUserId(target == EscalationTarget.named_user ? request.escalationUserId() : null);
         stage.setAllowInfoRequests(request.allowInfoRequests() == null || request.allowInfoRequests());
@@ -650,6 +727,8 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         m.put("status", t.getStatus().name());
         m.put("documentTypeId", t.getDocumentTypeId());
         m.put("onDocumentChange", t.getOnDocumentChange().name());
+        m.put("defaultInactivityReminderHours", t.getDefaultInactivityReminderHours());
+        m.put("defaultEscalateAfterReminderHours", t.getDefaultEscalateAfterReminderHours());
         return m;
     }
 
@@ -679,7 +758,8 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         List<WorkflowStageResponse> stageResponses = stages.stream()
                 .map(s -> new WorkflowStageResponse(s.getStageId(), s.getStageOrder(), s.getName(),
                         s.getCompletionRule().name(), s.getRejectionRule().name(), s.getSlaHours(),
-                        s.getReminderBeforeHours(), s.getEscalationTarget().name(), s.getEscalationUserId(),
+                        s.getReminderBeforeHours(), s.getInactivityReminderHours(),
+                        s.getEscalateAfterReminderHours(), s.getEscalationTarget().name(), s.getEscalationUserId(),
                         s.isAllowInfoRequests(), s.isRequiresSignature(),
                         participants.getOrDefault(s.getStageId(), List.of()).stream()
                                 .map(p -> new ParticipantResponse(p.getParticipantId(), p.getAssigneeType().name(),
@@ -692,6 +772,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         return new WorkflowTemplateResponse(t.getTemplateId(), t.getCode(), t.getName(), t.getDescription(),
                 t.getVersionNumber(), t.getStatus().name(), t.getDocumentTypeId(), typeName,
                 t.getOnDocumentChange().name(),
+                t.getDefaultInactivityReminderHours(), t.getDefaultEscalateAfterReminderHours(),
                 t.getTemplateId() != null && instanceRepository.existsByTemplateId(t.getTemplateId()),
                 stageResponses, t.getCreatedAt(), t.getUpdatedAt());
     }

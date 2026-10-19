@@ -18,6 +18,11 @@ public record DocumentResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         UUID folderId,
+        /** The current-or-latest version's file, so the detail page can preview and download it. Null if it has no version yet. */
+        String fileName,
+        String mimeType,
+        Long sizeBytes,
+        Integer versionNumber,
         /** Set together (V105) once a workflow with a valid signature approved - null means not locked. */
         OffsetDateTime signatureLockedAt,
         UUID signatureLockedVersionId

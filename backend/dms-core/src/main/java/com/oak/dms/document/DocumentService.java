@@ -2,7 +2,6 @@ package com.oak.dms.document;
 
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
-import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrRerunResponse;
 import com.oak.dms.document.dto.OcrStatusResponse;
@@ -13,9 +12,6 @@ import com.oak.dms.document.dto.SaveReviewRequest;
 import com.oak.dms.document.dto.SaveReviewResponse;
 import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -111,12 +107,16 @@ public interface DocumentService {
     /**
      * A page of the tenant's documents, newest first.
      *
-     * @param folderId only that folder's documents; ignored when {@code allFolders}
-     * @param unfiled  with no folderId: only documents not in any folder
-     * @param query    optional case-insensitive title search
+     * @param folderId          only that folder's documents; ignored when {@code allFolders}
+     * @param unfiled           with no folderId: only documents not in any folder
+     * @param query             optional case-insensitive title search
+     * @param documentTypeId    optional - only documents of that type
+     * @param excludeDocumentId optional - leaves one document out (the one under approval, when
+     *                          picking supporting documents)
      */
     org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
-            UUID folderId, boolean allFolders, String query, org.springframework.data.domain.Pageable pageable);
+            UUID folderId, boolean allFolders, String query, UUID documentTypeId, UUID excludeDocumentId,
+            org.springframework.data.domain.Pageable pageable);
 
     /**
      * "Shared with me": restricted documents whose own list names the caller
@@ -130,14 +130,6 @@ public interface DocumentService {
     int moveDocuments(java.util.List<UUID> documentIds, UUID folderId);
 
     DocumentResponse getDocument(UUID documentId);
-
-    /**
-     * The caller's tenant's documents, newest first, optionally narrowed by
-     * a title search and a document type, and leaving out one document
-     * (e.g. the one under approval when picking supporting documents).
-     */
-    Page<DocumentSummaryResponse> listDocuments(String search, UUID documentTypeId, UUID excludeDocumentId,
-                                                Pageable pageable);
 
     /** Streams the document's current version (falling back to its latest version if none is current yet). */
     DownloadedDocument downloadDocument(UUID documentId);

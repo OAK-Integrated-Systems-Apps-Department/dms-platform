@@ -110,6 +110,14 @@ public class WorkflowTask {
     @Builder.Default
     private int slaPausedSeconds = 0;
 
+    /** Last claim/delegate/reassign/info-answered (3.2, N-FR-003); the inactivity clock starts here. */
+    @Column(name = "last_activity_at")
+    private OffsetDateTime lastActivityAt;
+
+    /** Fire-once stamp for the inactivity reminder (3.2); the due-date reminder uses reminderSentAt. */
+    @Column(name = "inactivity_reminder_sent_at")
+    private OffsetDateTime inactivityReminderSentAt;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

@@ -16,7 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One user's ECDSA P-256 signing key (V105), named
+ * One user's ECDSA P-256 signing key (V108), named
  * {@code dms-sig-<tenantId>-<userId>-<generation>}. {@code generation}
  * increments each time the active key is revoked, so a new key never reuses
  * an old Transit/file key name - see {@code SigningKeyService}.

@@ -1,5 +1,6 @@
 package com.oak.dms.workflow.service;
 
+import com.oak.dms.workflow.dto.DocumentWorkflowStatusResponse;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
 import com.oak.dms.workflow.dto.MyTaskResponse;
 import com.oak.dms.workflow.dto.WorkflowActionView;
@@ -8,6 +9,8 @@ import com.oak.dms.workflow.dto.WorkflowInstanceSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -28,6 +31,13 @@ public interface WorkflowQueryService {
     WorkflowInstanceResponse getInstance(UUID instanceId);
 
     Page<WorkflowInstanceSummaryResponse> documentHistory(UUID documentId, Pageable pageable);
+
+    /**
+     * The newest run of each of these documents, for a list of documents.
+     * Documents the caller can't open, and documents never submitted, are
+     * simply left out - a missing row says nothing about whether it exists.
+     */
+    List<DocumentWorkflowStatusResponse> documentStatuses(Collection<UUID> documentIds);
 
     Page<WorkflowActionView> timeline(UUID instanceId, Pageable pageable);
 

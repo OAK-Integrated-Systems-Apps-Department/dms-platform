@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.mail.SimpleMailMessage;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Duration;
@@ -137,7 +136,7 @@ class WorkflowScenariosIT extends WorkflowApiSupport {
             JsonNode done = instance(instanceId, w.chamath());
             assertThat(done.get("status").asString()).isEqualTo("approved");
             assertThat(done.get("completedAt").isNull()).isFalse();
-            SimpleMailMessage outcome = awaitMail(to(w.chamath()).and(m -> m.getSubject().contains("approved")));
+            CapturedMail outcome = awaitMail(to(w.chamath()).and(m -> m.getSubject().contains("approved")));
             assertThat(outcome.getText()).contains("Supplier contract 2026-114");
             assertThat(sentMails().stream().filter(to(w.chamath()))).hasSize(1);
 
@@ -179,7 +178,7 @@ class WorkflowScenariosIT extends WorkflowApiSupport {
             assertThat(stage(rejected, 2).get("entryCount").asInt()).isEqualTo(1);
             assertThat(myTaskIds(w.nimal())).isEmpty();
 
-            SimpleMailMessage mail = awaitMail(to(w.chamath()).and(m -> m.getSubject().contains("rejected")));
+            CapturedMail mail = awaitMail(to(w.chamath()).and(m -> m.getSubject().contains("rejected")));
             assertThat(mail.getText()).contains(reason);
             assertThat(sentMails().stream().filter(to(w.nimal()))).isEmpty();
             assertThat(count("select count(*) from audit_events where tenant_id = ? and action = 'WORKFLOW_REJECTED'"
@@ -423,9 +422,6 @@ class WorkflowScenariosIT extends WorkflowApiSupport {
         throw new AssertionError("No " + type + " action");
     }
 
-    private static java.util.function.Predicate<SimpleMailMessage> subject(String part) {
-        return m -> m.getSubject() != null && m.getSubject().contains(part);
-    }
 
     private User approver(String name) {
         User u = fx.user(w.tenantId(), name);
@@ -603,7 +599,7 @@ class WorkflowScenariosIT extends WorkflowApiSupport {
 
             assertThat(count("select count(*) from comment_mentions where comment_id = ? and mentioned_user_id = ?"
                     + " and had_document_access = false", comment, outsider.getUserId())).isEqualTo(1);
-            SimpleMailMessage mail = awaitMail(to(outsider).and(subject("mentioned you")));
+            CapturedMail mail = awaitMail(to(outsider).and(subject("mentioned you")));
             assertThat(mail.getText()).contains("Please check @Outsider").doesNotContain("/documents/");
 
             JsonNode mention = get200("/api/v1/mentions/my", outsider).get("content").get(0);

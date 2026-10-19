@@ -14,6 +14,7 @@ import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,7 @@ public class FolderAccessService {
     private final AuthorizationService authorizationService;
     private final AuditService auditService;
     private final AccessCache cache;
+    private final ApplicationEventPublisher events;
 
     /**
      * The caller's access to every folder of their tenant. The folder tree and the caller's entries
@@ -51,24 +53,49 @@ public class FolderAccessService {
      */
     @Transactional(readOnly = true)
     public FolderAccessView forCaller() {
-        UUID tenantId = TenantContext.getTenantId();
-        UUID userId = TenantContext.getUserId();
-        List<Folder> folders = cache.folders(tenantId,
-                () -> folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId));
-        boolean admin = authorizationService.isTenantAdmin();
+        return forUser(TenantContext.getTenantId(), TenantContext.getUserId(), authorizationService.isTenantAdmin());
+    }
+
+    /**
+     * {@link #forCaller()} worked out for someone else - what a mentioned
+     * person or a candidate in a people picker could open. The caller passes
+     * {@code admin} because tenant-admin status comes from Keycloak: one
+     * lookup for a single user ({@code UserPermissions#isTenantAdmin}), or
+     * one list for a whole picker ({@code UserPermissions#tenantAdminIds}).
+     */
+    @Transactional(readOnly = true)
+    public FolderAccessView forUser(UUID tenantId, UUID userId, boolean admin) {
+        return forUser(tenantId, userId, admin, tenantFolders(tenantId));
+    }
+
+    /**
+     * {@link #forUser(UUID, UUID, boolean)} over a folder list already in
+     * hand - for working several people out at once, so the tree is read once
+     * rather than once per person (the cache can't help inside a read-write
+     * transaction, which never stores).
+     */
+    @Transactional(readOnly = true)
+    public FolderAccessView forUser(UUID tenantId, UUID userId, boolean admin, List<Folder> folders) {
         Map<UUID, FolderAccessLevel> granted = Map.of();
-        // Only look the caller's entries up when something is actually restricted.
+        // Only look their entries up when something is actually restricted.
         if (!admin && folders.stream().anyMatch(f -> f.getAccessMode() == FolderAccessMode.restricted)) {
             granted = cache.folderGrants(tenantId, userId, () -> {
                 Map<UUID, FolderAccessLevel> best = new HashMap<>();
                 for (FolderAccessEntry entry : accessRepository.findForPrincipals(tenantId, userId,
-                        principals.callerRoleIds())) {
+                        principals.roleIdsOf(tenantId, userId))) {
                     best.merge(entry.getFolderId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
                 }
                 return best;
             });
         }
         return new FolderAccessView(folders, granted, admin);
+    }
+
+    /** The tenant's live folders, from {@link AccessCache} while nothing access-related has changed. */
+    @Transactional(readOnly = true)
+    public List<Folder> tenantFolders(UUID tenantId) {
+        return cache.folders(tenantId,
+                () -> folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId));
     }
 
     /** Whether the caller is a tenant admin - full access to every folder and document. */
@@ -133,8 +160,8 @@ public class FolderAccessService {
             }
         }
 
-        Map<String, Object> previous = AccessPrincipals.snapshot(folder.getAccessMode(),
-                grants(accessRepository.findByTenantIdAndFolderIdOrderByCreatedAtAsc(tenantId, folderId)));
+        List<Grant> before = grants(accessRepository.findByTenantIdAndFolderIdOrderByCreatedAtAsc(tenantId, folderId));
+        Map<String, Object> previous = AccessPrincipals.snapshot(folder.getAccessMode(), before);
         folder.setAccessMode(mode);
         folder.setUpdatedAt(OffsetDateTime.now());
         folder.setUpdatedBy(TenantContext.getUserId());
@@ -157,6 +184,9 @@ public class FolderAccessService {
                 .previousValue(previous)
                 .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
                 .log();
+        // Tell whoever is newly on the list that the folder was shared with them (3.2, N10).
+        AccessGrantedEvent.of("folder", folderId, folder.getFolderName(), before, wanted.values())
+                .ifPresent(events::publishEvent);
         return getAccess(folderId);
     }
 

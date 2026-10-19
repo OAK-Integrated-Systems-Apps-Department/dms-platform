@@ -6,7 +6,6 @@ import {
   type UploadTransfer,
 } from "@/lib/api-fetch"
 import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
-import type { PageDto } from "@/lib/workflow/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
 export interface SelectableDocumentTypeDto {
@@ -187,12 +186,17 @@ export interface DocumentPageDto {
 
 /**
  * `GET /api/v1/documents`. `folderId` = that folder; null = documents not in
- * any folder; `all` = every document (with `q`, a title search). `page` is 0-indexed.
+ * any folder; `all` = every document (with `q`, a title search).
+ * `documentTypeId` narrows to one type and `excludeDocumentId` leaves one
+ * document out - what the workflow document picker uses. `page` is 0-indexed.
  */
 export async function fetchDocuments(params: {
   folderId: string | null
   all?: boolean
   q?: string
+  documentTypeId?: string
+  /** Left out of the results - e.g. the document under approval when picking supporting documents. */
+  excludeDocumentId?: string
   page: number
   size: number
 }): Promise<DocumentPageDto> {
@@ -204,6 +208,9 @@ export async function fetchDocuments(params: {
   if (params.folderId) search.set("folderId", params.folderId)
   if (params.all) search.set("all", "true")
   if (params.q?.trim()) search.set("q", params.q.trim())
+  if (params.documentTypeId) search.set("documentTypeId", params.documentTypeId)
+  if (params.excludeDocumentId)
+    search.set("excludeDocumentId", params.excludeDocumentId)
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
     undefined,
@@ -822,7 +829,12 @@ export interface DocumentDto {
   status: string
   createdAt: string
   updatedAt: string | null
-  /** Set (V105, 1.4) once a workflow with a valid signature approved - null means not locked. */
+  /** The current-or-latest version's file, for the preview/download on the detail page. Null if it has no version yet. */
+  fileName: string | null
+  mimeType: string | null
+  sizeBytes: number | null
+  versionNumber: number | null
+  /** Set (1.4) once a workflow with a valid signature approved - null means not locked. */
   signatureLockedAt: string | null
   signatureLockedVersionId: string | null
 }

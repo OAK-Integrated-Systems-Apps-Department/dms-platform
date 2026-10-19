@@ -4,8 +4,8 @@ import com.oak.dms.security.auth.UserPermissions;
 import com.oak.dms.signature.event.SignatureInvalidatedEvent;
 import com.oak.dms.signature.event.SignatureVerificationFailedEvent;
 import com.oak.dms.user.User;
-import com.oak.dms.workflow.helper.NotificationDispatcher;
 import com.oak.dms.workflow.helper.WorkflowNotificationMailer;
+import com.oak.dms.workflow.helper.WorkflowNotificationMailer.Doc;
 import com.oak.dms.workflow.helper.WorkflowRecipients;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,10 +13,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.List;
+
 /**
- * 1.4 Digital Signature Integration's mail, modelled on
- * {@code WorkflowNotificationListener} (same AFTER_COMMIT + dispatcher
- * pattern, same recipients/mailer helpers, reused rather than duplicated).
+ * 1.4 Digital Signature Integration's notifications, modelled on
+ * {@code WorkflowNotificationListener} (same BEFORE_COMMIT + shared
+ * {@code NotificationService} pattern via {@link WorkflowNotificationMailer},
+ * same recipients helper, reused rather than duplicated) - written through
+ * the notification service inside the triggering transaction, so the inbox
+ * entry commits atomically with the invalidation/verification it is about.
  * <p>
  * {@link #onInvalidated} tells the workflow's initiator a signature no
  * longer stands behind their document. Deliberately scoped to the
@@ -37,33 +42,22 @@ public class SignatureNotificationListener {
     private final WorkflowRecipients recipients;
     private final UserPermissions userPermissions;
     private final WorkflowNotificationMailer mailer;
-    private final NotificationDispatcher dispatcher;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onInvalidated(SignatureInvalidatedEvent event) {
-        dispatcher.dispatch("signature-invalidated", event.instanceId(), () -> notifyInvalidated(event));
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onVerificationFailed(SignatureVerificationFailedEvent event) {
-        dispatcher.dispatch("signature-verification-failed", event.signatureId(), () -> notifyVerificationFailed(event));
-    }
-
-    private void notifyInvalidated(SignatureInvalidatedEvent event) {
         instanceRepository.findByInstanceIdAndTenantIdAndDeletedFalse(event.instanceId(), event.tenantId())
                 .map(i -> recipients.activeUser(i.getInitiatedBy(), event.tenantId()))
-                .ifPresent(initiator -> NotificationDispatcher.send(
-                        () -> mailer.sendSignatureInvalidated(initiator, recipients.documentTitle(event.documentId()),
-                                event.reason(), event.documentId()),
-                        "signature-invalidated", initiator, event.instanceId()));
+                .ifPresent(initiator -> {
+                    Doc doc = new Doc(event.documentId(), recipients.documentTitle(event.documentId()));
+                    mailer.sendSignatureInvalidated(List.of(initiator), doc, event.reason());
+                });
     }
 
-    private void notifyVerificationFailed(SignatureVerificationFailedEvent event) {
-        String title = recipients.documentTitle(event.documentId());
-        for (User admin : recipients.activeUsers(userPermissions.tenantAdminIds(event.tenantId()), event.tenantId()).values()) {
-            NotificationDispatcher.send(() -> mailer.sendSignatureVerificationFailed(admin, title,
-                    event.verificationResult(), event.documentId()), "signature-verification-failed", admin,
-                    event.signatureId());
-        }
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onVerificationFailed(SignatureVerificationFailedEvent event) {
+        Doc doc = new Doc(event.documentId(), recipients.documentTitle(event.documentId()));
+        List<User> admins = List.copyOf(
+                recipients.activeUsers(userPermissions.tenantAdminIds(event.tenantId()), event.tenantId()).values());
+        mailer.sendSignatureVerificationFailed(admins, doc, event.verificationResult());
     }
 }

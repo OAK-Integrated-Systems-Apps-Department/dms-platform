@@ -6,21 +6,26 @@ import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.Document;
+import com.oak.dms.document.DocumentApprovals;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.folder.AccessPrincipals.Grant;
 import com.oak.dms.folder.dto.FolderDtos.DocumentAccessResponse;
 import com.oak.dms.folder.dto.FolderDtos.FolderAccessResponse;
 import com.oak.dms.folder.dto.FolderDtos.UpdateFolderAccessRequest;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.security.auth.UserPermissions;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,15 +51,25 @@ public class DocumentAccessService {
     private final AccessPrincipals principals;
     private final AuditService auditService;
     private final AccessCache cache;
+    private final DocumentApprovals approvals;
+    private final UserPermissions userPermissions;
+    private final ApplicationEventPublisher events;
 
     /**
      * The caller's access to folders and to restricted documents, worked out once per request.
      *
-     * @param granted       best level the caller's own entries give, per restricted document
-     * @param anyRestricted whether the tenant has any restricted document at all
+     * @param granted          best level the caller's own entries give, per restricted document
+     * @param anyRestricted    whether the tenant has any restricted document at all
+     * @param workflowReadable documents a running approval lets them read - see {@link DocumentApprovals}
      */
     public record DocumentAccessView(FolderAccessView folders, Map<UUID, FolderAccessLevel> granted, boolean admin,
-                                     boolean anyRestricted) {
+                                     boolean anyRestricted, Set<UUID> workflowReadable) {
+
+        /** Folder and document access only - no approval is running for this caller. */
+        public DocumentAccessView(FolderAccessView folders, Map<UUID, FolderAccessLevel> granted, boolean admin,
+                                  boolean anyRestricted) {
+            this(folders, granted, admin, anyRestricted, Set.of());
+        }
 
         public FolderAccessLevel level(Document document) {
             FolderAccessLevel level = admin ? FolderAccessLevel.manage
@@ -63,7 +78,16 @@ public class DocumentAccessService {
                     : folders.level(document.getFolderId());
             // A template is only ever opened, downloaded or copied here - it's changed through
             // DocumentTemplateService, with the document-type permission, never as a document.
-            return document.isTemplate() && level.atLeast(FolderAccessLevel.view) ? FolderAccessLevel.view : level;
+            if (document.isTemplate() && level.atLeast(FolderAccessLevel.view)) {
+                level = FolderAccessLevel.view;
+            }
+            // Workflow-scoped read (3.1 Phase 2): while an approval is running, the people it is
+            // waiting on can open the document under approval - read-only, and only until their
+            // task or the run ends. It never lowers a level they already have.
+            if (!level.atLeast(FolderAccessLevel.view) && workflowReadable.contains(document.getDocumentId())) {
+                return FolderAccessLevel.view;
+            }
+            return level;
         }
 
         public boolean canSee(Document document) {
@@ -73,6 +97,11 @@ public class DocumentAccessService {
         /** Restricted documents the caller is on the list of - never empty, for an IN clause. */
         public Set<UUID> grantedIds() {
             return granted.isEmpty() ? Set.of(AccessPrincipals.NONE) : granted.keySet();
+        }
+
+        /** Documents a running approval lets them read - never empty, for an IN clause. */
+        public Set<UUID> workflowReadableIds() {
+            return workflowReadable.isEmpty() ? Set.of(AccessPrincipals.NONE) : workflowReadable;
         }
 
         /** No filtering needed: an admin, or nothing restricted anywhere. */
@@ -85,8 +114,46 @@ public class DocumentAccessService {
     public DocumentAccessView forCaller() {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
-        FolderAccessView folders = folderAccess.forCaller();
         boolean admin = folderAccess.callerIsAdmin();
+        return build(tenantId, userId, folderAccess.forCaller(), admin,
+                admin ? Set.of() : approvals.readableDocumentIds(tenantId, userId));
+    }
+
+    /**
+     * {@link #forCaller()} worked out for someone else - what a mentioned
+     * person, or a candidate in a people picker, could open. One Keycloak
+     * lookup for their tenant-admin status; use {@link #forUsers} for a
+     * whole picker, which asks once for everyone.
+     */
+    @Transactional(readOnly = true)
+    public DocumentAccessView forUser(UUID tenantId, UUID userId) {
+        boolean admin = userPermissions.isTenantAdmin(tenantId, userId);
+        return build(tenantId, userId, folderAccess.forUser(tenantId, userId, admin), admin,
+                admin ? Set.of() : approvals.readableDocumentIds(tenantId, userId));
+    }
+
+    /** {@link #forUser} for several users at once - one tenant-admin lookup and one workflow query for all of them. */
+    @Transactional(readOnly = true)
+    public Map<UUID, DocumentAccessView> forUsers(UUID tenantId, Collection<UUID> userIds) {
+        Set<UUID> wanted = new LinkedHashSet<>(userIds);
+        wanted.remove(null);
+        if (wanted.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> admins = userPermissions.tenantAdminIds(tenantId);
+        Map<UUID, Set<UUID>> workflowReadable = approvals.readableDocumentIdsByUser(tenantId, wanted);
+        List<Folder> folders = folderAccess.tenantFolders(tenantId);
+        Map<UUID, DocumentAccessView> views = new LinkedHashMap<>();
+        for (UUID userId : wanted) {
+            boolean admin = admins.contains(userId);
+            views.put(userId, build(tenantId, userId, folderAccess.forUser(tenantId, userId, admin, folders), admin,
+                    admin ? Set.of() : workflowReadable.getOrDefault(userId, Set.of())));
+        }
+        return views;
+    }
+
+    private DocumentAccessView build(UUID tenantId, UUID userId, FolderAccessView folders, boolean admin,
+                                     Set<UUID> workflowReadable) {
         // Deleted ones too: a restricted document in the recycle bin must stay open to the people on its
         // list, so they can restore it - even when no live document is restricted.
         boolean anyRestricted = cache.anyRestrictedDocuments(tenantId, () ->
@@ -96,13 +163,13 @@ public class DocumentAccessService {
             granted = cache.documentGrants(tenantId, userId, () -> {
                 Map<UUID, FolderAccessLevel> best = new HashMap<>();
                 for (DocumentAccessEntry entry : accessRepository.findForPrincipals(tenantId, userId,
-                        principals.callerRoleIds())) {
+                        principals.roleIdsOf(tenantId, userId))) {
                     best.merge(entry.getDocumentId(), entry.getAccessLevel(), (a, b) -> a.atLeast(b) ? a : b);
                 }
                 return best;
             });
         }
-        return new DocumentAccessView(folders, granted, admin, anyRestricted);
+        return new DocumentAccessView(folders, granted, admin, anyRestricted, workflowReadable);
     }
 
     /** Restricted documents the caller isn't on the list of - left out of exports. */
@@ -199,8 +266,8 @@ public class DocumentAccessService {
             }
         }
 
-        Map<String, Object> previous = AccessPrincipals.snapshot(document.getAccessMode(),
-                grants(accessRepository.findByTenantIdAndDocumentIdOrderByCreatedAtAsc(tenantId, documentId)));
+        List<Grant> before = grants(accessRepository.findByTenantIdAndDocumentIdOrderByCreatedAtAsc(tenantId, documentId));
+        Map<String, Object> previous = AccessPrincipals.snapshot(document.getAccessMode(), before);
         document.setAccessMode(mode);
         document.setUpdatedAt(OffsetDateTime.now());
         document.setUpdatedBy(TenantContext.getUserId());
@@ -223,6 +290,9 @@ public class DocumentAccessService {
                 .previousValue(previous)
                 .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
                 .log();
+        // Tell whoever is newly on the list that the document was shared with them (3.2, N10).
+        AccessGrantedEvent.of("document", documentId, document.getTitle(), before, wanted.values())
+                .ifPresent(events::publishEvent);
         return getAccess(documentId);
     }
 

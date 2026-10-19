@@ -12,6 +12,8 @@ import com.oak.dms.comment.repository.DocumentCommentRepository;
 import com.oak.dms.comment.service.MentionService;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.folder.DocumentAccessService;
+import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.security.auth.UserPermissions;
@@ -44,6 +46,7 @@ public class MentionServiceImpl implements MentionService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final UserPermissions userPermissions;
+    private final DocumentAccessService documentAccessService;
     private final AuthorizationService authorizationService;
     private final CommentMapper mapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -58,23 +61,30 @@ public class MentionServiceImpl implements MentionService {
             throw new CommentValidationException("COMMENT_INVALID_MENTION",
                     "A comment can mention at most " + MAX_MENTIONS + " people");
         }
-        List<CommentMention> created = new ArrayList<>();
+        List<User> mentioned = new ArrayList<>();
         for (UUID id : ids) {
             User user = userRepository.findByUserIdAndTenantIdAndDeletedFalse(id, tenantId)
                     .filter(u -> u.getStatus() == User.UserStatus.active)
                     .orElseThrow(() -> new CommentValidationException("COMMENT_INVALID_MENTION",
                             "A mentioned person doesn't exist or is not active"));
-            if (mentionRepository.existsByTenantIdAndCommentIdAndMentionedUserId(tenantId, comment.getCommentId(),
+            if (!mentionRepository.existsByTenantIdAndCommentIdAndMentionedUserId(tenantId, comment.getCommentId(),
                     user.getUserId())) {
-                continue;
+                mentioned.add(user);
             }
+        }
+        // Decision 10: they are notified either way; this records whether they could actually open
+        // this document - the permission AND folder/document access (V53/V54), worked out for them.
+        Map<UUID, DocumentAccessView> access = documentAccessService.forUsers(tenantId,
+                mentioned.stream().map(User::getUserId).toList());
+        List<CommentMention> created = new ArrayList<>();
+        for (User user : mentioned) {
+            boolean canOpen = userPermissions.holds(tenantId, user.getUserId(), PermissionCodes.DOCM_DOCUMENTS_VIEW)
+                    && access.get(user.getUserId()).canSee(document);
             created.add(CommentMention.builder()
                     .tenantId(tenantId)
                     .commentId(comment.getCommentId())
                     .mentionedUserId(user.getUserId())
-                    // Decision 10: they are notified either way; this records why they couldn't open it.
-                    .hadDocumentAccess(userPermissions.holds(tenantId, user.getUserId(),
-                            PermissionCodes.DOCM_DOCUMENTS_VIEW))
+                    .hadDocumentAccess(canOpen)
                     .build());
         }
         if (created.isEmpty()) {
@@ -99,10 +109,13 @@ public class MentionServiceImpl implements MentionService {
         documentRepository.findAllById(comments.values().stream().map(DocumentComment::getDocumentId).toList())
                 .forEach(d -> documents.put(d.getDocumentId(), d));
         CommentMapper.Context context = mapper.context(tenantId, comments.values());
-        boolean canOpen = authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        // canOpen is per document: the permission plus the caller's own access to that one document.
+        boolean hasPermission = authorizationService.hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW);
+        DocumentAccessView access = hasPermission ? documentAccessService.forCaller() : null;
         return page.map(m -> {
             DocumentComment c = comments.get(m.getCommentId());
             Document d = documents.get(c.getDocumentId());
+            boolean canOpen = access != null && d != null && !d.isDeleted() && access.canSee(d);
             return new MentionResponse(m.getMentionId(), mapper.toResponse(c, context), c.getDocumentId(),
                     d == null ? null : d.getTitle(), canOpen, m.getCreatedAt());
         });

@@ -11,9 +11,9 @@ import com.oak.dms.workflow.event.WorkflowInfoRequestEvent;
 import com.oak.dms.workflow.event.WorkflowTaskDelegatedEvent;
 import com.oak.dms.workflow.event.WorkflowTaskEscalatedEvent;
 import com.oak.dms.workflow.event.WorkflowTaskReminderEvent;
-import com.oak.dms.workflow.helper.NotificationDispatcher;
 import com.oak.dms.workflow.helper.TaskRouting;
 import com.oak.dms.workflow.helper.WorkflowNotificationMailer;
+import com.oak.dms.workflow.helper.WorkflowNotificationMailer.Doc;
 import com.oak.dms.workflow.helper.WorkflowRecipients;
 import com.oak.dms.workflow.repository.WorkflowInfoRequestRepository;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
@@ -33,10 +33,11 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Phase 2 workflow mail (S9): delegation and reassignment, reminders,
- * escalation and information requests. Same rules as
- * {@link WorkflowNotificationListener} - after commit, off the request
- * thread, one try per recipient, best effort (decision 24).
+ * Phase 2 workflow notifications (S9): delegation and reassignment, reminders
+ * (due-date and inactivity), escalation and information requests. Same rules
+ * as {@link WorkflowNotificationListener} - BEFORE_COMMIT, written through the
+ * shared notification service in the raising transaction, one call per event's
+ * recipients.
  */
 @Component
 @RequiredArgsConstructor
@@ -60,29 +61,28 @@ public class WorkflowActivityNotificationListener {
     private final TaskRouting taskRouting;
     private final WorkflowRecipients recipients;
     private final WorkflowNotificationMailer mailer;
-    private final NotificationDispatcher dispatcher;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onTaskMoved(WorkflowTaskDelegatedEvent event) {
-        dispatcher.dispatch(event.kind(), event.taskId(), () -> notifyTaskMoved(event));
+        notifyTaskMoved(event);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onReminder(WorkflowTaskReminderEvent event) {
-        dispatcher.dispatch("reminder", event.taskId(), () -> notifyReminder(event));
+        notifyReminder(event);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onEscalated(WorkflowTaskEscalatedEvent event) {
-        dispatcher.dispatch("escalation", event.taskId(), () -> notifyEscalated(event));
+        notifyEscalated(event);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onInfoRequest(WorkflowInfoRequestEvent event) {
-        dispatcher.dispatch("info-" + event.kind(), event.instanceId(), () -> notifyInfoRequest(event));
+        notifyInfoRequest(event);
     }
 
-    private record Context(WorkflowInstance instance, WorkflowTask task, String stageName, String title) {
+    private record Context(WorkflowInstance instance, WorkflowTask task, String stageName, Doc doc) {
     }
 
     private Context context(UUID taskId) {
@@ -94,7 +94,8 @@ public class WorkflowActivityNotificationListener {
         if (stage == null || instance == null) {
             return null;
         }
-        return new Context(instance, task, stage.getName(), recipients.documentTitle(instance.getDocumentId()));
+        return new Context(instance, task, stage.getName(),
+                new Doc(instance.getDocumentId(), recipients.documentTitle(instance.getDocumentId())));
     }
 
     private void notifyTaskMoved(WorkflowTaskDelegatedEvent event) {
@@ -107,26 +108,24 @@ public class WorkflowActivityNotificationListener {
         String toName = name(event.newHolderId(), tenantId);
         User newHolder = recipients.activeUser(event.newHolderId(), tenantId);
         if (newHolder != null) {
-            NotificationDispatcher.send(() -> mailer.sendTaskMoved(newHolder, true, event.kind(), c.title(), c.stageName(),
-                    fromName, toName, event.note()), event.kind(), newHolder, event.taskId());
+            mailer.sendTaskMoved(List.of(newHolder), true, event.kind(), c.doc(), c.stageName(), fromName, toName,
+                    event.note());
         }
         User previous = recipients.activeUser(event.previousHolderId(), tenantId);
         if (previous != null && !previous.getUserId().equals(event.newHolderId())) {
-            NotificationDispatcher.send(() -> mailer.sendTaskMoved(previous, false, event.kind(), c.title(), c.stageName(),
-                    fromName, toName, event.note()), event.kind(), previous, event.taskId());
+            mailer.sendTaskMoved(List.of(previous), false, event.kind(), c.doc(), c.stageName(), fromName, toName,
+                    event.note());
         }
     }
 
     private void notifyReminder(WorkflowTaskReminderEvent event) {
         Context c = context(event.taskId());
-        if (c == null || c.task().getDueAt() == null) {
-            return;
+        if (c == null) {
+            return; // an inactivity reminder has no due date, so dueAt may be null here
         }
         Set<UUID> holders = taskRouting.currentHolders(event.tenantId(), c.task(), c.instance().getInitiatedBy());
-        for (User user : recipients.activeUsers(holders, event.tenantId()).values()) {
-            NotificationDispatcher.send(() -> mailer.sendReminder(user, c.title(), c.stageName(), c.task().getDueAt()),
-                    "reminder", user, event.taskId());
-        }
+        mailer.sendReminder(recipients.activeUsers(holders, event.tenantId()).values(), c.doc(), c.stageName(),
+                c.task().getDueAt());
     }
 
     private void notifyEscalated(WorkflowTaskEscalatedEvent event) {
@@ -137,25 +136,21 @@ public class WorkflowActivityNotificationListener {
         UUID tenantId = event.tenantId();
         if (event.targetUserId() == null) {
             String why = WHY_NOT_ESCALATED.getOrDefault(event.skippedReason(), event.skippedReason());
-            for (User user : recipients.activeUsers(recipients.reassignersAndAdmins(tenantId), tenantId).values()) {
-                NotificationDispatcher.send(() -> mailer.sendEscalationFailed(user, c.title(), c.stageName(), why,
-                        c.instance().getInstanceId()), "escalation-failed", user, event.taskId());
-            }
+            mailer.sendEscalationFailed(
+                    recipients.activeUsers(recipients.reassignersAndAdmins(tenantId), tenantId).values(), c.doc(),
+                    c.stageName(), why, c.instance().getInstanceId());
             return;
         }
         User target = recipients.activeUser(event.targetUserId(), tenantId);
         if (target != null) {
-            NotificationDispatcher.send(() -> mailer.sendEscalated(target, true, c.title(), c.stageName(), null),
-                    "escalation", target, event.taskId());
+            mailer.sendEscalated(List.of(target), true, c.doc(), c.stageName(), null);
         }
         String targetName = name(event.targetUserId(), tenantId);
         Set<UUID> holders = new LinkedHashSet<>(taskRouting.currentHolders(tenantId, c.task(),
                 c.instance().getInitiatedBy()));
         holders.remove(event.targetUserId());
-        for (User user : recipients.activeUsers(holders, tenantId).values()) {
-            NotificationDispatcher.send(() -> mailer.sendEscalated(user, false, c.title(), c.stageName(), targetName),
-                    "escalation-copy", user, event.taskId());
-        }
+        mailer.sendEscalated(recipients.activeUsers(holders, tenantId).values(), false, c.doc(), c.stageName(),
+                targetName);
     }
 
     private void notifyInfoRequest(WorkflowInfoRequestEvent event) {
@@ -164,14 +159,14 @@ public class WorkflowActivityNotificationListener {
         if (instance == null) {
             return;
         }
-        String title = recipients.documentTitle(instance.getDocumentId());
+        Doc doc = new Doc(instance.getDocumentId(), recipients.documentTitle(instance.getDocumentId()));
         List<WorkflowInfoRequest> requests = infoRequestRepository.findAllById(event.infoRequestIds());
         for (WorkflowInfoRequest r : requests) {
             switch (event.kind()) {
-                case "requested" -> mailRequested(r, tenantId, title);
+                case "requested" -> mailRequested(r, tenantId, doc);
                 case "reassigned" -> {
-                    mailRequested(r, tenantId, title);
-                    mailClosed(event.previousRequestedFrom(), tenantId, title,
+                    mailRequested(r, tenantId, doc);
+                    mailClosed(event.previousRequestedFrom(), tenantId, doc,
                             "it was redirected to " + name(r.getRequestedFrom(), tenantId), instance);
                 }
                 case "answered", "declined" -> {
@@ -181,16 +176,16 @@ public class WorkflowActivityNotificationListener {
                         int documents = supportingRepository.findByInfoRequestIdInAndTenantIdAndDeletedFalse(
                                 List.of(r.getInfoRequestId()), tenantId).size();
                         String responder = name(r.getRespondedBy(), tenantId);
-                        NotificationDispatcher.send(() -> mailer.sendInfoAnswered(requester, title, responder, declined,
+                        mailer.sendInfoAnswered(List.of(requester), doc, responder, declined,
                                 declined ? r.getDeclineReason() : r.getResponseMessage(), documents,
-                                instance.getInstanceId()), "info-" + event.kind(), requester, r.getInfoRequestId());
+                                instance.getInstanceId());
                     }
                 }
-                case "withdrawn" -> mailClosed(r.getRequestedFrom(), tenantId, title, r.getCancelReason(), instance);
+                case "withdrawn" -> mailClosed(r.getRequestedFrom(), tenantId, doc, r.getCancelReason(), instance);
                 case "cancelled" -> {
                     // Closed by the engine: both sides learn why (decision 16).
-                    mailClosed(r.getRequestedFrom(), tenantId, title, r.getCancelReason(), instance);
-                    mailClosed(r.getRequestedBy(), tenantId, title, r.getCancelReason(), instance);
+                    mailClosed(r.getRequestedFrom(), tenantId, doc, r.getCancelReason(), instance);
+                    mailClosed(r.getRequestedBy(), tenantId, doc, r.getCancelReason(), instance);
                 }
                 default -> {
                 }
@@ -198,20 +193,18 @@ public class WorkflowActivityNotificationListener {
         }
     }
 
-    private void mailRequested(WorkflowInfoRequest r, UUID tenantId, String title) {
+    private void mailRequested(WorkflowInfoRequest r, UUID tenantId, Doc doc) {
         User to = recipients.activeUser(r.getRequestedFrom(), tenantId);
         if (to != null) {
             String requester = name(r.getRequestedBy(), tenantId);
-            NotificationDispatcher.send(() -> mailer.sendInfoRequested(to, title, requester, r.getMessage(), r.getDueAt()),
-                    "info-requested", to, r.getInfoRequestId());
+            mailer.sendInfoRequested(List.of(to), doc, requester, r.getMessage(), r.getDueAt());
         }
     }
 
-    private void mailClosed(UUID userId, UUID tenantId, String title, String reason, WorkflowInstance instance) {
+    private void mailClosed(UUID userId, UUID tenantId, Doc doc, String reason, WorkflowInstance instance) {
         User to = recipients.activeUser(userId, tenantId);
         if (to != null) {
-            NotificationDispatcher.send(() -> mailer.sendInfoClosed(to, title, reason, instance.getInstanceId()),
-                    "info-closed", to, instance.getInstanceId());
+            mailer.sendInfoClosed(List.of(to), doc, reason, instance.getInstanceId());
         }
     }
 

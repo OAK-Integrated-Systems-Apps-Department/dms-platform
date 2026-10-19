@@ -19,7 +19,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One signature (V105) - append-only evidence, enforced in the database by
+ * One signature (V108) - append-only evidence, enforced in the database by
  * {@code trg_document_signatures_append_only}: every field below except
  * {@link #status}, {@link #statusChangedAt}, {@link #statusReason},
  * {@link #lastVerifiedAt} and {@link #lastVerificationResult} is immutable

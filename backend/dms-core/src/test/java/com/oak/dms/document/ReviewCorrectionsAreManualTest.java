@@ -13,7 +13,6 @@ import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.TenantContext;
-import com.oak.dms.document.DocumentMapper;
 import com.oak.dms.folder.AccessPrincipals;
 import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.folder.FolderAccessService;
@@ -73,13 +72,12 @@ class ReviewCorrectionsAreManualTest {
 
     @Mock private DocumentTypeRepository documentTypeRepository;
     @Mock private DocumentTypeFieldService documentTypeFieldService;
-    @Mock private com.oak.dms.user.UserRepository userRepository;
     @Mock private com.oak.dms.storage.repository.StorageLocationRepository storageLocationRepository;
     @Mock private com.oak.dms.storage.service.ObjectStorageServiceFactory objectStorageServiceFactory;
     @Mock private DocumentRepository documentRepository;
     @Mock private DocumentVersionRepository documentVersionRepository;
     @Mock private DocumentOcrFieldResultRepository documentOcrFieldResultRepository;
-    @Mock private DocumentMapper documentMapper;
+    @Mock private DocumentApprovals documentApprovals;
     @Mock private IngestionGate ingestionGate;
     @Mock private AuditService auditService;
     @Mock private FolderService folderService;
@@ -117,10 +115,10 @@ class ReviewCorrectionsAreManualTest {
         // Constructor order follows the field order in DocumentServiceImpl:
         // the document/folder/access collaborators first, then the OCR ones.
         service = new DocumentServiceImpl(
-                documentRepository, documentVersionRepository, documentMapper, documentTypeRepository,
-                userRepository, storageLocationRepository, objectStorageServiceFactory, ingestionGate,
+                documentRepository, documentVersionRepository, documentTypeRepository,
+                storageLocationRepository, objectStorageServiceFactory, ingestionGate,
                 auditService, folderService, folderAccessService, documentAccessService,
-                accessPrincipals, versionContent,
+                accessPrincipals, documentApprovals, versionContent,
                 documentTypeFieldService, documentOcrFieldResultRepository,
                 documentOcrLineItemRepository, documentOcrCorrectionRepository,
                 processingJobRepository, ocrWorkerClient, ocrEnqueueService,

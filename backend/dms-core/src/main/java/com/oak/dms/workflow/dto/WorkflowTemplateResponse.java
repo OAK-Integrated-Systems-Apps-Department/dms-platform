@@ -15,6 +15,8 @@ public record WorkflowTemplateResponse(
         UUID documentTypeId,
         String documentTypeName,
         String onDocumentChange,
+        Integer defaultInactivityReminderHours,
+        Integer defaultEscalateAfterReminderHours,
         boolean hasInstances,
         List<WorkflowStageResponse> stages,
         OffsetDateTime createdAt,

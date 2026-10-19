@@ -1,7 +1,7 @@
 package com.oak.dms.signature.enums;
 
 /**
- * A signature row's lifecycle status (V105). {@code valid} is a signature
+ * A signature row's lifecycle status (V108). {@code valid} is a signature
  * that still stands behind the version it signed; {@code invalidated}
  * covers both reasons a signature stops standing behind it - its workflow
  * ended cancelled/rejected (see {@code WorkflowSignatureListener}), or a

@@ -1,14 +1,13 @@
 package com.oak.dms.encryption;
 
+import com.oak.dms.notification.service.NotificationRequest;
+import com.oak.dms.notification.service.NotificationService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -19,11 +18,11 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Emails the people who can rotate an organisation's master key when it is
- * due (the schedule's reminder, {@link KeyRotationScheduler}): everyone holding
+ * Notifies the people who can rotate an organisation's master key when it is
+ * due ({@link KeyRotationScheduler}): everyone holding
  * de.manage-encryption-keys.rotate-key through a role, and the organisation's
- * tenant admins. Plain text, no key material - just that it is due and where to
- * do it. Best effort: a mail failure is logged and the audit event stands.
+ * tenant admins. Routed through the shared {@link NotificationService} (3.2,
+ * N8) as the critical {@code security.key-rotation.reminder} category.
  */
 @Slf4j
 @Component
@@ -32,42 +31,36 @@ public class KeyRotationReminderMailer {
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM yyyy");
 
-    private final JavaMailSender mailSender;
     private final JdbcTemplate jdbc;
     private final UserRepository userRepository;
     private final KeycloakUserService keycloakUserService;
+    private final NotificationService notificationService;
 
-    @Value("${app.frontend-base-url}")
-    private String frontendBaseUrl;
-
-    @Value("${dms.scanning.notifications.mail-from:no-reply@oakdms.local}")
-    private String mailFrom;
-
-    /** @return how many people were emailed */
+    /** @return how many people were notified */
     public int send(UUID tenantId, OffsetDateTime dueAt, Integer intervalDays) {
-        int sent = 0;
-        for (User user : recipients(tenantId)) {
-            try {
-                SimpleMailMessage message = new SimpleMailMessage();
-                message.setFrom(mailFrom);
-                message.setTo(user.getEmail());
-                message.setSubject("Your organisation's encryption key is due for rotation");
-                message.setText("Hello " + nameOf(user) + ",\n\n"
-                        + "Your organisation's master encryption key "
-                        + (dueAt != null ? "was due for rotation on " + DAY.format(dueAt) : "is due for rotation")
-                        + (intervalDays != null ? " (it is rotated every " + intervalDays + " days)" : "") + ".\n\n"
-                        + "Rotating it takes a moment and nothing has to be re-uploaded: rotate the key, then re-wrap "
-                        + "the existing keys onto it.\n\n"
-                        + frontendBaseUrl + "/admin/encryption\n\n"
-                        + "You'll be reminded again until it is rotated. To have it rotated automatically, turn on "
-                        + "\"Rotate and re-wrap automatically\" on the same page.\n");
-                mailSender.send(message);
-                sent++;
-            } catch (RuntimeException e) {
-                log.warn("Could not email the key rotation reminder to user {}: {}", user.getUserId(), e.getMessage());
-            }
+        List<User> recipients = recipients(tenantId);
+        if (recipients.isEmpty()) {
+            return 0;
         }
-        return sent;
+        String body = "Your organisation's master encryption key "
+                + (dueAt != null ? "was due for rotation on " + DAY.format(dueAt) : "is due for rotation")
+                + (intervalDays != null ? " (it is rotated every " + intervalDays + " days)" : "") + ".\n\n"
+                + "Rotating it takes a moment and nothing has to be re-uploaded: rotate the key, then re-wrap the "
+                + "existing keys onto it.\n\n"
+                + "You'll be reminded again until it is rotated. To have it rotated automatically, turn on "
+                + "\"Rotate and re-wrap automatically\" on the Encryption page.";
+        notificationService.notify(NotificationRequest.builder()
+                .tenantId(tenantId)
+                .recipientUserIds(recipients.stream().map(User::getUserId).toList())
+                .categoryCode("security.key-rotation.reminder")
+                .title("Your organisation's encryption key is due for rotation")
+                .body(body)
+                .linkUrl("/admin/encryption")
+                .objectType("encryption_key")
+                .sourceModule("encryption")
+                .dedupeKey(null) // reminders recur until rotated
+                .build());
+        return recipients.size();
     }
 
     /** Active users of the tenant who may rotate its key - by role permission, or as tenant admin. */
@@ -95,10 +88,5 @@ public class KeyRotationReminderMailer {
                 .filter(u -> tenantId.equals(u.getTenantId()) && !u.isDeleted()
                         && u.getStatus() == User.UserStatus.active && u.getEmail() != null)
                 .toList();
-    }
-
-    private static String nameOf(User user) {
-        return user.getDisplayName() != null && !user.getDisplayName().isBlank() ? user.getDisplayName()
-                : user.getEmail();
     }
 }
