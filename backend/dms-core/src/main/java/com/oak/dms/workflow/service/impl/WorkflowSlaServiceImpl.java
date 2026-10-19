@@ -4,7 +4,6 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.workflow.config.WorkflowProperties;
 import com.oak.dms.workflow.entity.WorkflowInstance;
-import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
 import com.oak.dms.workflow.entity.WorkflowTask;
 import com.oak.dms.workflow.enums.EscalationTarget;
@@ -21,7 +20,6 @@ import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
 import com.oak.dms.workflow.repository.WorkflowSlaRepository.DueTask;
 import com.oak.dms.workflow.repository.WorkflowSlaRepository;
 import com.oak.dms.workflow.repository.WorkflowStageInstanceRepository;
-import com.oak.dms.workflow.repository.WorkflowStageRepository;
 import com.oak.dms.workflow.repository.WorkflowTaskRepository;
 import com.oak.dms.workflow.service.WorkflowSlaService;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +48,6 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
     private final WorkflowSlaRepository slaRepository;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
-    private final WorkflowStageRepository stageRepository;
     private final WorkflowTaskRepository taskRepository;
     private final EscalationTargetResolver targetResolver;
     private final WorkflowActionRecorder actions;
@@ -62,7 +59,7 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
 
     public WorkflowSlaServiceImpl(WorkflowSlaRepository slaRepository, WorkflowInstanceRepository instanceRepository,
                                   WorkflowStageInstanceRepository stageInstanceRepository,
-                                  WorkflowStageRepository stageRepository, WorkflowTaskRepository taskRepository,
+                                  WorkflowTaskRepository taskRepository,
                                   EscalationTargetResolver targetResolver, WorkflowActionRecorder actions,
                                   WorkflowEngine engine, WorkflowLocks locks, WorkflowProperties properties,
                                   ApplicationEventPublisher eventPublisher,
@@ -70,7 +67,6 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
         this.slaRepository = slaRepository;
         this.instanceRepository = instanceRepository;
         this.stageInstanceRepository = stageInstanceRepository;
-        this.stageRepository = stageRepository;
         this.taskRepository = taskRepository;
         this.targetResolver = targetResolver;
         this.actions = actions;
@@ -110,32 +106,73 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
         WorkflowTask task = taskRepository.lockByTaskIdAndTenantId(due.taskId(), due.tenantId()).orElseThrow();
 
         if (instance.getStatus() != InstanceStatus.in_progress || stage.getStatus() != StageInstanceStatus.active
-                || !TaskStatus.DECIDABLE.contains(task.getStatus()) || task.getDueAt() == null) {
+                || !TaskStatus.DECIDABLE.contains(task.getStatus())) {
             return false;   // decided, cancelled or paused for information (decision 8) since the scan
         }
-        WorkflowStage def = stageRepository.findById(stage.getStageId()).orElseThrow();
+        // due_at may be null (inactivity-only task); each branch below checks it where needed.
+        // Every threshold and the escalation target are resolved fresh in the scan SQL (due-date reminder and
+        // escalation target from the stage only; inactivity hours the stage's own value, else the template
+        // default), so a stale L2-cached template entity can never shadow a just-changed default (N-NFR-004).
+        Integer reminderBeforeHours = due.reminderBeforeHours();
+        Integer inactivityHours = due.inactivityReminderHours();
+        Integer escalateAfterHours = due.escalateAfterReminderHours();
+        EscalationTarget escalationTarget = EscalationTarget.valueOf(due.escalationTarget());
         OffsetDateTime now = OffsetDateTime.now();
-        if (task.getEscalatedAt() == null && def.getEscalationTarget() != EscalationTarget.none
-                && !task.getDueAt().isAfter(now)) {
-            escalate(instance, stage, def, task, now);
+        boolean canEscalate = task.getEscalatedAt() == null && escalationTarget != EscalationTarget.none;
+
+        // Escalation fires once, at the first trigger - due-date, or (after its reminder) inactivity.
+        if (canEscalate && task.getDueAt() != null && !task.getDueAt().isAfter(now)) {
+            escalate(instance, stage, due, escalationTarget, task, now);
             return true;
         }
-        if (task.getReminderSentAt() == null && def.getReminderBeforeHours() != null && task.getDueAt().isAfter(now)
-                && !task.getDueAt().minusHours(def.getReminderBeforeHours()).isAfter(now)) {
-            remind(instance, stage, def, task, now);
+        if (canEscalate && task.getInactivityReminderSentAt() != null && escalateAfterHours != null
+                && !task.getInactivityReminderSentAt().plusHours(escalateAfterHours).isAfter(now)) {
+            escalate(instance, stage, due, escalationTarget, task, now);
             return true;
+        }
+        // Due-date reminder (before due) and inactivity reminder each fire at most once (separate stamps).
+        if (task.getReminderSentAt() == null && reminderBeforeHours != null && task.getDueAt() != null
+                && task.getDueAt().isAfter(now)
+                && !task.getDueAt().minusHours(reminderBeforeHours).isAfter(now)) {
+            remind(instance, stage, reminderBeforeHours, task, now);
+            return true;
+        }
+        if (task.getInactivityReminderSentAt() == null && inactivityHours != null) {
+            OffsetDateTime base = task.getLastActivityAt() != null ? task.getLastActivityAt() : task.getCreatedAt();
+            if (base != null && !base.plusHours(inactivityHours).isAfter(now)) {
+                remindInactivity(instance, stage, task, now, inactivityHours);
+                return true;
+            }
         }
         return false;
     }
 
-    private void remind(WorkflowInstance instance, WorkflowStageInstance stage, WorkflowStage def, WorkflowTask task,
-                        OffsetDateTime now) {
+    /** Inactivity reminder (N-FR-003): no activity for N hours. Stamps its own fire-once column. */
+    private void remindInactivity(WorkflowInstance instance, WorkflowStageInstance stage, WorkflowTask task,
+                                  OffsetDateTime now, int inactivityHours) {
+        task.setInactivityReminderSentAt(now);
+        taskRepository.saveAndFlush(task);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("stageOrder", stage.getStageOrder());
+        detail.put("reason", "inactivity");
+        detail.put("inactivityReminderHours", inactivityHours);
+        actions.record(instance, stage.getStageInstanceId(), task.getTaskId(), WorkflowActionType.reminded, null, null,
+                detail);
+        audit(AuditActionCatalog.WORKFLOW_TASK_REMINDER_SENT, instance, task, detail);
+        eventPublisher.publishEvent(new WorkflowTaskReminderEvent(instance.getTenantId(), instance.getInstanceId(),
+                task.getTaskId()));
+    }
+
+    private void remind(WorkflowInstance instance, WorkflowStageInstance stage, int reminderBeforeHours,
+                        WorkflowTask task, OffsetDateTime now) {
         task.setReminderSentAt(now);
         taskRepository.saveAndFlush(task);
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("stageOrder", stage.getStageOrder());
-        detail.put("dueAt", task.getDueAt().toString());
-        detail.put("reminderBeforeHours", def.getReminderBeforeHours());
+        if (task.getDueAt() != null) {
+            detail.put("dueAt", task.getDueAt().toString());
+        }
+        detail.put("reminderBeforeHours", reminderBeforeHours);
         actions.record(instance, stage.getStageInstanceId(), task.getTaskId(), WorkflowActionType.reminded, null, null,
                 detail);
         audit(AuditActionCatalog.WORKFLOW_TASK_REMINDER_SENT, instance, task, detail);
@@ -148,16 +185,19 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
      * written (decision 6). An unusable target is stamped too, so it fires
      * once, and admins are alerted instead (A2).
      */
-    private void escalate(WorkflowInstance instance, WorkflowStageInstance stage, WorkflowStage def,
-                          WorkflowTask task, OffsetDateTime now) {
-        EscalationTargetResolver.Resolution target = targetResolver.resolve(def, task, instance);
+    private void escalate(WorkflowInstance instance, WorkflowStageInstance stage, DueTask due,
+                          EscalationTarget escalationTarget, WorkflowTask task, OffsetDateTime now) {
+        EscalationTargetResolver.Resolution target = targetResolver.resolve(escalationTarget,
+                due.escalationUserId(), task, instance);
         task.setEscalatedAt(now);
         task.setEscalatedTo(target.userId());
         taskRepository.saveAndFlush(task);
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("stageOrder", stage.getStageOrder());
-        detail.put("dueAt", task.getDueAt().toString());
-        detail.put("escalationTarget", def.getEscalationTarget().name());
+        if (task.getDueAt() != null) {
+            detail.put("dueAt", task.getDueAt().toString());
+        }
+        detail.put("escalationTarget", escalationTarget.name());
         detail.put("source", target.source());
         if (target.userId() != null) {
             detail.put("target", target.userId().toString());

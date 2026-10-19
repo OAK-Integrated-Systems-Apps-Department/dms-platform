@@ -16,7 +16,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
-/** GET /api/v1/documents - the document list behind the supporting-document picker. */
+/**
+ * GET /api/v1/documents - "Browse documents", including the documentTypeId
+ * and excludeDocumentId narrowing the workflow document picker uses
+ * (all=true, q=...).
+ */
 @SpringBootTest
 @Import(WorkflowFixtures.class)
 class DocumentListIT extends WorkflowApiSupport {
@@ -43,7 +47,7 @@ class DocumentListIT extends WorkflowApiSupport {
     }
 
     private JsonNode list(String query) throws Exception {
-        return get200("/api/v1/documents" + query, viewer);
+        return get200("/api/v1/documents?all=true" + query, viewer);
     }
 
     private static List<UUID> ids(JsonNode page) {
@@ -54,41 +58,60 @@ class DocumentListIT extends WorkflowApiSupport {
 
     @Test
     void searchMatchesTitleCaseInsensitively_newestFirst() throws Exception {
-        assertThat(ids(list("?search=SUPPLY"))).containsExactly(annex, agreement);
-        assertThat(ids(list("?search=ANNEX b"))).containsExactly(annex);
+        assertThat(ids(list("&q=SUPPLY"))).containsExactly(annex, agreement);
+        assertThat(ids(list("&q=ANNEX b"))).containsExactly(annex);
         assertThat(ids(list(""))).containsExactly(invoice, annex, agreement);
 
-        JsonNode row = list("?search=march").get("content").get(0);
+        JsonNode row = list("&q=march").get("content").get(0);
         assertThat(row.get("title").asString()).isEqualTo("March invoice");
         assertThat(row.get("documentTypeName").asString()).isEqualTo("Invoice");
-        assertThat(row.get("latestVersionId").isNull()).isFalse();
+        assertThat(row.get("documentTypeId").asString()).isEqualTo(invoiceType.toString());
+        assertThat(row.get("versionNumber").isNull()).isFalse();
         assertThat(row.get("createdAt").isNull()).isFalse();
-        assertThat(row.get("createdByName").asString()).isEqualTo(viewer.getDisplayName());
+        assertThat(row.get("ownerUserId").asString()).isEqualTo(viewer.getUserId().toString());
+        assertThat(row.get("myAccess").asString()).isEqualTo("manage");
     }
 
     @Test
     void typeFilter_andExclusion() throws Exception {
-        assertThat(ids(list("?documentTypeId=" + invoiceType))).containsExactly(invoice);
-        assertThat(ids(list("?documentTypeId=" + contractType + "&excludeDocumentId=" + agreement)))
+        assertThat(ids(list("&documentTypeId=" + invoiceType))).containsExactly(invoice);
+        assertThat(ids(list("&documentTypeId=" + contractType + "&excludeDocumentId=" + agreement)))
                 .containsExactly(annex);
+        assertThat(ids(list("&q=supply&excludeDocumentId=" + annex))).containsExactly(agreement);
+    }
+
+    @Test
+    void narrowingAlsoAppliesInsideOneFolderAndAtTheTopLevel() throws Exception {
+        // Without all=true the listing is the top level, where these three are.
+        assertThat(ids(get200("/api/v1/documents?documentTypeId=" + contractType, viewer)))
+                .containsExactly(annex, agreement);
+        assertThat(ids(get200("/api/v1/documents?documentTypeId=" + contractType + "&excludeDocumentId=" + annex,
+                viewer))).containsExactly(agreement);
     }
 
     @Test
     void pagination_andDeletedDocumentsAreLeftOut() throws Exception {
-        JsonNode second = list("?page=1&size=1");
+        JsonNode second = list("&page=1&size=1");
         assertThat(ids(second)).containsExactly(annex);
         assertThat(second.get("totalElements").asLong()).isEqualTo(3);
         assertThat(second.get("totalPages").asInt()).isEqualTo(3);
-        assertThat(list("?size=500").get("size").asInt()).as("size is capped").isEqualTo(50);
+        assertThat(list("&size=5000").get("size").asInt()).as("size is capped").isEqualTo(2000);
 
         fx.jdbc().update("update documents set is_deleted = true, deleted_at = now() where document_id = ?", annex);
         assertThat(ids(list(""))).containsExactly(invoice, agreement);
     }
 
     @Test
+    void templatesAreNeverListed() throws Exception {
+        fx.jdbc().update("update documents set is_template = true where document_id = ?", invoice);
+        assertThat(ids(list(""))).containsExactly(annex, agreement);
+        assertThat(ids(list("&documentTypeId=" + invoiceType))).isEmpty();
+    }
+
+    @Test
     void needsViewPermission_andNeverShowsAnotherTenantsDocuments() throws Exception {
         User noView = fx.user(tenantId, "NoView");
-        call(get("/api/v1/documents"), fx.jwtFor(noView), null, 403);
+        call(get("/api/v1/documents?all=true"), fx.jwtFor(noView), null, 403);
 
         UUID otherTenant = fx.tenant();
         User otherViewer = fx.user(otherTenant, "Other");
@@ -96,11 +119,11 @@ class DocumentListIT extends WorkflowApiSupport {
         UUID otherDocument = fx.document(otherTenant, fx.documentType(otherTenant, "Contract"), otherViewer,
                 "Supply Agreement (other tenant)");
 
-        assertThat(ids(list("?search=supply"))).doesNotContain(otherDocument).containsExactly(annex, agreement);
-        assertThat(ids(call(get("/api/v1/documents?search=supply"), fx.jwtFor(otherViewer), null, 200)))
+        assertThat(ids(list("&q=supply"))).doesNotContain(otherDocument).containsExactly(annex, agreement);
+        assertThat(ids(call(get("/api/v1/documents?all=true&q=supply"), fx.jwtFor(otherViewer), null, 200)))
                 .containsExactly(otherDocument);
         // Even naming this tenant's type returns nothing for the other tenant.
-        assertThat(call(get("/api/v1/documents?documentTypeId=" + contractType), fx.jwtFor(otherViewer), null, 200)
-                .get("totalElements").asLong()).isZero();
+        assertThat(call(get("/api/v1/documents?all=true&documentTypeId=" + contractType), fx.jwtFor(otherViewer),
+                null, 200).get("totalElements").asLong()).isZero();
     }
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { FilePlus, Loader2, Upload, X } from "lucide-react"
+import { Eye, FilePlus, Loader2, Upload, X } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,12 +15,18 @@ import { useSelectableDocumentTypes } from "@/lib/documents/use-selectable-docum
 import type { SupportingDocumentInput } from "@/lib/workflow/api"
 
 import { DocumentPicker } from "./document-picker"
+import { useDocumentPreview } from "./use-document-preview"
 
 const TICKET_POLL_MS = 3000
 
-/** A chosen document, with the title shown in the list. */
+/** A chosen document, with the title and (when known) enough file metadata to preview it. */
 export interface PickedSupportingDocument extends SupportingDocumentInput {
   title: string
+  fileName?: string | null
+  mimeType?: string | null
+  sizeBytes?: number | null
+  documentTypeName?: string | null
+  createdAt?: string | null
 }
 
 interface SupportingDocumentPickerProps {
@@ -41,6 +47,7 @@ export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }:
   const canView = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
   const canUpload = hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
   const [mode, setMode] = useState<"link" | "upload">("link")
+  const preview = useDocumentPreview()
 
   if (!canView) {
     return (
@@ -66,18 +73,41 @@ export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }:
                 <span className="truncate">{doc.title}</span>
                 <span className="text-[11.5px] text-muted-foreground">{doc.source === "uploaded_new" ? "(uploaded)" : "(linked)"}</span>
               </span>
-              <button
-                type="button"
-                onClick={() => onChange(value.filter((d) => d.documentId !== doc.documentId))}
-                className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-                aria-label={`Remove ${doc.title}`}
-              >
-                <X size={13} />
-              </button>
+              <span className="flex shrink-0 items-center gap-0.5">
+                {(doc.fileName || doc.mimeType) && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      preview.open({
+                        documentId: doc.documentId,
+                        title: doc.title,
+                        fileName: doc.fileName ?? null,
+                        mimeType: doc.mimeType ?? null,
+                        sizeBytes: doc.sizeBytes ?? null,
+                        documentTypeName: doc.documentTypeName ?? null,
+                        createdAt: doc.createdAt ?? new Date().toISOString(),
+                      })
+                    }
+                    className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                    aria-label={`View ${doc.title}`}
+                  >
+                    <Eye size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onChange(value.filter((d) => d.documentId !== doc.documentId))}
+                  className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                  aria-label={`Remove ${doc.title}`}
+                >
+                  <X size={13} />
+                </button>
+              </span>
             </li>
           ))}
         </ul>
       )}
+      {preview.element}
       {canUpload && (
         <SegmentedControl
           value={mode}
@@ -92,7 +122,18 @@ export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }:
         <DocumentPicker
           excludeDocumentId={excludeDocumentId}
           pickedIds={value.map((d) => d.documentId)}
-          onPick={(doc) => add({ documentId: doc.documentId, source: "linked_existing", title: doc.title })}
+          onPick={(doc) =>
+            add({
+              documentId: doc.documentId,
+              source: "linked_existing",
+              title: doc.title,
+              fileName: doc.fileName,
+              mimeType: doc.mimeType,
+              sizeBytes: doc.sizeBytes,
+              documentTypeName: doc.documentTypeName,
+              createdAt: doc.createdAt,
+            })
+          }
         />
       ) : (
         <UploadNew onAdd={add} />
@@ -118,7 +159,7 @@ function UploadNew({ onAdd }: { onAdd: (doc: PickedSupportingDocument) => void }
         const ticket = await fetchIngestionTicket(state.ticket!)
         if (ticket.documentId) {
           window.clearInterval(id)
-          onAdd({ documentId: ticket.documentId, source: "uploaded_new", title: title.trim() || ticket.originalFilename })
+          onAdd({ documentId: ticket.documentId, source: "uploaded_new", title: title.trim() || ticket.originalFilename, fileName: ticket.originalFilename })
           setState({ phase: "idle" })
           setFile(null)
           setTitle("")
@@ -139,7 +180,7 @@ function UploadNew({ onAdd }: { onAdd: (doc: PickedSupportingDocument) => void }
     try {
       const ticket = await uploadDocument(file, typeId, title.trim() || file.name)
       if (ticket.documentId) {
-        onAdd({ documentId: ticket.documentId, source: "uploaded_new", title: title.trim() || file.name })
+        onAdd({ documentId: ticket.documentId, source: "uploaded_new", title: title.trim() || file.name, fileName: file.name })
         setState({ phase: "idle" })
         setFile(null)
         setTitle("")

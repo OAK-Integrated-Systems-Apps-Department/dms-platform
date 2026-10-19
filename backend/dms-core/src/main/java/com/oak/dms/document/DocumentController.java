@@ -8,7 +8,6 @@ import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.document.dto.DocumentListItem;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DocumentReviewResponse;
-import com.oak.dms.document.dto.DocumentSummaryResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.document.dto.OcrRerunRequest;
 import com.oak.dms.document.dto.OcrRerunResponse;
@@ -36,7 +35,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -92,7 +90,6 @@ public class DocumentController {
 
     /** Shorthand for the permission-code class, which is otherwise named in full on every route. */
     private static final String P = "T(com.oak.dms.security.rbac.catalog.PermissionCodes).";
-    private static final int MAX_PAGE_SIZE = 50;
 
     private final DocumentService documentService;
     private final DocumentAccessService documentAccessService;
@@ -136,16 +133,19 @@ public class DocumentController {
 
     @GetMapping
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
-
     @Operation(summary = "Browse documents",
             description = "folderId: one folder's documents; without it, documents not in any folder - or every "
-                    + "document with all=true. q searches titles. Newest first by default.")
+                    + "document with all=true. q searches titles. documentTypeId narrows to one type and "
+                    + "excludeDocumentId leaves one document out (the document picker). Newest first by default.")
     public PageResponse<DocumentListItem> listDocuments(
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "all", defaultValue = "false") boolean all,
             @RequestParam(value = "q", required = false) String query,
+            @RequestParam(value = "documentTypeId", required = false) UUID documentTypeId,
+            @RequestParam(value = "excludeDocumentId", required = false) UUID excludeDocumentId,
             @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return PageResponse.from(documentService.listDocuments(folderId, all, query, pageable));
+        return PageResponse.from(documentService.listDocuments(folderId, all, query, documentTypeId, excludeDocumentId,
+                pageable));
     }
 
     @GetMapping("/shared-with-me")
@@ -215,20 +215,6 @@ public class DocumentController {
         return Map.of("moved", documentService.moveDocuments(request.documentIds(), request.folderId()));
     }
     
-    @Operation(summary = "List documents, newest first",
-            description = "search matches the title (case-insensitive); documentTypeId narrows to one type; "
-                    + "excludeDocumentId leaves one document out. size is at most 50.")
-    public PageResponse<DocumentSummaryResponse> listDocuments(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) UUID documentTypeId,
-            @RequestParam(required = false) UUID excludeDocumentId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return PageResponse.from(documentService.listDocuments(search, documentTypeId, excludeDocumentId,
-                PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE))));
-
-    }
-
     @GetMapping("/{id}")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
     @Operation(summary = "Get a document's metadata")

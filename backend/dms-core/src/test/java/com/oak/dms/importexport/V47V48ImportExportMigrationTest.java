@@ -407,7 +407,7 @@ class V47V48ImportExportMigrationTest {
     @Test
     void v70_templatePermissionsGoToRolesThatManagedTemplates_andNothingElseChanges() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "69");
+            migrate(url, "86");
             String tenant = UUID.randomUUID().toString();
             String role = UUID.randomUUID().toString();
             try (Connection c = connect(url)) {
@@ -420,7 +420,7 @@ class V47V48ImportExportMigrationTest {
                         + role + "', permission_id from permissions where tenant_id is null and permission_code in "
                         + "('mdtm.manage-content-types.update', 'fie.manage-import-templates.create-template')");
             }
-            migrate(url, "70");
+            migrate(url, "87");
             try (Connection c = connect(url)) {
                 assertThat(strings(c, "select p.permission_code from role_permissions rp join permissions p "
                         + "using (permission_id) where rp.role_id = '" + role + "'")).containsExactlyInAnyOrder(

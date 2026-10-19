@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { FileText, Plus } from "lucide-react"
 
 import { SearchInput } from "@/components/ui/search-input"
-import { searchDocuments, type DocumentSummaryDto } from "@/lib/documents/api"
+import { fetchDocuments, type DocumentListItemDto } from "@/lib/documents/api"
 import { formatDateTime } from "@/lib/utils"
 
 const RESULTS = 8
@@ -15,13 +15,16 @@ interface DocumentPickerProps {
   excludeDocumentId?: string
   /** Already chosen - hidden from the results. */
   pickedIds: string[]
-  onPick: (document: DocumentSummaryDto) => void
+  onPick: (document: DocumentListItemDto) => void
 }
 
 /**
  * Search the tenant's documents by title and pick one (the person-picker
  * pattern: debounced server-side search, a results list under the box).
  * With an empty search it lists the newest documents.
+ *
+ * Backed by "Browse documents" (`GET /api/v1/documents`, all=true), so the
+ * results are exactly the documents this person may open.
  */
 export function DocumentPicker({ excludeDocumentId, pickedIds, onPick }: DocumentPickerProps) {
   const [search, setSearch] = useState("")
@@ -34,7 +37,15 @@ export function DocumentPicker({ excludeDocumentId, pickedIds, onPick }: Documen
 
   const documents = useQuery({
     queryKey: ["documents", "picker", debounced, excludeDocumentId],
-    queryFn: () => searchDocuments(debounced, { excludeDocumentId }, 0, RESULTS + pickedIds.length),
+    queryFn: () =>
+      fetchDocuments({
+        folderId: null,
+        all: true,
+        q: debounced,
+        excludeDocumentId,
+        page: 0,
+        size: RESULTS + pickedIds.length,
+      }),
     staleTime: 30_000,
     retry: false,
   })
@@ -67,7 +78,7 @@ export function DocumentPicker({ excludeDocumentId, pickedIds, onPick }: Documen
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-foreground">{doc.title}</span>
                   <span className="block text-[11.5px] text-muted-foreground">
-                    {[doc.documentTypeName ?? "No type", formatDateTime(doc.createdAt), doc.createdByName]
+                    {[doc.documentTypeName ?? "No type", doc.fileName, formatDateTime(doc.createdAt)]
                       .filter(Boolean)
                       .join(" · ")}
                   </span>

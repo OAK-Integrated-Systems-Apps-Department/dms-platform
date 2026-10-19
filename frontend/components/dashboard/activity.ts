@@ -1,16 +1,20 @@
 import type { LucideIcon } from "lucide-react"
 import {
+  CheckCircle2,
   Download,
   FolderInput,
   FolderPlus,
   FolderX,
   History,
+  Inbox,
   Pencil,
   RotateCcw,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   Upload,
+  XCircle,
 } from "lucide-react"
 
 import type { DashboardActivity } from "@/lib/dashboard/api"
@@ -78,6 +82,27 @@ const ACTIONS: Record<string, ActivityLook> = {
   FOLDER_ACCESS_CHANGED: {
     verb: "changed who can open the folder",
     icon: ShieldCheck,
+    color: "var(--gold)",
+  },
+  // Approvals - only ever shown to someone taking part in that run (DashboardService).
+  WORKFLOW_SUBMITTED: {
+    verb: "submitted for approval",
+    icon: Send,
+    color: "var(--gold)",
+  },
+  WORKFLOW_APPROVED: {
+    verb: "approved",
+    icon: CheckCircle2,
+    color: "var(--primary)",
+  },
+  WORKFLOW_REJECTED: {
+    verb: "rejected",
+    icon: XCircle,
+    color: "var(--rust)",
+  },
+  WORKFLOW_TASK_ASSIGNED: {
+    verb: "asked you to approve",
+    icon: Inbox,
     color: "var(--gold)",
   },
 }

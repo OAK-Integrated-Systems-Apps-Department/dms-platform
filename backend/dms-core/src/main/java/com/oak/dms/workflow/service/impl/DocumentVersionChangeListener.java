@@ -60,6 +60,7 @@ public class DocumentVersionChangeListener {
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
+    private final WorkflowNewVersionNotifier newVersionNotifier;
 
     @EventListener
     @Transactional(propagation = Propagation.MANDATORY)
@@ -111,6 +112,8 @@ public class DocumentVersionChangeListener {
         engine.audit(AuditActionCatalog.WORKFLOW_DOCUMENT_VERSION_CHANGED, instance)
                 .newValue(engine.instanceSummary(instance, detail))
                 .log();
+        // The approval carries on with the submitted version: tell the people it is waiting on (3.2, N10).
+        newVersionNotifier.notifyHolders(instance, event);
     }
 
     /**

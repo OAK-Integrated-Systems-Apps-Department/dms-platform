@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -9,13 +9,12 @@ import {
   Clock,
   FolderOpen,
   HelpCircle,
-  LayoutDashboard,
+  Inbox as InboxIcon,
   LogOut,
   User,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { activityLook, activityWho } from "@/components/dashboard/activity"
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { TopbarSearch } from "@/components/layout/topbar-search"
@@ -26,15 +25,14 @@ import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useAccountIdentity } from "@/lib/auth/use-account-identity"
 import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
-import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch } from "@/lib/api-fetch"
 import { ROUTES } from "@/lib/app-config"
-import type { DashboardActivity } from "@/lib/dashboard/api"
 import { useDashboard } from "@/lib/dashboard/use-dashboard"
 import { downloadDocumentFile } from "@/lib/documents/api"
 import { saveDownloadedFile } from "@/lib/download-file"
+import { useMarkRead, useNotifications, useUnreadCount } from "@/lib/notifications/use-notifications"
 
 const rowClass = "flex items-center gap-2.5 px-3.5 py-2"
 const footerClass =
@@ -44,49 +42,8 @@ const footerClass =
 type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
 
 /**
- * When this browser last opened the activity menu - in localStorage, so the
- * unread dot only shows for what's new since (a per-browser convenience; no
- * notification store exists on the server).
- */
-const SEEN_KEY = "dms.activity.seen"
-const SEEN_EVENT = "dms-activity-seen"
-
-function subscribeSeen(onChange: () => void) {
-  window.addEventListener("storage", onChange)
-  window.addEventListener(SEEN_EVENT, onChange)
-  return () => {
-    window.removeEventListener("storage", onChange)
-    window.removeEventListener(SEEN_EVENT, onChange)
-  }
-}
-
-function readSeen(): string | null {
-  try {
-    return window.localStorage.getItem(SEEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-function markSeen(iso: string) {
-  try {
-    window.localStorage.setItem(SEEN_KEY, iso)
-  } catch {
-    // storage blocked - the dot just shows again next time
-  }
-  window.dispatchEvent(new Event(SEEN_EVENT))
-}
-
-/** Something someone else did since the menu was last opened. */
-function isUnread(entry: DashboardActivity, seen: string | null, me?: string) {
-  if (entry.actorId && entry.actorId === me) return false
-  return seen === null || new Date(entry.occurredAt) > new Date(seen)
-}
-
-/**
  * Top bar: sidebar toggle, document search, help, the recent-documents
- * and recent-activity menus (from the dashboard figures, GET
- * /api/v1/dashboard), and the account menu. Only one dropdown is open at a
+ * and notification-inbox menus, and the account menu. Only one dropdown is open at a
  * time; a document picked from the search or the recent list opens in the
  * preview right here.
  *
@@ -113,7 +70,6 @@ function isUnread(entry: DashboardActivity, seen: string | null, me?: string) {
  */
 export function AppTopbar() {
   const router = useRouter()
-  const { data: user } = useCurrentUser()
   // Name and initials come from here, not useCurrentUser directly: a platform
   // administrator has no local user row, and the menu used to render "…" for
   // them. See useAccountIdentity.
@@ -127,9 +83,10 @@ export function AppTopbar() {
   const { isTenant } = useDashboardScope()
   const dashboard = useDashboard(30, isTenant)
   const recent = dashboard.data?.recent ?? []
-  const activity = dashboard.data?.activity ?? []
-  const seen = useSyncExternalStore(subscribeSeen, readSeen, () => null)
-  const unread = activity.some((entry) => isUnread(entry, seen, user?.userId))
+  const unreadCount = useUnreadCount().data ?? 0
+  const notifications = useNotifications(0, 6)
+  const notifRows = notifications.data?.content ?? []
+  const markRead = useMarkRead()
   const [preview, setPreview] = useState<PreviewRow | null>(null)
 
   const [pinOpen, setPinOpen] = useState(false)
@@ -278,68 +235,57 @@ export function AppTopbar() {
 
       <div ref={notifRef} className="relative shrink-0">
         <IconButton
-          title={unread ? "Recent activity - something new" : "Recent activity"}
+          title={unreadCount > 0 ? `Notifications - ${unreadCount} unread` : "Notifications"}
           active={notifOpen}
           onClick={() => {
-            if (!notifOpen && activity.length > 0)
-              markSeen(activity[0].occurredAt)
             setNotifOpen((v) => !v)
             setPinOpen(false)
             setAccountOpen(false)
           }}
         >
           <Bell size={17} />
-          {unread && (
-            <span className="absolute top-[7px] right-[7px] size-[7px] rounded-full border-[1.5px] border-card bg-[var(--rust)]" />
+          {unreadCount > 0 && (
+            <span className="absolute top-[3px] right-[3px] flex min-w-[15px] items-center justify-center rounded-full border-[1.5px] border-card bg-[var(--rust)] px-[3px] text-[9px] font-bold leading-[13px] text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
           )}
         </IconButton>
         {notifOpen && (
-          <Dropdown
-            title={
-              dashboard.data?.usageScope === "organisation"
-                ? "Recent activity in your organisation"
-                : "Your recent activity"
-            }
-            width={340}
-            noPad
-          >
-            {dashboard.isPending ? (
-              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
-                Loading…
-              </p>
-            ) : activity.length === 0 ? (
-              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">
-                Nothing yet.
-              </p>
+          <Dropdown title="Notifications" width={340} noPad>
+            {notifications.isPending ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">Loading…</p>
+            ) : notifRows.length === 0 ? (
+              <p className="px-3.5 py-3 text-[12.5px] text-muted-foreground">Nothing yet.</p>
             ) : (
               <div className="py-1.5">
-                {activity.slice(0, 6).map((entry) => {
-                  const look = activityLook(entry.action)
-                  const Icon = look.icon
-                  return (
-                    <div key={entry.id} className={`${rowClass} items-start`}>
-                      <span
-                        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white"
-                        style={{ background: look.color }}
-                      >
-                        <Icon size={12} />
+                {notifRows.map((n) => (
+                  <button
+                    key={n.notificationId}
+                    type="button"
+                    onClick={() => {
+                      if (!n.read) markRead.mutate(n.notificationId)
+                      setNotifOpen(false)
+                      if (n.linkUrl) router.push(n.linkUrl)
+                    }}
+                    className={`${rowClass} w-full items-start text-left hover:bg-muted ${n.read ? "" : "bg-[var(--primary-tint)]"}`}
+                  >
+                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Bell size={11} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12.5px] font-semibold text-foreground">{n.title}</span>
+                      {n.body && (
+                        <span className="block overflow-hidden text-[11.5px] text-ellipsis whitespace-nowrap text-muted-foreground">
+                          {n.body}
+                        </span>
+                      )}
+                      <span className="mt-px block text-[11px] text-[var(--ink-faint)]">
+                        <FriendlyDate iso={n.createdAt} />
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12.5px] text-foreground">
-                          <b>{activityWho(entry, user?.userId)}</b> {look.verb}{" "}
-                          {entry.resourceName && (
-                            <span className="break-words text-muted-foreground">
-                              {entry.resourceName}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-px text-[11px] text-[var(--ink-faint)]">
-                          <FriendlyDate iso={entry.occurredAt} />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                    </span>
+                    {!n.read && <span className="mt-1.5 size-[7px] shrink-0 rounded-full bg-[var(--rust)]" />}
+                  </button>
+                ))}
               </div>
             )}
             <button
@@ -347,11 +293,22 @@ export function AppTopbar() {
               className={footerClass}
               onClick={() => {
                 setNotifOpen(false)
-                router.push("/")
+                router.push("/inbox")
               }}
             >
-              <LayoutDashboard size={14} />
-              Go to the dashboard
+              <InboxIcon size={14} />
+              Open the inbox
+            </button>
+            <button
+              type="button"
+              className={footerClass}
+              onClick={() => {
+                setNotifOpen(false)
+                router.push("/profile/notifications")
+              }}
+            >
+              <User size={14} />
+              Notification preferences
             </button>
           </Dropdown>
         )}

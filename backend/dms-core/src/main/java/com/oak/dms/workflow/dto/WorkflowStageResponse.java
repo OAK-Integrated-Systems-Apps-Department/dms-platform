@@ -11,6 +11,9 @@ public record WorkflowStageResponse(
         String rejectionRule,
         Integer slaHours,
         Integer reminderBeforeHours,
+        /** null = inherit the template default */
+        Integer inactivityReminderHours,
+        Integer escalateAfterReminderHours,
         String escalationTarget,
         UUID escalationUserId,
         boolean allowInfoRequests,

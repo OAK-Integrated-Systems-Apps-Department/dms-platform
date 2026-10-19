@@ -10,6 +10,7 @@ import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowTask;
 import com.oak.dms.workflow.enums.AssigneeType;
+import com.oak.dms.workflow.enums.EscalationTarget;
 import com.oak.dms.workflow.enums.TaskStatus;
 import com.oak.dms.workflow.repository.WorkflowTaskRepository;
 import lombok.RequiredArgsConstructor;
@@ -48,13 +49,22 @@ public class EscalationTargetResolver {
     private final UserPermissions userPermissions;
 
     public Resolution resolve(WorkflowStage stage, WorkflowTask task, WorkflowInstance instance) {
+        return resolve(stage.getEscalationTarget(), stage.getEscalationUserId(), task, instance);
+    }
+
+    /**
+     * The same, for the target that actually applies to the task: the stage's own, or the template default a
+     * stage with no target of its own inherits (3.2). {@code namedUserId} is only read for named_user.
+     */
+    public Resolution resolve(EscalationTarget escalationTarget, UUID namedUserId, WorkflowTask task,
+                              WorkflowInstance instance) {
         UUID tenantId = instance.getTenantId();
         String source;
         UUID target;
-        switch (stage.getEscalationTarget()) {
+        switch (escalationTarget) {
             case named_user -> {
                 source = "named_user";
-                target = stage.getEscalationUserId();
+                target = namedUserId;
             }
             case department_head -> {
                 if (task.getAssigneeType() == AssigneeType.department) {

@@ -9,7 +9,6 @@ import com.oak.dms.comment.helper.MentionParser;
 import com.oak.dms.comment.repository.CommentMentionRepository;
 import com.oak.dms.comment.repository.DocumentCommentRepository;
 import com.oak.dms.user.User;
-import com.oak.dms.workflow.helper.NotificationDispatcher;
 import com.oak.dms.workflow.helper.WorkflowRecipients;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,10 +20,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Mention and reply mails, after commit and off the request thread
- * ({@link NotificationDispatcher}). A mention mail sets notified_at once it
- * went out; a reply notifies the thread's root author unless they wrote the
- * reply or are mentioned in it (they get the mention mail instead).
+ * Mention and reply notifications, written through the shared notification
+ * service BEFORE_COMMIT, in the comment's own transaction (3.2, N8). A mention
+ * sets notified_at once its notification is written; a reply notifies the
+ * thread's root author unless they wrote the reply or are mentioned in it
+ * (they get the mention notification instead).
  */
 @Component
 @RequiredArgsConstructor
@@ -34,16 +34,15 @@ public class CommentNotificationListener {
     private final CommentMentionRepository mentionRepository;
     private final WorkflowRecipients recipients;
     private final CommentNotificationMailer mailer;
-    private final NotificationDispatcher dispatcher;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onMentioned(CommentMentionedEvent event) {
-        dispatcher.dispatch("mention", event.commentId(), () -> notifyMentioned(event));
+        notifyMentioned(event);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onCreated(CommentCreatedEvent event) {
-        dispatcher.dispatch("reply", event.commentId(), () -> notifyReply(event));
+        notifyReply(event);
     }
 
     private void notifyMentioned(CommentMentionedEvent event) {
@@ -59,11 +58,9 @@ public class CommentNotificationListener {
             if (to == null) {
                 continue;
             }
-            boolean sent = NotificationDispatcher.send(() -> mailer.sendMentioned(to, author, title, text,
-                    mention.isHadDocumentAccess(), comment.getDocumentId()), "mention", to, comment.getCommentId());
-            if (sent) {
-                mentionRepository.markNotified(mention.getMentionId(), OffsetDateTime.now());
-            }
+            mailer.sendMentioned(to, author, comment.getDocumentId(), title, text);
+            // The durable in-app notification was written in this transaction.
+            mentionRepository.markNotified(mention.getMentionId(), OffsetDateTime.now());
         }
     }
 
@@ -83,8 +80,8 @@ public class CommentNotificationListener {
             return;
         }
         String author = name(reply.getAuthorUserId(), event.tenantId());
-        NotificationDispatcher.send(() -> mailer.sendReply(to, author, recipients.documentTitle(reply.getDocumentId()),
-                MentionParser.toPlainText(reply.getBody()), reply.getDocumentId()), "reply", to, reply.getCommentId());
+        mailer.sendReply(to, author, reply.getDocumentId(), recipients.documentTitle(reply.getDocumentId()),
+                MentionParser.toPlainText(reply.getBody()));
     }
 
     private String name(UUID userId, UUID tenantId) {

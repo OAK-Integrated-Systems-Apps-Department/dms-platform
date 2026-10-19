@@ -278,6 +278,8 @@ public class WorkflowEngine {
             task.setSlaPausedAt(null);
         }
         task.setStatus(task.getClaimedBy() != null ? TaskStatus.claimed : TaskStatus.pending);
+        // Resuming after an answered information request counts as activity (3.2, N-FR-003).
+        task.setLastActivityAt(now);
         task.setUpdatedAt(now);
     }
 

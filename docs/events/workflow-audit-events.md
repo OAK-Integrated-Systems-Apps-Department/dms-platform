@@ -37,10 +37,10 @@ Runtime `new_value` always starts with the instance summary:
 
 | Action | Object | Severity | Reason required | Extra `new_value` fields |
 |---|---|---|---|---|
-| `WORKFLOW_TEMPLATE_CREATED` | template | MEDIUM | – | `templateId, code, name, versionNumber, status, documentTypeId, onDocumentChange` |
-| `WORKFLOW_TEMPLATE_UPDATED` | template | MEDIUM | – | Same, plus a `previous_value` snapshot |
-| `WORKFLOW_TEMPLATE_STAGES_UPDATED` | template | MEDIUM | – | `change` (`stage_added`, `stage_updated`, `stage_deleted` or `stages_reordered`), `stageId`, `stages` (the full stage list after the change) |
-| `WORKFLOW_TEMPLATE_VERSION_CREATED` | template (the new draft) | MEDIUM | – | `sourceTemplateId, sourceVersionNumber` |
+| `WORKFLOW_TEMPLATE_CREATED` | template | MEDIUM | – | `templateId, code, name, versionNumber, status, documentTypeId, onDocumentChange`, and the template's inactivity defaults (3.2): `defaultInactivityReminderHours, defaultEscalateAfterReminderHours` (the template-level due-date reminder and escalation target defaults no longer exist) |
+| `WORKFLOW_TEMPLATE_UPDATED` | template | MEDIUM | – | Same, plus a `previous_value` snapshot - so a change to a default (an admin changing when reminders and escalations fire) shows as a before/after pair |
+| `WORKFLOW_TEMPLATE_STAGES_UPDATED` | template | MEDIUM | – | `change` (`stage_added`, `stage_updated`, `stage_deleted` or `stages_reordered`), `stageId`, `stages` (the full stage list after the change, including each stage's `inactivityReminderHours` and `escalateAfterReminderHours` overrides - null means it inherits the template default) |
+| `WORKFLOW_TEMPLATE_VERSION_CREATED` | template (the new draft) | MEDIUM | – | `sourceTemplateId, sourceVersionNumber`, plus the snapshot above (a new version copies the template defaults and the stage overrides) |
 | `WORKFLOW_TEMPLATE_ACTIVATED` | template | MEDIUM | – | Snapshot |
 | `WORKFLOW_TEMPLATE_DEACTIVATED` | template | MEDIUM | – | Snapshot, plus `supersededBy` when another activation demoted it |
 | `WORKFLOW_TEMPLATE_DELETED` | template | HIGH | – | `previous_value` snapshot |
@@ -64,8 +64,8 @@ Runtime `new_value` always starts with the instance summary:
 |---|---|---|---|---|
 | `WORKFLOW_TASK_DELEGATED` | task | MEDIUM | – | `from, fromName, to, toName, originalHolder, returnedToOriginal, delegatedFrom, delegatedTo` |
 | `WORKFLOW_TASK_REASSIGNED` | task | MEDIUM | **yes** | Same; `from` is null for a task reassigned from an unclaimed pool |
-| `WORKFLOW_TASK_REMINDER_SENT` | task | LOW | – | `dueAt, reminderBeforeHours`. Actor `SYSTEM` |
-| `WORKFLOW_TASK_ESCALATED` | task | MEDIUM | – | `dueAt, escalationTarget, source` (`named_user`, `pool_department_head` or `initiator_department_head`), then `target, targetName`, or `skipped` (`no_target`, `target_inactive`, `target_is_initiator`, `target_is_holder`, `target_already_decided`, `target_lacks_permission`). Actor `SYSTEM` |
+| `WORKFLOW_TASK_REMINDER_SENT` | task | LOW | – | Two kinds, both actor `SYSTEM`, each sent once per task. **Due-date:** `dueAt, reminderBeforeHours` (the stage's own value). **Inactivity** (3.2): `reason: "inactivity"`, `inactivityReminderHours` - no `dueAt`, since a task without an SLA can still be reminded |
+| `WORKFLOW_TASK_ESCALATED` | task | MEDIUM | – | `dueAt` (absent when the task has no due time and escalated after an inactivity reminder), `escalationTarget` (the stage's own), `source` (`named_user`, `pool_department_head` or `initiator_department_head`), then `target, targetName`, or `skipped` (`no_target`, `target_inactive`, `target_is_initiator`, `target_is_holder`, `target_already_decided`, `target_lacks_permission`). Actor `SYSTEM` |
 | `WORKFLOW_INFO_REQUESTED` | information request | MEDIUM | – | `infoRequestId, taskId, requestedBy, requestedFrom, requestedFromName, requestStatus` |
 | `WORKFLOW_INFO_PROVIDED` | information request | MEDIUM | – | Same, plus `supportingDocumentIds, taskResumed` |
 | `WORKFLOW_INFO_DECLINED` | information request | MEDIUM | **yes** | Same, plus `taskResumed` |
@@ -86,6 +86,6 @@ The timeline records the same facts, in UI terms:
 - **By people:** `submitted`, `claimed`, `released`, `approved`, `rejected`, `cancelled`
 - **By the system** (`actor_user_id` null): `stage_activated` (detail lists every entry and the users it resolved to at activation), `stage_approved`, `stage_rejected`, `stage_unassignable`, `workflow_approved`, `workflow_rejected`, `version_changed`, `restarted`
 - **Phase 2, by people:** `delegated`, `reassigned` (reason = the admin's reason), `commented` (detail `commentId`, never the text), `info_requested` (reason = the request's message), `info_provided`, `info_declined`, `info_cancelled` (withdrawn), `info_reassigned`, `supporting_document_added`, `supporting_document_removed`
-- **Phase 2, by the system:** `reminded`, `escalated` (detail `target` or `skipped`), `info_cancelled` when the engine closes a request (detail `automatic: true`, `cause`)
+- **Phase 2, by the system:** `reminded` (detail `reminderBeforeHours`, or `reason: "inactivity"` with `inactivityReminderHours`), `escalated` (detail `target` or `skipped`), `info_cancelled` when the engine closes a request (detail `automatic: true`, `cause`)
 - `approved` and `rejected` carry `detail.route`, and `detail.delegatedFrom`/`delegatedFromName` when a delegate decided, so the timeline reads "Approved by <delegate>, delegated from <original>" (decision 2).
-- Entries about an information request have `info_request_id` set (V48).
+- Entries about an information request have `info_request_id` set (V96).

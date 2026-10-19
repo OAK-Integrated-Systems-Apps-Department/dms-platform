@@ -7,26 +7,56 @@ import { FileText, Lock, Paperclip, Trash2 } from "lucide-react"
 import { useWorkflowActions } from "@/lib/workflow/use-workflow-actions"
 import { formatDateTime } from "@/lib/utils"
 
-import type { SupportingDocumentDto } from "@/lib/workflow/api"
+import { fetchSupportingDocumentContent, type SupportingDocumentDto } from "@/lib/workflow/api"
 
 import { SupportingDocumentPicker, type PickedSupportingDocument } from "./supporting-document-picker"
+import { useDocumentPreview } from "./use-document-preview"
 import { WorkflowFormDialog } from "./workflow-form-dialog"
 
 /**
- * One supporting document. A viewer who can open documents gets a link; one
- * who can't sees the title and note with a lock (decision 18) - there is no
- * per-document grant to bypass.
+ * One supporting document. A viewer who can open documents can preview the
+ * pinned version in the shared viewer and still "View details"; one who can't
+ * sees the title and note with a lock (decision 18) - there is no per-document
+ * grant to bypass.
  */
 export function SupportingDocumentRow({ document, onRemove }: { document: SupportingDocumentDto; onRemove?: () => void }) {
+  const preview = useDocumentPreview()
   return (
     <li className="flex items-start justify-between gap-2 text-[12.5px]">
       <span className="min-w-0">
-        <span className="flex items-center gap-1.5">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {document.canOpen ? (
             <>
-              <FileText size={13} className="shrink-0 text-primary" />
-              <Link href={`/documents/${document.documentId}`} className="font-semibold text-primary hover:underline">
-                {document.title ?? "Document"}
+              <span className="flex items-center gap-1.5">
+                <FileText size={13} className="shrink-0 text-primary" />
+                <button
+                  type="button"
+                  onClick={() =>
+                    preview.open(
+                      {
+                        documentId: document.documentId,
+                        title: document.title ?? "Document",
+                        fileName: document.fileName,
+                        mimeType: document.mimeType,
+                        sizeBytes: document.sizeBytes,
+                        documentTypeName: null,
+                        createdAt: document.addedAt,
+                      },
+                      {
+                        // The pinned version that was attached (decision 17), not the document's current one.
+                        contentSource: () =>
+                          fetchSupportingDocumentContent(document.instanceId, document.supportingDocumentId),
+                        contentKey: document.supportingDocumentId,
+                      }
+                    )
+                  }
+                  className="text-left font-semibold text-primary hover:underline"
+                >
+                  {document.title ?? "Document"}
+                </button>
+              </span>
+              <Link href={`/documents/${document.documentId}`} className="text-[11.5px] text-muted-foreground hover:text-foreground hover:underline">
+                View details
               </Link>
             </>
           ) : (
@@ -53,6 +83,7 @@ export function SupportingDocumentRow({ document, onRemove }: { document: Suppor
           <Trash2 size={13} />
         </button>
       )}
+      {preview.element}
     </li>
   )
 }

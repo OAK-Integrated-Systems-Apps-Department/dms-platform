@@ -2,6 +2,7 @@ import {
   Activity,
   AtSign,
   BarChart3,
+  Bell,
   Building2,
   ClipboardCheck,
   ClipboardList,
@@ -67,6 +68,13 @@ export const navSections: NavSection[] = [
         icon: Workflow,
         href: "/tasks",
         liveBadge: "myOpenTasks",
+      },
+      // The notification inbox (3.2); the badge is the live unread count.
+      {
+        label: "Inbox",
+        icon: Bell,
+        href: "/inbox",
+        liveBadge: "myUnreadNotifications",
       },
       // Comments that mention me - readable even without document access (Phase 2).
       { label: "Mentions", icon: AtSign, href: "/mentions" },
@@ -246,6 +254,17 @@ export const navSections: NavSection[] = [
           PermissionCodes.DE_KEYS_VIEW,
           PermissionCodes.DE_KEYS_ROTATE,
           PermissionCodes.DE_KEYS_GENERATE,
+        ],
+      },
+      // Notification settings + delivery log (3.2). Any NOTIF capability gets in.
+      {
+        label: "Notification Settings",
+        icon: Bell,
+        href: "/admin/notifications",
+        permission: [
+          PermissionCodes.NOTIF_SETTINGS_MANAGE,
+          PermissionCodes.NOTIF_DELIVERY_LOG_VIEW,
+          PermissionCodes.NOTIF_DELIVERY_LOG_RETRY,
         ],
       },
       // Every organisation on the platform - suspend, deactivate, destroy keys.

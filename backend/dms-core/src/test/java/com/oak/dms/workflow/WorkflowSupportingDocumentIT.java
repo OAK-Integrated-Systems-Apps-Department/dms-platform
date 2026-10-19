@@ -8,8 +8,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockHttpServletResponse;
 import tools.jackson.databind.JsonNode;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +105,63 @@ class WorkflowSupportingDocumentIT extends WorkflowApiSupport {
         ContractWorld outside = ContractWorld.create(fx);
         call(post(path()), fx.tenantAdminJwtFor(outside.admin()), link(annex, null, "linked_existing"), 404);
         call(get(path()), fx.tenantAdminJwtFor(outside.admin()), null, 404);
+    }
+
+    @Test
+    void submittingWithSupportingDocuments_attachesThemInTheSameTransaction() throws Exception {
+        UUID doc = fx.document(w.tenantId(), w.contractTypeId(), w.chamath(), "Contract 2026-200");
+        UUID evidence = fx.document(w.tenantId(), w.contractTypeId(), w.chamath(), "Evidence A");
+
+        JsonNode submitted = submit(w.chamath(), doc, List.of(link(evidence, null, "linked_existing")), 201);
+        UUID newInstance = id(submitted, "instanceId");
+
+        JsonNode listed = get200("/api/v1/workflow/instances/" + newInstance + "/supporting-documents", w.chamath());
+        assertThat(listed).hasSize(1);
+        assertThat(id(listed.get(0), "documentId")).isEqualTo(evidence);
+        assertThat(fx.count("select count(*) from workflow_actions where instance_id = ?"
+                + " and action_type = 'supporting_document_added'", newInstance)).isEqualTo(1);
+    }
+
+    @Test
+    void supportingDocumentContent_servesThePinnedVersion_notTheCurrentOne() throws Exception {
+        // Attach v1 of the annex - the supporting document is pinned to that version (decision 17).
+        JsonNode added = postAs(path(), w.chamath(), link(annex, null, "linked_existing"), 201);
+        UUID supportingDocumentId = id(added, "supportingDocumentId");
+        UUID pinnedVersion = id(added, "versionId");
+        fx.putVersionContent(pinnedVersion, "PINNED-V1".getBytes(StandardCharsets.UTF_8));
+
+        // A new version becomes the document's current one; the pinned attachment must not follow it.
+        UUID currentVersion = fx.newVersion(w.tenantId(), annex, w.chamath());
+        fx.putVersionContent(currentVersion, "CURRENT-V2".getBytes(StandardCharsets.UTF_8));
+        assertThat(pinnedVersion).isNotEqualTo(currentVersion);
+
+        String contentPath = path() + "/" + supportingDocumentId + "/content";
+        // The viewer gets v1's content - the pinned version, not the current one. Chamath holds
+        // docm.documents.view and their own access, and no dvc.versions.view, which is all that's needed.
+        MockHttpServletResponse ok = getRaw(contentPath, fx.jwtFor(w.chamath()));
+        assertThat(ok.getStatus()).isEqualTo(200);
+        assertThat(ok.getContentAsString()).isEqualTo("PINNED-V1");
+
+        // A participant who can't open the document (no docm.documents.view) gets no content.
+        assertThat(getRaw(contentPath, fx.jwtFor(w.nimal())).getStatus()).isEqualTo(403);
+        // Someone outside the run can't see it at all.
+        ContractWorld outside = ContractWorld.create(fx);
+        assertThat(getRaw(contentPath, fx.tenantAdminJwtFor(outside.admin())).getStatus()).isEqualTo(404);
+    }
+
+    @Test
+    void anInvalidSupportingDocument_failsTheWholeSubmission_andCreatesNothing() throws Exception {
+        UUID doc = fx.document(w.tenantId(), w.contractTypeId(), w.chamath(), "Contract 2026-201");
+
+        // The document under submission can't be its own supporting document - and the whole submission fails.
+        assertThat(submit(w.chamath(), doc, List.of(link(doc, null, "linked_existing")), 422).get("code").asString())
+                .isEqualTo("WORKFLOW_SUPPORTING_IS_SUBJECT");
+
+        // All-or-nothing (decision 11): no instance, no supporting documents, no timeline actions.
+        assertThat(fx.count("select count(*) from workflow_instances where document_id = ?", doc)).isZero();
+        assertThat(fx.count("select count(*) from workflow_supporting_documents where document_id = ?", doc)).isZero();
+        assertThat(fx.count("select count(*) from workflow_actions a join workflow_instances i"
+                + " on i.instance_id = a.instance_id where i.document_id = ?", doc)).isZero();
     }
 
     @Test

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { ApprovalBadge } from "@/components/documents/approval-badge"
 import type {
   DragBinding,
   DropBinding,
@@ -25,6 +26,7 @@ import type { FolderNode } from "@/lib/folders/api"
 import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
+import type { DocumentWorkflowStatusDto } from "@/lib/workflow/api"
 
 /** One entry of an item's "…" menu. */
 export interface ItemAction {
@@ -467,6 +469,7 @@ export function DocumentTile({
   onOpen,
   actions,
   drag,
+  approval,
   flag,
 }: {
   row: DocumentListItemDto
@@ -478,6 +481,8 @@ export function DocumentTile({
   actions: ItemAction[]
   /** Drag it (with the rest of the selection) onto a folder to move it. */
   drag?: DragBinding
+  /** Its newest approval, when it has one. */
+  approval?: DocumentWorkflowStatusDto
   /** A small badge shown beside the name - e.g. "Archived". */
   flag?: ReactNode
 }) {
@@ -527,6 +532,7 @@ export function DocumentTile({
           <FriendlyDate iso={row.createdAt} />
           {row.sizeBytes !== null && ` · ${formatBytes(row.sizeBytes)}`}
         </p>
+        {approval && <ApprovalBadge status={approval} className="mt-1.5" />}
       </div>
       {onToggle && (
         <input
@@ -565,6 +571,7 @@ export function BrowserList({
   onOpenDocument,
   folderActions,
   documentActions,
+  approvals,
   empty,
   selectable = true,
   folderDrag,
@@ -581,6 +588,8 @@ export function BrowserList({
   onOpenDocument: (row: DocumentListItemDto) => void
   folderActions: (folder: FolderNode) => ItemAction[]
   documentActions: (row: DocumentListItemDto) => ItemAction[]
+  /** Newest approval per document id - absent while loading, or for documents never submitted. */
+  approvals?: Map<string, DocumentWorkflowStatusDto>
   empty: ReactNode
   /** false for a listing without checkboxes. */
   selectable?: boolean
@@ -740,6 +749,7 @@ export function BrowserList({
                             aria-label="Restricted"
                           />
                         )}
+                        <ApprovalBadge status={approvals?.get(row.documentId)} />
                         <PinnedIndicator documentId={row.documentId} />
                         {flag?.(row)}
                       </p>

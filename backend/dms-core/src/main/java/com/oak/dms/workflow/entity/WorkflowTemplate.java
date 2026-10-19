@@ -67,6 +67,15 @@ public class WorkflowTemplate {
     @Builder.Default
     private OnDocumentChange onDocumentChange = OnDocumentChange.flag_only;
 
+    // Inactivity defaults (N-FR-003/004/006); stages may override. null = no default.
+    // The columns default_reminder_before_hours, default_escalation_target and
+    // default_escalation_user_id (V104) are unused and reserved - not mapped.
+    @Column(name = "default_inactivity_reminder_hours")
+    private Integer defaultInactivityReminderHours;
+
+    @Column(name = "default_escalate_after_reminder_hours")
+    private Integer defaultEscalateAfterReminderHours;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

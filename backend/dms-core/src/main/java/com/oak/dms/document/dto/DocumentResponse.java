@@ -17,6 +17,11 @@ public record DocumentResponse(
         String status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        UUID folderId
+        UUID folderId,
+        /** The current-or-latest version's file, so the detail page can preview and download it. Null if it has no version yet. */
+        String fileName,
+        String mimeType,
+        Long sizeBytes,
+        Integer versionNumber
 ) {
 }

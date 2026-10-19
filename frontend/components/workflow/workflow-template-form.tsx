@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useDocumentTypeOptions } from "@/lib/workflow/use-participant-options"
 import { cn } from "@/lib/utils"
 
+import { CollapsibleSection, HoursInput, HowRemindersWork } from "./reminder-fields"
 import {
   createTemplateSchema,
   updateTemplateSchema,
@@ -46,7 +47,15 @@ export function CreateWorkflowTemplateForm({ onSubmit }: CreateFormProps) {
 
   const { register, handleSubmit, control, formState: { errors, isSubmitting, isValid } } = useForm<CreateTemplateFormValues>({
     resolver: zodResolver(createTemplateSchema),
-    defaultValues: { name: "", code: "", description: "", documentTypeId: "", onDocumentChange: "flag_only" },
+    defaultValues: {
+      name: "",
+      code: "",
+      description: "",
+      documentTypeId: "",
+      onDocumentChange: "flag_only",
+      defaultInactivityReminderHours: null,
+      defaultEscalateAfterReminderHours: null,
+    },
     mode: "onChange",
   })
 
@@ -209,7 +218,90 @@ function SharedFields({
         />
         <p className="mt-2 text-[12.5px] leading-[1.55] text-muted-foreground">{ON_CHANGE_HELP[onDocumentChange]}</p>
       </div>
+
+      <ReminderDefaults control={ctl} errors={errors} />
     </>
+  )
+}
+
+/**
+ * The template's inactivity defaults (N-FR-006 - thresholds per workflow type). A stage uses them unless it sets
+ * its own value on its stage card, which shows what it inherits from here.
+ */
+function ReminderDefaults({
+  control,
+  errors,
+}: {
+  control: Control<UpdateTemplateFormValues>
+  errors: FieldErrors<UpdateTemplateFormValues>
+}) {
+  const [open, setOpen] = useState(false)
+  const inactivity = useWatch({ control, name: "defaultInactivityReminderHours" })
+  const escalateAfter = useWatch({ control, name: "defaultEscalateAfterReminderHours" })
+  // An error inside a closed section would be invisible, so open it.
+  const hasError = Boolean(errors.defaultInactivityReminderHours || errors.defaultEscalateAfterReminderHours)
+
+  const summary =
+    inactivity == null && escalateAfter == null
+      ? "No defaults set"
+      : [
+          inactivity != null ? `Inactivity reminder ${inactivity}h` : null,
+          escalateAfter != null ? `escalate ${escalateAfter}h after it` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+
+  return (
+    <div className="mt-6">
+      <CollapsibleSection
+        title="Inactivity reminder defaults (optional)"
+        summary={summary}
+        open={open || hasError}
+        onOpenChange={setOpen}
+      >
+        <p className="text-[12.5px] text-muted-foreground">
+          Stages use these unless they set their own. Leave a box empty for no default. <HowRemindersWork />
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Controller
+            name="defaultInactivityReminderHours"
+            control={control}
+            render={({ field }) => (
+              <div>
+                <Label htmlFor="template-default-inactivity">Inactivity reminder: hours</Label>
+                <HoursInput
+                  id="template-default-inactivity"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.defaultInactivityReminderHours)}
+                />
+                <p className="mt-1.5 text-[12px] text-muted-foreground">Hours without activity before approvers are reminded.</p>
+                {errors.defaultInactivityReminderHours && <FieldError message={errors.defaultInactivityReminderHours.message} />}
+              </div>
+            )}
+          />
+          <Controller
+            name="defaultEscalateAfterReminderHours"
+            control={control}
+            render={({ field }) => (
+              <div>
+                <Label htmlFor="template-default-escalate-after">Escalate after the reminder: hours</Label>
+                <HoursInput
+                  id="template-default-escalate-after"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.defaultEscalateAfterReminderHours)}
+                />
+                <p className="mt-1.5 text-[12px] text-muted-foreground">Hours after the reminder before the task escalates.</p>
+                {errors.defaultEscalateAfterReminderHours && (
+                  <FieldError message={errors.defaultEscalateAfterReminderHours.message} />
+                )}
+              </div>
+            )}
+          />
+        </div>
+      </CollapsibleSection>
+    </div>
   )
 }
 

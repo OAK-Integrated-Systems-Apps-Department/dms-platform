@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.mail.SimpleMailMessage;
 import tools.jackson.databind.JsonNode;
 
 import javax.sql.DataSource;
@@ -166,7 +165,7 @@ class WorkflowAccessIT extends WorkflowApiSupport {
         contractTemplate();
         submit(w.chamath(), w.contractDocumentId(), 201);
         for (User member : List.of(w.saman(), w.dilani(), w.ruwan(), w.kumari(), w.asanka())) {
-            SimpleMailMessage m = awaitMail(to(member));
+            CapturedMail m = awaitMail(to(member));
             assertThat(m.getSubject()).isEqualTo("Approval needed: Supplier contract 2026-114");
             assertThat(m.getText()).contains("Department Review");
         }
