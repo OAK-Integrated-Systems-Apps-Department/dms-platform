@@ -191,6 +191,13 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
   const users = useUserOptions(Boolean(draft) && draft?.escalationTarget === "named_user")
   const values = draft ?? toFormValues(stage)
   const effective = effectiveReminders(values, templateDefaults)
+  // The template's escalate-after is inherited, but with no "Escalate to" on this stage it can never fire.
+  const inertTemplateEscalateAfter =
+    values.escalateAfterReminderHours == null &&
+    templateDefaults?.escalateAfterReminderHours != null &&
+    values.escalationTarget === "none"
+      ? templateDefaults.escalateAfterReminderHours
+      : null
   const entries = values.participants.length
   const showMajorityWarning = values.completionRule === "majority" && entries > 0 && entries <= 2
 
@@ -311,6 +318,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
           <CollapsibleSection
             title="Reminders & escalation"
             summary={remindersSummary(effective)}
+            attention={inertTemplateEscalateAfter != null ? "Check" : undefined}
             open={remindersOpen}
             onOpenChange={setRemindersOpen}
           >
@@ -361,6 +369,13 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
                 options={ESCALATION_OPTIONS}
               />
               <p className="mt-2 text-[12.5px] text-muted-foreground">{ESCALATION_HELP[draft.escalationTarget]}</p>
+              {inertTemplateEscalateAfter != null && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3 py-2 text-[12.5px] text-[var(--gold-foreground)]">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  The template&apos;s escalate-after ({inertTemplateEscalateAfter} h) has no effect on this stage because no
+                  &quot;Escalate to&quot; is set. Choose who to escalate to, or leave it as is if this stage should not escalate.
+                </p>
+              )}
               {errors.escalationTarget && <p className="mt-1.5 text-[12px] text-destructive">{errors.escalationTarget}</p>}
               {draft.escalationTarget === "named_user" && (
                 <div className="mt-3 sm:w-[320px]">

@@ -41,12 +41,15 @@ export function HowRemindersWork() {
 export function CollapsibleSection({
   title,
   summary,
+  attention,
   open,
   onOpenChange,
   children,
 }: {
   title: string
   summary: string
+  /** A short marker (e.g. "Check") shown beside the summary while closed, so a problem is visible unopened. */
+  attention?: string
   open: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
@@ -61,7 +64,17 @@ export function CollapsibleSection({
       >
         <span className="min-w-0 flex-1">
           <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{title}</span>
-          {!open && <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">{summary}</span>}
+          {!open && (
+            <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-muted-foreground">
+              <span className="truncate">{summary}</span>
+              {attention && (
+                <span className="flex shrink-0 items-center gap-1 font-semibold text-[var(--gold-foreground)]">
+                  <span className="size-2 rounded-full bg-[var(--gold)]" aria-hidden="true" />
+                  {attention}
+                </span>
+              )}
+            </span>
+          )}
         </span>
         <ChevronDown
           size={15}
