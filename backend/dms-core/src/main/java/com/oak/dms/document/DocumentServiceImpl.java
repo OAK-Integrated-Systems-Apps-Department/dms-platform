@@ -45,6 +45,7 @@ import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.service.DocumentSignatureLockService;
 import com.oak.dms.storage.dto.DownloadedObject;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
@@ -143,6 +144,9 @@ public class DocumentServiceImpl implements DocumentService {
     // Deliberately NOT used by previewDocument or downloadDocumentFromJob (bulk/ZIP export is
     // out of scope for this feature).
     private final WatermarkDefaultsService watermarkDefaultsService;
+
+    // 1.4 Digital Signature Integration (V105) - guards moveDocuments/deleteDocument below.
+    private final DocumentSignatureLockService signatureLockService;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -325,8 +329,11 @@ public class DocumentServiceImpl implements DocumentService {
             throw new ResourceNotFoundException("Document", "one or more of the selected documents");
         }
         // Moving needs edit on the document - for one that follows its folder, edit in that folder.
+        // All-or-nothing, same as the visibility check above: a signature-locked
+        // document in the selection refuses the whole move, not just itself.
         for (Document document : documents) {
             documentAccessService.require(access, document, FolderAccessLevel.edit);
+            signatureLockService.guard(document);
         }
         int moved = 0;
         for (Document document : documents) {
@@ -372,10 +379,10 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DownloadedDocument downloadDocument(UUID documentId) {
         // true: only the plain, user-facing download gets the tenant's
-        // default watermark - never the preview below, and never the
-        // bulk/ZIP export path (downloadDocumentFromJob), which is out of
-        // scope for this feature (see BulkExportService/startZipDownload -
-        // a known gap, not an oversight).
+        // default watermark here - never the preview below. The bulk/ZIP
+        // export path (downloadDocumentFromJob) has its own, separately
+        // configured tenant toggle, applied by ExportArchiveBuilder once the
+        // bytes below are back - not here, since it's a different policy.
         return serve(findVisible(documentId, FolderAccessLevel.view), AuditActionCatalog.DOCUMENT_DOWNLOADED, null,
                 true);
     }
@@ -486,6 +493,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public void deleteDocument(UUID documentId) {
         Document document = findVisible(documentId, FolderAccessLevel.edit);
+        signatureLockService.guard(document);
 
         document.setDeleted(true);
         document.setDeletedAt(OffsetDateTime.now());

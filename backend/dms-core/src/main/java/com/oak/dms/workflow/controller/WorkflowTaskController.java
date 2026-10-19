@@ -1,6 +1,7 @@
 package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
+import com.oak.dms.signature.dto.SignAndApproveRequest;
 import com.oak.dms.workflow.dto.ApproveTaskRequest;
 import com.oak.dms.workflow.dto.DelegateTaskRequest;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
@@ -91,6 +92,19 @@ public class WorkflowTaskController {
     @Operation(summary = "Reject - a reason is mandatory (400 without one)")
     public TaskActionResponse reject(@PathVariable("taskId") UUID taskId, @Valid @RequestBody RejectTaskRequest request) {
         return taskService.act(taskId, TaskDecision.reject, request.reason());
+    }
+
+    @PostMapping("/{taskId}/sign-and-approve")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_APPROVE) "
+            + "and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DSI_SIGN)")
+    @Operation(summary = "1.4 Digital Signature Integration: sign AND approve in one transaction",
+            description = "Required instead of plain /approve when the stage has requires_signature=true (409 "
+                    + "WORKFLOW_SIGNATURE_REQUIRED from /approve otherwise). Needs explicit consent plus step-up "
+                    + "re-authentication (password, and TOTP if MFA is enabled) - refused while impersonating. If "
+                    + "the signature cannot be recorded for any reason, nothing is approved (fail closed).")
+    public TaskActionResponse signAndApprove(@PathVariable("taskId") UUID taskId,
+                                             @Valid @RequestBody SignAndApproveRequest request) {
+        return taskService.actWithSignature(taskId, request);
     }
 
     @PostMapping("/{taskId}/delegate")

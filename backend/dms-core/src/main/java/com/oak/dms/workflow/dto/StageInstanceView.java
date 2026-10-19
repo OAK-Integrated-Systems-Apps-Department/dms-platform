@@ -20,6 +20,8 @@ public record StageInstanceView(
         OffsetDateTime completedAt,
         List<TaskView> tasks,
         /** Whether approvers in this stage may request information (V47). */
-        boolean allowInfoRequests
+        boolean allowInfoRequests,
+        /** Whether approving this stage requires a digital signature (V105). */
+        boolean requiresSignature
 ) {
 }

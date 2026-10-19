@@ -17,6 +17,12 @@ import java.util.UUID;
  * {@link SimpleMailMessage}s through {@link JavaMailSender}, like
  * ThreatNotificationMailer. Throws on a send failure; the caller
  * (WorkflowNotificationListener) only logs it.
+ * <p>
+ * {@link #sendSignatureInvalidated}/{@link #sendSignatureVerificationFailed}
+ * are 1.4 Digital Signature Integration's own mails, reusing this class
+ * rather than a new one - same {@link #send} helper, same
+ * {@link #frontendBaseUrl}/{@link WorkflowProperties} mail-from, called from
+ * {@code com.oak.dms.signature.listener.SignatureNotificationListener}.
  */
 @Component
 @RequiredArgsConstructor
@@ -163,6 +169,26 @@ public class WorkflowNotificationMailer {
                 + "\" no longer needs an answer.\n\nReason: " + reason + "\n\n" + frontendBaseUrl
                 + "/workflows/instances/" + instanceId + "\n";
         send(to, "Information request closed: " + documentTitle, body);
+    }
+
+    // ---------------------------------------------------------------- 1.4 Digital Signature Integration
+
+    /** To the initiator when a workflow ends cancelled/rejected and invalidated a signature on their document. */
+    public void sendSignatureInvalidated(User to, String documentTitle, String reason, UUID documentId) {
+        String body = "Hello " + nameOf(to) + ",\n\n"
+                + "A signature on \"" + documentTitle + "\" is no longer valid: " + reason
+                + "\n\nIf this document still needs to be approved, it will need to be signed again once its "
+                + "workflow is resubmitted.\n\n" + frontendBaseUrl + "/documents/" + documentId + "\n";
+        send(to, "Signature no longer valid: " + documentTitle, body);
+    }
+
+    /** To tenant admins when an on-demand verification finds a signature that no longer checks out. */
+    public void sendSignatureVerificationFailed(User to, String documentTitle, String verificationResult, UUID documentId) {
+        String body = "Hello " + nameOf(to) + ",\n\n"
+                + "A signature verification on \"" + documentTitle + "\" failed (" + verificationResult + ") - "
+                + "the document may have been altered after it was signed, or the signature itself no longer "
+                + "matches. It has been marked invalidated.\n\n" + frontendBaseUrl + "/documents/" + documentId + "\n";
+        send(to, "Signature verification failed: " + documentTitle, body);
     }
 
     private void send(User to, String subject, String text) {

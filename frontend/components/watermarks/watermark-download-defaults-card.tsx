@@ -23,9 +23,11 @@ interface WatermarkDownloadDefaultsCardProps {
 }
 
 /**
- * "Watermark every download by default" - the tenant-wide policy for the
- * plain Download action (not the "Add watermark" copy below, which a person
- * asks for explicitly and which this has no effect on).
+ * "Watermark every download by default" and "Watermark bulk exports by
+ * default" - the tenant-wide policies for the plain Download action and for
+ * a bulk/ZIP export's files, respectively (not the "Add watermark" copy
+ * below, which a person asks for explicitly and which neither has any effect
+ * on). Both share one default template.
  *
  * Sits above the templates table on the same screen rather than a separate
  * settings page: choosing the default template is meaningless without the
@@ -69,21 +71,35 @@ function WatermarkDownloadDefaultsForm({ initial, templates, canEdit }: Watermar
   // values here never drift from what the server holds without another
   // edit happening first - no resync effect needed.
   const [enabled, setEnabled] = useState(initial.enabled)
+  const [bulkExportEnabled, setBulkExportEnabled] = useState(initial.bulkExportEnabled)
   const [templateId, setTemplateId] = useState(initial.defaultTemplateId ?? "")
+
+  const needsTemplate = enabled || bulkExportEnabled
 
   const save = useMutation({
     mutationFn: () =>
-      updateWatermarkDefaults({ enabled, templateId: enabled ? templateId || null : null }),
+      updateWatermarkDefaults({
+        enabled,
+        bulkExportEnabled,
+        templateId: needsTemplate ? templateId || null : null,
+      }),
     onSuccess: (updated: WatermarkDefaultsDto) => {
       queryClient.setQueryData(["watermarks", "defaults"], updated)
-      toast.success(updated.enabled ? "Downloads are now watermarked by default." : "Default watermarking turned off.")
+      toast.success(
+        updated.enabled || updated.bulkExportEnabled
+          ? "Default watermarking settings saved."
+          : "Default watermarking turned off."
+      )
     },
     onError: (failure) =>
       toast.error(failure instanceof Error ? failure.message : "Could not save the download-watermarking settings."),
   })
 
-  const changed = enabled !== initial.enabled || (enabled && templateId !== (initial.defaultTemplateId ?? ""))
-  const canSave = !enabled || Boolean(templateId)
+  const changed =
+    enabled !== initial.enabled ||
+    bulkExportEnabled !== initial.bulkExportEnabled ||
+    (needsTemplate && templateId !== (initial.defaultTemplateId ?? ""))
+  const canSave = !needsTemplate || Boolean(templateId)
 
   return (
     <div className="mb-5 rounded-lg border border-border bg-card p-[22px] shadow-[var(--ledger-shadow)]">
@@ -102,7 +118,26 @@ function WatermarkDownloadDefaultsForm({ initial, templates, canEdit }: Watermar
         </label>
       </div>
 
-      {enabled && (
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-border pt-4">
+        <div className="max-w-[560px]">
+          <h2 className="mb-1 text-[14.5px] font-semibold">Watermark bulk exports by default</h2>
+          <p className="text-[12.5px] leading-[1.6] text-muted-foreground">
+            When on, every supported file in a bulk/ZIP export is stamped with the same default
+            template as it&apos;s added to the archive. Off by default - exports are unchanged unless a
+            tenant admin turns this on.
+          </p>
+        </div>
+        <label className="flex shrink-0 items-center gap-2.5 text-[13px] font-medium">
+          <Switch
+            checked={bulkExportEnabled}
+            onCheckedChange={setBulkExportEnabled}
+            disabled={!canEdit || save.isPending}
+          />
+          {bulkExportEnabled ? "On" : "Off"}
+        </label>
+      </div>
+
+      {needsTemplate && (
         <div className="mt-4 max-w-[360px]">
           <span className="mb-1.5 block text-[12.5px] font-medium">Default template</span>
           <SearchableSelect

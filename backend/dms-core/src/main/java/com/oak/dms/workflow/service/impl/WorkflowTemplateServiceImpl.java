@@ -11,7 +11,9 @@ import com.oak.dms.department.entity.Department;
 import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
+import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.security.rbac.catalog.PermissionCodes;
 import com.oak.dms.security.rbac.entity.Role;
 import com.oak.dms.security.rbac.repository.RoleRepository;
 import com.oak.dms.user.User;
@@ -32,6 +34,7 @@ import com.oak.dms.workflow.enums.AssigneeType;
 import com.oak.dms.workflow.enums.EscalationTarget;
 import com.oak.dms.workflow.enums.OnDocumentChange;
 import com.oak.dms.workflow.enums.TemplateStatus;
+import com.oak.dms.workflow.exception.WorkflowAccessException;
 import com.oak.dms.workflow.exception.WorkflowStateException;
 import com.oak.dms.workflow.exception.WorkflowValidationException;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
@@ -74,6 +77,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
+    private final AuthorizationService authz;
     private final AuditService auditService;
 
     // ------------------------------------------------------------------ read
@@ -221,6 +225,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     .escalationTarget(stage.getEscalationTarget())
                     .escalationUserId(stage.getEscalationUserId())
                     .allowInfoRequests(stage.isAllowInfoRequests())
+                    .requiresSignature(stage.isRequiresSignature())
                     .createdBy(userId)
                     .build());
             for (WorkflowStageParticipant p : participants.getOrDefault(stage.getStageId(), List.of())) {
@@ -518,7 +523,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         }
     }
 
-    private static WorkflowStage applyStage(WorkflowStage stage, UpsertWorkflowStageRequest request) {
+    private WorkflowStage applyStage(WorkflowStage stage, UpsertWorkflowStageRequest request) {
         EscalationTarget target = request.escalationTarget() == null ? EscalationTarget.none : request.escalationTarget();
         stage.setName(request.name().trim());
         stage.setCompletionRule(request.completionRule());
@@ -528,6 +533,18 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         stage.setEscalationTarget(target);
         stage.setEscalationUserId(target == EscalationTarget.named_user ? request.escalationUserId() : null);
         stage.setAllowInfoRequests(request.allowInfoRequests() == null || request.allowInfoRequests());
+        // 1.4 Digital Signature Integration: a stricter permission than the
+        // one gating template/stage management generally - only omit the
+        // field (null) to leave it unchanged; sending it at all needs
+        // DSI_CONFIGURE_WORKFLOW_RULES, even from someone who can otherwise
+        // edit this template.
+        if (request.requiresSignature() != null) {
+            if (!authz.hasPermission(PermissionCodes.DSI_CONFIGURE_WORKFLOW_RULES)) {
+                throw new WorkflowAccessException("WORKFLOW_SIGNATURE_RULE_FORBIDDEN",
+                        "Only someone who can configure signature workflow rules may require a signature for this stage");
+            }
+            stage.setRequiresSignature(request.requiresSignature());
+        }
         return stage;
     }
 
@@ -663,7 +680,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                 .map(s -> new WorkflowStageResponse(s.getStageId(), s.getStageOrder(), s.getName(),
                         s.getCompletionRule().name(), s.getRejectionRule().name(), s.getSlaHours(),
                         s.getReminderBeforeHours(), s.getEscalationTarget().name(), s.getEscalationUserId(),
-                        s.isAllowInfoRequests(),
+                        s.isAllowInfoRequests(), s.isRequiresSignature(),
                         participants.getOrDefault(s.getStageId(), List.of()).stream()
                                 .map(p -> new ParticipantResponse(p.getParticipantId(), p.getAssigneeType().name(),
                                         p.getAssigneeId(), names.get(p.getAssigneeType() + ":" + p.getAssigneeId()),

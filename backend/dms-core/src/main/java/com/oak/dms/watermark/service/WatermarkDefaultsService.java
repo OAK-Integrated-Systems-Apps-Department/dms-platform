@@ -35,22 +35,25 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
- * Whether this tenant's plain "Download" action (not the async "Add
- * watermark" copy, which is unaffected by any of this) should quietly stamp
- * a watermark onto the file before it is streamed, and which template to
- * use.
+ * Whether this tenant's plain "Download" action, and separately whether a
+ * bulk/ZIP export's files, should quietly stamp a watermark onto the file
+ * before it is streamed - and which template to use. Neither is the async
+ * "Add watermark" copy, which is unaffected by any of this.
  *
  * <h2>Two different jobs, one class</h2>
  * {@link #get} / {@link #update} are the admin-facing policy CRUD, backing
  * {@code GET}/{@code PUT /api/v1/watermark-settings}. {@link #applyIfConfigured}
- * is the download-path hook: it is called from
+ * is the plain-download hook, called from
  * {@code DocumentServiceImpl#downloadDocument} after the original bytes are
- * read and never fails the download - any reason it can't watermark (feature
- * off, no template configured, an unsupported or oversized file, fonts
- * unavailable, a drawing error) is swallowed and the caller gets the
- * original bytes back exactly as it would have without this feature.
+ * read; {@link #applyForBulkExportIfConfigured} is the equivalent hook called
+ * from {@code ExportArchiveBuilder} per file as a ZIP export is built. Both
+ * never fail the caller - any reason they can't watermark (feature off, no
+ * template configured, an unsupported or oversized file, fonts unavailable, a
+ * drawing error) is swallowed and the caller gets the original bytes back
+ * exactly as it would have without this feature.
  *
  * <h2>Deliberately not the job pipeline</h2>
  * This never creates a {@code watermark_jobs} row and never touches
@@ -85,7 +88,8 @@ public class WatermarkDefaultsService {
 
     private WatermarkDefaultsResponse toResponse(TenantWatermarkSettings settings) {
         if (settings.getDefaultTemplateId() == null) {
-            return new WatermarkDefaultsResponse(settings.isDownloadWatermarkEnabled(), null, null);
+            return new WatermarkDefaultsResponse(settings.isDownloadWatermarkEnabled(),
+                    settings.isBulkExportWatermarkEnabled(), null, null);
         }
         // The template may since have been retired or (in theory) belong to
         // another tenant's now-stale row; either way, show what is stored
@@ -94,12 +98,12 @@ public class WatermarkDefaultsService {
                 .map(WatermarkTemplate::getLabel)
                 .orElse(null);
         return new WatermarkDefaultsResponse(settings.isDownloadWatermarkEnabled(),
-                settings.getDefaultTemplateId(), label);
+                settings.isBulkExportWatermarkEnabled(), settings.getDefaultTemplateId(), label);
     }
 
     /**
-     * @throws WatermarkException 400 if {@code enabled} is true with no
-     *                            template named, surfaced through
+     * @throws WatermarkException 400 if {@code enabled} or {@code bulkExportEnabled}
+     *                            is true with no template named, surfaced through
      *                            {@link WatermarkTemplateService#requireUsable}
      *                            if that template isn't one this tenant may
      *                            use or isn't active
@@ -108,10 +112,10 @@ public class WatermarkDefaultsService {
     public WatermarkDefaultsResponse update(WatermarkDefaultsRequest request) {
         UUID tenantId = TenantContext.getTenantId();
         WatermarkTemplate template = null;
-        if (request.enabled()) {
+        if (request.enabled() || request.bulkExportEnabled()) {
             if (request.templateId() == null) {
                 throw WatermarkException.badRequest("WATERMARK_DEFAULTS_TEMPLATE_REQUIRED",
-                        "Choose a watermark template to apply to downloads by default.");
+                        "Choose a watermark template to apply by default.");
             }
             // Reuses the exact check a watermark request already makes: this
             // tenant's own template, or a system one, and still active.
@@ -122,6 +126,7 @@ public class WatermarkDefaultsService {
                 .orElseGet(() -> TenantWatermarkSettings.builder().tenantId(tenantId).build());
         Map<String, Object> before = snapshot(settings);
         settings.setDownloadWatermarkEnabled(request.enabled());
+        settings.setBulkExportWatermarkEnabled(request.bulkExportEnabled());
         settings.setDefaultTemplateId(template == null ? null : template.getTemplateId());
         settings.setUpdatedBy(TenantContext.getUserId());
         settings.setUpdatedAt(OffsetDateTime.now());
@@ -141,11 +146,12 @@ public class WatermarkDefaultsService {
     private static Map<String, Object> snapshot(TenantWatermarkSettings settings) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("downloadWatermarkEnabled", settings.isDownloadWatermarkEnabled());
+        values.put("bulkExportWatermarkEnabled", settings.isBulkExportWatermarkEnabled());
         values.put("defaultTemplateId", settings.getDefaultTemplateId());
         return values;
     }
 
-    // --------------------------------------------------------- the download hook
+    // --------------------------------------------------------- the download hooks
 
     /**
      * Watermarks {@code original} with this tenant's configured default
@@ -159,23 +165,54 @@ public class WatermarkDefaultsService {
      */
     @Transactional(readOnly = true)
     public byte[] applyIfConfigured(byte[] original, VersionDetails version) {
+        return applyIfConfigured(original, version, TenantWatermarkSettings::isDownloadWatermarkEnabled,
+                "the default download watermark");
+    }
+
+    /**
+     * The bulk-export equivalent of {@link #applyIfConfigured}, called once
+     * per file as {@code ExportArchiveBuilder} assembles a ZIP - same
+     * template, same fallback-to-original behaviour, gated by
+     * {@link TenantWatermarkSettings#isBulkExportWatermarkEnabled()} instead
+     * of the plain-download flag.
+     */
+    @Transactional(readOnly = true)
+    public byte[] applyForBulkExportIfConfigured(byte[] original, VersionDetails version) {
+        return applyIfConfigured(original, version, TenantWatermarkSettings::isBulkExportWatermarkEnabled,
+                "the default bulk-export watermark");
+    }
+
+    /**
+     * Whether this tenant currently has bulk-export watermarking switched on,
+     * so {@code ExportArchiveBuilder} can skip reading a file fully into
+     * memory for the common case where it won't be touched.
+     */
+    @Transactional(readOnly = true)
+    public boolean isBulkExportWatermarkEnabled() {
+        return availability.isAvailable() && settingsRepository.findById(TenantContext.getTenantId())
+                .map(s -> s.isBulkExportWatermarkEnabled() && s.getDefaultTemplateId() != null)
+                .orElse(false);
+    }
+
+    private byte[] applyIfConfigured(byte[] original, VersionDetails version,
+                                      Predicate<TenantWatermarkSettings> enabled, String what) {
         try {
-            return tryApply(original, version).orElse(original);
+            return tryApply(original, version, enabled).orElse(original);
         } catch (RuntimeException e) {
-            // Belt and braces on top of tryApply's own narrower catches: a
-            // plain download must never fail because of this feature.
-            log.warn("Could not apply the default download watermark to document {} - serving the original",
-                    version.documentId(), e);
+            // Belt and braces on top of tryApply's own narrower catches: this
+            // must never fail the caller.
+            log.warn("Could not apply {} to document {} - serving the original", what, version.documentId(), e);
             return original;
         }
     }
 
-    private Optional<byte[]> tryApply(byte[] original, VersionDetails version) {
+    private Optional<byte[]> tryApply(byte[] original, VersionDetails version,
+                                       Predicate<TenantWatermarkSettings> enabled) {
         if (!availability.isAvailable()) {
             return Optional.empty();
         }
         TenantWatermarkSettings settings = settingsRepository.findById(TenantContext.getTenantId()).orElse(null);
-        if (settings == null || !settings.isDownloadWatermarkEnabled() || settings.getDefaultTemplateId() == null) {
+        if (settings == null || !enabled.test(settings) || settings.getDefaultTemplateId() == null) {
             return Optional.empty();
         }
         if (!formatServices.isSupported(version.mimeType())) {

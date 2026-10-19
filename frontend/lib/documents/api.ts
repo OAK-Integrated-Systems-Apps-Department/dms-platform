@@ -822,6 +822,9 @@ export interface DocumentDto {
   status: string
   createdAt: string
   updatedAt: string | null
+  /** Set (V105, 1.4) once a workflow with a valid signature approved - null means not locked. */
+  signatureLockedAt: string | null
+  signatureLockedVersionId: string | null
 }
 
 /** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */

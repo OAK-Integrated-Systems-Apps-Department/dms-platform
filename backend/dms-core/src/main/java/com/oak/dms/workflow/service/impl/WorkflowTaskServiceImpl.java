@@ -5,8 +5,11 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.helper.AuditEventBuilder;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.dto.SignAndApproveRequest;
+import com.oak.dms.signature.service.DocumentSignatureService;
 import com.oak.dms.workflow.dto.TaskActionResponse;
 import com.oak.dms.workflow.entity.WorkflowInstance;
+import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
 import com.oak.dms.workflow.entity.WorkflowTask;
 import com.oak.dms.workflow.enums.InstanceStatus;
@@ -22,6 +25,7 @@ import com.oak.dms.workflow.helper.WorkflowActionRecorder;
 import com.oak.dms.workflow.helper.WorkflowLocks;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
 import com.oak.dms.workflow.repository.WorkflowStageInstanceRepository;
+import com.oak.dms.workflow.repository.WorkflowStageRepository;
 import com.oak.dms.workflow.repository.WorkflowTaskRepository;
 import com.oak.dms.workflow.service.ApproverResolver;
 import com.oak.dms.workflow.service.WorkflowTaskService;
@@ -45,11 +49,13 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     private final WorkflowTaskRepository taskRepository;
     private final WorkflowStageInstanceRepository stageInstanceRepository;
     private final WorkflowInstanceRepository instanceRepository;
+    private final WorkflowStageRepository stageRepository;
     private final ApproverResolver approverResolver;
     private final TaskRouting taskRouting;
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
     private final WorkflowLocks locks;
+    private final DocumentSignatureService signatureService;
     private final com.oak.dms.observability.DmsMetrics dmsMetrics;
 
     /**
@@ -134,6 +140,49 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
         if (decision == TaskDecision.reject && cleanReason == null) {
             throw new WorkflowRequestException("WORKFLOW_REASON_REQUIRED", "A reason is required to reject");
         }
+        if (decision == TaskDecision.approve && stageRequiresSignature(taskId, tenantId)) {
+            throw new WorkflowStateException("WORKFLOW_SIGNATURE_REQUIRED",
+                    "This stage requires a digital signature - approve it with sign-and-approve instead of a plain approve.");
+        }
+        LockedTask locked = lockAndValidate(taskId, tenantId, userId);
+        return finishDecision(locked, decision, cleanReason, userId);
+    }
+
+    /**
+     * 1.4 Digital Signature Integration: signs AND approves in one
+     * transaction (decision 1). Locks and validates exactly as {@link #act}
+     * does, then signs BEFORE recording any decision - if signing throws
+     * (consent/step-up failure, the stored file no longer matching its
+     * recorded hash, the key service unreachable, or a failed self-check),
+     * nothing below runs and the whole transaction rolls back, so the task
+     * is left undecided. Fail closed: there is no path here that records an
+     * approval without also having just recorded a valid signature.
+     */
+    @Override
+    @Transactional
+    public TaskActionResponse actWithSignature(UUID taskId, SignAndApproveRequest request) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID userId = TenantContext.getUserId();
+        LockedTask locked = lockAndValidate(taskId, tenantId, userId);
+        signatureService.sign(locked.instance(), locked.task(), request);
+        return finishDecision(locked, TaskDecision.approve, request.comment(), userId);
+    }
+
+    /** Whether the stage this task belongs to requires a signature to approve (V105, mirrors allow_info_requests). */
+    private boolean stageRequiresSignature(UUID taskId, UUID tenantId) {
+        return taskRepository.findStageInstanceIdOfTask(taskId, tenantId)
+                .flatMap(stageInstanceId -> stageInstanceRepository.findByStageInstanceIdAndTenantId(stageInstanceId, tenantId))
+                .flatMap(stageInstance -> stageRepository.findById(stageInstance.getStageId()))
+                .map(WorkflowStage::isRequiresSignature)
+                .orElse(false);
+    }
+
+    /** The locks and guards shared by {@link #act} and {@link #actWithSignature}, before either records a decision. */
+    private record LockedTask(WorkflowInstance instance, WorkflowStageInstance stage, WorkflowTask task,
+                              TaskRouting.Route route, List<WorkflowTask> open) {
+    }
+
+    private LockedTask lockAndValidate(UUID taskId, UUID tenantId, UUID userId) {
         locks.applyLockTimeout();
 
         // Parent ids as scalars only: nothing may be loaded into the persistence
@@ -168,6 +217,19 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
                         "Another approver has claimed this task");
             }
             throw new WorkflowAccessException("WORKFLOW_NOT_ASSIGNEE", "You are not an approver of this task");
+        }
+        return new LockedTask(instance, stage, task, route, open);
+    }
+
+    /** Records this entry's decision and lets the engine apply the stage's rules - shared by {@link #act} and {@link #actWithSignature}. */
+    private TaskActionResponse finishDecision(LockedTask locked, TaskDecision decision, String reason, UUID userId) {
+        WorkflowInstance instance = locked.instance();
+        WorkflowStageInstance stage = locked.stage();
+        WorkflowTask task = locked.task();
+        TaskRouting.Route route = locked.route();
+        String cleanReason = reason == null || reason.isBlank() ? null : reason.trim();
+        if (decision == TaskDecision.reject && cleanReason == null) {
+            throw new WorkflowRequestException("WORKFLOW_REASON_REQUIRED", "A reason is required to reject");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -208,13 +270,13 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
             decisionDetail.put("delegatedFrom", task.getDelegatedFrom().toString());
             decisionDetail.put("delegatedFromName", engine.displayName(task.getDelegatedFrom()));
         }
-        actions.record(instance, stage.getStageInstanceId(), taskId,
+        actions.record(instance, stage.getStageInstanceId(), task.getTaskId(),
                 approve ? WorkflowActionType.approved : WorkflowActionType.rejected, userId, cleanReason,
                 decisionDetail);
         taskAudit(approve ? AuditActionCatalog.WORKFLOW_TASK_APPROVED : AuditActionCatalog.WORKFLOW_TASK_REJECTED,
-                instance, taskId, stage, task, route).reason(cleanReason).log();
+                instance, task.getTaskId(), stage, task, route).reason(cleanReason).log();
 
-        List<WorkflowTask> remaining = new ArrayList<>(open);
+        List<WorkflowTask> remaining = new ArrayList<>(locked.open());
         remaining.remove(task);
         engine.evaluateAndAdvance(instance, stage, remaining, userId);
         return response(task, stage, instance);

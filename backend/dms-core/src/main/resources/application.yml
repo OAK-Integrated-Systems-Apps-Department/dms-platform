@@ -531,6 +531,38 @@ dms:
       default-interval-days: ${ENCRYPTION_ROTATION_DEFAULT_DAYS:365}
       check-interval: ${ENCRYPTION_ROTATION_CHECK_INTERVAL:PT6H}
       remind-every: ${ENCRYPTION_ROTATION_REMIND_EVERY:P7D}
+  # 1.4 Digital Signature Integration (module DSI, INTERNAL signing only) -
+  # see SignatureProperties/SignatureConfig and docs/requirement-registry.md 1.4.
+  signature:
+    # OFF by default. While off, the standalone signature endpoints (list/
+    # verify/evidence/lock-release, revoke-key) aren't mapped at all, same
+    # convention as watermark - but see NullDocumentSigner's own doc comment
+    # for the one endpoint (sign-and-approve) that can't follow it exactly.
+    enabled: ${SIGNATURE_ENABLED:false}
+    # Password (+ TOTP if the signer has MFA enabled) re-checked immediately
+    # before every signature. Disable only for tests.
+    require-step-up: ${SIGNATURE_REQUIRE_STEP_UP:true}
+    # openbao in production; local-dev = a file-backed key pair, for development only.
+    provider: ${SIGNATURE_PROVIDER:local-dev}
+    allow-local-dev: ${SIGNATURE_ALLOW_LOCAL_DEV:true}
+    local-dev-key-file: ${SIGNATURE_LOCAL_DEV_KEY_FILE:${java.io.tmpdir}/dms-signature/local-dev-signing-keys.json}
+    # A separate OpenBao connection from dms.encryption.openbao - least-
+    # privilege-separated token/policy even against the same server (see
+    # docs/storage-architecture.md). key-name here is the signing-key name
+    # PREFIX ("dms-sig"), not one shared key - each user gets their own
+    # dms-sig-<tenantId>-<userId>-<generation>.
+    openbao:
+      address: ${SIGNATURE_OPENBAO_ADDR:}
+      auth: ${SIGNATURE_OPENBAO_AUTH:token}
+      token: ${SIGNATURE_OPENBAO_TOKEN:}
+      role-id: ${SIGNATURE_OPENBAO_ROLE_ID:}
+      secret-id: ${SIGNATURE_OPENBAO_SECRET_ID:}
+      app-role-mount: ${SIGNATURE_OPENBAO_APPROLE_MOUNT:approle}
+      mount: ${SIGNATURE_OPENBAO_MOUNT:transit}
+      key-name: ${SIGNATURE_OPENBAO_KEY_PREFIX:dms-sig}
+    # How often SignatureLockReconcileJob catches an approved-and-signed
+    # document the after-commit lock step missed.
+    reconcile-interval: ${SIGNATURE_RECONCILE_INTERVAL:PT15M}
   import-export:
     # Bulk import intake limits - see ImportExportProperties.
     max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}

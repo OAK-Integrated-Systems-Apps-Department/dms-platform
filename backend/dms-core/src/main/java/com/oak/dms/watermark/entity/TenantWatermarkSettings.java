@@ -14,19 +14,17 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One tenant's policy for the plain "Download" action (V103): whether it
- * should quietly watermark the file inline, synchronously, before streaming
- * it, and which template to use.
+ * One tenant's policy for watermarking a document on the way out, inline and
+ * synchronously, rather than through the async "Add watermark" job pipeline
+ * ({@code watermark_jobs}/{@code WatermarkJobWorker}, which is unaffected by
+ * this table and never reads this entity): {@link #downloadWatermarkEnabled}
+ * (V103) covers the plain "Download" action, and
+ * {@link #bulkExportWatermarkEnabled} (V104) covers a bulk/ZIP export's files.
+ * Both share the one {@link #defaultTemplateId} - there is only ever one
+ * tenant-standard watermark, not a different one per download path.
  * <p>
- * No row for a tenant means the platform default, which is off - the same
- * "no row = default" convention {@code pin_settings} (V101) uses. This is
- * kept deliberately narrow (one feature, one row per tenant) rather than a
- * general tenant-settings bag; a second tenant-level toggle some day is free
- * to get its own table the same way.
- * <p>
- * This is NOT the async "Add watermark" job pipeline
- * ({@code watermark_jobs}/{@code WatermarkJobWorker}) - that feature is
- * unaffected by this table and this entity is never read by it.
+ * No row for a tenant means the platform default, which is off for both - the
+ * same "no row = default" convention {@code pin_settings} (V101) uses.
  */
 @Entity
 @Table(name = "tenant_watermark_settings")
@@ -44,10 +42,13 @@ public class TenantWatermarkSettings {
     @Column(name = "download_watermark_enabled", nullable = false)
     private boolean downloadWatermarkEnabled;
 
+    @Column(name = "bulk_export_watermark_enabled", nullable = false)
+    private boolean bulkExportWatermarkEnabled;
+
     /**
-     * Which template a plain download is stamped with when
-     * {@link #downloadWatermarkEnabled} is true. Null is only valid when the
-     * toggle is off - {@code WatermarkDefaultsService} enforces that on
+     * Which template is stamped on when either {@link #downloadWatermarkEnabled}
+     * or {@link #bulkExportWatermarkEnabled} is true. Null is only valid when
+     * both toggles are off - {@code WatermarkDefaultsService} enforces that on
      * every write, so a row here is never "on with nothing to draw".
      */
     @Column(name = "default_template_id")

@@ -17,6 +17,9 @@ public record DocumentResponse(
         String status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        UUID folderId
+        UUID folderId,
+        /** Set together (V105) once a workflow with a valid signature approved - null means not locked. */
+        OffsetDateTime signatureLockedAt,
+        UUID signatureLockedVersionId
 ) {
 }

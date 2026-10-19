@@ -113,20 +113,24 @@ export function isWatermarkInFlight(status: WatermarkJobStatus): boolean {
 
 /**
  * Mirrors WatermarkDefaultsResponse. This is the tenant's policy for the
- * plain "Download" action - separate from, and unaffected by, the
- * user-initiated "Add watermark" job above. `defaultTemplateId` can be set
- * while `enabled` is false (a previously-chosen template kept for next
- * time); the UI should treat that as "off" either way.
+ * plain "Download" action (`enabled`) and for a bulk/ZIP export's files
+ * (`bulkExportEnabled`) - both separate from, and unaffected by, the
+ * user-initiated "Add watermark" job above, and sharing one template.
+ * `defaultTemplateId` can be set while both flags are false (a
+ * previously-chosen template kept for next time); the UI should treat that
+ * as "off" either way.
  */
 export interface WatermarkDefaultsDto {
   enabled: boolean
+  bulkExportEnabled: boolean
   defaultTemplateId: string | null
   defaultTemplateLabel: string | null
 }
 
-/** Mirrors WatermarkDefaultsRequest. templateId is required when enabled is true. */
+/** Mirrors WatermarkDefaultsRequest. templateId is required when enabled or bulkExportEnabled is true. */
 export interface WatermarkDefaultsRequestDto {
   enabled: boolean
+  bulkExportEnabled: boolean
   templateId: string | null
 }
 

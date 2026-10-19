@@ -17,7 +17,9 @@ package com.oak.dms.audit.catalog;
  * always match it.
  *
  * DocumentServiceImpl/StorageLocationServiceImpl are also call sites now
- * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below).
+ * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below), as are
+ * DocumentSignatureService/WorkflowSignatureListener/SigningKeyService/
+ * DocumentSignatureLockService (DOCUMENT_SIGNATURE/SIGNING_KEY below).
  */
 public final class AuditObjectTypes {
 
@@ -79,6 +81,10 @@ public final class AuditObjectTypes {
     public static final String WORKFLOW_SUPPORTING_DOCUMENT = "WORKFLOW_SUPPORTING_DOCUMENT";
     /** A comment on a document (document_comments) - every DOCUMENT_COMMENT_* event. */
     public static final String DOCUMENT_COMMENT = "DOCUMENT_COMMENT";
+    /** One signature (document_signatures, V105) - the object of every DOCUMENT_SIGNATURE_* event except LOCKED/UNLOCKED, whose object is the DOCUMENT itself. */
+    public static final String DOCUMENT_SIGNATURE = "DOCUMENT_SIGNATURE";
+    /** One user's signing key (user_signing_keys, V105) - the object of every SIGNING_KEY_* event. */
+    public static final String SIGNING_KEY = "SIGNING_KEY";
 
     /**
      * Not a business entity like every other constant here - the "object"

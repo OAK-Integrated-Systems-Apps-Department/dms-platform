@@ -68,8 +68,11 @@ class ExportArchiveBuilderTest {
     private final MetadataFieldRepository fields = mock(MetadataFieldRepository.class);
     private final DocumentService documentService = mock(DocumentService.class);
     private final DocumentTypeFieldService schemas = mock(DocumentTypeFieldService.class);
+    private final com.oak.dms.watermark.service.WatermarkDefaultsService watermarkDefaultsService =
+            mock(com.oak.dms.watermark.service.WatermarkDefaultsService.class);
     private final ExportArchiveBuilder builder = new ExportArchiveBuilder(documents, versions, folders, types,
-            metadata, fields, documentService, schemas, mock(com.oak.dms.encryption.KeyPrefetcher.class));
+            metadata, fields, documentService, schemas, mock(com.oak.dms.encryption.KeyPrefetcher.class),
+            watermarkDefaultsService);
     private final Map<UUID, Document> stored = new LinkedHashMap<>();
 
     @TempDir

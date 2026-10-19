@@ -28,6 +28,13 @@ public record UpsertWorkflowStageRequest(
         UUID escalationUserId,
         /** Whether approvers may pause their task to request information; null means true (V47 default). */
         Boolean allowInfoRequests,
+        /**
+         * Whether approving this stage requires a digital signature; null
+         * means false (V105 default). Only settable by a caller holding
+         * {@code DSI_CONFIGURE_WORKFLOW_RULES} - see
+         * {@code WorkflowTemplateServiceImpl#upsertStage}.
+         */
+        Boolean requiresSignature,
         @NotEmpty @Size(max = 50) List<@Valid ParticipantRequest> participants
 ) {
 }

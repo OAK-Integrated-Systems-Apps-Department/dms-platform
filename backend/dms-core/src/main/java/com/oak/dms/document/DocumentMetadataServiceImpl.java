@@ -14,6 +14,7 @@ import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.audit.helper.SystemActor;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.service.DocumentSignatureLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -79,6 +80,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     private final DocumentTypeFieldService documentTypeFieldService;
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
+    private final DocumentSignatureLockService signatureLockService;
 
     @Override
     @Transactional(readOnly = true)
@@ -116,6 +118,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     public void saveValues(UUID documentId, Map<String, Object> valuesByFieldKey, boolean enforceMandatory) {
         UUID tenantId = TenantContext.getTenantId();
         Document document = requireDocument(documentId, tenantId);
+        signatureLockService.guard(document);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
         writeValues(document, tenantId, schema, valuesByFieldKey, SOURCE_MANUAL, null, enforceMandatory);
     }

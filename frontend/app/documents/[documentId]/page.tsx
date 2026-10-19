@@ -13,6 +13,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
+import { DocumentSignaturesPanel } from "@/components/signatures/document-signatures-panel"
 import { ApiError } from "@/lib/api-error"
 import { useDocument } from "@/lib/documents/use-document"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -108,6 +109,8 @@ export default function DocumentPage() {
                   </div>
                 )
               )}
+
+              <DocumentSignaturesPanel document={document} />
             </div>
 
             <div className="flex min-w-0 flex-col gap-5">

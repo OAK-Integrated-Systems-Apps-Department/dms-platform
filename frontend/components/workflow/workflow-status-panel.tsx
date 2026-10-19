@@ -48,6 +48,8 @@ import { cn, formatDateTime } from "@/lib/utils"
 
 import type { InfoRequestDto, WorkflowInstanceDto, WorkflowStageInstanceDto, WorkflowTaskDto } from "@/lib/workflow/api"
 
+import { SignAndApproveDialog } from "@/components/signatures/sign-and-approve-dialog"
+
 import { DelegateTaskDialog } from "./delegate-task-dialog"
 import { InfoRequestsList } from "./info-requests-list"
 import { RequestInfoDialog } from "./request-info-dialog"
@@ -78,6 +80,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
   const { hasPermission } = usePermissions()
   const actions = useWorkflowActions()
   const [decision, setDecision] = useState<TaskDecisionKind | null>(null)
+  const [signing, setSigning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [moving, setMoving] = useState<{ task: WorkflowTaskDto; stage: WorkflowStageInstanceDto; mode: "delegate" | "reassign" } | null>(null)
   const [requestingInfo, setRequestingInfo] = useState(false)
@@ -231,7 +234,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                 <button
                   type="button"
                   disabled={actions.isActing}
-                  onClick={() => setDecision("approve")}
+                  onClick={() => (myStage?.requiresSignature ? setSigning(true) : setDecision("approve"))}
                   className="flex items-center gap-1 rounded-sm border border-primary bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground disabled:opacity-60"
                 >
                   <CheckCircle2 size={13} /> Approve
@@ -292,6 +295,16 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
           onConfirm={async (text) =>
             (decision === "approve" ? await actions.approve(myTask.taskId, text) : await actions.reject(myTask.taskId, text)) !== null
           }
+        />
+      )}
+
+      {signing && myTask && myStage && (
+        <SignAndApproveDialog
+          taskId={myTask.taskId}
+          documentTitle={instance.documentTitle ?? "Untitled document"}
+          stageLabel={`Stage ${myStage.stageOrder} of ${stages.length}: ${myStage.name}`}
+          versionChanged={instance.versionChangedFlag}
+          onOpenChange={(open) => !open && setSigning(false)}
         />
       )}
 

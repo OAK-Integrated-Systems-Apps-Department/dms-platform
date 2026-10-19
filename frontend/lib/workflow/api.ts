@@ -110,6 +110,8 @@ export interface WorkflowStageDto {
   escalationUserId: string | null
   /** Whether approvers may pause their task to request information (default true). */
   allowInfoRequests: boolean
+  /** Whether approving this stage requires a digital signature (default false, 1.4). */
+  requiresSignature: boolean
   participants: WorkflowParticipantDto[]
 }
 
@@ -168,6 +170,8 @@ export interface UpsertStagePayload {
   escalationTarget?: EscalationTarget | null
   escalationUserId?: string | null
   allowInfoRequests?: boolean
+  /** Only takes effect for a caller holding DSI_CONFIGURE_WORKFLOW_RULES - omitted otherwise, which leaves it unchanged. */
+  requiresSignature?: boolean
   participants: ParticipantPayload[]
 }
 
@@ -312,6 +316,8 @@ export interface WorkflowStageInstanceDto {
   completedAt: string | null
   tasks: WorkflowTaskDto[]
   allowInfoRequests: boolean
+  /** Whether approving this stage requires a digital signature (1.4). */
+  requiresSignature: boolean
 }
 
 /**
@@ -492,6 +498,8 @@ export interface MyTaskDto {
   route: TaskRoute | null
   delegatedFrom: WorkflowUserRefDto | null
   openInfoRequestCount: number
+  /** Whether approving this task's stage requires a digital signature - open SignAndApproveDialog instead of a plain approve when true (1.4). */
+  requiresSignature: boolean
 }
 
 /** Mirrors backend/dms-core's MyTaskCountResponse. requestsForMe: open information requests addressed to me. */

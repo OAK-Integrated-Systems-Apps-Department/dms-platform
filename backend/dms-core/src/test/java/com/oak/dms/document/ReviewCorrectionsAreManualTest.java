@@ -96,6 +96,7 @@ class ReviewCorrectionsAreManualTest {
     @Mock private MetadataValidationService metadataValidationService;
     @Mock private OcrProperties ocrProperties;
     @Mock private com.oak.dms.watermark.service.WatermarkDefaultsService watermarkDefaultsService;
+    @Mock private com.oak.dms.signature.service.DocumentSignatureLockService signatureLockService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private DocumentServiceImpl service;
@@ -124,7 +125,7 @@ class ReviewCorrectionsAreManualTest {
                 documentOcrLineItemRepository, documentOcrCorrectionRepository,
                 processingJobRepository, ocrWorkerClient, ocrEnqueueService,
                 documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
-                new PageImageCache(ocrProperties), watermarkDefaultsService);
+                new PageImageCache(ocrProperties), watermarkDefaultsService, signatureLockService);
 
         TenantContext.set(tenantId, UUID.randomUUID());
 

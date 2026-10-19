@@ -191,6 +191,23 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_COMMENT_UPDATED = "DOCUMENT_COMMENT_UPDATED";
     public static final String DOCUMENT_COMMENT_DELETED = "DOCUMENT_COMMENT_DELETED";
 
+    // 1.4 Digital Signature Integration (module DSI, INTERNAL signing only -
+    // see com.oak.dms.signature's package docs). DOCUMENT_SIGNED/REJECTED/
+    // INVALIDATED/VERIFICATION_FAILED are HIGH: each is either a legally
+    // meaningful act or a security-relevant failure. VERIFIED is LOW - a
+    // routine, expected, high-frequency check, same tier as DOCUMENT_DOWNLOADED.
+    // LOCKED is MEDIUM (a consequence of an approval, not a decision of its
+    // own); UNLOCKED is HIGH and reason-required, same as a quarantine override.
+    public static final String DOCUMENT_SIGNED = "DOCUMENT_SIGNED";
+    public static final String DOCUMENT_SIGNATURE_REJECTED = "DOCUMENT_SIGNATURE_REJECTED";
+    public static final String DOCUMENT_SIGNATURE_INVALIDATED = "DOCUMENT_SIGNATURE_INVALIDATED";
+    public static final String DOCUMENT_SIGNATURE_VERIFIED = "DOCUMENT_SIGNATURE_VERIFIED";
+    public static final String DOCUMENT_SIGNATURE_VERIFICATION_FAILED = "DOCUMENT_SIGNATURE_VERIFICATION_FAILED";
+    public static final String DOCUMENT_SIGNATURE_LOCKED = "DOCUMENT_SIGNATURE_LOCKED";
+    public static final String DOCUMENT_SIGNATURE_UNLOCKED = "DOCUMENT_SIGNATURE_UNLOCKED";
+    public static final String SIGNING_KEY_CREATED = "SIGNING_KEY_CREATED";
+    public static final String SIGNING_KEY_REVOKED = "SIGNING_KEY_REVOKED";
+
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -496,7 +513,20 @@ public final class AuditActionCatalog {
             // Document comments - module DOCM. Rows carry ids and length, never the body.
             Map.entry(DOCUMENT_COMMENT_CREATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_COMMENT_UPDATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
-            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false))
+            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+
+            // 1.4 Digital Signature Integration (DocumentSignatureService/
+            // WorkflowSignatureListener/SignatureFailureRecorder/
+            // DocumentSignatureLockService/SigningKeyService) - module DSI.
+            Map.entry(DOCUMENT_SIGNED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_REJECTED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_INVALIDATED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_VERIFIED, new AuditActionSpec("DSI", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_SIGNATURE_VERIFICATION_FAILED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_LOCKED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SIGNATURE_UNLOCKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+            Map.entry(SIGNING_KEY_CREATED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true))
     );
 
     private AuditActionCatalog() {

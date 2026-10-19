@@ -44,6 +44,8 @@ export const stageSchema = z
   escalationTarget: z.enum(["none", "department_head", "named_user"]),
   escalationUserId: z.string().nullable(),
   allowInfoRequests: z.boolean(),
+  /** Only settable by someone holding DSI_CONFIGURE_WORKFLOW_RULES - see stage-card.tsx's own note when it's read-only. */
+  requiresSignature: z.boolean(),
   participants: z
     .array(
       z.object({

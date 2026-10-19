@@ -118,4 +118,18 @@ public class Document {
     @Column(name = "access_mode", nullable = false)
     @Builder.Default
     private com.oak.dms.folder.FolderAccessMode accessMode = com.oak.dms.folder.FolderAccessMode.inherit;
+
+    /**
+     * Set together (V105, both null or both set - see the CHECK) once a
+     * workflow with at least one valid signature is approved - see
+     * {@code com.oak.dms.signature.service.DocumentSignatureLockService}.
+     * While set, new versions, restore, metadata edits, move and delete are
+     * all refused (409 DOCUMENT_SIGNATURE_LOCKED) until a permission-gated,
+     * reason-required unlock.
+     */
+    @Column(name = "signature_locked_at")
+    private OffsetDateTime signatureLockedAt;
+
+    @Column(name = "signature_locked_version_id")
+    private UUID signatureLockedVersionId;
 }

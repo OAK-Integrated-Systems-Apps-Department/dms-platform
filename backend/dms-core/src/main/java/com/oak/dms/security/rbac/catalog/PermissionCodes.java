@@ -213,4 +213,16 @@ public final class PermissionCodes {
     // Document Lifecycle - DLM, seeded by V10. Submitting a document into its
     // document type's active workflow.
     public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
+
+    // 1.4 Digital Signature Integration - DSI, seeded by V10 (except
+    // UNLOCK, seeded by V105). INTERNAL signing only - deliberately no
+    // constant for dsi.sign-documents.request-external-signature or
+    // dsi.manage-signature-configuration.configure-provider (both V10 rows,
+    // unused by anything in this feature - external signers and a
+    // third-party provider are out of scope, see docs/requirement-registry.md 1.4).
+    public static final String DSI_SIGN = "dsi.sign-documents.sign";
+    public static final String DSI_VIEW_SIGNATURE_HISTORY = "dsi.view-signature-history.view";
+    public static final String DSI_MANAGE_CERTIFICATES = "dsi.manage-signature-configuration.manage-certificates";
+    public static final String DSI_CONFIGURE_WORKFLOW_RULES = "dsi.manage-signature-configuration.configure-workflow-rules";
+    public static final String DSI_UNLOCK_SIGNED_DOCUMENTS = "dsi.unlock-signed-documents.unlock";
 }

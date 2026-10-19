@@ -22,6 +22,7 @@ import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.service.SigningKeyService;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +63,7 @@ public class UserServiceImpl implements UserService {
     private final AuthorizationService authorizationService;
     private final TenantRepository tenantRepository;
     private final AuditService auditService;
+    private final SigningKeyService signingKeyService;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
@@ -427,6 +429,10 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
 
         keycloakUserService.disableUser(user.getKeycloakId());
+        // 1.4 Digital Signature Integration: a deactivated user signs nothing new -
+        // their already-made signatures are untouched (decision 9).
+        signingKeyService.revokeActiveKeyIfAny(user.getTenantId(), user.getUserId(),
+                "User account deactivated.", TenantContext.getUserId());
         log.info("Deactivated user {}", userId);
 
         auditService.event(AuditActionCatalog.USER_DEACTIVATED)
@@ -457,6 +463,15 @@ public class UserServiceImpl implements UserService {
         // purges the tenant admin account through this app.
         if (isTenantAdminAccount(user)) {
             throw new InvalidUserStateException("The tenant admin account can't be permanently deleted.");
+        }
+        // 1.4 Digital Signature Integration: the identity behind a legal
+        // signature is never erased - user_signing_keys.user_id (and,
+        // transitively, document_signatures) is RESTRICT, not CASCADE/SET
+        // NULL, so this would fail at the database anyway; checked here
+        // first for a clear message instead of a raw constraint violation.
+        if (signingKeyService.hasEverSigned(user.getTenantId(), user.getUserId())) {
+            throw new InvalidUserStateException(
+                    "This user has signed documents and can't be permanently deleted - deactivate instead.");
         }
 
         UUID keycloakId = user.getKeycloakId();

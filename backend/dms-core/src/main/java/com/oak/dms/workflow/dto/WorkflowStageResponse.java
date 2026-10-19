@@ -14,6 +14,7 @@ public record WorkflowStageResponse(
         String escalationTarget,
         UUID escalationUserId,
         boolean allowInfoRequests,
+        boolean requiresSignature,
         List<ParticipantResponse> participants
 ) {
 }

@@ -1,13 +1,15 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, ArrowDown, ArrowUp, BellRing, Clock, MessageSquareMore, Pencil, Trash2, TrendingUp } from "lucide-react"
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, Clock, MessageSquareMore, PenLine, Pencil, Trash2, TrendingUp } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Switch } from "@/components/ui/switch"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { useUserOptions } from "@/lib/workflow/use-participant-options"
 import { COMPLETION_RULE_LABELS, REJECTION_RULE_LABELS } from "@/lib/workflow/workflow-badges"
 import { cn } from "@/lib/utils"
@@ -65,6 +67,7 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
     escalationTarget: stage?.escalationTarget ?? "none",
     escalationUserId: stage?.escalationUserId ?? null,
     allowInfoRequests: stage?.allowInfoRequests ?? true,
+    requiresSignature: stage?.requiresSignature ?? false,
     participants: (stage?.participants ?? [])
       .slice()
       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -72,7 +75,7 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
   }
 }
 
-function toPayload(values: StageFormValues): UpsertStagePayload {
+function toPayload(values: StageFormValues, canConfigureSignature: boolean): UpsertStagePayload {
   return {
     name: values.name.trim(),
     completionRule: values.completionRule,
@@ -82,6 +85,11 @@ function toPayload(values: StageFormValues): UpsertStagePayload {
     escalationTarget: values.escalationTarget,
     escalationUserId: values.escalationTarget === "named_user" ? values.escalationUserId : null,
     allowInfoRequests: values.allowInfoRequests,
+    // Omitted entirely (not just unchanged) for anyone without
+    // DSI_CONFIGURE_WORKFLOW_RULES - the backend leaves the stage's current
+    // value alone when the field is absent, but would 403 the WHOLE save if
+    // it were present with any value and the caller lacked that permission.
+    requiresSignature: canConfigureSignature ? values.requiresSignature : undefined,
     participants: values.participants.map((p, index) => ({
       assigneeType: p.assigneeType,
       assigneeId: p.assigneeId,
@@ -116,6 +124,8 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
   const isNew = stage === null
   const [draft, setDraft] = useState<StageFormValues | null>(() => (isNew ? toFormValues(null) : null))
   const [errors, setErrors] = useState<Partial<Record<keyof StageFormValues, string>>>({})
+  const { hasPermission } = usePermissions()
+  const canConfigureSignature = hasPermission(PermissionCodes.DSI_CONFIGURE_WORKFLOW_RULES)
 
   function update(patch: Partial<StageFormValues>) {
     setDraft((current) => (current ? { ...current, ...patch } : current))
@@ -134,7 +144,7 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
       return
     }
     setErrors({})
-    const ok = await onSave(toPayload(parsed.data))
+    const ok = await onSave(toPayload(parsed.data, canConfigureSignature))
     if (ok && !isNew) setDraft(null)
   }
 
@@ -307,6 +317,28 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
                 </span>
               </span>
             </label>
+
+            {canConfigureSignature ? (
+              <label className="flex items-start gap-3">
+                <Switch
+                  checked={draft.requiresSignature}
+                  onCheckedChange={(requiresSignature) => update({ requiresSignature })}
+                  className="mt-0.5"
+                />
+                <span className="text-[13px] text-foreground">
+                  Requires digital signature
+                  <span className="block text-[12px] text-muted-foreground">
+                    Approving this stage needs an explicit signature (password, and an authenticator code if enabled) -
+                    the plain Approve action is refused.
+                  </span>
+                </span>
+              </label>
+            ) : (
+              <p className="text-[12.5px] text-muted-foreground">
+                Requires digital signature: <strong className="text-foreground">{draft.requiresSignature ? "On" : "Off"}</strong>
+                <span className="block text-[12px]">Only someone who can configure signature workflow rules may change this.</span>
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-2.5 border-t border-dashed border-border pt-4">
@@ -384,6 +416,11 @@ export function StageCard({ stage, position, total, editable, busy, onSave, onDe
             {!stage.allowInfoRequests && (
               <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 <MessageSquareMore size={12} /> Information requests are switched off for this stage.
+              </p>
+            )}
+            {stage.requiresSignature && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <PenLine size={12} /> Approving this stage requires a digital signature.
               </p>
             )}
           </div>

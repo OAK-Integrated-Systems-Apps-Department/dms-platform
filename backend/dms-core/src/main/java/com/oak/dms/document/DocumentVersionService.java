@@ -13,6 +13,7 @@ import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.service.DocumentSignatureLockService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +57,7 @@ public class DocumentVersionService {
     private final VersionContent versionContent;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final DocumentSignatureLockService signatureLockService;
 
     /**
      * One row of the history.
@@ -147,7 +149,8 @@ public class DocumentVersionService {
     public IngestionTicketResponse upload(UUID documentId, String originalFilename, long contentLength,
                                           InputStream content, String comment,
                                           List<String> requestedFields, boolean lowPriority) {
-        visible(documentId, FolderAccessLevel.edit);
+        Document document = visible(documentId, FolderAccessLevel.edit);
+        signatureLockService.guard(document);
         IngestionRequest request = IngestionRequest.newVersion(documentId, "replacement_upload", originalFilename,
                 contentLength, content, clean(comment));
         return ingestionGate.submit(
@@ -163,6 +166,7 @@ public class DocumentVersionService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public IngestionTicketResponse restore(UUID documentId, UUID versionId) {
         Document document = visible(documentId, FolderAccessLevel.edit);
+        signatureLockService.guard(document);
         DocumentVersion version = version(document, versionId);
         if (version.getVersionId().equals(currentVersionId(document))) {
             throw new FolderException(HttpStatus.CONFLICT, "VERSION_ALREADY_CURRENT",

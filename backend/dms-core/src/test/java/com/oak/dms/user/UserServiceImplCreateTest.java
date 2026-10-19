@@ -41,7 +41,7 @@ class UserServiceImplCreateTest {
     private final AuditService audit = mock(AuditService.class);
     private final UserServiceImpl service = new UserServiceImpl(users, mock(UserMapper.class), keycloak,
             mock(PasswordResetService.class), mock(OutboxEventPublisher.class), mock(AuthorizationService.class),
-            mock(TenantRepository.class), audit);
+            mock(TenantRepository.class), audit, mock(com.oak.dms.signature.service.SigningKeyService.class));
 
     @BeforeEach
     void setUp() {
