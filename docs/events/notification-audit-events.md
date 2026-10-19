@@ -40,4 +40,4 @@ Not audited here, on purpose: a notification being created, read, archived, or s
 
 ## Related changes to existing events
 
-The reminder and escalation settings on workflow templates and stages (3.2) change what two existing events record - see [workflow-audit-events.md](workflow-audit-events.md): the template snapshot carries the five template defaults, the stage list carries the two stage overrides, and `WORKFLOW_TASK_REMINDER_SENT` is also written for an inactivity reminder.
+The reminder and escalation settings on workflow templates and stages (3.2) change what two existing events record - see [workflow-audit-events.md](workflow-audit-events.md): the template snapshot carries the two template inactivity defaults, the stage list carries the two stage overrides, and `WORKFLOW_TASK_REMINDER_SENT` is also written for an inactivity reminder.

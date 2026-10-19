@@ -1,28 +1,75 @@
 "use client"
 
+import { ChevronDown, Info } from "lucide-react"
+
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { SegmentedControl } from "@/components/ui/segmented-control"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+
+/** "How reminders work" - the longer explanation, kept out of the way in a tooltip (hover or keyboard focus). */
+export function HowRemindersWork() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        className="inline-flex items-center gap-1 rounded-btn text-[12px] font-semibold text-primary hover:underline"
+      >
+        <Info size={12} aria-hidden="true" />
+        How reminders work
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm flex-col items-start gap-1.5 py-2 text-[12px] leading-[1.5]">
+        <span>
+          <b>Due-date reminder</b> - sent a set number of hours before a task is due. Needs the stage to have SLA hours.
+        </span>
+        <span>
+          <b>Inactivity reminder</b> - sent when nobody has claimed, delegated or answered anything on the task for a
+          set number of hours. Works with or without an SLA.
+        </span>
+        <span>
+          Escalation happens at the due time or, once the inactivity reminder has gone out, the set number of hours
+          after it - whichever comes first. Each reminder and the escalation is sent once per task.
+        </span>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 /**
- * The two kinds of reminder, in a few words - shown wherever they are configured (the template's defaults and a
- * stage's own settings) so nobody has to guess what "inactivity" means.
+ * A closed-by-default section with a one-line summary shown while closed. A native button toggles it, so it is
+ * keyboard accessible without extra wiring.
  */
-export function ReminderHelp() {
+export function CollapsibleSection({
+  title,
+  summary,
+  open,
+  onOpenChange,
+  children,
+}: {
+  title: string
+  summary: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: React.ReactNode
+}) {
   return (
-    <div className="rounded-btn border border-border bg-muted px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-muted-foreground">
-      <p>
-        <b className="font-semibold text-foreground">Due-date reminder</b> - sent a set number of hours <em>before</em> a task
-        is due. It needs the stage to have SLA hours.
-      </p>
-      <p className="mt-1.5">
-        <b className="font-semibold text-foreground">Inactivity reminder</b> - sent when nobody has claimed, delegated or
-        answered anything on the task for a set number of hours. It works with or without an SLA.
-      </p>
-      <p className="mt-1.5">
-        Escalation then happens at the due time, or - once the inactivity reminder has gone out - the set number of hours
-        after it, whichever comes first. Each reminder, and the escalation, is sent once per task.
-      </p>
+    <div className="rounded-lg border border-dashed border-border">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{title}</span>
+          {!open && <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">{summary}</span>}
+        </span>
+        <ChevronDown
+          size={15}
+          aria-hidden="true"
+          className={open ? "shrink-0 rotate-180 text-muted-foreground" : "shrink-0 text-muted-foreground"}
+        />
+      </button>
+      {open && <div className="flex flex-col gap-4 border-t border-dashed border-border px-4 py-4">{children}</div>}
     </div>
   )
 }
@@ -61,11 +108,9 @@ export function HoursInput({
   )
 }
 
-type Mode = "inherit" | "own"
-
 /**
- * A stage override with "Inherit from template" as the default: inheriting stores null (the backend's "use the
- * template's value"), "Set for this stage" reveals the hours. When inheriting, it shows what the template says.
+ * A stage's inactivity field: one number input where empty means "inherit the template's value", which the
+ * placeholder shows ("Template default: 72 h", or "Not set" when the template has none).
  */
 export function InheritableHours({
   id,
@@ -82,7 +127,7 @@ export function InheritableHours({
   label: string
   /** The stage's own value; null = inherit. */
   value: number | null
-  /** The template's default, to show while inheriting; null = the template has none. */
+  /** The template's default; null = the template has none. */
   inheritedValue: number | null
   onChange: (value: number | null) => void
   error?: string
@@ -90,33 +135,18 @@ export function InheritableHours({
   help?: string
   max?: number
 }) {
-  const mode: Mode = value == null ? "inherit" : "own"
   return (
-    <div>
+    <div className="sm:w-[300px]">
       <Label htmlFor={id}>{label}</Label>
-      <SegmentedControl<Mode>
-        value={mode}
+      <HoursInput
+        id={id}
+        value={value}
+        onChange={onChange}
+        invalid={Boolean(error)}
         disabled={disabled}
-        onChange={(next) => {
-          if (next === "inherit") onChange(null)
-          else if (value == null) onChange(inheritedValue ?? 24)
-        }}
-        options={[
-          { value: "inherit", label: "Inherit from template" },
-          { value: "own", label: "Set for this stage" },
-        ]}
+        max={max}
+        placeholder={inheritedValue != null ? `Template default: ${inheritedValue} h` : "Not set"}
       />
-      {mode === "own" ? (
-        <div className="mt-2.5 sm:w-[200px]">
-          <HoursInput id={id} value={value} onChange={onChange} invalid={Boolean(error)} disabled={disabled} max={max} />
-        </div>
-      ) : (
-        <p className="mt-2 text-[12.5px] text-muted-foreground">
-          {inheritedValue != null
-            ? `Uses the template's ${inheritedValue} hours.`
-            : "The template has no default, so this is not used."}
-        </p>
-      )}
       {help && <p className="mt-1.5 text-[12px] text-muted-foreground">{help}</p>}
       {error && <p className="mt-1.5 text-[12px] text-destructive">{error}</p>}
     </div>

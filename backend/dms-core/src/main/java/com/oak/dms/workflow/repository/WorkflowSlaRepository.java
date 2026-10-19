@@ -30,10 +30,7 @@ public class WorkflowSlaRepository {
      * Unlocked candidate scan (ix_workflow_tasks_sla_due). Tasks awaiting
      * information are excluded (decision 8). The inner query resolves the effective settings:
      * <ul>
-     *   <li>due-date reminder: the stage's reminder_before_hours, else the template default - but only when it is
-     *   shorter than the stage's SLA (a longer one would be "already due" the moment the task is created);</li>
-     *   <li>escalation target/user: a stage with a target of its own keeps it (and its user); a stage left at
-     *   'none' inherits the template's default target and user;</li>
+     *   <li>due-date reminder and escalation target/user: the stage's own settings only;</li>
      *   <li>inactivity reminder and escalate-after: the stage's value, else the template default.</li>
      * </ul>
      * A task already past due is only ever escalated - the reminder branch needs due_at in the future.
@@ -46,16 +43,12 @@ public class WorkflowSlaRepository {
                 select t.task_id, t.tenant_id, t.stage_instance_id, si.instance_id,
                        t.status, t.due_at, t.escalated_at, t.reminder_sent_at, t.inactivity_reminder_sent_at,
                        t.last_activity_at, t.created_at,
-                       coalesce(s.reminder_before_hours,
-                                case when tpl.default_reminder_before_hours < s.sla_hours
-                                     then tpl.default_reminder_before_hours end) as eff_reminder_before,
+                       s.reminder_before_hours as eff_reminder_before,
                        coalesce(s.inactivity_reminder_hours, tpl.default_inactivity_reminder_hours) as eff_inactivity,
                        coalesce(s.escalate_after_reminder_hours, tpl.default_escalate_after_reminder_hours)
                            as eff_escalate_after,
-                       coalesce(nullif(s.escalation_target, 'none'), nullif(tpl.default_escalation_target, 'none'),
-                                'none') as eff_target,
-                       case when s.escalation_target <> 'none' then s.escalation_user_id
-                            else tpl.default_escalation_user_id end as eff_user
+                       s.escalation_target as eff_target,
+                       s.escalation_user_id as eff_user
                   from workflow_tasks t
                   join workflow_stage_instances si on si.stage_instance_id = t.stage_instance_id and si.tenant_id = t.tenant_id
                   join workflow_instances i on i.instance_id = si.instance_id and i.tenant_id = si.tenant_id

@@ -37,7 +37,7 @@ Runtime `new_value` always starts with the instance summary:
 
 | Action | Object | Severity | Reason required | Extra `new_value` fields |
 |---|---|---|---|---|
-| `WORKFLOW_TEMPLATE_CREATED` | template | MEDIUM | – | `templateId, code, name, versionNumber, status, documentTypeId, onDocumentChange`, and the template's reminder/escalation defaults (3.2): `defaultReminderBeforeHours, defaultInactivityReminderHours, defaultEscalateAfterReminderHours, defaultEscalationTarget, defaultEscalationUserId` |
+| `WORKFLOW_TEMPLATE_CREATED` | template | MEDIUM | – | `templateId, code, name, versionNumber, status, documentTypeId, onDocumentChange`, and the template's inactivity defaults (3.2): `defaultInactivityReminderHours, defaultEscalateAfterReminderHours` (the template-level due-date reminder and escalation target defaults no longer exist) |
 | `WORKFLOW_TEMPLATE_UPDATED` | template | MEDIUM | – | Same, plus a `previous_value` snapshot - so a change to a default (an admin changing when reminders and escalations fire) shows as a before/after pair |
 | `WORKFLOW_TEMPLATE_STAGES_UPDATED` | template | MEDIUM | – | `change` (`stage_added`, `stage_updated`, `stage_deleted` or `stages_reordered`), `stageId`, `stages` (the full stage list after the change, including each stage's `inactivityReminderHours` and `escalateAfterReminderHours` overrides - null means it inherits the template default) |
 | `WORKFLOW_TEMPLATE_VERSION_CREATED` | template (the new draft) | MEDIUM | – | `sourceTemplateId, sourceVersionNumber`, plus the snapshot above (a new version copies the template defaults and the stage overrides) |
@@ -64,8 +64,8 @@ Runtime `new_value` always starts with the instance summary:
 |---|---|---|---|---|
 | `WORKFLOW_TASK_DELEGATED` | task | MEDIUM | – | `from, fromName, to, toName, originalHolder, returnedToOriginal, delegatedFrom, delegatedTo` |
 | `WORKFLOW_TASK_REASSIGNED` | task | MEDIUM | **yes** | Same; `from` is null for a task reassigned from an unclaimed pool |
-| `WORKFLOW_TASK_REMINDER_SENT` | task | LOW | – | Two kinds, both actor `SYSTEM`, each sent once per task. **Due-date:** `dueAt, reminderBeforeHours` (the stage's value, or the template default it inherits). **Inactivity** (3.2): `reason: "inactivity"`, `inactivityReminderHours` - no `dueAt`, since a task without an SLA can still be reminded |
-| `WORKFLOW_TASK_ESCALATED` | task | MEDIUM | – | `dueAt` (absent when the task has no due time and escalated after an inactivity reminder), `escalationTarget` (the stage's own, or the template default a stage left at `none` inherits), `source` (`named_user`, `pool_department_head` or `initiator_department_head`), then `target, targetName`, or `skipped` (`no_target`, `target_inactive`, `target_is_initiator`, `target_is_holder`, `target_already_decided`, `target_lacks_permission`). Actor `SYSTEM` |
+| `WORKFLOW_TASK_REMINDER_SENT` | task | LOW | – | Two kinds, both actor `SYSTEM`, each sent once per task. **Due-date:** `dueAt, reminderBeforeHours` (the stage's own value). **Inactivity** (3.2): `reason: "inactivity"`, `inactivityReminderHours` - no `dueAt`, since a task without an SLA can still be reminded |
+| `WORKFLOW_TASK_ESCALATED` | task | MEDIUM | – | `dueAt` (absent when the task has no due time and escalated after an inactivity reminder), `escalationTarget` (the stage's own), `source` (`named_user`, `pool_department_head` or `initiator_department_head`), then `target, targetName`, or `skipped` (`no_target`, `target_inactive`, `target_is_initiator`, `target_is_holder`, `target_already_decided`, `target_lacks_permission`). Actor `SYSTEM` |
 | `WORKFLOW_INFO_REQUESTED` | information request | MEDIUM | – | `infoRequestId, taskId, requestedBy, requestedFrom, requestedFromName, requestStatus` |
 | `WORKFLOW_INFO_PROVIDED` | information request | MEDIUM | – | Same, plus `supportingDocumentIds, taskResumed` |
 | `WORKFLOW_INFO_DECLINED` | information request | MEDIUM | **yes** | Same, plus `taskResumed` |

@@ -1,6 +1,5 @@
 package com.oak.dms.workflow.dto;
 
-import com.oak.dms.workflow.enums.EscalationTarget;
 import com.oak.dms.workflow.enums.OnDocumentChange;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -18,11 +17,8 @@ public record CreateWorkflowTemplateRequest(
         @Size(max = 1000) String description,
         @NotNull UUID documentTypeId,
         OnDocumentChange onDocumentChange,
-        /** Template-wide reminder/escalation defaults (3.2); a stage's own value, when set, overrides them. */
-        @Min(1) @Max(8759) Integer defaultReminderBeforeHours,
+        /** Template-wide inactivity defaults (N-FR-006); a stage's own value, when set, overrides them. */
         @Min(1) @Max(8760) Integer defaultInactivityReminderHours,
-        @Min(1) @Max(8760) Integer defaultEscalateAfterReminderHours,
-        EscalationTarget defaultEscalationTarget,
-        UUID defaultEscalationUserId
+        @Min(1) @Max(8760) Integer defaultEscalateAfterReminderHours
 ) {
 }

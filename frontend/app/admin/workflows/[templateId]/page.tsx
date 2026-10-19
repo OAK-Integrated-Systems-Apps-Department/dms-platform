@@ -21,7 +21,6 @@ import { formatDateTime } from "@/lib/utils"
 import { WORKFLOW_TEMPLATE_ANY_PERMISSION } from "@/lib/workflow/permissions"
 import { useWorkflowTemplate } from "@/lib/workflow/use-workflow-template"
 import {
-  ESCALATION_TARGET_LABELS,
   ON_DOCUMENT_CHANGE_LABELS,
   TEMPLATE_STATUS_BADGE_VARIANT,
   TEMPLATE_STATUS_LABELS,
@@ -123,11 +122,8 @@ export default function WorkflowTemplatePage() {
                             description: template.description ?? "",
                             documentTypeId: template.documentTypeId,
                             onDocumentChange: template.onDocumentChange,
-                            defaultReminderBeforeHours: template.defaultReminderBeforeHours,
                             defaultInactivityReminderHours: template.defaultInactivityReminderHours,
                             defaultEscalateAfterReminderHours: template.defaultEscalateAfterReminderHours,
-                            defaultEscalationTarget: template.defaultEscalationTarget,
-                            defaultEscalationUserId: template.defaultEscalationUserId,
                           }}
                           documentTypeLocked={template.versionNumber > 1}
                           onSubmit={async (values) =>
@@ -136,12 +132,8 @@ export default function WorkflowTemplatePage() {
                               description: values.description.trim() || null,
                               documentTypeId: values.documentTypeId,
                               onDocumentChange: values.onDocumentChange,
-                              defaultReminderBeforeHours: values.defaultReminderBeforeHours,
                               defaultInactivityReminderHours: values.defaultInactivityReminderHours,
                               defaultEscalateAfterReminderHours: values.defaultEscalateAfterReminderHours,
-                              defaultEscalationTarget: values.defaultEscalationTarget,
-                              defaultEscalationUserId:
-                                values.defaultEscalationTarget === "named_user" ? values.defaultEscalationUserId : null,
                             })) !== null
                           }
                         />
@@ -150,10 +142,8 @@ export default function WorkflowTemplatePage() {
                           <Field label="Description" value={template.description || "—"} />
                           <Field label="Document Type" value={template.documentTypeName ?? "—"} />
                           <Field label="When The Document Changes" value={ON_DOCUMENT_CHANGE_LABELS[template.onDocumentChange]} />
-                          <Field label="Due-Date Reminder Default" value={hoursLabel(template.defaultReminderBeforeHours, "before due")} />
                           <Field label="Inactivity Reminder Default" value={hoursLabel(template.defaultInactivityReminderHours, "without activity")} />
                           <Field label="Escalate After Reminder Default" value={hoursLabel(template.defaultEscalateAfterReminderHours, "after the inactivity reminder")} />
-                          <Field label="Default Escalation Target" value={ESCALATION_TARGET_LABELS[template.defaultEscalationTarget]} />
                           <Field label="Used By A Workflow" value={template.hasInstances ? "Yes" : "No"} />
                           <Field label="Created" value={formatDateTime(template.createdAt)} />
                           <Field label="Updated" value={template.updatedAt ? formatDateTime(template.updatedAt) : "—"} />

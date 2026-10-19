@@ -110,9 +110,9 @@ public class WorkflowSlaServiceImpl implements WorkflowSlaService {
             return false;   // decided, cancelled or paused for information (decision 8) since the scan
         }
         // due_at may be null (inactivity-only task); each branch below checks it where needed.
-        // Every threshold and the escalation target are resolved fresh in the scan SQL (the stage's own value,
-        // else the template default it inherits), so a stale L2-cached template entity can never shadow a
-        // just-changed default (N-NFR-004).
+        // Every threshold and the escalation target are resolved fresh in the scan SQL (due-date reminder and
+        // escalation target from the stage only; inactivity hours the stage's own value, else the template
+        // default), so a stale L2-cached template entity can never shadow a just-changed default (N-NFR-004).
         Integer reminderBeforeHours = due.reminderBeforeHours();
         Integer inactivityHours = due.inactivityReminderHours();
         Integer escalateAfterHours = due.escalateAfterReminderHours();

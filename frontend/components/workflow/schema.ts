@@ -18,22 +18,17 @@ const templateDetailsShape = {
   description: z.string().trim().max(1000, "Keep the description under 1000 characters"),
   documentTypeId: z.string().min(1, "Pick a document type"),
   onDocumentChange: z.enum(["flag_only", "restart"]),
-  // Reminder / escalation defaults for every stage (3.2); a stage's own value overrides them.
-  defaultReminderBeforeHours: hoursField(8759),
+  // Inactivity defaults for every stage (N-FR-006); a stage's own value overrides them.
   defaultInactivityReminderHours: hoursField(),
   defaultEscalateAfterReminderHours: hoursField(),
-  defaultEscalationTarget: z.enum(["none", "department_head", "named_user"]),
-  defaultEscalationUserId: z.string().nullable(),
 }
 
 interface TemplateDefaultsValues {
   defaultInactivityReminderHours: number | null
   defaultEscalateAfterReminderHours: number | null
-  defaultEscalationTarget: "none" | "department_head" | "named_user"
-  defaultEscalationUserId: string | null
 }
 
-/** The same rules the backend enforces: escalation follows the inactivity reminder; a named person needs a person. */
+/** The same rule the backend enforces: escalation follows the inactivity reminder. */
 function templateDefaultsRules(values: TemplateDefaultsValues, ctx: z.RefinementCtx) {
   if (values.defaultEscalateAfterReminderHours != null && values.defaultInactivityReminderHours == null) {
     ctx.addIssue({
@@ -41,9 +36,6 @@ function templateDefaultsRules(values: TemplateDefaultsValues, ctx: z.Refinement
       path: ["defaultEscalateAfterReminderHours"],
       message: "Set an inactivity reminder first - escalation follows it",
     })
-  }
-  if (values.defaultEscalationTarget === "named_user" && !values.defaultEscalationUserId) {
-    ctx.addIssue({ code: "custom", path: ["defaultEscalationUserId"], message: "Choose who to escalate to" })
   }
 }
 
@@ -64,23 +56,21 @@ export const updateTemplateSchema = z.object(templateDetailsShape).superRefine(t
 export type UpdateTemplateFormValues = z.infer<typeof updateTemplateSchema>
 
 /**
- * What a stage inherits when it leaves a reminder/escalation setting empty - the template's defaults. Passed to
- * the stage card so it can show the inherited value and check a stage against what it will actually inherit.
+ * What a stage inherits when it leaves an inactivity field empty - the template's defaults. Passed to the stage
+ * card so it can show the inherited value and check a stage against what it will actually inherit.
  */
 export interface TemplateReminderDefaults {
-  reminderBeforeHours: number | null
   inactivityReminderHours: number | null
   escalateAfterReminderHours: number | null
-  escalationTarget: "none" | "department_head" | "named_user"
 }
 
 /**
  * One stage, as edited on its card. Matches UpsertWorkflowStageRequest's
  * limits, including the Phase 2 rules: a reminder needs an SLA and comes
- * before it; a named-user escalation needs the person. The 3.2 rules depend on what the stage inherits from
- * its template, so the schema is built for those defaults: escalation after an inactivity reminder needs an
- * inactivity reminder (the stage's own or the template's), and a stage that escalates needs something that
- * triggers it - an SLA (the due time) or an inactivity reminder with an escalate-after time.
+ * before it; a named-user escalation needs the person. The inactivity rules depend on what the stage inherits
+ * from its template, so the schema is built for those defaults: escalate-after needs an inactivity reminder (the
+ * stage's own or the template's) and an escalation target on the stage, and a stage that escalates needs
+ * something that triggers it - an SLA (the due time) or an inactivity reminder with an escalate-after time.
  */
 export function buildStageSchema(defaults?: TemplateReminderDefaults | null) {
   return z
@@ -129,9 +119,13 @@ export function buildStageSchema(defaults?: TemplateReminderDefaults | null) {
           message: "Needs an inactivity reminder - set one for this stage, or a default on the template",
         })
       }
-      // A stage left at "none" inherits the template's default target.
-      const target = stage.escalationTarget !== "none" ? stage.escalationTarget : (defaults?.escalationTarget ?? "none")
-      if (target !== "none" && stage.slaHours == null && !(inactivity != null && escalateAfter != null)) {
+      if (stage.escalateAfterReminderHours != null && stage.escalationTarget === "none") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["escalationTarget"],
+          message: "Choose who to escalate to - escalate-after needs an escalation target",
+        })
+      } else if (stage.escalationTarget !== "none" && stage.slaHours == null && !(inactivity != null && escalateAfter != null)) {
         ctx.addIssue({
           code: "custom",
           path: ["escalationTarget"],

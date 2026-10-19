@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils"
 import type { UpsertStagePayload, WorkflowStageDto } from "@/lib/workflow/api"
 
 import { ASSIGNEE_TYPE_ICON, ParticipantPicker } from "./participant-picker"
-import { HoursInput, InheritableHours, ReminderHelp } from "./reminder-fields"
+import { CollapsibleSection, HoursInput, HowRemindersWork, InheritableHours } from "./reminder-fields"
 import { buildStageSchema, type StageFormValues, type TemplateReminderDefaults } from "./schema"
 
 const COMPLETION_OPTIONS = [
@@ -47,14 +47,12 @@ const ESCALATION_OPTIONS = [
 ]
 
 const ESCALATION_HELP = {
-  none: "No escalation target of its own. If the template sets a default target, this stage uses it; otherwise nothing happens at the due time and the task just shows as overdue.",
+  none: "No escalation target: nothing happens at the due time and the task just shows as overdue.",
   department_head:
     "A department pool task goes to that department's head; a user or role task to the head of the submitter's department. The original approvers can still act.",
   named_user:
     "This person can also approve or reject once the task escalates (at the due time, or after the inactivity reminder). The original approvers can still act.",
 }
-
-const TARGET_LABELS = { none: "none", department_head: "the department head", named_user: "a named person" }
 
 const ICON_BUTTON =
   "flex size-8 items-center justify-center rounded-btn border border-[var(--border-strong)] bg-card text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
@@ -98,30 +96,34 @@ function toPayload(values: StageFormValues): UpsertStagePayload {
   }
 }
 
-/** The stage's own value, else the template default it inherits (mirrors the backend's resolution). */
+/**
+ * What the stage will actually use. The due-date reminder and escalation target are the stage's own; the two
+ * inactivity hours fall back to the template default (mirrors the backend's resolution).
+ */
 function effectiveReminders(
   stage: Pick<
     StageFormValues,
-    "slaHours" | "reminderBeforeHours" | "inactivityReminderHours" | "escalateAfterReminderHours" | "escalationTarget"
+    "reminderBeforeHours" | "inactivityReminderHours" | "escalateAfterReminderHours" | "escalationTarget"
   >,
   defaults: TemplateReminderDefaults | null
 ) {
-  const inheritedReminder =
-    defaults?.reminderBeforeHours != null && stage.slaHours != null && defaults.reminderBeforeHours < stage.slaHours
-      ? defaults.reminderBeforeHours
-      : null
   return {
-    reminderBefore: stage.reminderBeforeHours ?? inheritedReminder,
+    reminderBefore: stage.reminderBeforeHours,
     inactivity: stage.inactivityReminderHours ?? defaults?.inactivityReminderHours ?? null,
     escalateAfter: stage.escalateAfterReminderHours ?? defaults?.escalateAfterReminderHours ?? null,
-    target: stage.escalationTarget !== "none" ? stage.escalationTarget : (defaults?.escalationTarget ?? "none"),
+    target: stage.escalationTarget,
   }
 }
 
-/** "None" is also how a stage inherits the template's default target - say so when the template has one. */
-function escalationOptions(defaults: TemplateReminderDefaults | null) {
-  const inherits = defaults != null && defaults.escalationTarget !== "none"
-  return ESCALATION_OPTIONS.map((o) => (o.value === "none" && inherits ? { ...o, label: "Template default" } : o))
+/** One line for the collapsed "Reminders & escalation" section, e.g. "Reminder 24h before due · Inactivity 72h · Escalates to Department head". */
+function remindersSummary(effective: ReturnType<typeof effectiveReminders>): string {
+  const parts = [
+    effective.reminderBefore != null ? `Reminder ${effective.reminderBefore}h before due` : null,
+    effective.inactivity != null ? `Inactivity ${effective.inactivity}h` : null,
+    effective.target === "department_head" ? "Escalates to Department head" : null,
+    effective.target === "named_user" ? "Escalates to a named person" : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(" · ") : "None set"
 }
 
 interface StageCardProps {
@@ -132,7 +134,7 @@ interface StageCardProps {
   /** False once the template is no longer a draft - the card is then read-only. */
   editable: boolean
   busy: boolean
-  /** What a setting left empty on this stage inherits - the template's reminder/escalation defaults. */
+  /** What an inactivity field left empty on this stage inherits - the template's defaults. */
   templateDefaults?: TemplateReminderDefaults | null
   onSave: (payload: UpsertStagePayload) => Promise<boolean>
   onDelete?: () => void
@@ -152,6 +154,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
   const isNew = stage === null
   const [draft, setDraft] = useState<StageFormValues | null>(() => (isNew ? toFormValues(null) : null))
   const [errors, setErrors] = useState<Partial<Record<keyof StageFormValues, string>>>({})
+  const [remindersOpen, setRemindersOpen] = useState(false)
 
   function update(patch: Partial<StageFormValues>) {
     setDraft((current) => (current ? { ...current, ...patch } : current))
@@ -167,15 +170,20 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
         if (!next[key]) next[key] = issue.message
       }
       setErrors(next)
+      setRemindersOpen(true)   // an error in the collapsed section would be invisible
       return
     }
     setErrors({})
     const ok = await onSave(toPayload(parsed.data))
-    if (ok && !isNew) setDraft(null)
+    if (ok && !isNew) {
+      setDraft(null)
+      setRemindersOpen(false)
+    }
   }
 
   function handleCancel() {
     setErrors({})
+    setRemindersOpen(false)
     if (isNew) onCancelNew?.()
     else setDraft(null)
   }
@@ -286,11 +294,29 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
             {errors.participants && <p className="mt-1.5 text-[12px] text-destructive">{errors.participants}</p>}
           </div>
 
-          <div className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">
-            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-              Reminders, escalation &amp; information requests
+          <label className="flex items-start gap-3">
+            <Switch
+              checked={draft.allowInfoRequests}
+              onCheckedChange={(allowInfoRequests) => update({ allowInfoRequests })}
+              className="mt-0.5"
+            />
+            <span className="text-[13px] text-foreground">
+              Allow information requests
+              <span className="block text-[12px] text-muted-foreground">
+                Approvers can pause their task to ask someone for a document or an answer; the SLA clock stops meanwhile.
+              </span>
+            </span>
+          </label>
+
+          <CollapsibleSection
+            title="Reminders & escalation"
+            summary={remindersSummary(effective)}
+            open={remindersOpen}
+            onOpenChange={setRemindersOpen}
+          >
+            <p className="text-[12.5px] text-muted-foreground">
+              Remind approvers before a task is due or when it sits idle, and escalate if nobody acts. <HowRemindersWork />
             </p>
-            <ReminderHelp />
 
             <div className="sm:w-[300px]">
               <Label htmlFor={`stage-reminder-${stage?.stageId ?? "new"}`}>
@@ -302,21 +328,9 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
                 disabled={draft.slaHours == null}
                 value={draft.reminderBeforeHours}
                 invalid={Boolean(errors.reminderBeforeHours)}
-                placeholder={templateDefaults?.reminderBeforeHours ? `Inherit (${templateDefaults.reminderBeforeHours})` : undefined}
                 onChange={(reminderBeforeHours) => update({ reminderBeforeHours })}
               />
-              {draft.slaHours == null ? (
-                <p className="mt-1.5 text-[12px] text-muted-foreground">Set SLA hours first.</p>
-              ) : (
-                templateDefaults?.reminderBeforeHours != null &&
-                draft.reminderBeforeHours == null && (
-                  <p className="mt-1.5 text-[12px] text-muted-foreground">
-                    {templateDefaults.reminderBeforeHours < draft.slaHours
-                      ? `Left empty, it uses the template's ${templateDefaults.reminderBeforeHours} hours.`
-                      : `The template's ${templateDefaults.reminderBeforeHours}-hour default is not shorter than this stage's SLA, so no due-date reminder is sent.`}
-                  </p>
-                )
-              )}
+              {draft.slaHours == null && <p className="mt-1.5 text-[12px] text-muted-foreground">Set SLA hours first.</p>}
               {errors.reminderBeforeHours && <p className="mt-1.5 text-[12px] text-destructive">{errors.reminderBeforeHours}</p>}
             </div>
 
@@ -336,7 +350,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
               inheritedValue={templateDefaults?.escalateAfterReminderHours ?? null}
               onChange={(escalateAfterReminderHours) => update({ escalateAfterReminderHours })}
               error={errors.escalateAfterReminderHours}
-              help="Needs an escalation target below, and an inactivity reminder."
+              help="Needs an inactivity reminder and an escalation target."
             />
 
             <div>
@@ -344,14 +358,9 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
               <SegmentedControl
                 value={draft.escalationTarget}
                 onChange={(escalationTarget) => update({ escalationTarget })}
-                options={escalationOptions(templateDefaults)}
+                options={ESCALATION_OPTIONS}
               />
               <p className="mt-2 text-[12.5px] text-muted-foreground">{ESCALATION_HELP[draft.escalationTarget]}</p>
-              {draft.escalationTarget === "none" && templateDefaults && templateDefaults.escalationTarget !== "none" && (
-                <p className="mt-1 text-[12.5px] text-muted-foreground">
-                  This stage will escalate to {TARGET_LABELS[templateDefaults.escalationTarget]}, the template&apos;s default.
-                </p>
-              )}
               {errors.escalationTarget && <p className="mt-1.5 text-[12px] text-destructive">{errors.escalationTarget}</p>}
               {draft.escalationTarget === "named_user" && (
                 <div className="mt-3 sm:w-[320px]">
@@ -366,21 +375,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
                 </div>
               )}
             </div>
-
-            <label className="flex items-start gap-3">
-              <Switch
-                checked={draft.allowInfoRequests}
-                onCheckedChange={(allowInfoRequests) => update({ allowInfoRequests })}
-                className="mt-0.5"
-              />
-              <span className="text-[13px] text-foreground">
-                Allow information requests
-                <span className="block text-[12px] text-muted-foreground">
-                  Approvers can pause their task to ask someone for a document or an answer; the SLA clock stops meanwhile.
-                </span>
-              </span>
-            </label>
-          </div>
+          </CollapsibleSection>
 
           <div className="flex items-center justify-end gap-2.5 border-t border-dashed border-border pt-4">
             <button
@@ -443,8 +438,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
             )}
             {effective.reminderBefore != null && stage.slaHours != null && (
               <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <BellRing size={12} /> Approvers are reminded {effective.reminderBefore} hours before it is due
-                {stage.reminderBeforeHours == null ? " (template default)." : "."}
+                <BellRing size={12} /> Approvers are reminded {effective.reminderBefore} hours before it is due.
               </p>
             )}
             {effective.inactivity != null && (
@@ -463,7 +457,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
                       stage.escalateAfterReminderHours == null ? " (template default)" : ""
                     }`
                   : ""}
-                {stage.escalationTarget === "none" ? " - the template's default target." : "."}
+                {"."}
               </p>
             )}
             {!stage.allowInfoRequests && (

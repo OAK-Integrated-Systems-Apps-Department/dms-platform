@@ -166,6 +166,9 @@ Tables (exact columns per brief section 3; key constraints shown):
   (CHECK >0), `default_escalation_target VARCHAR(20) DEFAULT 'none'` CHECK IN
   (`none`,`department_head`,`named_user`), `default_escalation_user_id UUID`
   (CHECK set iff target=`named_user`; composite FK→users).
+  **`default_reminder_before_hours`, `default_escalation_target` and `default_escalation_user_id` are now unused and
+  reserved (Deviation #14):** the columns stay (V104 is untouched, existing rows unaffected) but nothing maps, accepts,
+  returns, validates, audits or reads them.
 - `workflow_stages` ADD: `inactivity_reminder_hours INT` (CHECK >0, NULL=inherit),
   `escalate_after_reminder_hours INT` (CHECK >0, NULL=inherit).
 - `workflow_tasks` ADD: `last_activity_at TIMESTAMPTZ`, `inactivity_reminder_sent_at TIMESTAMPTZ`.
@@ -495,7 +498,7 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
 | N-FR-003 (inactivity reminder, configurable threshold) | N11 |
 | N-FR-004 (escalate after further period) | N11 |
 | N-FR-005 (log channel/recipient/timestamp/outcome in audit trail) | N7 (attempts table + selective audit) |
-| N-FR-006 (thresholds per workflow type/category) | N2 (template/stage cols) + N11 + G1/G2 (template and stage APIs and editor). **Covered per workflow type (the template, with per-stage overrides), not per document category** - a template belongs to one document type, so "per type" is the unit of configuration; there is no setting keyed by a category of document |
+| N-FR-006 (thresholds per workflow type/category) | N2 (template/stage cols) + N11 + G1/G2 (template and stage APIs and editor). **Covered per workflow type for the inactivity thresholds (the template's two inactivity defaults, with per-stage overrides), not per document category** (the due-date reminder and escalation target are per stage only, as in workflow Phase 2) - a template belongs to one document type, so "per type" is the unit of configuration; there is no setting keyed by a category of document |
 | N-NFR-001 (≥99% reliability, retry) | N4 (backoff retry) + N7 (failure logging) |
 | N-NFR-002 (within minutes) | N4 (AFTER_COMMIT nudge + 30s poll) |
 | N-NFR-003 (scalability, no loss) | N3 (tx write) + N4 (SKIP LOCKED + lease) |
@@ -542,8 +545,9 @@ IT via failsafe (`*IT.java`), DB `dms_phase2_it` @ 5435.
 | 9 | Added a 30 s circuit-breaker to `UserPermissions.tenantAdminIds` (after a failed Keycloak lookup it returns the same empty set at once instead of waiting out another timeout) | Notifications are now written inside the user's transaction and the access check calls Keycloak; a slow/down Keycloak would stall every approve/submit. Result is identical to the failure path, only faster (suite Keycloak warnings 282 -> 2) |
 | 10 | Test harness: `NotificationMailSupport` retires stale pending email rows before each test; `WorkflowApiSupport` now extends it (GreenMail instead of a mocked `JavaMailSender`) | The suite shares one DB and the dispatcher is off in tests, so rows pile up and the dispatcher claims the OLDEST first - a test would be buried under earlier runs' backlog |
 | 11 | `DocumentAccessService`/`FolderAccessService` gained a trailing `ApplicationEventPublisher` constructor argument; their two unit tests pass one more mock | Needed to publish `AccessGrantedEvent` without the folder module depending on the notification module (bean cycle). Assertions unchanged |
-| 12 | The scan now applies **all** the template defaults, not only the inactivity ones: the due-date reminder default (only when shorter than the stage's SLA) and the escalation target/user (a stage left at target `none` inherits the template's) | N11 wired only the inactivity thresholds, so a template default for the due-date reminder or the target would have been stored and silently ignored. The data model gives a stage no way to say "inherit" for the target other than `none`, so `none` means inherit - a stage cannot opt out of a template's default target (it can set its own) |
+| 12 | **Superseded by #14.** The scan now applied **all** the template defaults, not only the inactivity ones: the due-date reminder default (only when shorter than the stage's SLA) and the escalation target/user (a stage left at target `none` inherits the template's) | N11 wired only the inactivity thresholds, so a template default for the due-date reminder or the target would have been stored and silently ignored. The data model gives a stage no way to say "inherit" for the target other than `none`, so `none` means inherit - a stage cannot opt out of a template's default target (it can set its own) |
 | 13 | A stage may now have an escalation target and no SLA | Escalation can follow an inactivity reminder, so it no longer needs a due time. The frontend rule "Escalation happens at the due time - set SLA hours" became "something must trigger it" (an SLA, or an inactivity reminder with an escalate-after time) |
+| 14 | Removed the template-level due-date reminder default and the template-level escalation target/user default; the template keeps only the two inactivity defaults (N-FR-006). The three V104 columns stay in the table, unused and reserved. The stage card's reminder settings sit in one collapsible "Reminders & escalation" section, and the template form's defaults in a collapsible "Inactivity reminder defaults (optional)" | They duplicated stage settings that already existed in workflow Phase 2 (due-date reminder, escalation target) and made "None" ambiguous (it meant "inherit" whenever the template had a target), which also stopped a stage from opting out. N-FR-003/004/006 need only the inactivity thresholds with a template default. Supersedes #12; the escalation target is now per stage only and `none` simply means no target. Escalate-after on a stage now also needs an escalation target on that stage (422 `WORKFLOW_INVALID_STAGE`); an escalate-after that is only inherited from the template does nothing on a stage with no target, and is not rejected |
 
 ---
 
@@ -806,3 +810,27 @@ Traceability: N-FR-006 is covered per workflow type, not per document category.
 cleared (the app refuses to start when encrypted objects exist without its key), so `dms_phase2_it` was recreated fresh on port 5435 as the brief
 allows. The dev DB on 5433 was not touched by any test.
 
+### G5 - Simplifying the reminder and escalation settings ✅
+
+- **Removed** (Deviation #14): the template-level due-date reminder default (`defaultReminderBeforeHours`) and escalation target/user
+  default (`defaultEscalationTarget`, `defaultEscalationUserId`) - from the template create/update requests, the response, validation, the
+  audit snapshot, the new-version copy, the entity mapping, `WorkflowSlaRepository.FIND_DUE_SQL` and the frontend types, schema, forms and
+  summaries. The columns `default_reminder_before_hours`, `default_escalation_target`, `default_escalation_user_id` (V104) are **unused and
+  reserved**; no migration changed and existing rows are unaffected.
+- **Kept:** stage SLA hours, due-date reminder, escalate-to (none / department head / named person) and allow-information-requests
+  (workflow Phase 2); stage `inactivityReminderHours` / `escalateAfterReminderHours` (null = inherit); template
+  `defaultInactivityReminderHours` / `defaultEscalateAfterReminderHours`.
+- **Scheduler:** due-date reminder and escalation target/user come from the stage only; inactivity and escalate-after hours are the stage's
+  value, else the template default. Fire-once stamps, awaiting-info skipping and locking are unchanged.
+- **Validation:** a stage's own escalate-after needs an inactivity reminder (own or inherited) and an escalation target on the stage.
+- **UI:** template form - a closed "Inactivity reminder defaults (optional)" section (two inputs, one helper line each, a one-line summary
+  while closed). Stage card - "Allow information requests" stays visible; due-date reminder, inactivity, escalate-after and "Escalate to"
+  are in one closed "Reminders & escalation" section with a summary such as "Reminder 24h before due · Inactivity 72h · Escalates to
+  Department head". The inherit/own toggles became a single number input whose empty state means inherit, with the placeholder showing
+  "Template default: 72 h" or "Not set". The explanation box became one sentence and a "How reminders work" tooltip.
+- **Tests:** `WorkflowReminderSettingsIT` rewritten for the two remaining defaults (see the verification note below).
+- **Verification (G5):** `WorkflowReminderSettingsIT` 14/14 green; `WorkflowConcurrencyIT` (60) + `NotificationConcurrencyIT` (5) green in 5 separate runs;
+  frontend `tsc --noEmit` clean apart from the stale `.next/dev/types` reference, `eslint` clean on the changed paths. The full `mvn clean verify`
+  has 7 failures, all in OCR, watermark and bulk-import code this change does not touch (unit: `BulkImportServiceImplTest`,
+  `DocumentMetadataServiceApplyOcrFieldsTest` x2; IT: `OcrEventsConsumerLiveIT`, `OcrJobTokenHealthGroupIT`, `DocumentUploadOcrQueueingIT`,
+  `WatermarkWorkerFailureIT`). The running app was not rebuilt.

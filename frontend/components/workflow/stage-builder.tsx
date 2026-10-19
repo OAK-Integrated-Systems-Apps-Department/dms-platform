@@ -38,12 +38,10 @@ export function StageBuilder({ template, editable, busy, onAdd, onUpdate, onDele
   const [pendingDelete, setPendingDelete] = useState<WorkflowStageDto | null>(null)
 
   const stages = template.stages.slice().sort((a, b) => a.stageOrder - b.stageOrder)
-  // What a stage inherits when it leaves a reminder/escalation setting empty.
+  // What a stage inherits when it leaves an inactivity field empty.
   const templateDefaults: TemplateReminderDefaults = {
-    reminderBeforeHours: template.defaultReminderBeforeHours,
     inactivityReminderHours: template.defaultInactivityReminderHours,
     escalateAfterReminderHours: template.defaultEscalateAfterReminderHours,
-    escalationTarget: template.defaultEscalationTarget,
   }
 
   function move(index: number, delta: -1 | 1) {
