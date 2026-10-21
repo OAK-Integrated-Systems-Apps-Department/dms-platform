@@ -84,8 +84,13 @@ export function DocumentsHub({
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          { label: "Documents", href: "/documents" },
-          ...(parent ? [{ label: parent.label, href: parent.href }] : []),
+          // Every other tab hangs off My Documents; that tab is the root itself.
+          ...(current.key !== "documents"
+            ? [{ label: TABS[0].label, href: TABS[0].href }]
+            : []),
+          ...(parent && parent.key !== "documents"
+            ? [{ label: parent.label, href: parent.href }]
+            : []),
           { label: current.label },
         ]}
       />

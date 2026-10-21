@@ -71,7 +71,9 @@ export function RecycleBin() {
   const { items, retentionDays, byType } = bin.data
 
   return (
-    <div className="flex w-full flex-col gap-5">
+    // Fills the window down to the bottom, like My Documents and Shared with me,
+    // so the empty state is a full-height box.
+    <div className="flex min-h-[calc(100dvh-300px)] w-full flex-col gap-5">
       <RetentionBar
         days={retentionDays}
         canEdit={canSetRetention}
@@ -86,7 +88,7 @@ export function RecycleBin() {
       )}
 
       {items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-border p-10 text-center">
           <Trash2 className="mx-auto mb-2 text-muted-foreground" size={22} />
           <p className="text-[13.5px] font-medium">The recycle bin is empty</p>
           <p className="mt-1 text-[12.5px] text-muted-foreground">

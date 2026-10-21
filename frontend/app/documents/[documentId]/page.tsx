@@ -62,7 +62,11 @@ export default function DocumentPage() {
     <DashboardShell initialActiveLabel="My Documents">
       <AdminBreadcrumb
         className="mb-3"
-        segments={[{ label: "Dashboard", href: "/" }, { label: document?.title ?? "Document" }]}
+        segments={[
+          { label: "Dashboard", href: "/" },
+          { label: "My Documents", href: "/documents" },
+          { label: document?.title ?? "Document" },
+        ]}
       />
 
       {isPending ? (
