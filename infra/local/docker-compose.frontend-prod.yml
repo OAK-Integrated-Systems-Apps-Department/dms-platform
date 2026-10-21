@@ -1,0 +1,26 @@
+# Overlay: serve the frontend from a production build instead of `next dev`.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.frontend-prod.yml up -d --build frontend
+#
+# Back to hot reload with: docker compose -f docker-compose.yml up -d --build frontend
+#
+# `next dev` compiles each route and the Tailwind stylesheet on first request,
+# through a Windows bind mount with polling, so pages show unstyled for a few
+# seconds on first load and again after login. A production build ships the CSS
+# precompiled and render-blocking, so there's no unstyled flash.
+#
+# Trade-off: no hot reload - rebuild (the command above) to see a code change.
+services:
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      # Inlined into the browser bundle at build time (lib/api-config.ts), so
+      # they must be the public host, as in the dev service's environment.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
+        NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
+    # The image carries its own code: drop the dev bind mount and the
+    # node_modules / .next anonymous volumes that would shadow it.
+    volumes: !reset []
+    mem_limit: 1g
