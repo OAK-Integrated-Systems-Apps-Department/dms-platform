@@ -107,7 +107,9 @@ export function PinnedDocumentsView() {
     : "Nothing pinned yet. Use Pin on any document in My Documents, in its preview, or on its own page, and it will be here."
 
   return (
-    <div className="min-w-0">
+    // Fills the window down to the bottom, like My Documents, so the empty state
+    // is a full-height box instead of a thin strip under the toolbar.
+    <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-[var(--ledger-shadow)]">
         <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
           <Pin size={16} className="text-primary" />
@@ -167,6 +169,10 @@ export function PinnedDocumentsView() {
           message="Your pinned documents couldn't be loaded."
           onRetry={() => void refetch()}
         />
+      ) : rows.length === 0 ? (
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+          {empty}
+        </p>
       ) : view === "list" ? (
         <BrowserList
           folders={[]}
@@ -182,10 +188,6 @@ export function PinnedDocumentsView() {
           flag={flag}
           empty={empty}
         />
-      ) : rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
-          {empty}
-        </p>
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
           {rows.map((row) => (

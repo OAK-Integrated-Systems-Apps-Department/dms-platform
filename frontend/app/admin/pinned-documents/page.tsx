@@ -27,19 +27,19 @@ const MAX = 200
  * organisation controls (PID-FR-007).
  */
 export default function PinnedDocumentsSettingsPage() {
-  usePageTitle("Pinned Documents")
+  usePageTitle("Pin Limit")
   return (
     <DashboardShell initialActiveLabel="Pin Limit">
       <AdminBreadcrumb
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          { label: "Pinned Documents" },
+          { label: "Pin Limit" },
         ]}
       />
       <div className="mb-5 max-w-[760px]">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
-          Pinned documents
+          Pin limit
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           People pin the documents they use most, and those appear on their own

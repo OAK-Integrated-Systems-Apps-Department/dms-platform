@@ -62,10 +62,23 @@ export interface NavItem {
   platformAdminOrPermission?: string
 }
 
+/**
+ * A collapsible sub-group inside a section (e.g. "Access" under
+ * Administration). Its items obey the same visibility rules as any other
+ * item; a group whose items are all hidden is dropped.
+ */
+export interface NavGroup {
+  label: string
+  icon: LucideIcon
+  items: NavItem[]
+}
+
 export interface NavSection {
-  /** Small uppercase label above the group, e.g. "Governance". Omit for the top group. */
+  /** Small uppercase label above the group, e.g. "Administration". Omit for the top group. */
   label?: string
   items: NavItem[]
+  /** Collapsible sub-groups, rendered after `items`. */
+  groups?: NavGroup[]
 }
 
 export interface AppUser {

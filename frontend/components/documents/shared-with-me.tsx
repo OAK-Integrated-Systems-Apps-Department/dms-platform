@@ -163,7 +163,9 @@ export function SharedWithMe() {
     : "Nothing has been shared with you yet. When someone gives you access to a folder or document, it shows up here."
 
   return (
-    <div className="min-w-0">
+    // Fills the window down to the bottom, like My Documents, so the empty state
+    // is a full-height box instead of a thin strip under the toolbar.
+    <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-[var(--ledger-shadow)]">
         <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
           <Users size={16} className="text-primary" />
@@ -234,6 +236,10 @@ export function SharedWithMe() {
             "Could not load what's shared with you."
           )}
         </p>
+      ) : shownFolders.length === 0 && rows.length === 0 ? (
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+          {empty}
+        </p>
       ) : view === "list" ? (
         <BrowserList
           folders={shownFolders}
@@ -248,10 +254,6 @@ export function SharedWithMe() {
           documentActions={documentActions}
           empty={empty}
         />
-      ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
-          {empty}
-        </p>
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
           {shownFolders.map((folder) => (

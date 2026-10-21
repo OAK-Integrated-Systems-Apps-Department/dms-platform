@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { CategoryGroups } from "@/components/notifications/category-groups"
 import { LoadingState } from "@/components/ui/loading-state"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { friendlyMessage } from "@/lib/api-error"
@@ -63,37 +64,17 @@ function SettingsSection() {
   if (isPending) return <LoadingState message="Loading settings…" />
 
   return (
-    <section className="mb-9 max-w-[760px]">
-      <h2 className="mb-2 font-heading text-[16px] font-semibold">Category email defaults</h2>
-      <ul className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-        {(data ?? []).map((s) => (
-          <li key={s.categoryCode} className="flex items-center gap-4 border-b border-border px-5 py-3.5 last:border-b-0">
-            <div className="min-w-0 flex-1">
-              <div className="text-[13.5px] font-semibold text-foreground">
-                {s.displayName}
-                {s.locked && <span className="ml-2 text-[11px] font-normal text-muted-foreground">(critical - always on)</span>}
-              </div>
-              {s.description && <p className="text-[12px] text-muted-foreground">{s.description}</p>}
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={s.emailEnabledDefault}
-              disabled={s.locked || update.isPending}
-              onClick={() => toggle(s)}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                s.emailEnabledDefault ? "bg-primary" : "bg-[var(--border-strong)]"
-              } ${s.locked ? "cursor-not-allowed opacity-60" : ""}`}
-            >
-              <span
-                className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${
-                  s.emailEnabledDefault ? "left-[22px]" : "left-0.5"
-                }`}
-              />
-            </button>
-          </li>
-        ))}
-      </ul>
+    <section className="mb-9">
+      <h2 className="mb-3 font-heading text-[16px] font-semibold">Category email defaults</h2>
+      <CategoryGroups
+        items={(data ?? []).map((s) => ({ ...s, enabled: s.emailEnabledDefault }))}
+        unit="emailed by default"
+        disabled={update.isPending}
+        onToggle={(item) => {
+          const s = (data ?? []).find((d) => d.categoryCode === item.categoryCode)
+          if (s) toggle(s)
+        }}
+      />
     </section>
   )
 }
@@ -108,7 +89,7 @@ function DeliveryLogSection() {
   const rows = data?.content ?? []
 
   return (
-    <section className="max-w-[980px]">
+    <section>
       <div className="mb-2 flex items-center justify-between gap-3">
         <h2 className="font-heading text-[16px] font-semibold">Delivery log</h2>
         <select
