@@ -207,6 +207,13 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_SIGNATURE_UNLOCKED = "DOCUMENT_SIGNATURE_UNLOCKED";
     public static final String SIGNING_KEY_CREATED = "SIGNING_KEY_CREATED";
     public static final String SIGNING_KEY_REVOKED = "SIGNING_KEY_REVOKED";
+    /** A visual signature burned onto a page, producing a new document version (reason=signed_copy) - before sign-and-approve, see SignaturePlacementService. */
+    public static final String DOCUMENT_SIGNATURE_PLACED = "DOCUMENT_SIGNATURE_PLACED";
+    public static final String DOCUMENT_SIGNATURE_PLACEMENT_REMOVED = "DOCUMENT_SIGNATURE_PLACEMENT_REMOVED";
+    // Cosmetic (typed name / drawn mark shown alongside a real signature, never
+    // part of what's cryptographically verified) - LOW, same tier as any other
+    // self-service profile edit.
+    public static final String VISUAL_SIGNATURE_UPDATED = "VISUAL_SIGNATURE_UPDATED";
 
     // Notifications (3.2) - module NOTIF. The main trail gets only these few;
     // every delivery attempt goes to the append-only notification_delivery_attempts table.
@@ -535,6 +542,9 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_SIGNATURE_UNLOCKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
             Map.entry(SIGNING_KEY_CREATED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
             Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+            Map.entry(VISUAL_SIGNATURE_UPDATED, new AuditActionSpec("DSI", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_SIGNATURE_PLACED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SIGNATURE_PLACEMENT_REMOVED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
 
             // Notifications (3.2) - module NOTIF
             Map.entry(NOTIFICATION_DELIVERY_FAILED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),

@@ -118,6 +118,16 @@ public class WorkflowTask {
     @Column(name = "inactivity_reminder_sent_at")
     private OffsetDateTime inactivityReminderSentAt;
 
+    /**
+     * 1.4 Digital Signature Integration (V111) - the document version signature placement started
+     * FROM, set once on this task's first placement and reused on every later one, so re-placing
+     * (retrying after a step-up failure, going back and choosing a different mark...) always replaces
+     * that one stamp instead of layering a new one on top of this task's own previous attempt. Null
+     * until this task's first placement; never read for anything else.
+     */
+    @Column(name = "signature_placement_base_version_id")
+    private UUID signaturePlacementBaseVersionId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

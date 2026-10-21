@@ -3,6 +3,7 @@ package com.oak.dms.signature.entity;
 import com.oak.dms.signature.enums.SignatureMeaning;
 import com.oak.dms.signature.enums.SignatureStatus;
 import com.oak.dms.signature.enums.VerificationResult;
+import com.oak.dms.signature.enums.VisualSignatureKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -126,6 +127,23 @@ public class DocumentSignature {
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
+
+    /**
+     * A snapshot of the signer's {@code user_visual_signatures} row (or
+     * whatever they typed/drew this time, if different) at the moment of
+     * THIS signature - cosmetic only, not part of {@link #manifestText} and
+     * never checked by {@code SignatureVerifier}. Null for a signature made
+     * before V109 existed.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visual_signature_kind", updatable = false)
+    private VisualSignatureKind visualSignatureKind;
+
+    @Column(name = "visual_signature_text", updatable = false)
+    private String visualSignatureText;
+
+    @Column(name = "visual_signature_image", updatable = false)
+    private byte[] visualSignatureImage;
 
     public boolean isValid() {
         return status == SignatureStatus.valid;

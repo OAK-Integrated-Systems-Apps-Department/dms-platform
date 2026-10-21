@@ -64,7 +64,7 @@ export function ProfileOverview() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<ProfileEditFormValues>({
     resolver: zodResolver(profileEditFormSchema),
-    defaultValues: { firstName: "", lastName: "" },
+    defaultValues: { firstName: "", lastName: "", position: "" },
     mode: "onChange",
   })
 
@@ -72,17 +72,17 @@ export function ProfileOverview() {
   // it isn't available yet on the render where the hook above is
   // initialized.
   useEffect(() => {
-    if (user) reset({ firstName: user.firstName, lastName: user.lastName })
+    if (user) reset({ firstName: user.firstName, lastName: user.lastName, position: user.position ?? "" })
   }, [user, reset])
 
   function startEditing() {
-    if (user) reset({ firstName: user.firstName, lastName: user.lastName })
+    if (user) reset({ firstName: user.firstName, lastName: user.lastName, position: user.position ?? "" })
     setSubmitError(null)
     setIsEditing(true)
   }
 
   function cancelEditing() {
-    if (user) reset({ firstName: user.firstName, lastName: user.lastName })
+    if (user) reset({ firstName: user.firstName, lastName: user.lastName, position: user.position ?? "" })
     setSubmitError(null)
     setIsEditing(false)
   }
@@ -142,6 +142,21 @@ export function ProfileOverview() {
                 <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.lastName.message}</p>
               )}
             </div>
+            <div className="col-span-2">
+              <Label htmlFor="position">Position (job title)</Label>
+              <Input
+                id="position"
+                autoComplete="off"
+                placeholder="e.g. Finance Manager"
+                {...register("position")}
+              />
+              <p className="mt-1 text-[11.5px] text-muted-foreground">
+                Shown alongside your name when you place a signature on a document.
+              </p>
+              {errors.position && (
+                <p className="mt-1.5 text-[12px] text-[var(--rust)]">{errors.position.message}</p>
+              )}
+            </div>
           </div>
           <div className="mb-6 flex justify-end gap-2.5">
             <button
@@ -179,7 +194,15 @@ export function ProfileOverview() {
               {user?.lastName ?? "—"}
             </p>
           </div>
-          <div className="col-span-2 flex items-start justify-end sm:col-span-2">
+          <div>
+            <p className="mb-1 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+              Position
+            </p>
+            <p className="font-mono text-[12.5px] text-foreground">
+              {user?.position ?? "—"}
+            </p>
+          </div>
+          <div className="col-span-2 flex items-start justify-end sm:col-span-1">
             <button
               type="button"
               onClick={startEditing}
@@ -187,7 +210,7 @@ export function ProfileOverview() {
               className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               <Pencil size={13} />
-              Edit name
+              Edit
             </button>
           </div>
         </div>

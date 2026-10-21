@@ -20,6 +20,8 @@ export interface CurrentUser {
   lastPasswordChangedAt: string | null
   /** ISO timestamp stamped by dms-core on every successful sign-in (`AuthService#recordLastLogin`) - so while signed in, this is the current session's sign-in time. Null if the user has never signed in. */
   lastLoginAt: string | null
+  /** Job title (1.4) - shown on a placed signature alongside name/department/date, or null if unset. Self-set via PUT /api/v1/users/me. */
+  position: string | null
   /** Role names for display only (never for gating - use `permissions`): fixed platform roles (`PLATFORM_ADMIN`/`TENANT_ADMIN`/`MEMBER`) first, then the tenant-defined roles that currently apply. `/me`-only, like `permissions`. */
   roles: string[]
   /**

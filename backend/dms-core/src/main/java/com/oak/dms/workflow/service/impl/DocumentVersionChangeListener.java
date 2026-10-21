@@ -4,6 +4,8 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.document.DocumentVersion;
+import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.document.event.DocumentVersionCreatedEvent;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowTemplate;
@@ -53,6 +55,7 @@ import java.util.UUID;
 public class DocumentVersionChangeListener {
 
     private final DocumentRepository documentRepository;
+    private final DocumentVersionRepository versionRepository;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowTemplateRepository templateRepository;
     private final TemplateSelector templateSelector;
@@ -65,6 +68,18 @@ public class DocumentVersionChangeListener {
     @EventListener
     @Transactional(propagation = Propagation.MANDATORY)
     public void onDocumentVersionCreated(DocumentVersionCreatedEvent event) {
+        // 1.4 Digital Signature Integration: a version created by SignaturePlacementService's own
+        // stamping step (reason=signed_copy) is this SAME in-progress instance's own doing, not an
+        // external replace mid-approval - it already advances WorkflowInstance.documentVersionId to
+        // this exact version itself (right after the ticket resolves, just outside this transaction).
+        // Treating it as "the document changed under the approvers" would be wrong on both branches
+        // below: flagging would warn about a change the instance is already tracking, and - far worse -
+        // restart would cancel the very instance this signature is being placed for.
+        DocumentVersion createdVersion = versionRepository.findById(event.newVersionId()).orElse(null);
+        if (createdVersion != null && "signed_copy".equals(createdVersion.getCreatedReason())) {
+            return;
+        }
+
         // Scalar lookup, so the instance is first loaded by its lock (a row read
         // earlier in the transaction would come back stale from FOR UPDATE).
         Optional<UUID> inFlight = instanceRepository.findInProgressInstanceId(event.tenantId(), event.documentId());

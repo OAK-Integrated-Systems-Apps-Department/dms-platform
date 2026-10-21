@@ -13,6 +13,7 @@ import com.oak.dms.signature.dto.SignAndApproveRequest;
 import com.oak.dms.signature.entity.DocumentSignature;
 import com.oak.dms.signature.entity.UserSigningKey;
 import com.oak.dms.signature.enums.SignatureMeaning;
+import com.oak.dms.signature.enums.VisualSignatureKind;
 import com.oak.dms.signature.event.SignatureRejectedEvent;
 import com.oak.dms.signature.exception.SignatureException;
 import com.oak.dms.signature.helper.PemKeys;
@@ -68,6 +69,7 @@ class DocumentSignatureServiceTest {
     @Mock private DocumentContentReader contentReader;
     @Mock private UserRepository userRepository;
     @Mock private SigningKeyService signingKeyService;
+    @Mock private UserVisualSignatureService visualSignatureService;
     @Mock private DocumentSigner signer;
     @Mock private StepUpAuthenticator stepUp;
     @Mock private AuditService auditService;
@@ -87,13 +89,15 @@ class DocumentSignatureServiceTest {
     void setUp() {
         ObjectMapper mapper = new ObjectMapper();
         service = new DocumentSignatureService(signatureRepository, documentRepository, versionRepository,
-                contentReader, userRepository, signingKeyService, signer, new SignatureManifestBuilder(mapper),
-                new SignatureVerifier(), stepUp, auditService, eventPublisher, mapper);
+                contentReader, userRepository, signingKeyService, visualSignatureService, signer,
+                new SignatureManifestBuilder(mapper), new SignatureVerifier(), stepUp, auditService, eventPublisher,
+                mapper);
         TenantContext.set(tenantId, userId);
         lenient().when(auditService.event(anyString()))
                 .thenReturn(new com.oak.dms.audit.helper.AuditEventBuilder(auditService, "x"));
         lenient().when(userRepository.findById(userId))
                 .thenReturn(Optional.of(User.builder().userId(userId).displayName("Sign Er").email("signer@test.example").build()));
+        lenient().when(visualSignatureService.validateTypedText(anyString())).thenReturn("Sign Er");
         lenient().when(contentReader.open(documentId, versionId))
                 .thenAnswer(inv -> new DownloadedDocument(new ByteArrayInputStream(DOCUMENT_BYTES), DOCUMENT_BYTES.length, "application/pdf", "doc.pdf"));
         // A real JpaRepository.save/saveAndFlush returns its argument - the bare mock would return null.
@@ -116,7 +120,8 @@ class DocumentSignatureServiceTest {
     }
 
     private SignAndApproveRequest request(boolean consent) {
-        return new SignAndApproveRequest("a comment", SignatureMeaning.approved, consent, "password", null);
+        return new SignAndApproveRequest("a comment", SignatureMeaning.approved, consent, "password", null,
+                VisualSignatureKind.typed, "Sign Er", null);
     }
 
     private static String sha256Hex(byte[] bytes) throws Exception {

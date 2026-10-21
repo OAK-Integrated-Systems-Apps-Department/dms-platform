@@ -3,7 +3,7 @@
 
 import { useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
@@ -115,6 +115,7 @@ async function login(
  */
 export function LoginPageContent() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
@@ -157,6 +158,13 @@ export function LoginPageContent() {
     }) => login(username, password, rememberMe, totp),
     onSuccess: (result) => {
       if (result.ok) {
+        // Without this, any "me"-scoped data a PREVIOUS session cached (current user, visual
+        // signature, permissions, notifications...) would still be sitting in this tab's React Query
+        // cache - a client-side navigation never remounts the Providers tree that owns it, so a
+        // different person signing in right after someone else, in the same tab, would briefly see
+        // the first person's cached data before anything refetches. router.refresh() only affects
+        // Next's server-component cache, not this one.
+        queryClient.clear()
         toast.success("Signed in successfully.")
         router.push("/")
         router.refresh()

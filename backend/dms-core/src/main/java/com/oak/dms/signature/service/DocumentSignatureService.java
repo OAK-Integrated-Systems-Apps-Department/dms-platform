@@ -21,6 +21,7 @@ import com.oak.dms.signature.entity.DocumentSignature;
 import com.oak.dms.signature.entity.UserSigningKey;
 import com.oak.dms.signature.enums.SignatureStatus;
 import com.oak.dms.signature.enums.VerificationResult;
+import com.oak.dms.signature.enums.VisualSignatureKind;
 import com.oak.dms.signature.event.SignatureRejectedEvent;
 import com.oak.dms.signature.event.SignatureVerificationFailedEvent;
 import com.oak.dms.signature.exception.SignatureException;
@@ -67,6 +68,7 @@ public class DocumentSignatureService {
     private final DocumentContentReader contentReader;
     private final UserRepository userRepository;
     private final SigningKeyService signingKeyService;
+    private final UserVisualSignatureService visualSignatureService;
     private final DocumentSigner signer;
     private final SignatureManifestBuilder manifestBuilder;
     private final SignatureVerifier verifier;
@@ -108,6 +110,20 @@ public class DocumentSignatureService {
         if (signatureRepository.existsByTenantIdAndTaskId(tenantId, taskId)) {
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
+        }
+
+        // Cheap, no-network validation before the Keycloak round trip below - a malformed visual
+        // signature shouldn't cost the signer a wasted step-up attempt.
+        String visualText;
+        byte[] visualImage;
+        try {
+            // drawn/uploaded are stored and validated identically - see VisualSignatureKind's own doc comment.
+            visualText = request.visualSignatureKind() == VisualSignatureKind.typed
+                    ? visualSignatureService.validateTypedText(request.visualSignatureText()) : null;
+            visualImage = request.visualSignatureKind() == VisualSignatureKind.typed
+                    ? null : visualSignatureService.validateImage(request.visualSignatureImageBase64());
+        } catch (SignatureException e) {
+            throw rejected(e, tenantId, actorUserId, documentId, taskId);
         }
 
         User signerUser = userRepository.findById(actorUserId)
@@ -184,6 +200,9 @@ public class DocumentSignatureService {
                 .signingKeyName(key.getKeyName())
                 .signedAt(signedAt)
                 .createdBy(actorUserId)
+                .visualSignatureKind(request.visualSignatureKind())
+                .visualSignatureText(visualText)
+                .visualSignatureImage(visualImage)
                 .build();
 
         DocumentSignature saved;
@@ -194,6 +213,11 @@ public class DocumentSignatureService {
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
         }
+
+        // Cosmetic only (decision: never part of manifestText/what's verified) - best-effort save of
+        // "what they used this time" as their new default, so next time's dialog starts pre-filled with it.
+        visualSignatureService.upsert(tenantId, actorUserId, request.visualSignatureKind(), visualText,
+                visualImage == null ? null : java.util.Base64.getEncoder().encodeToString(visualImage), actorUserId);
 
         auditService.event(AuditActionCatalog.DOCUMENT_SIGNED)
                 .objectType(AuditObjectTypes.DOCUMENT_SIGNATURE)
@@ -371,7 +395,11 @@ public class DocumentSignatureService {
                 s.getSignerUserId(), s.getSignerName(), s.getSignerEmail(), s.getMeaning().name(), s.getCommentText(),
                 s.getStatus().name(), s.getStatusReason(), s.getStatusChangedAt(),
                 s.getLastVerificationResult() == null ? null : s.getLastVerificationResult().name(),
-                s.getLastVerifiedAt(), s.getSignedAt());
+                s.getLastVerifiedAt(), s.getSignedAt(),
+                s.getVisualSignatureKind() == null ? null : s.getVisualSignatureKind().name(),
+                s.getVisualSignatureText(),
+                s.getVisualSignatureImage() == null ? null
+                        : java.util.Base64.getEncoder().encodeToString(s.getVisualSignatureImage()));
     }
 
     private static String clean(String comment) {

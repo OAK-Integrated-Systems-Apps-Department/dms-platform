@@ -47,6 +47,6 @@ public interface UserMapper {
                 base.username(), base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(),
                 base.status(), base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(),
                 base.lastLoginAt(), base.lastPasswordChangedAt(), permissions, roles,
-                impersonatorDisplayName != null, impersonatorDisplayName, base.departmentId());
+                impersonatorDisplayName != null, impersonatorDisplayName, base.departmentId(), base.position());
     }
 }

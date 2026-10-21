@@ -89,6 +89,8 @@ public final class AuditObjectTypes {
     public static final String DOCUMENT_SIGNATURE = "DOCUMENT_SIGNATURE";
     /** One user's signing key (user_signing_keys, V105) - the object of every SIGNING_KEY_* event. */
     public static final String SIGNING_KEY = "SIGNING_KEY";
+    /** One user's saved visual signature (user_visual_signatures, V109) - cosmetic, the object of VISUAL_SIGNATURE_UPDATED. */
+    public static final String VISUAL_SIGNATURE = "VISUAL_SIGNATURE";
 
     /**
      * Not a business entity like every other constant here - the "object"

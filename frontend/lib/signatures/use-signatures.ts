@@ -5,8 +5,10 @@ import { toast } from "sonner"
 
 import {
   fetchDocumentSignatures,
+  fetchMyVisualSignature,
   releaseSignatureLock,
   revokeSigningKey,
+  saveMyVisualSignature,
   signAndApproveTask,
   verifyDocumentSignatures,
   type SignAndApproveRequestDto,
@@ -19,6 +21,14 @@ export function useDocumentSignatures(documentId: string | null) {
     queryKey: ["signatures", documentId],
     queryFn: () => fetchDocumentSignatures(documentId as string),
     enabled: Boolean(documentId),
+  })
+}
+
+/** The caller's own saved visual signature (null if they've never set one) - used to pre-fill the sign-and-approve dialog. */
+export function useMyVisualSignature() {
+  return useQuery({
+    queryKey: ["visual-signature", "me"],
+    queryFn: fetchMyVisualSignature,
   })
 }
 
@@ -41,7 +51,21 @@ export function useSignatureActions() {
   const signAndApprove = useMutation({
     mutationFn: ({ taskId, request }: { taskId: string; request: SignAndApproveRequestDto }) =>
       signAndApproveTask(taskId, request),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      // Signing saves whatever was typed/drawn as the new default (see DocumentSignatureService#sign).
+      queryClient.invalidateQueries({ queryKey: ["visual-signature", "me"] })
+    },
+  })
+
+  // Deliberately no onError toast here, unlike the other mutations below: VisualSignatureCard needs
+  // the raw error (via the thrown rejection `saveVisualSignature` below passes through) to show a
+  // step-up failure inline in ConfirmPasswordDialog and keep it open, the same way
+  // SignAndApproveDialog handles its own password step - a background toast plus a closed dialog
+  // would lose the password-retry flow entirely.
+  const saveVisualSignature = useMutation({
+    mutationFn: saveMyVisualSignature,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["visual-signature", "me"] }),
   })
 
   const verifyAll = useMutation({
@@ -71,6 +95,9 @@ export function useSignatureActions() {
 
   return {
     signAndApprove,
+    /** Rethrows on failure (e.g. wrong password) - see the mutation's own comment on why this doesn't swallow it. */
+    saveVisualSignature: (input: Parameters<typeof saveMyVisualSignature>[0]) => saveVisualSignature.mutateAsync(input),
+    isSavingVisualSignature: saveVisualSignature.isPending,
     verifyAll: async (documentId: string) => {
       try {
         return await verifyAll.mutateAsync(documentId)

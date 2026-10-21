@@ -444,6 +444,22 @@ services:
       # A second copy outside Docker (repo/.dms-dev-keys, gitignored): restored
       # automatically if the encryption_dev_keys volume is ever lost.
       ENCRYPTION_LOCAL_DEV_BACKUP_FILE: /var/lib/dms-encryption-backup/local-dev-keys.json
+      # 1.4 Digital Signature Integration (module DSI). OFF by default (see
+      # application.yml's dms.signature.enabled) - turned on here for local
+      # dev so the signature endpoints/sign-and-approve are actually
+      # reachable. provider defaults to local-dev (a file-backed key pair).
+      #
+      # On the signature_dev_keys volume below, NOT this default's own /tmp -
+      # the file only matters for SIGNING something new, but
+      # user_signing_keys (which DOES persist, in Postgres) still remembers
+      # "this user already has an active key" once one is ever created.
+      # Losing just the file (a plain container recreate, /tmp wiped) while
+      # that DB row survives left every future sign attempt failing with
+      # "No development signing key ... - call ensureKey first" - the file
+      # and the row have to live and die together, or revoke+recreate the
+      # key by hand to recover.
+      SIGNATURE_ENABLED: "true"
+      SIGNATURE_LOCAL_DEV_KEY_FILE: /var/lib/dms-signature/local-dev-signing-keys.json
     ports:
       - "8080:8080"
     volumes:
@@ -460,6 +476,8 @@ services:
       # rather than quietly creating a new key once encrypted objects exist.
       - encryption_dev_keys:/var/lib/dms-encryption
       - ../../.dms-dev-keys:/var/lib/dms-encryption-backup
+      # The development signing key file (1.4) - see SIGNATURE_LOCAL_DEV_KEY_FILE's own comment above.
+      - signature_dev_keys:/var/lib/dms-signature
     depends_on:
       postgres:
         condition: service_healthy
@@ -950,6 +968,7 @@ volumes:
   loki_data:
   promtail_positions:
   encryption_dev_keys:
+  signature_dev_keys:
   prometheus_data:
   grafana_data:
   postgres_data:

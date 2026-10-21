@@ -219,6 +219,7 @@ public class UserServiceImpl implements UserService {
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
         user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
+        user.setPosition(request.position() == null || request.position().isBlank() ? null : request.position().trim());
         user.setUpdatedBy(user.getUserId());
         user.setUpdatedAt(OffsetDateTime.now());
 

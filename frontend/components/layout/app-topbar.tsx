@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Bell,
   ChevronDown,
@@ -70,6 +71,7 @@ type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
  */
 export function AppTopbar() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   // Name and initials come from here, not useCurrentUser directly: a platform
   // administrator has no local user row, and the menu used to render "…" for
   // them. See useAccountIdentity.
@@ -140,6 +142,10 @@ export function AppTopbar() {
     try {
       await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST" })
     } catch {}
+    // Same reasoning as login-page-content.tsx's own onSuccess: a client-side navigation never
+    // remounts the Providers tree that owns the React Query cache, so without this, whoever signs in
+    // next in this same tab would start out seeing this person's cached "me"-scoped data.
+    queryClient.clear()
     router.push(ROUTES.LOGIN)
     router.refresh()
   }

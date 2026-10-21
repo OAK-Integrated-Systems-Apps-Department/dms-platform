@@ -66,6 +66,8 @@ public record UserResponse(
         boolean impersonating,
         String impersonatorDisplayName,
         /** Primary department (V43), or null. Changed via PUT /api/v1/users/{id}/department. */
-        UUID departmentId
+        UUID departmentId,
+        /** Job title (V112), or null. Self-set via PUT /api/v1/users/me. */
+        String position
 ) {
 }

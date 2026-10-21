@@ -23,6 +23,11 @@ public record DocumentSignatureResponse(
         OffsetDateTime statusChangedAt,
         String lastVerificationResult,
         OffsetDateTime lastVerifiedAt,
-        OffsetDateTime signedAt
+        OffsetDateTime signedAt,
+        /** Cosmetic only - see DocumentSignature's own doc comment. Null for a signature made before V109. */
+        String visualSignatureKind,
+        String visualSignatureText,
+        /** Base64 PNG - null when visualSignatureKind isn't "drawn". */
+        String visualSignatureImageBase64
 ) {
 }

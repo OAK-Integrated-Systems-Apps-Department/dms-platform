@@ -128,6 +128,17 @@ function SignatureRow({ signature }: { signature: DocumentSignatureDto }) {
       {signature.status === "invalidated" && signature.statusReason && (
         <p className="mt-1 text-[12px] text-[var(--rust)]">{signature.statusReason}</p>
       )}
+      {signature.visualSignatureKind === "typed" && signature.visualSignatureText && (
+        <p className="mt-1.5 text-[22px] font-signature text-foreground">{signature.visualSignatureText}</p>
+      )}
+      {signature.visualSignatureKind !== "typed" && signature.visualSignatureImageBase64 && (
+        // eslint-disable-next-line @next/next/no-img-element -- a small inline base64 PNG, not worth next/image's overhead
+        <img
+          src={`data:image/png;base64,${signature.visualSignatureImageBase64}`}
+          alt={`${signature.signerName}'s signature`}
+          className="mt-1.5 h-10 w-auto"
+        />
+      )}
       {signature.lastVerificationResult && (
         <p className="mt-1 text-[11.5px] text-muted-foreground">
           Last verified {signature.lastVerifiedAt ? formatDateTime(signature.lastVerifiedAt) : "—"}:{" "}
