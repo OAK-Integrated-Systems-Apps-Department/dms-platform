@@ -10,6 +10,7 @@ import {
   FileStack,
   FileText,
   Grid3x3,
+  Link2,
   KeyRound,
   LayoutDashboard,
   ListChecks,
@@ -335,6 +336,16 @@ export const navSections: NavSection[] = [
         permission: [
           PermissionCodes.MDTM_TYPE_FIELD_MAPPING_VIEW,
           PermissionCodes.MDTM_TYPE_FIELD_MAPPING_UPDATE,
+        ],
+      },
+      {
+        label: "Relationship Types",
+        icon: Link2,
+        href: "/admin/metadata/relationship-types",
+        permission: [
+          PermissionCodes.DRM_TYPES_CREATE,
+          PermissionCodes.DRM_TYPES_UPDATE,
+          PermissionCodes.DRM_TYPES_DELETE,
         ],
       },
     ],

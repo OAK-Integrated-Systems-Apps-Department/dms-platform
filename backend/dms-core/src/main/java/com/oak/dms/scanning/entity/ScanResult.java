@@ -185,6 +185,14 @@ public class ScanResult {
     private boolean ocrLowPriority = false;
 
     /**
+     * The document the uploader chose to keep a copy of ("Keep both" after duplicate detection, V108),
+     * or null. Read by DocumentVersionPromoter, which raises the event that links the new document to it
+     * as "Duplicate of" once it exists.
+     */
+    @Column(name = "duplicate_of_document_id", updatable = false)
+    private UUID duplicateOfDocumentId;
+
+    /**
      * Set only on a quarantine release attempt (V40): the original,
      * quarantined scan result this row re-scans (or force-releases).
      */

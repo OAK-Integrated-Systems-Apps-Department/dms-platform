@@ -40,6 +40,7 @@ import com.oak.dms.ocrworker.OcrProperties;
 import com.oak.dms.ocrworker.OcrWorkerClient;
 import com.oak.dms.ocrworker.ProcessingJob;
 import com.oak.dms.ocrworker.ProcessingJobRepository;
+import com.oak.dms.relationship.dto.RelationshipFilter;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.service.IngestionGate;
@@ -161,6 +162,16 @@ public class DocumentServiceImpl implements DocumentService {
     public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
                                                   long contentLength, InputStream content, UUID folderId,
                                                   boolean refuseDuplicates, List<String> requestedFields) {
+        return uploadDocument(documentTypeId, title, originalFilename, contentLength, content, folderId,
+                refuseDuplicates, requestedFields, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId,
+                                                  boolean refuseDuplicates, List<String> requestedFields,
+                                                  UUID duplicateOfDocumentId) {
         if (folderId != null) {
             // 404/403 now, rather than a document landing nowhere (or somewhere it mustn't) later
             folderService.requireEditable(folderId);
@@ -168,6 +179,9 @@ public class DocumentServiceImpl implements DocumentService {
         IngestionRequest request =
                 IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
         request = withOcr(request, documentTypeId, requestedFields, false);
+        if (duplicateOfDocumentId != null) {
+            request = request.duplicateOf(duplicateOfDocumentId);
+        }
         return ingestionGate.submit(refuseDuplicates ? request.refusingDuplicates() : request);
     }
 
@@ -189,6 +203,20 @@ public class DocumentServiceImpl implements DocumentService {
         IngestionRequest request =
                 IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
         return ingestionGate.submit(withOcr(request, documentTypeId, requestedFields, true));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                         long contentLength, InputStream content, UUID folderId,
+                                                         List<String> requestedFields, UUID duplicateOfDocumentId) {
+        if (folderId != null) {
+            folderService.requireLive(folderId);
+        }
+        IngestionRequest request =
+                IngestionRequest.newDocument(documentTypeId, title, originalFilename, contentLength, content, folderId);
+        request = withOcr(request, documentTypeId, requestedFields, true);
+        return ingestionGate.submit(duplicateOfDocumentId == null ? request : request.duplicateOf(duplicateOfDocumentId));
     }
 
     /**
@@ -245,6 +273,22 @@ public class DocumentServiceImpl implements DocumentService {
             page = documentRepository.findLiveAtTopLevel(tenantId, title, documentTypeId, excludeDocumentId, pageable);
         }
 
+        return toItems(page, access);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentListItem> listRelatedDocuments(String query, UUID documentTypeId, UUID excludeDocumentId,
+                                                       RelationshipFilter filter, Pageable pageable) {
+        UUID tenantId = TenantContext.getTenantId();
+        String title = query == null || query.isBlank() ? "" : LikePatterns.escape(query.strip());
+        DocumentAccessView access = documentAccessService.forCaller();
+        Page<Document> page = access.seesEverything()
+                ? documentRepository.findLiveRelated(tenantId, title, documentTypeId, excludeDocumentId,
+                filter.typeId(), filter.relatedTo(), filter.asSource(), filter.asTarget(), pageable)
+                : documentRepository.findVisibleRelated(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
+                access.grantedIds(), access.workflowReadableIds(), documentTypeId, excludeDocumentId,
+                filter.typeId(), filter.relatedTo(), filter.asSource(), filter.asTarget(), pageable);
         return toItems(page, access);
     }
 

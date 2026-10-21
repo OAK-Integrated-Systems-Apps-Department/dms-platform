@@ -81,6 +81,10 @@ public final class AuditObjectTypes {
     public static final String WORKFLOW_SUPPORTING_DOCUMENT = "WORKFLOW_SUPPORTING_DOCUMENT";
     /** A comment on a document (document_comments) - every DOCUMENT_COMMENT_* event. */
     public static final String DOCUMENT_COMMENT = "DOCUMENT_COMMENT";
+    /** A link between two documents (document_relationships) - every RELATIONSHIP_* event except the type ones. */
+    public static final String DOCUMENT_RELATIONSHIP = "DOCUMENT_RELATIONSHIP";
+    /** A relationship type (relationship_types) - every RELATIONSHIP_TYPE_* event. */
+    public static final String RELATIONSHIP_TYPE = "RELATIONSHIP_TYPE";
 
     /**
      * Not a business entity like every other constant here - the "object"

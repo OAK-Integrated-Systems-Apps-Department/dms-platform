@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
+import { RelationshipsLink } from "@/components/relationships/relationships-link"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -419,6 +420,7 @@ export function DocumentPreview({
                 </Button>
               </div>
             )}
+            <RelationshipsLink documentId={row.documentId} />
             {onViewDetails && (
               <Button size="sm" variant="outline" onClick={onViewDetails}>
                 <FileSearch />

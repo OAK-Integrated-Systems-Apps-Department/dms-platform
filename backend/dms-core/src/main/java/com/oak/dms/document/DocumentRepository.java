@@ -89,6 +89,39 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                       @Param("documentTypeId") UUID documentTypeId,
                                       @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
 
+    // Browsing by relationship (2.8): the same visibility rules as above, over every folder, with the
+    // document required to have an active link of the type (any type if :relTypeId is null) to or from
+    // :relatedTo (any document if null). :asSource keeps documents that are the source of such a link,
+    // :asTarget those that are its target. The access predicate is ANDed, never replaced.
+    String RELATED = "and exists (select 1 from com.oak.dms.relationship.entity.DocumentRelationship r "
+            + "where r.tenantId = :tenantId and r.removedAt is null "
+            + "and (:relTypeId is null or r.relationshipTypeId = :relTypeId) "
+            + "and ((:asSource = true and r.sourceDocumentId = d.documentId "
+            + "and (:relatedTo is null or r.targetDocumentId = :relatedTo)) "
+            + "or (:asTarget = true and r.targetDocumentId = d.documentId "
+            + "and (:relatedTo is null or r.sourceDocumentId = :relatedTo)))) ";
+
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + RELATED + "and ((" + FOLLOWS_FOLDER
+            + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
+    Page<Document> findVisibleRelated(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                      @Param("hidden") Collection<UUID> hiddenFolderIds,
+                                      @Param("granted") Collection<UUID> grantedDocumentIds,
+                                      @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
+                                      @Param("documentTypeId") UUID documentTypeId,
+                                      @Param("excludeDocumentId") UUID excludeDocumentId,
+                                      @Param("relTypeId") UUID relationshipTypeId, @Param("relatedTo") UUID relatedTo,
+                                      @Param("asSource") boolean asSource, @Param("asTarget") boolean asTarget,
+                                      Pageable pageable);
+
+    /** {@link #findVisibleRelated} for a caller who sees everything. */
+    @Query("select d from Document d where " + LIVE_TITLED + NARROWED + RELATED)
+    Page<Document> findLiveRelated(@Param("tenantId") UUID tenantId, @Param("title") String title,
+                                   @Param("documentTypeId") UUID documentTypeId,
+                                   @Param("excludeDocumentId") UUID excludeDocumentId,
+                                   @Param("relTypeId") UUID relationshipTypeId, @Param("relatedTo") UUID relatedTo,
+                                   @Param("asSource") boolean asSource, @Param("asTarget") boolean asTarget,
+                                   Pageable pageable);
+
     /**
      * "Shared with me": restricted documents whose own list names the user or
      * one of their roles - not ones they own (those are theirs, not shared).

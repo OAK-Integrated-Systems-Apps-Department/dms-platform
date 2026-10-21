@@ -32,6 +32,8 @@ export type UploadRequest =
       folderId: string | null
       /** Checked for duplicates and found none: refuse if the same file arrived meanwhile. */
       refuseDuplicates: boolean
+      /** "Keep both" against this document: the backend links the new copy to it as "Duplicate of". */
+      duplicateOfDocumentId?: string
     }
   | { kind: "version"; file: File; documentId: string; comment: string }
 
@@ -249,7 +251,8 @@ async function run(id: string) {
             request.folderId,
             request.refuseDuplicates,
             undefined,
-            transfer
+            transfer,
+            request.duplicateOfDocumentId
           )
     patch(id, { loaded: current.size, ...outcomeOfTicket(ticket, request) })
     if (ticket.status === "pending")

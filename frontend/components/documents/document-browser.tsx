@@ -13,6 +13,7 @@ import {
   FolderPlus,
   FolderUp,
   History,
+  Link2,
   Pin,
   PinOff,
   LayoutGrid,
@@ -97,6 +98,8 @@ import {
 } from "@/lib/documents/use-browser-view"
 import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
 import { useDocumentWorkflowStatuses } from "@/lib/workflow/use-document-workflow-statuses"
+import { LinkToDialog } from "@/components/relationships/link-to-dialog"
+import { useDocument } from "@/lib/documents/use-document"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 25
@@ -116,6 +119,7 @@ type Dialog =
   | { kind: "submit-for-approval"; row: DocumentListItemDto; key: number }
   | { kind: "watermark"; row: DocumentListItemDto; key: number }
   | { kind: "ocr"; row: DocumentListItemDto; key: number }
+  | { kind: "link-to"; rows: DocumentListItemDto[]; key: number }
   | null
 
 /**
@@ -137,11 +141,43 @@ type Dialog =
 export function DocumentBrowser() {
   // The open folder lives in the URL (?folder=…), so Back, refresh and
   // shared links work. Each folder gets a fresh view (search, page, selection).
-  const folderId = useSearchParams().get("folder")
-  return <FolderView key={folderId ?? "root"} folderId={folderId} />
+  const params = useSearchParams()
+  const folderId = params.get("folder")
+  // "Documents that supersede this": ?relatedTo=<id>&relationshipType=<code>&direction=source|target|any
+  // searches every folder for documents linked to that one.
+  const relatedTo = params.get("relatedTo")
+  const relationshipType = params.get("relationshipType")
+  const rawDirection = params.get("direction")
+  const direction =
+    rawDirection === "source" || rawDirection === "target" || rawDirection === "any"
+      ? rawDirection
+      : undefined
+  return (
+    <FolderView
+      key={`${folderId ?? "root"}|${relatedTo ?? ""}|${relationshipType ?? ""}|${direction ?? ""}`}
+      folderId={folderId}
+      related={
+        relatedTo
+          ? { relatedTo, relationshipType: relationshipType ?? undefined, direction }
+          : null
+      }
+    />
+  )
 }
 
-function FolderView({ folderId }: { folderId: string | null }) {
+interface RelatedFilter {
+  relatedTo: string
+  relationshipType?: string
+  direction?: "source" | "target" | "any"
+}
+
+function FolderView({
+  folderId,
+  related,
+}: {
+  folderId: string | null
+  related: RelatedFilter | null
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const queryClient = useQueryClient()
@@ -161,6 +197,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
       PermissionCodes.DLM_SUBMIT_DOCUMENTS_FOR_REVIEW
     ),
     viewDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW),
+    manageRelationships: hasPermission(PermissionCodes.DRM_RELATIONSHIPS_CREATE),
     ocrTrigger: hasPermission(PermissionCodes.OS_OCR_TRIGGER),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
@@ -181,6 +218,7 @@ function FolderView({ folderId }: { folderId: string | null }) {
 
   const view = useBrowserView()
   const folders = useFolders()
+  const relatedDocument = useDocument(related?.relatedTo ?? "")
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -200,14 +238,15 @@ function FolderView({ folderId }: { folderId: string | null }) {
   // The top level is open to everyone; inside a folder, the caller's own level applies.
   const canEditHere = hasAccess(current?.myAccess, "edit")
   const documents = useQuery({
-    queryKey: ["documents", "browse", current?.folderId, query, page],
+    queryKey: ["documents", "browse", current?.folderId, query, page, related],
     queryFn: () =>
       fetchDocuments({
-        folderId: current?.folderId ?? null,
-        all: false,
+        folderId: related ? null : (current?.folderId ?? null),
+        all: related !== null,
         q: query,
         page: page - 1,
         size: PAGE_SIZE,
+        ...(related ?? {}),
       }),
   })
   const rows = documents.data?.content ?? []
@@ -482,6 +521,12 @@ function FolderView({ folderId }: { folderId: string | null }) {
         icon: History,
         onSelect: () => setDialog({ kind: "versions", row, key: Date.now() }),
       })
+    // Every document the caller can open has a Related Documents panel.
+    actions.push({
+      label: "Relationships",
+      icon: Link2,
+      onSelect: () => router.push(`/documents/${row.documentId}#relationships`),
+    })
     if (can.moveDocuments && hasAccess(row.myAccess, "edit"))
       actions.push({
         label: "Move to",
@@ -492,6 +537,13 @@ function FolderView({ folderId }: { folderId: string | null }) {
             ids: [row.documentId],
             key: Date.now(),
           }),
+      })
+    if (can.manageRelationships && hasAccess(row.myAccess, "edit"))
+      actions.push({
+        label: "Link to…",
+        icon: Link2,
+        onSelect: () =>
+          setDialog({ kind: "link-to", rows: [row], key: Date.now() }),
       })
     // Watermarking needs only document-view: the copy it produces is of a
     // document the caller can already read, and it never replaces the
@@ -597,6 +649,24 @@ function FolderView({ folderId }: { folderId: string | null }) {
         />
       )}
       <DropHint hint={dnd.hint} />
+      {related && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <span className="flex items-center gap-1.5 rounded-btn border border-primary/40 bg-primary/5 px-2.5 py-1">
+            {related.relationshipType === "SUPERSEDES" && related.direction === "source"
+              ? "Documents that supersede"
+              : "Documents related to"}{" "}
+            <strong>{relatedDocument.data?.title ?? "this document"}</strong>
+            <button
+              type="button"
+              aria-label="Clear the relationship filter"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => router.push(pathname, { scroll: false })}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
       <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
         <div className="border-b border-border px-2.5 py-2">
           <FolderPath
@@ -759,6 +829,25 @@ function FolderView({ folderId }: { folderId: string | null }) {
               Move to
             </Button>
           )}
+          {can.manageRelationships &&
+            rows
+              .filter((r) => checked.has(r.documentId))
+              .every((r) => hasAccess(r.myAccess, "edit")) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setDialog({
+                    kind: "link-to",
+                    rows: rows.filter((r) => checked.has(r.documentId)),
+                    key: Date.now(),
+                  })
+                }
+              >
+                <Link2 />
+                Link to…
+              </Button>
+            )}
           {can.export && (
             <Button variant="outline" size="sm" onClick={downloadSelected}>
               <Download />
@@ -922,6 +1011,18 @@ function FolderView({ folderId }: { folderId: string | null }) {
               "Could not move the folder."
             )
           }
+        />
+      )}
+      {dialog?.kind === "link-to" && (
+        <LinkToDialog
+          key={dialog.key}
+          sources={dialog.rows}
+          open
+          onOpenChange={(next) => !next && setDialog(null)}
+          onLinked={() => {
+            setChecked(new Set())
+            toast.success("Documents linked.")
+          }}
         />
       )}
       {dialog?.kind === "move-documents" && (

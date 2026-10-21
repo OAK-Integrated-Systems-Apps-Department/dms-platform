@@ -17,12 +17,15 @@ export class ApiError extends Error {
   readonly status: number
   /** The backend's optional machine-readable `code` (see ErrorResponse/ApiException on the backend), e.g. "TENANT_CONTEXT_MISSING" - undefined when the response body didn't carry one. */
   readonly code?: string
+  /** The backend's optional structured `details` (a loop's chain, the invalid documents of a bulk request) - undefined when absent. */
+  readonly details?: unknown
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, details?: unknown) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 

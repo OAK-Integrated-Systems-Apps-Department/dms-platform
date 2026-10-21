@@ -86,6 +86,19 @@ public interface DocumentService {
                                            boolean refuseDuplicates, List<String> requestedFields);
 
     /**
+     * As above, for an upload the user chose to "Keep both" after duplicate detection: once the file is
+     * clean and the document exists it is linked to {@code duplicateOfDocumentId} as "Duplicate of" (2.8).
+     * The original is checked again then - if it is gone or the uploader can't open it, no link is made and
+     * the upload is unaffected.
+     *
+     * @param duplicateOfDocumentId the document the new one is a copy of; null for no link
+     */
+    IngestionTicketResponse uploadDocument(UUID documentTypeId, String title, String originalFilename,
+                                           long contentLength, InputStream content, UUID folderId,
+                                           boolean refuseDuplicates, List<String> requestedFields,
+                                           UUID duplicateOfDocumentId);
+
+    /**
      * {@link #uploadDocument} for a background job (a Bulk Import batch) whose
      * folder access was checked when the person requested it. The folder must
      * still exist, but access isn't checked again: the job runs without the
@@ -105,6 +118,14 @@ public interface DocumentService {
                                                   List<String> requestedFields);
 
     /**
+     * {@link #uploadDocumentFromJob} for a file bulk import adds as a separate copy of a document it
+     * recognised: the new document is linked to {@code duplicateOfDocumentId} as "Duplicate of" (2.8).
+     */
+    IngestionTicketResponse uploadDocumentFromJob(UUID documentTypeId, String title, String originalFilename,
+                                                  long contentLength, InputStream content, UUID folderId,
+                                                  List<String> requestedFields, UUID duplicateOfDocumentId);
+
+    /**
      * A page of the tenant's documents, newest first.
      *
      * @param folderId          only that folder's documents; ignored when {@code allFolders}
@@ -116,6 +137,14 @@ public interface DocumentService {
      */
     org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
             UUID folderId, boolean allFolders, String query, UUID documentTypeId, UUID excludeDocumentId,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * {@link #listDocuments} narrowed to documents linked to {@code filter.relatedTo()} (or having a link of
+     * the type) - over every folder, and with exactly the same access filtering (2.8, DRM-FR-012).
+     */
+    org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listRelatedDocuments(
+            String query, UUID documentTypeId, UUID excludeDocumentId, com.oak.dms.relationship.dto.RelationshipFilter filter,
             org.springframework.data.domain.Pageable pageable);
 
     /**

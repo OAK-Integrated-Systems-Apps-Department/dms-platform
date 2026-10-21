@@ -4,6 +4,7 @@ import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
+import { RelatedDocumentsPanel } from "@/components/relationships/related-documents-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
@@ -61,6 +62,7 @@ export default function WorkflowInstancePage() {
             <Panel title="Timeline">
               <WorkflowTimeline instanceId={instance.instanceId} />
             </Panel>
+            <RelatedDocumentsPanel documentId={instance.documentId} readOnly />
             <DiscussionPanel
               documentId={instance.documentId}
               workflowInstanceId={instance.instanceId}
