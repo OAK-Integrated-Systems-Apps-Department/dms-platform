@@ -29,8 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # can see it, makes the later resolution treat torch as already satisfied
 # and skip the CUDA wheels entirely.
 #
-# This runs before COPY pyproject.toml/src on purpose: it doesn't depend
-# on either, and Docker invalidates every later layer once an earlier COPY
+# This runs before COPY pyproject.toml on purpose: it doesn't depend on
+# it, and Docker invalidates every later layer once an earlier COPY
 # changes -- ordering it first means an unrelated pyproject.toml edit
 # (e.g. bumping a version) doesn't force re-downloading a ~200MB wheel.
 ENV PYTHONPATH=/install/lib/python3.12/site-packages \
@@ -46,11 +46,24 @@ ENV PYTHONPATH=/install/lib/python3.12/site-packages \
 # Verified: `import torchvision` raised "RuntimeError: operator
 # torchvision::nms does not exist" until both came from the same
 # whl/cpu index together.
-RUN pip install --no-cache-dir --prefix=/install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# The pip download cache is a BuildKit cache mount rather than discarded
+# (`--no-cache-dir`): it lives outside the image, so it costs no image
+# size, but a layer that does get invalidated re-installs from wheels
+# already on disk instead of downloading several GB again.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefix=/install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
+# Only the third-party dependencies are installed here, from pyproject.toml
+# alone. The project's own code is NOT installed: the runtime stage copies
+# src and runs it through PYTHONPATH=/app/src, so an installed copy was
+# dead weight -- and, worse, having `COPY src` ahead of this step meant
+# editing any source file re-ran the whole multi-GB dependency install.
+# Now this layer is invalidated only when pyproject.toml changes.
+# (tomllib reads the dependency list so it is declared in one place.)
 COPY pyproject.toml .
-COPY src src
-RUN pip install --no-cache-dir --prefix=/install .
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" > requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefix=/install -r requirements.txt
 
 FROM python:3.12-slim AS runtime-base
 # libgomp1: paddlepaddle's native libpaddle.so dlopen()s libgomp.so.1 for
@@ -157,7 +170,8 @@ CMD ["python", "-m", "uvicorn", "ocr_worker.main:app", "--host", "0.0.0.0", "--p
 FROM runtime-base AS test
 USER root
 COPY pyproject.toml .
-RUN pip install --no-cache-dir "pytest>=8.3" "pytest-asyncio>=0.24" \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install "pytest>=8.3" "pytest-asyncio>=0.24" \
         "pytest-mock>=3.14" "httpx>=0.27" "pypdf>=5.0" \
     && chown -R oakdms:oakdms /home/oakdms
 USER oakdms
