@@ -12,6 +12,7 @@ import {
   GitBranch,
   Gauge,
   Grid3x3,
+  Link2,
   KeyRound,
   Landmark,
   LayoutDashboard,
@@ -277,6 +278,16 @@ export const navSections: NavSection[] = [
             permission: [
               PermissionCodes.DW_WATERMARK_TEMPLATE_CREATE,
               PermissionCodes.DW_WATERMARK_TEMPLATE_UPDATE,
+            ],
+          },
+          {
+            label: "Relationship Types",
+            icon: Link2,
+            href: "/admin/metadata/relationship-types",
+            permission: [
+              PermissionCodes.DRM_TYPES_CREATE,
+              PermissionCodes.DRM_TYPES_UPDATE,
+              PermissionCodes.DRM_TYPES_DELETE,
             ],
           },
         ],

@@ -1,5 +1,6 @@
 package com.oak.dms.document;
 
+import com.oak.dms.relationship.event.DuplicateKeptEvent;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.event.DocumentVersionCreatedEvent;
 import com.oak.dms.scanning.entity.ScanResult;
@@ -120,6 +121,12 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .createdBy(uploadedBy)
                     .build());
             version.majorVersion(1).minorVersion(0).versionLabel("1.0");
+            if (cleanResult.getDuplicateOfDocumentId() != null) {
+                // "Keep both" after duplicate detection (2.8): the link is made after this commits, in its own
+                // transaction, so a problem with it can never undo or fail the upload.
+                eventPublisher.publishEvent(new DuplicateKeptEvent(tenantId, plan.documentId(),
+                        cleanResult.getDuplicateOfDocumentId(), uploadedBy, cleanResult.getScanResultId()));
+            }
         } else {
             Document document = findDocument(plan.documentId(), tenantId);
             DocumentVersion latest = documentVersionRepository

@@ -462,6 +462,9 @@ export function BulkUploadSheet({
           folderId: target,
           // Checked and nothing found: if the same file arrives meanwhile, refuse rather than duplicate.
           refuseDuplicates: item.checked && !duplicate,
+          ...(duplicate?.choice === "both"
+            ? { duplicateOfDocumentId: duplicate.match.documentId }
+            : {}),
         }
         return {
           request,

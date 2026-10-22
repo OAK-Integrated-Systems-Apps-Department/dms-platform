@@ -168,7 +168,7 @@ export async function apiFetch(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code)
+    throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code, body?.details)
   }
   return response
 }

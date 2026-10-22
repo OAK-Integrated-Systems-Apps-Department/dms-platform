@@ -592,6 +592,56 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
     module: "WA",
     label: "Workflow template version created",
   },
+  {
+    action: "RELATIONSHIP_CREATED",
+    module: "DRM",
+    label: "Document relationship created",
+  },
+  {
+    action: "RELATIONSHIP_UPDATED",
+    module: "DRM",
+    label: "Document relationship updated",
+  },
+  {
+    action: "RELATIONSHIP_REMOVED",
+    module: "DRM",
+    label: "Document relationship removed",
+  },
+  {
+    action: "RELATIONSHIP_BATCH_CREATED",
+    module: "DRM",
+    label: "Document relationships created in bulk",
+  },
+  {
+    action: "RELATIONSHIP_REMOVED_TARGET_PURGED",
+    module: "DRM",
+    label: "Document relationship removed (document purged)",
+  },
+  {
+    action: "RELATIONSHIP_TYPE_CREATED",
+    module: "DRM",
+    label: "Relationship type created",
+  },
+  {
+    action: "RELATIONSHIP_TYPE_UPDATED",
+    module: "DRM",
+    label: "Relationship type updated",
+  },
+  {
+    action: "RELATIONSHIP_TYPE_ENABLED",
+    module: "DRM",
+    label: "Relationship type enabled",
+  },
+  {
+    action: "RELATIONSHIP_TYPE_DISABLED",
+    module: "DRM",
+    label: "Relationship type disabled",
+  },
+  {
+    action: "RELATIONSHIP_TYPE_DELETED",
+    module: "DRM",
+    label: "Relationship type deleted",
+  },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
@@ -608,6 +658,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   DVC: "Document Version Control",
   DSC: "Document Storage & Centralization",
   WA: "Workflow Automation",
+  DRM: "Document Relationships Management",
 }
 
 export function auditModuleOptions(): string[] {

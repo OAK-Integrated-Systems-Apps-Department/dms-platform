@@ -10,6 +10,7 @@ import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
 import com.oak.dms.folder.Folder;
 import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.folder.FolderException;
+import com.oak.dms.relationship.service.RelationshipPurgeHandler;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.exception.StorageObjectNotFoundException;
@@ -78,6 +79,7 @@ public class RecycleBinService {
     private final OcrArtifactWriter ocrArtifactWriter;
     private final PageImageCache pageImageCache;
     private final TransactionTemplate transactions;
+    private final RelationshipPurgeHandler relationshipPurge;
     private final int defaultRetentionDays;
 
     public RecycleBinService(DocumentRepository documentRepository, DocumentVersionRepository versionRepository,
@@ -85,7 +87,7 @@ public class RecycleBinService {
                              StorageLocationRepository storageLocationRepository, ObjectStorageServiceFactory storage,
                              UserRepository userRepository, AuditService auditService, JdbcTemplate jdbc,
                              OcrArtifactWriter ocrArtifactWriter, PageImageCache pageImageCache,
-                             PlatformTransactionManager transactionManager,
+                             PlatformTransactionManager transactionManager, RelationshipPurgeHandler relationshipPurge,
                              @Value("${dms.documents.recycle-bin.retention-days:30}") int defaultRetentionDays) {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
@@ -98,6 +100,7 @@ public class RecycleBinService {
         this.ocrArtifactWriter = ocrArtifactWriter;
         this.pageImageCache = pageImageCache;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.relationshipPurge = relationshipPurge;
         this.defaultRetentionDays = defaultRetentionDays;
     }
 
@@ -368,6 +371,8 @@ public class RecycleBinService {
                     document.getDocumentId());
             jdbc.update("delete from document_metadata where document_id = ?", document.getDocumentId());
             jdbc.update("delete from document_access where document_id = ?", document.getDocumentId());
+            // Links to or from it are removed (the history and an audit record per link stay) - 2.8 DRM-FR-011.
+            relationshipPurge.removeLinksOf(document.getTenantId(), document.getDocumentId(), document.getTitle());
             jdbc.update("update documents set purged_at = now() where document_id = ?", document.getDocumentId());
         });
         auditService.event(AuditActionCatalog.DOCUMENT_PURGED)
