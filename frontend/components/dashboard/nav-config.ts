@@ -280,6 +280,16 @@ export const navSections: NavSection[] = [
               PermissionCodes.DW_WATERMARK_TEMPLATE_UPDATE,
             ],
           },
+          {
+            label: "Relationship Types",
+            icon: Link2,
+            href: "/admin/metadata/relationship-types",
+            permission: [
+              PermissionCodes.DRM_TYPES_CREATE,
+              PermissionCodes.DRM_TYPES_UPDATE,
+              PermissionCodes.DRM_TYPES_DELETE,
+            ],
+          },
         ],
       },
       {
@@ -390,16 +400,6 @@ export const navSections: NavSection[] = [
             href: "/admin/organisations",
             platformAdminOnly: true,
           },
-        ],
-      },
-      {
-        label: "Relationship Types",
-        icon: Link2,
-        href: "/admin/metadata/relationship-types",
-        permission: [
-          PermissionCodes.DRM_TYPES_CREATE,
-          PermissionCodes.DRM_TYPES_UPDATE,
-          PermissionCodes.DRM_TYPES_DELETE,
         ],
       },
     ],
