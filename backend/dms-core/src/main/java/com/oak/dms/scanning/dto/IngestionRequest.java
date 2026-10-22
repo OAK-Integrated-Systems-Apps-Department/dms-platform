@@ -36,8 +36,26 @@ public record IngestionRequest(
          */
         List<String> ocrRequestedFields,
         /** True when this came from a bulk-import batch: queued at low priority so interactive scans aren't starved. */
-        boolean ocrLowPriority
+        boolean ocrLowPriority,
+        /** The document the uploader chose to keep a copy of after duplicate detection; the new one is linked to it as "Duplicate of". Null for no link. */
+        UUID duplicateOfDocumentId
 ) {
+
+    /** The shape every caller used before {@code duplicateOfDocumentId} existed. */
+    public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,
+                            String title, String originalFilename, long contentLength, InputStream content,
+                            UUID folderId, String versionComment, boolean refuseDuplicates,
+                            List<String> ocrRequestedFields, boolean ocrLowPriority) {
+        this(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename, contentLength, content,
+                folderId, versionComment, refuseDuplicates, ocrRequestedFields, ocrLowPriority, null);
+    }
+
+    /** The same request, whose new document will be linked to {@code originalDocumentId} as "Duplicate of". */
+    public IngestionRequest duplicateOf(UUID originalDocumentId) {
+        return new IngestionRequest(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename,
+                contentLength, content, folderId, versionComment, refuseDuplicates, ocrRequestedFields, ocrLowPriority,
+                originalDocumentId);
+    }
 
     /**
      * @param refuseDuplicates the uploader checked for duplicates and found none: refuse (409) if the same
@@ -60,13 +78,13 @@ public record IngestionRequest(
     /** A new document whose uploader asked to refuse it if the same file arrived meanwhile. */
     public IngestionRequest refusingDuplicates() {
         return new IngestionRequest(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename,
-                contentLength, content, folderId, versionComment, true, ocrRequestedFields, ocrLowPriority);
+                contentLength, content, folderId, versionComment, true, ocrRequestedFields, ocrLowPriority, duplicateOfDocumentId);
     }
 
     /** The same request, with OCR asked for on the version this produces. */
     public IngestionRequest withOcr(List<String> requestedFields, boolean lowPriority) {
         return new IngestionRequest(kind, createdReason, documentTypeId, targetDocumentId, title, originalFilename,
-                contentLength, content, folderId, versionComment, refuseDuplicates, requestedFields, lowPriority);
+                contentLength, content, folderId, versionComment, refuseDuplicates, requestedFields, lowPriority, duplicateOfDocumentId);
     }
 
     public IngestionRequest(IngestionKind kind, String createdReason, UUID documentTypeId, UUID targetDocumentId,

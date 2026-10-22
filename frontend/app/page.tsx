@@ -50,6 +50,7 @@ import {
   fetchSharedWithMe,
 } from "@/lib/documents/api"
 import { saveDownloadedFile } from "@/lib/download-file"
+import { usePageTitle } from "@/lib/use-page-title"
 
 /** A document the preview can open - from the recent or most-opened lists. */
 type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
@@ -106,6 +107,7 @@ function summaryOf(data: DashboardDto): string {
  * loads, empties and fails on its own.
  */
 export default function Page() {
+  usePageTitle("Dashboard")
   const { data: user, isLoading: isUserLoading } = useCurrentUser()
   // A platform administrator belongs to no tenant, so everything below -
   // documents, folders, activity, all of it tenant-scoped - answers 401

@@ -315,6 +315,7 @@ public class IngestionGateImpl implements IngestionGate {
                     // version is ever created for it.
                     .ocrRequestedFields(toJson(request.ocrRequestedFields()))
                     .ocrLowPriority(request.ocrLowPriority())
+                    .duplicateOfDocumentId(request.duplicateOfDocumentId())
                     .createdBy(userId)
                     .createdAt(now)
                     .build());

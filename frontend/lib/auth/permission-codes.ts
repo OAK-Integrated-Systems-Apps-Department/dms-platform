@@ -191,4 +191,13 @@ export const PermissionCodes = {
   NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
   NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",
   NOTIF_DELIVERY_LOG_RETRY: "notif.delivery-log.retry",
+
+  // Document Relationships (2.8) - editing a link reuses the create code;
+  // view-graph is seeded but has no screen yet.
+  DRM_RELATIONSHIPS_CREATE: "drm.manage-document-relationships.create",
+  DRM_RELATIONSHIPS_REMOVE: "drm.manage-document-relationships.remove",
+  DRM_RELATIONSHIPS_VIEW_GRAPH: "drm.manage-document-relationships.view-graph",
+  DRM_TYPES_CREATE: "drm.configure-relationship-types.create-type",
+  DRM_TYPES_UPDATE: "drm.configure-relationship-types.update-type",
+  DRM_TYPES_DELETE: "drm.configure-relationship-types.delete-type",
 } as const

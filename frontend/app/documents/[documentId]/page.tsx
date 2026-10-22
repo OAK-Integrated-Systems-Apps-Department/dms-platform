@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { PinButton } from "@/components/pins/pin-button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
+import { RelatedDocumentsPanel } from "@/components/relationships/related-documents-panel"
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
@@ -139,6 +140,8 @@ export default function DocumentPage() {
                   </div>
                 )}
               </Panel>
+
+              <RelatedDocumentsPanel documentId={document.documentId} />
 
               {current ? (
                 instance.isPending ? (

@@ -13,7 +13,12 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "pillow>=10.4",
-    "pymupdf>=1.24",
+    # <2: pymupdf 2.0 turned into a meta-package that also installs
+    # pymupdf_layout, pymupdf4llm and onnxruntime. With onnxruntime in the
+    # image, scripts/prefetch_models.py segfaults (exit 139, in Paddle's
+    # AnalysisPredictor::PreparePirProgram) when loading PP-LCNet_x1_0_doc_ori
+    # after Docling's warm-up. 1.28.x is the last version known to work.
+    "pymupdf>=1.24,<2",
     "docling>=2.0",
     # paddleocr>=3 no longer pulls in its own inference engine -- paddlepaddle
     # (CPU) and paddlepaddle-gpu are separate PyPI packages, unlike torch's

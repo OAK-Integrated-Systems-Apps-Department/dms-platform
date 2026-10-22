@@ -3,6 +3,8 @@ package com.oak.dms.document;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oak.dms.relationship.dto.RelationshipFilter;
+import com.oak.dms.relationship.service.RelationshipBrowseFilter;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.common.exception.MetadataValidationFailedException;
 import com.oak.dms.document.dto.DocumentListItem;
@@ -98,6 +100,7 @@ public class DocumentController {
     private final DuplicateFinder duplicateFinder;
     private final DocumentMetadataService documentMetadataService;
     private final ObjectMapper objectMapper;
+    private final RelationshipBrowseFilter relationshipBrowseFilter;
 
     /**
      * Returns an ingestion ticket, uniformly across scan providers - the
@@ -116,7 +119,9 @@ public class DocumentController {
                                                                    @RequestParam(value = "refuseDuplicates", defaultValue = "false")
                                                                    boolean refuseDuplicates,
                                                                    @RequestParam(value = "requestedFields", required = false)
-                                                                   String requestedFieldsJson)
+                                                                   String requestedFieldsJson,
+                                                                   @RequestParam(value = "duplicateOfDocumentId", required = false)
+                                                                   UUID duplicateOfDocumentId)
             throws IOException {
         // requestedFields is the Scan Documents flow's field picker. Absent for
         // an ordinary upload, which is why it stays optional rather than
@@ -126,7 +131,8 @@ public class DocumentController {
         List<String> requestedFields = parseRequestedFields(requestedFieldsJson);
         try (InputStream content = file.getInputStream()) {
             IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, title,
-                    file.getOriginalFilename(), file.getSize(), content, folderId, refuseDuplicates, requestedFields);
+                    file.getOriginalFilename(), file.getSize(), content, folderId, refuseDuplicates, requestedFields,
+                    duplicateOfDocumentId);
             return IngestionTicketResponses.toResponseEntity(ticket);
         }
     }
@@ -136,14 +142,25 @@ public class DocumentController {
     @Operation(summary = "Browse documents",
             description = "folderId: one folder's documents; without it, documents not in any folder - or every "
                     + "document with all=true. q searches titles. documentTypeId narrows to one type and "
-                    + "excludeDocumentId leaves one document out (the document picker). Newest first by default.")
+                    + "excludeDocumentId leaves one document out (the document picker). relationshipType (a type code) and "
+                    + "relatedTo (a document id) keep documents linked that way - over every folder; direction (source|target|any) "
+                    + "says which side of the link the returned documents are on: relatedTo=X&relationshipType=SUPERSEDES&direction=source "
+                    + "is the documents that supersede X. Newest first by default.")
     public PageResponse<DocumentListItem> listDocuments(
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "all", defaultValue = "false") boolean all,
             @RequestParam(value = "q", required = false) String query,
             @RequestParam(value = "documentTypeId", required = false) UUID documentTypeId,
             @RequestParam(value = "excludeDocumentId", required = false) UUID excludeDocumentId,
+            @RequestParam(value = "relationshipType", required = false) String relationshipType,
+            @RequestParam(value = "relatedTo", required = false) UUID relatedTo,
+            @RequestParam(value = "direction", required = false) String direction,
             @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        RelationshipFilter relationship = relationshipBrowseFilter.resolve(relationshipType, relatedTo, direction);
+        if (relationship != null) {
+            return PageResponse.from(documentService.listRelatedDocuments(query, documentTypeId, excludeDocumentId,
+                    relationship, pageable));
+        }
         return PageResponse.from(documentService.listDocuments(folderId, all, query, documentTypeId, excludeDocumentId,
                 pageable));
     }

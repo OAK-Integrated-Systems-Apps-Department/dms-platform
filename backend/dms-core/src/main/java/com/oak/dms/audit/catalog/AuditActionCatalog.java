@@ -223,6 +223,18 @@ public final class AuditActionCatalog {
     public static final String NOTIFICATION_PREFERENCE_CHANGED = "NOTIFICATION_PREFERENCE_CHANGED";
     public static final String NOTIFICATION_DELIVERY_RETRIED = "NOTIFICATION_DELIVERY_RETRIED";
 
+    // Document Relationships (2.8) - module DRM
+    public static final String RELATIONSHIP_CREATED = "RELATIONSHIP_CREATED";
+    public static final String RELATIONSHIP_UPDATED = "RELATIONSHIP_UPDATED";
+    public static final String RELATIONSHIP_REMOVED = "RELATIONSHIP_REMOVED";
+    public static final String RELATIONSHIP_BATCH_CREATED = "RELATIONSHIP_BATCH_CREATED";
+    public static final String RELATIONSHIP_REMOVED_TARGET_PURGED = "RELATIONSHIP_REMOVED_TARGET_PURGED";
+    public static final String RELATIONSHIP_TYPE_CREATED = "RELATIONSHIP_TYPE_CREATED";
+    public static final String RELATIONSHIP_TYPE_UPDATED = "RELATIONSHIP_TYPE_UPDATED";
+    public static final String RELATIONSHIP_TYPE_ENABLED = "RELATIONSHIP_TYPE_ENABLED";
+    public static final String RELATIONSHIP_TYPE_DISABLED = "RELATIONSHIP_TYPE_DISABLED";
+    public static final String RELATIONSHIP_TYPE_DELETED = "RELATIONSHIP_TYPE_DELETED";
+
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -551,7 +563,19 @@ public final class AuditActionCatalog {
             Map.entry(NOTIFICATION_RECIPIENT_NO_EMAIL, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
             Map.entry(NOTIFICATION_SETTING_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
             Map.entry(NOTIFICATION_PREFERENCE_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.LOW, false)),
-            Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false))
+            Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+
+            // Document Relationships (2.8) - module DRM
+            Map.entry(RELATIONSHIP_CREATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_UPDATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_REMOVED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_BATCH_CREATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_REMOVED_TARGET_PURGED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_CREATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_UPDATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_ENABLED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_DISABLED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_DELETED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

@@ -42,6 +42,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex, HttpServletRequest request) {
         log.warn("API exception on {}: {}", request.getRequestURI(), ex.getMessage());
+        if (ex.getDetails() != null) {
+            return ResponseEntity.status(ex.getStatus())
+                    .body(ErrorResponse.ofDetails(ex.getStatus().value(), ex.getStatus().getReasonPhrase(),
+                            ex.getCode(), ex.getMessage(), request.getRequestURI(), ex.getDetails()));
+        }
         return ResponseEntity.status(ex.getStatus())
                 .body(ErrorResponse.of(ex.getStatus().value(), ex.getStatus().getReasonPhrase(),
                         ex.getCode(), ex.getMessage(), request.getRequestURI()));

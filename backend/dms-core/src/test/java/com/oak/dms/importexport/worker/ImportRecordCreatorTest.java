@@ -296,16 +296,64 @@ class ImportRecordCreatorTest {
     }
 
     @Test
-    void duplicates_keepBoth_doesntEvenLook() {
+    void duplicates_keepBoth_neverSkipsOrAddsAVersion_whateverTheFinderSays() {
         ImportItem item = stagedItem();
         stub(item);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(match(true, true, true, true)));
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("stop here"));
+
+        assertThatThrownBy(() -> creator.createRecord(batchThat("keep_both"), item.getImportItemId(), fields))
+                .hasMessageContaining("stop here");
+
+        verify(versions, never()).upload(any(), any(), anyLong(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void duplicates_keepBoth_linksTheNewCopyToTheMatchedOriginal() {
+        ImportItem item = stagedItem();
+        stub(item);
+        var original = match(true, true, true, true);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(original));
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("stop here"));
+
+        assertThatThrownBy(() -> creator.createRecord(batchThat("keep_both"), item.getImportItemId(), fields))
+                .hasMessageContaining("stop here");
+
+        // The original rides on the upload (2.8): the scan result carries it to the promoter, which links the copy.
+        verify(documentService).uploadDocumentFromJob(eq(documentTypeId), eq("Q3 report"), eq("Q3 report.pdf"),
+                eq(1024L), any(), isNull(), any(), eq(original.documentId()));
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void duplicates_keepBoth_withNoMatch_usesTheOrdinaryUpload() {
+        ImportItem item = stagedItem();
+        stub(item);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of());
         when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any()))
                 .thenThrow(new RuntimeException("stop here"));
 
         assertThatThrownBy(() -> creator.createRecord(batchThat("keep_both"), item.getImportItemId(), fields))
                 .hasMessageContaining("stop here");
 
-        verifyNoInteractions(duplicates);
+        verify(documentService, never()).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
+    void duplicates_newVersion_thatEndsUpAsASeparateDocument_isLinkedToo_butAVersionIsNot() {
+        // Same name, can't edit it: added as a separate document next to the original.
+        ImportItem separate = stagedItem();
+        stub(separate);
+        var cantEdit = match(false, false, true, false);
+        when(duplicates.find(any(), any(), any())).thenReturn(List.of(cantEdit));
+        when(documentService.uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("stop here"));
+        assertThatThrownBy(() -> creator.createRecord(batchThat("new_version"), separate.getImportItemId(), fields))
+                .hasMessageContaining("stop here");
+        verify(documentService).uploadDocumentFromJob(any(), any(), any(), anyLong(), any(), any(), any(),
+                eq(cantEdit.documentId()));
     }
 
     @Test

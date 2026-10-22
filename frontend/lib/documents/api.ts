@@ -95,7 +95,9 @@ export async function uploadDocument(
    */
   requestedFields?: string[],
   /** Progress and cancellation - see apiUpload. */
-  transfer?: UploadTransfer
+  transfer?: UploadTransfer,
+  /** The existing document the user chose "Keep both" against - the backend links the new copy to it as "Duplicate of". */
+  duplicateOfDocumentId?: string
 ): Promise<IngestionTicketDto> {
   const form = new FormData()
   form.append("file", file)
@@ -103,6 +105,7 @@ export async function uploadDocument(
   const params = new URLSearchParams({ documentTypeId, title })
   if (folderId) params.set("folderId", folderId)
   if (refuseDuplicates) params.set("refuseDuplicates", "true")
+  if (duplicateOfDocumentId) params.set("duplicateOfDocumentId", duplicateOfDocumentId)
   if (requestedFields && requestedFields.length > 0) {
     params.set("requestedFields", JSON.stringify(requestedFields))
   }
@@ -198,6 +201,10 @@ export async function fetchDocuments(params: {
   documentTypeId?: string
   /** Left out of the results - e.g. the document under approval when picking supporting documents. */
   excludeDocumentId?: string
+  /** Relationship filters: a type code, and/or the document the results are related to (direction: which side the results are on). */
+  relationshipType?: string
+  relatedTo?: string
+  direction?: "source" | "target" | "any"
   page: number
   size: number
 }): Promise<DocumentPageDto> {
@@ -212,6 +219,9 @@ export async function fetchDocuments(params: {
   if (params.documentTypeId) search.set("documentTypeId", params.documentTypeId)
   if (params.excludeDocumentId)
     search.set("excludeDocumentId", params.excludeDocumentId)
+  if (params.relationshipType) search.set("relationshipType", params.relationshipType)
+  if (params.relatedTo) search.set("relatedTo", params.relatedTo)
+  if (params.direction) search.set("direction", params.direction)
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
     undefined,

@@ -61,6 +61,28 @@ class TenantCatalogueProvisioningIT {
     }
 
     @Test
+    void createTenant_installsTheRelationshipTypes() throws Exception {
+        TenantResponse tenant = tenantService.createTenant(createRequest());
+
+        try (Connection c = dataSource.getConnection()) {
+            assertThat(count(c, "select count(*) from relationship_types where tenant_id = ?::uuid and is_system"
+                    + " and is_enabled", tenant.tenantId().toString())).isEqualTo(10);
+        }
+    }
+
+    @Test
+    void provisionTenant_installsTheRelationshipTypes() throws Exception {
+        when(keycloakUserService.createUser(any(), any(), any(), any(), any())).thenReturn(UUID.randomUUID());
+
+        TenantProvisioningResponse response = tenantProvisioningService.provisionTenant(provisionRequest());
+
+        try (Connection c = dataSource.getConnection()) {
+            assertThat(count(c, "select count(*) from relationship_types where tenant_id = ?::uuid and is_system",
+                    response.tenant().tenantId().toString())).isEqualTo(10);
+        }
+    }
+
+    @Test
     void createTenant_rollsBackTheTenantWhenTheCatalogueFails() throws Exception {
         failAfterInstalling();
         CreateTenantRequest request = createRequest();

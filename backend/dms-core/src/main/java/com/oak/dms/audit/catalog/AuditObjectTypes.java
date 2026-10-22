@@ -91,6 +91,10 @@ public final class AuditObjectTypes {
     public static final String SIGNING_KEY = "SIGNING_KEY";
     /** One user's saved visual signature (user_visual_signatures, V109) - cosmetic, the object of VISUAL_SIGNATURE_UPDATED. */
     public static final String VISUAL_SIGNATURE = "VISUAL_SIGNATURE";
+    /** A link between two documents (document_relationships) - every RELATIONSHIP_* event except the type ones. */
+    public static final String DOCUMENT_RELATIONSHIP = "DOCUMENT_RELATIONSHIP";
+    /** A relationship type (relationship_types) - every RELATIONSHIP_TYPE_* event. */
+    public static final String RELATIONSHIP_TYPE = "RELATIONSHIP_TYPE";
 
     /**
      * Not a business entity like every other constant here - the "object"

@@ -10,15 +10,27 @@ public abstract class ApiException extends RuntimeException {
 
     private final HttpStatus status;
     private final String code;
+    private final Object details;
 
     protected ApiException(HttpStatus status, String message) {
         this(status, null, message);
     }
 
     protected ApiException(HttpStatus status, String code, String message) {
+        this(status, code, message, null);
+    }
+
+    /** With structured data for the response body's {@code details} (see ErrorResponse). */
+    protected ApiException(HttpStatus status, String code, String message, Object details) {
         super(message);
         this.status = status;
         this.code = code;
+        this.details = details;
+    }
+
+    /** Structured data for the response body, or null. */
+    public Object getDetails() {
+        return details;
     }
 
     public HttpStatus getStatus() {

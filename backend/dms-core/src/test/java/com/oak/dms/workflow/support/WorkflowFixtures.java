@@ -210,10 +210,19 @@ public class WorkflowFixtures {
 
     /** A document with one clean version, created through the real promoter. */
     public UUID document(UUID tenantId, UUID documentTypeId, User owner, String title) {
+        return documentKeptNextTo(tenantId, documentTypeId, owner, title, null);
+    }
+
+    /**
+     * {@link #document}, as an upload the user chose to "Keep both" next to {@code originalId} (2.8): the
+     * scan result carries it, so the promoter raises the event that links the new document to it.
+     */
+    public UUID documentKeptNextTo(UUID tenantId, UUID documentTypeId, User owner, String title, UUID originalId) {
         return tx.execute(status -> {
             ScanResult scan = cleanScan(tenantId, owner.getUserId(), IngestionKind.new_document, "initial_upload")
                     .documentTypeId(documentTypeId)
                     .title(title)
+                    .duplicateOfDocumentId(originalId)
                     .build();
             DocumentPromoter.PromotionPlan plan = promoter.prepare(scan);
             scan.setDocumentVersionId(plan.versionId());

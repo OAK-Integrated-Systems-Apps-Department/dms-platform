@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import {
+  ChevronRight,
   Layers,
   Moon,
   PenLine,
@@ -15,8 +16,13 @@ import {
 
 import { cn } from "@/lib/utils"
 import { APP_NAME } from "@/lib/app-config"
-import type { NavItem } from "@/components/dashboard/types"
+import type { NavGroup, NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
+import {
+  filterNavSections,
+  findActiveHref,
+  groupHasHref,
+} from "@/components/dashboard/nav-utils"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
@@ -27,6 +33,11 @@ import { useMyTaskCount } from "@/lib/workflow/use-my-task-count"
 import { useUnreadCount } from "@/lib/notifications/use-notifications"
 import { Dropdown } from "@/components/ui/dropdown"
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -36,8 +47,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { Toggle } from "@/components/ui/toggle"
+
+const OPEN_GROUPS_KEY = "dms.sidebar.open-groups"
+
+const ACTIVE_ITEM_CLASS =
+  "bg-sidebar-primary font-semibold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
 
 interface AppSidebarProps {
   activeLabel?: string
@@ -116,26 +136,172 @@ export function AppSidebar({
   // switched on for this deployment as well. Sections that end up with zero
   // visible items are dropped too, rather than rendering an empty group
   // header.
-  const visibleSections = navSections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter(
-        (item) =>
-          (!item.platformAdminOnly || isPlatformAdmin) &&
-          featureOn(item.feature) &&
-          (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
-          (!item.platformAdminOrPermission ||
-            isPlatformAdmin ||
-            hasAnyPermission(item.platformAdminOrPermission)) &&
-          (!item.permission ||
-            hasAnyPermission(
-              ...(Array.isArray(item.permission)
-                ? item.permission
-                : [item.permission])
-            ))
-      ),
-    }))
-    .filter((section) => section.items.length > 0)
+  const visibleSections = filterNavSections(
+    navSections,
+    (item) =>
+      (!item.platformAdminOnly || isPlatformAdmin) &&
+      featureOn(item.feature) &&
+      (!item.adminOnly || isPlatformAdmin || isTenantAdmin) &&
+      (!item.platformAdminOrPermission ||
+        isPlatformAdmin ||
+        hasAnyPermission(item.platformAdminOrPermission)) &&
+      (!item.permission ||
+        hasAnyPermission(
+          ...(Array.isArray(item.permission)
+            ? item.permission
+            : [item.permission])
+        ))
+  )
+
+  // Only one item may read as active: the longest href matching the path, so
+  // /documents/scan does not also light up "My Documents".
+  const activeHref = findActiveHref(visibleSections, pathname)
+
+  // Which collapsible groups are open, by label. A group the person has not
+  // touched is open only while it holds the current page; navigating into a
+  // group always opens it, and the choice is remembered per browser.
+  const { state: sidebarState, isMobile } = useSidebar()
+  const iconRail = sidebarState === "collapsed" && !isMobile
+  // Read from storage up front rather than in an effect: every group is
+  // permission- or feature-gated, so none renders until client-side data
+  // arrives and there is no server markup to mismatch.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {}
+    try {
+      return JSON.parse(window.localStorage.getItem(OPEN_GROUPS_KEY) ?? "{}")
+    } catch {
+      return {} // Storage unavailable or corrupt: the defaults are fine.
+    }
+  })
+  const [seenHref, setSeenHref] = useState(activeHref)
+
+  if (seenHref !== activeHref) {
+    setSeenHref(activeHref)
+    const holder = visibleSections
+      .flatMap((section) => section.groups)
+      .find((group) => groupHasHref(group, activeHref))
+    if (holder) setOpenGroups((prev) => ({ ...prev, [holder.label]: true }))
+  }
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(openGroups))
+    } catch {
+      // Not persisted this time; the in-memory state still works.
+    }
+  }, [openGroups])
+
+  function renderItemContent(item: NavItem, isActive: boolean) {
+    const badge = item.liveBadge ? liveBadges[item.liveBadge] : item.badge
+    const Icon = item.icon
+    return (
+      <>
+        <Icon size={16.5} className={cn(!isActive && "opacity-85")} />
+        <span className="flex-1">{item.label}</span>
+        {badge != null && (
+          <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
+            {badge}
+          </span>
+        )}
+      </>
+    )
+  }
+
+  function renderItem(item: NavItem) {
+    const isActive = item.href
+      ? item.href === activeHref
+      : item.label === activeLabel
+    const className = cn(
+      "h-auto py-[9px] text-[13.5px]",
+      isActive && ACTIVE_ITEM_CLASS
+    )
+    return (
+      <SidebarMenuItem key={item.label}>
+        {item.href ? (
+          <SidebarMenuButton
+            isActive={isActive}
+            tooltip={item.label}
+            render={<Link href={item.href} />}
+            className={className}
+          >
+            {renderItemContent(item, isActive)}
+          </SidebarMenuButton>
+        ) : (
+          <SidebarMenuButton
+            isActive={isActive}
+            tooltip={item.label}
+            onClick={() => onNavigate?.(item.label)}
+            className={className}
+          >
+            {renderItemContent(item, isActive)}
+          </SidebarMenuButton>
+        )}
+      </SidebarMenuItem>
+    )
+  }
+
+  function renderGroup(group: NavGroup) {
+    // The icon rail has no room for a nested list (SidebarMenuSub is hidden
+    // there), so the group's items are shown as plain icon buttons instead.
+    if (iconRail) return group.items.map(renderItem)
+
+    const hasActive = groupHasHref(group, activeHref)
+    const open = openGroups[group.label] ?? hasActive
+    const Icon = group.icon
+    return (
+      <SidebarMenuItem key={group.label}>
+        <Collapsible
+          open={open}
+          onOpenChange={(next) =>
+            setOpenGroups((prev) => ({ ...prev, [group.label]: next }))
+          }
+        >
+          <CollapsibleTrigger
+            className={cn(
+              "flex h-auto w-full items-center gap-2 rounded-md p-2 py-[9px] text-left text-[13.5px] ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2",
+              hasActive && !open && "font-semibold"
+            )}
+          >
+            <Icon size={16.5} className="shrink-0 opacity-85" />
+            <span className="flex-1">{group.label}</span>
+            <ChevronRight
+              size={14}
+              className={cn(
+                "shrink-0 opacity-70 transition-transform",
+                open && "rotate-90"
+              )}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            {/* Right margin and inner padding trimmed from the primitive's
+                defaults so a sub-item's highlight reaches the same right edge
+                as the parent rows and sits close to the guide line. The text
+                still lines up with the parent label (px-1.5 + px-3 = the
+                default's px-2.5 + px-2). */}
+            <SidebarMenuSub className="mr-0 px-1.5">
+              {group.items.map((item) => {
+                const isActive = item.href === activeHref
+                return (
+                  <SidebarMenuSubItem key={item.label}>
+                    <SidebarMenuSubButton
+                      isActive={isActive}
+                      render={<Link href={item.href ?? "#"} />}
+                      className={cn(
+                        "h-auto px-3 py-[7px] text-[13px]",
+                        isActive && ACTIVE_ITEM_CLASS
+                      )}
+                    >
+                      <span className="flex-1">{item.label}</span>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                )
+              })}
+            </SidebarMenuSub>
+          </CollapsibleContent>
+        </Collapsible>
+      </SidebarMenuItem>
+    )
+  }
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const settingsRef = useRef<HTMLDivElement>(null)
@@ -180,63 +346,8 @@ export function AppSidebar({
               </SidebarGroupLabel>
             )}
             <SidebarMenu>
-              {section.items.map((item: NavItem) => {
-                const isActive = item.href
-                  ? item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href)
-                  : item.label === activeLabel
-                const Icon = item.icon
-                const badge = item.liveBadge
-                  ? liveBadges[item.liveBadge]
-                  : item.badge
-                const content = (
-                  <>
-                    <Icon
-                      size={16.5}
-                      className={cn(!isActive && "opacity-85")}
-                    />
-                    <span className="flex-1">{item.label}</span>
-                    {badge != null && (
-                      <span className="rounded-full bg-[var(--gold)] px-1.5 py-px text-[10.5px] font-bold text-[#221a0c]">
-                        {badge}
-                      </span>
-                    )}
-                  </>
-                )
-
-                return (
-                  <SidebarMenuItem key={item.label}>
-                    {item.href ? (
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        tooltip={item.label}
-                        render={<Link href={item.href} />}
-                        className={cn(
-                          "h-auto py-[9px] text-[13.5px]",
-                          isActive &&
-                            "bg-sidebar-primary font-semibold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
-                        )}
-                      >
-                        {content}
-                      </SidebarMenuButton>
-                    ) : (
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        tooltip={item.label}
-                        onClick={() => onNavigate?.(item.label)}
-                        className={cn(
-                          "h-auto py-[9px] text-[13.5px]",
-                          isActive &&
-                            "bg-sidebar-primary font-semibold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
-                        )}
-                      >
-                        {content}
-                      </SidebarMenuButton>
-                    )}
-                  </SidebarMenuItem>
-                )
-              })}
+              {section.items.map(renderItem)}
+              {section.groups.map(renderGroup)}
             </SidebarMenu>
           </SidebarGroup>
         ))}
@@ -248,7 +359,15 @@ export function AppSidebar({
             <Dropdown
               width={260}
               noPad
-              className="top-auto right-auto bottom-[52px] left-0 text-foreground"
+              // Beside the rail on desktop so it never covers the nav list;
+              // the mobile drawer has no room to its right, so there it
+              // still opens upward over the list.
+              className={cn(
+                "top-auto right-auto text-foreground",
+                isMobile
+                  ? "bottom-[52px] left-0"
+                  : "bottom-0 left-full ml-3"
+              )}
             >
               <div className="flex items-center justify-between p-3.5 pb-2.5">
                 <span className="text-[13.5px] font-semibold">Settings</span>

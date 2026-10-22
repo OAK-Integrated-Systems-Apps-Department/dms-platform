@@ -182,9 +182,16 @@ public class ImportRecordCreator {
         }
         // Already in the DMS? The batch's own choice decides (V65).
         UUID versionOf = null;
-        Optional<DuplicateFinder.Match> duplicate = "keep_both".equals(batch.duplicateAction()) ? Optional.empty()
-                : duplicates.find(item.getStagedFileHash(), item.getFilenameReference(), batch.folderId()).stream()
-                .findFirst();
+        // The document this one will be linked to as "Duplicate of" (2.8): set when the file is added as a
+        // separate copy of something the finder recognised - which, for keep_both, the finder is only asked for this.
+        UUID duplicateOf = null;
+        boolean keepBoth = "keep_both".equals(batch.duplicateAction());
+        Optional<DuplicateFinder.Match> found = duplicates.find(item.getStagedFileHash(), item.getFilenameReference(),
+                batch.folderId()).stream().findFirst();
+        Optional<DuplicateFinder.Match> duplicate = keepBoth ? Optional.empty() : found;
+        if (keepBoth && found.isPresent()) {
+            duplicateOf = found.get().documentId();
+        }
         if (duplicate.isPresent()) {
             DuplicateFinder.Match match = duplicate.get();
             String where = "'" + match.title() + "'" + (match.folderName() != null ? " in " + match.folderName() : "");
@@ -203,11 +210,14 @@ public class ImportRecordCreator {
             if (match.sameName() && match.canAddVersion()) {
                 versionOf = match.documentId();
                 warn(item.getImportItemId(), "Added as a new version of " + where);
+                duplicateOf = null;
             } else if (match.sameName()) {
                 warn(item.getImportItemId(), "You can't edit " + where + ", so it was added as a separate document");
+                duplicateOf = match.documentId();
             } else {
                 warn(item.getImportItemId(), "The same content is already in " + where
                         + " (version " + match.matchedVersion() + ") - added as a separate document");
+                duplicateOf = match.documentId();
             }
         }
         String title = ImportTitles.resolve(rowValues(item).title(), item.getFilenameReference());
@@ -256,6 +266,9 @@ public class ImportRecordCreator {
                     // different file.
                     ? versions.upload(versionOf, item.getFilenameReference(), item.getStagedSizeBytes(), content,
                     "Uploaded again by bulk import", ocrFields, true)
+                    : duplicateOf != null
+                    ? documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
+                    item.getStagedSizeBytes(), content, batch.folderId(), ocrFields, duplicateOf)
                     : documentService.uploadDocumentFromJob(batch.documentTypeId(), title, item.getFilenameReference(),
                     item.getStagedSizeBytes(), content, batch.folderId(), ocrFields);
         } catch (ApiException e) {

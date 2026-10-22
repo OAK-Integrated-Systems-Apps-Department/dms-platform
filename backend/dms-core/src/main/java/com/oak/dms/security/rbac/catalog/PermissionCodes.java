@@ -232,4 +232,13 @@ public final class PermissionCodes {
     public static final String NOTIF_SETTINGS_MANAGE = "notif.notification-settings.manage";
     public static final String NOTIF_DELIVERY_LOG_VIEW = "notif.delivery-log.view";
     public static final String NOTIF_DELIVERY_LOG_RETRY = "notif.delivery-log.retry";
+
+    // Document Relationships Management - DRM, seeded by V10. Edit reuses the
+    // create code (D1); view-graph is seeded but unused - there is no graph view.
+    public static final String DRM_RELATIONSHIPS_CREATE = "drm.manage-document-relationships.create";
+    public static final String DRM_RELATIONSHIPS_REMOVE = "drm.manage-document-relationships.remove";
+    public static final String DRM_RELATIONSHIPS_VIEW_GRAPH = "drm.manage-document-relationships.view-graph";
+    public static final String DRM_TYPES_CREATE = "drm.configure-relationship-types.create-type";
+    public static final String DRM_TYPES_UPDATE = "drm.configure-relationship-types.update-type";
+    public static final String DRM_TYPES_DELETE = "drm.configure-relationship-types.delete-type";
 }
