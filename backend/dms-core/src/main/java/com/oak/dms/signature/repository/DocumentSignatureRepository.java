@@ -23,6 +23,8 @@ public interface DocumentSignatureRepository extends JpaRepository<DocumentSigna
 
     boolean existsByTenantIdAndTaskId(UUID tenantId, UUID taskId);
 
+    Optional<DocumentSignature> findByTenantIdAndTaskId(UUID tenantId, UUID taskId);
+
     /** One row per document ({@code SignatureLockReconcileJob}) whose workflow approved with a valid signature but whose document isn't locked yet - the after-commit lock step can fail, this is the safety net. */
     interface PendingLock {
         UUID getTenantId();

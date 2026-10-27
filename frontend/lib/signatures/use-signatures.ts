@@ -4,12 +4,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  addDocumentSignaturePage,
+  fetchDocumentSignaturePlacementInfo,
   fetchDocumentSignatures,
   fetchMyVisualSignature,
+  placeDocumentSignature,
   releaseSignatureLock,
+  removeDocumentSignaturePlacement,
   revokeSigningKey,
   saveMyVisualSignature,
   signAndApproveTask,
+  signDocumentStandalone,
   verifyDocumentSignatures,
   type SignAndApproveRequestDto,
 } from "./api"
@@ -20,6 +25,15 @@ export function useDocumentSignatures(documentId: string | null) {
   return useQuery({
     queryKey: ["signatures", documentId],
     queryFn: () => fetchDocumentSignatures(documentId as string),
+    enabled: Boolean(documentId),
+  })
+}
+
+/** Placement info for standalone signing (V118) - mirrors `useDocumentSignatures`, but for the placement/page-count check, not the signature history itself. */
+export function useDocumentSignaturePlacementInfo(documentId: string | null) {
+  return useQuery({
+    queryKey: ["signature-placement-info", "document", documentId],
+    queryFn: () => fetchDocumentSignaturePlacementInfo(documentId as string),
     enabled: Boolean(documentId),
   })
 }
@@ -54,6 +68,42 @@ export function useSignatureActions() {
     onSuccess: () => {
       invalidate()
       // Signing saves whatever was typed/drawn as the new default (see DocumentSignatureService#sign).
+      queryClient.invalidateQueries({ queryKey: ["visual-signature", "me"] })
+    },
+  })
+
+  function invalidateStandalonePlacement(documentId: string) {
+    queryClient.invalidateQueries({ queryKey: ["signature-placement-info", "document", documentId] })
+    queryClient.invalidateQueries({ queryKey: ["signatures", documentId] })
+    // addPage/place/remove/signStandalone all change the document's currentVersionId - refresh the
+    // document itself too, so anything showing it (the detail page, a "View document" preview) picks up
+    // the new version rather than reading a stale one from before this action.
+    queryClient.invalidateQueries({ queryKey: ["document", documentId] })
+  }
+
+  const addStandalonePage = useMutation({
+    mutationFn: (documentId: string) => addDocumentSignaturePage(documentId),
+    onSuccess: (_, documentId) => invalidateStandalonePlacement(documentId),
+  })
+
+  const placeStandalone = useMutation({
+    mutationFn: ({ documentId, input }: { documentId: string; input: Parameters<typeof placeDocumentSignature>[1] }) =>
+      placeDocumentSignature(documentId, input),
+    onSuccess: (_, { documentId }) => invalidateStandalonePlacement(documentId),
+  })
+
+  const removeStandalone = useMutation({
+    mutationFn: (documentId: string) => removeDocumentSignaturePlacement(documentId),
+    onSuccess: (_, documentId) => invalidateStandalonePlacement(documentId),
+  })
+
+  // Deliberately no onError toast, same reasoning as signAndApprove: the standalone-sign dialog needs
+  // the raw failure to decide whether to stay open and which field to blame (step-up vs. something else).
+  const signStandalone = useMutation({
+    mutationFn: ({ documentId, request }: { documentId: string; request: Omit<SignAndApproveRequestDto, "meaning"> }) =>
+      signDocumentStandalone(documentId, request),
+    onSuccess: (_, { documentId }) => {
+      invalidateStandalonePlacement(documentId)
       queryClient.invalidateQueries({ queryKey: ["visual-signature", "me"] })
     },
   })
@@ -98,6 +148,19 @@ export function useSignatureActions() {
     /** Rethrows on failure (e.g. wrong password) - see the mutation's own comment on why this doesn't swallow it. */
     saveVisualSignature: (input: Parameters<typeof saveMyVisualSignature>[0]) => saveVisualSignature.mutateAsync(input),
     isSavingVisualSignature: saveVisualSignature.isPending,
+    addStandalonePage,
+    placeStandalone,
+    removeStandalone: async (documentId: string) => {
+      try {
+        await removeStandalone.mutateAsync(documentId)
+        return true
+      } catch {
+        return false
+      }
+    },
+    isRemovingStandalone: removeStandalone.isPending,
+    /** Rethrows on failure (e.g. wrong password) - the standalone-sign dialog needs the raw error to decide whether to stay open. */
+    signStandalone,
     verifyAll: async (documentId: string) => {
       try {
         return await verifyAll.mutateAsync(documentId)

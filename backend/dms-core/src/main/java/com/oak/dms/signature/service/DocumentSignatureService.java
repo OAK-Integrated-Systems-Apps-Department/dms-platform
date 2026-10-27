@@ -76,6 +76,7 @@ public class DocumentSignatureService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper mapper;
+    private final com.oak.dms.workflow.repository.WorkflowInstanceRepository instanceRepository;
 
     // ------------------------------------------------------------- signing
 
@@ -99,17 +100,53 @@ public class DocumentSignatureService {
     @Transactional
     public DocumentSignature sign(WorkflowInstance instance, WorkflowTask task, SignAndApproveRequest request) {
         UUID tenantId = TenantContext.getTenantId();
-        UUID actorUserId = TenantContext.getUserId();
         UUID documentId = instance.getDocumentId();
         UUID taskId = task.getTaskId();
+        if (signatureRepository.existsByTenantIdAndTaskId(tenantId, taskId)) {
+            throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
+                    "This task has already been signed."), tenantId, TenantContext.getUserId(), documentId, taskId);
+        }
+        return signInternal(documentId, instance.getDocumentVersionId(), instance.getInstanceId(), taskId, request);
+    }
+
+    /**
+     * Signs a document directly (V118) - the current version as a standalone e-signature, not as part of
+     * approving any workflow task. {@code request.meaning()} is still caller-supplied (the standalone
+     * sign endpoint always sends {@code acknowledged}, never {@code approved} - there is no approval
+     * here), everything else works exactly like {@link #sign} with no workflow instance or task behind
+     * the resulting row.
+     */
+    @Transactional
+    public DocumentSignature signStandalone(UUID documentId, SignAndApproveRequest request) {
+        UUID tenantId = TenantContext.getTenantId();
+        Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        // Refuses while a workflow approval is actively in progress - otherwise a signer unrelated to
+        // that approval could add their own independent signature mid-approval. See
+        // StandaloneSignaturePlacementService#guardNoActiveWorkflow's own doc comment for the full reasoning.
+        if (instanceRepository.findFirstByTenantIdAndDocumentIdAndStatus(tenantId, documentId,
+                com.oak.dms.workflow.enums.InstanceStatus.in_progress).isPresent()) {
+            throw SignatureException.conflict("DOCUMENT_WORKFLOW_IN_PROGRESS",
+                    "This document has an approval workflow in progress - standalone signing isn't available until it finishes.");
+        }
+        UUID versionId = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        return signInternal(documentId, versionId, null, null, request);
+    }
+
+    /**
+     * Shared by {@link #sign} (a workflow instance/task behind it) and {@link #signStandalone} (neither) -
+     * everything from here on treats a null {@code workflowInstanceId}/{@code taskId} exactly like a real
+     * one, since nothing below actually branches on which path called it.
+     */
+    private DocumentSignature signInternal(UUID documentId, UUID versionId, UUID workflowInstanceId, UUID taskId,
+                                           SignAndApproveRequest request) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID actorUserId = TenantContext.getUserId();
 
         if (!request.consent()) {
             throw rejected(SignatureException.badRequest("SIGNATURE_CONSENT_REQUIRED",
                     "Confirm you intend to sign this document."), tenantId, actorUserId, documentId, taskId);
-        }
-        if (signatureRepository.existsByTenantIdAndTaskId(tenantId, taskId)) {
-            throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
-                    "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
         }
 
         // Cheap, no-network validation before the Keycloak round trip below - a malformed visual
@@ -134,7 +171,6 @@ public class DocumentSignatureService {
             throw rejected(e, tenantId, actorUserId, documentId, taskId);
         }
 
-        UUID versionId = instance.getDocumentVersionId();
         DocumentVersion version = versionRepository
                 .findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, documentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("DocumentVersion", versionId));
@@ -159,7 +195,7 @@ public class DocumentSignatureService {
         String manifestText = manifestBuilder.build(new SignatureManifestBuilder.ManifestInput(
                 tenantId, documentId, versionId, version.getVersionNumber(), actualHash, actorUserId,
                 signerUser.getDisplayName(), signerUser.getEmail(), request.meaning(), comment,
-                instance.getInstanceId(), taskId, signedAt));
+                workflowInstanceId, taskId, signedAt));
 
         byte[] der;
         try {
@@ -186,7 +222,7 @@ public class DocumentSignatureService {
                 .tenantId(tenantId)
                 .documentId(documentId)
                 .versionId(versionId)
-                .workflowInstanceId(instance.getInstanceId())
+                .workflowInstanceId(workflowInstanceId)
                 .taskId(taskId)
                 .signerUserId(actorUserId)
                 .signerName(signerUser.getDisplayName())
@@ -209,7 +245,8 @@ public class DocumentSignatureService {
         try {
             saved = signatureRepository.saveAndFlush(row);
         } catch (DataIntegrityViolationException e) {
-            // uq_document_signatures_one_per_task - a concurrent duplicate attempt lost the race.
+            // uq_document_signatures_one_per_task - a concurrent duplicate attempt on the same task lost
+            // the race (never fires for a standalone row, whose taskId is always null).
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
         }
@@ -219,13 +256,19 @@ public class DocumentSignatureService {
         visualSignatureService.upsert(tenantId, actorUserId, request.visualSignatureKind(), visualText,
                 visualImage == null ? null : java.util.Base64.getEncoder().encodeToString(visualImage), actorUserId);
 
+        Map<String, Object> auditValues = new java.util.HashMap<>();
+        auditValues.put("documentId", documentId);
+        auditValues.put("versionId", versionId);
+        if (taskId != null) {
+            auditValues.put("taskId", taskId);
+        }
+        auditValues.put("meaning", saved.getMeaning().name());
         auditService.event(AuditActionCatalog.DOCUMENT_SIGNED)
                 .objectType(AuditObjectTypes.DOCUMENT_SIGNATURE)
                 .objectId(saved.getSignatureId())
                 .resourceName(version.getOriginalFilename())
                 .outcome(AuditOutcome.SUCCESS)
-                .newValue(Map.of("documentId", documentId, "versionId", versionId, "taskId", taskId,
-                        "meaning", saved.getMeaning().name()))
+                .newValue(auditValues)
                 .log();
         return saved;
     }
@@ -264,6 +307,48 @@ public class DocumentSignatureService {
                 signature.getPublicKeyPem(), signature.getAlgorithm(), manifestField(signature, "fileSha256"),
                 signature.getStatus().name(), signature.getLastVerificationResult() == null ? null
                         : signature.getLastVerificationResult().name(), signature.getSignedAt());
+    }
+
+    /**
+     * Invalidates this task's signature, if it ever had one - part of retracting its approval
+     * ({@code WorkflowTaskServiceImpl#retract}). Never deletes or rewrites the evidence columns (the
+     * append-only trigger wouldn't allow it anyway): only {@code status}/{@code statusChangedAt}/
+     * {@code statusReason} change, same as every other status transition this row can ever have. A no-op
+     * (returns null) if this task was never signed, or its signature is already invalidated.
+     *
+     * @return the version id it was signed against, so the caller can revert the document/instance back
+     *         to the task's placement baseline - null if there was nothing to invalidate
+     */
+    @Transactional
+    public UUID invalidateForTaskRetraction(UUID taskId, String reason) {
+        UUID tenantId = TenantContext.getTenantId();
+        return signatureRepository.findByTenantIdAndTaskId(tenantId, taskId)
+                .filter(DocumentSignature::isValid)
+                .map(signature -> {
+                    signature.setStatus(SignatureStatus.invalidated);
+                    signature.setStatusChangedAt(OffsetDateTime.now());
+                    signature.setStatusReason(reason);
+                    DocumentSignature saved = signatureRepository.save(signature);
+                    auditService.event(AuditActionCatalog.DOCUMENT_SIGNATURE_INVALIDATED)
+                            .objectType(AuditObjectTypes.DOCUMENT_SIGNATURE)
+                            .objectId(saved.getSignatureId())
+                            .outcome(AuditOutcome.SUCCESS)
+                            .newValue(Map.of("documentId", saved.getDocumentId(), "taskId", taskId, "reason", reason))
+                            .log();
+                    return saved.getVersionId();
+                })
+                .orElse(null);
+    }
+
+    /** Same shape {@link #list} returns, for a single freshly-created signature - lets a caller (e.g. {@code StandaloneSignatureController#sign}) hand back the new row without a second round trip through {@link #list}. */
+    @Transactional(readOnly = true)
+    public DocumentSignatureResponse toPublicResponse(DocumentSignature signature) {
+        Document document = documentRepository
+                .findByDocumentIdAndTenantIdAndDeletedFalse(signature.getDocumentId(), TenantContext.getTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Document", signature.getDocumentId()));
+        UUID current = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        return toResponse(signature, current);
     }
 
     // ------------------------------------------------------------- verify

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, Lock, ShieldCheck } from "lucide-react"
+import { Eye, Loader2, Lock, PenLine, ShieldCheck, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Panel } from "@/components/ui/panel"
@@ -9,10 +10,16 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { type DocumentDto } from "@/lib/documents/api"
-import { useDocumentSignatures, useSignatureActions } from "@/lib/signatures/use-signatures"
+import { useDocumentPreview } from "@/components/workflow/use-document-preview"
+import {
+  useDocumentSignaturePlacementInfo,
+  useDocumentSignatures,
+  useSignatureActions,
+} from "@/lib/signatures/use-signatures"
 import { type DocumentSignatureDto, type SignatureStatus, type VerificationResult } from "@/lib/signatures/api"
 import { formatDateTime } from "@/lib/utils"
 
+import { SignDocumentDialog } from "./sign-document-dialog"
 import { UnlockDocumentDialog } from "./unlock-document-dialog"
 
 const STATUS_LABEL: Record<SignatureStatus, string> = {
@@ -32,13 +39,23 @@ const VERIFICATION_LABEL: Record<VerificationResult, string> = {
  * each naming its version and whether it's still the document's current
  * one - plus a locked banner (once an approved, validly-signed workflow has
  * locked the document - decision 6/7) with an Unlock action gated behind
- * `DSI_UNLOCK_SIGNED_DOCUMENTS`, and a Verify-all button (DSI-FR-003).
+ * `DSI_UNLOCK_SIGNED_DOCUMENTS`, a Verify-all button (DSI-FR-003), and - V118 -
+ * a "Sign document" action for adding a standalone e-signature outside of
+ * approving any workflow task, with its own "Remove signature" once one is
+ * placed. No longer returns null for zero signatures: that was fine when
+ * this panel was purely a read-only history, but someone who can sign now
+ * needs somewhere to start even on a never-signed document.
  */
 export function DocumentSignaturesPanel({ document }: { document: DocumentDto }) {
   const { data: signatures, isPending, isError } = useDocumentSignatures(document.documentId)
-  const { verifyAll, isVerifying } = useSignatureActions()
+  const { verifyAll, isVerifying, removeStandalone, isRemovingStandalone } = useSignatureActions()
   const { hasPermission } = usePermissions()
   const [unlocking, setUnlocking] = useState(false)
+  const [signing, setSigning] = useState(false)
+  const canSignStandalone =
+    hasPermission(PermissionCodes.DSI_SIGN_DOCUMENT_STANDALONE) && hasPermission(PermissionCodes.DOCM_DOCUMENTS_CREATE)
+  const { data: placementInfo } = useDocumentSignaturePlacementInfo(canSignStandalone ? document.documentId : null)
+  const preview = useDocumentPreview()
 
   if (isPending) {
     return (
@@ -54,15 +71,65 @@ export function DocumentSignaturesPanel({ document }: { document: DocumentDto })
       </Panel>
     )
   }
-  if (signatures.length === 0) {
+  if (signatures.length === 0 && !canSignStandalone) {
     return null
   }
 
   const locked = Boolean(document.signatureLockedAt)
   const canUnlock = hasPermission(PermissionCodes.DSI_UNLOCK_SIGNED_DOCUMENTS)
 
+  async function handleRemoveStandalone() {
+    const ok = await removeStandalone(document.documentId)
+    if (ok) {
+      toast.success("Signature removed.")
+    } else {
+      toast.error("Could not remove the placed signature.")
+    }
+  }
+
   return (
     <Panel title="Signatures">
+      {canSignStandalone && (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <span className="text-[12.5px] text-muted-foreground">
+            Add your own e-signature directly, outside of any approval.
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => preview.open(document)}
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted"
+            >
+              <Eye size={13} />
+              View document
+            </button>
+            {placementInfo?.alreadyPlaced && (
+              <button
+                type="button"
+                onClick={handleRemoveStandalone}
+                disabled={isRemovingStandalone}
+                className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRemovingStandalone ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Remove signature
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSigning(true)}
+              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2.5 py-1 text-[12px] font-bold text-primary-foreground hover:opacity-90"
+            >
+              <PenLine size={13} />
+              Sign document
+            </button>
+          </div>
+        </div>
+      )}
+
+      {signatures.length === 0 && (
+        <p className="pb-1 text-[13px] text-muted-foreground">No signatures on this document yet.</p>
+      )}
+
       {locked && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           <div className="flex items-start gap-2">
@@ -84,28 +151,34 @@ export function DocumentSignaturesPanel({ document }: { document: DocumentDto })
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-[12px] text-muted-foreground">
-          {signatures.length} signature{signatures.length === 1 ? "" : "s"}
-        </span>
-        <button
-          type="button"
-          onClick={() => verifyAll(document.documentId)}
-          disabled={isVerifying}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isVerifying ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
-          Verify all
-        </button>
-      </div>
+      {signatures.length > 0 && (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-[12px] text-muted-foreground">
+              {signatures.length} signature{signatures.length === 1 ? "" : "s"}
+            </span>
+            <button
+              type="button"
+              onClick={() => verifyAll(document.documentId)}
+              disabled={isVerifying}
+              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isVerifying ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
+              Verify all
+            </button>
+          </div>
 
-      <ul className="divide-y divide-border">
-        {signatures.map((signature) => (
-          <SignatureRow key={signature.signatureId} signature={signature} />
-        ))}
-      </ul>
+          <ul className="divide-y divide-border">
+            {signatures.map((signature) => (
+              <SignatureRow key={signature.signatureId} signature={signature} />
+            ))}
+          </ul>
+        </>
+      )}
 
       {unlocking && <UnlockDocumentDialog documentId={document.documentId} onOpenChange={setUnlocking} />}
+      {signing && <SignDocumentDialog document={document} onOpenChange={setSigning} />}
+      {preview.element}
     </Panel>
   )
 }

@@ -97,7 +97,20 @@ public class SignaturePlacementService {
         int pageCount = supported ? stampService.pageCount(readAll(current), current.contentType()) : 1;
         return new SignaturePlacementInfoResponse(resolved.instance.getDocumentId(),
                 resolved.instance.getDocumentVersionId(), current.contentType(), supported, pageCount,
-                resolved.task.getSignaturePlacementBaseVersionId() != null);
+                isCurrentlyPlaced(resolved));
+    }
+
+    /**
+     * Whether the instance is CURRENTLY targeting a stamped version, not merely whether this task has
+     * ever pinned a baseline (which, once set, stays set forever - see {@link #remove}'s own doc
+     * comment). Using the pinned-forever flag here was a bug: after a successful {@link #remove}, the
+     * instance is back at its baseline, but the baseline itself is deliberately never cleared, so the
+     * "already placed / Remove it" banner never went away - removing looked like it silently did
+     * nothing, even though the version pointer really had been reverted.
+     */
+    private static boolean isCurrentlyPlaced(Resolved resolved) {
+        UUID baseline = resolved.task.getSignaturePlacementBaseVersionId();
+        return baseline != null && !baseline.equals(resolved.instance.getDocumentVersionId());
     }
 
     /**
@@ -106,15 +119,16 @@ public class SignaturePlacementService {
      * a mark they decided they don't want after all. The baseline itself is left alone, so a later
      * re-placement for this same task still starts from the same clean original, not from nothing.
      *
-     * @throws SignatureException 409 if this task has never placed a signature
+     * @throws SignatureException 409 if this task has never placed a signature, or already reverted to
+     *                             its baseline (nothing currently placed to remove)
      */
     public void remove(UUID taskId) {
         Resolved resolved = resolve(taskId);
-        UUID baseline = resolved.task.getSignaturePlacementBaseVersionId();
-        if (baseline == null) {
+        if (!isCurrentlyPlaced(resolved)) {
             throw SignatureException.conflict("SIGNATURE_PLACEMENT_NONE",
                     "This task hasn't placed a signature on the document yet.");
         }
+        UUID baseline = resolved.task.getSignaturePlacementBaseVersionId();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
                 instanceRepository.advanceDocumentVersion(resolved.instance.getInstanceId(), resolved.tenantId,
                         baseline));
@@ -154,7 +168,11 @@ public class SignaturePlacementService {
         byte[] markPng = request.visualSignatureKind() == VisualSignatureKind.typed
                 ? typedSignatureRenderer.render(visualSignatureService.validateTypedText(request.visualSignatureText()))
                 : visualSignatureService.validateImage(request.visualSignatureImageBase64());
-        byte[] composedMark = stampComposer.compose(markPng, signerInfo(resolved.tenantId, TenantContext.getUserId()));
+        // Cosmetic choice only (see PlaceSignatureRequest#includeSignerDetails's own doc comment) - the
+        // bare mark is stamped as-is when the signer doesn't want the text block under it.
+        byte[] composedMark = request.includeSignerDetails()
+                ? stampComposer.compose(markPng, signerInfo(resolved.tenantId, TenantContext.getUserId()))
+                : markPng;
 
         byte[] stamped = stampService.stamp(sourceBytes, mimeType, request.page(), request.xRatio(), request.yRatio(),
                 request.widthRatio(), request.heightRatio(), composedMark);

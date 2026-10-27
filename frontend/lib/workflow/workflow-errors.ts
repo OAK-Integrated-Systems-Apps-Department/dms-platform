@@ -28,6 +28,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   WORKFLOW_NOT_ASSIGNEE: "This task isn't assigned to you.",
   WORKFLOW_SELF_APPROVAL_FORBIDDEN: "You can't approve a document you submitted.",
   WORKFLOW_CANCEL_FORBIDDEN: "Only the person who submitted the document (or a tenant admin) can cancel this workflow.",
+  // Review / retraction (V119)
+  WORKFLOW_RETRACTION_WINDOW_CLOSED: "This can no longer be reviewed - a later decision has already been recorded for this stage.",
+  WORKFLOW_STAGE_UNDER_REVIEW: "Another approver is currently reviewing a decision on this stage - try again shortly.",
+  WORKFLOW_NOT_YOUR_DECISION: "You can only review or retract your own approval.",
+  WORKFLOW_REVIEW_SESSION_ENDED: "This review session is no longer active - it may have expired or been closed.",
   // Template design
   WORKFLOW_TEMPLATE_CODE_EXISTS: "A workflow template with this code already exists.",
   WORKFLOW_TEMPLATE_NOT_DRAFT: "Only draft templates can be edited. Create a new version to make changes.",

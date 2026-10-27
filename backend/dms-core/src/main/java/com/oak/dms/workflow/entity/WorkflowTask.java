@@ -128,6 +128,24 @@ public class WorkflowTask {
     @Column(name = "signature_placement_base_version_id")
     private UUID signaturePlacementBaseVersionId;
 
+    /**
+     * Set together (V119, all-or-nothing per the CHECK) when this task's own decision is retracted -
+     * see {@code WorkflowTaskServiceImpl#retract}'s own doc comment. The original decision/decisionReason/
+     * actedBy/actedAt above are NOT cleared by a retraction - they simply get overwritten by whatever the
+     * signer re-decides next; the full before/after trail lives in the audit log
+     * (WORKFLOW_TASK_RETRACTED), not in these columns. These three only ever mark "this task has been
+     * retracted before" for quick display - status itself goes back to pending/claimed so the task is
+     * actionable again.
+     */
+    @Column(name = "retracted_at")
+    private OffsetDateTime retractedAt;
+
+    @Column(name = "retracted_by")
+    private UUID retractedBy;
+
+    @Column(name = "retraction_reason")
+    private String retractionReason;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

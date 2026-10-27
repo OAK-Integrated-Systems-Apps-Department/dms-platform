@@ -2,9 +2,12 @@
 
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, Loader2, Trash2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Eye, Loader2, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { friendlyMessage } from "@/lib/api-error"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { useDocument } from "@/lib/documents/use-document"
 import {
   fetchSignaturePlacementInfo,
   fetchSignaturePlacementPage,
@@ -12,7 +15,10 @@ import {
   removeSignaturePlacement,
   type VisualSignatureKind,
 } from "@/lib/signatures/api"
-import { cn } from "@/lib/utils"
+import { cn, formatSignatureStampDate } from "@/lib/utils"
+
+import { Checkbox } from "@/components/ui/checkbox"
+import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 
 interface SignaturePlacementStepProps {
   taskId: string
@@ -24,10 +30,16 @@ interface SignaturePlacementStepProps {
   onDone: () => void
 }
 
-/** Default mark size as a fraction of the page - roughly a real signature's proportions. */
+/**
+ * Default drag-box size as a fraction of the page. Only an approximate preview of where the mark will
+ * land - the backend (`DocumentStampService#aspectHeight`) always derives the actual stamped height from
+ * the composed mark+Name/Designation/Date image's own aspect ratio, never from this box's height, so that
+ * text is never stretched/squashed to fit a box sized for a bare signature line. Width and position (x/y)
+ * are what the backend actually honors.
+ */
 const DEFAULT_WIDTH_RATIO = 0.28
 const DEFAULT_HEIGHT_RATIO = 0.09
-const PAGE_WIDTH = 900
+const PAGE_WIDTH = 1400
 
 /**
  * "Place it on the document" - the step between picking a visual signature
@@ -53,8 +65,12 @@ export function SignaturePlacementStep({
     queryKey: ["signature-placement-info", taskId],
     queryFn: () => fetchSignaturePlacementInfo(taskId),
   })
+  const { data: document } = useDocument(info?.documentId ?? "")
+  const { data: currentUser, isError: currentUserError } = useCurrentUser()
+  const preview = useDocumentPreview()
   const [page, setPage] = useState(0)
   const [box, setBox] = useState({ x: 0.36, y: 0.75, width: DEFAULT_WIDTH_RATIO, height: DEFAULT_HEIGHT_RATIO })
+  const [includeSignerDetails, setIncludeSignerDetails] = useState(true)
   const imageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; boxX: number; boxY: number } | null>(null)
 
@@ -86,6 +102,7 @@ export function SignaturePlacementStep({
         visualSignatureKind,
         visualSignatureText: visualSignatureKind === "typed" ? visualSignatureText : null,
         visualSignatureImageBase64: visualSignatureKind !== "typed" ? visualSignatureImageBase64 : null,
+        includeSignerDetails,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["signatures"] })
@@ -98,6 +115,7 @@ export function SignaturePlacementStep({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["signature-placement-info", taskId] })
       queryClient.invalidateQueries({ queryKey: ["signatures"] })
+      toast.success("Signature removed - you can place it again.")
     },
   })
 
@@ -160,7 +178,29 @@ export function SignaturePlacementStep({
 
   return (
     <div className="text-left">
-      <p className="mb-3 text-[12.5px] text-muted-foreground">Drag your signature to where it should go on the page.</p>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[12.5px] text-muted-foreground">Drag your signature to where it should go on the page.</p>
+        {document && (
+          <button
+            type="button"
+            onClick={() => preview.open(document)}
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted"
+          >
+            <Eye size={13} />
+            Read document
+          </button>
+        )}
+      </div>
+
+      <div className="mb-3 rounded-btn border border-[var(--border-strong)] px-3 py-1.5">
+        <Checkbox
+          id="sign-approve-include-details"
+          label="Include my name, designation, department and date"
+          hint="Turn off to stamp just the signature mark - your identity and signing time stay in the cryptographic signature either way."
+          checked={includeSignerDetails}
+          onCheckedChange={setIncludeSignerDetails}
+        />
+      </div>
 
       {info.pageCount > 1 && (
         <div className="mb-2 flex items-center justify-center gap-3 text-[12px] font-semibold text-muted-foreground">
@@ -205,7 +245,7 @@ export function SignaturePlacementStep({
             <img
               src={pageQuery.data}
               alt={`Page ${page + 1}`}
-              className="block max-h-[52vh] w-auto max-w-full select-none"
+              className="block max-h-[78vh] w-auto max-w-full select-none"
               draggable={false}
             />
           ) : (
@@ -217,7 +257,7 @@ export function SignaturePlacementStep({
               onPointerDown={startDrag}
               onPointerMove={onDrag}
               onPointerUp={endDrag}
-              className="absolute cursor-move touch-none rounded-sm border-2 border-primary bg-primary/10"
+              className="absolute cursor-move touch-none rounded-sm border-2 border-dashed border-foreground/50 bg-foreground/5"
               style={{
                 left: `${box.x * 100}%`,
                 top: `${box.y * 100}%`,
@@ -238,6 +278,35 @@ export function SignaturePlacementStep({
                   draggable={false}
                 />
               ) : null}
+            </div>
+          )}
+
+          {/* Approximate preview only - never sent anywhere. The real Name/Position/Department/Date
+              block (SignatureStampComposer, backend) is composed into the mark itself at place() time;
+              this just shows roughly what that will say, right under the drag box, so it doesn't look
+              like only the bare mark gets stamped. Fixed black-on-white (never `text-foreground`,
+              theme-dependent and near-white in dark mode) - this sits on the rendered PAGE, always a
+              light raster image regardless of the app's own theme, exactly like the real stamp always
+              draws this text in solid black (SignatureStampComposer). */}
+          {!pageQuery.isPending && pageQuery.data && currentUser && includeSignerDetails && (
+            <div
+              className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-black shadow-sm"
+              style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
+            >
+              <p className="font-semibold">{currentUser.displayName}</p>
+              {currentUser.position && <p>{currentUser.position}</p>}
+              {currentUser.departmentName && <p>{currentUser.departmentName}</p>}
+              <p>Signed: {formatSignatureStampDate(new Date())}</p>
+            </div>
+          )}
+
+          {!pageQuery.isPending && pageQuery.data && currentUserError && includeSignerDetails && (
+            <div
+              className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-destructive shadow-sm"
+              style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
+            >
+              Could not load your profile to preview Name/Position/Department - the actual stamp isn&apos;t
+              affected.
             </div>
           )}
         </div>
@@ -291,6 +360,8 @@ export function SignaturePlacementStep({
           {info.alreadyPlaced ? "Replace signature" : "Place signature"}
         </button>
       </div>
+
+      {preview.element}
     </div>
   )
 }

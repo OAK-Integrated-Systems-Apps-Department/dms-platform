@@ -93,9 +93,14 @@ public class DocumentStampService {
     /**
      * Stamps {@code signaturePng} (a small transparent-background PNG, see
      * {@code UserVisualSignatureService}/{@code imageFileToTransparentSignature}) onto {@code source}, at the
-     * rectangle given as ratios (0..1) of the target page/image's own width/height - resolution-independent,
+     * position/width given as ratios (0..1) of the target page/image's own width/height - resolution-independent,
      * since the placement UI previews a page at whatever size fits the screen, never the page's real point/pixel
      * size.
+     * <p>
+     * {@code heightRatio} is accepted (the placement UI's drag box has one) but NOT used to size the drawn
+     * image - see {@link #aspectHeight}'s own doc comment for why the height is always derived from
+     * {@code signaturePng}'s own aspect ratio instead. Only {@code xRatio}/{@code yRatio}/{@code widthRatio}
+     * actually affect where/how big the mark ends up.
      *
      * @throws SignatureException 400 if {@code mimeType} isn't {@link #supports(String) supported}, the PDF is
      *                             signed/encrypted/restricted, or {@code page} is out of range
@@ -110,6 +115,39 @@ public class DocumentStampService {
         }
         throw SignatureException.badRequest("SIGNATURE_PLACEMENT_UNSUPPORTED_TYPE",
                 "Placing a signature on the page isn't supported for this file type.");
+    }
+
+    /**
+     * Appends one blank page, the same size as the current last page (or A4 if there are none), to a
+     * PDF - used by standalone signing (V118) when no existing page has room for the Name/Designation/
+     * Date block and the signer chooses "Add signature page" rather than dragging onto an existing one.
+     * PDF only: a still image is always exactly one page and has no notion of "appending a page" to it.
+     *
+     * @throws SignatureException 400 if {@code mimeType} isn't a PDF, or the PDF is signed/encrypted/restricted
+     */
+    public byte[] appendBlankPage(byte[] source, String mimeType) {
+        if (!MIME_PDF.equals(mimeType)) {
+            throw SignatureException.badRequest("SIGNATURE_PLACEMENT_UNSUPPORTED_TYPE",
+                    "Adding a page is only supported for PDF documents.");
+        }
+        try (PDDocument document = Loader.loadPDF(source)) {
+            refuseIfSigned(document);
+            refuseIfNotModifiable(document);
+            PDRectangle size = document.getNumberOfPages() > 0
+                    ? cropBox(document.getPage(document.getNumberOfPages() - 1)) : PDRectangle.A4;
+            document.addPage(new PDPage(size));
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream(source.length + 8 * 1024);
+            document.save(out);
+            return out.toByteArray();
+        } catch (InvalidPasswordException e) {
+            throw SignatureException.badRequest("SIGNATURE_PLACEMENT_PDF_ENCRYPTED",
+                    "This PDF is password-protected, so a page can't be added.");
+        } catch (IOException e) {
+            log.debug("Could not append a page to a PDF for signature placement", e);
+            throw SignatureException.badRequest("SIGNATURE_PLACEMENT_PDF_DAMAGED",
+                    "This PDF could not be read - it may be damaged or incomplete.");
+        }
     }
 
     // --------------------------------------------------------------- PDF
@@ -134,11 +172,14 @@ public class DocumentStampService {
             PDImageXObject image = LosslessFactory.createFromImage(document, markImage);
 
             float x = box.getLowerLeftX() + (float) (xRatio * box.getWidth());
+            float width = (float) (widthRatio * box.getWidth());
+            // heightRatio is NOT used for the drawn height - see aspectHeight's own doc comment on why
+            // stretching to whatever box the placement UI's drag handle happens to be would distort (or,
+            // for the composed Name/Designation/Date text block, squash into illegibility) the image.
+            float height = aspectHeight(markImage, width);
             // PDF's y axis runs bottom-up; the placement UI's runs top-down like the screen - flip here,
             // once, rather than asking the frontend to reason about PDF coordinate conventions at all.
-            float height = (float) (heightRatio * box.getHeight());
             float y = box.getLowerLeftY() + box.getHeight() - (float) (yRatio * box.getHeight()) - height;
-            float width = (float) (widthRatio * box.getWidth());
 
             try (PDPageContentStream content = new PDPageContentStream(document, pdPage,
                     PDPageContentStream.AppendMode.APPEND, true, true)) {
@@ -156,6 +197,20 @@ public class DocumentStampService {
             throw SignatureException.badRequest("SIGNATURE_PLACEMENT_PDF_DAMAGED",
                     "This PDF could not be read - it may be damaged or incomplete.");
         }
+    }
+
+    /**
+     * The height to draw {@code image} at for a given target {@code width}, preserving its own
+     * width:height ratio - never the caller's independently-chosen heightRatio. {@code signaturePng}
+     * here is always {@link SignatureStampComposer}'s output (the mark plus the Name/Designation/Date
+     * text block stacked underneath it, all one PNG) - letting the placement UI's drag box dictate the
+     * height too would stretch or (for a box sized for just a bare signature line, which is what the
+     * default drag box - and most users' first instinct - looks like) squash that text down to
+     * illegible or invisible. The box the signer drags still controls width and position; only its
+     * height is now derived, not honored literally.
+     */
+    private static float aspectHeight(BufferedImage image, float width) {
+        return width * image.getHeight() / image.getWidth();
     }
 
     private void refuseIfSigned(PDDocument document) {
@@ -219,7 +274,8 @@ public class DocumentStampService {
                 int x = (int) Math.round(xRatio * base.getWidth());
                 int y = (int) Math.round(yRatio * base.getHeight());
                 int width = (int) Math.round(widthRatio * base.getWidth());
-                int height = (int) Math.round(heightRatio * base.getHeight());
+                // heightRatio ignored - see aspectHeight's own doc comment.
+                int height = Math.round(aspectHeight(mark, width));
                 g.drawImage(mark, x, y, width, height, null);
             } finally {
                 g.dispose();

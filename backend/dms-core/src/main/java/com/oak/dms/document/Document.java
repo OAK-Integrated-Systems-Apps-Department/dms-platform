@@ -132,4 +132,19 @@ public class Document {
 
     @Column(name = "signature_locked_version_id")
     private UUID signatureLockedVersionId;
+
+    /**
+     * Set the first time a standalone signing action (adding a page, or
+     * placing a mark) touches this document since it last had none (V118) -
+     * the version "remove signature" reverts {@link #currentVersionId} back
+     * to. Cleared to null once that removal completes, so the next
+     * standalone signing session pins a fresh baseline rather than reverting
+     * past it. Mirrors {@code WorkflowTask#signaturePlacementBaseVersionId},
+     * but lives on the document (not a task) since a standalone session has
+     * no task/instance to hold it, and resets instead of staying pinned
+     * forever - a document can be signed, unsigned and re-signed many times
+     * over its life, unlike one task's single signing ceremony.
+     */
+    @Column(name = "standalone_signature_base_version_id")
+    private UUID standaloneSignatureBaseVersionId;
 }

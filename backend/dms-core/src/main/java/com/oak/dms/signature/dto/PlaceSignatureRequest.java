@@ -23,6 +23,15 @@ public record PlaceSignatureRequest(
         @NotNull @DecimalMin("0.01") @DecimalMax("1.0") Double heightRatio,
         @NotNull VisualSignatureKind visualSignatureKind,
         @Size(max = 150) String visualSignatureText,
-        String visualSignatureImageBase64
+        String visualSignatureImageBase64,
+        /**
+         * Whether to burn the signer's Name/Designation/Department/Date block underneath the mark
+         * ({@code SignatureStampComposer}) - true stamps mark + that text together as one image, false
+         * stamps just the bare mark. Purely cosmetic either way: neither is ever part of what
+         * {@code SignatureVerifier} actually checks (the signer's identity and signing time are already
+         * in the cryptographic manifest regardless), so turning the text off never weakens the signature
+         * itself, only what's visibly printed on the page.
+         */
+        boolean includeSignerDetails
 ) {
 }

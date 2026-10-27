@@ -17,6 +17,7 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
@@ -64,6 +65,7 @@ public class UserServiceImpl implements UserService {
     private final TenantRepository tenantRepository;
     private final AuditService auditService;
     private final SigningKeyService signingKeyService;
+    private final DepartmentRepository departmentRepository;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
@@ -207,7 +209,7 @@ public class UserServiceImpl implements UserService {
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
                 authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
-                resolveImpersonatorDisplayNameOrNull());
+                resolveImpersonatorDisplayNameOrNull(), resolveDepartmentNameOrNull(user));
     }
 
     @Override
@@ -237,7 +239,7 @@ public class UserServiceImpl implements UserService {
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
                 authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
-                resolveImpersonatorDisplayNameOrNull());
+                resolveImpersonatorDisplayNameOrNull(), resolveDepartmentNameOrNull(saved));
     }
 
     @Override
@@ -641,6 +643,15 @@ public class UserServiceImpl implements UserService {
             return null;
         }
         return userRepository.findById(impersonatorId).map(User::getDisplayName).orElse(null);
+    }
+
+    /** {@code user.getDepartmentId()}'s resolved name, or null if unset/deleted - see {@code UserResponse#departmentName}'s own doc comment on why this has to be resolved here rather than left to the frontend. */
+    private String resolveDepartmentNameOrNull(User user) {
+        if (user.getDepartmentId() == null) {
+            return null;
+        }
+        return departmentRepository.findByDepartmentIdAndTenantIdAndDeletedFalse(user.getDepartmentId(), user.getTenantId())
+                .map(com.oak.dms.department.entity.Department::getName).orElse(null);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

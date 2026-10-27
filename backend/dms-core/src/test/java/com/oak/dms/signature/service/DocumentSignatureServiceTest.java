@@ -22,6 +22,7 @@ import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowTask;
+import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,7 @@ class DocumentSignatureServiceTest {
     @Mock private StepUpAuthenticator stepUp;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private WorkflowInstanceRepository instanceRepository;
 
     private DocumentSignatureService service;
 
@@ -91,7 +93,7 @@ class DocumentSignatureServiceTest {
         service = new DocumentSignatureService(signatureRepository, documentRepository, versionRepository,
                 contentReader, userRepository, signingKeyService, visualSignatureService, signer,
                 new SignatureManifestBuilder(mapper), new SignatureVerifier(), stepUp, auditService, eventPublisher,
-                mapper);
+                mapper, instanceRepository);
         TenantContext.set(tenantId, userId);
         lenient().when(auditService.event(anyString()))
                 .thenReturn(new com.oak.dms.audit.helper.AuditEventBuilder(auditService, "x"));

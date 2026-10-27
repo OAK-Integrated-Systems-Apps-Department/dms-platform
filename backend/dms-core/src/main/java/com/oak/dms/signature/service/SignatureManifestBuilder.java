@@ -68,7 +68,8 @@ public class SignatureManifestBuilder {
         manifest.put("tenantId", input.tenantId().toString());
         manifest.put("versionId", input.versionId().toString());
         manifest.put("versionNumber", input.versionNumber());
-        manifest.put("workflowInstanceId", input.workflowInstanceId().toString());
+        // Both null for a standalone signature (V118) - signed directly, not as part of any workflow task/instance.
+        manifest.put("workflowInstanceId", input.workflowInstanceId() == null ? null : input.workflowInstanceId().toString());
         manifest.put("workflowTaskId", input.workflowTaskId() == null ? null : input.workflowTaskId().toString());
 
         try {

@@ -59,7 +59,8 @@ public class DocumentSignature {
     @Column(name = "version_id", nullable = false, updatable = false)
     private UUID versionId;
 
-    @Column(name = "workflow_instance_id", nullable = false, updatable = false)
+    /** Null for a standalone signature (V118) - signed directly, not as part of any workflow task/instance. */
+    @Column(name = "workflow_instance_id", updatable = false)
     private UUID workflowInstanceId;
 
     @Column(name = "task_id", updatable = false)

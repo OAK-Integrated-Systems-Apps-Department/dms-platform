@@ -22,6 +22,8 @@ export interface CurrentUser {
   lastLoginAt: string | null
   /** Job title (1.4) - shown on a placed signature alongside name/department/date, or null if unset. Self-set via PUT /api/v1/users/me. */
   position: string | null
+  /** Resolved department name (1.4), or null if unset - `/me`-only, like `permissions`/`roles`: not resolvable any other self-service way (see backend `UserResponse#departmentName`'s own doc comment). Used by the signature-placement preview to approximate what `SignatureStampComposer` will actually stamp. */
+  departmentName: string | null
   /** Role names for display only (never for gating - use `permissions`): fixed platform roles (`PLATFORM_ADMIN`/`TENANT_ADMIN`/`MEMBER`) first, then the tenant-defined roles that currently apply. `/me`-only, like `permissions`. */
   roles: string[]
   /**

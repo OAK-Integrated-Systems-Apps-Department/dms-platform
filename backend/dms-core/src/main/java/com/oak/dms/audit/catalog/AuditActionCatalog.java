@@ -170,6 +170,7 @@ public final class AuditActionCatalog {
     public static final String WORKFLOW_TASK_RELEASED = "WORKFLOW_TASK_RELEASED";
     public static final String WORKFLOW_TASK_APPROVED = "WORKFLOW_TASK_APPROVED";
     public static final String WORKFLOW_TASK_REJECTED = "WORKFLOW_TASK_REJECTED";
+    public static final String WORKFLOW_TASK_RETRACTED = "WORKFLOW_TASK_RETRACTED";
     public static final String WORKFLOW_STAGE_COMPLETED = "WORKFLOW_STAGE_COMPLETED";
     public static final String WORKFLOW_APPROVED = "WORKFLOW_APPROVED";
     public static final String WORKFLOW_REJECTED = "WORKFLOW_REJECTED";
@@ -518,6 +519,7 @@ public final class AuditActionCatalog {
             Map.entry(WORKFLOW_TASK_RELEASED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
             Map.entry(WORKFLOW_TASK_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
             Map.entry(WORKFLOW_TASK_REJECTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_TASK_RETRACTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
             Map.entry(WORKFLOW_STAGE_COMPLETED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
             Map.entry(WORKFLOW_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
             Map.entry(WORKFLOW_REJECTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),

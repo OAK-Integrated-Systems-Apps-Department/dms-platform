@@ -68,6 +68,16 @@ public record UserResponse(
         /** Primary department (V43), or null. Changed via PUT /api/v1/users/{id}/department. */
         UUID departmentId,
         /** Job title (V112), or null. Self-set via PUT /api/v1/users/me. */
-        String position
+        String position,
+        /**
+         * {@code departmentId}'s resolved name - the same {@code GET /api/v1/users/me}-only story as
+         * {@code permissions}/{@code roles} above (null on every other endpoint that returns this DTO).
+         * Resolving a user's own department name isn't otherwise self-service: {@code GET
+         * /api/v1/departments} and {@code GET /api/v1/users/{userId}/department} are both admin/template-
+         * designer gated, so a caller who only holds ordinary signing/approval permissions has no other
+         * way to learn their own department's name client-side (needed to preview the Name/Position/
+         * Department/Date block {@code SignatureStampComposer} stamps onto a signed document).
+         */
+        String departmentName
 ) {
 }

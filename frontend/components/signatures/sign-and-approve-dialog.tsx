@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { Loader2, PenLine } from "lucide-react"
+import { Eye, EyeOff, Loader2, PenLine } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -49,15 +49,21 @@ const STEP_1_FIELDS = [
  * 1.4 Digital Signature Integration: approving a stage that
  * `requires_signature` opens this instead of `TaskActionDialog`, as a
  * three-step wizard:
- *   1. Your signature - comment, the cosmetic visual mark (typed name in a
+ *   1. Confirm your signature - the cosmetic visual mark (typed name in a
  *      script font, or drawn/uploaded via `VisualSignatureFields`; pre-filled
  *      from `useMyVisualSignature` if the signer has a saved one, editable
  *      here, and saved as their new default on a successful sign - see
- *      `UserVisualSignatureService`'s own doc comment on the backend), and
- *      the explicit consent checkbox.
- *   2. Place it on the document - `SignaturePlacementStep` drags that same
- *      mark onto the actual page, burning it into a NEW document version
- *      BEFORE anything is signed (see that component's, and the backend
+ *      `UserVisualSignatureService`'s own doc comment on the backend), a
+ *      comment, and the explicit consent checkbox. ALWAYS shown, even with a
+ *      saved default - an earlier version of this dialog skipped straight to
+ *      step 2 in that case, which meant consent was never actually ticked
+ *      and "Sign and approve" could fail validation silently at step 3 with
+ *      no visible error. Showing this step every time is what makes that
+ *      structurally impossible now, not just visually clearer.
+ *   2. Read and place it on the document - `SignaturePlacementStep` renders
+ *      the real page large enough to actually read, and lets the signer drag
+ *      that same mark onto it, burning it into a NEW document version BEFORE
+ *      anything is signed (see that component's, and the backend
  *      `SignaturePlacementService`'s, own doc comments for why this can't be
  *      folded into the sign-and-approve transaction itself). Skipped
  *      automatically for a file type that can't be stamped.
@@ -67,7 +73,9 @@ const STEP_1_FIELDS = [
  *      on its own, which is exactly why it's kept separate rather than
  *      presented as if it alone were "the signature." No OTP field here -
  *      nobody in this deployment has MFA enabled yet; see the schema's own
- *      doc comment for what happens if that changes.
+ *      doc comment for what happens if that changes. Clicking Back from here
+ *      clears the password (never silently reused) - reviewing the placement
+ *      again means re-proving it's still you before signing.
  * <p>
  * On failure the dialog drops back to step 3 with everything from steps 1-2
  * kept exactly as entered - only `password` is cleared, never resubmitted or
@@ -85,12 +93,7 @@ export function SignAndApproveDialog({
   const { data: savedVisualSignature, isFetched: savedVisualSignatureFetched } = useMyVisualSignature()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [formError, setFormError] = useState<string | null>(null)
-  // Once, the first time the saved signature finishes loading: if the signer already has one, skip
-  // straight past "pick/edit your signature" to placement - re-picking it every single approval is
-  // exactly the friction this skip exists to remove. Still reachable via step 2's own Back button for
-  // anyone who actually wants to change it this time; a signer with nothing saved yet still starts at
-  // step 1, since there's nothing to skip to.
-  const skippedStep1Ref = useRef(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const {
     register,
@@ -133,12 +136,6 @@ export function SignAndApproveDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedVisualSignature])
-
-  useEffect(() => {
-    if (skippedStep1Ref.current || !savedVisualSignatureFetched) return
-    skippedStep1Ref.current = true
-    if (savedVisualSignature) setStep(2)
-  }, [savedVisualSignatureFetched, savedVisualSignature])
 
   async function goToStep2() {
     const valid = await trigger(STEP_1_FIELDS)
@@ -185,10 +182,16 @@ export function SignAndApproveDialog({
     }
   }
 
+  /** Reviewing the placement again means re-proving it's still you before the final submit. */
+  function backToPlacement() {
+    setValue("password", "")
+    setStep(2)
+  }
+
   return (
     <AlertDialog open onOpenChange={onOpenChange}>
       <AlertDialogPortal>
-        <AlertDialogPopup className="sm:max-w-xl">
+        <AlertDialogPopup className={cn(step === 2 ? "sm:max-w-4xl" : "sm:max-w-xl")}>
           <form onSubmit={handleSubmit(submit)}>
             <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-primary/10 text-primary">
               <PenLine size={20} aria-hidden="true" />
@@ -202,7 +205,7 @@ export function SignAndApproveDialog({
 
             <p className="mb-4 text-center text-[11.5px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
               Step {step} of 3 -{" "}
-              {step === 1 ? "Your signature" : step === 2 ? "Place it on the document" : "Confirm it's you"}
+              {step === 1 ? "Confirm your signature" : step === 2 ? "Read and place it on the document" : "Confirm it's you"}
             </p>
 
             {versionChanged && (
@@ -306,20 +309,33 @@ export function SignAndApproveDialog({
 
               <div className="mb-4">
                 <Label htmlFor="sign-approve-password">Password</Label>
-                <Input
-                  id="sign-approve-password"
-                  type="password"
-                  autoComplete="current-password"
-                  aria-invalid={Boolean(errors.password)}
-                  {...register("password")}
-                />
+                <div className="relative">
+                  <Input
+                    id="sign-approve-password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    aria-invalid={Boolean(errors.password)}
+                    className="pr-10"
+                    {...register("password")}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 {errors.password && <p className="mt-1.5 text-[12px] text-destructive">{errors.password.message}</p>}
               </div>
 
               <div className="flex items-center justify-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={backToPlacement}
                   disabled={isSubmitting}
                   className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 >

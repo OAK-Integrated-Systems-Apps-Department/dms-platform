@@ -1,6 +1,6 @@
 import { ApiError } from "@/lib/api-error"
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { apiFetch, apiFetchJson, apiFetchVoid } from "@/lib/api-fetch"
 import { type TaskActionResultDto } from "@/lib/workflow/api"
 
 const DOCUMENTS = `${API_BASE_URL}/api/v1/documents`
@@ -113,7 +113,7 @@ export async function fetchSignatureEvidence(signatureId: string): Promise<Signa
 
 /** Unlocks a signature-locked document. A reason is mandatory. */
 export async function releaseSignatureLock(documentId: string, reason: string): Promise<void> {
-  await apiFetchJson(
+  await apiFetchVoid(
     `${DOCUMENTS}/${documentId}/signature-lock/release`,
     { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ reason }) },
     "Could not unlock this document."
@@ -122,7 +122,7 @@ export async function releaseSignatureLock(documentId: string, reason: string): 
 
 /** Revokes a user's active signing key. A reason is mandatory. */
 export async function revokeSigningKey(userId: string, reason: string): Promise<void> {
-  await apiFetchJson(
+  await apiFetchVoid(
     `${SIGNING_KEYS}/${userId}/revoke`,
     { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ reason }) },
     "Could not revoke this signing key."
@@ -215,6 +215,8 @@ export async function placeSignatureOnDocument(
     yRatio: number
     widthRatio: number
     heightRatio: number
+    /** Whether to burn the signer's Name/Designation/Department/Date block underneath the mark - cosmetic only, never part of what's cryptographically verified. */
+    includeSignerDetails: boolean
   } & Pick<SignAndApproveRequestDto, "visualSignatureKind" | "visualSignatureText" | "visualSignatureImageBase64">
 ): Promise<PlaceSignatureResultDto> {
   return apiFetchJson(
@@ -226,7 +228,7 @@ export async function placeSignatureOnDocument(
 
 /** Removes this task's placed signature - the stamped version itself is kept, just no longer what will be signed. */
 export async function removeSignaturePlacement(taskId: string): Promise<void> {
-  await apiFetchJson(
+  await apiFetchVoid(
     `${WORKFLOW_TASKS}/${taskId}/signature-placement`,
     { method: "DELETE" },
     "Could not remove the placed signature."
@@ -246,5 +248,86 @@ export async function signAndApproveTask(
     `${WORKFLOW_TASKS}/${taskId}/sign-and-approve`,
     { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(request) },
     "Could not sign and approve this task."
+  )
+}
+
+// ----------------------------------------------------------------------
+// Standalone signing (1.4, V118) - add an e-signature straight to a
+// document, independent of approving any workflow task. Same shapes as the
+// task-scoped placement/sign calls above, mirrored under
+// `/api/v1/documents/{documentId}/...` instead of
+// `/api/v1/workflow/tasks/{taskId}/...`.
+// ----------------------------------------------------------------------
+
+/** Whether/how many pages this document's current version can be signature-placed on. */
+export async function fetchDocumentSignaturePlacementInfo(documentId: string): Promise<SignaturePlacementInfoDto> {
+  return apiFetchJson(
+    `${DOCUMENTS}/${documentId}/signature-placement`,
+    undefined,
+    "Could not load this document for signature placement."
+  )
+}
+
+/** Page `page` (0-based) rendered for the placement UI to drag the signature onto. */
+export async function fetchDocumentSignaturePlacementPage(
+  documentId: string,
+  page: number,
+  width: number
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${DOCUMENTS}/${documentId}/signature-placement/pages/${page}?width=${width}`,
+    undefined,
+    "Could not load this page."
+  )
+  return response.blob()
+}
+
+/** Appends a blank page to make room for the signature block - only when no existing page has room. PDF only. */
+export async function addDocumentSignaturePage(documentId: string): Promise<SignaturePlacementInfoDto> {
+  return apiFetchJson(
+    `${DOCUMENTS}/${documentId}/signature-placement/pages`,
+    { method: "POST" },
+    "Could not add a page to this document."
+  )
+}
+
+/** Burns the signer's visual signature (with Name/Designation/Date) onto the given page/rectangle. */
+export async function placeDocumentSignature(
+  documentId: string,
+  input: {
+    page: number
+    xRatio: number
+    yRatio: number
+    widthRatio: number
+    heightRatio: number
+    /** Whether to burn the signer's Name/Designation/Department/Date block underneath the mark - cosmetic only, never part of what's cryptographically verified. */
+    includeSignerDetails: boolean
+  } & Pick<SignAndApproveRequestDto, "visualSignatureKind" | "visualSignatureText" | "visualSignatureImageBase64">
+): Promise<PlaceSignatureResultDto> {
+  return apiFetchJson(
+    `${DOCUMENTS}/${documentId}/signature-placement`,
+    { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(input) },
+    "Could not place your signature on the document."
+  )
+}
+
+/** Removes the document's standalone signature block - the stamped version itself is kept, just no longer current. */
+export async function removeDocumentSignaturePlacement(documentId: string): Promise<void> {
+  await apiFetchVoid(
+    `${DOCUMENTS}/${documentId}/signature-placement`,
+    { method: "DELETE" },
+    "Could not remove the placed signature."
+  )
+}
+
+/** Cryptographically signs the document's current version directly - meaning is always "acknowledged" (no approval involved). */
+export async function signDocumentStandalone(
+  documentId: string,
+  request: Omit<SignAndApproveRequestDto, "meaning">
+): Promise<DocumentSignatureDto> {
+  return apiFetchJson(
+    `${DOCUMENTS}/${documentId}/sign`,
+    { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...request, meaning: "acknowledged" }) },
+    "Could not sign this document."
   )
 }

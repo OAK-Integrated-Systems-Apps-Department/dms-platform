@@ -183,6 +183,21 @@ export async function apiFetchJson<T>(
   return response.json() as Promise<T>
 }
 
+/**
+ * `apiFetch` for an endpoint that returns no body (a `void`-returning controller method - 200/204 with
+ * an empty response) - never calls `.json()`, unlike `apiFetchJson`. Calling `.json()` on a genuinely
+ * empty body throws "Unexpected end of JSON input" (not a caught `ApiError`, so it surfaces as a raw,
+ * unfriendly error) - use this instead of `apiFetchJson<void>` for any DELETE/POST that doesn't return
+ * a response body.
+ */
+export async function apiFetchVoid(
+  input: string,
+  init?: RequestInit,
+  fallbackMessage?: string
+): Promise<void> {
+  await apiFetch(input, init, fallbackMessage)
+}
+
 /** Byte progress and cancellation for `apiUpload`. */
 export interface UploadTransfer {
   /** Bytes of the request body sent so far, out of `total`. */
