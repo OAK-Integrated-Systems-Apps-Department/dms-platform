@@ -115,7 +115,7 @@ export interface WorkflowStageDto {
   escalationUserId: string | null
   /** Whether approvers may pause their task to request information (default true). */
   allowInfoRequests: boolean
-  /** Whether approving this stage requires a digital signature (default false, 1.4). */
+  /** Whether approving this stage requires a digital signature - always true, every stage (V117, 1.4). */
   requiresSignature: boolean
   participants: WorkflowParticipantDto[]
 }
@@ -187,8 +187,6 @@ export interface UpsertStagePayload {
   escalationTarget?: EscalationTarget | null
   escalationUserId?: string | null
   allowInfoRequests?: boolean
-  /** Only takes effect for a caller holding DSI_CONFIGURE_WORKFLOW_RULES - omitted otherwise, which leaves it unchanged. */
-  requiresSignature?: boolean
   participants: ParticipantPayload[]
 }
 

@@ -33,10 +33,11 @@ public record UpsertWorkflowStageRequest(
         /** Whether approvers may pause their task to request information; null means true (V47 default). */
         Boolean allowInfoRequests,
         /**
-         * Whether approving this stage requires a digital signature; null
-         * means false (V105 default). Only settable by a caller holding
-         * {@code DSI_CONFIGURE_WORKFLOW_RULES} - see
-         * {@code WorkflowTemplateServiceImpl#upsertStage}.
+         * Ignored (V117): every stage now requires a digital signature to
+         * approve, unconditionally - see
+         * {@code WorkflowTemplateServiceImpl#applyStage}. Kept on the
+         * request shape only so older clients that still send it don't fail
+         * deserialization.
          */
         Boolean requiresSignature,
         @NotEmpty @Size(max = 50) List<@Valid ParticipantRequest> participants

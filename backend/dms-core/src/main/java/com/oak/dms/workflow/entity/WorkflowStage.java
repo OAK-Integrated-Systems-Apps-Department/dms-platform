@@ -94,13 +94,14 @@ public class WorkflowStage {
      * Whether approving this stage requires a digital signature (V105, 1.4
      * Digital Signature Integration) - when true, the plain
      * {@code /approve} endpoint refuses with 409 WORKFLOW_SIGNATURE_REQUIRED
-     * and the approver must use {@code /sign-and-approve} instead. Setting
-     * this is gated behind {@code DSI_CONFIGURE_WORKFLOW_RULES}, not the
-     * ordinary workflow-template permissions.
+     * and the approver must use {@code /sign-and-approve} instead.
+     * Mandatory for every stage as of V117 - no longer configurable, never
+     * false: {@code WorkflowTemplateServiceImpl#applyStage} forces this true
+     * on every create/update regardless of what the caller sends.
      */
     @Column(name = "requires_signature", nullable = false)
     @Builder.Default
-    private boolean requiresSignature = false;
+    private boolean requiresSignature = true;
 
     @Column(name = "created_by")
     private UUID createdBy;

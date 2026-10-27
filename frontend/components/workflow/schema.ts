@@ -91,7 +91,7 @@ export function buildStageSchema(defaults?: TemplateReminderDefaults | null) {
       escalationTarget: z.enum(["none", "department_head", "named_user"]),
       escalationUserId: z.string().nullable(),
       allowInfoRequests: z.boolean(),
-      /** Only settable by someone holding DSI_CONFIGURE_WORKFLOW_RULES - see stage-card.tsx's own note when it's read-only. */
+      /** Always true (V117) - not actually sent to the backend, which ignores the field now. Kept so the form has a value to display. */
       requiresSignature: z.boolean(),
       participants: z
         .array(
