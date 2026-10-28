@@ -4,6 +4,7 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.observability.DmsMetrics;
 import com.oak.dms.scanning.dto.ScanTarget;
 import com.oak.dms.scanning.dto.ThreatQuarantinedEvent;
 import com.oak.dms.scanning.dto.ScanVerdict;
@@ -79,6 +80,7 @@ public class IngestionProcessor {
     private final ScanProperties scanProperties;
     private final ReleaseAttemptFinalizer releaseAttemptFinalizer;
     private final ApplicationEventPublisher eventPublisher;
+    private final DmsMetrics dmsMetrics;
     private final TransactionTemplate transactionTemplate;
 
     public IngestionProcessor(ScanResultRepository scanResultRepository,
@@ -93,6 +95,7 @@ public class IngestionProcessor {
                               ScanProperties scanProperties,
                               ReleaseAttemptFinalizer releaseAttemptFinalizer,
                               ApplicationEventPublisher eventPublisher,
+                              DmsMetrics dmsMetrics,
                               PlatformTransactionManager transactionManager) {
         this.scanResultRepository = scanResultRepository;
         this.quarantineRecordRepository = quarantineRecordRepository;
@@ -106,6 +109,7 @@ public class IngestionProcessor {
         this.scanProperties = scanProperties;
         this.releaseAttemptFinalizer = releaseAttemptFinalizer;
         this.eventPublisher = eventPublisher;
+        this.dmsMetrics = dmsMetrics;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -149,6 +153,8 @@ public class IngestionProcessor {
             long started = System.nanoTime();
             ScanVerdict verdict = scanner.scan(engine, target(row, staging));
             long durationMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+
+            dmsMetrics.recordScan(verdict.status().name(), verdict.engineName(), durationMs);
 
             switch (verdict.status()) {
                 case CLEAN -> promote(row, staging, verdict, durationMs, leaseToken);
@@ -405,6 +411,11 @@ public class IngestionProcessor {
         if (Boolean.TRUE.equals(committed)) {
             purgeStaging(scanResultId);
         }
+    }
+
+    /** Releases a staged row this caller holds to the retry scheduler, due at once. */
+    void handOff(UUID scanResultId, OffsetDateTime leaseToken) {
+        reschedule(scanResultId, leaseToken, OffsetDateTime.now());
     }
 
     private void reschedule(UUID scanResultId, OffsetDateTime leaseToken, OffsetDateTime nextAttemptAt) {

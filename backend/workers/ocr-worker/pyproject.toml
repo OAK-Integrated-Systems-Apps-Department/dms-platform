@@ -1,0 +1,82 @@
+[project]
+name = "ocr-worker"
+version = "0.1.0"
+description = "Oak DMS OCR & Scanning microservice (OS-FR-001..006, OS-NFR-001..006)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "aio-pika>=9.4",
+    "pika>=1.3",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pillow>=10.4",
+    # <2: pymupdf 2.0 turned into a meta-package that also installs
+    # pymupdf_layout, pymupdf4llm and onnxruntime. With onnxruntime in the
+    # image, scripts/prefetch_models.py segfaults (exit 139, in Paddle's
+    # AnalysisPredictor::PreparePirProgram) when loading PP-LCNet_x1_0_doc_ori
+    # after Docling's warm-up. 1.28.x is the last version known to work.
+    "pymupdf>=1.24,<2",
+    "docling>=2.0",
+    # paddleocr>=3 no longer pulls in its own inference engine -- paddlepaddle
+    # (CPU) and paddlepaddle-gpu are separate PyPI packages, unlike torch's
+    # single-name/local-version-tag scheme, so this stays CPU-only with no
+    # special index needed (see Dockerfile's torch comment for the case
+    # where that *isn't* true).
+    "paddlepaddle>=3.0",
+    "paddleocr>=2.9",
+    # Selectable OCR field extraction's "language" field: ISO 639-1 codes
+    # directly, pure-Python, no model download -- no existing dependency
+    # here does language detection at all.
+    "langdetect>=1.0.9",
+    # Phase 1 stability (docs/ocr/failure-analysis.md #4): real magic-byte
+    # MIME sniffing, replacing trust in the caller-supplied Content-Type.
+    # Was already present transitively (pulled in by another dependency)
+    # but never declared directly -- pinning it explicitly rather than
+    # relying on that accident.
+    "filetype>=1.2",
+    # New format support this phase (Decision 3): HEIC/HEIF has no
+    # registered MIME type in most browsers (verified live -- Chrome
+    # itself sends application/octet-stream for a real .heic upload) and
+    # fitz/MuPDF can't decode it directly either (verified live,
+    # FileDataError) -- pillow-heif registers itself as a real PIL plugin
+    # so a plain PIL.Image.open handles it (layout.py's
+    # _decode_via_pil_to_png).
+    "pillow-heif>=0.18",
+    # Phase 1 stability (B.2): a plain concurrent.futures.ProcessPoolExecutor
+    # cannot kill a hung task -- future.result(timeout=...) raises
+    # client-side but the underlying process keeps running forever,
+    # permanently wasting that worker slot (verified against the library's
+    # own documented behavior). pebble.ProcessPool genuinely terminates and
+    # auto-respawns the worker process on a real per-task timeout.
+    "pebble>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
+    "httpx>=0.27",
+    # Test-fixture construction only (encrypted/corrupt PDF test fixtures,
+    # docs/ocr/failure-analysis.md's own repro batch) -- never imported by
+    # production code.
+    "pypdf>=5.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "model: real PaddleOCR/Docling/subprocess-pool tests -- slow, needs the actual installed models/deps; excluded from the default run (pytest -m model to run them).",
+]
+addopts = "-m 'not model'"

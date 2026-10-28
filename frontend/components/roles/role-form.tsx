@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { AlertTriangle } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -38,14 +38,14 @@ interface RoleFormProps {
 export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
   const router = useRouter()
   const isSystemRole = Boolean(role?.system)
-  const { groups: permissionGroups, loading: catalogLoading } = usePermissionCatalog()
+  const { groups: permissionGroups, loading: catalogLoading } =
+    usePermissionCatalog()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const {
     register,
     handleSubmit,
     control,
-    watch,
     setValue,
     formState: { errors, isSubmitting, isValid },
   } = useForm<RoleFormValues>({
@@ -59,7 +59,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
     mode: "onChange",
   })
 
-  const selectedPermissions = watch("permissions")
+  const selectedPermissions = useWatch({ control, name: "permissions" })
 
   function togglePermission(id: string, checked: boolean) {
     setValue(

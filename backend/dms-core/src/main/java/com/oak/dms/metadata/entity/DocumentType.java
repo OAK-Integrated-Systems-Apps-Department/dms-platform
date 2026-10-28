@@ -75,6 +75,17 @@ public class DocumentType {
     @Column(name = "default_retention_policy_id")
     private UUID defaultRetentionPolicyId;
 
+    /**
+     * Whether documents of this type are meant to carry a watermark.
+     * <p>
+     * <b>Not enforced yet.</b> It is stored and returned by the API, and
+     * nothing reads it to decide anything: a user can watermark a document
+     * whose type says false, and can download one whose type says true
+     * without a mark. Phase 1 watermarking is entirely on request - see
+     * docs/watermarking.md. This is a Phase 2 seam, left untouched in
+     * behaviour on purpose so that turning enforcement on later is a change
+     * in one place rather than an archaeology exercise.
+     */
     @Column(name = "requires_watermark", nullable = false)
     @Builder.Default
     private boolean requiresWatermark = false;

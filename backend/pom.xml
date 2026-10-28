@@ -43,6 +43,41 @@
           before release.
         -->
         <keycloak-admin-client.version>26.0.12</keycloak-admin-client.version>
+
+        <!--
+          Code analysis. JaCoCo measures coverage during `mvn verify`;
+          sonar-maven-plugin uploads the result. The two are separate on
+          purpose - coverage is worth having whether or not anyone runs
+          Sonar, so JaCoCo is bound to the normal build and `sonar:sonar`
+          is only ever invoked explicitly.
+        -->
+        <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
+
+        <!--
+          The backend and the frontend are two Sonar projects, not one. A
+          single project key can only be written by one scanner run: the
+          Maven scanner here and the CLI scanner that analyses frontend/
+          would each overwrite the other's results.
+
+          sonar.host.url and sonar.token are deliberately NOT here - a token
+          is a credential and belongs in the environment (SONAR_HOST_URL /
+          SONAR_TOKEN), never in a committed file.
+        -->
+        <sonar.projectKey>oak-dms-backend</sonar.projectKey>
+        <sonar.projectName>Oak DMS - backend</sonar.projectName>
+        <!--
+          Generated code has no author to fix what Sonar finds in it, and
+          counting it drags the coverage figure toward meaningless.
+        -->
+        <sonar.coverage.exclusions>
+            **/dto/**,**/*Response.java,**/*Request.java,**/config/**,**/DmsCoreApplication.java
+        </sonar.coverage.exclusions>
+        <!--
+          Left at its default (target/site/jacoco/jacoco.xml, per module) -
+          which is exactly where the report goal below writes. Set it only
+          if that ever stops being true.
+          <sonar.coverage.jacoco.xmlReportPaths>
+        -->
     </properties>
 
     <dependencyManagement>
@@ -59,6 +94,38 @@
         </dependencies>
     </dependencyManagement>
 
+    <build>
+        <plugins>
+            <!--
+              Pinned rather than resolved as "whatever is newest", so an
+              analysis run a year from now is the same analysis run. Never
+              bound to a phase: `sonar:sonar` is invoked explicitly, so an
+              ordinary build never needs a Sonar server to exist.
+
+              Declared here because `sonar:sonar` is invoked on THIS pom
+              (-f backend/pom.xml), which analyses the whole reactor in one
+              pass. JaCoCo is NOT here - see the note on <modules> below.
+            -->
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>${sonar-maven-plugin.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!--
+      NOTE: this pom aggregates its modules but does not parent them.
+      dms-core (and each worker) declares spring-boot-starter-parent as its
+      own <parent>, so nothing in this file's <build> or <properties> is
+      inherited by them - the modules only get built together, not
+      configured together.
+
+      That is why jacoco-maven-plugin is declared in dms-core/pom.xml rather
+      than here: put in this file it would attach only to this pom, which
+      has no source to measure, and coverage would silently come out empty.
+      Any new module needs its own copy of that plugin block.
+    -->
     <modules>
         <module>dms-core</module>
         <!--

@@ -39,7 +39,8 @@ public class DocumentTypeController {
     }
 
     @GetMapping("/{documentTypeId}")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
+    // Template managers (V70) read the type they're adding templates to - they can't change it.
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_CREATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_DELETE)")
     @Operation(summary = "Get a document type by id")
     public DocumentTypeResponse getDocumentType(@PathVariable UUID documentTypeId) {
         return documentTypeService.getDocumentType(documentTypeId);
@@ -55,7 +56,7 @@ public class DocumentTypeController {
     }
 
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_CREATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_DELETE)")
     @Operation(summary = "List document types in the caller's tenant",
             description = "Also readable by mdtm.manage-type-field-mapping.* - the document-type column "
                     + "picker on the Mapping matrix screen is populated straight from this list.")

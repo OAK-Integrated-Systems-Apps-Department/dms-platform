@@ -4,9 +4,14 @@ import com.oak.dms.importexport.entity.ExportJob;
 import com.oak.dms.importexport.enums.ExportJobStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,4 +40,17 @@ public interface ExportJobRepository extends JpaRepository<ExportJob, UUID> {
      * expires_at never match.
      */
     List<ExportJob> findByExpiresAtBeforeOrderByExpiresAtAsc(OffsetDateTime now);
+
+    /** Finished exports whose file is past its expiry - the purge sweep. */
+    List<ExportJob> findByStatusAndExpiresAtBefore(ExportJobStatus status, OffsetDateTime now);
+
+    /** Jobs not finished yet - resumed at startup. */
+    List<ExportJob> findByStatusIn(Collection<ExportJobStatus> statuses);
+
+    long countByTenantIdAndRequestedByAndStatusIn(UUID tenantId, UUID requestedBy, Collection<ExportJobStatus> statuses);
+
+    /** Locks the job row - status changes by the worker, the purge and the request side never interleave. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from ExportJob j where j.exportJobId = :id")
+    Optional<ExportJob> lockById(@Param("id") UUID exportJobId);
 }

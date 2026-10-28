@@ -2,14 +2,24 @@
 
 import { useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
-import { isNetworkError, isSessionExpired } from "@/lib/api-error"
+import {
+  isNetworkError,
+  isOrganisationInactive,
+  isSessionExpired,
+} from "@/lib/api-error"
+import { API_BASE_URL } from "@/lib/api-config"
 import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
 import { useProactiveSessionRefresh } from "@/lib/auth/use-proactive-session-refresh"
 
@@ -73,9 +83,21 @@ export function Providers({
     // flag/timer: a page with several queries in flight can fail together
     // in one connection drop, and should still only produce one toast.
     let networkErrorHandled = false
-    let client: QueryClient
 
     function handleGlobalError(error: unknown) {
+      // The organisation was suspended or closed mid-session: sign out and say why.
+      if (isOrganisationInactive(error)) {
+        if (sessionExpiredHandled) return
+        sessionExpiredHandled = true
+        client.clear()
+        void fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        }).catch(() => undefined)
+        router.push("/login?reason=organisation-inactive")
+        return
+      }
+
       if (isSessionExpired(error)) {
         if (sessionExpiredHandled) return
         sessionExpiredHandled = true
@@ -106,7 +128,9 @@ export function Providers({
       }
     }
 
-    client = new QueryClient({
+    // handleGlobalError only reads `client` when a query/mutation fails,
+    // by which point this const is long initialised.
+    const client = new QueryClient({
       queryCache: new QueryCache({ onError: handleGlobalError }),
       mutationCache: new MutationCache({ onError: handleGlobalError }),
     })

@@ -54,8 +54,8 @@ export function UserDeleteDialog({
               {user.name}
             </strong>{" "}
             ({user.username}) will be permanently removed, along with their
-            account. This can't be undone — there's no Reactivate for a
-            deleted user the way there is for a deactivated one.
+            account. This can&apos;t be undone — there&apos;s no Reactivate for
+            a deleted user the way there is for a deactivated one.
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">

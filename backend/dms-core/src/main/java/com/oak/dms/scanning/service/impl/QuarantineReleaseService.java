@@ -5,6 +5,7 @@ import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.scanning.enums.ScanMode;
 import com.oak.dms.scanning.dto.QuarantineReleaseResponse;
 import com.oak.dms.scanning.entity.QuarantineRecord;
 import com.oak.dms.scanning.entity.ScanEngine;
@@ -137,12 +138,14 @@ class QuarantineReleaseService {
                     .startedAt(now)
                     .uploadedBy(original.getUploadedBy())
                     .nextAttemptAt(now)
-                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().getLeaseSeconds()))
+                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().leaseSecondsFor(
+                            original.getSizeBytes() != null ? original.getSizeBytes() : 0)))
                     .ingestionKind(original.getIngestionKind())
                     .createdReason(original.getCreatedReason())
                     .documentTypeId(original.getDocumentTypeId())
                     .targetDocumentId(original.getTargetDocumentId())
                     .title(original.getTitle())
+                    .versionComment(original.getVersionComment())
                     .releasedFromScanResultId(original.getScanResultId())
                     .reviewRequestedBy(userId)
                     .reviewReason(reason)
@@ -163,9 +166,10 @@ class QuarantineReleaseService {
         StorageLocation staging = ingestionProcessor.loadLocation(attempt.getStagingLocationId());
         StoredObjectMetadata staged;
         try {
+            // A cloud re-scan reads the staged copy in place, so it can't be encrypted (see IngestionGateImpl).
             staged = storageObjectMover.copyVerified(quarantineLocation(record), record.getQuarantineObjectKey(),
                     staging, attempt.getStagingObjectKey(), record.getSizeBytes(), attempt.getMimeType(),
-                    record.getFileHash());
+                    record.getFileHash(), attempt.getScanMode() != ScanMode.post_store_object);
         } catch (StorageException | StorageObjectMover.StagedObjectChangedException e) {
             storageObjectMover.deleteQuietly(staging, attempt.getStagingObjectKey());
             ingestionProcessor.failTerminal(attemptId, leaseToken,
@@ -341,6 +345,7 @@ class QuarantineReleaseService {
                 .documentTypeId(original.getDocumentTypeId())
                 .targetDocumentId(original.getTargetDocumentId())
                 .title(original.getTitle())
+                .versionComment(original.getVersionComment())
                 .releasedFromScanResultId(original.getScanResultId())
                 .reviewRequestedBy(userId)
                 .reviewReason(reason)

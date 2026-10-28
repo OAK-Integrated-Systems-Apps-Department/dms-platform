@@ -28,13 +28,13 @@ public class IngestionTicketMapper {
                 row.getSizeBytes(),
                 row.getFileHash(),
                 threat ? row.getThreatName() : null,
-                message(row.getStatus(), retrying, row.getThreatName()),
+                message(row.getStatus(), retrying, row.getThreatName(), row.getFailureReason()),
                 retrying,
                 row.getCreatedAt(),
                 row.getCompletedAt());
     }
 
-    private static String message(ScanResultStatus status, boolean retrying, String threatName) {
+    private static String message(ScanResultStatus status, boolean retrying, String threatName, String reason) {
         return switch (status) {
             case pending -> retrying
                     ? "The scan service is temporarily unavailable. Your file is held and will be scanned automatically."
@@ -43,7 +43,11 @@ public class IngestionTicketMapper {
             case released_override -> "The file was released from quarantine by an administrator.";
             case infected, quarantined -> "A threat was detected" + (threatName != null ? " (" + threatName + ")" : "")
                     + ". The file was blocked and quarantined.";
-            case unscannable -> "Password-protected or encrypted files can't be scanned and are not accepted. "
+            // clamd stopped part-way (AlertExceedsMax) - an archive nested too deep or holding too much.
+            case unscannable -> reason != null && reason.startsWith("Heuristics.Limits.Exceeded")
+                    ? "This archive is nested too deeply or holds too much for the virus scanner to check in full, "
+                    + "so it was not accepted. Unpack the archives inside it, or split it, and upload again."
+                    : "Password-protected or encrypted files can't be scanned and are not accepted. "
                     + "Remove the protection and upload the file again.";
             case failed -> "The file could not be scanned and was not added. Please try uploading it again later.";
         };

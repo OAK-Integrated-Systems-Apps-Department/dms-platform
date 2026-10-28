@@ -65,6 +65,10 @@ public class Tenant {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    /** Set once its encryption keys were destroyed (V59) - it can never be reactivated. */
+    @Column(name = "keys_shredded_at")
+    private OffsetDateTime keysShreddedAt;
+
     public enum TenantStatus {
         active, suspended, archived
     }

@@ -19,6 +19,7 @@ import java.util.Map;
  *  - ABDR = Comprehensive Audit Management (the audit trail itself, e.g. exporting it)
  *  - SHAD = System Health and Administration Dashboard (platform infrastructure status, e.g. the outbox relay)
  *  - MDTM = Metadata and Document-Type Management (document types, the metadata field catalog, and the field-mapping matrix that ties them together)
+ *  - WA   = Workflow Automation (approval templates and their runtime)
  *
  * reasonRequired would, per the spec's own example, be true for
  * destructive/access-revoking actions ("mandatory for legal hold /
@@ -58,6 +59,8 @@ public final class AuditActionCatalog {
     public static final String LOGOUT = "LOGOUT";
     public static final String PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED";
     public static final String PASSWORD_RESET_COMPLETED = "PASSWORD_RESET_COMPLETED";
+    /** The holder changed their own password from inside the DMS (distinct from a reset via emailed link). */
+    public static final String PASSWORD_CHANGED = "PASSWORD_CHANGED";
     public static final String USER_CREATED = "USER_CREATED";
     public static final String USER_UPDATED = "USER_UPDATED";
     public static final String USER_ROLE_ASSIGNED = "USER_ROLE_ASSIGNED";
@@ -99,6 +102,7 @@ public final class AuditActionCatalog {
     public static final String METADATA_FIELD_VALIDATION_DELETED = "METADATA_FIELD_VALIDATION_DELETED";
     public static final String DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED";
     public static final String DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED";
+    public static final String DOCUMENT_VIEWED = "DOCUMENT_VIEWED";
     public static final String DOCUMENT_DELETED = "DOCUMENT_DELETED";
     public static final String STORAGE_LOCATION_CREATED = "STORAGE_LOCATION_CREATED";
     public static final String DOCUMENT_SCAN_CLEAN = "DOCUMENT_SCAN_CLEAN";
@@ -113,6 +117,98 @@ public final class AuditActionCatalog {
     public static final String BULK_IMPORT_STARTED = "BULK_IMPORT_STARTED";
     public static final String BULK_IMPORT_COMPLETED = "BULK_IMPORT_COMPLETED";
     public static final String BULK_IMPORT_CANCELLED = "BULK_IMPORT_CANCELLED";
+
+    public static final String IMPORT_FILE_BLOCKED = "IMPORT_FILE_BLOCKED";
+    public static final String FOLDER_CREATED = "FOLDER_CREATED";
+    public static final String FOLDER_RENAMED = "FOLDER_RENAMED";
+    public static final String FOLDER_MOVED = "FOLDER_MOVED";
+    public static final String FOLDER_DELETED = "FOLDER_DELETED";
+    public static final String FOLDER_ACCESS_CHANGED = "FOLDER_ACCESS_CHANGED";
+    public static final String DOCUMENT_ACCESS_CHANGED = "DOCUMENT_ACCESS_CHANGED";
+    public static final String ENCRYPTION_KEY_ROTATED = "ENCRYPTION_KEY_ROTATED";
+    public static final String ENCRYPTION_KEYS_REWRAPPED = "ENCRYPTION_KEYS_REWRAPPED";
+    public static final String ENCRYPTION_BACKFILL_COMPLETED = "ENCRYPTION_BACKFILL_COMPLETED";
+    public static final String ENCRYPTION_ROTATION_POLICY_CHANGED = "ENCRYPTION_ROTATION_POLICY_CHANGED";
+    public static final String ENCRYPTION_KEY_ROTATION_DUE = "ENCRYPTION_KEY_ROTATION_DUE";
+    public static final String ENCRYPTION_TENANT_KEYS_SHREDDED = "ENCRYPTION_TENANT_KEYS_SHREDDED";
+    public static final String DOCUMENT_MOVED = "DOCUMENT_MOVED";
+    public static final String DOCUMENT_VERSION_RESTORED = "DOCUMENT_VERSION_RESTORED";
+    public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
+    public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
+    public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** The organisation's cap on how many documents one person may pin (PID). */
+    public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
+    public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
+    public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
+    public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
+    public static final String EXPORT_REQUESTED = "EXPORT_REQUESTED";
+    public static final String EXPORT_COMPLETED = "EXPORT_COMPLETED";
+    public static final String EXPORT_DOWNLOADED = "EXPORT_DOWNLOADED";
+    public static final String WATERMARK_TEMPLATE_CREATED = "WATERMARK_TEMPLATE_CREATED";
+    public static final String WATERMARK_TEMPLATE_UPDATED = "WATERMARK_TEMPLATE_UPDATED";
+    public static final String WATERMARK_TEMPLATE_DELETED = "WATERMARK_TEMPLATE_DELETED";
+    public static final String WATERMARK_REQUESTED = "WATERMARK_REQUESTED";
+    public static final String WATERMARK_COMPLETED = "WATERMARK_COMPLETED";
+    public static final String WATERMARK_FAILED = "WATERMARK_FAILED";
+    public static final String WATERMARK_RESULT_DOWNLOADED = "WATERMARK_RESULT_DOWNLOADED";
+
+    public static final String DEPARTMENT_CREATED = "DEPARTMENT_CREATED";
+    public static final String DEPARTMENT_UPDATED = "DEPARTMENT_UPDATED";
+    public static final String DEPARTMENT_DELETED = "DEPARTMENT_DELETED";
+    public static final String USER_DEPARTMENT_CHANGED = "USER_DEPARTMENT_CHANGED";
+    public static final String WORKFLOW_TEMPLATE_CREATED = "WORKFLOW_TEMPLATE_CREATED";
+    public static final String WORKFLOW_TEMPLATE_UPDATED = "WORKFLOW_TEMPLATE_UPDATED";
+    public static final String WORKFLOW_TEMPLATE_STAGES_UPDATED = "WORKFLOW_TEMPLATE_STAGES_UPDATED";
+    public static final String WORKFLOW_TEMPLATE_VERSION_CREATED = "WORKFLOW_TEMPLATE_VERSION_CREATED";
+    public static final String WORKFLOW_TEMPLATE_ACTIVATED = "WORKFLOW_TEMPLATE_ACTIVATED";
+    public static final String WORKFLOW_TEMPLATE_DEACTIVATED = "WORKFLOW_TEMPLATE_DEACTIVATED";
+    public static final String WORKFLOW_TEMPLATE_DELETED = "WORKFLOW_TEMPLATE_DELETED";
+    public static final String WORKFLOW_SUBMITTED = "WORKFLOW_SUBMITTED";
+    public static final String WORKFLOW_TASK_CLAIMED = "WORKFLOW_TASK_CLAIMED";
+    public static final String WORKFLOW_TASK_RELEASED = "WORKFLOW_TASK_RELEASED";
+    public static final String WORKFLOW_TASK_APPROVED = "WORKFLOW_TASK_APPROVED";
+    public static final String WORKFLOW_TASK_REJECTED = "WORKFLOW_TASK_REJECTED";
+    public static final String WORKFLOW_STAGE_COMPLETED = "WORKFLOW_STAGE_COMPLETED";
+    public static final String WORKFLOW_APPROVED = "WORKFLOW_APPROVED";
+    public static final String WORKFLOW_REJECTED = "WORKFLOW_REJECTED";
+    public static final String WORKFLOW_CANCELLED = "WORKFLOW_CANCELLED";
+    public static final String WORKFLOW_DOCUMENT_VERSION_CHANGED = "WORKFLOW_DOCUMENT_VERSION_CHANGED";
+    public static final String WORKFLOW_RESTARTED = "WORKFLOW_RESTARTED";
+    public static final String WORKFLOW_TASK_DELEGATED = "WORKFLOW_TASK_DELEGATED";
+    public static final String WORKFLOW_TASK_REASSIGNED = "WORKFLOW_TASK_REASSIGNED";
+    public static final String WORKFLOW_TASK_REMINDER_SENT = "WORKFLOW_TASK_REMINDER_SENT";
+    public static final String WORKFLOW_TASK_ESCALATED = "WORKFLOW_TASK_ESCALATED";
+    public static final String WORKFLOW_INFO_REQUESTED = "WORKFLOW_INFO_REQUESTED";
+    public static final String WORKFLOW_INFO_PROVIDED = "WORKFLOW_INFO_PROVIDED";
+    public static final String WORKFLOW_INFO_DECLINED = "WORKFLOW_INFO_DECLINED";
+    public static final String WORKFLOW_INFO_CANCELLED = "WORKFLOW_INFO_CANCELLED";
+    public static final String WORKFLOW_INFO_REQUEST_REASSIGNED = "WORKFLOW_INFO_REQUEST_REASSIGNED";
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT_ADDED = "WORKFLOW_SUPPORTING_DOCUMENT_ADDED";
+    public static final String WORKFLOW_SUPPORTING_DOCUMENT_REMOVED = "WORKFLOW_SUPPORTING_DOCUMENT_REMOVED";
+    public static final String DOCUMENT_COMMENT_CREATED = "DOCUMENT_COMMENT_CREATED";
+    public static final String DOCUMENT_COMMENT_UPDATED = "DOCUMENT_COMMENT_UPDATED";
+    public static final String DOCUMENT_COMMENT_DELETED = "DOCUMENT_COMMENT_DELETED";
+
+    // Notifications (3.2) - module NOTIF. The main trail gets only these few;
+    // every delivery attempt goes to the append-only notification_delivery_attempts table.
+    public static final String NOTIFICATION_DELIVERY_FAILED = "NOTIFICATION_DELIVERY_FAILED";
+    public static final String NOTIFICATION_RECIPIENT_NO_EMAIL = "NOTIFICATION_RECIPIENT_NO_EMAIL";
+    public static final String NOTIFICATION_SETTING_CHANGED = "NOTIFICATION_SETTING_CHANGED";
+    public static final String NOTIFICATION_PREFERENCE_CHANGED = "NOTIFICATION_PREFERENCE_CHANGED";
+    public static final String NOTIFICATION_DELIVERY_RETRIED = "NOTIFICATION_DELIVERY_RETRIED";
+
+    // Document Relationships (2.8) - module DRM
+    public static final String RELATIONSHIP_CREATED = "RELATIONSHIP_CREATED";
+    public static final String RELATIONSHIP_UPDATED = "RELATIONSHIP_UPDATED";
+    public static final String RELATIONSHIP_REMOVED = "RELATIONSHIP_REMOVED";
+    public static final String RELATIONSHIP_BATCH_CREATED = "RELATIONSHIP_BATCH_CREATED";
+    public static final String RELATIONSHIP_REMOVED_TARGET_PURGED = "RELATIONSHIP_REMOVED_TARGET_PURGED";
+    public static final String RELATIONSHIP_TYPE_CREATED = "RELATIONSHIP_TYPE_CREATED";
+    public static final String RELATIONSHIP_TYPE_UPDATED = "RELATIONSHIP_TYPE_UPDATED";
+    public static final String RELATIONSHIP_TYPE_ENABLED = "RELATIONSHIP_TYPE_ENABLED";
+    public static final String RELATIONSHIP_TYPE_DISABLED = "RELATIONSHIP_TYPE_DISABLED";
+    public static final String RELATIONSHIP_TYPE_DELETED = "RELATIONSHIP_TYPE_DELETED";
+
 
     private static final Map<String, AuditActionSpec> ACTIONS = Map.ofEntries(
             // Roles (RoleController) - module ASM
@@ -137,6 +233,7 @@ public final class AuditActionCatalog {
             // for why silent session renewal is deliberately not audited.
             Map.entry(PASSWORD_RESET_REQUESTED, new AuditActionSpec("ASM", AuditSeverity.LOW, false)),
             Map.entry(PASSWORD_RESET_COMPLETED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
+            Map.entry(PASSWORD_CHANGED, new AuditActionSpec("ASM", AuditSeverity.MEDIUM, false)),
             // Impersonation (ImpersonationService) - module ASM: starting a
             // session under someone else's identity is at least as
             // sensitive as a role deletion (HIGH); ending one is routine
@@ -262,6 +359,8 @@ public final class AuditActionCatalog {
             // state-changing action.
             Map.entry(DOCUMENT_UPLOADED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_DOWNLOADED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            // Opened in the in-app preview rather than saved as a file.
+            Map.entry(DOCUMENT_VIEWED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
 
             // Storage locations (StorageLocationController) - also module
@@ -296,12 +395,142 @@ public final class AuditActionCatalog {
             Map.entry(QUARANTINE_OVERRIDE_RELEASED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
             Map.entry(QUARANTINE_DELETED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, true)),
 
-            // Template-based bulk import (BulkImportService) - module FIE.
+            // Bulk import (BulkImportAuditor) - module FIE.
             // One event per batch, not per row: each created document is
             // already audited as DOCUMENT_UPLOADED by the scan gate.
             Map.entry(BULK_IMPORT_STARTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
             Map.entry(BULK_IMPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
-            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false))
+            Map.entry(BULK_IMPORT_CANCELLED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+
+            // A file refused at intake by the virus scan - a security event, HIGH.
+            Map.entry(IMPORT_FILE_BLOCKED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false)),
+
+            // Folders (FolderService) - module DSC; moving documents - DOCM.
+            Map.entry(FOLDER_CREATED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_RENAMED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_MOVED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            Map.entry(FOLDER_DELETED, new AuditActionSpec("DSC", AuditSeverity.MEDIUM, false)),
+            // Who can get into a folder changed - security relevant, so HIGH.
+            Map.entry(FOLDER_ACCESS_CHANGED, new AuditActionSpec("DSC", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_ACCESS_CHANGED, new AuditActionSpec("DOCM", AuditSeverity.HIGH, false)),
+
+            // Encryption at rest (EncryptionAdminService) - module DE (DE-NFR-006). Every unwrap is
+            // additionally an authenticated request in OpenBao's own audit log.
+            Map.entry(ENCRYPTION_KEY_ROTATED, new AuditActionSpec("DE", AuditSeverity.HIGH, false)),
+            Map.entry(ENCRYPTION_KEYS_REWRAPPED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            Map.entry(ENCRYPTION_BACKFILL_COMPLETED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            Map.entry(ENCRYPTION_ROTATION_POLICY_CHANGED, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            // The schedule's reminder that a key is due for rotation (not auto-rotated) - system actor.
+            Map.entry(ENCRYPTION_KEY_ROTATION_DUE, new AuditActionSpec("DE", AuditSeverity.MEDIUM, false)),
+            // Crypto-shredding a removed tenant's keys: irreversible, so a reason is required.
+            Map.entry(ENCRYPTION_TENANT_KEYS_SHREDDED, new AuditActionSpec("DE", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_MOVED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+            // Version history (DocumentVersionService) - module DVC; a new version itself is DOCUMENT_UPLOADED.
+            Map.entry(DOCUMENT_VERSION_RESTORED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
+            // The recycle bin (RecycleBinService) - module RBR. A purge destroys the files for good.
+            Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
+            Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
+
+            // Saved import templates (ImportTemplateService) - module FIE.
+            Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(IMPORT_TEMPLATE_UPDATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(IMPORT_TEMPLATE_DELETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+
+            // Bulk export (ExportJobService / ExportJobWorker) - module FIE.
+            // DOWNLOADED is HIGH: it is the moment a bulk copy of documents
+            // leaves the system. Each document read into the ZIP is also a
+            // DOCUMENT_DOWNLOADED, with {"via": "bulk_export"}.
+            Map.entry(EXPORT_REQUESTED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(EXPORT_COMPLETED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),
+            Map.entry(EXPORT_DOWNLOADED, new AuditActionSpec("FIE", AuditSeverity.HIGH, false)),
+
+            // Watermarking (WatermarkTemplateService / WatermarkService /
+            // WatermarkJobWorker) - module DW, the module code V7 seeded for
+            // it. Template changes are MEDIUM: they decide what every future
+            // copy will say, but affect no copy already produced.
+            Map.entry(WATERMARK_TEMPLATE_CREATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_UPDATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_TEMPLATE_DELETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            // REQUESTED carries the resolved text and is written in the
+            // request thread, which is the only place impersonation is
+            // captured - the worker runs as the effective user with no
+            // "acting as" of its own, so the two later events reference the
+            // job id and join back to this one.
+            Map.entry(WATERMARK_REQUESTED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_COMPLETED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
+            Map.entry(WATERMARK_FAILED, new AuditActionSpec("DW", AuditSeverity.LOW, false)),
+            // HIGH for the same reason as EXPORT_DOWNLOADED: this is the
+            // moment a copy of a document leaves the system - one carrying
+            // the name of the person who took it.
+            Map.entry(WATERMARK_RESULT_DOWNLOADED, new AuditActionSpec("DW", AuditSeverity.HIGH, false)),
+
+            // Departments (DepartmentController) - module OTUA. They define
+            // who sits in a department approver pool, hence MEDIUM.
+            Map.entry(DEPARTMENT_CREATED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+            Map.entry(DEPARTMENT_UPDATED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+            Map.entry(DEPARTMENT_DELETED, new AuditActionSpec("OTUA", AuditSeverity.HIGH, false)),
+            Map.entry(USER_DEPARTMENT_CHANGED, new AuditActionSpec("OTUA", AuditSeverity.MEDIUM, false)),
+
+            // Workflow Automation - module WA (3.1, docs/events/workflow-audit-events.md).
+            // Configuration changes: who approves what.
+            Map.entry(WORKFLOW_TEMPLATE_CREATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_UPDATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_STAGES_UPDATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_VERSION_CREATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_ACTIVATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_DEACTIVATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TEMPLATE_DELETED, new AuditActionSpec("WA", AuditSeverity.HIGH, false)),
+            // Runtime. A task rejection, a workflow rejection and a cancel
+            // always carry a reason (WA-FR-003, WA-FR-014).
+            Map.entry(WORKFLOW_SUBMITTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_CLAIMED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_RELEASED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_REJECTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_STAGE_COMPLETED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_REJECTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
+            Map.entry(WORKFLOW_CANCELLED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
+            Map.entry(WORKFLOW_DOCUMENT_VERSION_CHANGED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_RESTARTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            // Phase 2 (docs/workflow-phase2-plan.md S10). A reassignment by an
+            // admin, a declined request and a cancelled request carry a reason.
+            Map.entry(WORKFLOW_TASK_DELEGATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_TASK_REASSIGNED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_TASK_REMINDER_SENT, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_TASK_ESCALATED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_REQUESTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_PROVIDED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
+            Map.entry(WORKFLOW_INFO_DECLINED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_INFO_CANCELLED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_INFO_REQUEST_REASSIGNED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_SUPPORTING_DOCUMENT_ADDED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            Map.entry(WORKFLOW_SUPPORTING_DOCUMENT_REMOVED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
+            // Document comments - module DOCM. Rows carry ids and length, never the body.
+            Map.entry(DOCUMENT_COMMENT_CREATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_COMMENT_UPDATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+
+            // Notifications (3.2) - module NOTIF
+            Map.entry(NOTIFICATION_DELIVERY_FAILED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_RECIPIENT_NO_EMAIL, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_SETTING_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+            Map.entry(NOTIFICATION_PREFERENCE_CHANGED, new AuditActionSpec("NOTIF", AuditSeverity.LOW, false)),
+            Map.entry(NOTIFICATION_DELIVERY_RETRIED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),
+
+            // Document Relationships (2.8) - module DRM
+            Map.entry(RELATIONSHIP_CREATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_UPDATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_REMOVED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_BATCH_CREATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(RELATIONSHIP_REMOVED_TARGET_PURGED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_CREATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_UPDATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_ENABLED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_DISABLED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(RELATIONSHIP_TYPE_DELETED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false))
     );
 
     private AuditActionCatalog() {

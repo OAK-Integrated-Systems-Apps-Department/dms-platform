@@ -1,19 +1,24 @@
 package com.oak.dms.scanning.service.impl;
 
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.scanning.enums.ScanMode;
 import com.oak.dms.scanning.dto.DetectedFileType;
 import com.oak.dms.scanning.dto.IngestionRequest;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.entity.ScanEngine;
 import com.oak.dms.scanning.entity.ScanResult;
+import com.oak.dms.scanning.enums.ScanProvider;
 import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.scanning.exception.FileTooLargeException;
+import com.oak.dms.scanning.exception.FileTypeNotAllowedException;
 import com.oak.dms.scanning.helper.EncryptionMarkerInputStream;
 import com.oak.dms.scanning.helper.FileTypeInspector;
+import com.oak.dms.scanning.helper.IngestionProperties;
 import com.oak.dms.scanning.helper.IngestionTicketMapper;
 import com.oak.dms.scanning.helper.ScanProperties;
 import com.oak.dms.scanning.helper.SizeLimitingInputStream;
 import com.oak.dms.scanning.helper.StorageObjectMover;
+import com.oak.dms.scanning.helper.ZipArchiveCheck;
 import com.oak.dms.scanning.repository.ScanResultRepository;
 import com.oak.dms.scanning.service.DocumentPromoter;
 import com.oak.dms.scanning.service.IngestionGate;
@@ -24,6 +29,7 @@ import com.oak.dms.storage.dto.StoredObjectMetadata;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.exception.StorageException;
+import com.oak.dms.storage.service.ObjectStorageService;
 import com.oak.dms.storage.service.ObjectStorageServiceFactory;
 import com.oak.dms.storage.service.StorageLocationResolver;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +47,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -56,7 +63,8 @@ import java.util.UUID;
  *   for direct uploads) and, for PDFs, watching for {@code /Encrypt} - all in
  *   one pass;</li>
  *   <li>hand the row to {@link IngestionProcessor} - which, for ClamAV,
- *   reaches a verdict before this request returns.</li>
+ *   reaches a verdict before this request returns (except for a file larger
+ *   than one clamd segment, left pending for the retry scheduler).</li>
  * </ol>
  * Never runs inside a transaction: each step commits on its own, so a crash
  * at any point leaves a row the retry scheduler can finish or fail.
@@ -72,11 +80,14 @@ public class IngestionGateImpl implements IngestionGate {
     private final ScanResultRepository scanResultRepository;
     private final FileTypeInspector fileTypeInspector;
     private final IngestionProcessor ingestionProcessor;
+    private final ScanWorkPool scanWorkPool;
     private final StorageObjectMover storageObjectMover;
     private final DocumentPromoter documentPromoter;
     private final IngestionTicketMapper ingestionTicketMapper;
     private final ScanProperties scanProperties;
+    private final IngestionProperties ingestionProperties;
     private final TransactionTemplate transactionTemplate;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public IngestionGateImpl(ScanEngineResolver scanEngineResolver,
                              ScanEngineFactory scanEngineFactory,
@@ -85,11 +96,15 @@ public class IngestionGateImpl implements IngestionGate {
                              ScanResultRepository scanResultRepository,
                              FileTypeInspector fileTypeInspector,
                              IngestionProcessor ingestionProcessor,
+                             ScanWorkPool scanWorkPool,
                              StorageObjectMover storageObjectMover,
                              DocumentPromoter documentPromoter,
                              IngestionTicketMapper ingestionTicketMapper,
                              ScanProperties scanProperties,
-                             PlatformTransactionManager transactionManager) {
+                             IngestionProperties ingestionProperties,
+                             PlatformTransactionManager transactionManager,
+                             org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         this.scanEngineResolver = scanEngineResolver;
         this.scanEngineFactory = scanEngineFactory;
         this.storageLocationResolver = storageLocationResolver;
@@ -97,10 +112,12 @@ public class IngestionGateImpl implements IngestionGate {
         this.scanResultRepository = scanResultRepository;
         this.fileTypeInspector = fileTypeInspector;
         this.ingestionProcessor = ingestionProcessor;
+        this.scanWorkPool = scanWorkPool;
         this.storageObjectMover = storageObjectMover;
         this.documentPromoter = documentPromoter;
         this.ingestionTicketMapper = ingestionTicketMapper;
         this.scanProperties = scanProperties;
+        this.ingestionProperties = ingestionProperties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -131,7 +148,8 @@ public class IngestionGateImpl implements IngestionGate {
 
         if (detected.encrypted()) {
             ingestionProcessor.markUnscannable(scanResultId, leaseToken,
-                    "Password-protected Office document (encrypted OOXML package)", null);
+                    "zip".equals(detected.extension()) ? "Password-protected ZIP archive"
+                            : "Password-protected Office document (encrypted OOXML package)", null);
             return ticket(scanResultId);
         }
 
@@ -141,8 +159,14 @@ public class IngestionGateImpl implements IngestionGate {
         InputStream hashing = new DigestInputStream(limited, digest);
         EncryptionMarkerInputStream encryptionWatch = detected.pdf() ? new EncryptionMarkerInputStream(hashing) : null;
         StoredObjectMetadata stored;
+        ObjectStorageService stagingStore = engine.getScanMode() == ScanMode.post_store_object
+                ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
+                : objectStorageServiceFactory.resolve(staging);
         try {
-            stored = objectStorageServiceFactory.resolve(staging).upload(staging, row.getStagingObjectKey(),
+            // Encrypted at rest like everything else. A cloud scanner (GuardDuty / Defender) reads the staged
+            // object in place, so there the storage's own server-side encryption protects it instead - the
+            // upload is refused if the staging location doesn't have it.
+            stored = stagingStore.upload(staging, row.getStagingObjectKey(),
                     encryptionWatch != null ? encryptionWatch : hashing, request.contentLength(), detected.mimeType());
         } catch (StorageException e) {
             storageObjectMover.deleteQuietly(staging, row.getStagingObjectKey());
@@ -164,7 +188,80 @@ public class IngestionGateImpl implements IngestionGate {
             return ticket(scanResultId);
         }
 
-        // 5. Scan and route. ClamAV answers now; cloud scanners come back pending.
+        // 4a. A ZIP is checked whole - complete, readable, within what the scanner can inspect - by
+        // reading the staged copy once. Nothing is extracted or run; the archive is kept as uploaded.
+        boolean largeArchive = false;
+        if ("zip".equals(detected.extension())) {
+            ZipArchiveCheck.Result zip;
+            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                zip = ZipArchiveCheck.check(staged, ingestionProperties.getZipMaxEntries(),
+                        ingestionProperties.getZipMaxUncompressedBytes(),
+                        ingestionProperties.getZipBlockedExtensions().stream()
+                                .map(e -> e.trim().replaceFirst("^\\.", "").toLowerCase(java.util.Locale.ROOT))
+                                .collect(java.util.stream.Collectors.toSet()));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (zip.outcome() == ZipArchiveCheck.Outcome.ENCRYPTED) {
+                ingestionProcessor.markUnscannable(scanResultId, leaseToken, zip.message(), null);
+                return ticket(scanResultId);
+            }
+            if (zip.outcome() == ZipArchiveCheck.Outcome.INVALID) {
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, zip.message());
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw new FileTypeNotAllowedException(zip.message());
+            }
+            // More than clamd opens of one archive: ClamAvScanAdapter scans it file by file instead.
+            largeArchive = zip.uncompressedBytes() > scanProperties.getClamav().getArchiveScanBytes()
+                    || zip.entries() > scanProperties.getClamav().getArchiveScanFiles();
+        }
+
+        // 4a'. An Office Open XML file's head only showed a plausible package (its parts can come in
+        // any order); its index must list [Content_Types].xml, or it's a ZIP wearing an Office extension.
+        // An index that can't be read is left to the scanner, as before this check.
+        if (FileTypeInspector.isOfficeOpenXml(detected.extension())) {
+            ZipArchiveCheck.Presence types;
+            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                types = ZipArchiveCheck.containsEntry(staged, FileTypeInspector.OOXML_CONTENT_TYPES);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (types == ZipArchiveCheck.Presence.ABSENT) {
+                String message = "The file's content does not match its ." + detected.extension() + " extension";
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, message);
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw new FileTypeNotAllowedException(message);
+            }
+        }
+
+        // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
+        // The uploader sending the same file into the same folder again - typically because a large
+        // one is still being scanned and they weren't sure it went through - gets their first upload's
+        // ticket back, to follow that scan, rather than a refusal blaming "someone".
+        java.util.Optional<UUID> earlier = ownEarlierUpload(request, tenantId, userId, scanResultId,
+                row.getCreatedAt(), fileHash);
+        if (earlier.isPresent()) {
+            ingestionProcessor.failTerminal(scanResultId, leaseToken,
+                    "Same file as upload " + earlier.get() + " by the same user - that one is followed instead");
+            ingestionProcessor.purgeStaging(scanResultId);
+            return ticket(earlier.get());
+        }
+        duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
+            ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());
+            ingestionProcessor.purgeStaging(scanResultId);
+            throw refusal;
+        });
+
+        // 5. Scan and route. ClamAV answers now; cloud scanners come back pending. So does a
+        // file too large for one clamd pass, or a ZIP too large for clamd to open whole: scanning
+        // it piece by piece can take far longer than a request should stay open, so a
+        // background worker (ScanWorkPool) picks it up straight away instead.
+        if (engine.getProvider() == ScanProvider.CLAMAV
+                && (largeArchive || limited.count() > scanProperties.getClamav().getSegmentBytes())) {
+            ingestionProcessor.handOff(scanResultId, leaseToken);
+            scanWorkPool.wake();
+            return ticket(scanResultId);
+        }
         ingestionProcessor.process(scanResultId);
         return ticket(scanResultId);
     }
@@ -195,12 +292,30 @@ public class IngestionGateImpl implements IngestionGate {
                     .startedAt(now)
                     .uploadedBy(userId)
                     .nextAttemptAt(now)
-                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().getLeaseSeconds()))
+                    .leaseExpiresAt(now.plusSeconds(scanProperties.getRetry().leaseSecondsFor(request.contentLength())))
                     .ingestionKind(request.kind())
                     .createdReason(request.createdReason())
                     .documentTypeId(request.documentTypeId())
+                    .folderId(request.folderId())
                     .targetDocumentId(request.targetDocumentId())
                     .title(request.title())
+                    .versionComment(request.versionComment())
+                    // The OCR request rides on the scan result, not on a
+                    // separate table, because it has to survive the gap
+                    // between "file accepted" and "verdict clean" - which
+                    // with a cloud scanner is minutes to hours, across
+                    // restarts. This row is the only thing that exists for
+                    // the whole of that gap.
+                    //
+                    // It is read by DocumentVersionPromoter, the one class
+                    // that creates a DocumentVersion, so OCR is requested
+                    // exactly once per version and only after a clean
+                    // verdict. An infected file is quarantined with its OCR
+                    // request still attached and never acted on, because no
+                    // version is ever created for it.
+                    .ocrRequestedFields(toJson(request.ocrRequestedFields()))
+                    .ocrLowPriority(request.ocrLowPriority())
+                    .duplicateOfDocumentId(request.duplicateOfDocumentId())
                     .createdBy(userId)
                     .createdAt(now)
                     .build());
@@ -211,6 +326,76 @@ public class IngestionGateImpl implements IngestionGate {
             }
             return saved;
         });
+    }
+
+    /**
+     * The same user's own upload of the same file into the same folder within the last hour, still
+     * being scanned or already through - newest first. Only for a new document whose uploader checked
+     * for duplicates ("keep both" uploads deliberately add another copy).
+     */
+    private java.util.Optional<UUID> ownEarlierUpload(IngestionRequest request, UUID tenantId, UUID userId,
+                                                      UUID scanResultId, OffsetDateTime createdAt, String fileHash) {
+        if (request.kind() != com.oak.dms.scanning.enums.IngestionKind.new_document || !request.refuseDuplicates()) {
+            return java.util.Optional.empty();
+        }
+        return jdbc.queryForList("""
+                select s.scan_result_id from scan_results s
+                 where s.tenant_id = ? and s.uploaded_by = ? and s.file_hash = ? and s.scan_result_id <> ?
+                   and s.ingestion_kind = 'new_document' and s.folder_id is not distinct from ?
+                   and s.status in ('pending', 'clean', 'released_override') and not s.is_deleted
+                   and s.created_at > now() - interval '1 hour'
+                   and (s.created_at, s.scan_result_id) < (?, ?)
+                   -- Through already: only while the document it became is still there.
+                   and (s.status = 'pending' or exists (
+                        select 1 from document_versions v join documents d on d.document_id = v.document_id
+                         where v.version_id = s.document_version_id and not v.is_deleted and not d.is_deleted))
+                 order by s.created_at desc
+                 limit 1
+                """, UUID.class, tenantId, userId, fileHash, scanResultId, request.folderId(), createdAt,
+                scanResultId).stream().findFirst();
+    }
+
+    /**
+     * A new version byte-for-byte equal to its document's current version adds nothing - refused. A new
+     * document whose uploader checked for duplicates is refused when the same file is already in that folder,
+     * or someone uploaded it there a moment earlier (both checked and found nothing - the earlier upload wins,
+     * so exactly one of them goes through).
+     */
+    private java.util.Optional<com.oak.dms.common.exception.DuplicateUploadException> duplicateRefusal(
+            IngestionRequest request, UUID tenantId, UUID scanResultId, OffsetDateTime createdAt, String fileHash) {
+        if (request.kind() == com.oak.dms.scanning.enums.IngestionKind.new_version) {
+            Boolean same = jdbc.queryForObject("""
+                    select coalesce((select v.file_hash = ? from documents d
+                        join document_versions v on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
+                        where d.document_id = ? and d.tenant_id = ?), false)
+                    """, Boolean.class, fileHash, request.targetDocumentId(), tenantId);
+            return Boolean.TRUE.equals(same)
+                    ? java.util.Optional.of(new com.oak.dms.common.exception.DuplicateUploadException(
+                    "VERSION_IDENTICAL", "This file is identical to the current version - there's nothing new to add."))
+                    : java.util.Optional.empty();
+        }
+        if (!request.refuseDuplicates()) {
+            return java.util.Optional.empty();
+        }
+        Boolean taken = jdbc.queryForObject("""
+                select exists (select 1 from documents d
+                               join document_versions v on v.document_id = d.document_id and not v.is_deleted
+                               where d.tenant_id = ? and not d.is_deleted and not d.is_template
+                                 and d.folder_id is not distinct from ? and v.file_hash = ?)
+                    or exists (select 1 from scan_results s
+                               where s.tenant_id = ? and s.file_hash = ? and s.scan_result_id <> ?
+                                 and s.ingestion_kind = 'new_document' and s.folder_id is not distinct from ?
+                                 and s.status in ('pending', 'clean', 'released_override')
+                                 and s.document_version_id is null and not s.is_deleted
+                                 and s.created_at > now() - interval '1 hour'
+                                 and (s.created_at, s.scan_result_id) < (?, ?))
+                """, Boolean.class, tenantId, request.folderId(), fileHash, tenantId, fileHash, scanResultId,
+                request.folderId(), createdAt, scanResultId);
+        return Boolean.TRUE.equals(taken)
+                ? java.util.Optional.of(new com.oak.dms.common.exception.DuplicateUploadException(
+                "DUPLICATE_UPLOADED_MEANWHILE", "The same file was just added to this folder - check again "
+                + "and choose what to do with it."))
+                : java.util.Optional.empty();
     }
 
     private void recordStaged(UUID scanResultId, String fileHash, long sizeBytes, String eTag) {
@@ -254,5 +439,38 @@ public class IngestionGateImpl implements IngestionGate {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available on this JVM", e);
         }
+    }
+
+    /**
+     * The OCR field selection as the JSON array the column, the queue message
+     * and ocr-worker's {@code requested_fields} all carry.
+     *
+     * <p>Null for "no OCR" rather than {@code "[]"}: both are treated the same
+     * downstream, and leaving the column NULL keeps a row that never asked for
+     * OCR visibly distinct from one that asked for nothing.
+     *
+     * <p>Written with a plain {@code String.join} rather than Jackson because
+     * a field key is {@code [a-z0-9_]} by the metadata field rules - there is
+     * nothing here to escape, and reaching for a serializer would mean this
+     * class holds an ObjectMapper for one line. The keys are validated against
+     * the document type's schema before they reach here (see
+     * {@code DocumentServiceImpl#withOcr} and
+     * {@code BulkImportServiceImpl#ocrFieldsJson}); anything containing a
+     * quote or backslash is rejected there, and defensively again here.
+     */
+    private static String toJson(java.util.List<String> fieldKeys) {
+        if (fieldKeys == null || fieldKeys.isEmpty()) {
+            return null;
+        }
+        List<String> safe = fieldKeys.stream()
+                .filter(key -> key != null && !key.isBlank())
+                .map(String::trim)
+                .filter(key -> key.indexOf('"') < 0 && key.indexOf('\\') < 0)
+                .distinct()
+                .toList();
+        if (safe.isEmpty()) {
+            return null;
+        }
+        return safe.stream().collect(java.util.stream.Collectors.joining("\",\"", "[\"", "\"]"));
     }
 }

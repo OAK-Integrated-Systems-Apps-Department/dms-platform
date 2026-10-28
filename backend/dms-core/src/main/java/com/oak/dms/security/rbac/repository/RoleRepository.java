@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,4 +36,11 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
 
     @Query("select r from Role r where r.tenantId = :tenantId and r.deleted = false")
     Page<Role> findAllActiveByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /** Live roles of the tenant whose name contains {@code q} - the folder access picker. */
+    @Query("select r from Role r where r.tenantId = :tenantId and r.deleted = false "
+            + "and lower(r.roleName) like lower(concat('%', :q, '%')) order by r.roleName")
+    List<Role> searchByName(@Param("tenantId") UUID tenantId, @Param("q") String q, Pageable limit);
+
+    List<Role> findAllByRoleIdInAndTenantIdAndDeletedFalse(Collection<UUID> roleIds, UUID tenantId);
 }

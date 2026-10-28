@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,4 +52,26 @@ public interface UserRoleRepository extends JpaRepository<UserRole, UUID> {
             order by r.roleName
             """)
     List<String> findActiveRoleNames(@Param("userId") UUID userId, @Param("tenantId") UUID tenantId);
+
+    /** Ids of the active roles the user holds - who they are when a folder lists roles (V53). */
+    @Query("""
+            select distinct r.roleId
+            from UserRole ur
+            join Role r on r.roleId = ur.roleId
+            where ur.userId = :userId and ur.tenantId = :tenantId
+              and r.deleted = false
+              and r.status = com.oak.dms.security.rbac.entity.Role.RoleStatus.active
+            """)
+    List<UUID> findActiveRoleIds(@Param("userId") UUID userId, @Param("tenantId") UUID tenantId);
+
+    /** Users holding any of the given active roles - who a role named on an access list stands for. */
+    @Query("""
+            select distinct ur.userId
+            from UserRole ur
+            join Role r on r.roleId = ur.roleId
+            where ur.tenantId = :tenantId and ur.roleId in :roleIds
+              and r.deleted = false
+              and r.status = com.oak.dms.security.rbac.entity.Role.RoleStatus.active
+            """)
+    List<UUID> findActiveUserIdsByRoleIds(@Param("tenantId") UUID tenantId, @Param("roleIds") Collection<UUID> roleIds);
 }

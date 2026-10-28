@@ -5,6 +5,8 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import org.springframework.util.unit.DataSize;
+
 import java.time.Duration;
 
 /**
@@ -24,4 +26,13 @@ public class ExportJobProperties {
 
     /** PLACEHOLDER pending Key Decision #10. */
     private Duration jobTtl = Duration.ofHours(24);
+
+    /** Most documents one export may hold. */
+    private int maxDocuments = 1000;
+
+    /** Largest ZIP one export may produce (its files, before compression). */
+    private DataSize maxExportSize = DataSize.ofGigabytes(20);
+
+    /** Exports one user may have pending or processing at once. */
+    private int maxActiveJobsPerUser = 2;
 }

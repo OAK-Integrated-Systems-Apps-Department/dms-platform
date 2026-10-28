@@ -1,37 +1,74 @@
+"use client"
+
 import { HardDrive } from "lucide-react"
 
-interface StorageCardProps {
-  usedGb: number
-  totalGb: number
-  usedPercent: number
-}
+import { NUMBER } from "@/components/dashboard/charts"
+import {
+  DashCard,
+  DashSkeleton,
+  EmptyState,
+  Pending,
+} from "@/components/dashboard/dash-card"
+import { DonutChart } from "@/components/dashboard/donut-chart"
+import { FORMATS } from "@/components/dashboard/formats"
+import type { DashboardDto } from "@/lib/dashboard/api"
+import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 
-export function StorageCard({ usedGb, totalGb, usedPercent }: StorageCardProps) {
+/**
+ * What the storage is made of, by kind of file, as a donut with its legend.
+ * Only what's used - the system has no storage quota, so there's no
+ * "available" or "total" to show.
+ */
+export function StorageCard({
+  data,
+  order,
+}: {
+  data?: DashboardDto
+  order: number
+}) {
+  const formats = data?.formats.filter((f) => f.bytes > 0) ?? []
+  const total = formats.reduce((sum, f) => sum + f.bytes, 0)
+
   return (
-    <div className="rounded-lg border border-border bg-card px-[18px] py-4 shadow-[var(--ledger-shadow)]">
-      <div className="mb-3.5 flex items-center justify-between">
-        <div
-          className="flex size-8 items-center justify-center rounded-lg"
-          style={{ background: "var(--primary-tint)" }}
-        >
-          <HardDrive size={16} color="var(--primary)" />
-        </div>
-      </div>
-      <div className="font-heading text-[26px] font-semibold">
-        {usedGb} GB{" "}
-        <span className="font-sans text-sm font-normal text-muted-foreground">
-          / {totalGb} GB
-        </span>
-      </div>
-      <div className="mt-0.5 mb-2.5 text-[12.5px] text-muted-foreground">
-        Storage used
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full border border-border bg-muted">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${usedPercent}%` }}
+    <DashCard
+      order={order}
+      title="Storage"
+      subtitle="Current versions, by file type"
+    >
+      {!data ? (
+        <Pending
+          skeleton={
+            <div className="flex items-center gap-5">
+              <DashSkeleton className="size-[140px] shrink-0 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2">
+                <DashSkeleton className="h-3 w-full" />
+                <DashSkeleton className="h-3 w-4/5" />
+                <DashSkeleton className="h-3 w-3/5" />
+              </div>
+            </div>
+          }
         />
-      </div>
-    </div>
+      ) : total === 0 ? (
+        <EmptyState
+          icon={HardDrive}
+          title="Nothing stored yet"
+          text="Storage fills up as documents are added."
+        />
+      ) : (
+        <DonutChart
+          ariaLabel="Storage by file type"
+          centerValue={formatBytes(total)}
+          centerLabel="used"
+          slices={formats.map((f) => ({
+            key: f.format,
+            label: FORMATS[f.format].label,
+            value: f.bytes,
+            valueLabel: formatBytes(f.bytes),
+            detail: `${NUMBER.format(f.count)} ${f.count === 1 ? "file" : "files"}`,
+            color: FORMATS[f.format].color,
+          }))}
+        />
+      )}
+    </DashCard>
   )
 }

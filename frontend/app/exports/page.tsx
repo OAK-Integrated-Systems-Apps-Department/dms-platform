@@ -1,11 +1,6 @@
-import { Suspense } from "react"
+import { redirect } from "next/navigation"
 
-import { ExportsContent } from "./exports-content"
-
-export default function ExportsPage() {
-  return (
-    <Suspense fallback={null}>
-      <ExportsContent />
-    </Suspense>
-  )
+/** Exports were replaced by downloads in My Documents; old links and bookmarks still work. */
+export default function LegacyExportsPage() {
+  redirect("/documents")
 }

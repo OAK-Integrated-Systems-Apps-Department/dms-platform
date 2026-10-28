@@ -61,7 +61,7 @@ class TenantStarterCatalogServiceIT {
 
         InstallResult result = starterCatalogService.install(tenantId);
 
-        assertThat(result).isEqualTo(new InstallResult(25, 12, 4, 4));
+        assertThat(result).isEqualTo(new InstallResult(24, 8, 4, 4));
         try (Connection c = dataSource.getConnection()) {
             assertExactStarterCatalog(c, tenantId, null);
         }
@@ -135,7 +135,7 @@ class TenantStarterCatalogServiceIT {
 
         InstallResult result = starterCatalogService.install(tenantId);
 
-        assertThat(result).isEqualTo(new InstallResult(23, 8, 3, 3));
+        assertThat(result).isEqualTo(new InstallResult(22, 4, 3, 3));
         try (Connection c = dataSource.getConnection()) {
             assertThat(catalogSnapshot(c, tenantId)).containsAll(before);
             assertThat(strings(c, "select type_code || ':' || display_order from document_types "

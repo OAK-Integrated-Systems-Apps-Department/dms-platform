@@ -85,6 +85,17 @@ class V37MigrationIT {
                 assertThat(count(c, "select count(*) from metadata_field_options where tenant_id = ?", tenantId)).isEqualTo(12);
                 assertThat(count(c, "select count(*) from document_types where tenant_id = ?", tenantId)).isEqualTo(4);
                 assertThat(count(c, "select count(*) from document_type_schemas where tenant_id = ?", tenantId)).isEqualTo(4);
+            }
+
+            // V102 strips classification_level - V37's frozen catalogue still backfills it above,
+            // so this tenant must go through both to end up matching the current StarterCatalog.
+            migrate(url, "102");
+
+            try (Connection c = connect(url)) {
+                assertThat(count(c, "select count(*) from metadata_fields where tenant_id = ?", tenantId)).isEqualTo(24);
+                assertThat(count(c, "select count(*) from metadata_field_options where tenant_id = ?", tenantId)).isEqualTo(8);
+                assertThat(count(c, "select count(*) from document_types where tenant_id = ?", tenantId)).isEqualTo(4);
+                assertThat(count(c, "select count(*) from document_type_schemas where tenant_id = ?", tenantId)).isEqualTo(4);
                 assertExactStarterCatalog(c, tenantId, null);
             }
         });
@@ -145,6 +156,21 @@ class V37MigrationIT {
                 assertThat(count(c, "select count(*) from metadata_field_options where tenant_id = ?", tenantId))
                         .isEqualTo(2 + 8);
 
+                assertThat(count(c, "select count(*) from document_type_schemas where tenant_id = ?", tenantId))
+                        .isEqualTo(3 + 3);
+            }
+
+            // V102 strips classification_level from the fresh CONTRACT/POLICY/GENERAL mappings V37 just
+            // backfilled (untouched, mandatory, no document values yet), then hard-deletes the field and
+            // its options since nothing maps it any more. INVOICE here is the tenant's own pre-existing
+            // type/schema (empty fields), never touched by V37's backfill, so it was never in scope either way.
+            migrate(url, "102");
+
+            try (Connection c = connect(url)) {
+                assertThat(count(c, "select count(*) from metadata_fields where tenant_id = ?", tenantId))
+                        .isEqualTo(3 + 22);
+                assertThat(count(c, "select count(*) from metadata_field_options where tenant_id = ?", tenantId))
+                        .isEqualTo(2 + 4);
                 assertThat(count(c, "select count(*) from document_type_schemas where tenant_id = ?", tenantId))
                         .isEqualTo(3 + 3);
                 assertThat(schemaElements(c, tenantId, List.of("CONTRACT", "POLICY", "GENERAL")))

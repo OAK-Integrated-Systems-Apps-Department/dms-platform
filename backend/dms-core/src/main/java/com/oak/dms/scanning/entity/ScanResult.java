@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -155,6 +157,40 @@ public class ScanResult {
 
     @Column(name = "title", updatable = false)
     private String title;
+
+    /** A new version's "what changed" (V62), copied onto the version it becomes. */
+    @Column(name = "version_comment", updatable = false)
+    private String versionComment;
+
+    /** The folder a new document lands in once clean (V51); null = not in a folder. */
+    @Column(name = "folder_id", updatable = false)
+    private UUID folderId;
+
+    /**
+     * Schema field keys OCR should extract once this file is clean (V82), as
+     * raw JSON - same convention as {@code DocumentVersion.requestedFields}.
+     * Null or {@code []} means no OCR was asked for.
+     * <p>
+     * Carried here rather than acted on at upload because OCR must not read an
+     * unscanned file, and with a cloud scanner the clean verdict can arrive
+     * long after the request that made this choice has gone.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "ocr_requested_fields", columnDefinition = "jsonb", updatable = false)
+    private String ocrRequestedFields;
+
+    /** Bulk-import ingestion: OCR goes on the low-priority routing key (V82). */
+    @Column(name = "ocr_low_priority", nullable = false, updatable = false)
+    @Builder.Default
+    private boolean ocrLowPriority = false;
+
+    /**
+     * The document the uploader chose to keep a copy of ("Keep both" after duplicate detection, V108),
+     * or null. Read by DocumentVersionPromoter, which raises the event that links the new document to it
+     * as "Duplicate of" once it exists.
+     */
+    @Column(name = "duplicate_of_document_id", updatable = false)
+    private UUID duplicateOfDocumentId;
 
     /**
      * Set only on a quarantine release attempt (V40): the original,

@@ -37,7 +37,8 @@ export const PermissionCodes = {
   ASM_ROLES_UPDATE_ROLE: "asm.manage-roles-permissions.update-role",
   ASM_ROLES_DELETE_ROLE: "asm.manage-roles-permissions.delete-role",
   ASM_ROLES_VIEW_ROLE: "asm.manage-roles-permissions.view-role",
-  ASM_ROLES_ASSIGN_PERMISSIONS: "asm.manage-roles-permissions.assign-permissions",
+  ASM_ROLES_ASSIGN_PERMISSIONS:
+    "asm.manage-roles-permissions.assign-permissions",
 
   // Legacy - Permission Catalog screens only (PermissionController), see doc comment above.
   LEGACY_ROLE_VIEW: "role.view",
@@ -52,24 +53,48 @@ export const PermissionCodes = {
   MDTM_CONTENT_TYPES_UPDATE: "mdtm.manage-content-types.update",
   MDTM_CONTENT_TYPES_DELETE: "mdtm.manage-content-types.delete",
   MDTM_CONTENT_TYPES_VIEW: "mdtm.manage-content-types.view",
-  MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE: "mdtm.manage-content-types.activate-deactivate",
+  MDTM_CONTENT_TYPES_ACTIVATE_DEACTIVATE:
+    "mdtm.manage-content-types.activate-deactivate",
 
   MDTM_METADATA_SCHEMA_CREATE_FIELD: "mdtm.manage-metadata-schema.create-field",
   MDTM_METADATA_SCHEMA_UPDATE_FIELD: "mdtm.manage-metadata-schema.update-field",
   MDTM_METADATA_SCHEMA_DELETE_FIELD: "mdtm.manage-metadata-schema.delete-field",
   MDTM_METADATA_SCHEMA_VIEW_FIELD: "mdtm.manage-metadata-schema.view-field",
-  MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD: "mdtm.manage-metadata-schema.activate-deactivate-field",
-  MDTM_METADATA_SCHEMA_DEPRECATE_FIELD: "mdtm.manage-metadata-schema.deprecate-field",
-  MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES: "mdtm.manage-metadata-schema.set-validation-rules",
+  MDTM_METADATA_SCHEMA_ACTIVATE_DEACTIVATE_FIELD:
+    "mdtm.manage-metadata-schema.activate-deactivate-field",
+  MDTM_METADATA_SCHEMA_DEPRECATE_FIELD:
+    "mdtm.manage-metadata-schema.deprecate-field",
+  MDTM_METADATA_SCHEMA_SET_VALIDATION_RULES:
+    "mdtm.manage-metadata-schema.set-validation-rules",
 
   MDTM_TYPE_FIELD_MAPPING_VIEW: "mdtm.manage-type-field-mapping.view",
   MDTM_TYPE_FIELD_MAPPING_UPDATE: "mdtm.manage-type-field-mapping.update",
+  MDTM_DOCUMENT_TEMPLATES_CREATE: "mdtm.manage-document-templates.create",
+  MDTM_DOCUMENT_TEMPLATES_UPDATE: "mdtm.manage-document-templates.update",
+  MDTM_DOCUMENT_TEMPLATES_DELETE: "mdtm.manage-document-templates.delete",
+  // Pin Important Documents (PID). Pins are personal; the limit is the organisation's.
+  PID_PIN: "pid.pin-unpin-documents.pin",
+  PID_UNPIN: "pid.pin-unpin-documents.unpin",
+  PID_CONFIGURE_LIMITS: "pid.configure-pin-limits",
+  // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
+  SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",
+  SHAD_VIEW_SYSTEM_LOGS: "shad.view-system-logs",
   // Audit Events (ABDR - Comprehensive Audit Management)
   ABDR_VIEW_AUDIT_HISTORY: "abdr.view-audit-history",
   // Distinct from ABDR_VIEW_AUDIT_HISTORY - exporting the trail is a
   // stricter capability than viewing it on-screen, gated by its own
   // seeded permission code.
   ABDR_EXPORT_AUDIT_REPORTS: "abdr.export-audit-reports",
+  // File Import/Export (FIE) - BulkImportController gates every intake
+  // endpoint (template, batch, files, submit, cancel) on this one code.
+  FIE_BULK_IMPORT_UPLOAD_FILE: "fie.bulk-import-documents.upload-file",
+  // Bulk export - starting one also needs DOCM_DOCUMENTS_VIEW (it reads the
+  // documents); see ExportJobController.
+  FIE_BULK_EXPORT_EXECUTE: "fie.bulk-export-documents.execute-export",
+  // Saved import templates (ImportTemplateController).
+  FIE_IMPORT_TEMPLATES_CREATE: "fie.manage-import-templates.create-template",
+  FIE_IMPORT_TEMPLATES_UPDATE: "fie.manage-import-templates.update-template",
+  FIE_IMPORT_TEMPLATES_DELETE: "fie.manage-import-templates.delete-template",
   // Quarantine review (DOCM - seeded by backend V40, granted to no role by
   // default). OVERRIDE is deliberately separate from RELEASE: it
   // force-releases a file the malware scanner still flags.
@@ -80,4 +105,88 @@ export const PermissionCodes = {
   // Uploading documents (POST /api/v1/documents) - also what the upload
   // panel's document-type picker (/document-types/selectable) requires.
   DOCM_DOCUMENTS_CREATE: "docm.documents.create",
+
+  DOCM_DOCUMENTS_VIEW: "docm.documents.view",
+  DOCM_DOCUMENTS_DELETE: "docm.documents.delete",
+  // Moving documents between folders (V51).
+  DOCM_DOCUMENTS_MOVE: "docm.documents.move",
+  // Folders - DSC / Manage Folder Structure (V10). Browsing needs DOCM_DOCUMENTS_VIEW.
+  DSC_FOLDERS_CREATE: "dsc.manage-folder-structure.create-folder",
+  DSC_FOLDERS_RENAME_MOVE: "dsc.manage-folder-structure.rename-move-folder",
+  DSC_FOLDERS_DELETE: "dsc.manage-folder-structure.delete-folder",
+  // Folder access control (V53) - who can get into a folder.
+  DSC_FOLDER_ACCESS_ASSIGN:
+    "dsc.configure-folder-access-control.assign-permissions",
+  DSC_FOLDER_ACCESS_VIEW:
+    "dsc.configure-folder-access-control.view-access-list",
+  // Encryption at rest (V55) - the key management screen.
+  DE_KEYS_VIEW: "de.manage-encryption-keys.view-key-metadata",
+  DE_KEYS_ROTATE: "de.manage-encryption-keys.rotate-key",
+  DE_KEYS_GENERATE: "de.manage-encryption-keys.generate-key",
+  // Version history (DVC) and the recycle bin (RBR), seeded by V10.
+  DVC_VERSIONS_VIEW: "dvc.view-version-history.view",
+  DVC_VERSIONS_RESTORE: "dvc.restore-prior-version",
+  RBR_RESTORE: "rbr.restore-deleted-documents",
+  RBR_PURGE: "rbr.permanently-purge-documents",
+  RBR_RETENTION: "rbr.manage-recycle-bin-retention",
+  // Watermarking (DW), seeded by V68. Asking for a watermarked COPY needs
+  // only DOCM_DOCUMENTS_VIEW - these two are about administering the
+  // tenant's templates. There is deliberately no separate "delete template"
+  // code: the backend gates delete on update as well.
+  DW_WATERMARK_TEMPLATE_CREATE: "dw.configure-watermark-policy.create-template",
+  DW_WATERMARK_TEMPLATE_UPDATE: "dw.configure-watermark-policy.update-template",
+  // OCR & Scanning (OS), seeded by V10 long before the OCR feature was built -
+  // the branch that built it shipped with no permission checks at all, so
+  // these codes existed in the catalogue and the Roles screen without
+  // anything using them. They are enforced now; no migration was needed.
+  // Granted to no role by default: an administrator sees the OCR screens
+  // because TENANT_ADMIN holds everything implicitly, everyone else needs an
+  // explicit grant, which is right for a capability that reads content.
+  OS_OCR_TRIGGER: "os.perform-ocr-extraction.trigger",
+  OS_OCR_EDIT_TEXT: "os.perform-ocr-extraction.edit-text",
+  OS_OCR_TEMPLATE_CREATE: "os.configure-ocr-zones-templates.create-template",
+  OS_OCR_TEMPLATE_UPDATE: "os.configure-ocr-zones-templates.update-template",
+  OS_OCR_TEMPLATE_DELETE: "os.configure-ocr-zones-templates.delete-template",
+  OS_REVIEW_VIEW_QUEUE: "os.review-ocr-exceptions.view-queue",
+  OS_REVIEW_RESOLVE: "os.review-ocr-exceptions.resolve",
+
+  // Reading a document's metadata (GET /api/v1/documents/{id}).
+  DOCM_COMMENTS_CREATE: "docm.document-comments.create",
+
+  // Departments (OTUA) - also the approver pools a workflow stage can route
+  // to. The department list is additionally readable with
+  // WA_TEMPLATES_CREATE/UPDATE so a template designer can pick one.
+  OTUA_DEPARTMENTS_VIEW: "otua.manage-departments.view",
+  OTUA_DEPARTMENTS_CREATE: "otua.manage-departments.create",
+  OTUA_DEPARTMENTS_UPDATE: "otua.manage-departments.update",
+  OTUA_DEPARTMENTS_DELETE: "otua.manage-departments.delete",
+
+  // Workflow Automation (WA) - template design, task decisions, and the
+  // workflow audit trail. Any single WA_TEMPLATES_* code opens the template
+  // screens (list/get), matching the backend's ANY_TEMPLATE_PERMISSION.
+  WA_TEMPLATES_CREATE: "wa.configure-workflow-templates.create",
+  WA_TEMPLATES_UPDATE: "wa.configure-workflow-templates.update",
+  WA_TEMPLATES_DELETE: "wa.configure-workflow-templates.delete",
+  WA_TEMPLATES_TOGGLE_ACTIVE: "wa.configure-workflow-templates.toggle-active",
+  WA_TASK_APPROVE: "wa.approve-reject-workflow-task.approve",
+  WA_TASK_REJECT: "wa.approve-reject-workflow-task.reject",
+  WA_TASK_REASSIGN: "wa.reassign-workflow-task",
+  WA_REQUEST_INFORMATION: "wa.request-workflow-information.create",
+  WA_AUDIT_TRAIL_VIEW: "wa.view-workflow-audit-trail.view",
+  // Document Lifecycle Management - starting a workflow on a document.
+  DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",
+
+  // Notifications (3.2) - tenant-admin settings and the delivery log.
+  NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
+  NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",
+  NOTIF_DELIVERY_LOG_RETRY: "notif.delivery-log.retry",
+
+  // Document Relationships (2.8) - editing a link reuses the create code;
+  // view-graph is seeded but has no screen yet.
+  DRM_RELATIONSHIPS_CREATE: "drm.manage-document-relationships.create",
+  DRM_RELATIONSHIPS_REMOVE: "drm.manage-document-relationships.remove",
+  DRM_RELATIONSHIPS_VIEW_GRAPH: "drm.manage-document-relationships.view-graph",
+  DRM_TYPES_CREATE: "drm.configure-relationship-types.create-type",
+  DRM_TYPES_UPDATE: "drm.configure-relationship-types.update-type",
+  DRM_TYPES_DELETE: "drm.configure-relationship-types.delete-type",
 } as const

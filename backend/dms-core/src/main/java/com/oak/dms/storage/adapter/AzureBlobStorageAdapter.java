@@ -155,6 +155,12 @@ public class AzureBlobStorageAdapter implements ObjectStorageService {
         }
     }
 
+    /** Azure Storage Service Encryption is always on (AES-256) and can't be turned off. */
+    @Override
+    public boolean encryptsAtRest(StorageLocation location) {
+        return true;
+    }
+
     @Override
     public Optional<String> generatePresignedDownloadUrl(StorageLocation location, String objectKey, Duration ttl) {
         BlobClient blobClient = containerClient(location).getBlobClient(objectKey);

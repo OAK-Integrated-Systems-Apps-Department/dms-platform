@@ -1,5 +1,6 @@
 "use client"
 
+import { useId } from "react"
 import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -7,6 +8,8 @@ import { cn } from "@/lib/utils"
 interface CheckboxProps {
   id?: string
   label: string
+  /** A second, quieter line under the label — a caveat or an explanation the label is too short to carry. */
+  hint?: string
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   disabled?: boolean
@@ -20,10 +23,12 @@ interface CheckboxProps {
 export function Checkbox({
   id,
   label,
+  hint,
   checked,
   onCheckedChange,
   disabled,
 }: CheckboxProps) {
+  const hintId = useId()
   return (
     <label
       htmlFor={id}
@@ -32,12 +37,20 @@ export function Checkbox({
         disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
       )}
     >
-      <span>{label}</span>
+      <span>
+        {label}
+        {hint && (
+          <span id={hintId} className="mt-0.5 block text-[12px] text-muted-foreground">
+            {hint}
+          </span>
+        )}
+      </span>
       <button
         type="button"
         id={id}
         role="checkbox"
         aria-checked={checked}
+        aria-describedby={hint ? hintId : undefined}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
         className={cn(

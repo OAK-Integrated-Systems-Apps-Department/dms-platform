@@ -40,6 +40,12 @@ public class StorageProperties {
         private String accessKey;
         private String secretKey;
         private boolean pathStyleAccess = false;
+        /**
+         * Server-side encryption for S3 document locations: blank (none), AES256 (SSE-S3) or aws:kms
+         * (SSE-KMS, with {@link #kmsKeyId} or the bucket's default key). MinIO needs a KMS (KES) for either.
+         */
+        private String serverSideEncryption;
+        private String kmsKeyId;
     }
 
     @Getter
@@ -80,6 +86,9 @@ public class StorageProperties {
         private boolean pathStyleAccess = false;
         /** Optional - see {@code StorageLocation.credentialRef}. */
         private String credentialRef;
+        /** S3 only - as {@link S3#getServerSideEncryption()}; blank = the s3.* default. */
+        private String serverSideEncryption;
+        private String kmsKeyId;
 
         public PurposeTarget() {
         }

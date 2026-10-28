@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { UserCheck, UserX, type LucideIcon } from "lucide-react"
 
 import {
@@ -47,9 +47,8 @@ const STATUS_DIALOG_CONFIG = {
     description: (user: UserRecord) => (
       <>
         <strong className="font-semibold text-foreground">{user.name}</strong>{" "}
-        will lose access immediately. Their records and
-        audit history stay intact, and you can reactivate the account
-        anytime from here.
+        will lose access immediately. Their records and audit history stay
+        intact, and you can reactivate the account anytime from here.
       </>
     ),
     confirmLabel: "Deactivate User",
@@ -62,7 +61,7 @@ const STATUS_DIALOG_CONFIG = {
     description: (user: UserRecord) => (
       <>
         <strong className="font-semibold text-foreground">{user.name}</strong>{" "}
-         will be able to sign in again right away.
+        will be able to sign in again right away.
       </>
     ),
     confirmLabel: "Activate User",
@@ -112,17 +111,21 @@ export function UserStatusDialog({
   onConfirm,
 }: UserStatusDialogProps) {
   const isDeactivating = user.status === "Active"
-  const variant = STATUS_DIALOG_CONFIG[isDeactivating ? "deactivate" : "activate"]
+  const variant =
+    STATUS_DIALOG_CONFIG[isDeactivating ? "deactivate" : "activate"]
   const Icon = variant.icon
 
   const [reason, setReason] = useState("")
   // Clears whenever the dialog opens, not just on unmount - it's kept
   // mounted (see the caller's `pendingUser`/`open` handling) so a stale
   // reason from a previous Deactivate wouldn't otherwise be cleared before
-  // the next one opens.
-  useEffect(() => {
+  // the next one opens. Adjusted during render against the last-seen
+  // `open` rather than in an effect.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) setReason("")
-  }, [open])
+  }
 
   const trimmedReason = reason.trim()
   // Only the deactivate direction requires a reason (see
@@ -166,7 +169,9 @@ export function UserStatusDialog({
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
-              onClick={() => onConfirm(isDeactivating ? trimmedReason : undefined)}
+              onClick={() =>
+                onConfirm(isDeactivating ? trimmedReason : undefined)
+              }
               disabled={reasonMissing}
               className={cn(
                 "rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",

@@ -7,7 +7,10 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
+import com.oak.dms.common.exception.EmailInUseException;
+import com.oak.dms.common.exception.UsernameInUseException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.common.exception.TenantMismatchException;
 import com.oak.dms.audit.catalog.AuditActionCatalog;
@@ -101,44 +104,39 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse createUser(CreateUserRequest request) {
         UUID tenantId = TenantContext.getTenantId();
+        String email = request.email().strip();
+        String username = request.username().strip();
 
-        if (userRepository.existsByTenantIdAndEmailAndDeletedFalse(tenantId, request.email())) {
-            throw new DuplicateResourceException("A user already exists with email " + request.email());
+        // The same email check as an edit (emailTaken): no other user in the tenant - deactivated
+        // ones included, ignoring case - and no Keycloak account by email or username. Then the
+        // username, the same way. Each has one answer whatever the clash, see below.
+        if (emailTaken(email, null)) {
+            throw new EmailInUseException();
         }
-        if (userRepository.existsByTenantIdAndUsernameAndDeletedFalse(tenantId, request.username())) {
-            throw new DuplicateResourceException("A user already exists with username " + request.username());
+        if (userRepository.existsByTenantIdAndUsernameIgnoreCase(tenantId, username)) {
+            throw new UsernameInUseException();
         }
 
-        // Keycloak enforces both email and username uniqueness realm-wide
-        // (see KeycloakUserAlreadyExistsException's own doc comment) -
-        // every tenant shares one realm here, so an email or username
-        // already registered to some OTHER tenant collides here too,
-        // distinctly from the tenant-scoped checks above. Left as its own
-        // KeycloakUserAlreadyExistsException (409, code
-        // KEYCLOAK_USER_ALREADY_EXISTS, message naming both), a
-        // distinguishable shape here would let any caller with
-        // otua.manage-users.create in ANY tenant fingerprint whether a
-        // given email/username belongs to a user in some OTHER tenant, by
-        // comparing it against the identical-looking but genuinely
-        // different generic 409s above - the one cross-tenant probe this
-        // system doesn't otherwise allow (every other resource collapses
-        // a cross-tenant hit to an indistinguishable 404). Rethrown as a
-        // generic, tenant-scoped-sounding conflict so both cases are
-        // indistinguishable to the caller.
+        // Keycloak enforces email and username uniqueness realm-wide, and every tenant shares the
+        // one realm - so an email or username registered in some OTHER tenant collides too. Every
+        // clash, here or in the checks above, gets the same EmailInUseException/UsernameInUseException,
+        // so nobody with otua.manage-users.create can tell an in-tenant clash from one in another
+        // tenant (the one cross-tenant probe this system doesn't otherwise allow - every other
+        // resource collapses a cross-tenant hit to an indistinguishable 404).
         UUID keycloakId;
         try {
-            keycloakId = keycloakUserService.createUser(request.username(), request.email(), request.firstName(),
+            keycloakId = keycloakUserService.createUser(username, email, request.firstName(),
                     request.lastName(), tenantId);
         } catch (KeycloakUserAlreadyExistsException e) {
-            throw new DuplicateResourceException(
-                    "A user already exists with email " + request.email() + " or username " + request.username());
+            // The email was free a moment ago, so this is the username (or the same email, just taken).
+            throw emailTaken(email, null) ? new EmailInUseException() : new UsernameInUseException();
         }
 
         User user = User.builder()
                 .tenantId(tenantId)
                 .keycloakId(keycloakId)
-                .email(request.email())
-                .username(request.username())
+                .email(email)
+                .username(username)
                 .firstName(request.firstName())
                 .lastName(request.lastName())
                 .displayName(User.displayName(request.firstName(), request.lastName()))
@@ -146,7 +144,21 @@ public class UserServiceImpl implements UserService {
                 .createdBy(TenantContext.getUserId())
                 .build();
 
-        User saved = userRepository.save(user);
+        // Flushed now, so a clash on uq_users_tenant_email/_username (two admins inviting at once)
+        // fails here - and the Keycloak account just made is removed again rather than left orphaned.
+        User saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            try {
+                keycloakUserService.deleteUser(keycloakId);
+            } catch (RuntimeException cleanup) {
+                log.warn("Could not remove Keycloak account {} after a failed invite: {}", keycloakId,
+                        cleanup.getMessage());
+            }
+            throw userRepository.existsByTenantIdAndEmailIgnoreCaseAndUserIdNot(tenantId, email, new UUID(0, 0))
+                    ? new EmailInUseException() : new UsernameInUseException();
+        }
         log.info("Created user {} ({}) in tenant {}", saved.getUserId(), saved.getEmail(), tenantId);
 
         // dms-core's own branded "set your password" email (see
@@ -289,8 +301,21 @@ public class UserServiceImpl implements UserService {
         Map<String, Object> previousValue = Map.of(
                 "firstName", user.getFirstName(),
                 "lastName", user.getLastName() == null ? "" : user.getLastName(),
+                "email", user.getEmail(),
                 "mfaEnabled", user.isMfaEnabled(),
                 "status", user.getStatus());
+
+        // A new email must be no other account's: another user in this tenant (deactivated ones
+        // included - they keep theirs), or any Keycloak account in the shared realm, by email or by
+        // username (both sign in). One generic answer for all of these - see EmailInUseException.
+        String requested = request.email() == null ? "" : request.email().strip();
+        String newEmail = requested.isEmpty() || requested.equals(user.getEmail()) ? null : requested; // null = unchanged
+        if (newEmail != null) {
+            if (emailTaken(newEmail, user)) {
+                throw new EmailInUseException();
+            }
+            user.setEmail(newEmail);
+        }
 
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
@@ -315,7 +340,21 @@ public class UserServiceImpl implements UserService {
             keycloakUserService.enableUser(user.getKeycloakId());
         }
 
-        User saved = userRepository.save(user);
+        // The row first, flushed - so a clash on uq_users_tenant_email (two admins at once) fails
+        // here - then the Keycloak account. If Keycloak refuses, the transaction rolls the row back
+        // and the two never disagree.
+        User saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new EmailInUseException();
+        }
+        try {
+            keycloakUserService.updateProfile(saved.getKeycloakId(), saved.getFirstName(), saved.getLastName(),
+                    newEmail);
+        } catch (KeycloakUserAlreadyExistsException e) {
+            throw new EmailInUseException();
+        }
         log.info("Updated user {}", saved.getUserId());
 
         auditService.event(AuditActionCatalog.USER_UPDATED)
@@ -327,11 +366,39 @@ public class UserServiceImpl implements UserService {
                 .newValue(Map.of(
                         "firstName", saved.getFirstName(),
                         "lastName", saved.getLastName() == null ? "" : saved.getLastName(),
+                        "email", saved.getEmail(),
                         "mfaEnabled", saved.isMfaEnabled(),
                         "status", saved.getStatus()))
                 .log();
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isEmailAvailable(String email, UUID userId) {
+        String candidate = email == null ? "" : email.strip();
+        if (candidate.isEmpty()) {
+            return false;
+        }
+        User user = userId == null ? null : findOwnedByCallerTenant(userId);
+        if (user != null && candidate.equalsIgnoreCase(user.getEmail())) {
+            return true; // their own
+        }
+        return !emailTaken(candidate, user);
+    }
+
+    /**
+     * Another account has {@code email}: a user in the caller's tenant (deactivated ones too - they
+     * keep theirs, and uq_users_tenant_email covers them), or any Keycloak account in the shared
+     * realm, by email or username. {@code self} (null for a new user) is never counted.
+     */
+    private boolean emailTaken(String email, User self) {
+        UUID tenantId = self != null ? self.getTenantId() : TenantContext.getTenantId();
+        UUID selfId = self != null ? self.getUserId() : new UUID(0, 0);
+        return userRepository.existsByTenantIdAndEmailIgnoreCaseAndUserIdNot(tenantId, email, selfId)
+                || keycloakUserService.emailTakenByAnotherAccount(email,
+                self != null ? self.getKeycloakId() : new UUID(0, 0));
     }
 
     @Override

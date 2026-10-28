@@ -1,0 +1,16 @@
+{{ define "oak.subject" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}: {{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}{{ with .CommonLabels.component }} · {{ . }}{{ end }}{{ with .CommonLabels.client }} ({{ . }}{{ with $.CommonLabels.environment }} / {{ . }}{{ end }}){{ end }}
+{{- end }}
+
+{{ define "oak.text" -}}
+{{ range .Alerts -}}
+{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}  {{ .Labels.alertname }}{{ with .Labels.severity }}  [{{ . }}]{{ end }}
+{{ with .Annotations.summary }}{{ . }}{{ end }}
+{{ with .Annotations.description }}{{ . }}{{ end }}
+Started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}{{ if eq .Status "resolved" }}
+Ended:   {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}{{ end }}
+{{ with .Labels.client }}Client: {{ . }}{{ end }}{{ with .Labels.environment }}  Environment: {{ . }}{{ end }}
+
+{{ end -}}
+{{ with "__LINK__" }}Details: System Monitoring screen - {{ . }}{{ end }}
+{{- end }}

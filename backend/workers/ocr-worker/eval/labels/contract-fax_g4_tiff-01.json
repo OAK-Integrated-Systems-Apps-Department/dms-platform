@@ -1,0 +1,29 @@
+{
+  "doc_id": "contract-fax_g4_tiff-01",
+  "type_code": "CONTRACT",
+  "condition": "fax_g4_tiff",
+  "filename": "contract-fax_g4_tiff-01.tiff",
+  "mime_type": "image/tiff",
+  "degraded": true,
+  "expected_page_count": 1,
+  "set": "synthetic",
+  "fields": {
+    "contract_party": "Soylent Foods PLC",
+    "contract_value": "52404.92",
+    "contract_start_date": "2026-06-17",
+    "contract_end_date": "2029-06-16",
+    "effective_date": "2026-06-17",
+    "expiry_date": "2029-06-16",
+    "review_due_date": "2026-12-14",
+    "classification_level": "public",
+    "retention_class": "permanent",
+    "department": "Procurement",
+    "tags": [
+      "archive",
+      "urgent"
+    ],
+    "description": "Annual maintenance agreement covering all site equipment.",
+    "reference_number": "REF-CT-07703"
+  },
+  "reference_text": "Soylent Foods PLC\n15 Harbour Road, Colombo 03\nVAT Reg. GB 384 2910 55\nSERVICE AGREEMENT\nContract Party:\nSoylent Foods PLC\nContract Value:\n52,404.92\nContract Start Date:\n17/06/2026\nContract End Date:\n16/06/2029\nEffective Date:\n17/06/2026\nExpiry Date:\n16/06/2029\nReview Due Date:\n14/12/2026\nClassification:\nPublic\nRetention Class:\nPermanent\nDepartment:\nProcurement\nTags:\narchive, urgent\nDescription:\nAnnual maintenance agreement covering all site equipment.\nReference Number: REF-CT-07703\nRemittance: Bank of Ceylon, Colombo 03, sort 77-11-04, account 8830142297, ref as above.\nRegistered in England and Wales no. 04482137. VAT registration GB 384 2910 55.\nLate payment interest accrues at 8% above base rate per annum under the Late Payment of\nCommercial Debts (Interest) Act 1998. Goods remain our property until paid in full.\nTerms: payment due within 30 days of the invoice date."
+}

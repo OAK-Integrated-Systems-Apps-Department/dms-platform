@@ -41,7 +41,18 @@ public class StorageObjectMover {
     /** @return the copied object's metadata at the destination (its ETag is what a cloud scanner reports back) */
     public StoredObjectMetadata copyVerified(StorageLocation from, String fromKey, StorageLocation to, String toKey,
                                              long sizeBytes, String contentType, String expectedSha256) {
-        ObjectStorageService target = objectStorageServiceFactory.resolve(to);
+        return copyVerified(from, fromKey, to, toKey, sizeBytes, contentType, expectedSha256, true);
+    }
+
+    /**
+     * @param encryptTarget false only when a cloud scanner must read the copy in place (re-staging for an
+     *                      AWS GuardDuty / Defender scan) - see ObjectStorageServiceFactory#resolveUnencrypted
+     */
+    public StoredObjectMetadata copyVerified(StorageLocation from, String fromKey, StorageLocation to, String toKey,
+                                             long sizeBytes, String contentType, String expectedSha256,
+                                             boolean encryptTarget) {
+        ObjectStorageService target = encryptTarget ? objectStorageServiceFactory.resolve(to)
+                : objectStorageServiceFactory.resolveForInPlaceScan(to);
         DownloadedObject source = objectStorageServiceFactory.resolve(from).download(from, fromKey);
         MessageDigest digest = sha256();
         StoredObjectMetadata stored = null;

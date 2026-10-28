@@ -57,6 +57,11 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private final UserRepository userRepository;
     private final UserService userService;
+    private final OrganisationStatusGuard organisationStatus;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    /** Still reachable for a closed organisation's users: signing out clears their cookies. */
+    private static final java.util.Set<String> OPEN_PATHS = java.util.Set.of("/api/v1/auth/logout");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -64,19 +69,49 @@ public class TenantContextFilter extends OncePerRequestFilter {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-                resolveKeycloakId(jwt).ifPresent(keycloakId ->
-                        userRepository.findByKeycloakIdAndDeletedFalse(keycloakId).ifPresent(user -> {
-                            TenantContext.set(user.getTenantId(), user.getUserId(), user.getDisplayName(),
-                                    user.getKeycloakId());
-                            if (!user.isVerified()) {
-                                userService.markVerified(user.getUserId());
-                            }
-                        }));
+                Optional<com.oak.dms.user.User> found = resolveKeycloakId(jwt)
+                        .flatMap(userRepository::findByKeycloakIdAndDeletedFalse);
+                if (found.isPresent()) {
+                    com.oak.dms.user.User user = found.get();
+                    // A suspended or closed organisation: a session its users already had stops working
+                    // on its very next request, not when the token runs out. Platform admins get through.
+                    Optional<String> inactive = organisationStatus.inactiveReason(user.getTenantId());
+                    if (inactive.isPresent() && !isPlatformAdmin(authentication)
+                            && !OPEN_PATHS.contains(request.getRequestURI())) {
+                        log.info("Refused {} {} for user {}: organisation {} is not active", request.getMethod(),
+                                request.getRequestURI(), user.getUserId(), user.getTenantId());
+                        refuse(request, response, inactive.get());
+                        return;
+                    }
+                    TenantContext.set(user.getTenantId(), user.getUserId(), user.getDisplayName(),
+                            user.getKeycloakId());
+                    if (!user.isVerified()) {
+                        userService.markVerified(user.getUserId());
+                    }
+                }
             }
             chain.doFilter(request, response);
         } finally {
             TenantContext.clear();
         }
+    }
+
+    private static boolean isPlatformAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+    }
+
+    private void refuse(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        // Same shape as GlobalExceptionHandler's answers - ISO dates, not epoch numbers.
+        objectMapper.copy().findAndRegisterModules()
+                .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .writeValue(response.getOutputStream(), com.oak.dms.common.dto.ErrorResponse.of(
+                HttpServletResponse.SC_FORBIDDEN, "Forbidden", OrganisationStatusGuard.CODE, message,
+                request.getRequestURI()));
     }
 
     private Optional<UUID> resolveKeycloakId(Jwt jwt) {
