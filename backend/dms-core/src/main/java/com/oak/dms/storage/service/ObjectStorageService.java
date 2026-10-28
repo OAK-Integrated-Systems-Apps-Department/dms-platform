@@ -46,6 +46,15 @@ public interface ObjectStorageService {
     /** @throws StorageObjectNotFoundException if {@code objectKey} doesn't exist at {@code location}. */
     StoredObjectMetadata getMetadata(StorageLocation location, String objectKey);
 
+    /**
+     * Whether objects written to this location are encrypted at rest by the storage itself - server-side
+     * encryption. Required for a staging area a cloud malware scanner reads in place, which the
+     * application can't encrypt (see ObjectStorageServiceFactory#resolveUnencrypted).
+     */
+    default boolean encryptsAtRest(StorageLocation location) {
+        return false;
+    }
+
     /** Empty when this provider doesn't support a client-facing presigned URL (e.g. plain filesystem storage). */
     Optional<String> generatePresignedDownloadUrl(StorageLocation location, String objectKey, Duration ttl);
 }

@@ -11,6 +11,42 @@ infra/secrets/*.env
 # Ignore dms-core encrypted secrets file
 infra/secrets/dms-core.secrets.enc.env
 infra/secrets/dms-core.secrets.env
+
+# Python build/test artifacts (ocr-worker, scripts/dev, and
+# infra/production/render-secrets.py). These appear
+# whenever pytest runs with the source tree bind-mounted into a container,
+# which is how the ocr-worker suite is run -- see its README.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OCR eval corpus (docs/ocr/ocr-production-prompt.md section 5).
+# The rendered documents are regenerated deterministically from
+# eval/corpus.py's fixed seed, and a single 300-DPI scan condition is
+# ~26 MB. The generator and the ground-truth labels under eval/labels/
+# ARE committed -- they are the corpus; these are just its output.
+backend/workers/ocr-worker/eval/corpus/
+
+# Real evaluation documents and EVERYTHING DERIVED FROM THEM.
+#
+# A real invoice carries customer names, bank details and amounts. So does
+# its label file -- that is the whole point of a label -- and so does the
+# per-document detail in a report. Ignoring only the documents would leave
+# the same data committed in a more convenient form.
+#
+# Aggregate metrics for the real set (counts, accuracy, latency) stay in
+# the committed report: they carry no document content.
+backend/workers/ocr-worker/eval/corpus/real/
+backend/workers/ocr-worker/eval/labels/real/
+backend/workers/ocr-worker/eval/reports/*-real-detail.json
+
+# Per-run eval scratch, superseded by the run's own committed
+# reports/<name>.json + .md. The progress trail exists so an INTERRUPTED
+# run still says which documents were scored (an hour of inference was
+# nearly lost to a killed shell); once the report exists it is redundant.
+backend/workers/ocr-worker/eval/reports/*.progress.jsonl
+backend/workers/ocr-worker/eval/reports/*.log
+
 # Production server-side files (infra/production) - real secrets and deploy
 # state live only on the server; see infra/production/.env.example.
 infra/production/.env
@@ -18,5 +54,10 @@ infra/production/dms-core.env
 infra/production/.deploy-history
 infra/production/.deploy.lock
 
-# Python bytecode (e.g. from infra/production/render-secrets.py)
-__pycache__/
+# Development encryption key backup (infra/local) - never commit keys.
+.dms-dev-keys/
+
+# SonarQube scanner working directory (infra/sonarqube/scan.sh). Holds the
+# scanner's local cache and the report-task.txt that points at the last
+# analysis - regenerated every run, and never useful to anyone else.
+.scannerwork/

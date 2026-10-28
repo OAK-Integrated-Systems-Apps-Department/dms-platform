@@ -24,7 +24,10 @@ public record ProvisionTenantRequest(
 
         @NotBlank
         @Size(max = 255)
-        @Pattern(regexp = "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$",
+        // Unambiguous and counted rather than unbounded - see the note on
+        // the same field in CreateTenantRequest for why it is not the
+        // obvious hostname regex.
+        @Pattern(regexp = "^[a-z0-9]+(-+[a-z0-9]+){0,127}(\\.[a-z0-9]+(-+[a-z0-9]+){0,127}){0,127}$",
                 message = "domain must be a valid lowercase hostname, e.g. acme.oakdms.com")
         String domain,
 

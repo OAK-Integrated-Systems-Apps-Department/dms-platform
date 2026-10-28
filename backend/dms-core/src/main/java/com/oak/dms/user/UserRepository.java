@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,9 +23,33 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByTenantIdAndEmailAndDeletedFalse(UUID tenantId, String email);
 
-    boolean existsByTenantIdAndEmailAndDeletedFalse(UUID tenantId, String email);
+    /**
+     * Another user in the tenant - deactivated ones included, since uq_users_tenant_email covers
+     * them too - already has this email, ignoring case.
+     */
+    boolean existsByTenantIdAndEmailIgnoreCaseAndUserIdNot(UUID tenantId, String email, UUID userId);
 
-    boolean existsByTenantIdAndUsernameAndDeletedFalse(UUID tenantId, String username);
+    /** Any user in the tenant - deactivated ones included (uq_users_tenant_username) - has this username, ignoring case. */
+    boolean existsByTenantIdAndUsernameIgnoreCase(UUID tenantId, String username);
+
+    /**
+     * Active users of the tenant whose display name, username or email
+     * contains {@code search} (lower-cased, wrapped in %), by name - for
+     * people pickers. A null search lists everyone.
+     */
+    @Query("""
+            select u from User u
+            where u.tenantId = :tenantId and u.deleted = false and u.status = :status
+              and (:search is null or lower(u.displayName) like :search or lower(u.username) like :search
+                   or lower(u.email) like :search)
+            order by u.displayName
+            """)
+    List<User> searchByStatus(@Param("tenantId") UUID tenantId, @Param("status") User.UserStatus status,
+                              @Param("search") String search, Pageable pageable);
+
+    default List<User> searchActive(UUID tenantId, String search, Pageable pageable) {
+        return searchByStatus(tenantId, User.UserStatus.active, search, pageable);
+    }
 
     // Includes deactivated (soft-deleted) users deliberately, unlike the
     // three lookups above: the User List / View User screens need to keep
@@ -40,4 +65,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // this query's results already.
     @Query("select u from User u where u.tenantId = :tenantId")
     Page<User> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    java.util.List<User> findAllByUserIdInAndTenantIdAndDeletedFalse(java.util.Collection<UUID> userIds, UUID tenantId);
 }

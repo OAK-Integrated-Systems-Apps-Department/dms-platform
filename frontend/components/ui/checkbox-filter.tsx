@@ -1,12 +1,27 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { createPortal } from "react-dom"
 import { Check, ChevronDown, Search, X } from "lucide-react"
+
+import { cn } from "@/lib/utils"
 
 const POPOVER_MAX_HEIGHT = 420
 const VIEWPORT_MARGIN = 12
 const MIN_POPOVER_HEIGHT = 200
+
+// Nothing to subscribe to - used with useSyncExternalStore purely to tell
+// the client render (true) apart from server/hydration (false).
+function subscribeNoop() {
+  return () => {}
+}
 
 export interface CheckboxFilterProps {
   /** Label shown on the trigger button and used in placeholder text, e.g. "Module". */
@@ -71,14 +86,14 @@ export function CheckboxFilter({
 }: CheckboxFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false
+  )
   const [position, setPosition] = useState<PopoverPosition | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -98,12 +113,19 @@ export function CheckboxFilter({
     }
   }, [open])
 
-  useLayoutEffect(() => {
+  // Closing resets the search box and popover position - adjusted during
+  // render against the last-seen `open` rather than in the effect below.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (!open) {
       setSearch("")
       setPosition(null)
-      return
     }
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return
 
     function updatePosition() {
       const rect = triggerRef.current?.getBoundingClientRect()
@@ -111,10 +133,14 @@ export function CheckboxFilter({
 
       const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN
       const spaceAbove = rect.top - VIEWPORT_MARGIN
-      const openUpward = spaceBelow < POPOVER_MAX_HEIGHT && spaceAbove > spaceBelow
+      const openUpward =
+        spaceBelow < POPOVER_MAX_HEIGHT && spaceAbove > spaceBelow
 
       const available = openUpward ? spaceAbove : spaceBelow
-      const maxHeight = Math.min(POPOVER_MAX_HEIGHT, Math.max(MIN_POPOVER_HEIGHT, available))
+      const maxHeight = Math.min(
+        POPOVER_MAX_HEIGHT,
+        Math.max(MIN_POPOVER_HEIGHT, available)
+      )
 
       setPosition({
         top: openUpward ? undefined : rect.bottom + 6,
@@ -129,7 +155,11 @@ export function CheckboxFilter({
     // (the options list, the chips tray) — only reposition in response to
     // scrolling/resizing that could move the trigger button.
     function handleScroll(event: Event) {
-      if (popoverRef.current && event.target instanceof Node && popoverRef.current.contains(event.target)) {
+      if (
+        popoverRef.current &&
+        event.target instanceof Node &&
+        popoverRef.current.contains(event.target)
+      ) {
         return
       }
       updatePosition()
@@ -150,13 +180,14 @@ export function CheckboxFilter({
     // without `selected`/`options` here the popover would stay anchored
     // to wherever the trigger was BEFORE that reflow — still rendering,
     // just no longer aligned with the (now-moved) trigger button.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, selected, options])
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return options
-    return options.filter((option) => getLabel(option).toLowerCase().includes(q))
+    return options.filter((option) =>
+      getLabel(option).toLowerCase().includes(q)
+    )
   }, [options, search, getLabel])
 
   function toggleOption(option: string) {
@@ -185,34 +216,40 @@ export function CheckboxFilter({
 
   return (
     <div className="relative">
+      {/* Clear sits OUTSIDE this button, overlapping its right edge. It was
+          a <span role="button"> nested inside, which no keyboard could reach
+          and which is invalid HTML besides - a button may not contain
+          another control. */}
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         style={{ width: triggerWidth }}
-        className="flex h-[38px] items-center justify-between gap-2 rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card"
+        className={cn(
+          "flex h-[38px] items-center gap-2 rounded-btn border border-border bg-muted pl-3 text-[13.5px] text-foreground outline-none focus-visible:border-primary focus-visible:bg-card",
+          selected.length > 0 ? "pr-14" : "pr-9"
+        )}
       >
         <span className="truncate">
           <span className="text-[var(--ink-faint)]">{label}: </span>
           {summary}
         </span>
-        <span className="flex shrink-0 items-center gap-1">
-          {selected.length > 0 && (
-            <span
-              role="button"
-              aria-label={`Clear ${label.toLowerCase()} filter`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange([])
-              }}
-              className="flex size-4 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
-            >
-              <X size={12} />
-            </span>
-          )}
-          <ChevronDown size={14} className="text-[var(--ink-faint)]" />
-        </span>
       </button>
+
+      {selected.length > 0 && (
+        <button
+          type="button"
+          aria-label={`Clear ${label.toLowerCase()} filter`}
+          onClick={() => onChange([])}
+          className="absolute top-1/2 right-8 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
+        >
+          <X size={12} />
+        </button>
+      )}
+      <ChevronDown
+        size={14}
+        className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
+      />
 
       {open &&
         mounted &&
@@ -287,6 +324,13 @@ export function CheckboxFilter({
                       // the label's default action avoids that scroll
                       // entirely; keyboard/screen-reader users tabbing
                       // directly to the input below are unaffected.
+                      //
+                      // Sonar's S1082 flags this as a click handler on a
+                      // non-interactive element. It is a false positive: the
+                      // <input type="checkbox"> below is a real control with
+                      // its own onChange, so Tab reaches it and Space toggles
+                      // it. Giving the <label> its own keyboard handler would
+                      // add a second, duplicate way to toggle the same box.
                       onClick={(event) => {
                         event.preventDefault()
                         toggleOption(option)

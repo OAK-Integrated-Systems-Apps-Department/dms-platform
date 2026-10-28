@@ -15,6 +15,7 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -123,6 +124,44 @@ public class KeycloakUserService {
         } catch (Exception e) {
             throw new KeycloakIntegrationException("Failed to set temporary password for " + keycloakId, e);
         }
+    }
+
+    /**
+     * Writes a user's name - and, when {@code newEmail} isn't null, their email - to their Keycloak
+     * account, so sign-in, tokens and Keycloak's own screens show what DMS shows. A changed email
+     * starts out unverified. Keycloak refusing it as another account's (409) surfaces as
+     * {@link KeycloakUserAlreadyExistsException}.
+     */
+    public void updateProfile(UUID keycloakId, String firstName, String lastName, String newEmail) {
+        try {
+            var user = realm().users().get(keycloakId.toString());
+            UserRepresentation representation = user.toRepresentation();
+            representation.setFirstName(firstName);
+            representation.setLastName(lastName == null ? "" : lastName);
+            if (newEmail != null) {
+                representation.setEmail(newEmail);
+                representation.setEmailVerified(false);
+            }
+            user.update(representation);
+        } catch (WebApplicationException e) {
+            if (e.getResponse() != null && e.getResponse().getStatus() == Response.Status.CONFLICT.getStatusCode()) {
+                throw new KeycloakUserAlreadyExistsException(newEmail, null);
+            }
+            throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
+        }
+    }
+
+    /**
+     * Whether some Keycloak account other than {@code keycloakId} would clash with {@code email}:
+     * one with that email, or one whose username is it (people may sign in with either).
+     */
+    public boolean emailTakenByAnotherAccount(String email, UUID keycloakId) {
+        UsersResource users = realm().users();
+        String self = keycloakId.toString();
+        return users.searchByEmail(email, true).stream().anyMatch(u -> !self.equals(u.getId()))
+                || users.searchByUsername(email, true).stream().anyMatch(u -> !self.equals(u.getId()));
     }
 
     public void disableUser(UUID keycloakId) {
@@ -330,6 +369,33 @@ public class KeycloakUserService {
         } catch (Exception e) {
             throw new KeycloakIntegrationException(
                     "Failed to list platform realm roles for " + keycloakId, e);
+        }
+    }
+
+    /**
+     * Keycloak ids of every user directly assigned the realm role
+     * {@code roleName} (e.g. {@code TENANT_ADMIN}), across all tenants -
+     * the caller narrows to one tenant by matching {@code users.keycloak_id}.
+     * Paged through Keycloak's role-members API. Used to include tenant
+     * admins (who hold every permission implicitly, see
+     * {@code AuthorizationService#hasFullAccess}) as quarantine
+     * notification recipients.
+     */
+    public List<UUID> listRealmRoleMemberIds(String roleName) {
+        final int pageSize = 100;
+        try {
+            List<UUID> ids = new ArrayList<>();
+            for (int first = 0; ; first += pageSize) {
+                List<UserRepresentation> page = realm().roles().get(roleName).getUserMembers(first, pageSize);
+                page.forEach(user -> ids.add(UUID.fromString(user.getId())));
+                if (page.size() < pageSize) {
+                    return ids;
+                }
+            }
+        } catch (WebApplicationException e) {
+            throw keycloakFailure("list members of realm role " + roleName, e);
+        } catch (Exception e) {
+            throw new KeycloakIntegrationException("Failed to list members of realm role " + roleName, e);
         }
     }
 

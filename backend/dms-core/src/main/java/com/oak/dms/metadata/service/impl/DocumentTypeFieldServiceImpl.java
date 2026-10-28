@@ -264,8 +264,11 @@ public class DocumentTypeFieldServiceImpl implements DocumentTypeFieldService {
 
         return new DocumentTypeSchemaResponse.SchemaField(
                 field.getFieldId(), field.getFieldKey(), field.getLabel(), field.getHelpText(), field.getDataType(),
-                field.getStatus().name(), mapping.mandatory(), mapping.hidden(), mapping.displayOrder(),
-                mapping.fieldGroup(), effectiveDefault, options, validations);
+                // mapping is a record on this branch (accessors, not get*/is*);
+                // ocrExtractable is the OCR branch's addition, re-applied here
+                // because SchemaField declares it.
+                field.getStatus().name(), mapping.mandatory(), mapping.hidden(), field.isOcrExtractable(),
+                mapping.displayOrder(), mapping.fieldGroup(), effectiveDefault, options, validations);
     }
 
     private List<DocumentTypeFieldResponse> toResponses(DocumentTypeSchema schema, UUID tenantId) {

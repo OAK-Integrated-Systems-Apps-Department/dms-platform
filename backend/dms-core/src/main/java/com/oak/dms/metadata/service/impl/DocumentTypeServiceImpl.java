@@ -9,6 +9,7 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.metadata.dto.CreateDocumentTypeRequest;
 import com.oak.dms.metadata.mapper.DocumentTypeMapper;
 import com.oak.dms.metadata.dto.DocumentTypeResponse;
+import com.oak.dms.metadata.dto.SelectableDocumentTypeResponse;
 import com.oak.dms.metadata.dto.UpdateDocumentTypeRequest;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.entity.DocumentTypeSchema;
@@ -113,6 +114,16 @@ public class DocumentTypeServiceImpl implements DocumentTypeService {
     public Page<DocumentTypeResponse> listDocumentTypes(Pageable pageable) {
         return documentTypeRepository.findAllByTenant(TenantContext.getTenantId(), pageable)
                 .map(documentTypeMapper::toResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SelectableDocumentTypeResponse> listSelectableDocumentTypes() {
+        // Inactive types can't receive new documents, so they're never offered.
+        return documentTypeRepository.findAllByTenantOrderedByDisplayOrder(TenantContext.getTenantId()).stream()
+                .filter(t -> t.getStatus() == DocumentType.DocumentTypeStatus.active)
+                .map(t -> new SelectableDocumentTypeResponse(t.getDocumentTypeId(), t.getTypeCode(), t.getTypeName()))
+                .toList();
     }
 
     @Override

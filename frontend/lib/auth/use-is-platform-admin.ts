@@ -2,7 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query"
 
-import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { fetchMyPlatformRoles } from "@/lib/users/api"
 
 /**
@@ -18,14 +17,22 @@ import { fetchMyPlatformRoles } from "@/lib/users/api"
  * `GET /api/v1/users/me/platform-roles` (which includes PLATFORM_ADMIN for
  * the caller's own identity) rather than `GET /api/v1/users/{id}/platform-roles`
  * (which deliberately excludes it for arbitrary other users).
+ *
+ * Deliberately does NOT wait on `useCurrentUser`. It used to be gated on
+ * `enabled: !!currentUser?.userId`, which made it permanently broken for the
+ * only accounts it exists to identify: a platform administrator belongs to no
+ * tenant, so `GET /api/v1/users/me` answers 401 TENANT_CONTEXT_MISSING for
+ * them, `currentUser` was never set, the query never ran, and `isPending`
+ * stayed true for the rest of the session - leaving Organisations stuck on
+ * "Checking your access…" and every platform-admin nav item hidden.
+ *
+ * The endpoint reads the caller's own JWT and needs no tenant context, so it
+ * is safe to run unconditionally - the same way `useCurrentUser` itself does.
  */
 export function useIsPlatformAdmin() {
-  const { data: currentUser } = useCurrentUser()
-
   const query = useQuery({
-    queryKey: ["current-user-my-platform-roles", currentUser?.userId],
+    queryKey: ["current-user-my-platform-roles"],
     queryFn: fetchMyPlatformRoles,
-    enabled: !!currentUser?.userId,
     retry: false,
   })
 

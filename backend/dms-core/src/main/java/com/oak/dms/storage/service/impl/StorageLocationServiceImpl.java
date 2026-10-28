@@ -9,6 +9,7 @@ import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.dto.CreateStorageLocationRequest;
 import com.oak.dms.storage.dto.StorageLocationResponse;
 import com.oak.dms.storage.entity.StorageLocation;
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.storage.helper.StorageLocationMapper;
 import com.oak.dms.storage.repository.StorageLocationRepository;
 import com.oak.dms.storage.service.StorageLocationService;
@@ -45,6 +46,7 @@ public class StorageLocationServiceImpl implements StorageLocationService {
                 .basePath(request.basePath())
                 .pathStyleAccess(request.pathStyleAccess())
                 .credentialRef(request.credentialRef())
+                .purpose(StoragePurpose.document)
                 .status(StorageLocation.Status.active)
                 .createdBy(TenantContext.getUserId())
                 .build();
@@ -73,7 +75,7 @@ public class StorageLocationServiceImpl implements StorageLocationService {
     @Override
     @Transactional(readOnly = true)
     public List<StorageLocationResponse> listLocations() {
-        return storageLocationRepository.findAllByTenantIdAndDeletedFalse(TenantContext.getTenantId())
+        return storageLocationRepository.findAllByTenantIdAndPurposeAndDeletedFalse(TenantContext.getTenantId(), StoragePurpose.document)
                 .stream()
                 .map(storageLocationMapper::toResponse)
                 .toList();

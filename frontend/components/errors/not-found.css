@@ -1,0 +1,160 @@
+/* =========================================================================
+   404 — "This page has been misfiled"
+   -------------------------------------------------------------------------
+   A ledger-ruled page with a giant 4·0·4 whose 0 is a document sheet that
+   gets stamped NOT FOUND. Everything that moves stops for reduced motion.
+   ========================================================================= */
+
+.nf-page {
+  --nf-depth: color-mix(in oklab, var(--primary) 50%, black);
+  --nf-glow: color-mix(in oklab, var(--primary) 20%, transparent);
+  --nf-gold-glow: color-mix(in oklab, var(--gold) 22%, transparent);
+}
+
+/* ruled ledger paper, fading out toward the edges */
+.nf-ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 38px,
+    color-mix(in srgb, var(--primary) 5%, transparent) 39px
+  );
+  mask-image: radial-gradient(ellipse at 50% 40%, black 30%, transparent 75%);
+}
+
+.nf-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  opacity: 0.6;
+  animation: nf-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes nf-drift {
+  to {
+    transform: translate3d(60px, -40px, 0) scale(1.2);
+  }
+}
+
+/* --- the numerals ---------------------------------------------------------- */
+.nf-digit {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  color: var(--primary);
+  /* a stacked "pressed into paper" depth, in the brand colour */
+  text-shadow:
+    1px 1px 0 var(--nf-depth),
+    2px 2px 0 var(--nf-depth),
+    3px 3px 0 var(--nf-depth),
+    4px 4px 0 var(--nf-depth),
+    6px 10px 24px var(--nf-glow);
+  animation: nf-rise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.nf-digit:last-child {
+  animation-delay: 0.12s;
+}
+
+@keyframes nf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(30px) rotate(-4deg);
+  }
+}
+
+/* --- the sheet that stands in for the 0 ---------------------------------- */
+.nf-scene {
+  perspective: 900px;
+}
+
+.nf-sheet {
+  transform-style: preserve-3d;
+  transform: rotateY(-16deg) rotateX(8deg) rotate(-4deg);
+  animation:
+    nf-sheet-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.05s both,
+    nf-float 6s ease-in-out 1s infinite;
+  box-shadow:
+    0 1px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
+    -14px 22px 40px -10px color-mix(in oklab, black 30%, transparent);
+}
+
+@keyframes nf-sheet-in {
+  from {
+    opacity: 0;
+    transform: rotateY(-50deg) rotateX(30deg) rotate(-20deg) translateY(-40px);
+  }
+}
+
+@keyframes nf-float {
+  0%,
+  100% {
+    transform: rotateY(-16deg) rotateX(8deg) rotate(-4deg) translateY(0);
+  }
+  50% {
+    transform: rotateY(-10deg) rotateX(4deg) rotate(-2deg) translateY(-10px);
+  }
+}
+
+/* where the missing file should be */
+.nf-slot {
+  animation: nf-slot-pulse 3s ease-in-out infinite;
+}
+
+@keyframes nf-slot-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* the ink stamp lands with a thud, after the sheet is in place */
+.nf-stamp {
+  transform: rotate(-14deg);
+  animation: nf-stamp 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) 0.9s both;
+}
+
+/* a faint dot grain, like ink on paper */
+.nf-stamp-inner {
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--rust) 18%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-size: 5px 5px;
+}
+
+@keyframes nf-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-14deg) scale(2.2);
+  }
+  70% {
+    opacity: 1;
+    transform: rotate(-14deg) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-14deg) scale(1);
+  }
+}
+
+/* --- the words ------------------------------------------------------------- */
+.nf-fade {
+  animation: nf-fade 0.7s ease both;
+  animation-delay: var(--nf-delay, 0.3s);
+}
+
+@keyframes nf-fade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-page *,
+  .nf-page *::before,
+  .nf-page *::after {
+    animation: none !important;
+  }
+}

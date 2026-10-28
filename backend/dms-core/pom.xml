@@ -28,8 +28,18 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+        <!-- Opt-in slow ITs (JUnit @Tag("perf")) stay out of the normal `verify`; `-Pperf` runs only them, see docs/relationships-user-guide.md -->
+        <it.excludedGroups>perf</it.excludedGroups>
+        <it.groups></it.groups>
     </properties>
     <dependencies>
+        <!-- Document encryption (Module DE): streaming AES-256-GCM per stored object.
+             Google Tink's reviewed streaming AEAD - no home-made crypto format. -->
+        <dependency>
+            <groupId>com.google.crypto.tink</groupId>
+            <artifactId>tink</artifactId>
+            <version>1.15.0</version>
+        </dependency>
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -71,9 +81,12 @@
           Messaging: RabbitMQ is the DMS asynchronous processing backbone
           (Tech Stack Review), not just an audit/notification broker.
           dms-core publishes domain events via the outbox pattern
-          (com.oak.dms.outbox); the actual queue consumers live in the
-          separate worker deployables (backend/workers/*), not in this
-          module.
+          (com.oak.dms.outbox); most queue consumers live in the separate
+          worker deployables (backend/workers/*), not in this module.
+          One deliberate exception since Phase 1 B.1: com.oak.dms.ocrworker.
+          OcrEventsConsumer, since applying OCR results onto
+          document_metadata_values is a write path only dms-core owns
+          (see RabbitMqConfig's own class comment for the full reasoning).
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -100,6 +113,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--
+          Backs /actuator/prometheus, which application.yml has exposed all
+          along - without a registry on the classpath that endpoint simply
+          does not exist. Scraped by infra/monitoring's Prometheus; version
+          managed by the Boot parent.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
         <dependency>
@@ -132,24 +155,11 @@
             <version>26.0.12</version>
             <scope>compile</scope>
         </dependency>
-
-        <!--
-          Object storage: AWS SDK v2's S3 client, used by S3ObjectStorageAdapter.
-          Its endpointOverride()/forcePathStyle() support is what lets one adapter
-          talk to real AWS S3, MinIO, and the SeaweedFS S3 gateway - see
-          com.oak.dms.storage and docs/storage-architecture.md.
-        -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.55.1</version>
         </dependency>
-
-        <!--
-          Object storage: Azure Blob Storage client, used by
-          AzureBlobStorageAdapter - see com.oak.dms.storage and
-          docs/storage-architecture.md.
-        -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-blob</artifactId>
@@ -157,8 +167,45 @@
         </dependency>
 
         <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+
+        <!-- Text of uploads for "similar document" detection (DocumentFingerprints): old Word/PowerPoint -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+        <!-- ... and PDF -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+
+        <!-- Magic-byte MIME detection at upload (Phase 1 B.5): real gap
+             found live, uploadDocument previously trusted MultipartFile#
+             getContentType() (a client-supplied header) outright. tika-core
+             only (not the full parser tree) since only detection is needed,
+             matching ocr-worker's own filetype-based sniff as a second,
+             independent layer (backend/workers/ocr-worker/pyproject.toml). -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
         </dependency>
 
         <dependency>
@@ -178,6 +225,15 @@
             <artifactId>spring-boot-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- 3.2 Notification: an in-process SMTP server for email-delivery ITs
+             (captures real MimeMessages, HTML + text). Test scope only. -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail</artifactId>
+            <version>2.1.3</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -186,6 +242,43 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+              Test coverage, for SonarQube to read.
+
+              Declared here and not in backend/pom.xml because this module's
+              <parent> is spring-boot-starter-parent, not that aggregator -
+              it groups the modules for building but does not configure
+              them, so nothing declared there reaches this file. A copy of
+              this block is what each worker module will need when it is
+              enabled.
+
+              prepare-agent runs at initialize, before any test does;
+              report runs at verify, after both surefire and failsafe have
+              finished. So `mvn verify` leaves the XML Sonar wants at
+              target/site/jacoco/jacoco.xml - the scanner's default path -
+              without anyone having to ask for it.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -243,7 +336,50 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+              Runs the *IT integration tests in `mvn verify` (surefire only runs
+              *Test). They need the same Postgres/Redis/RabbitMQ CI already
+              provides (DB_URL etc.). Excluded: ITs that need services CI does
+              not run - a live Keycloak admin API (ImpersonationIT,
+              PermissionCodeAuditIT) and a ClamAV daemon (DocumentUploadIT).
+              Run those locally with -Dit.test=... against the full compose stack.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${it.excludedGroups}</excludedGroups>
+                    <groups>${it.groups}</groups>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/ImpersonationIT.java</exclude>
+                        <exclude>**/PermissionCodeAuditIT.java</exclude>
+                        <exclude>**/DocumentUploadIT.java</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- ./mvnw verify -Pperf -Dit.test=RelationshipScaleIT : runs only the @Tag("perf") ITs (slow, large generated data). -->
+        <profile>
+            <id>perf</id>
+            <properties>
+                <it.excludedGroups>none</it.excludedGroups>
+                <it.groups>perf</it.groups>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

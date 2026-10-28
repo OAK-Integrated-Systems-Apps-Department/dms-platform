@@ -19,12 +19,19 @@ import { DocumentTypesTable } from "@/components/document-types/document-types-t
 
 const DEFAULT_PAGE_SIZE = 10
 
+/** Managing templates (V70) opens the list too, to pick the type - read-only for the type itself. */
+const TEMPLATE_PERMISSIONS = [
+  PermissionCodes.MDTM_DOCUMENT_TEMPLATES_CREATE,
+  PermissionCodes.MDTM_DOCUMENT_TEMPLATES_UPDATE,
+  PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE,
+]
+
 /** Document Types — list (A5). Search/filter, add a type, or view/edit/activate/deactivate an existing one. */
 export default function DocumentTypesListPage() {
   usePageTitle("Document Types")
 
   const { hasPermission, hasAnyPermission } = usePermissions()
-  const canView = hasAnyPermission(PermissionCodes.MDTM_CONTENT_TYPES_VIEW, PermissionCodes.MDTM_CONTENT_TYPES_UPDATE)
+  const canView = hasAnyPermission(PermissionCodes.MDTM_CONTENT_TYPES_VIEW, PermissionCodes.MDTM_CONTENT_TYPES_UPDATE, ...TEMPLATE_PERMISSIONS)
   const { documentTypes, isLoading, isError, activate, deactivate } = useDocumentTypes(canView)
   const canCreate = hasPermission(PermissionCodes.MDTM_CONTENT_TYPES_CREATE)
   const canUpdate = hasPermission(PermissionCodes.MDTM_CONTENT_TYPES_UPDATE)
@@ -71,7 +78,7 @@ export default function DocumentTypesListPage() {
         </p>
       </div>
 
-      <PermissionGate permission={[PermissionCodes.MDTM_CONTENT_TYPES_VIEW, PermissionCodes.MDTM_CONTENT_TYPES_UPDATE]}>
+      <PermissionGate permission={[PermissionCodes.MDTM_CONTENT_TYPES_VIEW, PermissionCodes.MDTM_CONTENT_TYPES_UPDATE, ...TEMPLATE_PERMISSIONS]}>
         <div className="mb-4 flex flex-wrap items-center gap-2.5">
           <SearchInput className="min-w-[220px] flex-1" value={query} onChange={handleQueryChange} placeholder="Search document types…" />
 

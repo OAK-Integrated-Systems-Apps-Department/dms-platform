@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react"
 
+import { UploadsPanel } from "@/components/documents/uploads-panel"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { useSidebarCookie } from "@/components/providers/sidebar-cookie-provider"
 
@@ -75,6 +76,8 @@ export function DashboardShell({
           {children}
         </div>
       </SidebarInset>
+      {/* Uploads in progress, bottom right - they carry on from page to page. */}
+      <UploadsPanel />
     </SidebarProvider>
   )
 }

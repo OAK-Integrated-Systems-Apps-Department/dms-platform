@@ -1,0 +1,41 @@
+# Overlay for `phase1_closeout_verification.py reaper` (Phase 1 open item #4).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.closeout-reaper.yml up -d ocr-worker
+#
+# Restore with: docker compose -f docker-compose.yml up -d ocr-worker
+#
+# Only the lease/reaper clock is shortened -- the per-document timeout is
+# left at production values on purpose, so the document a pool worker is
+# SIGKILLed in the middle of is genuinely interrupted rather than having
+# timed out first. Deliberately NOT combined with the timeout overlay.
+services:
+  ocr-worker:
+    environment:
+      # 60s instead of 1800s, so an abandoned lease actually expires inside
+      # a test run; swept every 10s with a 5s first-retry backoff, so the
+      # whole expire -> requeue -> claim -> attempt 2 cycle lands in ~75s
+      # rather than ~31 minutes.
+      OCR_LEASE_DURATION_S: "60"
+      OCR_REAPER_INTERVAL_S: "10"
+      OCR_REAPER_BACKOFF_BASE_S: "5"
+
+      # Required, not incidental. A 60s lease is shorter than a real
+      # multi-page scan takes (the Phase 1 run measured 1014s for a
+      # 35-page scanned PDF), so with the normal OCR_MAX_PAGES=50 such a
+      # document livelocks: the lease expires while it is still
+      # legitimately running, the reaper requeues it, the retry starts
+      # over, and it never finishes. Observed exactly that on the first
+      # run of this overlay, against leftover 35-page fixtures from an
+      # earlier harness run -- they saturated the pool and the check's own
+      # document never got claimed.
+      #
+      # Capping pages to 3 makes anything bigger fail fast with
+      # TOO_MANY_PAGES instead of cycling. The general rule this is a
+      # special case of: OCR_LEASE_DURATION_S must exceed the largest
+      # possible per-document hard deadline
+      # (OCR_TIMEOUT_BASE_S + OCR_MAX_PAGES x OCR_TIMEOUT_PER_PAGE_S +
+      # OCR_TIMEOUT_HARD_GRACE_S), or the reaper competes with the worker
+      # instead of backing it up. ocr-worker logs a warning at startup
+      # when that does not hold -- including for this overlay, which is
+      # expected.
+      OCR_MAX_PAGES: "3"

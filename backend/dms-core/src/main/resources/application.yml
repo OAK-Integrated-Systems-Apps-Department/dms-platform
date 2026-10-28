@@ -2,6 +2,20 @@ spring:
   application:
     name: dms-core
 
+  # Spring Boot's default scheduler is a SINGLE thread shared by every
+  # @Scheduled method. Until Phase 2 there was only one (OutboxRelay,
+  # every 2s), so that was fine. OcrFieldsReconciler is the second, and
+  # its tick can do real work -- a schema lookup plus a
+  # delete-then-insert per field, for up to dms.ocr.batch-size versions.
+  # On one thread, a slow reconciler tick delays the relay, and the
+  # relay is the mechanism every OCR job is triggered by. Also covers
+  # ScanRetryScheduler (ClamAV retry) and workflow SLA reminders, which
+  # touch independent tables and shouldn't block each other either.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:2}
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/dms_dev}
     username: ${DB_USERNAME:postgres}
@@ -21,6 +35,25 @@ spring:
         jdbc.batch_size: 50
         order_inserts: true
         order_updates: true
+
+  # Spring's own multipart default is 1MB, which silently capped uploads
+  # before the scan gate existed, and which a real phone-camera photo of a
+  # document routinely exceeds - it surfaced as a raw
+  # MaxUploadSizeExceededException and a generic "An unexpected error
+  # occurred" until GlobalExceptionHandler learned to translate it.
+  #
+  # -1 = no limit, in line with dms.scanning.max-file-size-bytes below; the
+  # scan gate enforces any engine's own byte limit itself, this just stops
+  # the servlet layer rejecting first. Needed unlimited (not just a large
+  # finite ceiling) once bulk import's own ZIP/file uploads could reach tens
+  # of GB - see infra/production/nginx/dms.conf's client_max_body_size 0.
+  # Parts over the threshold are spooled to disk, never held in memory - so
+  # the temp directory needs room for the largest file uploaded.
+  servlet:
+    multipart:
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:-1}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:-1}
+      file-size-threshold: ${UPLOAD_FILE_SIZE_THRESHOLD:1MB}
 
   flyway:
     enabled: true
@@ -149,10 +182,252 @@ app:
     session-minutes: ${IMPERSONATION_SESSION_MINUTES:30}
 
 dms:
+  # Folder/document access (V53/V54): each tenant's folder tree and each
+  # user's access entries, kept between requests until anything that decides
+  # access changes (an access generation moved on by database triggers, V61).
+  # The TTL is only a backstop; 0 turns the cache off.
+  # Office previews (DocumentRenditionService): Word .doc, PowerPoint,
+  # OpenDocument, RTF and Visio files are converted to PDF by the Gotenberg
+  # container on their first preview. Blank = such files are download-only.
+  preview:
+    converter-url: ${PREVIEW_CONVERTER_URL:}
+    timeout: ${PREVIEW_TIMEOUT:PT90S}
+    max-bytes: ${PREVIEW_MAX_BYTES:52428800}
+  # Deleted documents stay in the recycle bin this long (each tenant can set
+  # its own), then the sweep purges them: files and keys destroyed for good.
+  # Digital Impact on the dashboard (DigitalImpactService). Pages are read from the files
+  # (PageCountBackfill); these are the assumptions that turn them into estimates. Defaults are
+  # the low end of published ranges, so the figures understate. Bump calculation-version when
+  # the method changes.
+  impact:
+    calculation-version: ${IMPACT_CALCULATION_VERSION:1}
+    paper-size: ${IMPACT_PAPER_SIZE:A4}
+    paper-width-mm: ${IMPACT_PAPER_WIDTH_MM:210}
+    paper-height-mm: ${IMPACT_PAPER_HEIGHT_MM:297}
+    paper-gsm: ${IMPACT_PAPER_GSM:80}
+    pages-per-sheet: ${IMPACT_PAGES_PER_SHEET:2}
+    co2e-kg-per-kg-paper: ${IMPACT_CO2E_KG_PER_KG_PAPER:1.08}
+    co2e-source: ${IMPACT_CO2E_SOURCE:EPA Victoria, office copy paper - 1.08 to 1.52 kg CO2e/kg; the low end of the range}
+    water-litres-per-kg-paper: ${IMPACT_WATER_LITRES_PER_KG_PAPER:300}
+    water-source: ${IMPACT_WATER_SOURCE:Water Footprint Network, printing and writing paper - 300 to 2600 L/kg; the low end of the range}
+    page-count-interval: ${IMPACT_PAGE_COUNT_INTERVAL:PT2M}
+    page-count-max-bytes: ${IMPACT_PAGE_COUNT_MAX_BYTES:524288000}
+  documents:
+    recycle-bin:
+      retention-days: ${RECYCLE_BIN_RETENTION_DAYS:30}
+      purge-interval: ${RECYCLE_BIN_PURGE_INTERVAL:PT1H}
+  access:
+    cache-ttl: ${ACCESS_CACHE_TTL:PT5M}
+    cache-max-entries: ${ACCESS_CACHE_MAX_ENTRIES:10000}
   outbox:
     relay-interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
   metadata:
     schema-cache-ttl-seconds: ${SCHEMA_CACHE_TTL_SECONDS:3600}
+  ocr:
+    # Master switch for the whole OCR feature. OFF by default.
+    #
+    # Off means nothing is published to the queue, no upload path depends on
+    # ocr-worker being reachable, and the internal read endpoint answers 404.
+    # A deployment that doesn't run the worker should be indistinguishable
+    # from one that never had the feature - in particular an ordinary upload
+    # still scans and lands exactly as it would have.
+    enabled: ${OCR_ENABLED:false}
+    # Backpressure, not a quota. Over this, new OCR requests are declined and
+    # left for the backlog sweeper rather than rejected, so a large import
+    # neither fails nor floods RabbitMQ. Per tenant, so one busy tenant can't
+    # starve the rest.
+    max-queued-per-tenant: ${OCR_MAX_QUEUED_PER_TENANT:2000}
+    # Most files from one Bulk Import batch queued for OCR up front; the rest
+    # are marked held-back and drain through the sweeper.
+    max-per-import-batch: ${OCR_MAX_PER_IMPORT_BATCH:500}
+    backlog-sweep-interval-ms: ${OCR_BACKLOG_SWEEP_INTERVAL_MS:30000}
+    backlog-sweep-batch-size: ${OCR_BACKLOG_SWEEP_BATCH_SIZE:100}
+    # Per-job read grants. ocr-worker cannot read storage directly any more -
+    # objects are encrypted at rest - so it asks dms-core for plaintext over
+    # /internal/v1/ocr, presenting BOTH the shared internal token and a
+    # short-lived HMAC grant naming one job, one version and one tenant.
+    # See OcrJobTokenCodec and docs/ocr/internal-endpoint.md.
+    #
+    # Blank refuses every internal read rather than signing with an empty key.
+    # Its own secret: a leak or rotation here must not touch impersonation or
+    # audit correlation.
+    job-token-secret: ${OCR_JOB_TOKEN_SECRET:}
+    job-token-minutes: ${OCR_JOB_TOKEN_MINUTES:30}
+    # Safety net (Phase 1 B.1): GET /{documentId}/ocr-status re-applies OCR
+    # field results onto document_metadata_values at poll time, on top of
+    # dms-core's own OcrEventsConsumer already doing it off the
+    # document.version.ocr.completed event. It exists because the consumer
+    # path had never been proven end to end -- and it MASKED a real defect
+    # for a whole phase (the relay's double-encoded payloads meant the
+    # consumer never ran at all, and nobody noticed because polling kept
+    # the UI correct; see docs/ocr/phase1-verification.md "Defects found").
+    #
+    # Turning this off is how that masking is ruled out: with it false, any
+    # metadata value that appears MUST have come from the event path. It is
+    # a config flag rather than a commented-out block specifically so that
+    # proof can be re-run at any time, not just once.
+    poll-reapply-enabled: ${OCR_POLL_REAPPLY_ENABLED:true}
+
+    # OcrFieldsReconciler (Phase 2) -- the replacement for the safety net
+    # above, and the reason it can eventually be removed. Where the poll
+    # re-apply only rescues a document somebody opens, and does it
+    # silently, the reconciler finds every completed version whose fields
+    # were never applied and logs a warning naming each one. A healthy
+    # system produces no warnings; each one that appears is a
+    # document.version.ocr.completed event that genuinely went missing.
+    reconciler-enabled: ${OCR_RECONCILER_ENABLED:true}
+    reconciler-interval-ms: ${OCR_RECONCILER_INTERVAL_MS:60000}
+    # Must comfortably exceed the normal path's latency (ocr-worker commit
+    # -> outbox relay's 2s poll -> listener), so a warning means the event
+    # never arrived rather than that it is still in flight.
+    stale-after-minutes: ${OCR_RECONCILER_STALE_AFTER_MINUTES:10}
+    batch-size: ${OCR_RECONCILER_BATCH_SIZE:50}
+
+    # The review screen (Phase 4c) is the only thing dms-core calls
+    # ocr-worker over HTTP for: a rendered page image and "what does this
+    # box say". Both are read-only and both have a human waiting, which is
+    # why they are not queued work like everything else.
+    #
+    # ocr-worker publishes no port; this is a container-network address by
+    # design, and the token is the same shared secret ocr-worker checks on
+    # every route.
+    worker-base-url: ${OCR_WORKER_BASE_URL:http://ocr-worker:8090}
+    internal-service-token: ${INTERNAL_SERVICE_TOKEN:}
+    # Empty means "use ocr-worker's own OCR_PREVIEW_DPI".
+    preview-dpi: ${OCR_PREVIEW_DPI:}
+
+  export:
+    # How long a generated export is kept before the Phase 4 auto-purge
+    # (sets export_jobs.expires_at). PLACEHOLDER - the real value is Phase 0
+    # Key Decision #10, still open. See ExportJobProperties.
+    job-ttl: ${EXPORT_JOB_TTL:PT24H}
+    max-documents: ${EXPORT_MAX_DOCUMENTS:1000}
+    max-export-size: ${EXPORT_MAX_SIZE:20GB}
+    max-active-jobs-per-user: ${EXPORT_MAX_ACTIVE_JOBS_PER_USER:2}
+  # Document watermarking (module DW, V68): a watermarked COPY of a document
+  # in its own format. The original is never touched. See WatermarkProperties.
+  watermark:
+    # OFF by default. While off the endpoints are not mapped at all, so they
+    # answer 404. Not the same as the startup font probe failing, which
+    # leaves them mapped and answers 503 WATERMARK_UNAVAILABLE - the
+    # difference tells an operator "not switched on" from "switched on but
+    # the image has no fonts" (see the Dockerfile).
+    enabled: ${WATERMARK_ENABLED:false}
+    # How long a produced copy is kept before WatermarkOutputSweeper deletes
+    # it. Short on purpose: the copy carries a person's name and is a second
+    # place the document's content exists.
+    output-ttl: ${WATERMARK_OUTPUT_TTL:PT24H}
+    max-active-jobs-per-user: ${WATERMARK_MAX_ACTIVE_JOBS_PER_USER:2}
+    # Largest source file per format, checked against DocumentVersion.sizeBytes
+    # BEFORE anything is read. Per format because the cost is not the file,
+    # it is what the library does with it.
+    #
+    # Heap arithmetic, worst case per job: the source byte[] + the output
+    # byte[] + the library's working set. POI holds an OOXML file in memory
+    # several times over (~5-8x for xlsx, less for docx/pptx); PDFBox reads
+    # a PDF far more lazily (~2x). With executor.job-max-size 2 that is
+    #   xlsx  10MB x 8 x 2 threads ~= 160MB
+    #   pptx  15MB x 5 x 2 threads ~= 150MB
+    #   docx  25MB x 4 x 2 threads ~= 200MB
+    #   pdf   25MB x 3 x 2 threads ~= 150MB
+    # so roughly 200MB of headroom covers the worst case. Raise a format's
+    # cap only together with the container's memory limit.
+    #
+    # NOTE: the 10MB xlsx cap is BELOW the 20MB file size the p95-under-5s
+    # target was written against. A spreadsheet between 10MB and 20MB is
+    # refused with 413 rather than being slow. Raise xlsx (and the heap) if
+    # real tenants have workbooks that large.
+    max-bytes:
+      pdf: ${WATERMARK_MAX_BYTES_PDF:25MB}
+      docx: ${WATERMARK_MAX_BYTES_DOCX:25MB}
+      xlsx: ${WATERMARK_MAX_BYTES_XLSX:10MB}
+      pptx: ${WATERMARK_MAX_BYTES_PPTX:15MB}
+      image: ${WATERMARK_MAX_BYTES_IMAGE:25MB}
+    default-max-bytes: ${WATERMARK_DEFAULT_MAX_BYTES:25MB}
+    # POI and PDFBox cannot be interrupted, so a job that overruns is failed
+    # and its thread abandoned - see WatermarkExecutorConfig.
+    format-timeout: ${WATERMARK_FORMAT_TIMEOUT:PT60S}
+    stuck-after: ${WATERMARK_STUCK_AFTER:PT15M}
+    # How often expired copies are deleted (WatermarkOutputSweeper). This
+    # shares the one @Scheduled thread with OutboxRelay (every 2s),
+    # RecycleBinService and KeyRotationScheduler, so each run takes a capped
+    # batch and leaves the rest for the next tick rather than holding that
+    # thread. spring.task.scheduling.pool.size is deliberately NOT changed
+    # by this feature.
+    sweep-interval: ${WATERMARK_SWEEP_INTERVAL:PT15M}
+    style:
+      # The default look, and the range a template or a request may move it
+      # within. These are the real guardrails; V68's CHECK constraints are
+      # deliberately wider, so tightening these is a config change.
+      font-size: ${WATERMARK_FONT_SIZE:40}
+      min-font-size: ${WATERMARK_MIN_FONT_SIZE:8}
+      max-font-size: ${WATERMARK_MAX_FONT_SIZE:200}
+      # Floor is 5, never 0: an invisible watermark is worse than none,
+      # because the person who asked believes their copy is marked.
+      opacity: ${WATERMARK_OPACITY:25}
+      min-opacity: ${WATERMARK_MIN_OPACITY:5}
+      max-opacity: ${WATERMARK_MAX_OPACITY:100}
+      rotation: ${WATERMARK_ROTATION:-45}
+      min-rotation: ${WATERMARK_MIN_ROTATION:-90}
+      max-rotation: ${WATERMARK_MAX_ROTATION:90}
+      color: ${WATERMARK_COLOR:#808080}
+      placement: ${WATERMARK_PLACEMENT:tiled}
+      page-scope: ${WATERMARK_PAGE_SCOPE:all-pages}
+      max-text-length: ${WATERMARK_MAX_TEXT_LENGTH:200}
+      max-token-length: ${WATERMARK_MAX_TOKEN_LENGTH:64}
+    limits:
+      max-pages: ${WATERMARK_MAX_PAGES:2000}
+      max-sheets: ${WATERMARK_MAX_SHEETS:200}
+      max-slides: ${WATERMARK_MAX_SLIDES:500}
+      # Checked from the image header BEFORE decoding - a 50MP decode is
+      # ~200MB of int[] whatever the file on disk weighs.
+      max-image-pixels: ${WATERMARK_MAX_IMAGE_PIXELS:50000000}
+      # A .docx stores no page count - pagination is decided by whatever
+      # lays the document out - so sections, which are what actually cost
+      # work here, are capped instead.
+      max-sections: ${WATERMARK_MAX_SECTIONS:100}
+      max-distinct-page-sizes: ${WATERMARK_MAX_DISTINCT_PAGE_SIZES:4}
+      render-dpi: ${WATERMARK_RENDER_DPI:150}
+      max-render-pixels: ${WATERMARK_MAX_RENDER_PIXELS:16000000}
+      # OOXML package guards, applied by OoxmlGuards on the bytes before POI
+      # opens anything. These are NOT POI's ZipSecureFile statics: those are
+      # JVM-wide and shared with DocumentFingerprints and the import
+      # templates, so this feature does not touch them. POI's own defaults
+      # (min inflate ratio 0.01, max entry 4GB, max 1000 entries) stay in
+      # force underneath. Note 0.01 is STRICTER than the 0.001 here, which
+      # is why applying our value globally would have loosened the guard for
+      # everyone else; what POI does not bound tightly is total inflated
+      # size, and max-uncompressed-bytes is what covers that.
+      min-inflate-ratio: ${WATERMARK_MIN_INFLATE_RATIO:0.001}
+      max-zip-entry-size: ${WATERMARK_MAX_ZIP_ENTRY_SIZE:256MB}
+      max-uncompressed-bytes: ${WATERMARK_MAX_UNCOMPRESSED_BYTES:300MB}
+      max-zip-entries: ${WATERMARK_MAX_ZIP_ENTRIES:2000}
+      # How far an Excel watermark may stretch. A used range is routinely
+      # tens of thousands of columns wide because somebody formatted a whole
+      # row once; a picture sized to all of it would be an unreadable smear
+      # and enormous to render.
+      max-sheet-watermark-columns: ${WATERMARK_MAX_SHEET_COLUMNS:30}
+      max-sheet-watermark-rows: ${WATERMARK_MAX_SHEET_ROWS:60}
+      max-sheet-watermark-pixels: ${WATERMARK_MAX_SHEET_PIXELS:1600}
+    executor:
+      job-core-size: ${WATERMARK_JOB_CORE_SIZE:2}
+      job-max-size: ${WATERMARK_JOB_MAX_SIZE:2}
+      # Full queue is a 503 with Retry-After, not a silent wait.
+      job-queue-capacity: ${WATERMARK_JOB_QUEUE_CAPACITY:20}
+      # Wider than the job pool on purpose: a thread abandoned by a timeout
+      # is never reclaimed, so an equal-sized pool would stall the feature
+      # after two bad files.
+      format-max-size: ${WATERMARK_FORMAT_MAX_SIZE:4}
+      retry-after: ${WATERMARK_RETRY_AFTER:PT30S}
+    rate-limit:
+      # Redis fixed window, per user and per IP. Fails OPEN if Redis is
+      # unreachable - max-active-jobs-per-user is the hard limit and it is
+      # in the database. The preview endpoint, which creates no job and so
+      # has no such backstop, falls back to an in-memory limiter instead.
+      window: ${WATERMARK_RATE_WINDOW:PT1M}
+      watermarks-per-window: ${WATERMARK_RATE_PER_WINDOW:10}
+      previews-per-window: ${WATERMARK_PREVIEW_RATE_PER_WINDOW:30}
+      preview-fallback-per-window: ${WATERMARK_PREVIEW_FALLBACK_PER_WINDOW:30}
   storage:
     # Backs the single platform-default StorageLocation (tenant_id NULL)
     # that StorageLocationBootstrap creates on startup if none exists yet -
@@ -171,6 +446,10 @@ dms:
       # MinIO/SeaweedFS typically need path-style bucket addressing; real
       # AWS S3 does not (though it still accepts it).
       path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+      # Server-side encryption, on top of the application's own encryption at
+      # rest: blank, AES256 (SSE-S3) or aws:kms (SSE-KMS). MinIO needs KES for either.
+      server-side-encryption: ${S3_SSE:}
+      kms-key-id: ${S3_SSE_KMS_KEY_ID:}
     filesystem:
       base-path: ${STORAGE_FILESYSTEM_BASE_PATH:/data/dms/documents}
     azure-blob:
@@ -182,6 +461,216 @@ dms:
       container: ${AZURE_STORAGE_CONTAINER:}
       account-name: ${AZURE_STORAGE_ACCOUNT_NAME:}
       account-key: ${AZURE_STORAGE_ACCOUNT_KEY:}
+    # Platform-default staging and quarantine locations for the scan gate
+    # (com.oak.dms.scanning - see docs/scanning-architecture.md), seeded by
+    # StorageLocationBootstrap next to the document location above. Each must
+    # be a physically separate target - the bootstrap refuses to start if
+    # either overlaps the document location (same bucket/container, or a
+    # nested base path). Blank bucket/endpoint fall back to the s3.*/
+    # azure-blob.* values above, so set a distinct bucket/container whenever
+    # the provider isn't FILE_SYSTEM. A cloud scan engine needs its staging
+    # location on its own storage: AZURE_DEFENDER => AZURE_BLOB container on a
+    # Defender-protected account, AWS_GUARDDUTY => S3 bucket with a Malware
+    # Protection plan.
+    staging:
+      provider: ${SCAN_STAGING_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_STAGING_BASE_PATH:/data/dms/staging}
+      bucket: ${SCAN_STAGING_BUCKET:}
+      endpoint: ${SCAN_STAGING_ENDPOINT:}
+      region: ${SCAN_STAGING_REGION:}
+      path-style-access: ${SCAN_STAGING_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_STAGING_CREDENTIAL_REF:}
+      # REQUIRED with a cloud scan engine (GuardDuty / Defender reads staged
+      # files in place, so the app can't encrypt them): AES256 or aws:kms.
+      # Azure Blob is always encrypted at rest. Blank = the s3.* setting.
+      server-side-encryption: ${SCAN_STAGING_SSE:}
+      kms-key-id: ${SCAN_STAGING_SSE_KMS_KEY_ID:}
+    quarantine:
+      provider: ${SCAN_QUARANTINE_PROVIDER:FILE_SYSTEM}
+      base-path: ${SCAN_QUARANTINE_BASE_PATH:/data/dms/quarantine}
+      bucket: ${SCAN_QUARANTINE_BUCKET:}
+      endpoint: ${SCAN_QUARANTINE_ENDPOINT:}
+      region: ${SCAN_QUARANTINE_REGION:}
+      path-style-access: ${SCAN_QUARANTINE_PATH_STYLE_ACCESS:false}
+      credential-ref: ${SCAN_QUARANTINE_CREDENTIAL_REF:}
+      server-side-encryption: ${SCAN_QUARANTINE_SSE:}
+      kms-key-id: ${SCAN_QUARANTINE_SSE_KMS_KEY_ID:}
+  # Encryption at rest (Module DE) - see EncryptionProperties and
+  # docs/storage-architecture.md. Every stored object is encrypted with its
+  # own AES-256-GCM data key, wrapped by the key service.
+  encryption:
+    enabled: ${ENCRYPTION_ENABLED:true}
+    # openbao in production; local-dev = a key file, for development only.
+    provider: ${ENCRYPTION_PROVIDER:local-dev}
+    # Production: true - refuses to start unless OpenBao holds the keys.
+    require-managed-keys: ${ENCRYPTION_REQUIRE_MANAGED_KEYS:false}
+    # Production: true - refuses to start unless OpenBao logs every key access
+    # in an audit device (DE-NFR-006). The policy needs read+sudo on sys/audit.
+    require-audit-device: ${ENCRYPTION_REQUIRE_AUDIT_DEVICE:false}
+    # Unwrapped data keys reused from memory for this long (0 = off), so a bulk
+    # export asks the key service once per key, not per file.
+    key-cache-ttl: ${ENCRYPTION_KEY_CACHE_TTL:PT5M}
+    key-cache-max-entries: ${ENCRYPTION_KEY_CACHE_MAX_ENTRIES:10000}
+    local-dev:
+      key-file: ${ENCRYPTION_LOCAL_DEV_KEY_FILE:${java.io.tmpdir}/dms-encryption/local-dev-keys.json}
+      # A second copy kept in step, restored if the key file is lost. Blank = none.
+      backup-file: ${ENCRYPTION_LOCAL_DEV_BACKUP_FILE:}
+    openbao:
+      address: ${ENCRYPTION_OPENBAO_ADDR:}
+      # approle (production - renewed and re-issued automatically) or token.
+      auth: ${ENCRYPTION_OPENBAO_AUTH:token}
+      token: ${ENCRYPTION_OPENBAO_TOKEN:}
+      role-id: ${ENCRYPTION_OPENBAO_ROLE_ID:}
+      secret-id: ${ENCRYPTION_OPENBAO_SECRET_ID:}
+      app-role-mount: ${ENCRYPTION_OPENBAO_APPROLE_MOUNT:approle}
+      mount: ${ENCRYPTION_OPENBAO_MOUNT:transit}
+      key-name: ${ENCRYPTION_OPENBAO_KEY:dms-documents}
+    # Master-key rotation schedule. Each tenant sets its own interval and
+    # auto-rotate on the key screen; these are the defaults and the checker.
+    rotation:
+      default-interval-days: ${ENCRYPTION_ROTATION_DEFAULT_DAYS:365}
+      check-interval: ${ENCRYPTION_ROTATION_CHECK_INTERVAL:PT6H}
+      remind-every: ${ENCRYPTION_ROTATION_REMIND_EVERY:P7D}
+  import-export:
+    # Bulk import intake limits - see ImportExportProperties.
+    max-files-per-batch: ${IMPORT_MAX_FILES_PER_BATCH:500}
+    max-batch-size: ${IMPORT_MAX_BATCH_SIZE:20GB}
+    max-active-batches-per-user: ${IMPORT_MAX_ACTIVE_BATCHES_PER_USER:1}
+    max-template-size: ${IMPORT_MAX_TEMPLATE_SIZE:5MB}
+    # Consumers on oak.dms.importexport.bulk-import - see BulkImportMessagingConfig.
+    worker-concurrency: ${IMPORT_WORKER_CONCURRENCY:1}
+    # ZIP intake and resumable (chunked) upload of large ZIPs.
+    max-archive-size: ${IMPORT_MAX_ARCHIVE_SIZE:20GB}
+    max-archive-entries: ${IMPORT_MAX_ARCHIVE_ENTRIES:5000}
+    max-chunk-size: ${IMPORT_MAX_CHUNK_SIZE:64MB}
+    upload-session-ttl: ${IMPORT_UPLOAD_SESSION_TTL:PT24H}
+    upload-session-dir: ${IMPORT_UPLOAD_SESSION_DIR:${java.io.tmpdir}/dms-upload-sessions}
+  ingestion:
+    # Extensions the ingestion gate accepts - each is verified against the
+    # file's content (magic bytes) by FileTypeInspector, and the client's
+
+    # Content-Type is ignored. The one archive type is zip (see below and
+    # docs/scanning-architecture.md); 7z/rar/tar/gz are not accepted.
+    allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
+    # A ZIP is kept as one file - never extracted - and checked whole before it's scanned
+    # (ZipArchiveCheck): refused when damaged, empty, or password-protected (unscannable).
+    # No entry-count or unpacked-size limit by default: a ZIP past what clamd opens of one
+    # archive (dms.scanning.clamav.archive-scan-files / -bytes) is scanned file by file
+    # instead. Set these to refuse larger ZIPs outright.
+    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
+    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
+    # A ZIP holding a program or script (.exe, .msi, .dll, .bat, .ps1, .js, .jar, ... - see
+    # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
+    # called, is refused even when the scan finds no malware - nested ZIPs included. Override the
+    # list with dms.ingestion.zip-blocked-extensions (DMS_INGESTION_ZIP_BLOCKED_EXTENSIONS, comma-separated).
+
+    # Content-Type is ignored. No archive types: this system accepts no
+    # archive uploads (deliberate deviation from VMSBDI-FR-004 - see
+    # docs/scanning-architecture.md).
+  # 3.1 Workflow Automation (WorkflowProperties). Task-assigned and outcome
+  # mails go out after the workflow change commits, off the request thread;
+  # a mail failure never affects the workflow. Uses spring.mail.*.
+  workflow:
+    notifications:
+      enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
+      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    # Phase 2: reminders before a task's due time and escalation when it
+    # passes (WorkflowSlaScheduler). Safe with several app instances - each
+    # task is handled under its instance row lock taken FOR UPDATE SKIP LOCKED.
+    sla:
+      enabled: ${WORKFLOW_SLA_ENABLED:true}
+      poll-interval: ${WORKFLOW_SLA_POLL_INTERVAL:PT1M}
+      batch-size: ${WORKFLOW_SLA_BATCH_SIZE:50}
+  # The system-monitoring screen reads Prometheus through dms-core rather
+  # than the browser reading Grafana directly, so the figures sit behind the
+  # same PLATFORM_ADMIN check as every other cross-tenant screen. Prometheus
+  # is addressed by its compose service name and needs no published port.
+  # Blank the URL to switch the screen off; it then says it is unconfigured
+  # rather than showing an error on every tile.
+  monitoring:
+    prometheus-url: ${PROMETHEUS_URL:http://prometheus:9090}
+    # Container logs, for the per-service log view. Same arrangement as
+    # Prometheus: addressed by service name, never published.
+    loki-url: ${LOKI_URL:http://loki:3100}
+    timeout: ${MONITORING_TIMEOUT:PT5S}
+    # Points per chart. The step is derived from this and the window, so a
+    # 7-day chart costs about the same as a 1-hour one.
+    chart-points: ${MONITORING_CHART_POINTS:120}
+  pins:
+    # How many documents one person may pin (PID-FR-007) until the organisation sets its own
+    # (PUT /api/v1/pins/limit, pid.configure-pin-limits).
+    default-max: ${DMS_PINS_DEFAULT_MAX:20}
+  dashboard:
+    # How long the home dashboard's figures are served from Redis before they are worked
+    # out again (DashboardCache). They scan every document the caller may see - seconds at
+    # millions of documents - so a minute's staleness buys a lot. 0 turns the cache off.
+    cache-seconds: ${DASHBOARD_CACHE_SECONDS:60}
+  scanning:
+    # Backs the platform-default ScanEngine (tenant_id NULL) that
+    # ScanEngineBootstrap creates on startup if none exists yet. CLAMAV |
+    # AZURE_DEFENDER | AWS_GUARDDUTY.
+    default-provider: ${SCAN_PROVIDER:CLAMAV}
+    # Long enough for clamd to scan one 2000 MB segment once it has received it.
+    timeout-seconds: ${SCAN_TIMEOUT_SECONDS:900}
+    # No limit (Long.MAX_VALUE). clamd reads at most 2147483645 bytes of one
+    # stream whatever its MaxFileSize says, so a larger file is sent to it in
+    # overlapping segments (clamav.segment-bytes below) and scanned in full.
+    max-file-size-bytes: ${SCAN_MAX_FILE_SIZE_BYTES:9223372036854775807}
+    # A cloud-scanned file still without a verdict this long after staging is
+    # failed - never promoted.
+    cloud-verdict-timeout-minutes: ${SCAN_CLOUD_VERDICT_TIMEOUT_MINUTES:60}
+    # How long a failed file's staged object is kept before it is purged.
+    failed-retention-hours: ${SCAN_FAILED_RETENTION_HOURS:72}
+    # Threat-detected emails (VMSBDI FR-003) - to the uploader, and to every
+    # administrator who can act on quarantine (docm.quarantine.view holders +
+    # the tenant's TENANT_ADMIN users). Sent after the quarantine commits, off
+    # the upload thread; a mail failure never affects the quarantine itself.
+    # Uses spring.mail.* (Mailpit locally, http://localhost:8026).
+    notifications:
+      enabled: ${SCAN_NOTIFY_ENABLED:true}
+      mail-from: ${SCAN_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+    retry:
+      poll-interval-ms: ${SCAN_RETRY_POLL_INTERVAL_MS:30000}
+      max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}
+      initial-backoff-seconds: ${SCAN_RETRY_INITIAL_BACKOFF_SECONDS:30}
+      max-backoff-seconds: ${SCAN_RETRY_MAX_BACKOFF_SECONDS:900}
+      lease-seconds: ${SCAN_RETRY_LEASE_SECONDS:1800}
+      # Added per GB of the file, so a very large file's lease outlasts its scan.
+      lease-seconds-per-gb: ${SCAN_RETRY_LEASE_SECONDS_PER_GB:120}
+      batch-size: ${SCAN_RETRY_BATCH_SIZE:20}
+      # Files scanned/promoted in the background at once (ScanWorkPool) - a busy worker holds
+      # about one CPU core while it copies and encrypts a large file.
+      workers: ${SCAN_RETRY_WORKERS:3}
+    clamav:
+      host: ${CLAMAV_HOST:localhost}
+      port: ${CLAMAV_PORT:3310}
+      connect-timeout-ms: ${CLAMAV_CONNECT_TIMEOUT_MS:5000}
+      chunk-size-bytes: ${CLAMAV_CHUNK_SIZE_BYTES:65536}
+      # Files larger than this go to clamd in several INSTREAMs. Must stay under
+      # clamd's StreamMaxLength (2047M) and its 2147483645-byte read ceiling.
+      segment-bytes: ${CLAMAV_SEGMENT_BYTES:2097152000}
+      # Each segment repeats this much of the end of the one before (held in memory).
+      segment-overlap-bytes: ${CLAMAV_SEGMENT_OVERLAP_BYTES:16777216}
+      # What clamd opens of one archive - keep equal to its MaxScanSize / MaxFiles. A ZIP
+      # past either is opened by dms-core and each file in it scanned on its own.
+      archive-scan-bytes: ${CLAMAV_ARCHIVE_SCAN_BYTES:4194304000}
+      archive-scan-files: ${CLAMAV_ARCHIVE_SCAN_FILES:10000}
+    azure-defender:
+      # Blob Service endpoint of the Defender-protected account that holds the
+      # staging container - verdicts are read from its blob index tags.
+      endpoint: ${AZURE_DEFENDER_BLOB_ENDPOINT:}
+      account-name: ${AZURE_DEFENDER_ACCOUNT_NAME:}
+      account-key: ${AZURE_DEFENDER_ACCOUNT_KEY:}
+      # Sent by Event Grid as X-Oak-Scan-Callback-Secret. Blank disables
+      # the callback endpoint (verdicts then arrive by polling only).
+      callback-secret: ${AZURE_DEFENDER_CALLBACK_SECRET:}
+    aws-guardduty:
+      region: ${AWS_GUARDDUTY_REGION:us-east-1}
+      access-key: ${AWS_GUARDDUTY_ACCESS_KEY:}
+      secret-key: ${AWS_GUARDDUTY_SECRET_KEY:}
+      # Sent by the EventBridge API destination as X-Oak-Scan-Callback-Secret.
+      # Blank disables the callback endpoint.
+      callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
 
 management:
   endpoints:
@@ -191,6 +680,20 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      group:
+        # What the container HEALTHCHECK (backend/Dockerfile) and deploy.sh
+        # actually gate releases on - everything EXCEPT ocrJobToken. OCR is
+        # off by default and, even enabled, is one feature among many: a
+        # deployment with no job-token secret has a real, loudly-logged
+        # problem (see OcrJobTokenHealthIndicator), but it is not "the
+        # backend is broken" the way a lost database connection is, and
+        # must not roll back an otherwise-healthy release the way DOWN from
+        # root /actuator/health would. Root still aggregates every
+        # indicator, ocrJobToken included, for anyone checking overall
+        # system state by hand - only the container probe moved.
+        core:
+          include: "*"
+          exclude: ocrJobToken
   health:
     # The mail indicator opens a live SMTP connection (and login) on every
     # /actuator/health call. An external relay being slow, down or rejecting
@@ -201,6 +704,32 @@ management:
     # PasswordResetService), so SMTP is deliberately not a health input.
     mail:
       enabled: false
+  # Scraped by Prometheus at /actuator/prometheus (see infra/monitoring).
+  metrics:
+    tags:
+      # Every series carries these, so one Prometheus can hold several
+      # deployments without their numbers running together.
+      application: ${MANAGEMENT_METRICS_APPLICATION:dms-core}
+      environment: ${MANAGEMENT_METRICS_ENVIRONMENT:local}
+    distribution:
+      # Percentiles for API latency have to be computed server-side from a
+      # histogram: without this, http.server.requests publishes only a count
+      # and a total, and no p95 panel or latency alert is possible.
+      percentiles-histogram:
+        http.server.requests: true
+        # Deliberately NOT a full histogram: Micrometer's default bucket set
+        # is ~69 buckets, and one per scan outcome made this metric 276 of
+        # the 764 series this endpoint publishes - the largest producer here,
+        # for something that fires a few times a minute at most. The explicit
+        # buckets below give the same p95 panel in ~8 series per outcome.
+        dms.document.ingestion: false
+      # Buckets either side of the typical value, so the p95 is meaningful
+      # rather than interpolated across one huge bucket.
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
+        # Scans span milliseconds (a small PDF) to tens of minutes (a 6 GB
+        # ZIP checked file by file), hence the very wide top end.
+        dms.document.ingestion: 250ms,1s,5s,30s,2m,10m,30m
 
 springdoc:
   swagger-ui:

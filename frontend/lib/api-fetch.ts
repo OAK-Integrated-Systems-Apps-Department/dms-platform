@@ -168,7 +168,7 @@ export async function apiFetch(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code)
+    throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code, body?.details)
   }
   return response
 }
@@ -181,4 +181,84 @@ export async function apiFetchJson<T>(
 ): Promise<T> {
   const response = await apiFetch(input, init, fallbackMessage)
   return response.json() as Promise<T>
+}
+
+/** Byte progress and cancellation for `apiUpload`. */
+export interface UploadTransfer {
+  /** Bytes of the request body sent so far, out of `total`. */
+  onProgress?: (loaded: number, total: number) => void
+  /** Aborting it cancels the upload - the promise rejects with an AbortError. */
+  signal?: AbortSignal
+}
+
+/**
+ * `apiFetchJson` for a multipart upload that reports its progress. fetch()
+ * can't tell how much of a request body has been sent, so this uses
+ * XMLHttpRequest - with the same session cookie, client-type header,
+ * one refresh-and-retry on 401 and ApiError on failure as `apiFetch`.
+ */
+export async function apiUpload<T>(
+  input: string,
+  body: FormData,
+  transfer: UploadTransfer = {},
+  fallbackMessage = "Upload failed."
+): Promise<T> {
+  let result = await sendWithProgress(input, body, transfer)
+  if (
+    result.status === 401 &&
+    !isAuthEndpoint(input) &&
+    (await refreshSession())
+  ) {
+    result = await sendWithProgress(input, body, transfer)
+  }
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiError(
+      result.status,
+      result.body?.message ?? fallbackMessage,
+      result.body?.code
+    )
+  }
+  return result.body as T
+}
+
+interface UploadResult {
+  status: number
+  body: { message?: string; code?: string } | null
+}
+
+function sendWithProgress(
+  input: string,
+  body: FormData,
+  transfer: UploadTransfer
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    if (transfer.signal?.aborted) {
+      reject(new DOMException("The upload was cancelled.", "AbortError"))
+      return
+    }
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", input)
+    xhr.withCredentials = true
+    xhr.setRequestHeader(CLIENT_TYPE_HEADER, CLIENT_TYPE)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable)
+        transfer.onProgress?.(event.loaded, event.total)
+    }
+    xhr.onload = () => {
+      let parsed: UploadResult["body"] = null
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        // not JSON - the fallback message is used
+      }
+      resolve({ status: xhr.status, body: parsed })
+    }
+    xhr.onerror = () => reject(new ApiError(0, NETWORK_ERROR_MESSAGE))
+    xhr.onabort = () =>
+      reject(new DOMException("The upload was cancelled.", "AbortError"))
+    transfer.signal?.addEventListener("abort", () => xhr.abort(), {
+      once: true,
+    })
+    xhr.send(body)
+  })
 }

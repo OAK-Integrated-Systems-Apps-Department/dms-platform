@@ -13,7 +13,10 @@ import {
   auditActionOptionsForModules,
   auditModuleOptions,
 } from "@/lib/audit-events/audit-action-catalog"
-import { OUTCOME_LABELS, SEVERITY_LABELS } from "@/lib/audit-events/audit-badges"
+import {
+  OUTCOME_LABELS,
+  SEVERITY_LABELS,
+} from "@/lib/audit-events/audit-badges"
 import type { AuditEventResponseDto } from "@/lib/audit-events/api"
 import { cn, formatDateTime } from "@/lib/utils"
 
@@ -69,15 +72,26 @@ const OBJECT_TYPE_OPTIONS = [
   "METADATA_FIELD",
   "METADATA_FIELD_OPTION",
   "METADATA_FIELD_VALIDATION",
+  "DOCUMENT_RELATIONSHIP",
+  "RELATIONSHIP_TYPE",
 ]
 
 /** Derived from the shared audit-badges.ts label maps, not re-typed here, so the Outcome/Severity dropdown options can't drift from the chip labels built from those same maps below. */
-const OUTCOME_OPTIONS = Object.entries(OUTCOME_LABELS).map(([value, label]) => ({ value, label }))
-const SEVERITY_OPTIONS = Object.entries(SEVERITY_LABELS).map(([value, label]) => ({ value, label }))
+const OUTCOME_OPTIONS = Object.entries(OUTCOME_LABELS).map(
+  ([value, label]) => ({ value, label })
+)
+const SEVERITY_OPTIONS = Object.entries(SEVERITY_LABELS).map(
+  ([value, label]) => ({ value, label })
+)
 
 /** Drops any selected actions that no longer belong to ANY of `modules` - a module deselected (via the panel or a chip) can't leave a now out-of-scope action behind. */
-function validActionsForModules(modules: string[], actions: string[]): string[] {
-  const stillValid = new Set(auditActionOptionsForModules(modules).map((entry) => entry.action))
+function validActionsForModules(
+  modules: string[],
+  actions: string[]
+): string[] {
+  const stillValid = new Set(
+    auditActionOptionsForModules(modules).map((entry) => entry.action)
+  )
   return actions.filter((action) => stillValid.has(action))
 }
 
@@ -110,32 +124,40 @@ function buildChips(
 ): Chip[] {
   const chips: Chip[] = []
 
-  for (const module of filters.modules) {
+  for (const moduleCode of filters.modules) {
     chips.push({
-      key: `module-${module}`,
-      label: `Module: ${AUDIT_MODULE_LABELS[module] ?? module}`,
+      key: `module-${moduleCode}`,
+      label: `Module: ${AUDIT_MODULE_LABELS[moduleCode] ?? moduleCode}`,
       onRemove: () => {
-        const modules = filters.modules.filter((m) => m !== module)
-        onChange({ modules, actions: validActionsForModules(modules, filters.actions) })
+        const modules = filters.modules.filter((m) => m !== moduleCode)
+        onChange({
+          modules,
+          actions: validActionsForModules(modules, filters.actions),
+        })
       },
     })
   }
 
   for (const action of filters.actions) {
-    const label = AUDIT_ACTION_CATALOG.find((entry) => entry.action === action)?.label ?? action
+    const label =
+      AUDIT_ACTION_CATALOG.find((entry) => entry.action === action)?.label ??
+      action
     chips.push({
       key: `action-${action}`,
       label: `Action: ${label}`,
-      onRemove: () => onChange({ actions: filters.actions.filter((a) => a !== action) }),
+      onRemove: () =>
+        onChange({ actions: filters.actions.filter((a) => a !== action) }),
     })
   }
 
   for (const actorId of filters.actorIds) {
-    const label = actorOptions.find((option) => option.id === actorId)?.label ?? actorId
+    const label =
+      actorOptions.find((option) => option.id === actorId)?.label ?? actorId
     chips.push({
       key: `actor-${actorId}`,
       label: `Actor: ${label}`,
-      onRemove: () => onChange({ actorIds: filters.actorIds.filter((id) => id !== actorId) }),
+      onRemove: () =>
+        onChange({ actorIds: filters.actorIds.filter((id) => id !== actorId) }),
     })
   }
 
@@ -143,12 +165,19 @@ function buildChips(
     chips.push({
       key: `objectType-${objectType}`,
       label: `Object type: ${objectType}`,
-      onRemove: () => onChange({ objectTypes: filters.objectTypes.filter((t) => t !== objectType) }),
+      onRemove: () =>
+        onChange({
+          objectTypes: filters.objectTypes.filter((t) => t !== objectType),
+        }),
     })
   }
 
   if (filters.objectId.trim()) {
-    chips.push({ key: "objectId", label: `Object id: ${filters.objectId}`, onRemove: () => onChange({ objectId: "" }) })
+    chips.push({
+      key: "objectId",
+      label: `Object id: ${filters.objectId}`,
+      onRemove: () => onChange({ objectId: "" }),
+    })
   }
   if (filters.outcome) {
     chips.push({
@@ -189,7 +218,13 @@ function buildChips(
   return chips
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
   return (
     <div>
       <Label className="mb-1.5">{label}</Label>
@@ -235,14 +270,21 @@ export function AuditLogFilters({
 
   // Re-seed the draft from the currently-applied filters every time the
   // panel opens, so a previous edit that was closed without Apply doesn't
-  // linger into the next time it's opened.
-  useEffect(() => {
+  // linger into the next time it's opened (or while it's open, if the
+  // applied filters change underneath it). Adjusted during render against
+  // the last-seen panelOpen/filters rather than in an effect.
+  const [seededFrom, setSeededFrom] = useState({ panelOpen, filters })
+  if (panelOpen !== seededFrom.panelOpen || filters !== seededFrom.filters) {
+    setSeededFrom({ panelOpen, filters })
     if (panelOpen) setDraft(filters)
-  }, [panelOpen, filters])
+  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setPanelOpen(false)
       }
     }
@@ -255,7 +297,10 @@ export function AuditLogFilters({
   }
 
   function handleDraftModulesChange(modules: string[]) {
-    updateDraft({ modules, actions: validActionsForModules(modules, draft.actions) })
+    updateDraft({
+      modules,
+      actions: validActionsForModules(modules, draft.actions),
+    })
   }
 
   function applyDraft() {
@@ -277,7 +322,9 @@ export function AuditLogFilters({
             onClick={() => setPanelOpen((v) => !v)}
             className={cn(
               "flex h-[38px] items-center gap-1.5 rounded-btn border bg-card px-3.5 text-[13px] font-semibold text-foreground transition-colors",
-              panelOpen ? "border-primary ring-3 ring-primary/15" : "border-[var(--border-strong)] hover:border-primary hover:bg-muted hover:text-primary"
+              panelOpen
+                ? "border-primary ring-3 ring-primary/15"
+                : "border-[var(--border-strong)] hover:border-primary hover:bg-muted hover:text-primary"
             )}
           >
             <SlidersHorizontal size={15} />
@@ -291,10 +338,10 @@ export function AuditLogFilters({
           </button>
 
           {panelOpen && (
-            <div
-              className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]"
-              onClick={(e) => e.stopPropagation()}
-            >
+            // No onClick={stopPropagation}: the outside-click handler
+            // already tests containerRef.contains(), and this panel is
+            // inside it.
+            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
               <div className="grid max-h-[65vh] grid-cols-2 gap-3 overflow-y-auto pr-1">
                 <Field label="Module">
                   <MultiSelect
@@ -315,7 +362,10 @@ export function AuditLogFilters({
                     searchPlaceholder="Search actions…"
                     selected={draft.actions}
                     onChange={(actions) => updateDraft({ actions })}
-                    options={draftActionOptions.map((entry) => ({ value: entry.action, label: entry.label }))}
+                    options={draftActionOptions.map((entry) => ({
+                      value: entry.action,
+                      label: entry.label,
+                    }))}
                   />
                 </Field>
 
@@ -330,7 +380,13 @@ export function AuditLogFilters({
                     <input
                       type="text"
                       value={draft.actorIds[0] ?? ""}
-                      onChange={(event) => updateDraft({ actorIds: event.target.value ? [event.target.value] : [] })}
+                      onChange={(event) =>
+                        updateDraft({
+                          actorIds: event.target.value
+                            ? [event.target.value]
+                            : [],
+                        })
+                      }
                       placeholder="Actor id (UUID)…"
                       className="h-[38px] w-full rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
                     />
@@ -343,7 +399,10 @@ export function AuditLogFilters({
                     searchPlaceholder="Search object types…"
                     selected={draft.objectTypes}
                     onChange={(objectTypes) => updateDraft({ objectTypes })}
-                    options={OBJECT_TYPE_OPTIONS.map((type) => ({ value: type, label: type }))}
+                    options={OBJECT_TYPE_OPTIONS.map((type) => ({
+                      value: type,
+                      label: type,
+                    }))}
                   />
                 </Field>
 
@@ -351,7 +410,9 @@ export function AuditLogFilters({
                   <input
                     type="text"
                     value={draft.objectId}
-                    onChange={(event) => updateDraft({ objectId: event.target.value })}
+                    onChange={(event) =>
+                      updateDraft({ objectId: event.target.value })
+                    }
                     placeholder="UUID…"
                     className="h-[38px] w-full rounded-btn border border-border bg-muted px-3 text-[13.5px] text-foreground outline-none placeholder:text-[var(--ink-faint)] focus-visible:border-primary focus-visible:bg-card"
                   />
@@ -362,7 +423,11 @@ export function AuditLogFilters({
                     allLabel="All outcomes"
                     searchable={false}
                     selected={draft.outcome}
-                    onChange={(outcome) => updateDraft({ outcome: outcome as AuditLogFilterState["outcome"] })}
+                    onChange={(outcome) =>
+                      updateDraft({
+                        outcome: outcome as AuditLogFilterState["outcome"],
+                      })
+                    }
                     options={OUTCOME_OPTIONS}
                   />
                 </Field>
@@ -372,7 +437,11 @@ export function AuditLogFilters({
                     allLabel="All severities"
                     searchable={false}
                     selected={draft.severity}
-                    onChange={(severity) => updateDraft({ severity: severity as AuditLogFilterState["severity"] })}
+                    onChange={(severity) =>
+                      updateDraft({
+                        severity: severity as AuditLogFilterState["severity"],
+                      })
+                    }
                     options={SEVERITY_OPTIONS}
                   />
                 </Field>

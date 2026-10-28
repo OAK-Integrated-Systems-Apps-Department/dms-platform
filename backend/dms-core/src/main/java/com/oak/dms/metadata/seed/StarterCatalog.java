@@ -3,7 +3,7 @@ package com.oak.dms.metadata.seed;
 import java.util.List;
 
 /**
- * The starter metadata catalogue every tenant begins with: 25 fields, 12
+ * The starter metadata catalogue every tenant begins with: 24 fields, 8
  * dropdown options, 4 document types and their schema-version-1 field
  * mappings. {@link TenantStarterCatalogService} installs it for new tenants.
  * <p>
@@ -11,6 +11,10 @@ import java.util.List;
  * V37 backfills the same catalogue into tenants that existed before this
  * class did, from its own frozen copy; V37MigrationIT asserts the two match,
  * so a change here needs a new migration if existing tenants should get it.
+ * <p>
+ * classification_level was removed by V102, which also strips it (and its
+ * options and mappings) from tenants that already had V37's/the installer's
+ * copy of it, leaving any tenant's own customization of the field alone.
  */
 public final class StarterCatalog {
 
@@ -29,7 +33,6 @@ public final class StarterCatalog {
     }
 
     public static final List<FieldDef> FIELDS = List.of(
-            new FieldDef("classification_level", "Classification Level", "Sensitivity classification of the document.", "dropdown", true),
             new FieldDef("department", "Department", "Owning department or business unit.", "lookup", false),
             new FieldDef("tags", "Tags", "Free-form labels for grouping and discovery.", "multi_select", false),
             new FieldDef("retention_class", "Retention Class", "Retention schedule this document falls under.", "dropdown", true),
@@ -61,10 +64,6 @@ public final class StarterCatalog {
      * adds some).
      */
     public static final List<OptionDef> OPTIONS = List.of(
-            new OptionDef("classification_level", "public", "Public", 10),
-            new OptionDef("classification_level", "internal", "Internal", 20),
-            new OptionDef("classification_level", "confidential", "Confidential", 30),
-            new OptionDef("classification_level", "restricted", "Restricted", 40),
             new OptionDef("currency", "USD", "US Dollar", 10),
             new OptionDef("currency", "EUR", "Euro", 20),
             new OptionDef("currency", "GBP", "British Pound", 30),
@@ -89,7 +88,6 @@ public final class StarterCatalog {
             new MappingDef("CONTRACT", "effective_date", false, 50, "Dates"),
             new MappingDef("CONTRACT", "expiry_date", false, 60, "Dates"),
             new MappingDef("CONTRACT", "review_due_date", false, 70, "Dates"),
-            new MappingDef("CONTRACT", "classification_level", true, 80, "Governance"),
             new MappingDef("CONTRACT", "retention_class", true, 90, "Governance"),
             new MappingDef("CONTRACT", "department", false, 100, "Governance"),
             new MappingDef("CONTRACT", "tags", false, 110, "General"),
@@ -101,12 +99,10 @@ public final class StarterCatalog {
             new MappingDef("INVOICE", "currency", true, 40, "Invoice Details"),
             new MappingDef("INVOICE", "vendor_supplier_name", true, 50, "Invoice Details"),
             new MappingDef("INVOICE", "purchase_order_number", false, 60, "Invoice Details"),
-            new MappingDef("INVOICE", "classification_level", true, 70, "Governance"),
             new MappingDef("INVOICE", "department", false, 80, "Governance"),
             new MappingDef("INVOICE", "cost_centre", false, 90, "Governance"),
             new MappingDef("INVOICE", "tags", false, 100, "General"),
             new MappingDef("INVOICE", "description", false, 110, "General"),
-            new MappingDef("POLICY", "classification_level", true, 10, "Governance"),
             new MappingDef("POLICY", "department", true, 20, "Governance"),
             new MappingDef("POLICY", "retention_class", true, 30, "Governance"),
             new MappingDef("POLICY", "effective_date", true, 40, "Dates"),
@@ -118,7 +114,6 @@ public final class StarterCatalog {
             new MappingDef("POLICY", "language", false, 100, "General"),
             new MappingDef("POLICY", "tags", false, 110, "General"),
             new MappingDef("POLICY", "reference_number", false, 120, "General"),
-            new MappingDef("GENERAL", "classification_level", true, 10, "Governance"),
             new MappingDef("GENERAL", "department", false, 20, "Governance"),
             new MappingDef("GENERAL", "retention_class", false, 30, "Governance"),
             new MappingDef("GENERAL", "description", false, 40, "General"),

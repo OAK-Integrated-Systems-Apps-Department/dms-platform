@@ -22,4 +22,8 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
 
     @Query("select t from Tenant t where t.deleted = false")
     Page<Tenant> findAllActive(Pageable pageable);
+
+    /** Every organisation, deactivated ones too - for the platform admin screen. */
+    @Query("select t from Tenant t")
+    Page<Tenant> findAllIncludingDeactivated(Pageable pageable);
 }

@@ -1173,6 +1173,10 @@ export const permissionGroups: PermissionGroup[] = [
         id: "shad.export-system-health-reports",
         label: "Export System Health Reports",
       },
+      {
+        id: "shad.view-system-logs",
+        label: "View System Logs",
+      },
     ],
   },
   {

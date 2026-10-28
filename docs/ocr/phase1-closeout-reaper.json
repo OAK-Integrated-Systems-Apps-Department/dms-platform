@@ -1,0 +1,57 @@
+{
+  "check": "reaper",
+  "passed": true,
+  "version_id": "fdef7de4-0f31-42a4-b685-b7a87f9a3e2b",
+  "lease_duration_s": 60,
+  "reaper_interval_s": 10,
+  "killed_pid": 8,
+  "killed_at": "2026-09-25T06:57:06.430734+00:00",
+  "seconds_to_requeue": 54.1,
+  "seconds_to_terminal_after_requeue": 32.0,
+  "final_ocr_status": "completed",
+  "final_attempts": 2,
+  "pool_worker_pids_before": [
+    8,
+    9,
+    2217
+  ],
+  "pool_worker_pids_after": [
+    9,
+    2252,
+    3365
+  ],
+  "jobs": [
+    {
+      "job_id": "935cd9d1-e657-452d-a5ab-396e84c03838",
+      "status": "completed",
+      "attempts": 2,
+      "last_error": null,
+      "lease_expires_at": "2026-09-25T06:59:10.387394+00:00",
+      "next_attempt_at": null,
+      "started_at": "2026-09-25T06:58:10.387394+00:00",
+      "finished_at": "2026-09-25T06:58:31.523872+00:00"
+    }
+  ],
+  "outbox": [
+    {
+      "event_type": "document.version.ocr.requested",
+      "status": "published",
+      "attempts": 0,
+      "created_at": "2026-09-25T06:56:56.855287+00:00"
+    },
+    {
+      "event_type": "document.version.ocr.requested",
+      "status": "published",
+      "attempts": 0,
+      "created_at": "2026-09-25T06:58:10.015064+00:00"
+    },
+    {
+      "event_type": "document.version.ocr.completed",
+      "status": "published",
+      "attempts": 0,
+      "created_at": "2026-09-25T06:58:31.529391+00:00"
+    }
+  ],
+  "run_id": "3ce8e8e7",
+  "completed_at": "2026-09-25T06:58:32.406088+00:00"
+}

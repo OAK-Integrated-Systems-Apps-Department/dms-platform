@@ -65,8 +65,18 @@ public class TenantController {
     @GetMapping
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "List all tenants")
-    public PageResponse<TenantResponse> listTenants(Pageable pageable) {
-        return PageResponse.from(tenantService.listTenants(pageable));
+    public PageResponse<TenantResponse> listTenants(
+            Pageable pageable,
+            @org.springframework.web.bind.annotation.RequestParam(value = "includeDeactivated",
+                    defaultValue = "false") boolean includeDeactivated) {
+        return PageResponse.from(tenantService.listTenants(pageable, includeDeactivated));
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/{tenantId}/reactivate")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "Bring a deactivated tenant back - not once its encryption keys were destroyed")
+    public TenantResponse reactivateTenant(@PathVariable UUID tenantId) {
+        return tenantService.reactivateTenant(tenantId);
     }
 
     @PutMapping("/{tenantId}")

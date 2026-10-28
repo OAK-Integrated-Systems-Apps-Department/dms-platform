@@ -17,12 +17,15 @@ export class ApiError extends Error {
   readonly status: number
   /** The backend's optional machine-readable `code` (see ErrorResponse/ApiException on the backend), e.g. "TENANT_CONTEXT_MISSING" - undefined when the response body didn't carry one. */
   readonly code?: string
+  /** The backend's optional structured `details` (a loop's chain, the invalid documents of a bulk request) - undefined when absent. */
+  readonly details?: unknown
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, details?: unknown) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -85,10 +88,17 @@ export function isNetworkError(error: unknown): boolean {
  * or a network failure - see `apiFetch`), or `fallback` if `error` isn't
  * even an `Error`.
  */
+/** The user's organisation is suspended or closed - the server refuses everything they do. */
+export function isOrganisationInactive(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "ORGANISATION_INACTIVE"
+}
+
 export function friendlyMessage(
   error: unknown,
   fallback = "Something went wrong. Please try again."
 ): string {
+  if (isOrganisationInactive(error) && error instanceof Error)
+    return error.message
   if (error instanceof ApiError && error.status === 403) {
     return "You don't have permission to do that."
   }

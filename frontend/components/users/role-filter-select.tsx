@@ -54,12 +54,16 @@ export function RoleFilterSelect({
     return () => document.removeEventListener("click", handleClickOutside)
   }, [])
 
+  // Search text resets on close - adjusted during render against the
+  // last-seen `open`; the effect below only handles focus.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (!open) setQuery("")
+  }
+
   useEffect(() => {
-    if (open) {
-      searchInputRef.current?.focus()
-    } else {
-      setQuery("")
-    }
+    if (open) searchInputRef.current?.focus()
   }, [open])
 
   function toggleRole(role: string) {
@@ -85,45 +89,48 @@ export function RoleFilterSelect({
     selected.length === 0
       ? "All roles"
       : selected.length === 1
-      ? selected[0]
-      : `${selected.length} roles`
+        ? selected[0]
+        : `${selected.length} roles`
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
+      {/* Clear sits OUTSIDE this button, overlapping its right edge. It was
+          a <span role="button"> nested inside, which no keyboard could reach
+          and which is invalid HTML besides - a button may not contain
+          another control. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-[38px] w-full items-center justify-between rounded-btn border bg-muted px-3 text-left text-[13.5px] text-foreground transition-colors",
+          "flex h-[38px] w-full items-center rounded-btn border bg-muted pl-3 text-left text-[13.5px] text-foreground transition-colors",
+          selected.length > 0 ? "pr-14" : "pr-9",
           open
             ? "border-primary bg-card ring-3 ring-primary/15"
             : "border-border"
         )}
       >
         <span className="truncate">{triggerLabel}</span>
-        <span className="ml-2 flex shrink-0 items-center gap-1">
-          {selected.length > 0 && (
-            <span
-              role="button"
-              aria-label="Clear all roles"
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange([])
-              }}
-              className="flex size-4 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
-            >
-              <X size={12} />
-            </span>
-          )}
-          <ChevronDown size={14} className="pointer-events-none text-[var(--ink-faint)]" />
-        </span>
       </button>
 
-      {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]"
-          onClick={(e) => e.stopPropagation()}
+      {selected.length > 0 && (
+        <button
+          type="button"
+          aria-label="Clear all roles"
+          onClick={() => onChange([])}
+          className="absolute top-1/2 right-8 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-border hover:text-foreground"
         >
+          <X size={12} />
+        </button>
+      )}
+      <ChevronDown
+        size={14}
+        className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)]"
+      />
+
+      {open && (
+        // No onClick={stopPropagation}: the outside-click handler already
+        // tests containerRef.contains(), and this panel is inside it.
+        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           <div className="relative mb-1.5">
             <Search
               size={13}
@@ -141,9 +148,10 @@ export function RoleFilterSelect({
 
           <div className="max-h-56 overflow-y-auto">
             {showAllRolesOption && (
-              <div
+              <button
+                type="button"
                 onClick={clearAll}
-                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
               >
                 <span
                   className={cn(
@@ -154,11 +162,15 @@ export function RoleFilterSelect({
                   )}
                 >
                   {selected.length === 0 && (
-                    <Check size={11} strokeWidth={3} className="text-primary-foreground" />
+                    <Check
+                      size={11}
+                      strokeWidth={3}
+                      className="text-primary-foreground"
+                    />
                   )}
                 </span>
                 All roles
-              </div>
+              </button>
             )}
 
             {filteredOptions.length === 0 && !showAllRolesOption ? (
@@ -169,10 +181,13 @@ export function RoleFilterSelect({
               filteredOptions.map((role) => {
                 const isSelected = selected.includes(role)
                 return (
-                  <div
+                  <button
                     key={role}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
                     onClick={() => toggleRole(role)}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[13.5px] hover:bg-muted"
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
                   >
                     <span
                       className={cn(
@@ -183,11 +198,15 @@ export function RoleFilterSelect({
                       )}
                     >
                       {isSelected && (
-                        <Check size={11} strokeWidth={3} className="text-primary-foreground" />
+                        <Check
+                          size={11}
+                          strokeWidth={3}
+                          className="text-primary-foreground"
+                        />
                       )}
                     </span>
                     {role}
-                  </div>
+                  </button>
                 )
               })
             )}

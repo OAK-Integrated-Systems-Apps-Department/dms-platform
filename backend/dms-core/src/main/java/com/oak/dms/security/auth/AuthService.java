@@ -47,6 +47,7 @@ public class AuthService {
     private final KeycloakUserService keycloakUserService;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final OrganisationStatusGuard organisationStatus;
 
     /**
      * Whether {@code username} needs an OTP code to sign in. Returns false
@@ -104,9 +105,24 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
+        User user = recordLastLogin(username);
+        // The password was right, but a suspended or closed organisation's users don't get a session.
+        Optional<String> inactive = user == null || hasRealmRole(tokens.accessToken(), "PLATFORM_ADMIN")
+                ? Optional.empty() : organisationStatus.inactiveReason(user.getTenantId());
+        if (inactive.isPresent()) {
+            keycloakAuthClient.revokeRefreshToken(tokens.refreshToken());
+            auditService.event(AuditActionCatalog.LOGIN_FAILURE)
+                    .tenantId(user.getTenantId())
+                    .actor(user.getUserId(), user.getDisplayName())
+                    .objectType(AuditObjectTypes.USER)
+                    .resourceName(username)
+                    .outcome(AuditOutcome.DENIED)
+                    .failureReason("organisation not active")
+                    .log();
+            throw new com.oak.dms.common.exception.OrganisationInactiveException(inactive.get());
+        }
         cookieService.writeSessionCookies(response, tokens, rememberMe);
         log.info("Successful login for user '{}'", username);
-        User user = recordLastLogin(username);
 
         // TenantContext isn't bound yet at this point in the request (the
         // session cookies were only just written above) - actor/tenant
@@ -128,6 +144,27 @@ public class AuthService {
                 // submitted alongside a wrong/unnecessary code.
                 .authMethod(totp != null && !totp.isBlank() ? AuditAuthMethod.MFA : AuditAuthMethod.PASSWORD)
                 .log();
+    }
+
+    /**
+     * Whether a token Keycloak has just issued to us (straight from its token endpoint, so not
+     * re-verified here) carries a realm role.
+     */
+    static boolean hasRealmRole(String accessToken, String role) {
+        try {
+            String[] parts = accessToken.split("\\.");
+            byte[] payload = java.util.Base64.getUrlDecoder().decode(parts[1]);
+            com.fasterxml.jackson.databind.JsonNode roles = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(payload).path("realm_access").path("roles");
+            for (com.fasterxml.jackson.databind.JsonNode r : roles) {
+                if (role.equalsIgnoreCase(r.asText())) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // Unreadable: treat as not having it.
+        }
+        return false;
     }
 
     /**

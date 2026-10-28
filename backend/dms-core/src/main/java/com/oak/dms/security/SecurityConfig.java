@@ -66,6 +66,16 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health/**",
             "/actuator/info",
+            // Scraped by Prometheus (infra/monitoring), which can't present a
+            // Keycloak JWT. Unauthenticated like /actuator/health above, and
+            // safe for the same reason: dms-core publishes no host port in
+            // production (127.0.0.1 only) and the host nginx deliberately
+            // does not proxy /actuator, so this is reachable from inside the
+            // compose network and an SSH tunnel, never from the network.
+            // It exposes request/JVM/DMS counters - no document content, no
+            // names, no credentials. Anyone adding a public /actuator route
+            // to nginx must put authentication in front of it.
+            "/actuator/prometheus",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
@@ -75,7 +85,26 @@ public class SecurityConfig {
             "/api/v1/auth/logout",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
-            "/api/v1/auth/reset-password/validate"
+            "/api/v1/auth/reset-password/validate",
+            // Cloud malware-scanner verdict webhooks (Azure Event Grid, AWS
+            // EventBridge) - they can't present a Keycloak JWT, so
+            // ScanCallbackController authenticates them with a shared-secret
+            // header instead, and a callback can only trigger a re-check of
+            // the provider's own verdict, never set one.
+            "/api/v1/scanning/callbacks/*",
+            // ocr-worker reading a document's plaintext bytes. Same reasoning
+            // as the scan callbacks above: the worker has no Keycloak JWT and
+            // no user behind it. It authenticates with TWO factors instead -
+            // the shared X-Internal-Token AND a per-job HMAC grant naming one
+            // version, one tenant and an expiry (OcrJobTokenCodec). Permitted
+            // here only in the sense that Spring Security doesn't demand a
+            // JWT; OcrInternalContentController refuses anything that fails
+            // either factor, and re-checks the job, the tenant and the scan
+            // verdict against the database before serving a byte.
+            //
+            // This path must not be exposed through nginx/ingress - see
+            // docs/ocr/internal-endpoint.md.
+            "/internal/v1/ocr/**"
     };
 
     @Bean
@@ -145,7 +174,9 @@ public class SecurityConfig {
         // AuditRequestContextFilter, which sets this on every
         // authenticated response so the frontend can thread a related
         // sequence's correlation_id into a subsequent call.
-        configuration.setExposedHeaders(List.of("X-Correlation-Id"));
+        // Content-Disposition likewise, so file downloads (e.g. the bulk
+        // import template) can keep the server-chosen filename.
+        configuration.setExposedHeaders(List.of("X-Correlation-Id", "Content-Disposition"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

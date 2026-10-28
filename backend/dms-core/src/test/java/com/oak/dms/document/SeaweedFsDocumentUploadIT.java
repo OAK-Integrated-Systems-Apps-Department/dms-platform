@@ -3,6 +3,9 @@ package com.oak.dms.document;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.dto.DocumentResponse;
 import com.oak.dms.document.dto.DownloadedDocument;
+import com.oak.dms.scanning.dto.IngestionTicketResponse;
+import com.oak.dms.scanning.enums.ScanResultStatus;
+import com.oak.dms.storage.enums.StoragePurpose;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.security.auth.TenantContext;
@@ -131,8 +134,7 @@ class SeaweedFsDocumentUploadIT {
         UUID documentTypeId = createDocumentType(tenant.tenantId());
 
         byte[] content = "hello real SeaweedFS storage".getBytes(StandardCharsets.UTF_8);
-        DocumentResponse uploaded = documentService.uploadDocument(documentTypeId, "SeaweedFS Test Doc",
-                "seaweed-hello.txt", "text/plain", content.length, new ByteArrayInputStream(content));
+        DocumentResponse uploaded = uploadClean(documentTypeId, "SeaweedFS Test Doc", "seaweed-hello.txt", content);
 
         assertThat(uploaded.title()).isEqualTo("SeaweedFS Test Doc");
         assertThat(uploaded.status()).isEqualTo("draft");
@@ -204,10 +206,8 @@ class SeaweedFsDocumentUploadIT {
         byte[] contentOne = "first document's content".getBytes(StandardCharsets.UTF_8);
         byte[] contentTwo = "second document's content - different bytes".getBytes(StandardCharsets.UTF_8);
 
-        DocumentResponse docOne = documentService.uploadDocument(documentTypeId, "Doc One", "one.txt",
-                "text/plain", contentOne.length, new ByteArrayInputStream(contentOne));
-        DocumentResponse docTwo = documentService.uploadDocument(documentTypeId, "Doc Two", "two.txt",
-                "text/plain", contentTwo.length, new ByteArrayInputStream(contentTwo));
+        DocumentResponse docOne = uploadClean(documentTypeId, "Doc One", "one.txt", contentOne);
+        DocumentResponse docTwo = uploadClean(documentTypeId, "Doc Two", "two.txt", contentTwo);
 
         String keyOne = documentVersionRepository.findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(
                         docOne.currentVersionId(), docOne.documentId(), tenant.tenantId())
@@ -233,8 +233,7 @@ class SeaweedFsDocumentUploadIT {
         TenantContext.set(tenantA.tenantId(), tenantA.userId());
         UUID documentTypeIdA = createDocumentType(tenantA.tenantId());
         byte[] content = "tenant A's private SeaweedFS content".getBytes(StandardCharsets.UTF_8);
-        DocumentResponse doc = documentService.uploadDocument(documentTypeIdA, "Tenant A Doc", "a.txt",
-                "text/plain", content.length, new ByteArrayInputStream(content));
+        DocumentResponse doc = uploadClean(documentTypeIdA, "Tenant A Doc", "a.txt", content);
         TenantContext.clear();
 
         TenantFixture tenantB = createTenantWithSeaweedFsStorage();
@@ -285,6 +284,24 @@ class SeaweedFsDocumentUploadIT {
                 .status(StorageLocation.Status.active)
                 .build());
 
+        // Staging and quarantine for the scan gate - also in SeaweedFS, so the
+        // clean-file promotion is an S3 -> S3 copy. Same bucket is fine for
+        // a test: every key is prefixed staging/, quarantine/ or documents/.
+        for (StoragePurpose purpose : new StoragePurpose[]{StoragePurpose.staging, StoragePurpose.quarantine}) {
+            storageLocationRepository.save(StorageLocation.builder()
+                    .tenantId(tenant.getTenantId())
+                    .name("seaweedfs-" + purpose + "-" + UUID.randomUUID())
+                    .provider(StorageProvider.S3)
+                    .purpose(purpose)
+                    .endpoint(SEAWEEDFS_ENDPOINT)
+                    .region("us-east-1")
+                    .bucket(BUCKET)
+                    .pathStyleAccess(true)
+                    .credentialRef(CREDENTIAL_REF)
+                    .status(StorageLocation.Status.active)
+                    .build());
+        }
+
         return new TenantFixture(tenant.getTenantId(), user.getUserId());
     }
 
@@ -295,6 +312,18 @@ class SeaweedFsDocumentUploadIT {
                 .typeName("SeaweedFS Test Document Type")
                 .build());
         return documentType.getDocumentTypeId();
+    }
+
+    /**
+     * Uploads go through the malware scan gate and return an ingestion
+     * ticket; with the local ClamAV engine a clean file is promoted before
+     * the call returns. Needs clamd reachable (docker compose up clamav).
+     */
+    private DocumentResponse uploadClean(UUID documentTypeId, String title, String filename, byte[] content) {
+        IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, title, filename,
+                content.length, new ByteArrayInputStream(content));
+        assertThat(ticket.status()).as(ticket.message()).isEqualTo(ScanResultStatus.clean);
+        return documentService.getDocument(ticket.documentId());
     }
 
     private record TenantFixture(UUID tenantId, UUID userId) {

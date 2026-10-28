@@ -3,6 +3,7 @@ package com.oak.dms.metadata.controller;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.metadata.dto.CreateDocumentTypeRequest;
 import com.oak.dms.metadata.dto.DocumentTypeResponse;
+import com.oak.dms.metadata.dto.SelectableDocumentTypeResponse;
 import com.oak.dms.metadata.dto.UpdateDocumentTypeRequest;
 import com.oak.dms.metadata.service.DocumentTypeService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -37,14 +39,24 @@ public class DocumentTypeController {
     }
 
     @GetMapping("/{documentTypeId}")
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE)")
+    // Template managers (V70) read the type they're adding templates to - they can't change it.
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_CREATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_DELETE)")
     @Operation(summary = "Get a document type by id")
     public DocumentTypeResponse getDocumentType(@PathVariable UUID documentTypeId) {
         return documentTypeService.getDocumentType(documentTypeId);
     }
 
+    @GetMapping("/selectable")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_CREATE)")
+    @Operation(summary = "Active document types a document can be uploaded as",
+            description = "Id, code and name only, in display order. For upload screens: needs only the "
+                    + "document-create permission, unlike the full admin list below.")
+    public List<SelectableDocumentTypeResponse> listSelectable() {
+        return documentTypeService.listSelectableDocumentTypes();
+    }
+
     @GetMapping
-    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE)")
+    @PreAuthorize("@authz.hasAnyPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_CONTENT_TYPES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_VIEW, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_TYPE_FIELD_MAPPING_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_CREATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_UPDATE, T(com.oak.dms.security.rbac.catalog.PermissionCodes).MDTM_DOCUMENT_TEMPLATES_DELETE)")
     @Operation(summary = "List document types in the caller's tenant",
             description = "Also readable by mdtm.manage-type-field-mapping.* - the document-type column "
                     + "picker on the Mapping matrix screen is populated straight from this list.")

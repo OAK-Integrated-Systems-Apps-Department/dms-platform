@@ -176,6 +176,7 @@ jobs:
             infra/production/postgres \
             infra/openbao \
             infra/production/nginx \
+            infra/monitoring \
             infra/local/keycloak/oak-dms-realm.json \
             infra/keycloak/bootstrap.sh \
           | ssh -F "$SSH_CONFIG" deploy-target "mkdir -p '$DEPLOY_PATH' && tar -xzf - -C '$DEPLOY_PATH'"

@@ -1,0 +1,96 @@
+# SonarQube for Oak DMS - a SEPARATE compose project from the application
+# stack (infra/local), deliberately.
+#
+# Two reasons it does not live in infra/local/docker-compose.yml:
+#   1. It is a development tool, not part of the product. Nothing in the DMS
+#      talks to it, and `docker compose up` for day-to-day work should not
+#      have to start it.
+#   2. It is heavy - SonarQube runs an embedded Elasticsearch and wants
+#      ~2 GB to itself, on top of the ~8 GB the application stack already
+#      asks for. Starting both on an 16 GB machine is what froze the Docker
+#      VM before (see the mem_limit comments in infra/local).
+#
+# Start:    docker compose -f infra/sonarqube/docker-compose.yml up -d
+# Stop:     docker compose -f infra/sonarqube/docker-compose.yml down
+# Then:     http://localhost:9000  (first login admin/admin - it forces a change)
+# Runbook:  infra/sonarqube/README.md
+
+name: sonarqube
+
+services:
+  # SonarQube's own database. Separate from the DMS Postgres on purpose:
+  # this is throwaway analysis history, it must never share a backup,
+  # a restore or a `docker compose down -v` with real document metadata.
+  #
+  # Postgres 17 rather than the 18 the application stack runs: SonarQube
+  # certifies specific Postgres majors, and 17 is the newest it lists.
+  # Check SonarQube's docs before raising this.
+  sonarqube-db:
+    image: postgres:17-alpine
+    container_name: sonarqube-db
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: sonar
+      # Local-only analysis database reachable on no published port - see
+      # the `ports` note on the sonarqube service. Not a product secret.
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonarqube_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  sonarqube:
+    image: sonarqube:26.9.0.129388-community
+    container_name: sonarqube
+    restart: unless-stopped
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    # The embedded Elasticsearch will not start in much less than this, and
+    # without a cap it will happily take the whole Docker VM.
+    mem_limit: 3g
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+    ports:
+      # Loopback only. This holds a full copy of the source under analysis;
+      # it has no business being reachable from the network.
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    # Elasticsearch mmaps its indices and refuses to start under the default
+    # limit. On Docker Desktop this applies to the WSL2/LinuxKit VM, not to
+    # Windows or macOS itself - see README.md if the container restart-loops
+    # with "max virtual memory areas vm.max_map_count [65530] is too low".
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      # The container is up long before SonarQube can be analysed against -
+      # it migrates its schema and starts Elasticsearch first. `status` is
+      # the only thing that reports UP once it is genuinely ready, which is
+      # what the CI job and the scan script wait on.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+volumes:
+  sonarqube_db:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:

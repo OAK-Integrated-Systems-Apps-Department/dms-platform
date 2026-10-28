@@ -26,6 +26,10 @@ public class StorageProperties {
     private final S3 s3 = new S3();
     private final FileSystem filesystem = new FileSystem();
     private final AzureBlob azureBlob = new AzureBlob();
+    /** Platform-default staging location - where uploads wait while they are scanned (see com.oak.dms.scanning). */
+    private final PurposeTarget staging = new PurposeTarget("/data/dms/staging");
+    /** Platform-default quarantine location - where infected uploads are isolated (see com.oak.dms.scanning). */
+    private final PurposeTarget quarantine = new PurposeTarget("/data/dms/quarantine");
 
     @Getter
     @Setter
@@ -36,6 +40,12 @@ public class StorageProperties {
         private String accessKey;
         private String secretKey;
         private boolean pathStyleAccess = false;
+        /**
+         * Server-side encryption for S3 document locations: blank (none), AES256 (SSE-S3) or aws:kms
+         * (SSE-KMS, with {@link #kmsKeyId} or the bucket's default key). MinIO needs a KMS (KES) for either.
+         */
+        private String serverSideEncryption;
+        private String kmsKeyId;
     }
 
     @Getter
@@ -52,5 +62,39 @@ public class StorageProperties {
         private String container;
         private String accountName;
         private String accountKey;
+    }
+
+    /**
+     * Seeds the platform-default staging/quarantine {@link com.oak.dms.storage.entity.StorageLocation}.
+     * Blank {@code bucket}/{@code endpoint}/{@code region} fall back to the same
+     * deployment-wide {@code s3.*}/{@code azure-blob.*} values the document
+     * location uses - which is why {@link StorageLocationBootstrap} refuses to
+     * start if the resulting physical target overlaps the document location's.
+     */
+    @Getter
+    @Setter
+    public static class PurposeTarget {
+        private StorageProvider provider = StorageProvider.FILE_SYSTEM;
+        /** FILE_SYSTEM only. */
+        private String basePath;
+        /** S3 bucket, or AZURE_BLOB container. */
+        private String bucket;
+        private String endpoint;
+        /** S3 only. */
+        private String region;
+        /** S3 only. */
+        private boolean pathStyleAccess = false;
+        /** Optional - see {@code StorageLocation.credentialRef}. */
+        private String credentialRef;
+        /** S3 only - as {@link S3#getServerSideEncryption()}; blank = the s3.* default. */
+        private String serverSideEncryption;
+        private String kmsKeyId;
+
+        public PurposeTarget() {
+        }
+
+        PurposeTarget(String defaultBasePath) {
+            this.basePath = defaultBasePath;
+        }
     }
 }

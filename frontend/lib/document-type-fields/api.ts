@@ -42,6 +42,7 @@ export interface DocumentTypeSchemaResponseDto {
     dataType: string
     mandatory: boolean
     hidden: boolean
+    ocrExtractable: boolean
     displayOrder: number
     fieldGroup: string | null
     defaultValue: string | null

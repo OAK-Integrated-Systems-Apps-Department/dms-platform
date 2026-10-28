@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { AlertTriangle, ChevronDown, Loader2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -35,7 +35,11 @@ const selectClassName =
  * of that module's actions. Changing the module clears any action picked
  * under the previous one, since it's very likely no longer valid.
  */
-export function PermissionForm({ mode, permission, onSubmit }: PermissionFormProps) {
+export function PermissionForm({
+  mode,
+  permission,
+  onSubmit,
+}: PermissionFormProps) {
   const router = useRouter()
   const modules = usePermissionsStore((state) => state.modules)
   const actions = usePermissionsStore((state) => state.actions)
@@ -61,7 +65,6 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
     register,
     handleSubmit,
     control,
-    watch,
     setValue,
     formState: { errors, isSubmitting, isValid },
   } = useForm<PermissionFormValues>({
@@ -76,7 +79,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
     mode: "onChange",
   })
 
-  const selectedModuleId = watch("moduleId")
+  const selectedModuleId = useWatch({ control, name: "moduleId" })
   const actionsForModule = useMemo(
     () => actions.filter((a) => a.moduleId === selectedModuleId),
     [actions, selectedModuleId]
@@ -105,8 +108,7 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
       {isSharedPermission && (
         <div className="mb-6 rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
           This is part of the platform&apos;s shared permission catalog.
-          It&apos;s visible to every tenant and can&apos;t be edited from
-          here.
+          It&apos;s visible to every tenant and can&apos;t be edited from here.
         </div>
       )}
 
@@ -114,11 +116,16 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         <Label htmlFor="permission-code">Permission Code</Label>
         {mode === "edit" ? (
           <>
-            <Input id="permission-code" value={permission?.code ?? ""} disabled readOnly />
+            <Input
+              id="permission-code"
+              value={permission?.code ?? ""}
+              disabled
+              readOnly
+            />
             <p className="mt-1.5 text-[12px] text-muted-foreground">
               The code is checked throughout the system and can&apos;t be
-              changed once created. Retire this permission and create a new
-              one if the code itself needs to change.
+              changed once created. Retire this permission and create a new one
+              if the code itself needs to change.
             </p>
           </>
         ) : (
@@ -130,13 +137,15 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
               {...register("code")}
             />
             <p className="mt-1.5 text-[12px] text-muted-foreground">
-              Dot-separated, lowercase — this is what code checks against,
-              e.g. <code className="font-mono">document.approve</code>.
+              Dot-separated, lowercase — this is what code checks against, e.g.{" "}
+              <code className="font-mono">document.approve</code>.
             </p>
           </>
         )}
         {errors.code && (
-          <p className="mt-1.5 text-[12px] text-destructive">{errors.code.message}</p>
+          <p className="mt-1.5 text-[12px] text-destructive">
+            {errors.code.message}
+          </p>
         )}
       </div>
 
@@ -150,14 +159,18 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
           {...register("name")}
         />
         {errors.name && (
-          <p className="mt-1.5 text-[12px] text-destructive">{errors.name.message}</p>
+          <p className="mt-1.5 text-[12px] text-destructive">
+            {errors.name.message}
+          </p>
         )}
       </div>
 
       <div className="mb-6">
         <Label htmlFor="permission-description">
           Description{" "}
-          <span className="text-[var(--ink-faint)] normal-case">(optional)</span>
+          <span className="text-[var(--ink-faint)] normal-case">
+            (optional)
+          </span>
         </Label>
         <Textarea
           id="permission-description"
@@ -179,9 +192,8 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         Module &amp; Action
       </h2>
       <p className="mb-4 text-[12.5px] text-muted-foreground">
-        Every permission belongs to one action under one module — this is
-        what groups it on Role Permission Configuration and the Permission
-        Matrix.
+        Every permission belongs to one action under one module — this is what
+        groups it on Role Permission Configuration and the Permission Matrix.
       </p>
 
       {catalogLoading ? (
@@ -208,7 +220,9 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                       // onChange here wouldn't clear a stale "Choose a
                       // module" error either. Same reasoning as the action
                       // select below.
-                      setValue("moduleId", event.target.value, { shouldValidate: true })
+                      setValue("moduleId", event.target.value, {
+                        shouldValidate: true,
+                      })
                       // The previously-selected action almost certainly
                       // doesn't belong to the newly-chosen module — clear
                       // it rather than silently submitting a mismatched
@@ -262,14 +276,18 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                       // that, a bare field.onChange here would update the
                       // value but leave that stale error on screen even
                       // once a real action is picked.
-                      setValue("actionId", event.target.value, { shouldValidate: true })
+                      setValue("actionId", event.target.value, {
+                        shouldValidate: true,
+                      })
                     }
                     disabled={!selectedModuleId || isSharedPermission}
                     aria-invalid={Boolean(errors.actionId)}
                     className={selectClassName}
                   >
                     <option value="" disabled>
-                      {selectedModuleId ? "Choose an action…" : "Choose a module first"}
+                      {selectedModuleId
+                        ? "Choose an action…"
+                        : "Choose a module first"}
                     </option>
                     {actionsForModule.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -289,11 +307,13 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
                 {errors.actionId.message}
               </p>
             )}
-            {selectedModuleId && actionsForModule.length === 0 && !errors.actionId && (
-              <p className="mt-1.5 text-[12px] text-muted-foreground">
-                This module has no actions yet.
-              </p>
-            )}
+            {selectedModuleId &&
+              actionsForModule.length === 0 &&
+              !errors.actionId && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">
+                  This module has no actions yet.
+                </p>
+              )}
           </div>
         </div>
       )}
@@ -310,7 +330,9 @@ export function PermissionForm({ mode, permission, onSubmit }: PermissionFormPro
         </button>
         <button
           type="submit"
-          disabled={isSubmitting || catalogLoading || isSharedPermission || !isValid}
+          disabled={
+            isSubmitting || catalogLoading || isSharedPermission || !isValid
+          }
           className="rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           {mode === "create" ? "Create Permission" : "Save Changes"}

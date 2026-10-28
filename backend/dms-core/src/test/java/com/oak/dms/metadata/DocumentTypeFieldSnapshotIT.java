@@ -201,7 +201,8 @@ class DocumentTypeFieldSnapshotIT {
             Files.createDirectories(SNAPSHOT.getParent());
             Files.writeString(SNAPSHOT, actual);
         }
-        assertThat(actual).isEqualTo(Files.readString(SNAPSHOT));
+        // Line endings aside: a Windows checkout turns the snapshot into CRLF.
+        assertThat(actual.replace("\r\n", "\n")).isEqualTo(Files.readString(SNAPSHOT).replace("\r\n", "\n"));
     }
 
     private static JsonNode normalize(JsonNode node, Map<String, String> ids) {

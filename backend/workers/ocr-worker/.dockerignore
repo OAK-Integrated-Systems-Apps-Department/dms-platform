@@ -1,0 +1,27 @@
+# The Dockerfile reads only pyproject.toml, src/ and scripts/prefetch_models.py.
+# Everything else would be sent to the daemon on every build, and a change to
+# any COPY'd path invalidates layers -- so keep the rest out of the context.
+# (Tests are bind-mounted by scripts/dev at run time, not COPY'd, so excluding
+# them does not affect the test image.)
+
+.git
+.gitignore
+.env
+.env.*
+
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+*.egg-info
+
+tests
+eval
+README.md
+
+# prefetch_models.py is the only script the image needs.
+scripts/*
+!scripts/prefetch_models.py

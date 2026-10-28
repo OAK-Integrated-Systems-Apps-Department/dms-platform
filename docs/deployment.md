@@ -34,6 +34,7 @@ browser ─► http://192.168.0.10  (host nginx, port 80, the only public port)
 | `infra/production/.env.example` | Template for the server-side `.env` (never commit the real one) |
 | `infra/production/deploy.sh` | Server-side deploy / rollback / status script |
 | `infra/production/nginx/dms.conf` | Host nginx site |
+| `infra/monitoring/` | Prometheus + Grafana config, shared with `infra/local` |
 | `infra/production/postgres/init-multiple-dbs.sh` | First-start DB/user creation (password from `.env`) |
 
 The dev stack (`infra/local/`) is unchanged in how you use it.
@@ -286,9 +287,34 @@ docker exec oakdms-frontend sh -c 'grep -rlE "localhost:(8080|8081)" /app/.next 
 
 ### Admin UIs (SSH tunnel, never public)
 ```bash
-ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 oak@192.168.0.10
+ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 -L 9090:localhost:9090 oak@192.168.0.10
 # Keycloak admin http://localhost:8081/admin  ·  RabbitMQ http://localhost:15672  ·  Mailpit http://localhost:8026
+# Prometheus (raw queries, scrape-target health) http://localhost:9090 - add a
+# "127.0.0.1:9090:9090" port binding to the prometheus service first; by default
+# it has no host port at all.
 ```
+
+### Monitoring
+Prometheus and Grafana run alongside the stack - see `infra/monitoring/README.md`
+for what is collected and how to change a panel or an alert.
+
+- **Dashboard:** in the DMS, Governance -> System Monitoring (platform admins
+  only). It embeds Grafana, which nginx serves at `/grafana/`.
+- **Before the first deploy**, set `GRAFANA_ADMIN_PASSWORD` and
+  `POSTGRES_METRICS_PASSWORD` in `.env` (both are in `secret-keys.txt`, so
+  OpenBao renders them if it is in use), and create the exporter's read-only
+  database login once:
+  ```sql
+  CREATE ROLE dms_metrics LOGIN PASSWORD '<POSTGRES_METRICS_PASSWORD>';
+  GRANT pg_monitor TO dms_metrics;
+  ```
+- **Nginx:** `/grafana/` is a new location in `dms.conf`, so re-run the
+  `cp` -> `nginx -t` -> `systemctl reload nginx` steps from section 2.5 when
+  deploying this the first time.
+- **Not health-gated:** `deploy.sh` waits only on `dms-core` and `frontend`
+  (`APP_SERVICES`), so a monitoring outage never rolls back a good release.
+- **Alerts do not notify anyone.** The rules are evaluated and shown in
+  Grafana, but there is no Alertmanager and no email or chat route yet.
 
 ## 5. Known limitations / follow-ups
 
@@ -298,15 +324,49 @@ ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 oak@1
   exposure beyond the LAN, then set `PUBLIC_URL=https://…` and
   `AUTH_COOKIE_SECURE=true`.
 - **Seeded Keycloak user.** `infra/local/keycloak/oak-dms-realm.json` creates
-  `superadmin@gmail.com` with a password that is committed in the repo, on a
-  realm's first import. Change that password immediately on any new install.
+  `superadmin@gmail.com` with the `PLATFORM_ADMIN` role and **no password** —
+  the realm file used to carry a committed one, which meant every deployment
+  built from this repo shared the same known platform-admin login.
+  `bootstrap.sh` now sets it from `KEYCLOAK_SUPERADMIN_PASSWORD`, and only
+  when the account has no credential yet, so a password changed later is not
+  reset on the next deploy. It is applied as a *temporary* password in
+  production, so the holder must replace it at first login.
+
+  Set `KEYCLOAK_SUPERADMIN_PASSWORD` in `.env` before the first deploy —
+  unique per client. Without it, bootstrap logs a warning and nobody can sign
+  in as the platform administrator.
+
+  **Servers installed before this change still hold the old committed
+  password.** Reset it once, in the Keycloak admin console
+  (Users → superadmin@gmail.com → Credentials → Reset password), or by
+  deleting that user's credential and re-running `keycloak-bootstrap`.
 - **Keycloak DB user.** Keycloak uses the `postgres` superuser (inherited
   from the local setup). A dedicated `keycloak` role owning only
   `keycloak_db` would be better.
 - **Mail.** Defaults deliver into Mailpit, so nobody receives email. Set
   `SMTP_*` to a real relay.
-- **Upload size.** nginx allows 100 MB, but Spring's default multipart limit
-  (1 MB file / 10 MB request) is not configured in `application.yml`.
+- **Upload size.** No per-file limit: nginx `client_max_body_size 0`,
+  `spring.servlet.multipart` `-1` and `dms.scanning.max-file-size-bytes`
+  (the `scan_engines` row) at Long.MAX_VALUE. ClamAV reads at most 2047 MB of
+  one stream, so dms-core sends larger files to it in overlapping 2000 MB
+  segments (`dms.scanning.clamav.segment-bytes`, which must stay under clamd's
+  `StreamMaxLength`). Those are scanned in the background, not within the
+  upload request.
+
+  Uploads spool to the dms-core container's temp directory and to staging
+  storage, so allow free disk for the largest files users will upload, several
+  at a time.
+- **Virus scanner.** The `clamav` service (`clamav/clamav-debian:1.4.3`) has the
+  same limits as the local stack, and dms-core reaches it at `clamav:3310`.
+  - **Network:** it has no host port, but it needs outbound HTTPS to
+    `database.clamav.net` for signature updates (every 2 hours).
+  - **First deploy:** a fresh `clamav_db` volume downloads about 300 MB of
+    signatures before clamd listens, which takes several minutes. Uploads made
+    meanwhile wait as "being scanned" and finish by themselves once it's up.
+  - **Memory:** budget about 3 GB of RAM for it (it's capped at 4 GB).
+  - **Check it:** `docker exec oakdms-clamav clamdcheck.sh` should succeed, and
+    `docker logs oakdms-clamav` shows "File size limit set to 2146435072
+    bytes".
 - **Integration tests.** The 14 `*IT` classes compile but never run (no
   maven-failsafe-plugin configured), so CI runs the 28 unit/context tests.
 - **Actions pinning.** Workflows use major-version tags (`@v5`). Pin to

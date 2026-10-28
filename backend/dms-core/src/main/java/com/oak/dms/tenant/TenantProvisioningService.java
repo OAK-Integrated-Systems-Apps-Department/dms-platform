@@ -6,6 +6,7 @@ import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.metadata.seed.TenantStarterCatalogService;
+import com.oak.dms.relationship.seed.RelationshipTypeSeeder;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.tenant.dto.ProvisionTenantRequest;
@@ -57,6 +58,7 @@ public class TenantProvisioningService {
     private final PasswordResetService passwordResetService;
     private final AuditService auditService;
     private final TenantStarterCatalogService starterCatalogService;
+    private final RelationshipTypeSeeder relationshipTypeSeeder;
 
     @Transactional
     public TenantProvisioningResponse provisionTenant(ProvisionTenantRequest request) {
@@ -77,6 +79,7 @@ public class TenantProvisioningService {
         tenant = tenantRepository.saveAndFlush(tenant);
         UUID tenantId = tenant.getTenantId();
         starterCatalogService.install(tenantId);
+        relationshipTypeSeeder.install(tenantId);
 
         // Creates the Keycloak user and sets an unguessable temporary
         // password nobody is told - same as a normal user invite (see

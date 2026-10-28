@@ -1,0 +1,14 @@
+{
+  "container": "oakdms-ocr-worker",
+  "label": "OCR_RENDER_MAX_MP=4.0, 50 uploads / 10 concurrent, 2 pool workers",
+  "samples": 1202,
+  "interval_s": 2,
+  "duration_s": 3000,
+  "peak_gib": 6.869,
+  "peak_was_reset_first": false,
+  "median_gib": 3.654,
+  "p95_gib": 5.603,
+  "limit_gib": 8.500,
+  "headroom_gib": 1.631,
+  "utilisation": 0.8081
+}
