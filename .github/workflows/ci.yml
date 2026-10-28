@@ -71,7 +71,7 @@ jobs:
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ci-only-rabbitmq
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # The JDK production actually builds with is the one in
       # backend/Dockerfile's build stage (maven:*-eclipse-temurin-<N>);
@@ -86,7 +86,7 @@ jobs:
           echo "Build JDK (backend/Dockerfile): $jdk, bytecode target (pom.xml): ${target:-unknown}"
           echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: ${{ steps.java.outputs.jdk }}
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-reports
           path: |
@@ -155,7 +155,7 @@ jobs:
       RABBITMQ_USERNAME: dms
       RABBITMQ_PASSWORD: ci-only-rabbitmq
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Detect Java version
         id: java
@@ -164,7 +164,7 @@ jobs:
           [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
           echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: ${{ steps.java.outputs.jdk }}
@@ -182,7 +182,7 @@ jobs:
 
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: integration-reports
           path: backend/dms-core/target/surefire-reports/
@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Read the runtime base image and font packages from the Dockerfile
         id: runtime
@@ -264,7 +264,7 @@ jobs:
 
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rendering-reports
           path: backend/dms-core/target/surefire-reports/
@@ -278,14 +278,14 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # frontend/Dockerfile builds on oven/bun:1 (latest 1.x); match it.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
@@ -294,16 +294,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # NON-BLOCKING for now: `bun run lint` currently reports 27 existing
-      # errors on develop (react-hooks/set-state-in-effect etc.). Making it
-      # blocking today would fail every PR. Fix those, then delete
-      # `continue-on-error` so lint regressions fail CI.
-      - name: Lint (non-blocking - see comment)
-        continue-on-error: true
+      - name: Lint
         run: bun run lint
 
       - name: Typecheck
         run: bun run typecheck
+
+      # Vitest (components, hooks, lib). Run against the lockfile install
+      # above - the same one the Docker image gets - so a dependency that only
+      # resolves on one developer's machine fails here.
+      - name: Unit tests
+        run: bun run test
 
       # The production `next build` itself runs inside the Docker image
       # build below (frontend/Dockerfile), which is the artifact that ships -
@@ -364,7 +365,7 @@ jobs:
     steps:
       # Shallow clones make Sonar report every line as new code and lose
       # blame, so it can no longer tell which issues a pull request added.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
@@ -375,7 +376,7 @@ jobs:
           [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
           echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: ${{ steps.java.outputs.jdk }}
@@ -383,7 +384,7 @@ jobs:
           cache-dependency-path: backend/**/pom.xml
 
       - name: Cache SonarQube packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.sonar/cache
           key: sonar-${{ runner.os }}
@@ -411,11 +412,71 @@ jobs:
       # A separate Sonar project from the backend - see the comment in
       # frontend/sonar-project.properties for why they cannot share a key.
       - name: Analyse frontend
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8
         with:
           # Reads frontend/sonar-project.properties; SONAR_HOST_URL and
           # SONAR_TOKEN come from the job env above.
           projectBaseDir: frontend
+
+  # The OCR worker's own unit tests, on pull requests into develop that touch
+  # it. Pull requests into main are covered by ocr-accuracy-gate.yml, which
+  # runs the same tests plus the accuracy evaluation. Built from the Dockerfile's
+  # `test` target - the production image plus pytest - so the tests run against
+  # the environment that ships. The image is ~5.7 GB with the model weights
+  # baked in, which is why this is skipped unless the worker changed.
+  ocr-worker:
+    name: OCR worker - unit tests
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'develop' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Did the OCR worker change?
+        id: changed
+        run: |
+          if git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- backend/workers/ocr-worker; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes under backend/workers/ocr-worker - skipping."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reclaim disk
+        if: steps.changed.outputs.changed == 'true'
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+
+      - name: Build the test image
+        if: steps.changed.outputs.changed == 'true'
+        run: docker build --target test -t ocr-worker-ci-test:${{ github.sha }} backend/workers/ocr-worker
+
+      - name: Unit tests
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" -w /repo/backend/workers/ocr-worker \
+            -e PYTHONPATH=/repo/backend/workers/ocr-worker/src:/repo/backend/workers/ocr-worker \
+            ocr-worker-ci-test:${{ github.sha }} \
+            python -m pytest tests -q
+
+      # The image that ships. Its layers are already built by the test target
+      # above (the test stage only adds pytest on top), so this costs the last
+      # few layers, not another 5.7 GB build - and it proves the production
+      # stage still builds, model prefetch included.
+      - name: Build the production image
+        if: steps.changed.outputs.changed == 'true'
+        run: docker build -t ci/ocr-worker:${{ github.sha }} backend/workers/ocr-worker
+
+      - name: Scan the production image
+        if: steps.changed.outputs.changed == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ci/ocr-worker:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
   images:
     name: Docker image - ${{ matrix.name }}
@@ -434,11 +495,11 @@ jobs:
           - name: dms-frontend
             context: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build production image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile
@@ -447,6 +508,27 @@ jobs:
           tags: ci/${{ matrix.name }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+      # Known vulnerabilities in the image that would ship. Two passes so the
+      # log always shows what is there: the first lists HIGH and CRITICAL and
+      # never fails; the second fails the build only on a CRITICAL that has a
+      # fix available (--ignore-unfixed), because those are the ones someone can
+      # act on today. An accepted exception goes in .trivyignore, with a reason.
+      - name: Vulnerability report (HIGH and CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ci/${{ matrix.name }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Vulnerability gate (fixable CRITICAL fails the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ci/${{ matrix.name }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       # The production bundle must call the API same-origin (/api/...), never
       # localhost:8080 - that was the original production bug.
@@ -466,7 +548,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Production compose (with the committed template)
         run: docker compose -f infra/production/docker-compose.yml --env-file infra/production/.env.example config --quiet

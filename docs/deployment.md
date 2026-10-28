@@ -210,7 +210,7 @@ actuator/Swagger are not reachable from the network. Docker bypasses ufw for
   SHA to redeploy that image without rebuilding.
 
 What `deploy.sh <sha>` does on the server:
-1. Pulls `dms-core` and `frontend` for that tag. If this fails, nothing changes.
+1. Pulls `dms-core`, `frontend` and `ocr-worker` for that tag. If this fails, nothing changes.
 2. `docker compose up -d`. Only containers whose image/config changed are
    recreated; Postgres/Keycloak/etc. keep running. `keycloak-bootstrap`
    re-applies Keycloak roles, SMTP and the web client URLs every time.
@@ -313,6 +313,14 @@ for what is collected and how to change a panel or an alert.
   deploying this the first time.
 - **Not health-gated:** `deploy.sh` waits only on `dms-core` and `frontend`
   (`APP_SERVICES`), so a monitoring outage never rolls back a good release.
+- **OCR worker:** deployed with the other two (same SHA tag) but not gated
+  either (`OPTIONAL_SERVICES`): `deploy.sh` reports whether it came up and
+  warns if not, so a slow model warm-up never rolls back a release. It needs
+  `INTERNAL_SERVICE_TOKEN` and `OCR_JOB_TOKEN_SECRET` (two different random
+  values, in `secret-keys.txt`) - until they are in OpenBao/`.env`, `deploy.sh`
+  stops before changing anything. Use passwords without `/ @ : ? #` for the
+  database and RabbitMQ (they are embedded in the worker's URLs). Rolling
+  back to a tag from before the worker existed starts everything except it.
 - **Alerts do not notify anyone.** The rules are evaluated and shown in
   Grafana, but there is no Alertmanager and no email or chat route yet.
 

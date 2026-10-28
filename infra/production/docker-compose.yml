@@ -399,6 +399,15 @@ services:
       ENCRYPTION_OPENBAO_AUTH: approle
       ENCRYPTION_OPENBAO_ROLE_ID: ${ENCRYPTION_OPENBAO_ROLE_ID:-}
       ENCRYPTION_OPENBAO_SECRET_ID: ${ENCRYPTION_OPENBAO_SECRET_ID:-}
+      # OCR (module OS). dms-core publishes OCR requests to RabbitMQ and serves
+      # the worker's reads at /internal/v1/ocr. Set OCR_ENABLED=false in .env to
+      # stop publishing (the worker can then be left stopped).
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_WORKER_BASE_URL: http://ocr-worker:8090
+      # Signs the per-job read grants the worker presents, and the shared
+      # X-Internal-Token both sides check. Both are secrets (secret-keys.txt).
+      OCR_JOB_TOKEN_SECRET: ${OCR_JOB_TOKEN_SECRET:?OCR_JOB_TOKEN_SECRET is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -438,6 +447,55 @@ services:
     # Health: the image's own HEALTHCHECK (frontend/Dockerfile).
     depends_on:
       - dms-core
+
+  # OCR worker (backend/workers/ocr-worker). Same image tag as dms-core and the
+  # frontend: deploy.yml builds all three from one commit. Internal only - no
+  # ports; dms-core reaches it at http://ocr-worker:8090.
+  #
+  # deploy.sh pulls this image with the others but does NOT health-gate it
+  # (a slow model warm-up must not roll back a good release); it reports the
+  # worker's state after the smoke test instead.
+  ocr-worker:
+    image: ${OCR_WORKER_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/ocr-worker}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
+    container_name: oakdms-ocr-worker
+    restart: unless-stopped
+    # Measured on the Phase 1 50-upload run with 2 pool processes: peak 6.89 GiB
+    # (backend/workers/ocr-worker/README.md "Memory"). 8704m is that plus ~25%.
+    # Roughly 3.4 GiB per OCR_WORKER_PROCESSES plus ~1.5 GiB shared - raise the
+    # limit together with the pool size, and re-measure on the real server.
+    mem_limit: ${OCR_WORKER_MEM_LIMIT:-8704m}
+    environment:
+      # FOLLOW-UP: both URLs embed a password verbatim. .env.example suggests
+      # `openssl rand -base64 36`, which can emit '/', '+' and '=' - a '/' or
+      # '@' in DMS_CORE_DB_PASSWORD or RABBITMQ_DEFAULT_PASS ends the userinfo
+      # early and the worker cannot connect (dms-core is unaffected: it takes
+      # the password as a separate setting). Until the worker builds these from
+      # separate variables, use passwords without / @ : ? # (e.g. openssl rand -hex 24).
+      DB_URL: postgresql+psycopg://dms_core_user:${DMS_CORE_DB_PASSWORD}@postgres:5432/dms_core_db
+      RABBITMQ_URL: amqp://dms:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+      DMS_CORE_BASE_URL: http://dms-core:8080
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      OCR_WORKER_PROCESSES: ${OCR_WORKER_PROCESSES:-2}
+      # Plaintext documents land here while a job runs - tmpfs, never a disk.
+      OCR_TMP_DIR: /dev/shm/ocr
+      # Dev aid that lists internal module names; off in production.
+      OCR_FINGERPRINT_ENABLED: "false"
+      # Memory handling only, no effect on results (see the local compose file).
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      OCR_WORKER_MAX_TASKS_PER_PROCESS: "15"
+    # No model volumes: the weights are baked into the image and the worker
+    # runs with OCR_OFFLINE_MODELS=true, so there is nothing to download.
+    tmpfs:
+      # uid/gid 100/101 = the image's oakdms user; without them the mount is
+      # root-owned and mode 1700 locks the worker out of its own files.
+      - /dev/shm/ocr:size=512m,mode=1700,uid=100,gid=101
+    # Health: the image's own HEALTHCHECK (/readyz, after both models warm up).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   # ---------------------------------------------------------------------
   # Monitoring (Prometheus + Grafana). Config is shared with infra/local and

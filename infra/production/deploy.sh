@@ -6,7 +6,7 @@
 #   ./deploy.sh --rollback     redeploy the tag that was live before the current one
 #   ./deploy.sh --status       show the deployed tag, history and container health
 #
-# Flow: pull the new dms-core/frontend images (nothing changes if that fails)
+# Flow: pull the new dms-core/frontend/ocr-worker images (nothing changes if that fails)
 # -> `docker compose up -d` (Compose only recreates containers whose image or
 # config changed; unchanged infrastructure keeps running) -> wait for the
 # containers' own health checks -> smoke-test through nginx. Only when all
@@ -27,6 +27,9 @@ cd "$(dirname "$0")"
 
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
 APP_SERVICES=(dms-core frontend)
+# Reported after a deploy but never a reason to roll one back: the worker warms
+# two models at start-up, and OCR being down must not undo a good release.
+OPTIONAL_SERVICES=(ocr-worker)
 HISTORY_FILE=.deploy-history
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-/dev/shm/oakdms/secrets.env}"
 
@@ -144,15 +147,38 @@ check_nginx_drift() {
 
 show_diagnostics() {
   dc ps -a || true
-  for svc in "${APP_SERVICES[@]}"; do
+  for svc in "${APP_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}"; do
     log "--- last 80 log lines: $svc"
     dc logs --no-color --tail=80 "$svc" || true
   done
 }
 
+# An older tag (a rollback target from before the OCR worker existed) has no
+# ocr-worker image. Start everything else rather than fail the whole rollback.
 bring_up() {
-  local tag="$1"
+  local tag="$1" services
+  if ! IMAGE_TAG="$tag" dc pull --quiet "${OPTIONAL_SERVICES[@]}" 2>/dev/null; then
+    log "no ${OPTIONAL_SERVICES[*]} image for $tag - starting the other services only"
+    services="$(IMAGE_TAG="$tag" dc config --services | grep -vxF "${OPTIONAL_SERVICES[0]}" | tr '\n' ' ')"
+    # shellcheck disable=SC2086
+    IMAGE_TAG="$tag" dc up -d $services
+    return
+  fi
   IMAGE_TAG="$tag" dc up -d
+}
+
+# Informational: wait for the optional services, but only warn if they are not up.
+report_optional() {
+  local deadline=$((SECONDS + HEALTH_TIMEOUT)) svc state
+  for svc in "${OPTIONAL_SERVICES[@]}"; do
+    while :; do
+      state="$(container_state "$svc")"
+      [ "$state" = healthy ] && { log "$svc is healthy"; break; }
+      case "$state" in exited|dead|missing) log "WARNING: $svc is $state - the release is live, OCR is not"; break ;; esac
+      [ "$SECONDS" -ge "$deadline" ] && { log "WARNING: $svc still $state after ${HEALTH_TIMEOUT}s - the release is live, check OCR"; break; }
+      sleep 5
+    done
+  done
 }
 
 deploy() {
@@ -165,7 +191,7 @@ deploy() {
   [ -z "$missing" ] || fail "secrets not available: $(echo "$missing" | tr '\n' ' ')- render them from OpenBao first (bash ../openbao/bao-ops.sh render) or put them in .env. Nothing was changed."
 
   log "deploying $new (currently: ${prev:-none})"
-  IMAGE_TAG="$new" dc pull --quiet "${APP_SERVICES[@]}" \
+  IMAGE_TAG="$new" dc pull --quiet "${APP_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}" \
     || fail "could not pull images for $new - nothing was changed"
 
   # bring_up inside the `if` so a failing `compose up` (e.g. keycloak-bootstrap
@@ -175,6 +201,7 @@ deploy() {
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$new" >> "$HISTORY_FILE"
     check_nginx_drift
     log "SUCCESS: $new is live"
+    report_optional
     return 0
   fi
 
@@ -207,7 +234,7 @@ case "${1:-}" in
     fi
     log "deployed tag: $(env_value IMAGE_TAG)"
     [ -f "$HISTORY_FILE" ] && { log "recent deploys:"; tail -n 10 "$HISTORY_FILE"; }
-    for svc in "${APP_SERVICES[@]}"; do log "$svc: $(container_state "$svc")"; done
+    for svc in "${APP_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}"; do log "$svc: $(container_state "$svc")"; done
     dc ps
     ;;
   --rollback)
