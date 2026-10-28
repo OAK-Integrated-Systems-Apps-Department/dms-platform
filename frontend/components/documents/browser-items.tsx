@@ -516,16 +516,19 @@ export function DocumentTile({
         )}
       </button>
       <div className="px-3.5 pt-2 pb-3" title={row.fileName ?? row.title}>
-        <p className="flex items-center gap-1.5 text-[13.5px] font-semibold">
-          {row.restricted && (
-            <Lock
-              size={12}
-              className="shrink-0 text-muted-foreground"
-              aria-label="Restricted"
-            />
-          )}
-          <span className="truncate">{row.title}</span>
-          <PinnedIndicator documentId={row.documentId} />
+        {/* The flag wraps onto its own line instead of squeezing the title to a few letters. */}
+        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13.5px] font-semibold">
+          <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
+            {row.restricted && (
+              <Lock
+                size={12}
+                className="shrink-0 text-muted-foreground"
+                aria-label="Restricted"
+              />
+            )}
+            <span className="truncate">{row.title}</span>
+            <PinnedIndicator documentId={row.documentId} />
+          </span>
           {flag}
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
