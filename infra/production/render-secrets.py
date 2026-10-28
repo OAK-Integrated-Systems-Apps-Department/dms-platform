@@ -6,8 +6,12 @@
 Used by both .github/workflows/deploy.yml and infra/openbao/bao-ops.sh, so
 there is exactly one implementation of "which keys, and how they're quoted".
 
-- Emits exactly the keys listed in secret-keys.txt, in that order, and
-  fails if any is missing - a deploy must never silently run without one.
+- Emits the keys listed in secret-keys.txt, in that order, and fails if any
+  is missing - a deploy must never silently run without one. The exception is
+  the keys named in secret-profiles.txt (next to it): secrets only some setups
+  have, such as those of a bundled service a client switched off. They are
+  emitted when OpenBao holds them and skipped when it does not; deploy.sh
+  checks the ones this server actually needs.
 - Values are single-quoted: Compose treats single-quoted .env values
   literally, so a '$' in a generated secret is never interpolated.
 - Refuses values that can't be represented that way (a single quote or a
@@ -15,6 +19,7 @@ there is exactly one implementation of "which keys, and how they're quoted".
 - Never prints a secret value; error messages name keys only.
 """
 import json
+import os
 import sys
 
 
@@ -23,10 +28,20 @@ def load_keys(path):
         return [line.strip() for line in f if line.strip() and not line.lstrip().startswith("#")]
 
 
+def load_optional(keys_path):
+    path = os.path.join(os.path.dirname(os.path.abspath(keys_path)), "secret-profiles.txt")
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        rows = [line.split() for line in f if line.strip() and not line.lstrip().startswith("#")]
+    return {row[1] for row in rows if len(row) >= 2}
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit("usage: render-secrets.py <secret-keys.txt>  (OpenBao JSON on stdin)")
     keys = load_keys(sys.argv[1])
+    optional = load_optional(sys.argv[1])
 
     try:
         response = json.load(sys.stdin)
@@ -34,9 +49,10 @@ def main():
     except (ValueError, KeyError, TypeError):
         sys.exit("render-secrets: stdin is not an OpenBao KV v2 read response")
 
-    missing = [k for k in keys if k not in data or data[k] is None]
+    missing = [k for k in keys if (k not in data or data[k] is None) and k not in optional]
     if missing:
         sys.exit("render-secrets: missing in OpenBao: " + ", ".join(missing))
+    keys = [k for k in keys if k in data and data[k] is not None]
 
     bad = [k for k in keys if any(c in str(data[k]) for c in ("'", "\n", "\r"))]
     if bad:

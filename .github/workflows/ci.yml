@@ -553,6 +553,36 @@ jobs:
       - name: Production compose (with the committed template)
         run: docker compose -f infra/production/docker-compose.yml --env-file infra/production/.env.example config --quiet
 
+      # A client on its own database, Redis, RabbitMQ and storage switches every
+      # bundled service off (docs/external-services.md). That configuration must
+      # stay valid and must really leave those containers out.
+      - name: Production compose (every bundled service replaced by an external one)
+        run: |
+          grep -v '^#' infra/production/.env.example | grep -v '^COMPOSE_PROFILES=' > /tmp/external.env
+          cat >> /tmp/external.env <<'EOF'
+          COMPOSE_PROFILES=
+          DB_HOST=db.example.com
+          DB_SSLMODE=require
+          KEYCLOAK_DB_USER=keycloak
+          KEYCLOAK_DB_PASSWORD=ci-value
+          REDIS_HOST=cache.example.com
+          RABBITMQ_HOST=mq.example.com
+          RABBITMQ_SCHEME=amqps
+          RABBITMQ_PORT=5671
+          CLAMAV_HOST=clamav.example.com
+          PREVIEW_CONVERTER_URL=http://converter.example.com:3000
+          SMTP_HOST=smtp.example.com
+          STORAGE_PROVIDER=S3
+          S3_ENDPOINT=
+          S3_BUCKET=ci-bucket
+          EOF
+          docker compose -f infra/production/docker-compose.yml --env-file /tmp/external.env config --quiet
+          services="$(docker compose -f infra/production/docker-compose.yml --env-file /tmp/external.env config --services)"
+          for bundled in postgres redis rabbitmq seaweedfs mailpit clamav gotenberg postgres-exporter redis-exporter; do
+            if grep -qx "$bundled" <<<"$services"; then echo "::error::$bundled still runs with COMPOSE_PROFILES empty"; exit 1; fi
+          done
+          echo "OK: external configuration is valid and starts none of the bundled services"
+
       # The local file needs env files that only exist on developer machines
       # (both gitignored); empty stand-ins are enough to validate its syntax.
       - name: Local compose

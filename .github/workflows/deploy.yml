@@ -4,13 +4,24 @@ name: Deploy
 # Manual runs (Actions -> Deploy -> Run workflow) can either build and deploy
 # the selected branch, or redeploy an image tag that already exists in GHCR
 # (fast rollback, no rebuild).
+#
+# Several clients: each has its own server, database and GitHub environment,
+# listed in infra/clients.yml. A push to main deploys to the clients marked
+# `auto: true`; a manual run can name others. Pushing a version tag (v1.4.2)
+# only publishes the release images - clients CI cannot reach take them from
+# there. See docs/multi-client-deployment.md.
 on:
   push:
     branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       image_tag:
         description: Redeploy this existing image tag (full commit SHA) without rebuilding. Leave empty to build and deploy the selected branch.
+        required: false
+        default: ""
+      clients:
+        description: 'Which clients to deploy to: names from infra/clients.yml, comma-separated, or "all". Leave empty for the auto clients.'
         required: false
         default: ""
 
@@ -87,6 +98,7 @@ jobs:
           tags: |
             type=raw,value=${{ github.sha }}
             type=ref,event=branch
+            type=semver,pattern={{version}}
 
       # Build into the local Docker daemon first, scan it, and only then push:
       # an image with a fixable CRITICAL vulnerability never reaches GHCR, so
@@ -130,20 +142,47 @@ jobs:
             [ -n "$tag" ] && docker push "$tag"
           done
 
+  # Which clients this run deploys to, from infra/clients.yml.
+  plan:
+    name: Plan - which clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REQUESTED: ${{ inputs.clients }}
+        run: python3 .github/scripts/select-clients.py >> "$GITHUB_OUTPUT"
+
   deploy:
-    name: Deploy to oak-app
-    needs: publish
+    name: Deploy to ${{ matrix.name }}
+    needs: [publish, plan]
     # Runs after a successful publish, or on its own for an image_tag redeploy
-    # (ci/publish are skipped then).
-    if: ${{ !cancelled() && (needs.publish.result == 'success' || (inputs.image_tag != '' && needs.publish.result == 'skipped')) }}
-    # 192.168.0.10 is a private LAN address that GitHub-hosted runners cannot
-    # reach, so this job needs a self-hosted runner inside that network (see
-    # docs/deployment.md). Override the label with the DEPLOY_RUNNER_LABEL
-    # repository variable if yours differs.
-    runs-on: ${{ vars.DEPLOY_RUNNER_LABEL || 'self-hosted' }}
+    # (ci/publish are skipped then) - and only if there is a client to deploy to.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && (needs.publish.result == 'success' || (inputs.image_tag != '' && needs.publish.result == 'skipped')) }}
+    strategy:
+      # One client failing must not stop the others, and a few at a time keeps
+      # the registry and the runners from being hit by every client at once.
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # The server is usually on a private LAN that GitHub-hosted runners cannot
+    # reach, so each client names the self-hosted runner that can (infra/clients.yml).
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    # Never two deploys to the same server at once.
+    concurrency:
+      group: deploy-${{ matrix.name }}
+      cancel-in-progress: false
+    # The environment is what makes the variables below (DEPLOY_HOST, ...) and
+    # the SSH secrets belong to THIS client, and is where its approvers are set.
     environment:
-      name: production
+      name: ${{ matrix.environment }}
       url: ${{ vars.PUBLIC_URL }}
     permissions:
       contents: read
@@ -216,6 +255,7 @@ jobs:
             infra/production/deploy.sh \
             infra/production/.env.example \
             infra/production/secret-keys.txt \
+            infra/production/secret-profiles.txt \
             infra/production/render-secrets.py \
             infra/production/postgres \
             infra/openbao \

@@ -209,6 +209,9 @@ actuator/Swagger are not reachable from the network. Docker bypasses ufw for
   (builds + deploys it), or fill **image_tag** with an existing full commit
   SHA to redeploy that image without rebuilding.
 
+> Deploying to several clients, or to servers CI cannot reach: see
+> [multi-client-deployment.md](multi-client-deployment.md).
+
 What `deploy.sh <sha>` does on the server:
 1. Pulls `dms-core`, `frontend` and `ocr-worker` for that tag. If this fails, nothing changes.
 2. `docker compose up -d`. Only containers whose image/config changed are
