@@ -311,8 +311,9 @@ class BulkImportServiceImplTest {
         when(importItemRepository.findMissingFilenames(batch.getImportBatchId())).thenReturn(List.of());
         when(importItemRepository.countOcrStatusesForBatch(batch.getImportBatchId())).thenReturn(List.of());
         // The repository itself enforces the page size - the service only
-        // has to notice the page came back full and ask for the real total.
-        List<String> page = List.of("a.pdf", "b.pdf");
+        // has to notice the page came back full (OCR_SKIPPED_FILENAMES_LIMIT, 100)
+        // and ask for the real total.
+        List<String> page = java.util.stream.IntStream.range(0, 100).mapToObj(i -> "f" + i + ".pdf").toList();
         when(importItemRepository.findOcrSkippedFilenames(eq(batch.getImportBatchId()), any()))
                 .thenReturn(page);
         when(importItemRepository.countOcrSkippedFilenames(batch.getImportBatchId())).thenReturn(5000L);
@@ -320,7 +321,7 @@ class BulkImportServiceImplTest {
         BulkImportStatusResponse response = service(realWorkbook).getStatus(batch.getImportBatchId());
 
         assertThat(response.ocr()).isNotNull();
-        assertThat(response.ocr().skippedFilenames()).containsExactly("a.pdf", "b.pdf");
+        assertThat(response.ocr().skippedFilenames()).hasSize(100);
         assertThat(response.ocr().skippedTotal()).isEqualTo(5000);
     }
 
