@@ -176,9 +176,12 @@ jobs:
       - name: Start OpenBao and Keycloak
         run: bash .github/scripts/start-it-services.sh
 
+      # -Dtest bypasses the excludes in pom.xml, so the two ITs that need a ClamAV daemon (an upload
+      # must be scanned clean before the call returns) are left out here by name. No clamd runs in
+      # this job; run them locally against the full compose stack.
       - name: Integration tests (*IT)
         working-directory: backend
-        run: ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false
+        run: ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test -Dtest='*IT,!DocumentUploadIT,!DocumentUploadOcrQueueingIT' -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Upload test reports
         if: failure()
@@ -587,7 +590,9 @@ jobs:
       # (both gitignored); empty stand-ins are enough to validate its syntax.
       - name: Local compose
         run: |
-          touch infra/secrets/dms-core.secrets.env
+          # Every secrets file the compose file names (dms-core, ocr-worker, ...), found
+          # from the file itself so adding another one cannot break this step again.
+          grep -oE '\.\./secrets/[A-Za-z0-9._-]+\.env' infra/local/docker-compose.yml | sort -u             | sed 's#^\.\./#infra/#' | xargs touch
           docker compose -f infra/local/docker-compose.yml --env-file infra/local/.env.example config --quiet
 
       - name: OpenBao compose
