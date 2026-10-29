@@ -587,7 +587,9 @@ jobs:
       # (both gitignored); empty stand-ins are enough to validate its syntax.
       - name: Local compose
         run: |
-          touch infra/secrets/dms-core.secrets.env
+          # Every secrets file the compose file names (dms-core, ocr-worker, ...), found
+          # from the file itself so adding another one cannot break this step again.
+          grep -oE '\.\./secrets/[A-Za-z0-9._-]+\.env' infra/local/docker-compose.yml | sort -u             | sed 's#^\.\./#infra/#' | xargs touch
           docker compose -f infra/local/docker-compose.yml --env-file infra/local/.env.example config --quiet
 
       - name: OpenBao compose
