@@ -457,6 +457,27 @@ abstract class WatermarkFixtures {
         return count == null ? 0 : count;
     }
 
+    /**
+     * The worker commits status = completed first and writes the WATERMARK_COMPLETED audit row
+     * after that transaction, so a test that has just seen "completed" can still count zero. Waits
+     * (up to 30 seconds) for at least one row to exist, then returns the count. Use this - not
+     * {@link #auditCount} - for an audit the worker writes after finishing a job.
+     */
+    protected int auditCountAfterWorker(String action, UUID objectId) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        int count = auditCount(action, objectId);
+        while (count == 0 && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+            count = auditCount(action, objectId);
+        }
+        return count;
+    }
+
     protected static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));

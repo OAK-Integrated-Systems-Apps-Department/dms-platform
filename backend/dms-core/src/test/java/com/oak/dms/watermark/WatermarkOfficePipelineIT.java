@@ -158,7 +158,7 @@ class WatermarkOfficePipelineIT extends WatermarkFixtures {
         assertThat(auditCount("WATERMARK_REQUESTED", job.jobId()))
                 .describedAs("the request itself is audited")
                 .isEqualTo(1);
-        assertThat(auditCount("WATERMARK_COMPLETED", job.jobId()))
+        assertThat(auditCountAfterWorker("WATERMARK_COMPLETED", job.jobId()))
                 .describedAs("and so is the copy actually being produced")
                 .isEqualTo(1);
         assertThat(auditCount("WATERMARK_FAILED", job.jobId())).isZero();
