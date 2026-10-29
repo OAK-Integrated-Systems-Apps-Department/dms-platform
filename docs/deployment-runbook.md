@@ -49,9 +49,11 @@ The list of clients is `infra/clients.yml`. A client entry has: `name`, `environ
 GitHub environment), `runner` (which runner reaches it), `url`, `mode` (`push` = GitHub
 deploys to it) and `auto` (`true` = a merge to `main` deploys there automatically).
 
-> The repo may also contain an older entry called `oak-app` with `auto: true`. If it is a
-> real server, a merge to `main` will deploy to it automatically. If it is not in use,
-> delete it from `infra/clients.yml` (or set `auto: false`) before your first merge.
+> A client marked `auto: true` in `infra/clients.yml` is deployed to by **every merge to
+> `main`**. Today `oakidocs` is `auto: true`: every merge to `main` builds the images and
+> deploys to it (a reviewer still has to approve, see A4). `oak-app` (GitHub environment
+> `production`) is `auto: false` and is deployed by hand (Actions -> Deploy -> Run workflow,
+> `clients: oak-app`). Change `auto:` on a client to change this.
 
 ---
 
@@ -86,9 +88,13 @@ exit
 
 ### A2. On your computer - run the setup script
 
-In Git Bash, in the project folder:
+In Git Bash, **first go to the project folder** (the script path is relative to it; running
+it from `~` gives `No such file or directory`):
 
 ```bash
+cd ~/Documents/DMS/dms-platform
+pwd                              # should end with .../dms-platform
+ls infra/clients/new-client.sh   # should print the file name
 bash infra/clients/new-client.sh --name oakidocs \
   --docker-host 192.168.0.51 --nginx-host 192.168.3.50 \
   --public-url http://oakidocs.ois.local --ssh-user oak \
@@ -128,8 +134,27 @@ sudo nginx -t && sudo systemctl reload nginx
 (Adjust the paths if your nginx layout is different.) Do not edit the rest of the file: its
 `/internal/` block is what stops the outside world from reaching the OCR read endpoint.
 
-**Firewall on the Docker server:** the app ports 3000, 8080 and 8081 are published on
-192.168.0.51 so nginx can reach them. Allow them from 192.168.3.50 **only**.
+**Restricting the app ports (do this after the first deploy works):** ports 3000, 8080 and 8081
+are published on 192.168.0.51 so nginx can reach them, and only nginx (192.168.3.50) should be
+able to. **A normal host firewall rule (firewalld, ufw) does not do this**: Docker adds its own
+rules, and traffic to a published port skips the host firewall. Use one of:
+
+- a firewall **between the two networks** (the network team: allow 192.168.3.50 to
+  192.168.0.51 on TCP 3000, 8080, 8081 and nothing else), or
+- Docker's own `DOCKER-USER` chain on the Docker server (untested here - try it on a spare
+  machine first):
+
+  ```bash
+  for port in 3000 8080 8081; do
+    sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport $port --ctdir ORIGINAL          ! -s 192.168.3.50 -j DROP
+  done
+  ```
+
+  These rules are lost on reboot unless you persist them (for example with the
+  `iptables-services` package, or a small systemd unit that re-applies them after Docker starts).
+
+Check from a machine that is **not** nginx: `curl -m 5 http://192.168.0.51:3000` must time out,
+and from the nginx server it must answer once the app is deployed.
 
 Also make sure the name `oakidocs.ois.local` resolves for the users, the runner **and the
 Docker server itself** (Part F3). For HTTPS, see Part F4.
@@ -306,6 +331,8 @@ Same as A1: Docker and the Compose plugin installed (Part F1), `/opt/dms` create
 by the SSH user, at least 14 GB memory and 30 GB free disk. Add the client's names to DNS (F3).
 
 ### C2. On your computer - run the setup script (no `--use-env`)
+
+From the project folder (`cd ~/Documents/DMS/dms-platform`):
 
 ```bash
 bash infra/clients/new-client.sh --name acme \
