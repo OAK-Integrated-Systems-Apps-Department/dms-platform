@@ -360,7 +360,9 @@
               *Test). They need the same Postgres/Redis/RabbitMQ CI already
               provides (DB_URL etc.). Excluded: ITs that need services CI does
               not run - a live Keycloak admin API (ImpersonationIT,
-              PermissionCodeAuditIT) and a ClamAV daemon (DocumentUploadIT).
+              PermissionCodeAuditIT) and a ClamAV daemon (DocumentUploadIT,
+              DocumentUploadOcrQueueingIT: both need an upload to be scanned clean
+              before the call returns).
               Run those locally with -Dit.test=... against the full compose stack.
             -->
             <plugin>
@@ -376,6 +378,7 @@
                         <exclude>**/ImpersonationIT.java</exclude>
                         <exclude>**/PermissionCodeAuditIT.java</exclude>
                         <exclude>**/DocumentUploadIT.java</exclude>
+                        <exclude>**/DocumentUploadOcrQueueingIT.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
