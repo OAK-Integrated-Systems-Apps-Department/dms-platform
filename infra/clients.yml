@@ -1,0 +1,58 @@
+# One entry per client INSTALLATION (their own server, database and secrets).
+# Read by .github/workflows/deploy.yml (via .github/scripts/select-clients.py)
+# to decide which servers a deploy goes to. Procedure: docs/multi-client-deployment.md.
+#
+# Everything that differs between clients lives in two places and never in code:
+#   - this file (which server group a client belongs to), and
+#   - that client's GitHub environment: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH,
+#     PUBLIC_URL, BAO_ADDR (variables) and DEPLOY_SSH_PRIVATE_KEY,
+#     DEPLOY_SSH_KNOWN_HOSTS (secrets), plus the server's own .env.
+#
+# Fields
+#   name         short id: lowercase letters, digits and '-'
+#   environment  the GitHub environment holding that client's variables and
+#                secrets. Put the required approvers on it - that is the
+#                per-client "who may deploy here" control.
+#   runner       runs-on label of the self-hosted runner that can reach the
+#                server (GitHub-hosted runners cannot reach a private network).
+#   url          optional: the client's public address (http(s)://host, no path).
+#                The Fleet status workflow checks it daily; without it the client is
+#                skipped there.
+#   mode         push  - this workflow SSHes in and deploys
+#                pull  - the client's server cannot be reached; it is listed for
+#                        the record and gets releases by bundle or registry pull
+#                        (docs/multi-client-deployment.md, "Servers CI cannot reach")
+#   auto         true  - a push to main deploys here automatically
+#                false - only when picked in Actions -> Deploy -> Run workflow
+#
+# Roll new releases out in waves: keep auto: true for your own staging or a
+# pilot client, auto: false for everyone else, then deploy the rest from the
+# Run workflow form (clients: "acme,globex" or "all") once the pilot is happy.
+clients:
+  - name: oak-app
+    environment: production
+    runner: self-hosted
+    mode: push
+    auto: true
+
+  # OAK iDocs: Docker services on oakidoc-svr.ois.local (192.168.0.51), nginx on a
+  # separate server. Setup: docs/clients/oakidocs.md. Replace `runner` with the
+  # label of a self-hosted runner that can reach 192.168.0.51 over SSH.
+  - name: oakidocs
+    environment: client-oakidocs
+    runner: self-hosted
+    url: http://oakidocs.ois.local
+    mode: push
+    auto: false
+
+  # - name: acme
+  #   environment: client-acme
+  #   runner: self-hosted
+  #   mode: push
+  #   auto: false
+  #
+  # - name: globex-onprem
+  #   environment: client-globex
+  #   runner: self-hosted
+  #   mode: pull
+  #   auto: false

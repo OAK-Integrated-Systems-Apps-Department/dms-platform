@@ -24,6 +24,7 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: oakdms-postgres
+    profiles: [postgres]
     restart: unless-stopped
     # Memory ceiling. Mostly page cache, which the kernel reclaims under pressure, so this is a
     # ceiling on a runaway query rather than a squeeze on normal work. 4g because the dashboard
@@ -38,7 +39,7 @@ services:
               "-c", "work_mem=16MB", "-c", "maintenance_work_mem=256MB"]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: postgres
       # Read only by init-multiple-dbs.sh, on the very first start.
       DMS_CORE_DB_PASSWORD: ${DMS_CORE_DB_PASSWORD:?DMS_CORE_DB_PASSWORD is required}
@@ -54,6 +55,7 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: oakdms-rabbitmq
+    profiles: [rabbitmq]
     # RabbitMQ names its data directory after the node's hostname - pin it
     # so the rabbitmq_data volume is reused across container recreations.
     hostname: rabbitmq
@@ -78,10 +80,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: oakdms-redis
+    profiles: [redis]
     restart: unless-stopped
     # Memory ceiling. ~15 MB used idle.
     mem_limit: 512m
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -97,6 +100,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     container_name: oakdms-mailpit
+    profiles: [mailpit]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 128m
@@ -120,15 +124,15 @@ services:
     command: ["start", "--import-realm"]
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_URL: jdbc:postgresql://${DB_HOST:-postgres}:${DB_PORT:-5432}/${KEYCLOAK_DB_NAME:-keycloak_db}?sslmode=${DB_SSLMODE:-prefer}
       # Keycloak connects as the postgres superuser (keycloak_db is owned by
       # it - see postgres/init-multiple-dbs.sh), so its password IS
       # POSTGRES_PASSWORD. Deriving it here, instead of a separate
       # KC_DB_PASSWORD that must be kept identical by hand, removes a way to
       # break Keycloak with a typo. (Least-privilege follow-up: a dedicated
       # keycloak DB user - see docs/deployment.md.)
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-postgres}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-${POSTGRES_PASSWORD:-}}
       # Only used the first time keycloak_db is initialised.
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
@@ -149,7 +153,7 @@ services:
       OAK_DMS_WEB_URL: ${PUBLIC_URL}
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
     ports:
-      - "127.0.0.1:8081:8080"
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8081:8080"
     volumes:
       - ../local/keycloak/oak-dms-realm.json:/opt/keycloak/data/import/oak-dms-realm.json:ro
     healthcheck:
@@ -168,6 +172,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
 
   # One-shot job, identical to the local one (same script): grants the
   # dms-core-admin service account its roles and re-applies SMTP settings and
@@ -218,12 +223,13 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:3.97
     container_name: oakdms-seaweedfs
+    profiles: [seaweedfs]
     restart: unless-stopped
     # Memory ceiling. ~85 MB used idle.
     mem_limit: 1g
     environment:
-      SEAWEEDFS_S3_ACCESS_KEY: ${SEAWEEDFS_S3_ACCESS_KEY:?SEAWEEDFS_S3_ACCESS_KEY is required}
-      SEAWEEDFS_S3_SECRET_KEY: ${SEAWEEDFS_S3_SECRET_KEY:?SEAWEEDFS_S3_SECRET_KEY is required}
+      SEAWEEDFS_S3_ACCESS_KEY: ${SEAWEEDFS_S3_ACCESS_KEY:-}
+      SEAWEEDFS_S3_SECRET_KEY: ${SEAWEEDFS_S3_SECRET_KEY:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -259,6 +265,7 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     container_name: oakdms-gotenberg
+    profiles: [gotenberg]
     restart: unless-stopped
     command:
       - gotenberg
@@ -292,6 +299,7 @@ services:
   clamav:
     image: clamav/clamav-debian:1.4.3
     container_name: oakdms-clamav
+    profiles: [clamav]
     restart: unless-stopped
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
@@ -348,18 +356,20 @@ services:
         required: false
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      DB_URL: jdbc:postgresql://postgres:5432/dms_core_db
-      DB_USERNAME: dms_core_user
+      DB_URL: jdbc:postgresql://${DB_HOST:-postgres}:${DB_PORT:-5432}/${DMS_CORE_DB_NAME:-dms_core_db}?sslmode=${DB_SSLMODE:-prefer}
+      DB_USERNAME: ${DMS_CORE_DB_USER:-dms_core_user}
       DB_PASSWORD: ${DMS_CORE_DB_PASSWORD}
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USERNAME: dms
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-dms}
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
-      REDIS_HOST: redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       # Office files are converted to PDF for the preview (DocumentRenditionService).
-      PREVIEW_CONVERTER_URL: http://gotenberg:3000
+      PREVIEW_CONVERTER_URL: ${PREVIEW_CONVERTER_URL:-http://gotenberg:3000}
       # Every upload is virus scanned by clamd before it becomes a document.
-      CLAMAV_HOST: clamav
-      CLAMAV_PORT: "3310"
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
@@ -381,7 +391,28 @@ services:
       FRONTEND_BASE_URL: ${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
-      S3_ENDPOINT: http://seaweedfs:8333
+      # Where documents are stored. Default FILE_SYSTEM (the documents_data
+      # volume). S3 covers AWS S3, MinIO, Ceph, Wasabi and the bundled
+      # SeaweedFS; AZURE_BLOB covers Azure Blob Storage. A tenant can also have
+      # its own storage location in the app, which overrides this default.
+      S3_ENDPOINT: ${S3_ENDPOINT-http://seaweedfs:8333}
+      STORAGE_PROVIDER:
+      S3_REGION:
+      S3_BUCKET:
+      S3_ACCESS_KEY:
+      S3_SECRET_KEY:
+      S3_PATH_STYLE_ACCESS:
+      S3_SSE:
+      S3_SSE_KMS_KEY_ID:
+      AZURE_STORAGE_ENDPOINT:
+      AZURE_STORAGE_CONTAINER:
+      AZURE_STORAGE_ACCOUNT_NAME:
+      AZURE_STORAGE_ACCOUNT_KEY:
+      SCAN_STAGING_BUCKET:
+      SCAN_QUARANTINE_BUCKET:
+      # TLS to Redis / RabbitMQ when they are managed services.
+      SPRING_DATA_REDIS_SSL_ENABLED:
+      SPRING_RABBITMQ_SSL_ENABLED:
       # Encryption at rest (com.oak.dms.encryption, Module DE) - data keys wrapped
       # by OpenBao Transit; the app refuses to start with anything less.
       # OFF until OpenBao is provisioned for it - see the "Encryption at rest"
@@ -399,29 +430,44 @@ services:
       ENCRYPTION_OPENBAO_AUTH: approle
       ENCRYPTION_OPENBAO_ROLE_ID: ${ENCRYPTION_OPENBAO_ROLE_ID:-}
       ENCRYPTION_OPENBAO_SECRET_ID: ${ENCRYPTION_OPENBAO_SECRET_ID:-}
+      # OCR (module OS). dms-core publishes OCR requests to RabbitMQ and serves
+      # the worker's reads at /internal/v1/ocr. Set OCR_ENABLED=false in .env to
+      # stop publishing (the worker can then be left stopped).
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_WORKER_BASE_URL: http://ocr-worker:8090
+      # Signs the per-job read grants the worker presents, and the shared
+      # X-Internal-Token both sides check. Both are secrets (secret-keys.txt).
+      OCR_JOB_TOKEN_SECRET: ${OCR_JOB_TOKEN_SECRET:?OCR_JOB_TOKEN_SECRET is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     volumes:
       - documents_data:/data
     # Health: the image's own HEALTHCHECK (backend/Dockerfile, /actuator/health).
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       rabbitmq:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
+        required: false
       keycloak-bootstrap:
         condition: service_completed_successfully
       mailpit:
         condition: service_healthy
+        required: false
       seaweedfs:
         condition: service_healthy
+        required: false
       # Started, not healthy: on a fresh volume clamd needs minutes to download
       # its signatures. Uploads made meanwhile wait (pending) and are scanned
       # automatically once it answers - dms-core retries, it never skips the scan.
       clamav:
         condition: service_started
+        required: false
 
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/dms-frontend}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
@@ -434,10 +480,64 @@ services:
     # The API URL is baked into this image at build time as same-origin
     # "/api" (frontend/Dockerfile) - nothing host-specific to set here.
     ports:
-      - "127.0.0.1:3000:3000"
+      # PROXY_BIND_ADDRESS: 127.0.0.1 (default) when nginx runs on this server. When
+      # nginx is on a different server, set it to this server's LAN address and
+      # firewall ports 3000, 8080 and 8081 to the nginx server only.
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     # Health: the image's own HEALTHCHECK (frontend/Dockerfile).
     depends_on:
       - dms-core
+
+  # OCR worker (backend/workers/ocr-worker). Same image tag as dms-core and the
+  # frontend: deploy.yml builds all three from one commit. Internal only - no
+  # ports; dms-core reaches it at http://ocr-worker:8090.
+  #
+  # deploy.sh pulls this image with the others but does NOT health-gate it
+  # (a slow model warm-up must not roll back a good release); it reports the
+  # worker's state after the smoke test instead.
+  ocr-worker:
+    image: ${OCR_WORKER_IMAGE:-ghcr.io/oak-integrated-systems-apps-department/ocr-worker}:${IMAGE_TAG:?IMAGE_TAG is not set - deploy with ./deploy.sh <tag>}
+    container_name: oakdms-ocr-worker
+    restart: unless-stopped
+    # Measured on the Phase 1 50-upload run with 2 pool processes: peak 6.89 GiB
+    # (backend/workers/ocr-worker/README.md "Memory"). 8704m is that plus ~25%.
+    # Roughly 3.4 GiB per OCR_WORKER_PROCESSES plus ~1.5 GiB shared - raise the
+    # limit together with the pool size, and re-measure on the real server.
+    mem_limit: ${OCR_WORKER_MEM_LIMIT:-8704m}
+    environment:
+      # FOLLOW-UP: both URLs embed a password verbatim. .env.example suggests
+      # `openssl rand -base64 36`, which can emit '/', '+' and '=' - a '/' or
+      # '@' in DMS_CORE_DB_PASSWORD or RABBITMQ_DEFAULT_PASS ends the userinfo
+      # early and the worker cannot connect (dms-core is unaffected: it takes
+      # the password as a separate setting). Until the worker builds these from
+      # separate variables, use passwords without / @ : ? # (e.g. openssl rand -hex 24).
+      DB_URL: postgresql+psycopg://${DMS_CORE_DB_USER:-dms_core_user}:${DMS_CORE_DB_PASSWORD}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DMS_CORE_DB_NAME:-dms_core_db}?sslmode=${DB_SSLMODE:-prefer}
+      RABBITMQ_URL: ${RABBITMQ_SCHEME:-amqp}://${RABBITMQ_USERNAME:-dms}:${RABBITMQ_DEFAULT_PASS}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
+      DMS_CORE_BASE_URL: http://dms-core:8080
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      OCR_WORKER_PROCESSES: ${OCR_WORKER_PROCESSES:-2}
+      # Plaintext documents land here while a job runs - tmpfs, never a disk.
+      OCR_TMP_DIR: /dev/shm/ocr
+      # Dev aid that lists internal module names; off in production.
+      OCR_FINGERPRINT_ENABLED: "false"
+      # Memory handling only, no effect on results (see the local compose file).
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      OCR_WORKER_MAX_TASKS_PER_PROCESS: "15"
+    # No model volumes: the weights are baked into the image and the worker
+    # runs with OCR_OFFLINE_MODELS=true, so there is nothing to download.
+    tmpfs:
+      # uid/gid 100/101 = the image's oakdms user; without them the mount is
+      # root-owned and mode 1700 locks the worker out of its own files.
+      - /dev/shm/ocr:size=512m,mode=1700,uid=100,gid=101
+    # Health: the image's own HEALTHCHECK (/readyz, after both models warm up).
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      rabbitmq:
+        condition: service_healthy
+        required: false
 
   # ---------------------------------------------------------------------
   # Monitoring (Prometheus + Grafana). Config is shared with infra/local and
@@ -687,6 +787,7 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: oakdms-postgres-exporter
+    profiles: [postgres]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 128m
@@ -696,29 +797,32 @@ services:
       # the wrong place to hold write access. Create it once with:
       #   CREATE ROLE dms_metrics LOGIN PASSWORD '...';
       #   GRANT pg_monitor TO dms_metrics;
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_METRICS_USER:-dms_metrics}:${POSTGRES_METRICS_PASSWORD:?POSTGRES_METRICS_PASSWORD is required}@postgres:5432/postgres?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_METRICS_USER:-dms_metrics}:${POSTGRES_METRICS_PASSWORD:-}@postgres:5432/postgres?sslmode=disable
       PG_EXPORTER_EXCLUDE_DATABASES: template0,template1
     expose:
       - "9187"
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
 
   redis-exporter:
     image: oliver006/redis_exporter:v1.67.0
     container_name: oakdms-redis-exporter
+    profiles: [redis]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 64m
     environment:
       REDIS_ADDR: redis://redis:6379
       # Production Redis requires a password (see the redis service above).
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     expose:
       - "9121"
     depends_on:
       redis:
         condition: service_healthy
+        required: false
 
 networks:
   # internal: true - no gateway out. Only dms-core and the converter are on it.

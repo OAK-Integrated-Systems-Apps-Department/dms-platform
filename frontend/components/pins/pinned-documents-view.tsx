@@ -33,32 +33,53 @@ import {
   useBrowserView,
 } from "@/lib/documents/use-browser-view"
 import { saveDownloadedFile } from "@/lib/download-file"
+import { describeAudience } from "@/lib/pins/audience"
 import { usePins } from "@/lib/pins/use-pins"
 import { cn } from "@/lib/utils"
 
 /**
- * The signed-in user's pinned documents (PID-FR-002), laid out like "Shared with me": the same
+ * The documents pinned for the signed-in user (PID-FR-002), laid out like "Shared with me": the same
  * toolbar, the same tiles or table, the same item menu. Open previews it; the menu downloads it,
- * opens its own page, or unpins it (PID-FR-005).
+ * opens its own page, or - for pins they placed - changes who sees it or unpins it (PID-FR-005).
  *
- * Personal to the signed-in user: the server only ever returns their own pins, and only those
- * they can still open (PID-FR-006/008/009). An archived document stays, flagged.
+ * Two kinds of pin appear: the ones this person placed, and the ones someone else placed for them.
+ * The second kind says who pinned it and has no unpin: only the pinner can remove it. The server only
+ * returns pins whose document the caller can still open (PID-FR-008/009). An archived document stays,
+ * flagged.
  */
 export function PinnedDocumentsView() {
   const router = useRouter()
   const view = useBrowserView()
-  const { pins, limit, count, isLoading, isError, refetch, canUnpin, toggle } =
-    usePins()
+  const {
+    pins,
+    limit,
+    count,
+    isLoading,
+    isError,
+    refetch,
+    canPin,
+    canUnpin,
+    pinOf,
+    openPin,
+    unpin,
+  } = usePins()
   const [query, setQuery] = useState("")
+  const [filter, setFilter] = useState<"all" | "mine" | "others">("all")
   const [preview, setPreview] = useState<DocumentListItemDto | null>(null)
 
   const term = query.trim().toLowerCase()
+  const othersCount = pins.length - count
   const shown = pins.filter(
     (pin) =>
-      !term ||
-      [pin.document.title, pin.document.fileName, pin.document.documentTypeName]
-        .filter(Boolean)
-        .some((text) => (text as string).toLowerCase().includes(term))
+      (filter === "all" || (filter === "mine") === pin.mine) &&
+      (!term ||
+        [
+          pin.document.title,
+          pin.document.fileName,
+          pin.document.documentTypeName,
+        ]
+          .filter(Boolean)
+          .some((text) => (text as string).toLowerCase().includes(term)))
   )
   const rows = shown.map((pin) => pin.document)
   const archived = new Set(
@@ -83,28 +104,62 @@ export function PinnedDocumentsView() {
         onSelect: () => router.push(`/documents/${row.documentId}`),
       },
     ]
-    if (canUnpin)
-      actions.push({
-        label: "Unpin",
-        icon: PinOff,
-        onSelect: () => void toggle(row),
-      })
+    // Only the person who pinned it can change who sees it or unpin it.
+    if (pinOf(row.documentId)?.mine) {
+      if (canPin)
+        actions.push({
+          label: "Change who sees pin…",
+          icon: Pin,
+          onSelect: () => openPin(row),
+        })
+      if (canUnpin)
+        actions.push({
+          label: "Unpin",
+          icon: PinOff,
+          onSelect: () => void unpin(row).catch(() => {}),
+        })
+    }
     return actions
   }
 
-  const flag = (row: DocumentListItemDto) =>
-    archived.has(row.documentId) ? (
-      <Badge
-        variant="muted"
-        title="This document has been archived - it is still here, but no longer current"
-      >
-        Archived
-      </Badge>
-    ) : null
+  const flag = (row: DocumentListItemDto) => {
+    const pin = pinOf(row.documentId)
+    const isArchived = archived.has(row.documentId)
+    if (!pin && !isArchived) return null
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {isArchived && (
+          <Badge
+            variant="muted"
+            title="This document has been archived - it is still here, but no longer current"
+          >
+            Archived
+          </Badge>
+        )}
+        {pin && !pin.mine && (
+          <Badge
+            variant="muted"
+            title={`${pin.pinnedByName} pinned this for you. Only they can unpin it.`}
+          >
+            Pinned by {pin.pinnedByName}
+          </Badge>
+        )}
+        {pin?.mine && pin.audience && (
+          <Badge variant="muted" title="Who sees your pin">
+            {describeAudience(pin.audience.mode, pin.audience.count)}
+          </Badge>
+        )}
+      </span>
+    )
+  }
 
   const empty = term
     ? "None of your pinned documents match your search."
-    : "Nothing pinned yet. Use Pin on any document in My Documents, in its preview, or on its own page, and it will be here."
+    : filter === "others"
+      ? "Nobody has pinned a document for you."
+      : filter === "mine"
+        ? "You haven't pinned anything. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
+        : "Nothing pinned yet. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
 
   return (
     // Fills the window down to the bottom, like My Documents, so the empty state
@@ -117,11 +172,43 @@ export function PinnedDocumentsView() {
         </span>
         {!isLoading && !isError && (
           <span className="text-[12.5px] text-muted-foreground">
-            {limit !== null ? `${count} of ${limit} pinned` : `${count} pinned`}
+            {limit !== null
+              ? `${count} of ${limit} pinned by you`
+              : `${count} pinned by you`}
+            {othersCount > 0 && ` · ${othersCount} by others`}
             {archived.size > 0 && ` · ${archived.size} archived`}
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div
+            role="radiogroup"
+            aria-label="Show"
+            className="inline-flex rounded-md border border-border p-0.5 text-[12.5px]"
+          >
+            {(
+              [
+                { value: "all", label: "All" },
+                { value: "mine", label: "Pinned by me" },
+                { value: "others", label: "Pinned by others" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={filter === option.value}
+                onClick={() => setFilter(option.value)}
+                className={cn(
+                  "rounded px-2.5 py-1",
+                  filter === option.value
+                    ? "bg-primary/15 font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <SearchInput
             value={query}
             onChange={setQuery}

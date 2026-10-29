@@ -118,11 +118,15 @@ scrape_configs:
   # --- RabbitMQ ---------------------------------------------------------
   # No exporter needed: rabbitmq_prometheus ships with the official image and
   # is enabled by default from 3.8 on, serving 15692 inside the network.
+  #
+  # The target comes from a file so a client on its own RabbitMQ can have none:
+  # with no target there is no `up` series, and RabbitMqDown stays silent instead
+  # of firing forever on a container that does not exist. The file in git lists
+  # the bundled broker (what infra/local and a default install use); in production
+  # deploy.sh rewrites it on every deploy from COMPOSE_PROFILES.
   - job_name: rabbitmq
-    static_configs:
-      - targets: ["rabbitmq:15692"]
-        labels:
-          service: rabbitmq
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/rabbitmq.yml"]
 
   # --- Grafana ----------------------------------------------------------
   # So "the dashboard is down" is itself visible, rather than being the

@@ -7,7 +7,7 @@ import { PinnedDocumentsView } from "@/components/pins/pinned-documents-view"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 
-/** Pinned documents (Module PID): the signed-in user's own shortcuts, on a page of their own. */
+/** Pinned documents (Module PID): the pins the signed-in user placed, and the ones placed for them. */
 export default function PinnedDocumentsPage() {
   usePageTitle("Pinned Documents")
   return (
@@ -24,8 +24,9 @@ export default function PinnedDocumentsPage() {
           Pinned documents
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          The documents you use most, one click away. Pin one from My
-          Documents, its preview or its own page; unpin it here or the same way.
+          The documents you pinned and the ones other people pinned for you.
+          Pin one from My Documents, its preview or its own page, and choose who
+          sees it. Only the person who pinned a document can unpin it.
         </p>
       </div>
       <PermissionGate permission={PermissionCodes.DOCM_DOCUMENTS_VIEW}>

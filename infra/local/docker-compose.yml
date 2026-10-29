@@ -524,6 +524,16 @@ services:
       # Plaintext documents land here while a job runs - tmpfs, so decrypted
       # content never reaches a real filesystem. See the tmpfs mount below.
       OCR_TMP_DIR: /dev/shm/ocr
+      # Memory, with no effect on results. glibc gives every thread its own
+      # malloc arena and keeps freed pages in it; paddle/docling run many
+      # threads per pool process, so freed memory from a big page stayed
+      # resident. Two arenas and an early trim hand it back to the kernel.
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      # Pool processes are recycled after this many documents (default 50),
+      # which bounds any slow native-library growth. A recycle costs one
+      # model reload while the other process keeps working.
+      OCR_WORKER_MAX_TASKS_PER_PROCESS: "15"
     # No `ports:` -- internal-only. ocr-worker is reachable from other containers on this compose
     # network at http://ocr-worker:8090 (Docker's own service-name DNS).
     # See README's "Auth & service exposure": frontend -> dms-core

@@ -138,6 +138,10 @@ public final class AuditActionCatalog {
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
     /** The organisation's cap on how many documents one person may pin (PID). */
     public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
+    /** A document pinned for an audience, the audience changed, or the pin removed (PID). */
+    public static final String PIN_ADDED = "PIN_ADDED";
+    public static final String PIN_AUDIENCE_CHANGED = "PIN_AUDIENCE_CHANGED";
+    public static final String PIN_REMOVED = "PIN_REMOVED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
@@ -432,6 +436,10 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
+            // A pin decides who sees a document's shortcut, so who pinned what for whom is on the record.
+            Map.entry(PIN_ADDED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
+            Map.entry(PIN_AUDIENCE_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
+            Map.entry(PIN_REMOVED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),

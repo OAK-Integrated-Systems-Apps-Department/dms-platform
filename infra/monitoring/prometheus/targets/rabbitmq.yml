@@ -1,0 +1,8 @@
+# Scrape target for the bundled RabbitMQ (prometheus.yml, job "rabbitmq").
+# This committed copy is what infra/local and a default install use. In
+# production deploy.sh rewrites it on every deploy: this same target while the
+# `rabbitmq` profile is on, an empty list (no target, so no false "RabbitMQ is
+# down" alert) when the client runs its own broker. Do not edit it by hand there.
+- targets: ["rabbitmq:15692"]
+  labels:
+    service: rabbitmq

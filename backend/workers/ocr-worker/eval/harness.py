@@ -14,8 +14,11 @@ make every accuracy number meaningless.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import random
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass
@@ -52,43 +55,44 @@ from . import schema as schema_mod
 class InMemoryStorage:
     """Stands in for `DocumentContentClient`.
 
-    Only the three methods the pipeline actually calls are implemented;
-    anything else is a genuine error rather than a silent no-op, so a
-    future pipeline change that starts touching storage differently fails
-    loudly here instead of being quietly unmeasured.
+    Only the methods the pipeline actually calls are implemented; anything
+    else is a genuine error rather than a silent no-op, so a future
+    pipeline change that starts touching storage differently fails loudly
+    here instead of being quietly unmeasured.
+
+    The pipeline reads through a per-job read grant (`download(grant)`) and
+    writes its outputs back against that grant, so documents are keyed by
+    the version id the grant carries.
     """
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
-        self.outputs: dict[str, dict] = {}
+        self.outputs: dict[str, bytes] = {}
         self.renditions: dict[str, bytes] = {}
 
-    def get_object_bytes(self, object_key: str) -> bytes:
-        return self.objects[object_key]
+    @contextlib.contextmanager
+    def download(self, grant):
+        fd, raw = tempfile.mkstemp(prefix="eval-", suffix=".bin")
+        path = Path(raw)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(self.objects[grant.version_id])
+            yield path
+        finally:
+            path.unlink(missing_ok=True)
 
-    def put_source_object(self, object_key: str, data: bytes, content_type: str) -> str:
-        self.objects[object_key] = data
-        return object_key
+    def put_output(self, grant, payload: bytes) -> str:
+        self.outputs[grant.version_id] = payload
+        return grant.version_id
 
-    def put_ocr_output_json(self, object_key: str, data: dict) -> str:
-        self.outputs[object_key] = data
-        return object_key
-
-    def put_rendition(self, object_key: str, data: bytes, content_type: str = "application/pdf") -> str:
+    def put_rendition(self, grant, pdf: bytes) -> str:
         """Searchable PDF rendition (production prompt 3.11).
 
         Its absence made every eval run fail every rendition -- silently,
-        until the report started counting them. The class docstring above
-        predicted exactly this: "a future pipeline change that starts
-        touching storage differently fails loudly here instead of being
-        quietly unmeasured". It did fail loudly; nothing was reading the
-        failure.
+        until the report started counting them.
         """
-        self.renditions[object_key] = data
-        return object_key
-
-    def ensure_buckets(self) -> None:
-        return None
+        self.renditions[grant.version_id] = pdf
+        return grant.version_id
 
 
 def make_session_factory():
@@ -228,7 +232,7 @@ def stage_version(session_factory, storage: InMemoryStorage, doc: corpus_mod.Cor
     document_id = uuid.uuid4()
     version_id = uuid.uuid4()
     object_key = f"tenants/{tenant_id}/documents/{document_id}/versions/{version_id}/{doc.filename}"
-    storage.objects[object_key] = doc.read()
+    storage.objects[str(version_id)] = doc.read()
 
     with session_factory() as session:
         session.add(
@@ -289,7 +293,7 @@ def build_pipeline(
     return OcrPipeline(
         settings=settings,
         session_factory=session_factory,
-        storage=storage,
+        content=storage,
         layout_engine=layout_engine,
         ocr_engine=ocr_engine,
         orientation_classifier=orientation_classifier,
@@ -397,7 +401,9 @@ def _run(
 
     started = time.monotonic()
     try:
-        outcome = pipeline.process_version(version_id, requested_fields=specs)
+        outcome = pipeline.process_version(
+            version_id, requested_fields=specs, read_token="eval-harness"
+        )
         status, error, output = outcome.status, outcome.error, outcome.output
     except Exception as exc:  # a crash is a result, not a reason to abandon the run
         status, error, output = "crashed", f"{type(exc).__name__}: {exc}", None

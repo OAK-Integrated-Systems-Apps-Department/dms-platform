@@ -4,13 +4,24 @@ name: Deploy
 # Manual runs (Actions -> Deploy -> Run workflow) can either build and deploy
 # the selected branch, or redeploy an image tag that already exists in GHCR
 # (fast rollback, no rebuild).
+#
+# Several clients: each has its own server, database and GitHub environment,
+# listed in infra/clients.yml. A push to main deploys to the clients marked
+# `auto: true`; a manual run can name others. Pushing a version tag (v1.4.2)
+# only publishes the release images - clients CI cannot reach take them from
+# there. See docs/multi-client-deployment.md.
 on:
   push:
     branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       image_tag:
         description: Redeploy this existing image tag (full commit SHA) without rebuilding. Leave empty to build and deploy the selected branch.
+        required: false
+        default: ""
+      clients:
+        description: 'Which clients to deploy to: names from infra/clients.yml, comma-separated, or "all". Leave empty for the auto clients.'
         required: false
         default: ""
 
@@ -48,17 +59,29 @@ jobs:
             context: backend
           - name: dms-frontend
             context: frontend
+          # ~5.7 GB with the model weights baked in. Built from the same
+          # commit as the other two so one IMAGE_TAG deploys all of them.
+          - name: ocr-worker
+            context: backend/workers/ocr-worker
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # The OCR worker image is ~5.7 GB and a hosted runner has ~14 GB free;
+      # drop toolchains the build never uses.
+      - name: Reclaim disk
+        if: matrix.name == 'ocr-worker'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          df -h /
 
       - name: Image name
         id: image
         # GHCR repository names must be lowercase; the org name is not.
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -69,37 +92,97 @@ jobs:
       # metadata-action also adds org.opencontainers.image.source, which links
       # the package to this repo so the deploy job's GITHUB_TOKEN can pull it.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=${{ github.sha }}
             type=ref,event=branch
+            type=semver,pattern={{version}}
 
-      - uses: docker/build-push-action@v6
+      # Build into the local Docker daemon first, scan it, and only then push:
+      # an image with a fixable CRITICAL vulnerability never reaches GHCR, so
+      # it can never be the tag deploy.sh pulls.
+      - name: Build image (not pushed yet)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+          # The OCR image's layers would fill GitHub's 10 GB cache and evict
+          # the other two images' caches, so it is built without one.
+          cache-from: ${{ matrix.name != 'ocr-worker' && format('type=gha,scope={0}', matrix.name) || '' }}
+          cache-to: ${{ matrix.name != 'ocr-worker' && format('type=gha,scope={0},mode=max', matrix.name) || '' }}
+
+      # Same policy as ci.yml's `images` job: list HIGH and CRITICAL, fail only
+      # on a CRITICAL that has a fix available. An accepted exception goes in
+      # .trivyignore with a reason.
+      - name: Vulnerability report (HIGH and CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Vulnerability gate (fixable CRITICAL stops the release)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push image
+        run: |
+          printf '%s\n' "${{ steps.meta.outputs.tags }}" | while read -r tag; do
+            [ -n "$tag" ] && docker push "$tag"
+          done
+
+  # Which clients this run deploys to, from infra/clients.yml.
+  plan:
+    name: Plan - which clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REQUESTED: ${{ inputs.clients }}
+        run: python3 .github/scripts/select-clients.py >> "$GITHUB_OUTPUT"
 
   deploy:
-    name: Deploy to oak-app
-    needs: publish
+    name: Deploy to ${{ matrix.name }}
+    needs: [publish, plan]
     # Runs after a successful publish, or on its own for an image_tag redeploy
-    # (ci/publish are skipped then).
-    if: ${{ !cancelled() && (needs.publish.result == 'success' || (inputs.image_tag != '' && needs.publish.result == 'skipped')) }}
-    # 192.168.0.10 is a private LAN address that GitHub-hosted runners cannot
-    # reach, so this job needs a self-hosted runner inside that network (see
-    # docs/deployment.md). Override the label with the DEPLOY_RUNNER_LABEL
-    # repository variable if yours differs.
-    runs-on: ${{ vars.DEPLOY_RUNNER_LABEL || 'self-hosted' }}
+    # (ci/publish are skipped then) - and only if there is a client to deploy to.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && (needs.publish.result == 'success' || (inputs.image_tag != '' && needs.publish.result == 'skipped')) }}
+    strategy:
+      # One client failing must not stop the others, and a few at a time keeps
+      # the registry and the runners from being hit by every client at once.
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # The server is usually on a private LAN that GitHub-hosted runners cannot
+    # reach, so each client names the self-hosted runner that can (infra/clients.yml).
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    # Never two deploys to the same server at once.
+    concurrency:
+      group: deploy-${{ matrix.name }}
+      cancel-in-progress: false
+    # The environment is what makes the variables below (DEPLOY_HOST, ...) and
+    # the SSH secrets belong to THIS client, and is where its approvers are set.
     environment:
-      name: production
+      name: ${{ matrix.environment }}
       url: ${{ vars.PUBLIC_URL }}
     permissions:
       contents: read
@@ -117,7 +200,7 @@ jobs:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/dms' }}
       PUBLIC_URL: ${{ vars.PUBLIC_URL }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Check configuration
         env:
@@ -170,8 +253,11 @@ jobs:
           tar -czf - \
             infra/production/docker-compose.yml \
             infra/production/deploy.sh \
+            infra/production/backup.sh \
+            infra/production/restore.sh \
             infra/production/.env.example \
             infra/production/secret-keys.txt \
+            infra/production/secret-profiles.txt \
             infra/production/render-secrets.py \
             infra/production/postgres \
             infra/openbao \

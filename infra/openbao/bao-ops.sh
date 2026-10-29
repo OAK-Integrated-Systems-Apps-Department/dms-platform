@@ -90,10 +90,18 @@ secret_keys() { grep -vE '^\s*(#|$)' "$KEYS_FILE" | tr -d '\r'; }
 # Reads KEY=VALUE for the secret keys from an env file (BOM/CRLF tolerant,
 # optional surrounding quotes) and prints a JSON object. Values never echo.
 env_to_json() {
-  python3 - "$1" "$KEYS_FILE" <<'PY'
-import json, sys
-env_path, keys_path = sys.argv[1], sys.argv[2]
+  python3 - "$1" "$KEYS_FILE" "$PROD/secret-profiles.txt" <<'PY'
+import json, os, sys
+env_path, keys_path, profiles_path = sys.argv[1], sys.argv[2], sys.argv[3]
 keys = [l.strip() for l in open(keys_path, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")]
+# secret-profiles.txt: secrets only some setups have (a bundled service switched
+# off, credentials for the client's own storage). Imported when present.
+optional = set()
+if os.path.exists(profiles_path):
+    for l in open(profiles_path, encoding="utf-8"):
+        parts = l.split()
+        if len(parts) >= 2 and not l.lstrip().startswith("#"):
+            optional.add(parts[1])
 vals = {}
 for line in open(env_path, encoding="utf-8-sig"):
     line = line.rstrip("\r\n")
@@ -104,9 +112,10 @@ for line in open(env_path, encoding="utf-8-sig"):
     if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
         v = v[1:-1]
     vals[k] = v
-missing = [k for k in keys if k not in vals]
+missing = [k for k in keys if k not in vals and k not in optional]
 if missing:
     sys.exit("missing in " + env_path + ": " + ", ".join(missing))
+keys = [k for k in keys if k in vals]
 bad = [k for k in keys if vals[k] == "CHANGE_ME"]
 if bad:
     sys.exit("still CHANGE_ME in " + env_path + ": " + ", ".join(bad))
