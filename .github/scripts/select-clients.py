@@ -50,6 +50,9 @@ for client in clients:
         fail(f"clients.yml: {name}: mode must be push or pull")
     if not client.get("runner"):
         fail(f"clients.yml: {name}: runner is required")
+    url = client.get("url", "")
+    if url and not re.match(r"^https?://[A-Za-z0-9._:-]+$", str(url)):
+        fail(f"clients.yml: {name}: url must look like http(s)://host[:port] (no path)")
 
 event = os.environ.get("EVENT", "")
 ref_type = os.environ.get("REF_TYPE", "")
@@ -73,7 +76,7 @@ else:
     chosen = [c for c in push_mode if c.get("auto")]
 
 include = [
-    {"name": c["name"], "environment": c["environment"], "runner": c["runner"]}
+    {"name": c["name"], "environment": c["environment"], "runner": c["runner"], "url": c.get("url", "")}
     for c in chosen
 ]
 print("matrix=" + json.dumps({"include": include}))

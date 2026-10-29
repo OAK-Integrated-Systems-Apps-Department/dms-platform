@@ -267,6 +267,38 @@ $new"
   fi
 }
 
+# Estimates, not measurements: the bundled stack idles at about 3.5 GB
+# (.env.example) and the OCR worker alone may use up to 8.5 GiB under load. Only a
+# warning - override with MIN_MEM_GB / MIN_DISK_GB, or ignore it on a client who
+# uses their own database and storage.
+preflight() {
+  local mem_kb disk_gb
+  mem_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  disk_gb="$(df -BG --output=avail . 2>/dev/null | tail -n1 | tr -dc '0-9')"
+  [ "${mem_kb:-0}" -ge $(( ${MIN_MEM_GB:-14} * 1000000 )) ]     || log "WARNING: this server has $(( ${mem_kb:-0} / 1000000 )) GB of memory; the full stack with OCR wants about ${MIN_MEM_GB:-14} GB or more"
+  [ "${disk_gb:-0}" -ge "${MIN_DISK_GB:-30}" ]     || log "WARNING: only ${disk_gb:-?} GB of disk free here; images, backups and documents need about ${MIN_DISK_GB:-30} GB or more"
+  return 0
+}
+
+# Database backup before an upgrade (backup.sh). The images are rolled back
+# automatically on a failed deploy, but the database schema is not: a migration
+# that ran stays. This is the way back. The first install has nothing to back up.
+BACKUP_PATH_LAST=""
+backup_before_upgrade() {
+  local new="$1" prev="$2" out
+  if [ "${SKIP_BACKUP:-0}" = "1" ]; then log "SKIP_BACKUP=1 - not taking a pre-upgrade backup"; return 0; fi
+  if [ -z "$prev" ]; then log "first install - no database to back up yet"; return 0; fi
+  [ -f backup.sh ] || { log "WARNING: backup.sh is missing - deploying without a backup"; return 0; }
+  if [[ ",$(active_profiles)," == *",postgres,"* ]] && [ -z "$(dc ps -q postgres 2>/dev/null)" ]; then
+    log "WARNING: the bundled database is not running - no backup possible, continuing"; return 0
+  fi
+  log "backing up the databases before upgrading to $new"
+  out="$(SECRETS_ENV_FILE="$SECRETS_ENV_FILE" bash ./backup.sh --label "pre-${new:0:12}")"     || fail "the pre-upgrade backup failed - nothing was changed (fix it, or set SKIP_BACKUP=1 to deploy without one)"
+  BACKUP_PATH_LAST="$(printf '%s
+' "$out" | sed -n 's/^BACKUP_PATH=//p' | tail -n1)"
+  log "backup: ${BACKUP_PATH_LAST:-done}"
+}
+
 deploy() {
   local new="$1" prev
   [[ "$new" =~ ^[A-Za-z0-9._-]+$ ]] || fail "invalid image tag: $new"
@@ -278,6 +310,7 @@ deploy() {
 
   check_external_services
   write_monitoring_targets
+  preflight
   log "deploying $new (currently: ${prev:-none})"
   if [ "${SKIP_PULL:-0}" = "1" ]; then
     log "SKIP_PULL=1 - using the images already on this host"
@@ -285,6 +318,7 @@ deploy() {
     IMAGE_TAG="$new" dc pull --quiet "${APP_SERVICES[@]}" "${OPTIONAL_SERVICES[@]}" \
       || fail "could not pull images for $new - nothing was changed"
   fi
+  backup_before_upgrade "$new" "$prev"
 
   # bring_up inside the `if` so a failing `compose up` (e.g. keycloak-bootstrap
   # exiting non-zero) still reaches diagnostics and rollback under `set -e`.
@@ -299,6 +333,10 @@ deploy() {
 
   log "FAILED: $new did not become healthy"
   show_diagnostics
+  if [ -n "$BACKUP_PATH_LAST" ]; then
+    log "NOTE: $new may already have changed the database schema. Rolling the images back does not undo that."
+    log "      If $prev does not run correctly on it, restore the pre-upgrade backup: ./restore.sh $BACKUP_PATH_LAST"
+  fi
   if [ -n "$prev" ] && [ "$prev" != "$new" ]; then
     log "rolling back to $prev"
     if bring_up "$prev" && wait_for_health && smoke_test; then

@@ -253,6 +253,8 @@ jobs:
           tar -czf - \
             infra/production/docker-compose.yml \
             infra/production/deploy.sh \
+            infra/production/backup.sh \
+            infra/production/restore.sh \
             infra/production/.env.example \
             infra/production/secret-keys.txt \
             infra/production/secret-profiles.txt \

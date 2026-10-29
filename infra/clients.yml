@@ -15,6 +15,9 @@
 #                per-client "who may deploy here" control.
 #   runner       runs-on label of the self-hosted runner that can reach the
 #                server (GitHub-hosted runners cannot reach a private network).
+#   url          optional: the client's public address (http(s)://host, no path).
+#                The Fleet status workflow checks it daily; without it the client is
+#                skipped there.
 #   mode         push  - this workflow SSHes in and deploys
 #                pull  - the client's server cannot be reached; it is listed for
 #                        the record and gets releases by bundle or registry pull
@@ -31,6 +34,16 @@ clients:
     runner: self-hosted
     mode: push
     auto: true
+
+  # OAK iDocs: Docker services on oakidoc-svr.ois.local (192.168.0.51), nginx on a
+  # separate server. Setup: docs/clients/oakidocs.md. Replace `runner` with the
+  # label of a self-hosted runner that can reach 192.168.0.51 over SSH.
+  - name: oakidocs
+    environment: client-oakidocs
+    runner: self-hosted
+    url: http://oakidocs.ois.local
+    mode: push
+    auto: false
 
   # - name: acme
   #   environment: client-acme

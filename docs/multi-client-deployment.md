@@ -35,6 +35,19 @@ never in code.
 
 ## Adding a client CI can reach
 
+**The short way** - one command on your own machine does steps 3-5 below (the `.env`
+with fresh secrets, the deploy key, the nginx site, the `clients.yml` entry) and,
+with the flags shown, also prepares the server and the GitHub environment:
+
+```bash
+bash infra/clients/new-client.sh --name acme   --docker-host 10.0.0.5 --nginx-host 10.0.0.2   --public-url https://dms.acme.example --ssh-user oak   --provision --github        # --provision: SSH to the server; --github: needs the gh CLI
+```
+
+Run `--help` for every option. What it leaves to you: the approvers on the GitHub
+environment, a runner label, installing the nginx file on the nginx server, DNS, and
+reviewing the `.env` (superadmin address, mail relay). It never stores a password; you
+type the SSH password once, into `ssh` itself. The manual steps follow for reference.
+
 1. **Server:** install Docker, create the install directory (default `/opt/dms`), and
    create `infra/production/.env` from `.env.example` (`chmod 600`). Decide first which
    services are bundled and which are the client's own (`COMPOSE_PROFILES`, see
@@ -92,6 +105,11 @@ Release by pushing a tag `vMAJOR.MINOR.PATCH`. That publishes the three images t
 `MAJOR.MINOR.PATCH` and with the commit SHA, after the tests and the vulnerability scan,
 and deploys nowhere. The SHA stays the exact identity of a release (`deploy.sh` records
 it); the version is the name you give clients.
+
+## Running them
+
+Backups, restore, the upgrade rule, the daily fleet check and where secrets live:
+[operations.md](operations.md).
 
 ## Limits worth knowing
 

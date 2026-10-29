@@ -40,6 +40,8 @@ docker save "${images[@]}" | gzip > "$stage/$name/images.tar.gz"
 tar -cf - \
   infra/production/docker-compose.yml \
   infra/production/deploy.sh \
+  infra/production/backup.sh \
+  infra/production/restore.sh \
   infra/production/install-release.sh \
   infra/production/.env.example \
   infra/production/secret-keys.txt \
