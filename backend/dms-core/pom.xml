@@ -337,6 +337,25 @@
                 </executions>
             </plugin>
             <!--
+              FontProviderTest and FontProviderConcurrencyTest pass or fail according to
+              which fonts the machine has installed, not according to the code: a bare
+              CI runner or a developer laptop gives different answers. They belong in the
+              runtime image's font stack, where CI's `rendering` job runs them by name
+              (-Dtest=..., which overrides these excludes). Everywhere else they are
+              skipped, so a plain `mvn test` / `mvn verify` means the same thing on every
+              machine.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/FontProviderTest.java</exclude>
+                        <exclude>**/FontProviderConcurrencyTest.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!--
               Runs the *IT integration tests in `mvn verify` (surefire only runs
               *Test). They need the same Postgres/Redis/RabbitMQ CI already
               provides (DB_URL etc.). Excluded: ITs that need services CI does
