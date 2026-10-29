@@ -29,21 +29,24 @@
 # pilot client, auto: false for everyone else, then deploy the rest from the
 # Run workflow form (clients: "acme,globex" or "all") once the pilot is happy.
 clients:
+  # auto is false for now: oakidocs is deployed first (every merge to main deploys to
+  # it). Deploy this one by hand (clients: oak-app), or set auto to true to have every
+  # merge deploy to it as well.
   - name: oak-app
     environment: production
     runner: self-hosted
     mode: push
-    auto: true
+    auto: false
 
   # OAK iDocs: Docker services on oakidoc-svr.ois.local (192.168.0.51), nginx on a
   # separate server. Setup: docs/clients/oakidocs.md. Replace `runner` with the
   # label of a self-hosted runner that can reach 192.168.0.51 over SSH.
   - name: oakidocs
     environment: client-oakidocs
-    runner: self-hosted
+    runner: oakidocs
     url: http://oakidocs.ois.local
     mode: push
-    auto: false
+    auto: true
 
   # - name: acme
   #   environment: client-acme

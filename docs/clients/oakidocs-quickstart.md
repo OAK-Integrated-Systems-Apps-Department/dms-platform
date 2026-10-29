@@ -41,7 +41,7 @@ exit
 
 ## Step 2. On your own computer
 
-Open Git Bash in the project folder and run this one command. It asks for the `oak`
+Open Git Bash and go to the project folder first (`cd ~/Documents/DMS/dms-platform`), then run this one command. It asks for the `oak`
 password: type it there.
 
 ```bash
@@ -80,7 +80,8 @@ sudo nginx -t && sudo systemctl reload nginx
 Adjust the paths if your nginx layout is different.
 
 On the Docker server, ports 3000, 8080 and 8081 are published on 192.168.0.51 so nginx can
-reach them. Allow them from 192.168.3.50 only (firewall).
+reach them. Restrict them to 192.168.3.50 after the first deploy works. Note that a normal host
+firewall rule does not stop traffic to Docker's published ports: see the runbook, step A3.
 
 ## Step 4. On the GitHub website
 
