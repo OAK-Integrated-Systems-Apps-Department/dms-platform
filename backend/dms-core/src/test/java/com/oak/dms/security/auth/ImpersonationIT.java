@@ -23,8 +23,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -80,6 +82,12 @@ class ImpersonationIT {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private KeycloakUserService keycloakUserService;
+    // The admin reset-password call sends a real mail and lets a send failure
+    // propagate (PasswordResetService#issueForAdminReset), so without an SMTP
+    // server - none runs in CI - it answers 500. These tests are about audit
+    // attribution, not delivery, so the sender is stubbed out.
+    @MockitoBean
+    private JavaMailSender mailSender;
 
     private MockMvc mockMvc;
     /**
