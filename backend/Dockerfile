@@ -61,7 +61,10 @@ RUN addgroup -S oakdms && adduser -S oakdms -G oakdms
 # repeating it in a workflow where the two would quietly drift apart. Same
 # reason the workflows already read the JDK version from here.
 ARG WATERMARK_FONT_PACKAGES="font-noto-cjk font-noto-devanagari font-noto-arabic font-noto-thai font-noto-hebrew font-noto-bengali font-noto-tamil"
-RUN apk add --no-cache ${WATERMARK_FONT_PACKAGES} && fc-cache -f
+# apk upgrade first: the base image can lag the Alpine repository, and a fixed CRITICAL in a
+# base library (brotli-libs, CVE-2026-111497) would otherwise fail the image scan until the
+# base is rebuilt.
+RUN apk upgrade --no-cache && apk add --no-cache ${WATERMARK_FONT_PACKAGES} && fc-cache -f
 WORKDIR /app
 COPY --from=build /build/dms-core/target/dms-core.jar app.jar
 # FILE_SYSTEM storage's default STORAGE_FILESYSTEM_BASE_PATH (see
