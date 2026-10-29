@@ -204,6 +204,18 @@ class WatermarkPipelineIT extends WatermarkFixtures {
     void theWorkerAuditsCompletion() {
         Fixture fixture = pdfFixture();
         UUID jobId = completedJob(fixture);
+        // The worker commits status = completed first and writes the audit row after that
+        // transaction (WatermarkJobWorker), so "completed" can be visible a moment before the
+        // audit is. Wait for the row; the count still has to end up at exactly one.
+        Instant deadline = Instant.now().plus(PATIENCE);
+        while (auditCount("WATERMARK_COMPLETED", jobId) == 0 && Instant.now().isBefore(deadline)) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        }
         assertThat(auditCount("WATERMARK_COMPLETED", jobId)).isEqualTo(1);
     }
 
