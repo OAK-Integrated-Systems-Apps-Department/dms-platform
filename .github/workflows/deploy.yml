@@ -347,13 +347,20 @@ jobs:
 
       # Independent check from outside the server: proves the app answers on
       # the LAN address users actually open, not just on the server itself.
+      #
+      # vars.SMOKE_URL (optional) is the address the runner uses instead of
+      # PUBLIC_URL, for when PUBLIC_URL is a public address the runner cannot
+      # reach from inside the network (no hairpin NAT).
       - name: Verify from the network
+        env:
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
         run: |
-          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$PUBLIC_URL/login")"
-          [ "$code" = "200" ] || { echo "::error::$PUBLIC_URL/login returned $code"; exit 1; }
-          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$PUBLIC_URL/api/v1/auth/refresh")"
-          case "$code" in 400|401|403) ;; *) echo "::error::$PUBLIC_URL/api/ returned $code"; exit 1 ;; esac
-          echo "OK: $PUBLIC_URL serves the frontend and /api/ reaches dms-core"
+          base="${SMOKE_URL:-$PUBLIC_URL}"
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$base/login")"
+          [ "$code" = "200" ] || { echo "::error::$base/login returned $code"; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$base/api/v1/auth/refresh")"
+          case "$code" in 400|401|403) ;; *) echo "::error::$base/api/ returned $code"; exit 1 ;; esac
+          echo "OK: $base serves the frontend and /api/ reaches dms-core"
 
       - name: Remove SSH material
         if: always()
