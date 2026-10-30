@@ -784,7 +784,7 @@ function OrganisationBreakdown({ org }: { org: PlatformOrganisationDto }) {
   if (breakdown.isPending) {
     return (
       <p className="mt-4 border-t border-border pt-4 text-[12.5px] text-muted-foreground">
-        Loading this organisation's breakdown…
+        Loading this organisation&apos;s breakdown…
       </p>
     )
   }
@@ -835,7 +835,7 @@ function OrganisationBreakdown({ org }: { org: PlatformOrganisationDto }) {
       <div>
         <h3 className="text-[13px] font-semibold">Storage by file type</h3>
         <p className="mb-3 text-[11.5px] text-muted-foreground">
-          What {org.tenantName}'s storage is made of. Point at a slice for its
+          What {org.tenantName}&apos;s storage is made of. Point at a slice for its
           figures.
         </p>
         {typeSlices.length > 0 ? (
@@ -855,7 +855,7 @@ function OrganisationBreakdown({ org }: { org: PlatformOrganisationDto }) {
       <div>
         <h3 className="text-[13px] font-semibold">Documents by stage</h3>
         <p className="mb-3 text-[11.5px] text-muted-foreground">
-          Where this organisation's documents are in their lifecycle. Every
+          Where this organisation&apos;s documents are in their lifecycle. Every
           stage is shown, including the empty ones.
         </p>
         <BarList items={statusBars} total={org.documents} />

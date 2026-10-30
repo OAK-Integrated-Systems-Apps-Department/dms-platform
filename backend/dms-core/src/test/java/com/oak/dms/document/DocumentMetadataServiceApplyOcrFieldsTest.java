@@ -100,7 +100,9 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
                 .build();
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(schema);
-        when(documentMetadataRepository.findById(new DocumentMetadataId(tenantId, documentId)))
+        // The service reads the stored values under a row lock (lockedStoredValues ->
+        // findByIdForUpdate) so a manual save racing an OCR result cannot be overwritten.
+        when(documentMetadataRepository.findByIdForUpdate(new DocumentMetadataId(tenantId, documentId)))
                 .thenReturn(stored == null ? Optional.empty() : Optional.of(DocumentMetadata.builder()
                         .id(new DocumentMetadataId(tenantId, documentId))
                         .documentTypeId(documentTypeId)

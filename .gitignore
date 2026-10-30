@@ -53,6 +53,7 @@ infra/production/.env
 infra/production/dms-core.env
 infra/production/.deploy-history
 infra/production/.deploy.lock
+infra/production/backups/
 
 # Development encryption key backup (infra/local) - never commit keys.
 .dms-dev-keys/

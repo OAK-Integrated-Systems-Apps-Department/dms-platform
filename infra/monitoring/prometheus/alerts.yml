@@ -122,6 +122,9 @@ groups:
           summary: "Redis is unreachable"
           description: "Caching and session lookups fall back to the database; expect it to feel slower."
 
+      # A client on its own RabbitMQ has no scrape target (prometheus.yml reads it
+      # from targets/rabbitmq.yml, which deploy.sh empties), so no `up` series exists
+      # and this stays silent rather than firing on a container that is not there.
       - alert: RabbitMqDown
         expr: up{job="rabbitmq"} == 0
         for: 5m

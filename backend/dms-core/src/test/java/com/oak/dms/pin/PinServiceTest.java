@@ -5,31 +5,38 @@ import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.document.DocumentService;
 import com.oak.dms.document.dto.DocumentListItem;
 import com.oak.dms.folder.FolderException;
+import com.oak.dms.pin.PinService.AudienceMode;
+import com.oak.dms.pin.PinService.AudienceRequest;
+import com.oak.dms.pin.PinService.PinnedDocument;
+import com.oak.dms.pin.PinService.Row;
 import com.oak.dms.security.auth.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** The rules around a pin: who may pin what, the limit, and what happens when a document goes away. */
+/**
+ * The rules around a pin that need no database: what a request must carry, and how one person's view of a
+ * document pinned by several people is chosen. Who sees what, the limit and the unpin rule are exercised
+ * against a real database in {@link PinAudienceIT}.
+ */
 class PinServiceTest {
 
     private final UUID tenantId = UUID.randomUUID();
@@ -44,11 +51,7 @@ class PinServiceTest {
         jdbc = mock(NamedParameterJdbcTemplate.class);
         documents = mock(DocumentService.class);
         service = new PinService(jdbc, documents, mock(AuditService.class));
-        ReflectionTestUtils.setField(service, "defaultMax", 3);
         TenantContext.set(tenantId, userId);
-        // No pin_settings row: the default applies.
-        when(jdbc.queryForList(contains("from pin_settings"), any(MapSqlParameterSource.class), eq(Integer.class)))
-                .thenReturn(List.of());
     }
 
     @AfterEach
@@ -61,68 +64,37 @@ class PinServiceTest {
                 "application/pdf", 1, UUID.randomUUID(), OffsetDateTime.now(), false, "view");
     }
 
-    private void visible(boolean yes) {
-        when(documents.visibleItems(any())).thenReturn(yes ? List.of(item(documentId)) : List.of());
+    private static Row row(UUID document, UUID pinnedBy, String name, AudienceMode mode, OffsetDateTime at, int people) {
+        return new Row(UUID.randomUUID(), document, pinnedBy, name, mode, at, people);
     }
 
-    private void pinsHeld(int alreadyThisOne, int total) {
-        when(jdbc.queryForObject(contains("and document_id = :document"), any(MapSqlParameterSource.class), eq(Integer.class)))
-                .thenReturn(alreadyThisOne);
-        when(jdbc.queryForObject(contains("select count(*) from document_pins where tenant_id"),
-                any(MapSqlParameterSource.class), eq(Integer.class))).thenReturn(total);
+    @Test
+    void aPinWithNoAudienceIsRefused_andTouchesNothing() {
+        assertThatThrownBy(() -> service.pin(documentId, null)).isInstanceOfSatisfying(FolderException.class,
+                e -> assertThat(e.getCode()).isEqualTo("PIN_AUDIENCE_REQUIRED"));
+        assertThatThrownBy(() -> service.pin(documentId, new AudienceRequest(null, List.of())))
+                .isInstanceOfSatisfying(FolderException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("PIN_AUDIENCE_REQUIRED"));
+        verifyNoInteractions(jdbc, documents);
     }
 
     @Test
     void aDocumentTheCallerCannotSeeIsNotFound_neverPinned() {
-        visible(false);
+        when(documents.visibleItems(any())).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.pin(documentId)).isInstanceOf(ResourceNotFoundException.class);
-        verify(jdbc, never()).update(contains("insert into document_pins"), any(MapSqlParameterSource.class));
+        assertThatThrownBy(() -> service.pin(documentId, new AudienceRequest(AudienceMode.ALL, List.of())))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(jdbc, never()).update(anyString(), any(MapSqlParameterSource.class));
     }
 
     @Test
-    void pinsAVisibleDocument_underTheLimit() {
-        visible(true);
-        pinsHeld(0, 2);
+    void specificUsersNeedsAtLeastOnePerson() {
+        when(documents.visibleItems(any())).thenReturn(List.of(item(documentId)));
 
-        service.pin(documentId);
-
-        verify(jdbc).update(contains("insert into document_pins"), any(MapSqlParameterSource.class));
-    }
-
-    @Test
-    void pinningAgainIsNotAnErrorAndAddsNothing() {
-        visible(true);
-        pinsHeld(1, 3);
-
-        service.pin(documentId);
-
-        verify(jdbc, never()).update(contains("insert into document_pins"), any(MapSqlParameterSource.class));
-    }
-
-    @Test
-    void atTheLimit_isRefusedWithAMessageSayingWhy() {
-        visible(true);
-        pinsHeld(0, 3);
-
-        assertThatThrownBy(() -> service.pin(documentId))
-                .isInstanceOfSatisfying(FolderException.class, e -> {
-                    assertThat(e.getCode()).isEqualTo("PIN_LIMIT_REACHED");
-                    assertThat(e.getMessage()).contains("3 documents");
-                });
-        verify(jdbc, never()).update(contains("insert into document_pins"), any(MapSqlParameterSource.class));
-    }
-
-    @Test
-    void anOrganisationLimitOverridesTheDefault() {
-        visible(true);
-        pinsHeld(0, 3);
-        when(jdbc.queryForList(contains("from pin_settings"), any(MapSqlParameterSource.class), eq(Integer.class)))
-                .thenReturn(List.of(5));
-
-        service.pin(documentId);
-
-        verify(jdbc).update(contains("insert into document_pins"), any(MapSqlParameterSource.class));
+        assertThatThrownBy(() -> service.pin(documentId, new AudienceRequest(AudienceMode.USERS, List.of())))
+                .isInstanceOfSatisfying(FolderException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("PIN_AUDIENCE_EMPTY"));
+        verify(jdbc, never()).update(anyString(), any(MapSqlParameterSource.class));
     }
 
     @Test
@@ -133,25 +105,43 @@ class PinServiceTest {
     }
 
     @Test
-    void pinsWhoseDocumentIsGone_areDroppedWhenTheListIsRead() {
-        UUID gone = UUID.randomUUID();
-        // Two pins: one still visible, one not (deleted, or access revoked).
-        org.mockito.Mockito.doAnswer(call -> {
-            java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
-            for (UUID id : List.of(documentId, gone)) {
-                when(rs.getObject("document_id", UUID.class)).thenReturn(id);
-                when(rs.getObject("pinned_at", OffsetDateTime.class)).thenReturn(OffsetDateTime.now());
-                ((RowCallbackHandler) call.getArgument(2)).processRow(rs);
-            }
-            return null;
-        }).when(jdbc).query(contains("from document_pins where tenant_id"), any(MapSqlParameterSource.class),
-                any(RowCallbackHandler.class));
-        when(documents.visibleItems(any())).thenReturn(List.of(item(documentId)));
+    void whenSeveralPeoplePinnedIt_theCallersOwnPinWins_otherwiseTheEarliestPinner() {
+        UUID other = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        List<Row> rows = List.of(
+                row(documentId, other, "Other", AudienceMode.ALL, now.minusDays(1), 0),
+                row(documentId, userId, "Me", AudienceMode.USERS, now.minusDays(2), 3),
+                row(documentId, third, "Third", AudienceMode.ALL, now.minusDays(3), 0));
 
-        PinService.Pins pins = service.list();
+        PinnedDocument mine = PinService.pinnedDocuments(rows, Map.of(documentId, item(documentId)), Set.of(), userId)
+                .get(0);
+        assertThat(mine.mine()).isTrue();
+        assertThat(mine.audience()).isEqualTo(new PinService.AudienceSummary(AudienceMode.USERS, 3));
 
-        assertThat(pins.pins()).extracting(p -> p.document().documentId()).containsExactly(documentId);
-        assertThat(pins.limit()).isEqualTo(3);
-        verify(jdbc).update(contains("delete from document_pins"), any(MapSqlParameterSource.class));
+        PinnedDocument theirs = PinService.pinnedDocuments(List.of(rows.get(0), rows.get(2)),
+                Map.of(documentId, item(documentId)), Set.of(), userId).get(0);
+        assertThat(theirs.mine()).isFalse();
+        assertThat(theirs.pinnedByName()).as("the earliest pinner").isEqualTo("Third");
+        assertThat(theirs.audience()).as("someone else's audience isn't passed on").isNull();
+    }
+
+    @Test
+    void documentsTheCallerCannotSeeAreLeftOut_andTheRestAreNewestFirst() {
+        UUID older = UUID.randomUUID();
+        UUID newer = UUID.randomUUID();
+        UUID hidden = UUID.randomUUID();
+        UUID someone = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        List<Row> rows = List.of(
+                row(hidden, someone, "S", AudienceMode.ALL, now, 0),
+                row(newer, someone, "S", AudienceMode.ALL, now.minusHours(1), 0),
+                row(older, someone, "S", AudienceMode.ALL, now.minusHours(2), 0));
+
+        List<PinnedDocument> pins = PinService.pinnedDocuments(rows,
+                Map.of(older, item(older), newer, item(newer)), Set.of(older), userId);
+
+        assertThat(pins).extracting(p -> p.document().documentId()).containsExactly(newer, older);
+        assertThat(pins).extracting(PinnedDocument::archived).containsExactly(false, true);
     }
 }

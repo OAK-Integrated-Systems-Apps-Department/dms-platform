@@ -270,10 +270,17 @@ class WatermarkWorkerFailureIT extends WatermarkFixtures {
                         .anyMatch(failure -> failure.code().equals(reason)));
     }
 
+    /**
+     * Every series carries these two (management.metrics.tags in application.yml): one fixed value
+     * each per deployment, so they cannot grow. The guard above is about the tags a meter adds.
+     */
+    private static final Set<String> DEPLOYMENT_TAGS = Set.of("application", "environment");
+
     private Set<String> tagsOf(String meterName) {
         return registry.find(meterName).meters().stream()
                 .flatMap(meter -> meter.getId().getTags().stream())
                 .map(Tag::getKey)
+                .filter(key -> !DEPLOYMENT_TAGS.contains(key))
                 .collect(Collectors.toSet());
     }
 
