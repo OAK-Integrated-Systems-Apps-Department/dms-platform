@@ -46,7 +46,14 @@ const VERIFICATION_LABEL: Record<VerificationResult, string> = {
  * this panel was purely a read-only history, but someone who can sign now
  * needs somewhere to start even on a never-signed document.
  */
-export function DocumentSignaturesPanel({ document }: { document: DocumentDto }) {
+export function DocumentSignaturesPanel({
+  document,
+  workflowInProgress = false,
+}: {
+  document: DocumentDto
+  /** Disables standalone sign/remove while true - the backend refuses both with a 409 anyway (guardNoActiveWorkflow), but surfacing that upfront saves the signer three dialog steps just to find out. */
+  workflowInProgress?: boolean
+}) {
   const { data: signatures, isPending, isError } = useDocumentSignatures(document.documentId)
   const { verifyAll, isVerifying, removeStandalone, isRemovingStandalone } = useSignatureActions()
   const { hasPermission } = usePermissions()
@@ -107,7 +114,8 @@ export function DocumentSignaturesPanel({ document }: { document: DocumentDto })
               <button
                 type="button"
                 onClick={handleRemoveStandalone}
-                disabled={isRemovingStandalone}
+                disabled={isRemovingStandalone || workflowInProgress}
+                title={workflowInProgress ? "This document has an approval workflow in progress." : undefined}
                 className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRemovingStandalone ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
@@ -117,7 +125,13 @@ export function DocumentSignaturesPanel({ document }: { document: DocumentDto })
             <button
               type="button"
               onClick={() => setSigning(true)}
-              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2.5 py-1 text-[12px] font-bold text-primary-foreground hover:opacity-90"
+              disabled={workflowInProgress}
+              title={
+                workflowInProgress
+                  ? "This document has an approval workflow in progress - standalone signing isn't available until it finishes."
+                  : undefined
+              }
+              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2.5 py-1 text-[12px] font-bold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <PenLine size={13} />
               Sign document

@@ -139,6 +139,14 @@ public abstract class WorkflowApiSupport extends NotificationMailSupport {
         return postAs("/api/v1/workflow/instances", as, Map.of("documentId", documentId), expectedStatus);
     }
 
+    /** Submit naming which active template to use - required once a document type has more than one (V120). */
+    protected JsonNode submit(User as, UUID documentId, UUID templateId, int expectedStatus) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("documentId", documentId);
+        body.put("templateId", templateId);
+        return postAs("/api/v1/workflow/instances", as, body, expectedStatus);
+    }
+
     /** Submit with supporting documents attached in the same transaction (each entry a SupportingDocumentInput map). */
     protected JsonNode submit(User as, UUID documentId, List<? extends Map<String, Object>> supportingDocuments,
                               int expectedStatus) throws Exception {

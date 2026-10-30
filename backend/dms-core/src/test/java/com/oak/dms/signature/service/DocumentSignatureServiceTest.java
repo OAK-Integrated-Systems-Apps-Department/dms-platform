@@ -13,6 +13,7 @@ import com.oak.dms.signature.dto.SignAndApproveRequest;
 import com.oak.dms.signature.entity.DocumentSignature;
 import com.oak.dms.signature.entity.UserSigningKey;
 import com.oak.dms.signature.enums.SignatureMeaning;
+import com.oak.dms.signature.enums.SignatureStatus;
 import com.oak.dms.signature.enums.VisualSignatureKind;
 import com.oak.dms.signature.event.SignatureRejectedEvent;
 import com.oak.dms.signature.exception.SignatureException;
@@ -151,13 +152,46 @@ class DocumentSignatureServiceTest {
 
     @Test
     void refusesADuplicateTaskBeforeStepUp() {
-        when(signatureRepository.existsByTenantIdAndTaskId(tenantId, taskId)).thenReturn(true);
+        when(signatureRepository.existsByTenantIdAndTaskIdAndStatus(tenantId, taskId, SignatureStatus.valid))
+                .thenReturn(true);
 
         assertThatThrownBy(() -> service.sign(instance(), task(), request(true)))
                 .isInstanceOfSatisfying(SignatureException.class,
                         e -> assertThat(e.getCode()).isEqualTo("SIGNATURE_ALREADY_RECORDED"));
 
         verify(stepUp, never()).verify(any(), any(), any());
+    }
+
+    @Test
+    void allowsReSigningAfterARetraction_whenOnlyAnInvalidatedRowRemainsForThisTask() throws Exception {
+        // Retraction (WorkflowTaskServiceImpl#retract -> invalidateForTaskRetraction) marks the OLD
+        // signature row invalidated rather than deleting it (append-only evidence) - a row for this
+        // taskId still exists, just not a VALID one. The duplicate-check must look past that and let
+        // the task be signed again, unlike a blanket existence check which would wrongly refuse it.
+        when(signatureRepository.existsByTenantIdAndTaskIdAndStatus(tenantId, taskId, SignatureStatus.valid))
+                .thenReturn(false);
+        when(versionRepository.findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, documentId, tenantId))
+                .thenReturn(Optional.of(version(sha256Hex(DOCUMENT_BYTES))));
+
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair pair = generator.generateKeyPair();
+        String publicKeyPem = PemKeys.encodePublicKey(pair.getPublic());
+        UserSigningKey key = UserSigningKey.builder().keyId(UUID.randomUUID()).keyName("dms-sig-test-2")
+                .publicKeyPem(publicKeyPem).build();
+        when(signingKeyService.ensureActiveKey(tenantId, userId)).thenReturn(key);
+        when(signer.sign(eq("dms-sig-test-2"), any())).thenAnswer(inv -> {
+            byte[] digest = inv.getArgument(1);
+            Signature s = Signature.getInstance("NONEwithECDSA");
+            s.initSign(pair.getPrivate());
+            s.update(digest);
+            return s.sign();
+        });
+
+        DocumentSignature saved = service.sign(instance(), task(), request(true));
+
+        assertThat(saved.getStatus().name()).isEqualTo("valid");
+        assertThat(saved.getTaskId()).isEqualTo(taskId);
     }
 
     @Test

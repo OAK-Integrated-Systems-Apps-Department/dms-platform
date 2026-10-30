@@ -73,6 +73,10 @@ RUN mkdir -p /data/dms/documents && chown -R oakdms:oakdms /data
 # owned by oakdms so the named volume mounted here starts out writable. Production
 # uses OpenBao and never writes here.
 RUN mkdir -p /var/lib/dms-encryption && chown oakdms:oakdms /var/lib/dms-encryption && chmod 700 /var/lib/dms-encryption
+# Development key file for document signing (dms.signature.provider=local-dev),
+# same reasoning as /var/lib/dms-encryption above. Production uses OpenBao and
+# never writes here.
+RUN mkdir -p /var/lib/dms-signature && chown oakdms:oakdms /var/lib/dms-signature && chmod 700 /var/lib/dms-signature
 USER oakdms
 
 EXPOSE 8080

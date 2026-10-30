@@ -98,6 +98,7 @@ export default function DocumentPage() {
             <SubmitToWorkflowButton
               documentId={document.documentId}
               documentTitle={document.title}
+              documentTypeId={document.documentTypeId}
               hidden={inProgress || history.isPending}
             />
           </div>
@@ -159,7 +160,7 @@ export default function DocumentPage() {
                 )
               )}
 
-              <DocumentSignaturesPanel document={document} />
+              <DocumentSignaturesPanel document={document} workflowInProgress={inProgress} />
             </div>
 
             <div className="flex min-w-0 flex-col gap-5">

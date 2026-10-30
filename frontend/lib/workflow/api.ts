@@ -218,6 +218,28 @@ export async function fetchWorkflowTemplate(templateId: string): Promise<Workflo
   return apiFetchJson(`${BASE}/templates/${templateId}`, undefined, "Could not load this workflow template.")
 }
 
+/** Mirrors backend/dms-core's WorkflowTemplateOptionResponse - one choice in a submit-time "which workflow" dropdown. */
+export interface WorkflowTemplateOptionDto {
+  templateId: string
+  name: string
+  code: string
+  versionNumber: number
+}
+
+/**
+ * Every active template of one document type - empty, one, or more. Backs
+ * the "which workflow" choice in {@link submitDocumentToWorkflow}; reachable
+ * by anyone who can submit documents, unlike {@link fetchWorkflowTemplates}
+ * which needs a template-admin permission.
+ */
+export async function fetchActiveWorkflowTemplates(documentTypeId: string): Promise<WorkflowTemplateOptionDto[]> {
+  return apiFetchJson(
+    `${BASE}/templates/active?documentTypeId=${documentTypeId}`,
+    undefined,
+    "Could not load the approval workflows for this document type."
+  )
+}
+
 /** Every version in this template's family (same code). */
 export async function fetchWorkflowTemplateVersions(templateId: string): Promise<WorkflowTemplateSummaryDto[]> {
   return apiFetchJson(`${BASE}/templates/${templateId}/versions`, undefined, "Could not load this template's versions.")
@@ -454,17 +476,20 @@ export interface WorkflowInstanceSummaryDto {
 }
 
 /**
- * Starts the document type's active workflow on this document, optionally
- * attaching supporting documents in the same transaction. An invalid
- * attachment fails the whole submission - nothing is created.
+ * Starts a workflow on this document, optionally attaching supporting
+ * documents in the same transaction. An invalid attachment fails the whole
+ * submission - nothing is created. `templateId` is required when the
+ * document's type has more than one active template (see
+ * {@link fetchActiveWorkflowTemplates}), optional when it has exactly one.
  */
 export async function submitDocumentToWorkflow(
   documentId: string,
+  templateId?: string,
   supportingDocuments?: SupportingDocumentInput[]
 ): Promise<WorkflowInstanceDto> {
   return apiFetchJson(
     `${BASE}/instances`,
-    jsonInit("POST", { documentId, supportingDocuments }),
+    jsonInit("POST", { documentId, templateId, supportingDocuments }),
     "Could not submit this document for approval."
   )
 }

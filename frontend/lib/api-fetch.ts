@@ -33,6 +33,34 @@ export function withCorrelation(init: RequestInit, token?: string | null): Reque
 export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check that the backend is running and try again."
 
+/**
+ * Set synchronously by the explicit "Log out" action (app-topbar.tsx),
+ * before it calls `/api/v1/auth/logout`, and read by providers.tsx's global
+ * `QueryCache`/`MutationCache` error handler. Without this, a background
+ * query already in flight when logout clears the session cookies (e.g. the
+ * notifications-unread-count poll) lands its own 401 moments later, which
+ * that handler can't tell apart from a real, unexpected session expiry - it
+ * would toast "Your session has expired" and redirect to `/session-expired`,
+ * racing with (and sometimes winning over) the logout action's own, correct
+ * `router.push("/login")`. Reset once that race window has passed - 15s is
+ * generous on purpose: the race is between the logout call's own fetch and
+ * whatever queries were already in flight, which on a slow connection or a
+ * loaded tab can take noticeably longer than the sub-second case this is
+ * guarding against on a fast one.
+ */
+let intentionalLogout = false
+
+export function markIntentionalLogout(): void {
+  intentionalLogout = true
+  setTimeout(() => {
+    intentionalLogout = false
+  }, 15000)
+}
+
+export function isIntentionalLogout(): boolean {
+  return intentionalLogout
+}
+
 const REFRESH_URL = `${API_BASE_URL}/api/v1/auth/refresh`
 
 /**

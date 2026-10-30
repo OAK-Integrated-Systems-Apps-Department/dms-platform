@@ -125,21 +125,31 @@ class WorkflowTemplateIT extends WorkflowApiSupport {
     }
 
     @Test
-    void activationNeedsStages_andDemotesThePreviousActiveTemplateOfTheType() throws Exception {
+    void activationNeedsStages_andDemotesOnlyThePreviousActiveVersionOfTheSameCode() throws Exception {
         UUID first = draft("FIRST");
         assertThat(adminPost("/api/v1/workflow/templates/" + first + "/activate", w.admin(), null, 422)
                 .get("code").asString()).isEqualTo("WORKFLOW_TEMPLATE_INVALID");
         addStage(first, legalStage("Review"), 201);
         adminPost("/api/v1/workflow/templates/" + first + "/activate", w.admin(), null, 200);
 
+        // SECOND is a different template (code), same document type - V120: it does NOT demote FIRST.
         UUID second = draft("SECOND");
         addStage(second, legalStage("Review"), 201);
         adminPost("/api/v1/workflow/templates/" + second + "/activate", w.admin(), null, 200);
 
-        assertThat(adminGet("/api/v1/workflow/templates/" + first).get("status").asString()).isEqualTo("inactive");
+        assertThat(adminGet("/api/v1/workflow/templates/" + first).get("status").asString()).isEqualTo("active");
         assertThat(adminGet("/api/v1/workflow/templates/" + second).get("status").asString()).isEqualTo("active");
         assertThat(fx.count("select count(*) from workflow_templates where tenant_id = ? and document_type_id = ?"
-                + " and status = 'active'", w.tenantId(), w.contractTypeId())).isEqualTo(1);
+                + " and status = 'active'", w.tenantId(), w.contractTypeId())).isEqualTo(2);
+
+        // A new version of FIRST's own code still demotes FIRST (version exclusivity is unchanged).
+        JsonNode firstV2 = adminPost("/api/v1/workflow/templates/" + first + "/versions", w.admin(), null, 201);
+        UUID firstV2Id = id(firstV2, "templateId");
+        addStage(firstV2Id, legalStage("Review"), 201);
+        adminPost("/api/v1/workflow/templates/" + firstV2Id + "/activate", w.admin(), null, 200);
+        assertThat(adminGet("/api/v1/workflow/templates/" + first).get("status").asString()).isEqualTo("inactive");
+        assertThat(adminGet("/api/v1/workflow/templates/" + firstV2Id).get("status").asString()).isEqualTo("active");
+        assertThat(adminGet("/api/v1/workflow/templates/" + second).get("status").asString()).isEqualTo("active");
 
         // Only drafts are edited.
         assertThat(adminPost("/api/v1/workflow/templates/" + second + "/stages", w.admin(), legalStage("More"), 409)
@@ -147,7 +157,7 @@ class WorkflowTemplateIT extends WorkflowApiSupport {
     }
 
     @Test
-    void concurrentActivationsForOneType_leaveExactlyOneActive() throws Exception {
+    void concurrentActivationsOfDifferentCodes_canAllEndUpActive() throws Exception {
         List<UUID> drafts = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             UUID d = draft("RACE" + i);
@@ -166,11 +176,50 @@ class WorkflowTemplateIT extends WorkflowApiSupport {
         }
         go.countDown();
         for (Future<Integer> f : results) {
+            assertThat(f.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+        }
+        pool.shutdownNow();
+        // Different template families (codes) don't conflict with each other - all 4 stay active.
+        assertThat(fx.count("select count(*) from workflow_templates where tenant_id = ? and document_type_id = ?"
+                + " and status = 'active'", w.tenantId(), w.contractTypeId())).isEqualTo(4);
+    }
+
+    @Test
+    void concurrentActivationsOfTheSameCode_leaveExactlyOneActive() throws Exception {
+        // Only one draft per code can exist at a time, so build up several versions of the same
+        // family by activating each before drafting the next - v1 and v2 end up inactive (superseded),
+        // v3 active. All three are still individually re-activatable; racing v1/v2/v3's activation
+        // against each other is what exercises the per-code backstop below.
+        UUID v1 = draft("SAMECODE");
+        addStage(v1, legalStage("Review"), 201);
+        adminPost("/api/v1/workflow/templates/" + v1 + "/activate", w.admin(), null, 200);
+
+        UUID v2 = id(adminPost("/api/v1/workflow/templates/" + v1 + "/versions", w.admin(), null, 201), "templateId");
+        addStage(v2, legalStage("Review"), 201);
+        adminPost("/api/v1/workflow/templates/" + v2 + "/activate", w.admin(), null, 200);
+
+        UUID v3 = id(adminPost("/api/v1/workflow/templates/" + v2 + "/versions", w.admin(), null, 201), "templateId");
+        addStage(v3, legalStage("Review"), 201);
+        adminPost("/api/v1/workflow/templates/" + v3 + "/activate", w.admin(), null, 200);
+
+        List<UUID> versions = List.of(v1, v2, v3);
+        ExecutorService pool = Executors.newFixedThreadPool(versions.size());
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<Integer>> results = new ArrayList<>();
+        for (UUID v : versions) {
+            results.add(pool.submit(() -> {
+                go.await();
+                return mvc.perform(post("/api/v1/workflow/templates/" + v + "/activate")
+                        .with(fx.tenantAdminJwtFor(w.admin()))).andReturn().getResponse().getStatus();
+            }));
+        }
+        go.countDown();
+        for (Future<Integer> f : results) {
             assertThat(f.get(30, TimeUnit.SECONDS)).isIn(200, 409);
         }
         pool.shutdownNow();
-        assertThat(fx.count("select count(*) from workflow_templates where tenant_id = ? and document_type_id = ?"
-                + " and status = 'active'", w.tenantId(), w.contractTypeId())).isEqualTo(1);
+        assertThat(fx.count("select count(*) from workflow_templates where tenant_id = ? and code = ?"
+                + " and status = 'active'", w.tenantId(), "SAMECODE")).isEqualTo(1);
     }
 
     @Test

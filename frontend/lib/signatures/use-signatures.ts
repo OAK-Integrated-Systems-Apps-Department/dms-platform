@@ -120,7 +120,19 @@ export function useSignatureActions() {
 
   const verifyAll = useMutation({
     mutationFn: (documentId: string) => verifyDocumentSignatures(documentId),
-    onSuccess: invalidate,
+    onSuccess: (result) => {
+      invalidate()
+      const problems = result.invalidated + result.unreadable
+      if (problems === 0) {
+        toast.success(
+          result.total === 1 ? "Signature verified - valid." : `All ${result.total} signatures verified - valid.`
+        )
+      } else {
+        toast.error(
+          `${problems} of ${result.total} signature${result.total === 1 ? "" : "s"} failed verification - see below.`
+        )
+      }
+    },
     onError: (error) => toast.error(friendlyMessage(error, "Could not verify this document's signatures.")),
   })
 

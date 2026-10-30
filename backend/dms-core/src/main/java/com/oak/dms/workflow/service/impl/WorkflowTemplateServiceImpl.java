@@ -23,6 +23,7 @@ import com.oak.dms.workflow.dto.ReorderStagesRequest;
 import com.oak.dms.workflow.dto.UpdateWorkflowTemplateRequest;
 import com.oak.dms.workflow.dto.UpsertWorkflowStageRequest;
 import com.oak.dms.workflow.dto.WorkflowStageResponse;
+import com.oak.dms.workflow.dto.WorkflowTemplateOptionResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateSummaryResponse;
 import com.oak.dms.workflow.entity.WorkflowStage;
@@ -102,6 +103,16 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         Page<WorkflowTemplate> page = templateRepository.findAll(spec, pageable);
         Map<UUID, String> typeNames = documentTypeNames(page.map(WorkflowTemplate::getDocumentTypeId).toList(), tenantId);
         return page.map(t -> toSummary(t, typeNames.get(t.getDocumentTypeId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkflowTemplateOptionResponse> listActiveForDocumentType(UUID documentTypeId) {
+        UUID tenantId = TenantContext.getTenantId();
+        return templateRepository.findByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(tenantId, documentTypeId,
+                        TemplateStatus.active).stream()
+                .map(t -> new WorkflowTemplateOptionResponse(t.getTemplateId(), t.getName(), t.getCode(), t.getVersionNumber()))
+                .toList();
     }
 
     @Override
@@ -255,10 +266,14 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     }
 
     /**
-     * Schema-publish pattern (DocumentTypeFieldServiceImpl#replaceMapping):
-     * lock the parent document_types row so two activations for the same
-     * type serialise, demote the current active version, then promote this
-     * one. uq_workflow_templates_one_active_per_type is the backstop.
+     * A document type may now have more than one active template, as long as
+     * they're different template families (decision 7 narrowed, V120) - the
+     * submitter picks which one applies when more than one does (see
+     * {@code TemplateSelector}). What's unchanged: at most one active
+     * version per template family (same code) - activating a new version
+     * still demotes the previous active version of the SAME code, just not
+     * of every other template sharing this document type.
+     * uq_workflow_templates_one_active_per_code is the backstop.
      */
     @Override
     @Transactional
@@ -278,8 +293,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         }
         validateForActivation(template);
 
-        templateRepository.findFirstByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(tenantId,
-                        template.getDocumentTypeId(), TemplateStatus.active)
+        templateRepository.findByTenantIdAndCodeAndStatusAndDeletedFalse(tenantId, template.getCode(), TemplateStatus.active)
                 .filter(current -> !current.getTemplateId().equals(template.getTemplateId()))
                 .ifPresent(current -> {
                     current.setStatus(TemplateStatus.inactive);
@@ -296,7 +310,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
             templateRepository.saveAndFlush(template);
         } catch (DataIntegrityViolationException e) {
             throw new WorkflowStateException("WORKFLOW_TEMPLATE_ACTIVE_CONFLICT",
-                    "Another template was activated for this document type at the same time - retry");
+                    "Another version of this template was activated at the same time - retry");
         }
         audit(AuditActionCatalog.WORKFLOW_TEMPLATE_ACTIVATED, template).newValue(snapshot(template)).log();
         return toResponse(template);

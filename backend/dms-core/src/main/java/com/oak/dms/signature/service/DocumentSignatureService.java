@@ -102,7 +102,11 @@ public class DocumentSignatureService {
         UUID tenantId = TenantContext.getTenantId();
         UUID documentId = instance.getDocumentId();
         UUID taskId = task.getTaskId();
-        if (signatureRepository.existsByTenantIdAndTaskId(tenantId, taskId)) {
+        // Only a VALID signature blocks a re-sign: after a retraction, invalidateForTaskRetraction
+        // marks the old row invalidated rather than deleting it (append-only evidence), and this task
+        // is legitimately re-decidable at that point - a blanket existence check here would wrongly
+        // refuse to let the approver sign again just because their retracted attempt's row still exists.
+        if (signatureRepository.existsByTenantIdAndTaskIdAndStatus(tenantId, taskId, SignatureStatus.valid)) {
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, TenantContext.getUserId(), documentId, taskId);
         }
@@ -245,7 +249,7 @@ public class DocumentSignatureService {
         try {
             saved = signatureRepository.saveAndFlush(row);
         } catch (DataIntegrityViolationException e) {
-            // uq_document_signatures_one_per_task - a concurrent duplicate attempt on the same task lost
+            // uq_document_signatures_one_valid_per_task (V121) - a concurrent duplicate attempt on the same task lost
             // the race (never fires for a standalone row, whose taskId is always null).
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
@@ -315,6 +319,11 @@ public class DocumentSignatureService {
      * append-only trigger wouldn't allow it anyway): only {@code status}/{@code statusChangedAt}/
      * {@code statusReason} change, same as every other status transition this row can ever have. A no-op
      * (returns null) if this task was never signed, or its signature is already invalidated.
+     * <p>
+     * Looks up the VALID row directly (never {@code findByTenantIdAndTaskId}, which can no longer assume
+     * at most one row per task once a task has been retracted and re-signed more than once -
+     * uq_document_signatures_one_valid_per_task (V121) only guarantees uniqueness among valid rows, so a
+     * plain task_id lookup against a task with prior invalidated attempts throws NonUniqueResultException).
      *
      * @return the version id it was signed against, so the caller can revert the document/instance back
      *         to the task's placement baseline - null if there was nothing to invalidate
@@ -322,8 +331,7 @@ public class DocumentSignatureService {
     @Transactional
     public UUID invalidateForTaskRetraction(UUID taskId, String reason) {
         UUID tenantId = TenantContext.getTenantId();
-        return signatureRepository.findByTenantIdAndTaskId(tenantId, taskId)
-                .filter(DocumentSignature::isValid)
+        return signatureRepository.findByTenantIdAndTaskIdAndStatus(tenantId, taskId, SignatureStatus.valid)
                 .map(signature -> {
                     signature.setStatus(SignatureStatus.invalidated);
                     signature.setStatusChangedAt(OffsetDateTime.now());

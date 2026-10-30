@@ -1,8 +1,8 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, Eye, FilePlus2, Loader2, Trash2 } from "lucide-react"
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Eye, FilePlus2, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { friendlyMessage } from "@/lib/api-error"
@@ -70,18 +70,24 @@ export function DocumentSignaturePlacementStep({
   const [page, setPage] = useState(0)
   const [box, setBox] = useState({ x: 0.36, y: 0.75, width: DEFAULT_WIDTH_RATIO, height: DEFAULT_HEIGHT_RATIO })
   const [includeSignerDetails, setIncludeSignerDetails] = useState(true)
-  const imageRef = useRef<HTMLDivElement | null>(null)
+  const pageRefs = useRef(new Map<number, HTMLDivElement>())
   const dragRef = useRef<{ startX: number; startY: number; boxX: number; boxY: number } | null>(null)
 
-  // staleTime/gcTime: Infinity - see SignaturePlacementStep's own comment on why (this component
-  // remounts across step visits the same way).
-  const pageQuery = useQuery({
-    queryKey: ["signature-placement-page", "document", documentId, page],
-    queryFn: async () => URL.createObjectURL(await fetchDocumentSignaturePlacementPage(documentId, page, PAGE_WIDTH)),
-    enabled: Boolean(info?.supported),
-    staleTime: Infinity,
-    gcTime: Infinity,
+  // Every page is fetched and shown at once, stacked in one scrollable reading pane - like Word's
+  // continuous view, rather than flipping through pages one at a time. staleTime/gcTime: Infinity -
+  // see SignaturePlacementStep's own comment on why (this component remounts across step visits the
+  // same way).
+  const pageCount = info?.pageCount ?? 0
+  const pageQueries = useQueries({
+    queries: Array.from({ length: pageCount }, (_, i) => ({
+      queryKey: ["signature-placement-page", "document", documentId, i],
+      queryFn: async () => URL.createObjectURL(await fetchDocumentSignaturePlacementPage(documentId, i, PAGE_WIDTH)),
+      enabled: Boolean(info?.supported),
+      staleTime: Infinity,
+      gcTime: Infinity,
+    })),
   })
+  const anyPagePending = pageQueries.some((q) => q.isPending)
 
   const addPage = useMutation({
     mutationFn: () => addDocumentSignaturePage(documentId),
@@ -120,17 +126,55 @@ export function DocumentSignaturePlacementStep({
   })
 
   function startDrag(event: React.PointerEvent<HTMLDivElement>) {
+    event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = { startX: event.clientX, startY: event.clientY, boxX: box.x, boxY: box.y }
   }
 
+  /**
+   * Repositioning is drag-only - there used to also be a "click anywhere on a page to teleport the
+   * mark there" shortcut, meant for moving the mark between pages in this continuous-scroll view, but
+   * it fired on every incidental click anywhere on any page (scrolling by clicking the pane, selecting
+   * text to read, clicking a different page just to look at it) and silently relocated an already-placed
+   * signature to wherever that click happened to land - the exact "my signature keeps jumping/ends up
+   * somewhere random" complaint this replaced. Dragging across a page boundary (pages are stacked
+   * vertically in one pane, so this is just "keep holding and move the pointer up/down past the edge")
+   * now re-anchors the drag onto whichever page the pointer is actually over, which covers the same
+   * need - moving the mark to a different page - without any click elsewhere ever moving it by itself.
+   */
   function onDrag(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current
-    const container = imageRef.current
-    if (!drag || !container) return
-    const rect = container.getBoundingClientRect()
-    const dx = (event.clientX - drag.startX) / rect.width
-    const dy = (event.clientY - drag.startY) / rect.height
+    if (!drag) return
+
+    let targetPage = page
+    let targetRect: DOMRect | null = null
+    for (const [index, element] of pageRefs.current.entries()) {
+      const rect = element.getBoundingClientRect()
+      if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        targetPage = index
+        targetRect = rect
+        break
+      }
+    }
+    // The pointer strayed into the gap between pages (or above/below all of them) - keep dragging on
+    // whichever page was last active rather than losing the drag entirely.
+    if (!targetRect) {
+      const container = pageRefs.current.get(page)
+      if (!container) return
+      targetRect = container.getBoundingClientRect()
+    }
+
+    if (targetPage !== page) {
+      const x = clamp((event.clientX - targetRect.left) / targetRect.width - box.width / 2, 0, 1 - box.width)
+      const y = clamp((event.clientY - targetRect.top) / targetRect.height - box.height / 2, 0, 1 - box.height)
+      setPage(targetPage)
+      setBox((prev) => ({ ...prev, x, y }))
+      dragRef.current = { startX: event.clientX, startY: event.clientY, boxX: x, boxY: y }
+      return
+    }
+
+    const dx = (event.clientX - drag.startX) / targetRect.width
+    const dy = (event.clientY - drag.startY) / targetRect.height
     setBox((prev) => ({
       ...prev,
       x: clamp(drag.boxX + dx, 0, 1 - prev.width),
@@ -218,103 +262,96 @@ export function DocumentSignaturePlacementStep({
       )}
 
       {info.pageCount > 1 && (
-        <div className="mb-2 flex items-center justify-center gap-3 text-[12px] font-semibold text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          Page {page + 1} of {info.pageCount}
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(info.pageCount - 1, p + 1))}
-            disabled={page === info.pageCount - 1}
-            className="disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
+        <p className="mb-2 text-center text-[12px] font-semibold text-muted-foreground">
+          Signature on page {page + 1} of {info.pageCount} - drag it onto a different page below to move it
+        </p>
       )}
 
-      {/* See SignaturePlacementStep's own comment on the shrink-wrap/centering approach here. */}
-      <div className="flex justify-center">
-        <div
-          ref={imageRef}
-          className="relative inline-block overflow-hidden rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)]"
-        >
-          {pageQuery.isPending ? (
-            <div className="flex h-64 w-[320px] items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-muted-foreground" />
-            </div>
-          ) : pageQuery.data ? (
-            // eslint-disable-next-line @next/next/no-img-element -- a locally-generated object URL, not a remote image
-            <img
-              src={pageQuery.data}
-              alt={`Page ${page + 1}`}
-              className="block max-h-[78vh] w-auto max-w-full select-none"
-              draggable={false}
-            />
-          ) : (
-            <p className="p-6 text-center text-[12.5px] text-destructive">Could not load this page.</p>
-          )}
-
-          {!pageQuery.isPending && pageQuery.data && (
+      {/* Every page stacked in one scrollable pane, like Word's continuous view, rather than one page
+          flipped at a time - see SignaturePlacementStep's own comment on the shrink-wrap/centering
+          approach each page box uses. */}
+      <div className="flex max-h-[78vh] flex-col items-center gap-3 overflow-auto rounded-btn border border-[var(--border-strong)] bg-muted/40 p-3">
+        {pageQueries.map((pageQuery, i) => (
+          <div key={i} className="relative inline-block shrink-0">
             <div
-              onPointerDown={startDrag}
-              onPointerMove={onDrag}
-              onPointerUp={endDrag}
-              className="absolute cursor-move touch-none rounded-sm border-2 border-dashed border-foreground/50 bg-foreground/5"
-              style={{
-                left: `${box.x * 100}%`,
-                top: `${box.y * 100}%`,
-                width: `${box.width * 100}%`,
-                height: `${box.height * 100}%`,
+              ref={(el) => {
+                if (el) pageRefs.current.set(i, el)
+                else pageRefs.current.delete(i)
               }}
+              className="relative inline-block overflow-hidden rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)]"
             >
-              {visualSignatureKind === "typed" ? (
-                <span className="flex h-full w-full items-center justify-center overflow-hidden text-[20px] font-signature text-foreground">
-                  {visualSignatureText}
-                </span>
-              ) : visualSignatureImageBase64 ? (
-                // eslint-disable-next-line @next/next/no-img-element -- a small inline base64 PNG
+              {pageQuery.isPending ? (
+                <div className="flex h-64 w-[320px] items-center justify-center">
+                  <Loader2 size={20} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : pageQuery.data ? (
+                // eslint-disable-next-line @next/next/no-img-element -- a locally-generated object URL, not a remote image
                 <img
-                  src={`data:image/png;base64,${visualSignatureImageBase64}`}
-                  alt="Your signature"
-                  className="h-full w-full object-contain"
+                  src={pageQuery.data}
+                  alt={`Page ${i + 1}`}
+                  className="block max-h-[78vh] w-auto max-w-full select-none"
                   draggable={false}
                 />
-              ) : null}
-            </div>
-          )}
+              ) : (
+                <p className="p-6 text-center text-[12.5px] text-destructive">Could not load this page.</p>
+              )}
 
-          {/* Approximate preview only - see SignaturePlacementStep's own comment on why (fixed
-              black-on-white, never `text-foreground` - this sits on the rendered page, always a light
-              image regardless of the app's own theme). */}
-          {!pageQuery.isPending && pageQuery.data && currentUser && includeSignerDetails && (
-            <div
-              className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-black shadow-sm"
-              style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
-            >
-              <p className="font-semibold">{currentUser.displayName}</p>
-              {currentUser.position && <p>{currentUser.position}</p>}
-              {currentUser.departmentName && <p>{currentUser.departmentName}</p>}
-              <p>Signed: {formatSignatureStampDate(new Date())}</p>
-            </div>
-          )}
+              {page === i && pageQuery.data && (
+                <div
+                  onPointerDown={startDrag}
+                  onPointerMove={onDrag}
+                  onPointerUp={endDrag}
+                  className="absolute cursor-move touch-none rounded-sm border-2 border-dashed border-foreground/50 bg-foreground/5"
+                  style={{
+                    left: `${box.x * 100}%`,
+                    top: `${box.y * 100}%`,
+                    width: `${box.width * 100}%`,
+                    height: `${box.height * 100}%`,
+                  }}
+                >
+                  {visualSignatureKind === "typed" ? (
+                    <span className="flex h-full w-full items-center justify-center overflow-hidden text-[20px] font-signature text-foreground">
+                      {visualSignatureText}
+                    </span>
+                  ) : visualSignatureImageBase64 ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- a small inline base64 PNG
+                    <img
+                      src={`data:image/png;base64,${visualSignatureImageBase64}`}
+                      alt="Your signature"
+                      className="h-full w-full object-contain"
+                      draggable={false}
+                    />
+                  ) : null}
+                </div>
+              )}
 
-          {!pageQuery.isPending && pageQuery.data && currentUserError && includeSignerDetails && (
-            <div
-              className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-destructive shadow-sm"
-              style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
-            >
-              Could not load your profile to preview Name/Position/Department - the actual stamp isn&apos;t
-              affected.
+              {/* Approximate preview only - see SignaturePlacementStep's own comment on why (fixed
+                  black-on-white, never `text-foreground` - this sits on the rendered page, always a
+                  light image regardless of the app's own theme). */}
+              {page === i && pageQuery.data && currentUser && includeSignerDetails && (
+                <div
+                  className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-black shadow-sm"
+                  style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
+                >
+                  <p className="font-semibold">{currentUser.displayName}</p>
+                  {currentUser.position && <p>{currentUser.position}</p>}
+                  {currentUser.departmentName && <p>{currentUser.departmentName}</p>}
+                  <p>Signed: {formatSignatureStampDate(new Date())}</p>
+                </div>
+              )}
+
+              {page === i && pageQuery.data && currentUserError && includeSignerDetails && (
+                <div
+                  className="pointer-events-none absolute w-max max-w-[55%] select-none rounded-sm bg-white/90 px-1 py-0.5 text-[10px] leading-tight text-destructive shadow-sm"
+                  style={{ left: `${box.x * 100}%`, top: `${(box.y + box.height) * 100}%`, marginTop: 2 }}
+                >
+                  Could not load your profile to preview Name/Position/Department - the actual stamp
+                  isn&apos;t affected.
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        ))}
       </div>
 
       {info.alreadyPlaced && (
@@ -356,7 +393,7 @@ export function DocumentSignaturePlacementStep({
         <button
           type="button"
           onClick={() => place.mutate()}
-          disabled={place.isPending || pageQuery.isPending}
+          disabled={place.isPending || anyPagePending}
           className={cn(
             "flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
           )}

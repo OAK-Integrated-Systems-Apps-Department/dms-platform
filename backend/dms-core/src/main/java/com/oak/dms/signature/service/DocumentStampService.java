@@ -1,6 +1,8 @@
 package com.oak.dms.signature.service;
 
 import com.oak.dms.signature.exception.SignatureException;
+import com.oak.dms.signature.service.format.DocumentFormatStamper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -26,6 +28,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -43,23 +46,35 @@ import java.util.Set;
  * same APPEND-content-stream technique, same lossless alpha-preserving
  * embed) - deliberately not shared code, since watermarking stamps the same
  * mark on every page at a fixed position while this stamps one mark once, at
- * a caller-chosen page and rectangle.
+ * a caller-chosen page and rectangle. PDF and the two still-image types stay
+ * handled inline below, unchanged; DOCX/XLSX/PPTX are each their own
+ * {@link DocumentFormatStamper}, dispatched the same way
+ * {@code WatermarkServiceFactory} picks a watermark format - kept inline
+ * for PDF/image rather than also extracted, so as not to disturb
+ * already-production code for this change.
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class DocumentStampService {
 
     /** The two still-image types this can stamp directly (a JPEG target keeps its own format; PNG keeps alpha). */
     public static final Set<String> IMAGE_MIME_TYPES = Set.of("image/png", "image/jpeg");
     private static final String MIME_PDF = "application/pdf";
 
+    private final List<DocumentFormatStamper> formatStampers;
+
     /** Every mime type this service can stamp - callers skip stamping entirely for anything else. */
     public boolean supports(String mimeType) {
-        return MIME_PDF.equals(mimeType) || IMAGE_MIME_TYPES.contains(mimeType);
+        return MIME_PDF.equals(mimeType) || IMAGE_MIME_TYPES.contains(mimeType) || formatStamperFor(mimeType) != null;
     }
 
-    /** How many pages/images {@code mimeType} has, for placement purposes - always 1 for a still image. */
+    /** How many pages/images/sheets/slides {@code mimeType} has, for placement purposes - always 1 for a still image. */
     public int pageCount(byte[] source, String mimeType) {
+        DocumentFormatStamper stamper = formatStamperFor(mimeType);
+        if (stamper != null) {
+            return stamper.pageCount(source);
+        }
         if (!MIME_PDF.equals(mimeType)) {
             return 1;
         }
@@ -76,6 +91,10 @@ public class DocumentStampService {
 
     /** {@code page} (0-based) rendered as a JPEG about {@code width} pixels wide, for the placement UI - ignored for a still image, which is returned as-is. */
     public byte[] renderPagePreview(byte[] source, String mimeType, int page, int width) {
+        DocumentFormatStamper stamper = formatStamperFor(mimeType);
+        if (stamper != null) {
+            return stamper.renderPagePreview(source, page, width);
+        }
         if (!MIME_PDF.equals(mimeType)) {
             return source;
         }
@@ -113,20 +132,34 @@ public class DocumentStampService {
         if (IMAGE_MIME_TYPES.contains(mimeType)) {
             return stampImage(source, mimeType, xRatio, yRatio, widthRatio, heightRatio, signaturePng);
         }
+        DocumentFormatStamper stamper = formatStamperFor(mimeType);
+        if (stamper != null) {
+            return stamper.stamp(source, page, xRatio, yRatio, widthRatio, heightRatio, signaturePng);
+        }
         throw SignatureException.badRequest("SIGNATURE_PLACEMENT_UNSUPPORTED_TYPE",
                 "Placing a signature on the page isn't supported for this file type.");
     }
 
+    private DocumentFormatStamper formatStamperFor(String mimeType) {
+        return formatStampers.stream().filter(s -> s.supports(mimeType)).findFirst().orElse(null);
+    }
+
     /**
-     * Appends one blank page, the same size as the current last page (or A4 if there are none), to a
-     * PDF - used by standalone signing (V118) when no existing page has room for the Name/Designation/
-     * Date block and the signer chooses "Add signature page" rather than dragging onto an existing one.
-     * PDF only: a still image is always exactly one page and has no notion of "appending a page" to it.
+     * Appends one blank page/sheet/slide - used by standalone signing (V118) when no existing page has
+     * room for the Name/Designation/Date block and the signer chooses "Add signature page" rather than
+     * dragging onto an existing one. For a PDF, the new page is the same size as the current last page
+     * (or A4 if there are none); DOCX/XLSX/PPTX each have their own {@link DocumentFormatStamper}
+     * implementation. A still image is always exactly one page and has no notion of "appending a page"
+     * to it, so this refuses for {@link #IMAGE_MIME_TYPES}.
      *
-     * @throws SignatureException 400 if {@code mimeType} isn't a PDF, or the PDF is signed/encrypted/restricted
+     * @throws SignatureException 400 if {@code mimeType} isn't supported, or the document is signed/encrypted/restricted
      */
     public byte[] appendBlankPage(byte[] source, String mimeType) {
         if (!MIME_PDF.equals(mimeType)) {
+            DocumentFormatStamper stamper = formatStamperFor(mimeType);
+            if (stamper != null) {
+                return stamper.appendBlankPage(source);
+            }
             throw SignatureException.badRequest("SIGNATURE_PLACEMENT_UNSUPPORTED_TYPE",
                     "Adding a page is only supported for PDF documents.");
         }

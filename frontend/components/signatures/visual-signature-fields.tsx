@@ -114,11 +114,15 @@ export function VisualSignatureFields({
         <>
           <Input
             id={`${idPrefix}-text`}
+            name={`${idPrefix}-signature-text`}
             placeholder="Type your name"
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
             disabled={disabled}
             aria-invalid={Boolean(textError)}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           {text && (
             <p className="mt-2 rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-3 py-2 text-center text-[26px] font-signature">
@@ -139,12 +143,13 @@ export function VisualSignatureFields({
       {kind === "uploaded" && (
         <>
           <p className="mb-1.5 text-[12px] text-muted-foreground">
-            A photo or scan of your signature - its background is removed automatically.
+            Sign your name in dark ink on a plain white sheet of paper, then upload a clear, well-lit photo or scan
+            of it - its background is removed automatically.
           </p>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg"
+            accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
             onChange={handleFileChange}
             disabled={disabled || uploading}
             className="text-[12.5px] file:mr-3 file:rounded-md file:border file:border-[var(--border-strong)] file:bg-card file:px-3 file:py-1.5 file:text-[12px] file:font-semibold"

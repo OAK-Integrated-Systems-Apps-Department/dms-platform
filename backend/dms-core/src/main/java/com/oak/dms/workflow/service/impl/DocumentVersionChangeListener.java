@@ -11,8 +11,8 @@ import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowTemplate;
 import com.oak.dms.workflow.enums.InstanceStatus;
 import com.oak.dms.workflow.enums.OnDocumentChange;
+import com.oak.dms.workflow.enums.TemplateStatus;
 import com.oak.dms.workflow.enums.WorkflowActionType;
-import com.oak.dms.workflow.helper.TemplateSelector;
 import com.oak.dms.workflow.helper.WorkflowActionRecorder;
 import com.oak.dms.workflow.helper.WorkflowLocks;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
@@ -58,7 +58,6 @@ public class DocumentVersionChangeListener {
     private final DocumentVersionRepository versionRepository;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowTemplateRepository templateRepository;
-    private final TemplateSelector templateSelector;
     private final WorkflowSubmissionService submissionService;
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
@@ -100,10 +99,13 @@ public class DocumentVersionChangeListener {
         detail.put("toVersionId", event.newVersionId());
 
         if (template != null && template.getOnDocumentChange() == OnDocumentChange.restart) {
-            Optional<WorkflowTemplate> active = templateSelector.selectFor(document);
-            if (active.isPresent()) {
+            // Restart with the SAME template the instance was already running, never a freshly-selected
+            // one: since V120 a document type can have more than one active template, and this is an
+            // automatic restart, not a submission - there's no one to ask which to use, so it only makes
+            // sense to continue with the template that was already chosen, if it's still active.
+            if (template.getStatus() == TemplateStatus.active) {
                 try {
-                    restart(instance, document, active.get(), event, detail);
+                    restart(instance, document, template, event, detail);
                     return;
                 } catch (ApiException e) {
                     // restart() pre-checks before it cancels, so nothing was written.

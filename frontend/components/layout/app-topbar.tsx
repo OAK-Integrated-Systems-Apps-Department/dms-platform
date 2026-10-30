@@ -28,7 +28,7 @@ import { useAccountIdentity } from "@/lib/auth/use-account-identity"
 import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch } from "@/lib/api-fetch"
+import { apiFetch, markIntentionalLogout } from "@/lib/api-fetch"
 import { ROUTES } from "@/lib/app-config"
 import { useDashboard } from "@/lib/dashboard/use-dashboard"
 import { downloadDocumentFile } from "@/lib/documents/api"
@@ -136,6 +136,12 @@ export function AppTopbar() {
   }
 
   async function handleLogout() {
+    // Marked before the logout call itself so a background query already in
+    // flight (e.g. the notifications poll) that lands its 401 just after the
+    // session cookies are cleared doesn't get mistaken by providers.tsx's
+    // global handler for an unexpected session expiry - see
+    // markIntentionalLogout's own doc comment.
+    markIntentionalLogout()
     // Best-effort: always navigate to /login regardless of outcome, same
     // as before - a logout call failing (already logged out, network
     // hiccup, whatever) shouldn't trap the person on the current page.

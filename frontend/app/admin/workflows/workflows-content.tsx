@@ -74,7 +74,8 @@ export function WorkflowsContent() {
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Workflow Templates</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Approval chains per document type. Each template is versioned: edit a draft, activate it, and create a new
-          version to change it later. Only one version per document type is active at a time.
+          version to change it later. A document type can have more than one active template - submitters choose
+          which one to use when more than one applies.
         </p>
       </div>
 
