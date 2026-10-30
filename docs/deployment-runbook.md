@@ -443,7 +443,7 @@ current data, so practise it on a spare server first. More in `docs/operations.m
 | Deploy, before anything starts | `the pre-upgrade backup failed` | fix the backup (disk space? database running?), or `SKIP_BACKUP=1` only if you accept the risk |
 | Deploy, publish | image scan fails | a fixable CRITICAL vulnerability: update the dependency, or record an accepted exception in `.trivyignore` with a reason |
 | Deploy, pull | `denied` pulling an image | the package is not linked to the repository, or the token lacks access: check the package settings in GitHub |
-| Deploy, last check | `/login` does not return 200 | nginx not set up, or the name does not resolve from the runner |
+| Deploy, last check | `/login` does not return 200 (`-> 000`) | nginx not set up, or the name does not resolve from the runner: see E1; for a public IP see F5 |
 | Deploy, health wait | `timed out waiting for dms-core` | look at the log lines it prints (database, Keycloak, storage settings) |
 | After login | emails never arrive | `SMTP_HOST` is still `mailpit` |
 | After login | OCR does not run | check `docker compose logs ocr-worker`; give it time to warm up; check the server has enough memory |
@@ -451,6 +451,77 @@ current data, so practise it on a spare server first. More in `docs/operations.m
 
 Still stuck: copy the failing step's log (without passwords) and the output of
 `./deploy.sh --status`, and ask for help with those.
+
+### E1. Problems met in the first real deploy (oakidocs), with fixes
+
+In the order they happened. Check the prompt first: the Docker server (`oak@oakidoc-svr`) and the
+nginx server (`oak@oakidocs`) are different machines, and several "missing file" problems were
+only a command typed on the wrong one.
+
+**Before the deploy starts**
+
+| What you see | Cause | Fix |
+|---|---|---|
+| Job stays at "Waiting for a runner to pick up this job" (`Requested labels: oakidocs`) | The runner was named `oakidocs` but its **labels** were only `self-hosted, Linux, X64` | Settings → Actions → Runners → the runner → Labels → add `oakidocs`; cancel the waiting run and start a new one. Also check `sudo ./svc.sh status` and that the runner belongs to this repository (or an organisation group that allows it) |
+| `missing configuration: vars.DEPLOY_HOST ... secrets.DEPLOY_SSH_...` | Values not in the environment `client-oakidocs`, saved under the wrong tab (Variables vs Secrets), or never generated | Variables: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `PUBLIC_URL`. Secrets: `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`, which are the files `~/.dms-clients/<name>/deploy-key` and `known_hosts` made by step A2 on the PC that ran it (Git Bash `~` is `C:\Users\<you>`). If the folder is missing, run A2 again |
+| `.env not found in /home/oak/\opt\dms/infra/production` (backslashes) | `DEPLOY_PATH` was saved as `\opt\dms`, so it became a relative path and a stray folder `~/\opt\dms` was created | Set `DEPLOY_PATH` to exactly `/opt/dms`; delete the stray folder with `rm -rf ~/'\opt\dms'` (quoted). In Windows Git Bash prefix `scp`/`ssh` commands that carry a `/path` with `MSYS_NO_PATHCONV=1` |
+| `still CHANGE_ME: #KEYCLOAK_DB_PASSWORD #S3_ACCESS_KEY ...` (names start with `#`) | Bug in `deploy.sh`: the preflight matched commented-out example lines of `.env.example` | Fixed in the code: the pattern now needs a real assignment. Until that fix is on `main` (the deploy copies `deploy.sh` from the deployed commit), delete those commented lines from the server's `.env`: `sed -i -E '/^#(NAME1\|NAME2)=CHANGE_ME$/d' .env` |
+
+**During the deploy**
+
+| What you see | Cause | Fix |
+|---|---|---|
+| All containers healthy, but `frontend via nginx: GET http://<name>/login -> 000`, then `FAILED ... did not become healthy` and `no previous tag to roll back to` | The smoke test goes through nginx and the Docker server could not reach it (`curl` said `No route to host` for `<nginx>:80`). The "no previous tag" line is normal on a first deploy | From the Docker server: `ping <nginx>` and `curl -sv http://<nginx>/login -H 'Host: <name>'`. On the nginx server: `ss -ltnp \| grep nginx`; open the port (`firewall-cmd --permanent --add-service=http && firewall-cmd --reload`); with SELinux Enforcing run `setsebool -P httpd_can_network_connect 1`. Between subnets ask the network admin to allow Docker server → nginx on 80 (or the port used) and nginx → Docker server on 3000, 8080, 8081. Then re-run the deploy; the containers are already up so it is quick |
+| `relation "processing_jobs" does not exist` in the OCR worker log | Harmless start-up race: the OCR reaper ran before `dms-core` finished its migrations | Nothing. Look for the first `[deploy]` line above the log dump to find the real failure |
+| Grafana `unhealthy` or `starting` | Optional monitoring service; the deploy only warns | Ignore for the release; later `docker logs --tail 30 oakdms-grafana` |
+
+**Logging in**
+
+| What you see | Cause | Fix |
+|---|---|---|
+| Where is the superadmin password? | Generated at setup | User `superadmin@gmail.com`; the password is the line `KEYCLOAK_SUPERADMIN_PASSWORD=` in `infra/secrets/<name>.env` (or `~/.dms-clients/<name>/env`), same as the server's `.env`. Print only that line with `grep`, from the right folder (`infra/secrets/...` is relative to the project). It is set only if the account has no password yet, as a *temporary* one: Keycloak asks for a new one at first login |
+| "Timeout when waiting for 3rd party check iframe message" | The address in the browser differs from `PUBLIC_URL`, so Keycloak's iframe cannot load (for example opened by IP address, or from outside where the private name does not resolve); blocked third-party cookies can also cause it | Open exactly `PUBLIC_URL`. Check `<PUBLIC_URL>/realms/oak-dms/protocol/openid-connect/3p-cookies/step1.html` loads; look at the first failing request in the browser's Network tab; try a private window |
+| Superadmin login rejected | Password changed earlier, or never applied | Reset it (below) |
+
+Reset the superadmin password (the Keycloak console is not exposed by nginx). On the Docker
+server; secrets travel as environment variables so they are neither shown nor kept in the shell
+history. `kcadm.sh` cannot read a password from a pipe ("Console is not active"), and
+`kcadm.sh config truncate` does not exist in this version:
+
+```bash
+cd /opt/dms/infra/production
+pw="$(grep '^KEYCLOAK_ADMIN_PASSWORD=' .env | tail -n1 | cut -d= -f2- | tr -d '\r')"
+read -rs -p "New superadmin password: " NEWPW; echo
+docker exec -e PW="$pw" -e NEWPW="$NEWPW" oakdms-keycloak sh -c '
+  /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password "$PW" &&
+  /opt/keycloak/bin/kcadm.sh set-password -r oak-dms --username superadmin@gmail.com --new-password "$NEWPW"'
+unset pw NEWPW
+docker exec oakdms-keycloak sh -c 'rm -f "$HOME/.keycloak/kcadm.config"'
+```
+
+The browser alternative: `ssh -L 8081:<docker-server>:8081 oak@<docker-server>`, open
+`http://localhost:8081`, sign in as `admin` with `KEYCLOAK_ADMIN_PASSWORD`, realm **oak-dms** →
+Users → the user → Credentials → Reset password (Temporary off).
+
+**CI problems fixed along the way**
+
+| Failure | Cause | Fix |
+|---|---|---|
+| `WatermarkServiceIT` flaky (two jobs for one key) | the worker failed fast and released the idempotency key | the job queue is mocked in that test |
+| `ImpersonationIT` HTTP 500 on admin password reset | no SMTP in CI; the mail failure propagated | `JavaMailSender` mocked in the test |
+| Watermark audit counted 0 | `WATERMARK_COMPLETED` is written just after the status commit | tests poll for it (`auditCountAfterWorker`) |
+| Trivy CRITICALs in the images | old Tomcat, Netty, Spring, brotli-libs, Tika, Next.js | newer versions pinned in `pom.xml`; `apk upgrade` in the Dockerfile; Next 16.4.3 |
+| "OCR worker unit tests" shown as skipped | by design: they run for pull requests into `develop`; PRs into `main` use `ocr-accuracy-gate.yml` | none |
+
+**After the first deploy**
+
+1. Change the SSH password of the deploy user and then disable password login (deploys use the key).
+2. Restrict 3000, 8080 and 8081 on the Docker server to the nginx server (see A3: Docker's
+   published ports bypass a normal host firewall).
+3. Remove duplicate lines added to `/etc/hosts` while testing.
+4. First backup: `./backup.sh --label first`.
+5. Branch protection on `main`; required reviewers on the client's environment.
+6. Rotate any secret that was ever printed in a chat or log.
 
 ---
 
@@ -627,6 +698,43 @@ plain HTTP from private addresses, so exposing the site beyond the LAN **require
    on every run, so logins keep working over the new address.
 7. **Test:** open `https://oakidocs.ois.local`, log in, and run `curl -I https://oakidocs.ois.local/login`
    from the runner. People will be logged out once when you switch, so do it outside working hours.
+
+### F5. Reaching it from the internet through a public IP
+
+A public IP belongs to the router. Only a **port forward** on the router sends
+`<public-ip>:<port>` to `<nginx-server>:<port>`; changing nginx's port alone does nothing.
+Without access to the router, a Cloudflare Tunnel (needs a domain managed in Cloudflare) or
+Tailscale (private, for staff only) need no forwarding.
+
+1. **Prove the forward works:** open `http://<public-ip>:<port>` on a phone on mobile data and
+   watch the request arrive on the nginx server: `sudo tail -f /var/log/nginx/access.log | grep -v '^<docker-server-ip>'`.
+2. **Make nginx serve the app on that port.** A default `server` block in `nginx.conf` may be
+   answering it instead (oakidocs: port 5173 showed the stock page). In `conf.d/dms.conf`:
+   ```
+   listen 80 default_server;
+   listen [::]:80 default_server;
+   listen 5173 default_server;
+   listen [::]:5173 default_server;
+   server_name oakidocs.ois.local 124.43.20.218;
+   ```
+   then `sudo nginx -t && sudo systemctl reload nginx`. With SELinux or firewalld, a port nginx
+   is not already listening on needs `semanage port -a -t http_port_t -p tcp <port>` and
+   `firewall-cmd --permanent --add-port=<port>/tcp`.
+3. **The Docker server usually cannot open the public IP from inside** (no hairpin NAT; `curl`
+   prints `000`), yet the deploy's smoke test and the workflow's "Verify from the network" step
+   call `PUBLIC_URL`. Set `SMOKE_URL` to the address the server itself can use, for example
+   `http://oakidocs.ois.local`: in the server's `.env` (read by `deploy.sh`) and as a variable in the
+   client's GitHub environment (read by the workflow). Unset, nothing changes. The Keycloak
+   issuer check still compares against `PUBLIC_URL`.
+4. **Switch `PUBLIC_URL`** to `http://<public-ip>:<port>` in the GitHub environment and in the
+   server's `.env`, then redeploy. Keycloak's address, the token issuer, CORS and the redirect
+   URIs all follow `PUBLIC_URL`. After this the old private name can no longer sign in:
+   **everyone uses the one address.**
+5. The nginx template sends `Host $host`, which drops the port. Keycloak ignores it (its
+   `KC_HOSTNAME` is fixed), but if redirects lose the port, look there.
+6. Plain HTTP over the internet sends passwords unencrypted. Use it for testing only, and put a
+   domain with HTTPS in front (F4) before real use. Never forward 3000, 8080, 8081 (Keycloak
+   admin), Grafana or RabbitMQ.
 
 ---
 
