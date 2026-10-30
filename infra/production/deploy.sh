@@ -86,10 +86,12 @@ if [ -f "$SECRETS_ENV_FILE" ]; then
     fail "$SECRETS_ENV_FILE still has CHANGE_ME values"
   fi
   # A CHANGE_ME left in .env is fine for any key the secrets file supplies.
-  placeholders="$(comm -23 <(grep -E '=CHANGE_ME$' .env | cut -d= -f1 | sort -u) <(defined_keys "$SECRETS_ENV_FILE") | grep -vxFf <(unneeded_secrets) || true)"
+  placeholders="$(comm -23 <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=CHANGE_ME$' .env | cut -d= -f1 | sort -u) <(defined_keys "$SECRETS_ENV_FILE") | grep -vxFf <(unneeded_secrets) || true)"
 else
   log "secrets: from .env (no $SECRETS_ENV_FILE)"
-  placeholders="$(grep -E '=CHANGE_ME$' .env | cut -d= -f1 | grep -vxFf <(unneeded_secrets) || true)"
+  # Anchored to a real assignment: .env.example carries commented-out examples
+  # (#S3_ACCESS_KEY=CHANGE_ME) that must not count as unfilled secrets.
+  placeholders="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=CHANGE_ME$' .env | cut -d= -f1 | grep -vxFf <(unneeded_secrets) || true)"
 fi
 [ -z "$placeholders" ] || fail "still CHANGE_ME: $(echo "$placeholders" | tr '\n' ' ')"
 
@@ -143,9 +145,15 @@ wait_for_health() {
 
 smoke_test() {
   [ "${SKIP_NGINX_CHECK:-0}" = "1" ] && { log "SKIP_NGINX_CHECK=1 - skipping nginx checks"; return 0; }
-  local url code
-  url="$(env_value PUBLIC_URL)"
-  [ -n "$url" ] || { log "PUBLIC_URL missing from .env"; return 1; }
+  local url code public
+  public="$(env_value PUBLIC_URL)"
+  [ -n "$public" ] || { log "PUBLIC_URL missing from .env"; return 1; }
+  # SMOKE_URL (optional, in .env): where THIS server reaches nginx. Set it when
+  # PUBLIC_URL is an address the server cannot reach itself, e.g. a public IP
+  # behind a router without hairpin NAT. Keycloak still reports PUBLIC_URL as
+  # its issuer whatever address it is asked on, so that check keeps using it.
+  url="$(env_value SMOKE_URL)"
+  url="${url:-$public}"
 
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url/login" || true)"
   [ "$code" = "200" ] || { log "frontend via nginx: GET $url/login -> $code (want 200)"; return 1; }
@@ -161,10 +169,10 @@ smoke_test() {
 
   # The issuer must equal what dms-core validates tokens against.
   if curl -fsS --max-time 10 "$url/realms/oak-dms/.well-known/openid-configuration" \
-       | grep -q "\"issuer\":\"$url/realms/oak-dms\""; then
-    log "Keycloak via nginx OK (issuer $url/realms/oak-dms)"
+       | grep -q "\"issuer\":\"$public/realms/oak-dms\""; then
+    log "Keycloak via nginx OK (issuer $public/realms/oak-dms)"
   else
-    log "Keycloak via nginx: issuer at $url/realms/oak-dms/.well-known/openid-configuration missing or not $url/realms/oak-dms"
+    log "Keycloak via nginx: issuer at $url/realms/oak-dms/.well-known/openid-configuration missing or not $public/realms/oak-dms"
     return 1
   fi
 }
