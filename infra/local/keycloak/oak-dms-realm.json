@@ -12,13 +12,13 @@
   "accessTokenLifespan": 1800,
 
   "smtpServer": {
-    "host": "mailpit",
-    "port": "1025",
+    "host": "smtp.gmail.com",
+    "port": "587",
     "from": "no-reply@oakdms.local",
-    "fromDisplayName": "Oak DMS",
-    "auth": "false",
+    "fromDisplayName": "OAK iDocs",
+    "auth": "true",
     "ssl": "false",
-    "starttls": "false"
+    "starttls": "true"
   },
 
   "roles": {
@@ -89,6 +89,10 @@
         "web-origins",
         "acr",
         "oak-dms-tenant"
+      ],
+
+      "optionalClientScopes": [
+        "offline_access"
       ],
 
       "protocolMappers": [
@@ -386,7 +390,7 @@
       "enabled": true,
       "firstName": "Super",
       "lastName": "Admin",
-      "realmRoles": ["PLATFORM_ADMIN"]
+      "realmRoles": ["PLATFORM_ADMIN", "default-roles-oak-dms"]
     }
   ]
 }

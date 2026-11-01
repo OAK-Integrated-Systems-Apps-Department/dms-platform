@@ -1,9 +1,11 @@
+import type { Metadata } from "next"
 import { Inter, IBM_Plex_Mono } from "next/font/google"
 import { cookies } from "next/headers"
 
 import "./globals.css"
 import { Providers } from "@/components/providers/providers"
 import { SIDEBAR_COOKIE_NAME } from "@/components/ui/sidebar"
+import { APP_NAME } from "@/lib/app-config"
 import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -19,6 +21,13 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
   variable: "--font-mono",
 })
+
+// One place for the browser-tab title. A page that exports `metadata` (or a layout
+// beside it, for client-component pages) gets "<its title> - <APP_NAME>"; anything
+// that doesn't gets just APP_NAME. Signed-in screens set theirs with usePageTitle.
+export const metadata: Metadata = {
+  title: { default: APP_NAME, template: `%s - ${APP_NAME}` },
+}
 
 export default async function RootLayout({
   children,

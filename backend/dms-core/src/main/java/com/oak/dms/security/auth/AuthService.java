@@ -88,7 +88,19 @@ public class AuthService {
      */
     public void login(String username, String password, String totp, boolean rememberMe,
                        HttpServletResponse response) {
-        KeycloakAuthClient.GrantResult result = keycloakAuthClient.passwordGrant(username, password, totp);
+        KeycloakAuthClient.GrantResult result =
+                keycloakAuthClient.passwordGrant(username, password, totp, rememberMe);
+        if (rememberMe && result instanceof KeycloakAuthClient.GrantResult.Failure scopeFailure
+                && ("invalid_scope".equals(scopeFailure.keycloakError())
+                        || "not_allowed".equals(scopeFailure.keycloakError()))) {
+            // invalid_scope: the client doesn't allow offline_access yet; not_allowed: the user
+            // lacks the offline_access role. Either way the credentials were fine (neither is
+            // reported for a wrong password, so this never doubles a failed-login count): sign in
+            // anyway, with a "remembered" session that only lasts the SSO lifetime.
+            log.warn("Keycloak refused the offline_access scope for '{}' ({}) - Remember me will not outlast "
+                    + "the SSO session. Re-run keycloak-bootstrap.", username, scopeFailure.keycloakError());
+            result = keycloakAuthClient.passwordGrant(username, password, totp, false);
+        }
         if (result instanceof KeycloakAuthClient.GrantResult.Failure failure) {
             // No actor/tenant is resolved here on purpose: a failed grant
             // must never be used to confirm whether `username` belongs to
@@ -200,12 +212,10 @@ public class AuthService {
 
     /**
      * Exchanges the refresh-token cookie for a fresh token pair, rewriting
-     * both cookies. {@code rememberMe} state isn't itself stored anywhere
-     * server-side, so a refresh always re-issues the refresh cookie as
-     * persistent if one was already present as persistent - in practice,
-     * the browser only sends a persistent refresh cookie back at all if
-     * the original login was rememberMe=true, so mirroring "was a refresh
-     * cookie present" is equivalent without needing separate state.
+     * both cookies. {@code rememberMe} state isn't stored anywhere
+     * server-side; it is read off the token instead: a "Remember me" login
+     * holds an offline token (no expiry reported), so the refresh cookie stays
+     * persistent exactly when the token is one.
      *
      * Deliberately not audited: same reasoning as {@link #recordLastLogin}
      * not being called from here - silently renewing an already-valid
@@ -224,7 +234,10 @@ public class AuthService {
             throw new SessionExpiredException();
         }
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
-        cookieService.writeSessionCookies(response, tokens, true);
+        // An offline token (a "Remember me" login) reports no expiry; anything
+        // else was a plain session, and must not turn persistent just because
+        // it was refreshed.
+        cookieService.writeSessionCookies(response, tokens, tokens.refreshExpiresInSeconds() == 0);
     }
 
     /** Revokes the refresh token in Keycloak (best-effort) and always clears the local cookies. */

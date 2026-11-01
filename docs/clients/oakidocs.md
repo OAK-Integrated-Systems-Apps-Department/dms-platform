@@ -105,6 +105,11 @@ Then `nginx -t && systemctl reload nginx`. Keep the rest of the file as it is: t
 Actions -> Deploy -> Run workflow, `clients: oakidocs`. The post-deploy check requests
 `PUBLIC_URL/login`, so `oakidocs.ois.local` must resolve from the runner.
 
+## If something fails
+
+Every problem met during the first deploy, with its cause and fix, is in
+[deployment-runbook.md](../deployment-runbook.md), Part E1 (problems and fixes) and F5 (public IP).
+
 ## Not decided here
 
 - HTTP or HTTPS for the public name (affects `PUBLIC_URL`, `AUTH_COOKIE_SECURE` and

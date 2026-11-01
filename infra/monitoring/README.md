@@ -123,8 +123,9 @@ through (`SMTP_*` in `infra/production/.env`); the only new setting is who
 receives them:
 
 - `ALERT_EMAIL_TO` - one address, or several separated by commas. **Empty by
-  default in production**, so nothing is sent until you set it. Locally it
-  defaults to `alerts@oakdms.local`, which Mailpit catches.
+  default** (production and local), so nothing is sent until you set it.
+  Locally it goes out through the Gmail account in `infra/local/.env`
+  (`SMTP_USERNAME` / `SMTP_PASSWORD`).
 - `ALERT_LINK` - optional; put the DMS address in the email as a link to the
   System Monitoring screen.
 
