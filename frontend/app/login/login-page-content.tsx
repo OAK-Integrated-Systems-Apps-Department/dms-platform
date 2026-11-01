@@ -8,19 +8,14 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import {
   ArrowRight,
-  Eye,
-  EyeOff,
-  FileSearch,
-  FileText,
-  KeyRound,
   Layers,
   Lock,
   ShieldCheck,
   User,
-  Users,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { LoginHeadline, LoginSpheres } from "@/components/auth/login-hero"
 import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
 import {
   loginCredentialsSchema,
@@ -108,29 +103,10 @@ async function login(
 }
 
 const inputClass =
-  "w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] py-3 pr-3.5 pl-10 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+  "w-full rounded-xl border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
 
 const primaryButtonClass =
-  "group flex w-full items-center justify-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary py-3 text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase shadow-[0_6px_18px_color-mix(in_srgb,var(--primary)_30%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_10px_24px_color-mix(in_srgb,var(--primary)_38%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
-
-/** What the product offers, shown beside the form on wide screens. */
-const HIGHLIGHTS = [
-  {
-    icon: Lock,
-    title: "Controlled access",
-    text: "Permissions follow roles and departments, so people see only what they should.",
-  },
-  {
-    icon: FileSearch,
-    title: "Easy to find",
-    text: "Metadata and OCR make scanned documents searchable.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Fully audited",
-    text: "Every view and change is recorded.",
-  },
-] as const
+  "group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
 
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
@@ -233,308 +209,260 @@ export function LoginPageContent() {
   }
 
   return (
-    <div className="grid min-h-screen bg-background lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      {/* Brand panel: wide screens only */}
-      <aside
-        aria-hidden="true"
-        className="relative hidden flex-col justify-between gap-8 overflow-hidden bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-10 text-primary-foreground lg:flex xl:p-12"
-      >
-        {/* Dot grid, fading out toward the bottom */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-60"
-          style={{
-            backgroundImage:
-              "radial-gradient(rgb(255 255 255 / 0.18) 1px, transparent 1px)",
-            backgroundSize: "22px 22px",
-            maskImage: "linear-gradient(to bottom, black, transparent 85%)",
-            WebkitMaskImage:
-              "linear-gradient(to bottom, black, transparent 85%)",
-          }}
-        />
-        {/* Soft glows */}
-        <div className="pointer-events-none absolute -top-32 -right-24 size-[520px] rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.18),transparent)]" />
-        <div className="pointer-events-none absolute -bottom-40 -left-32 size-[560px] rounded-full bg-[radial-gradient(closest-side,rgb(0_0_0/0.28),transparent)]" />
+    <div className="flex min-h-screen items-center justify-center bg-background bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
+      {/* One rounded card, split: brand panel | form */}
+      <div className="grid w-full lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
+        {/* Brand panel: wide screens only */}
+        <aside
+          aria-hidden="true"
+          className="relative hidden flex-col overflow-hidden bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-10 text-primary-foreground lg:flex xl:p-12 [@media(max-height:760px)]:lg:p-7"
+        >
+          {/* Oak-leaf photo, tinted into the brand green and drifting slowly */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.14] mix-blend-luminosity"
+            style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
+          />
+          {/* Bobbing spheres */}
+          <LoginSpheres />
+          {/* Aurora glow */}
+          <div className="pointer-events-none absolute top-1/3 -left-24 size-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-            <Layers size={22} />
-          </div>
-          <div>
-            <div className="font-heading text-lg font-semibold tracking-[-0.01em]">
-              {APP_NAME}
+          <div className="relative flex items-center gap-3">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+              <Layers size={22} />
             </div>
-            <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
-              DOCUMENT VAULT
-            </div>
-          </div>
-        </div>
-
-        <div className="relative mx-auto w-full max-w-[520px] text-center">
-          <h2 className="font-heading text-[28px] leading-[1.15] font-semibold tracking-[-0.025em] xl:text-[36px] xl:leading-[1.12]">
-            Your documents, organised and under control.
-          </h2>
-
-          {/* Decorative illustration: a vault ringed by what it holds */}
-          <div className="relative mx-auto mt-12 size-[190px] xl:mt-14 xl:size-[260px] [@media(max-height:820px)]:size-[190px]">
-            <div className="absolute inset-0 rounded-full border border-white/20" />
-            <div className="absolute inset-[11%] rounded-full border border-dashed border-white/25" />
-            <div className="absolute inset-[22%] rounded-full bg-white/10 ring-1 ring-white/25" />
-            <div className="absolute inset-[30%] flex items-center justify-center rounded-full bg-white text-primary shadow-[0_12px_32px_rgb(0_0_0/0.28)]">
-              <ShieldCheck size={32} />
-            </div>
-            {[
-              {
-                icon: FileText,
-                pos: "top-0 left-1/2 -translate-x-1/2 -translate-y-1/2",
-              },
-              {
-                icon: FileSearch,
-                pos: "top-1/2 right-0 translate-x-1/2 -translate-y-1/2",
-              },
-              {
-                icon: Users,
-                pos: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2",
-              },
-              {
-                icon: Lock,
-                pos: "top-1/2 left-0 -translate-x-1/2 -translate-y-1/2",
-              },
-            ].map(({ icon: Icon, pos }, i) => (
-              <div
-                key={i}
-                className={`absolute flex size-11 items-center justify-center rounded-xl bg-white/20 shadow-[0_8px_20px_rgb(0_0_0/0.2)] ring-1 ring-white/35 ${pos}`}
-              >
-                <Icon size={19} />
-              </div>
-            ))}
-          </div>
-
-          <ul className="mt-10 grid grid-cols-3 gap-3 text-left xl:mt-14">
-            {HIGHLIGHTS.map(({ icon: Icon, title, text }) => (
-              <li
-                key={title}
-                className="rounded-2xl border border-white/15 bg-white/10 p-4"
-              >
-                <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/20">
-                  <Icon size={17} />
-                </div>
-                <div className="text-[13px] font-semibold">{title}</div>
-                <p className="mt-1 hidden text-[12px] leading-[1.45] opacity-70 xl:block [@media(max-height:820px)]:hidden">
-                  {text}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="relative text-xs opacity-60">{APP_NAME}</div>
-      </aside>
-
-      {/* Form panel */}
-      <main className="relative flex items-center justify-center overflow-hidden px-5 py-10 sm:px-10">
-        <div className="relative w-full max-w-[440px] sm:rounded-2xl sm:border sm:border-border sm:bg-card sm:p-10 sm:shadow-[0_20px_50px_color-mix(in_srgb,var(--primary)_10%,transparent)]">
-          {/* Compact brand banner: replaces the brand panel below `lg` */}
-          <div className="relative mb-8 overflow-hidden rounded-2xl bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
-            />
-            <div className="relative flex items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-                <Layers size={20} />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate font-heading text-lg font-semibold tracking-[-0.01em]">
-                  {APP_NAME}
-                </div>
-                <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
-                  DOCUMENT VAULT
-                </div>
-              </div>
-            </div>
-            <p className="relative mt-4 text-[13px] leading-[1.5] opacity-85">
-              Your documents, organised and under control.
-            </p>
-          </div>
-
-          {step === "credentials" ? (
-            <>
-              <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-foreground">
-                Welcome back
-              </h1>
-              <p className="mt-1.5 mb-8 text-sm text-muted-foreground">
-                Sign in to continue to {APP_NAME}.
-              </p>
-
-              {searchParams.get("reason") === "organisation-inactive" && (
-                <p
-                  role="alert"
-                  className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-                >
-                  You were signed out because your organisation&apos;s account
-                  is suspended or closed. Contact your administrator.
-                </p>
-              )}
-
-              <form
-                onSubmit={handleSubmit(handleCredentialsSubmit)}
-                noValidate
-                className="space-y-5"
-              >
-                <div>
-                  <label
-                    htmlFor="username"
-                    className="mb-2 block text-[13px] font-semibold text-foreground"
-                  >
-                    Username or email
-                  </label>
-                  <div className="relative">
-                    <User
-                      size={16}
-                      className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--ink-faint)]"
-                    />
-                    <input
-                      id="username"
-                      type="text"
-                      placeholder="you@company.com"
-                      autoComplete="username"
-                      aria-invalid={
-                        credentialErrors.username ? true : undefined
-                      }
-                      {...register("username")}
-                      className={inputClass}
-                    />
-                  </div>
-                  {credentialErrors.username && (
-                    <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                      {credentialErrors.username.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="password"
-                    className="mb-2 block text-[13px] font-semibold text-foreground"
-                  >
-                    Password
-                  </label>
-                  <div className="relative">
-                    <KeyRound
-                      size={16}
-                      className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--ink-faint)]"
-                    />
-                    <input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter your password"
-                      autoComplete="current-password"
-                      aria-invalid={
-                        credentialErrors.password ? true : undefined
-                      }
-                      {...register("password")}
-                      className={`${inputClass} pr-11`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      tabIndex={-1}
-                      aria-label={
-                        showPassword ? "Hide password" : "Show password"
-                      }
-                      aria-pressed={showPassword}
-                      className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                    </button>
-                  </div>
-                  {credentialErrors.password && (
-                    <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                      {credentialErrors.password.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="size-3.5 accent-primary"
-                    />
-                    Remember me
-                  </label>
-                  <a
-                    href="/reset-password"
-                    className="text-[13px] font-semibold text-primary hover:underline"
-                  >
-                    Forgot password?
-                  </a>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={mutation.isPending}
-                  className={primaryButtonClass}
-                >
-                  {mutation.isPending ? (
-                    "Signing in…"
-                  ) : (
-                    <>
-                      Sign in
-                      <ArrowRight
-                        size={16}
-                        className="transition-transform group-hover:translate-x-0.5"
-                      />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <p className="mt-8 text-center text-xs text-[var(--ink-faint)]">
-                Need access? Contact your workspace administrator.
-              </p>
-            </>
-          ) : (
             <div>
-              <div className="bg-primary-tint mb-5 flex size-[52px] items-center justify-center rounded-full border border-border">
-                <ShieldCheck size={24} className="text-primary" />
+              <div className="font-heading text-lg font-semibold tracking-[-0.01em]">
+                {APP_NAME}
               </div>
-              <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-foreground">
-                Two-factor authentication
-              </h1>
-              <p className="mt-1.5 mb-8 text-sm text-muted-foreground">
-                Enter the code from your authenticator app.
-              </p>
+              <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
+                DOCUMENT VAULT
+              </div>
+            </div>
+          </div>
 
-              <form onSubmit={handleOtpSubmit}>
-                <OtpInput
-                  value={code}
-                  onChange={setCode}
-                  disabled={mutation.isPending}
-                />
+          <div className="relative my-auto py-8">
+            <LoginHeadline appName={APP_NAME} />
+          </div>
+        </aside>
+
+        {/* Form panel */}
+        <main className="relative flex items-center justify-center overflow-hidden bg-card px-5 py-10 sm:px-10 lg:px-12 xl:px-16">
+          {/* Corner sphere, echoing the brand panel */}
+          <div
+            aria-hidden="true"
+            className="lg-bob pointer-events-none absolute -right-20 -bottom-24 hidden size-[220px] rounded-full opacity-90 shadow-[inset_-10px_-14px_36px_rgb(0_0_0/0.3)] lg:block"
+            style={{
+              background:
+                "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)",
+              animationDuration: "20s",
+            }}
+          />
+
+          <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
+            {/* Compact brand banner: replaces the brand panel below `lg` */}
+            <div className="relative mb-8 overflow-hidden rounded-2xl bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
+              />
+              <div className="relative flex items-center gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <Layers size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-heading text-lg font-semibold tracking-[-0.01em]">
+                    {APP_NAME}
+                  </div>
+                  <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
+                    DOCUMENT VAULT
+                  </div>
+                </div>
+              </div>
+              <p className="relative mt-4 text-[13px] leading-[1.5] opacity-85">
+                Your documents, organised and under control.
+              </p>
+            </div>
+
+            {step === "credentials" ? (
+              <>
+                <h1 className="font-heading text-[40px] leading-none font-extrabold tracking-tight text-foreground">
+                  Sign in
+                </h1>
+                <p className="mt-3 mb-8 text-sm text-muted-foreground">
+                  Welcome back. Sign in to continue to {APP_NAME}.
+                </p>
+
+                {searchParams.get("reason") === "organisation-inactive" && (
+                  <p
+                    role="alert"
+                    className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
+                  >
+                    You were signed out because your organisation&apos;s account
+                    is suspended or closed. Contact your administrator.
+                  </p>
+                )}
+
+                <form
+                  onSubmit={handleSubmit(handleCredentialsSubmit)}
+                  noValidate
+                  className="space-y-5"
+                >
+                  <div>
+                    <label
+                      htmlFor="username"
+                      className="mb-2 block text-[13px] font-semibold text-foreground"
+                    >
+                      Username or email
+                    </label>
+                    <div className="relative">
+                      <User
+                        size={16}
+                        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-foreground"
+                      />
+                      <input
+                        id="username"
+                        type="text"
+                        placeholder="you@company.com"
+                        autoComplete="username"
+                        aria-invalid={
+                          credentialErrors.username ? true : undefined
+                        }
+                        {...register("username")}
+                        className={inputClass}
+                      />
+                    </div>
+                    {credentialErrors.username && (
+                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                        {credentialErrors.username.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="password"
+                      className="mb-2 block text-[13px] font-semibold text-foreground"
+                    >
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock
+                        size={16}
+                        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-foreground"
+                      />
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        autoComplete="current-password"
+                        aria-invalid={
+                          credentialErrors.password ? true : undefined
+                        }
+                        {...register("password")}
+                        className={`${inputClass} pr-11`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        tabIndex={-1}
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
+                        aria-pressed={showPassword}
+                        className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
+                      >
+                        {showPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    {credentialErrors.password && (
+                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                        {credentialErrors.password.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="size-3.5 accent-primary"
+                      />
+                      Remember me
+                    </label>
+                    <a
+                      href="/reset-password"
+                      className="text-[13px] font-semibold text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </a>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={mutation.isPending}
+                    className={primaryButtonClass}
+                  >
+                    {mutation.isPending ? (
+                      "Signing in…"
+                    ) : (
+                      <>
+                        Sign in
+                        <ArrowRight
+                          size={16}
+                          className="transition-transform group-hover:translate-x-0.5"
+                        />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <p className="mt-8 text-center text-xs text-[var(--ink-faint)]">
+                  Need access? Contact your workspace administrator.
+                </p>
+              </>
+            ) : (
+              <div>
+                <div className="bg-primary-tint mb-5 flex size-[52px] items-center justify-center rounded-full border border-border">
+                  <ShieldCheck size={24} className="text-primary" />
+                </div>
+                <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-foreground">
+                  Two-factor authentication
+                </h1>
+                <p className="mt-1.5 mb-8 text-sm text-muted-foreground">
+                  Enter the code from your authenticator app.
+                </p>
+
+                <form onSubmit={handleOtpSubmit}>
+                  <OtpInput
+                    value={code}
+                    onChange={setCode}
+                    disabled={mutation.isPending}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={mutation.isPending || code.length < OTP_LENGTH}
+                    className={primaryButtonClass}
+                  >
+                    {mutation.isPending ? "Verifying…" : "Submit"}
+                  </button>
+                </form>
 
                 <button
-                  type="submit"
-                  disabled={mutation.isPending || code.length < OTP_LENGTH}
-                  className={primaryButtonClass}
+                  type="button"
+                  onClick={handleBackToCredentials}
+                  className="mt-5 text-[13px] font-semibold text-primary hover:underline"
                 >
-                  {mutation.isPending ? "Verifying…" : "Submit"}
+                  Back to sign in
                 </button>
-              </form>
-
-              <button
-                type="button"
-                onClick={handleBackToCredentials}
-                className="mt-5 text-[13px] font-semibold text-primary hover:underline"
-              >
-                Back to sign in
-              </button>
-            </div>
-          )}
-        </div>
-      </main>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

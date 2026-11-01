@@ -1,7 +1,7 @@
 // app/../proxy.ts  (same location as the old middleware.ts, at the frontend root alongside app/)
 import { NextResponse, type NextRequest } from "next/server"
 
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
 
 const PUBLIC_PATHS = ["/login", "/reset-password", "/update-password", "/error", "/login-timeout", "/session-expired"]
 
@@ -18,8 +18,14 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublicPath = PUBLIC_PATHS.some((path) => pathname.startsWith(path))
   const hasSession = Boolean(request.cookies.get(ACCESS_TOKEN_COOKIE)?.value)
+  // The access cookie only lives 30 minutes, so after a browser restart a
+  // "Remember me" visitor has just the refresh cookie. Let them through to the
+  // app: its first API call gets a 401, renews the session from that cookie and
+  // retries (lib/api-fetch.ts); if the cookie is stale the backend clears it and
+  // the app sends them to /session-expired.
+  const hasRefreshToken = Boolean(request.cookies.get(REFRESH_TOKEN_COOKIE)?.value)
 
-  if (!hasSession && !isPublicPath) {
+  if (!hasSession && !hasRefreshToken && !isPublicPath) {
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("from", pathname)
     return NextResponse.redirect(loginUrl)

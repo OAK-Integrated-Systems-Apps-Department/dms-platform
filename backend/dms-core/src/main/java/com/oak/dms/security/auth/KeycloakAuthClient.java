@@ -53,11 +53,27 @@ public class KeycloakAuthClient {
      * an absent one on some versions.
      */
     public GrantResult passwordGrant(String username, String password, String totp) {
+        return passwordGrant(username, password, totp, false);
+    }
+
+    /**
+     * As above; with {@code offline} the grant also asks for the
+     * {@code offline_access} scope, which makes the refresh token an
+     * <em>offline</em> token that outlives the SSO session (it lasts the
+     * realm's offline-session idle timeout, 30 days by default). That is what
+     * "Remember me" needs - an ordinary refresh token dies with the 30-minute
+     * SSO session whatever the cookie's lifetime is. Keycloak answers
+     * {@code invalid_scope} if the client doesn't allow the scope.
+     */
+    public GrantResult passwordGrant(String username, String password, String totp, boolean offline) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "password");
         form.add("client_id", properties.getClientId());
         form.add("username", username);
         form.add("password", password);
+        if (offline) {
+            form.add("scope", "offline_access");
+        }
         if (totp != null && !totp.isBlank()) {
             form.add("totp", totp);
         }
@@ -90,6 +106,21 @@ public class KeycloakAuthClient {
             keycloakAuthRestTemplate.postForEntity(logoutUrl(), new HttpEntity<>(form, headers), Void.class);
         } catch (RestClientException e) {
             log.warn("Keycloak logout/revoke call failed (continuing to clear local session): {}", e.getMessage());
+        }
+
+        // An offline ("Remember me") token is not ended by the logout above, and
+        // would stay usable for weeks - revoke it explicitly. Harmless for an
+        // ordinary refresh token, which is already gone by now.
+        MultiValueMap<String, String> revoke = new LinkedMultiValueMap<>();
+        revoke.add("client_id", properties.getClientId());
+        revoke.add("token", refreshToken);
+        revoke.add("token_type_hint", "refresh_token");
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            keycloakAuthRestTemplate.postForEntity(revokeUrl(), new HttpEntity<>(revoke, headers), Void.class);
+        } catch (RestClientException e) {
+            log.warn("Keycloak token revocation failed (continuing to clear local session): {}", e.getMessage());
         }
     }
 
@@ -152,6 +183,11 @@ public class KeycloakAuthClient {
     private String tokenUrl() {
         return properties.getServerUrl() + "/realms/" + properties.getRealm()
                 + "/protocol/openid-connect/token";
+    }
+
+    private String revokeUrl() {
+        return properties.getServerUrl() + "/realms/" + properties.getRealm()
+                + "/protocol/openid-connect/revoke";
     }
 
     private String logoutUrl() {
