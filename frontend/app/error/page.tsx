@@ -1,7 +1,10 @@
 // app/error/page.tsx
+import type { Metadata } from "next"
 import { Suspense } from "react"
 
 import { ErrorContent } from "./error-content"
+
+export const metadata: Metadata = { title: "Something went wrong" }
 
 /**
  * The one generic, no-detail error screen — for things like an expired or

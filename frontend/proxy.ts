@@ -39,9 +39,11 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and images. There's no local
+  // Run on everything except static assets and images (public/images/ too: the
+  // login screen shows one, and a signed-out request would otherwise be redirected
+  // to /login and come back as HTML). There's no local
   // /api to exclude anymore — every data call goes straight to your Java
   // backend (see lib/api-config.ts) — but /login etc. still need to stay
   // reachable while logged out, which PUBLIC_PATHS above handles.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images/).*)"],
 }
