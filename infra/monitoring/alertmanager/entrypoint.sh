@@ -5,11 +5,11 @@
 # bit - one less thing to be lost on a Windows checkout.
 set -eu
 
-HOST="${ALERT_SMTP_HOST:-mailpit}"
-PORT="${ALERT_SMTP_PORT:-1025}"
+HOST="${ALERT_SMTP_HOST:-smtp.gmail.com}"
+PORT="${ALERT_SMTP_PORT:-587}"
 FROM="${ALERT_SMTP_FROM:-alerts@oakdms.local}"
 USERNAME="${ALERT_SMTP_USERNAME:-}"
-STARTTLS="${ALERT_SMTP_STARTTLS:-false}"
+STARTTLS="${ALERT_SMTP_STARTTLS:-true}"
 TO="${ALERT_EMAIL_TO:-}"
 
 # Only a boolean may reach the config: this value lands unquoted in YAML.

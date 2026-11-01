@@ -163,7 +163,6 @@ scrape_configs:
           - http://keycloak:8080/realms/oak-dms
           - http://seaweedfs:8333/
           - http://gotenberg:3000/health
-          - http://mailpit:8025/
         labels:
           service: reachability
     relabel_configs:

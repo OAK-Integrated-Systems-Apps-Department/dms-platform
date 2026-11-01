@@ -93,25 +93,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # Catch-all SMTP sink, kept because the current deployment relies on it
-  # (nothing else sends mail yet). Mail sent here is NOT delivered to anyone -
-  # point SMTP_* in .env at a real relay for real delivery; this container can
-  # then be left idle. UI is localhost-only (SSH tunnel).
-  mailpit:
-    image: axllent/mailpit:v1.27
-    container_name: oakdms-mailpit
-    profiles: [mailpit]
-    restart: unless-stopped
-    # Memory ceiling.
-    mem_limit: 128m
-    ports:
-      - "127.0.0.1:8026:8025"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8025/api/v1/info"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.0
     container_name: oakdms-keycloak
@@ -202,15 +183,15 @@ services:
       # by the administrator at first login, so the installer's value is
       # never the lasting credential.
       KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY: ${KEYCLOAK_SUPERADMIN_PASSWORD_TEMPORARY:-true}
-      KEYCLOAK_SMTP_HOST: ${SMTP_HOST:-mailpit}
-      KEYCLOAK_SMTP_PORT: ${SMTP_PORT:-1025}
-      KEYCLOAK_SMTP_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
-      KEYCLOAK_SMTP_FROM_DISPLAY_NAME: ${SMTP_FROM_DISPLAY_NAME:-Oak DMS}
-      KEYCLOAK_SMTP_AUTH: ${SMTP_AUTH:-false}
+      KEYCLOAK_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      KEYCLOAK_SMTP_PORT: ${SMTP_PORT:-587}
+      KEYCLOAK_SMTP_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
+      KEYCLOAK_SMTP_FROM_DISPLAY_NAME: ${SMTP_FROM_DISPLAY_NAME:-OAK iDocs}
+      KEYCLOAK_SMTP_AUTH: ${SMTP_AUTH:-true}
       KEYCLOAK_SMTP_USER: ${SMTP_USERNAME:-}
       KEYCLOAK_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       KEYCLOAK_SMTP_SSL: ${SMTP_SSL:-false}
-      KEYCLOAK_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      KEYCLOAK_SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
     volumes:
       - ../keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
     depends_on:
@@ -379,16 +360,23 @@ services:
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
       AUDIT_CORRELATION_SECRET: ${AUDIT_CORRELATION_SECRET:?AUDIT_CORRELATION_SECRET is required}
       IMPERSONATION_SECRET: ${IMPERSONATION_SECRET:?IMPERSONATION_SECRET is required}
-      MAIL_HOST: ${SMTP_HOST:-mailpit}
-      MAIL_PORT: ${SMTP_PORT:-1025}
+      MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${SMTP_PORT:-587}
       MAIL_USERNAME: ${SMTP_USERNAME:-}
       MAIL_PASSWORD: ${SMTP_PASSWORD:-}
-      MAIL_SMTP_AUTH: ${SMTP_AUTH:-false}
-      MAIL_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
-      PASSWORD_RESET_MAIL_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
+      MAIL_SMTP_AUTH: ${SMTP_AUTH:-true}
+      MAIL_SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      # Gmail rewrites the From address to the authenticated account anyway.
+      PASSWORD_RESET_MAIL_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
+      NOTIFICATION_MAIL_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
+      WORKFLOW_NOTIFY_MAIL_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
+      SCAN_NOTIFY_MAIL_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
       # Browser, frontend and API share one origin through nginx, so CORS is
       # never actually exercised - but keep the allow-list exact anyway.
       FRONTEND_BASE_URL: ${PUBLIC_URL}
+      # The product name in emails and API docs (the frontend image has its
+      # own, baked in at build time - see frontend/lib/app-config.ts).
+      PRODUCT_NAME: ${APP_NAME:-OAK iDocs}
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       # Where documents are stored. Default FILE_SYSTEM (the documents_data
@@ -456,9 +444,6 @@ services:
         required: false
       keycloak-bootstrap:
         condition: service_completed_successfully
-      mailpit:
-        condition: service_healthy
-        required: false
       seaweedfs:
         condition: service_healthy
         required: false
@@ -648,7 +633,7 @@ services:
       retries: 5
 
   # Reachability probes for the services that expose no metrics of their own
-  # (Keycloak, SeaweedFS, Gotenberg, ClamAV, Mailpit, the frontend). Without
+  # (Keycloak, SeaweedFS, Gotenberg, ClamAV, the frontend). Without
   # this, "is it up?" is only answerable for the handful that have exporters
   # - and the ones that do not are exactly the ones whose failure leaves the
   # DMS looking healthy while uploads or sign-in quietly stop working.
@@ -726,12 +711,12 @@ services:
       # or several separated by commas. The relay itself is the same SMTP_*
       # the rest of the stack already uses, so there is nothing else to set.
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
-      ALERT_SMTP_HOST: ${SMTP_HOST:-mailpit}
-      ALERT_SMTP_PORT: ${SMTP_PORT:-1025}
-      ALERT_SMTP_FROM: ${SMTP_FROM:-no-reply@oakdms.local}
+      ALERT_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      ALERT_SMTP_PORT: ${SMTP_PORT:-587}
+      ALERT_SMTP_FROM: ${SMTP_FROM:-${SMTP_USERNAME:-no-reply@oakdms.local}}
       ALERT_SMTP_USERNAME: ${SMTP_USERNAME:-}
       ALERT_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      ALERT_SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      ALERT_SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       # Shown in the email as a link to the monitoring screen. Optional - the
       # stack does not know its own public address, so it is not guessed.
       ALERT_LINK: ${ALERT_LINK:-}

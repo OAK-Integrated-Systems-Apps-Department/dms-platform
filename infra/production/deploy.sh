@@ -45,7 +45,7 @@ fail() { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 # RabbitMQ, S3 or Azure Blob, a real SMTP relay, ...) by leaving its profile out
 # of COMPOSE_PROFILES in .env - see docs/external-services.md. A server whose
 # .env predates this setting keeps running everything it ran before.
-DEFAULT_PROFILES="postgres,redis,rabbitmq,seaweedfs,mailpit,clamav,gotenberg"
+DEFAULT_PROFILES="postgres,redis,rabbitmq,seaweedfs,clamav,gotenberg"
 if [ -z "${COMPOSE_PROFILES+x}" ] && ! grep -qE '^COMPOSE_PROFILES=' .env; then
   export COMPOSE_PROFILES="$DEFAULT_PROFILES"
   log "COMPOSE_PROFILES is not set in .env - running every bundled service ($DEFAULT_PROFILES)"
@@ -242,8 +242,13 @@ check_external_services() {
     profile="${pair%%:*}"; var="${pair##*:}"
     [[ "$active" == *",$profile,"* ]] || [ -n "$(env_value "$var")" ] || problems="$problems $var"
   done
-  if [[ "$active" != *",mailpit,"* ]] && { [ -z "$(env_value SMTP_HOST)" ] || [ "$(env_value SMTP_HOST)" = mailpit ]; }; then
-    problems="$problems SMTP_HOST"
+  # Mail goes out through a real SMTP relay (Gmail by default); the old bundled
+  # mailpit sink no longer exists, so a server still pointing at it sends nothing.
+  if [ "$(env_value SMTP_HOST)" = mailpit ]; then
+    problems="$problems SMTP_HOST(was mailpit)"
+  fi
+  if [ -z "$(env_value SMTP_USERNAME)" ] || [ -z "$(env_value SMTP_PASSWORD)" ]; then
+    log "WARNING: SMTP_USERNAME / SMTP_PASSWORD are not set in .env - no email will be delivered"
   fi
   if [[ "$active" != *",postgres,"* ]] && ! grep -qs '^KEYCLOAK_DB_PASSWORD=' .env "$SECRETS_ENV_FILE"; then
     problems="$problems KEYCLOAK_DB_PASSWORD"

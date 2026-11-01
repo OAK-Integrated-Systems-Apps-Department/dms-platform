@@ -290,8 +290,8 @@ docker exec oakdms-frontend sh -c 'grep -rlE "localhost:(8080|8081)" /app/.next 
 
 ### Admin UIs (SSH tunnel, never public)
 ```bash
-ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 8026:localhost:8026 -L 9090:localhost:9090 oak@192.168.0.10
-# Keycloak admin http://localhost:8081/admin  ·  RabbitMQ http://localhost:15672  ·  Mailpit http://localhost:8026
+ssh -L 8081:localhost:8081 -L 15672:localhost:15672 -L 9090:localhost:9090 oak@192.168.0.10
+# Keycloak admin http://localhost:8081/admin  ·  RabbitMQ http://localhost:15672
 # Prometheus (raw queries, scrape-target health) http://localhost:9090 - add a
 # "127.0.0.1:9090:9090" port binding to the prometheus service first; by default
 # it has no host port at all.
@@ -354,8 +354,12 @@ for what is collected and how to change a panel or an alert.
 - **Keycloak DB user.** Keycloak uses the `postgres` superuser (inherited
   from the local setup). A dedicated `keycloak` role owning only
   `keycloak_db` would be better.
-- **Mail.** Defaults deliver into Mailpit, so nobody receives email. Set
-  `SMTP_*` to a real relay.
+- **Mail.** Sent through Gmail SMTP by default (`smtp.gmail.com:587`, STARTTLS).
+  Set `SMTP_USERNAME` to the Gmail address and `SMTP_PASSWORD` to a Google app
+  password (needs 2-Step Verification); another relay works by changing
+  `SMTP_HOST`/`SMTP_PORT`. For the local stack the same account goes in
+  `infra/local/.env` as `SMTP_USERNAME` / `SMTP_PASSWORD` (same names as production). Gmail sends from the
+  signed-in account whatever From is configured.
 - **Upload size.** No per-file limit: nginx `client_max_body_size 0`,
   `spring.servlet.multipart` `-1` and `dms.scanning.max-file-size-bytes`
   (the `scan_engines` row) at Long.MAX_VALUE. ClamAV reads at most 2047 MB of

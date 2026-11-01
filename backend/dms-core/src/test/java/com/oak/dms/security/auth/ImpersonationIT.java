@@ -23,7 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mail.javamail.JavaMailSender;
+import com.oak.dms.common.mail.BrandedMailSender;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -87,7 +87,7 @@ class ImpersonationIT {
     // server - none runs in CI - it answers 500. These tests are about audit
     // attribution, not delivery, so the sender is stubbed out.
     @MockitoBean
-    private JavaMailSender mailSender;
+    private BrandedMailSender mailSender;
 
     private MockMvc mockMvc;
     /**

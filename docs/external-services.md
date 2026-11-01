@@ -15,7 +15,7 @@ Keycloak (Keycloak's database is configurable, below).
 `COMPOSE_PROFILES` in `.env` lists the bundled services to run:
 
 ```
-COMPOSE_PROFILES=postgres,redis,rabbitmq,seaweedfs,mailpit,clamav,gotenberg
+COMPOSE_PROFILES=postgres,redis,rabbitmq,seaweedfs,clamav,gotenberg
 ```
 
 Remove a name and that container (and its metrics exporter) is not started; fill in
@@ -31,7 +31,6 @@ is missing.
 | `redis` | Redis + its exporter | `REDIS_*` |
 | `rabbitmq` | RabbitMQ | `RABBITMQ_*` |
 | `seaweedfs` | the bundled S3 | `STORAGE_PROVIDER=S3` or `AZURE_BLOB` + `S3_*` / `AZURE_STORAGE_*` |
-| `mailpit` | a mail sink that delivers nothing | `SMTP_*` |
 | `clamav` | malware scanner | `CLAMAV_HOST`, `CLAMAV_PORT` |
 | `gotenberg` | Office-to-PDF previews | `PREVIEW_CONVERTER_URL` |
 
@@ -108,7 +107,7 @@ REDIS_HOST=...  REDIS_PORT=6380  SPRING_DATA_REDIS_SSL_ENABLED=true
 RABBITMQ_HOST=...  RABBITMQ_PORT=5671  RABBITMQ_USERNAME=dms
 RABBITMQ_SCHEME=amqps  SPRING_RABBITMQ_SSL_ENABLED=true
 
-# Mail: SMTP_HOST must not stay "mailpit" once that profile is off
+# Mail: always an external relay (Gmail by default) - set SMTP_USERNAME/SMTP_PASSWORD
 SMTP_HOST=smtp.example.com  SMTP_PORT=587  SMTP_AUTH=true  SMTP_STARTTLS=true
 SMTP_USERNAME=...  SMTP_PASSWORD=...  SMTP_FROM=no-reply@client.example
 

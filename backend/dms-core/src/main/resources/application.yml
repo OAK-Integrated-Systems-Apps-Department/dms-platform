@@ -88,21 +88,27 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/oak-dms}
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/oak-dms/protocol/openid-connect/certs}
 
-  # Used only by PasswordResetService's own reset-link emails - unrelated
-  # to Keycloak's SMTP config (infra/local/docker-compose.yml's mailpit
-  # service / KEYCLOAK_SMTP_* env vars), which is a separate SMTP client
-  # inside Keycloak itself for its own account-creation/verify-email mail.
+  # All of dms-core's outgoing mail (reset/invite links, notifications,
+  # workflow and scan alerts). Defaults to Gmail SMTP: set MAIL_USERNAME to
+  # the Gmail address and MAIL_PASSWORD to a Google *app password* (needs
+  # 2-Step Verification; a normal account password is rejected). Any other
+  # relay works by overriding MAIL_HOST/MAIL_PORT. Unrelated to Keycloak's
+  # SMTP config (KEYCLOAK_SMTP_* env vars), a separate client inside Keycloak.
   mail:
-    host: ${MAIL_HOST:localhost}
-    port: ${MAIL_PORT:1026}
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: ${MAIL_SMTP_AUTH:false}
+          auth: ${MAIL_SMTP_AUTH:true}
           starttls:
-            enable: ${MAIL_SMTP_STARTTLS:false}
+            enable: ${MAIL_SMTP_STARTTLS:true}
+          # A dead relay must fail the send, not hang a request thread.
+          connectiontimeout: 10000
+          timeout: 15000
+          writetimeout: 15000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -137,7 +143,7 @@ app:
     # frontend's own lib/app-config.ts APP_NAME constant - the two run in
     # different processes/languages and have no shared config source, so
     # keep them in sync by hand if the brand name changes.
-    product-name: ${PRODUCT_NAME:Ledger}
+    product-name: ${PRODUCT_NAME:OAK iDocs}
   cors:
     # Comma-separated exact origins - see SecurityConfig for why this can
     # never be a wildcard now that CORS allows credentials.
@@ -159,7 +165,7 @@ app:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
   password-reset:
     token-ttl-minutes: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:30}
-    mail-from: ${PASSWORD_RESET_MAIL_FROM:no-reply@oakdms.local}
+    mail-from: ${PASSWORD_RESET_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
   audit:
     correlation:
       # Signs the X-Correlation-Id continuation token (see
@@ -182,6 +188,8 @@ app:
     session-minutes: ${IMPERSONATION_SESSION_MINUTES:30}
 
 dms:
+  notification:
+    mail-from: ${NOTIFICATION_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
   # Folder/document access (V53/V54): each tenant's folder tree and each
   # user's access entries, kept between requests until anything that decides
   # access changes (an access generation moved on by database triggers, V61).
@@ -573,7 +581,7 @@ dms:
   workflow:
     notifications:
       enabled: ${WORKFLOW_NOTIFY_ENABLED:true}
-      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+      mail-from: ${WORKFLOW_NOTIFY_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
     # Phase 2: reminders before a task's due time and escalation when it
     # passes (WorkflowSlaScheduler). Safe with several app instances - each
     # task is handled under its instance row lock taken FOR UPDATE SKIP LOCKED.
@@ -625,10 +633,10 @@ dms:
     # administrator who can act on quarantine (docm.quarantine.view holders +
     # the tenant's TENANT_ADMIN users). Sent after the quarantine commits, off
     # the upload thread; a mail failure never affects the quarantine itself.
-    # Uses spring.mail.* (Mailpit locally, http://localhost:8026).
+    # Uses spring.mail.*.
     notifications:
       enabled: ${SCAN_NOTIFY_ENABLED:true}
-      mail-from: ${SCAN_NOTIFY_MAIL_FROM:no-reply@oakdms.local}
+      mail-from: ${SCAN_NOTIFY_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
     retry:
       poll-interval-ms: ${SCAN_RETRY_POLL_INTERVAL_MS:30000}
       max-attempts: ${SCAN_RETRY_MAX_ATTEMPTS:10}

@@ -125,7 +125,7 @@ a while.
   key login works, turn off password login for `oak` on 192.168.0.51.
 - **Review the server's `.env`** (`/opt/dms/infra/production/.env`):
   - `KEYCLOAK_SUPERADMIN_USERNAME` - the default is `superadmin@gmail.com`; use a real address.
-  - `SMTP_HOST` - mail is not delivered while it is `mailpit`; point it at a real relay.
+  - `SMTP_USERNAME` / `SMTP_PASSWORD` - the Gmail address and a Google app password; no mail is sent without them.
   - `ALERT_EMAIL_TO` - blank means monitoring alerts are not emailed.
 - **Take a first backup** on the Docker server and copy it off the server:
   `cd /opt/dms/infra/production && ./backup.sh --label first`
