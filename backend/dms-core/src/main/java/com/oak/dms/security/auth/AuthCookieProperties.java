@@ -1,5 +1,7 @@
 package com.oak.dms.security.auth;
 
+import java.time.Duration;
+
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -53,4 +55,12 @@ public class AuthCookieProperties {
     private String domain;
 
     private String path = "/";
+
+    /**
+     * How long the refresh cookie of a "Remember me" login lives when Keycloak
+     * gives the token no expiry of its own (an offline token reports
+     * {@code refresh_expires_in: 0}). Keep it at or below the realm's offline
+     * session idle timeout (30 days).
+     */
+    private Duration rememberMeMaxAge = Duration.ofDays(30);
 }

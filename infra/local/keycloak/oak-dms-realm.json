@@ -91,6 +91,10 @@
         "oak-dms-tenant"
       ],
 
+      "optionalClientScopes": [
+        "offline_access"
+      ],
+
       "protocolMappers": [
         {
           "name": "sub",
@@ -386,7 +390,7 @@
       "enabled": true,
       "firstName": "Super",
       "lastName": "Admin",
-      "realmRoles": ["PLATFORM_ADMIN"]
+      "realmRoles": ["PLATFORM_ADMIN", "default-roles-oak-dms"]
     }
   ]
 }

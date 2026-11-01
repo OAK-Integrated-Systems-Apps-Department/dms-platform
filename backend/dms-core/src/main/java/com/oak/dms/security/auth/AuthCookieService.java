@@ -48,8 +48,18 @@ public class AuthCookieService {
      */
     public void writeSessionCookies(HttpServletResponse response, KeycloakTokenResponse tokens, boolean rememberMe) {
         addCookie(response, ACCESS_TOKEN_COOKIE, tokens.accessToken(), tokens.expiresInSeconds());
-        addCookie(response, REFRESH_TOKEN_COOKIE, tokens.refreshToken(),
-                rememberMe ? tokens.refreshExpiresInSeconds() : -1);
+        addCookie(response, REFRESH_TOKEN_COOKIE, tokens.refreshToken(), rememberMe ? persistentMaxAge(tokens) : -1);
+    }
+
+    /**
+     * An offline token reports no expiry ({@code refresh_expires_in: 0}), and
+     * a Max-Age of 0 would delete the cookie on the spot - so that case gets
+     * the configured remember-me lifetime instead.
+     */
+    private long persistentMaxAge(KeycloakTokenResponse tokens) {
+        return tokens.refreshExpiresInSeconds() > 0
+                ? tokens.refreshExpiresInSeconds()
+                : properties.getRememberMeMaxAge().toSeconds();
     }
 
     /** Overwrites both cookies with an immediately-expired, empty value so the browser deletes them. */
