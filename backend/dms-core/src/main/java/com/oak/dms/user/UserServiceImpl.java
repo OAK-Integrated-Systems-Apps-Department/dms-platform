@@ -7,6 +7,8 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
+import com.oak.dms.common.exception.MailDeliveryException;
+import org.springframework.mail.MailException;
 import com.oak.dms.common.exception.EmailInUseException;
 import com.oak.dms.common.exception.UsernameInUseException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
@@ -166,7 +168,22 @@ public class UserServiceImpl implements UserService {
         // Keycloak's hosted executeActionsEmail flow, so the invited
         // person lands on our own /update-password page instead of
         // Keycloak's default-themed one.
-        passwordResetService.issueForNewUser(saved);
+        try {
+            passwordResetService.issueForNewUser(saved);
+        } catch (RuntimeException e) {
+            // The invite is the only way this person can ever sign in, so a user nobody
+            // could tell about is worse than no user. The local row rolls back with this
+            // exception; the Keycloak account does not, so it is removed here - otherwise
+            // the retry would be refused as "email already used".
+            log.error("Invite email to {} could not be sent; undoing the account: {}", email, e.getMessage(), e);
+            try {
+                keycloakUserService.deleteUser(keycloakId);
+            } catch (RuntimeException cleanup) {
+                log.warn("Could not remove Keycloak account {} after a failed invite email: {}", keycloakId,
+                        cleanup.getMessage());
+            }
+            throw new MailDeliveryException();
+        }
 
         // Same transaction as the save() above: either both the user row
         // and this outbox row commit, or neither does. OutboxRelay picks
@@ -528,7 +545,14 @@ public class UserServiceImpl implements UserService {
     @Override
     public void resetPassword(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
-        passwordResetService.issueForAdminReset(user);
+        try {
+            passwordResetService.issueForAdminReset(user);
+        } catch (MailException e) {
+            // Shown to the admin as-is, instead of a generic "unexpected error".
+            log.error("Password reset email to user {} could not be sent: {}", userId, e.getMessage(), e);
+            throw new MailDeliveryException("The reset email could not be sent. "
+                    + "Check the mail settings (SMTP) and try again.");
+        }
         log.info("Sent password reset email for user {}", userId);
 
         auditService.event(AuditActionCatalog.PASSWORD_RESET_REQUESTED)

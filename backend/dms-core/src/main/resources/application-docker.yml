@@ -6,7 +6,7 @@ spring:
     url: ${DB_URL:jdbc:postgresql://postgres:5432/dms_core_db}
   # Same rule for everything below: placeholders, never literals. A literal
   # in this profile file overrides the environment variable for good -
-  # which is how production kept sending mail to mailpit while
+  # which is how production once kept sending mail to a stale host while
   # MAIL_HOST/MAIL_PORT pointed at a real SMTP relay.
   rabbitmq:
     host: ${RABBITMQ_HOST:rabbitmq}
@@ -16,8 +16,8 @@ spring:
       host: ${REDIS_HOST:redis}
 
   mail:
-    host: ${MAIL_HOST:mailpit}
-    port: ${MAIL_PORT:1025}
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
   security:
     oauth2:
       resourceserver:

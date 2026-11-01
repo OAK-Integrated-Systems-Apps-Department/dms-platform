@@ -7,6 +7,8 @@ import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.config.BrandingProperties;
 import com.oak.dms.common.exception.InvalidResetTokenException;
 import com.oak.dms.common.exception.KeycloakPasswordPolicyException;
+import com.oak.dms.common.mail.BrandedMailLayout;
+import com.oak.dms.common.mail.BrandedMailSender;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
@@ -16,8 +18,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,7 +73,8 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final KeycloakUserService keycloakUserService;
     private final PasswordResetTokenRepository tokenRepository;
-    private final JavaMailSender mailSender;
+    private final BrandedMailSender mailSender;
+    private final PasswordChangedMailer passwordChangedMailer;
     private final BrandingProperties branding;
     private final AuditService auditService;
 
@@ -228,6 +229,40 @@ public class PasswordResetService {
                 .log();
 
         log.info("Password reset completed via self-service flow for user {}", user.getUserId());
+
+        // First password of an invited account = the account is now usable, so
+        // this is the moment to welcome them (separate from the invite mail).
+        if (token.getKind() == PasswordResetToken.TokenKind.NEW_USER) {
+            sendWelcomeEmail(user);
+        } else {
+            passwordChangedMailer.send(user.getEmail(), user.getFirstName());
+        }
+    }
+
+    /**
+     * Best-effort: the password is already set, so a mail failure must not
+     * turn a successful activation into an error for the person.
+     */
+    private void sendWelcomeEmail(User user) {
+        try {
+            String productName = branding.getProductName();
+            String loginUrl = frontendBaseUrl + "/login";
+            BrandedMailLayout.Content content = BrandedMailLayout.Content.of(
+                            "Welcome to " + productName + "!", List.of(
+                                    "Hi " + user.getFirstName() + ",",
+                                    "Your password is set and your account is ready. "
+                                            + productName + " is your secure home for documents - upload, "
+                                            + "find, share and approve them, all in one place.",
+                                    "Sign in with your username or email and the password you just chose."))
+                    .withButton("Sign in to " + productName, loginUrl)
+                    .withNote("Your username: " + user.getUsername()
+                            + "\nNeed help? Contact your administrator.");
+            BrandedMailLayout layout = new BrandedMailLayout(branding);
+            mailSender.send(mailFrom, user.getEmail(), "Welcome to " + productName,
+                    layout.html(content), layout.text(content));
+        } catch (Exception e) {
+            log.warn("Could not send the welcome email to user {}: {}", user.getUserId(), e.getMessage());
+        }
     }
 
     /**
@@ -331,35 +366,33 @@ public class PasswordResetService {
 
     private void sendEmail(User user, String rawToken, EmailKind kind) {
         String link = frontendBaseUrl + "/update-password?token=" + rawToken;
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(mailFrom);
-        message.setTo(user.getEmail());
-
         String productName = branding.getProductName();
+        String greeting = "Hi " + user.getFirstName() + ",";
+        String expiry = "This link expires in " + tokenTtlMinutes + " minutes.";
 
+        String subject;
+        BrandedMailLayout.Content content;
         if (kind == EmailKind.NEW_USER) {
-            message.setSubject("Welcome to " + productName + " - set your password");
-            message.setText(
-                    "Hi " + user.getFirstName() + ",\n\n"
-                            + "An " + productName + " account has been created for you. Click the link below to choose a "
-                            + "password and finish setting up your account:\n\n"
-                            + link + "\n\n"
-                            + "This link expires in " + tokenTtlMinutes + " minutes. "
-                            + "If you weren't expecting this, you can safely ignore this email.\n\n"
-                            + "- " + productName);
+            subject = "Welcome to " + productName + " - set your password";
+            content = BrandedMailLayout.Content.of("Welcome to " + productName, List.of(
+                            greeting,
+                            "An account has been created for you. Choose a password to finish setting it up "
+                                    + "and sign in."))
+                    .withButton("Set your password", link)
+                    .withNote(expiry + " If you were not expecting this, you can safely ignore this email.");
         } else {
-            message.setSubject("Reset your " + productName + " password");
-            message.setText(
-                    "Hi " + user.getFirstName() + ",\n\n"
-                            + "We received a request to reset your " + productName + " password. Click the link below to choose a new one:\n\n"
-                            + link + "\n\n"
-                            + "This link expires in " + tokenTtlMinutes + " minutes. "
-                            + "If you didn't request this, you can safely ignore this email.\n\n"
-                            + "- " + productName);
+            subject = "Reset your " + productName + " password";
+            content = BrandedMailLayout.Content.of("Reset your password", List.of(
+                            greeting,
+                            "We received a request to reset your " + productName + " password. "
+                                    + "Choose a new one using the button below."))
+                    .withButton("Reset password", link)
+                    .withNote(expiry + " If you did not request this, you can safely ignore this email - "
+                            + "your password will stay as it is.");
         }
 
-        mailSender.send(message);
+        BrandedMailLayout layout = new BrandedMailLayout(branding);
+        mailSender.send(mailFrom, user.getEmail(), subject, layout.html(content), layout.text(content));
     }
 
     private static String generateToken() {

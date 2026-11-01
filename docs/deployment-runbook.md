@@ -250,8 +250,9 @@ What happens:
    `oak` on the Docker server.
 2. **Review the server's `.env`** (`/opt/dms/infra/production/.env`):
    - `KEYCLOAK_SUPERADMIN_USERNAME` - default `superadmin@gmail.com`; use a real address.
-   - `SMTP_HOST` and the other `SMTP_*` - mail is **not delivered** while `SMTP_HOST=mailpit`.
-     Point it at a real relay, then redeploy.
+   - `SMTP_USERNAME` and `SMTP_PASSWORD` - the Gmail address and a Google app password (the
+     other `SMTP_*` default to Gmail). Mail is **not delivered** without them; `deploy.sh`
+     refuses a server whose `.env` still has `SMTP_HOST=mailpit`. Redeploy after setting them.
    - `ALERT_EMAIL_TO` - blank means monitoring alerts are not emailed.
 3. **Take a first backup and copy it off the server:**
    ```bash
@@ -445,7 +446,7 @@ current data, so practise it on a spare server first. More in `docs/operations.m
 | Deploy, pull | `denied` pulling an image | the package is not linked to the repository, or the token lacks access: check the package settings in GitHub |
 | Deploy, last check | `/login` does not return 200 (`-> 000`) | nginx not set up, or the name does not resolve from the runner: see E1; for a public IP see F5 |
 | Deploy, health wait | `timed out waiting for dms-core` | look at the log lines it prints (database, Keycloak, storage settings) |
-| After login | emails never arrive | `SMTP_HOST` is still `mailpit` |
+| After login | emails never arrive | `SMTP_USERNAME`/`SMTP_PASSWORD` missing, or the password is not a Google *app password* |
 | After login | OCR does not run | check `docker compose logs ocr-worker`; give it time to warm up; check the server has enough memory |
 | A deployed version is wrong | | Part B, "If the new version is bad" |
 
