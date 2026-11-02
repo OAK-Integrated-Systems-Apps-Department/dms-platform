@@ -14,7 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One change of a document's owner (V113). Append-only: a trigger rejects UPDATE and DELETE, so there are no
+ * One change of a document's owner (V123). Append-only: a trigger rejects UPDATE and DELETE, so there are no
  * setters. User ids are plain columns (no foreign key) and the names are snapshots, so the row stays readable
  * after a user is permanently deleted.
  */

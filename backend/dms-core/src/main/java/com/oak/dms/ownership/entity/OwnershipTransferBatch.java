@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The summary of one transfer run (V113): a single transfer, a bulk run, an offboarding or a reorganisation.
+ * The summary of one transfer run (V123): a single transfer, a bulk run, an offboarding or a reorganisation.
  * Inserted once, complete, at the end of the run's transaction; the batch id is assigned by the service so the
  * history rows can point at it.
  */

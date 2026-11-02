@@ -129,6 +129,10 @@ export interface DocumentListItemDto {
   mimeType: string | null
   versionNumber: number | null
   ownerUserId: string
+  /** The owner's department (V123); null when the owner had none. */
+  ownerDepartmentId?: string | null
+  /** assigned, or holding while the document waits for a new owner. */
+  ownershipState?: "assigned" | "holding"
   createdAt: string
   /** Has its own access list (V54) instead of following its folder. */
   restricted: boolean
@@ -842,6 +846,10 @@ export interface DocumentDto {
   latestVersionId: string | null
   publishedVersionId: string | null
   ownerUserId: string | null
+  /** The owner's department (V123); null when the owner had none. */
+  ownerDepartmentId: string | null
+  /** assigned, or holding while the document waits for a new owner. */
+  ownershipState: "assigned" | "holding"
   status: string
   createdAt: string
   updatedAt: string | null

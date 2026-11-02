@@ -23,9 +23,9 @@ public record DocumentListItem(
         boolean restricted,
         /** What the caller may do with it: view, edit or manage. */
         String myAccess,
-        /** The owner's department (V113); null when the owner had none. */
+        /** The owner's department (V123); null when the owner had none. */
         UUID ownerDepartmentId,
-        /** assigned, or holding while it waits for a new owner (V113). */
+        /** assigned, or holding while it waits for a new owner (V123). */
         String ownershipState
 ) {
 

@@ -4,12 +4,12 @@ Where each requirement of the Document Ownership and Transfer module (registry s
 
 | Requirement | Built in | Tested by |
 |---|---|---|
-| DOT-FR-001 designated owner (person and/or department) on every document | V113 (`owner_department_id`, `ownership_state`), V114 backfill, `DocumentVersionPromoter`, owner fields in the document API, Owner field on the document page | `V113ToV115OwnershipMigrationTest`, `OwnershipSchemaIT`, `OwnershipFilterIT` |
+| DOT-FR-001 designated owner (person and/or department) on every document | V123 (`owner_department_id`, `ownership_state`), V124 backfill, `DocumentVersionPromoter`, owner fields in the document API, Owner field on the document page | `V123ToV125OwnershipMigrationTest`, `OwnershipSchemaIT`, `OwnershipFilterIT` |
 | DOT-FR-002 an admin transfers one document | `OwnershipTransferService`, `POST /documents/{id}/ownership/transfer`, transfer dialog | `OwnershipTransferIT` |
 | DOT-FR-003 bulk transfer for a departing employee or reorganised department | `OwnershipBatchService`, `OffboardingService`, `POST /ownership/transfers`, Offboard dialog | `OwnershipBulkIT`, `OwnershipOffboardingIT`, `OwnershipPerformanceIT`, `OwnershipScaleIT` (opt-in) |
-| DOT-FR-004 prior owner preserved in the history, never overwritten | append-only `ownership_transfers` (trigger + REVOKE), `OwnershipHistoryService`, history panel | `V113ToV115OwnershipMigrationTest`, `OwnershipHistoryIT` |
+| DOT-FR-004 prior owner preserved in the history, never overwritten | append-only `ownership_transfers` (trigger + REVOKE), `OwnershipHistoryService`, history panel | `V123ToV125OwnershipMigrationTest`, `OwnershipHistoryIT` |
 | DOT-FR-005 the owner's manager or an admin reviews the owned documents and reassigns selectively | `GET /ownership/documents`, selective transfer, manager scope (`OwnershipScope`), Owned documents tab | `OwnershipBulkIT`, `OwnershipSecurityIT` |
-| DOT-FR-006 the new owner is notified | `OwnershipNotificationListener`, categories (V115) | `OwnershipNotificationIT` |
+| DOT-FR-006 the new owner is notified | `OwnershipNotificationListener`, categories (V125) | `OwnershipNotificationIT` |
 | DOT-NFR-001 every change logged with prior owner, new owner, actor, timestamp | `ownership_transfers`, audit events (`DOT`) | `OwnershipTransferIT`, `OwnershipHistoryIT` |
 | DOT-NFR-002 a bulk transfer needs no per-document effort | "all" mode, chunked set-based updates, automatic "next 5,000", offboarding | `OwnershipBulkIT`, `OwnershipPerformanceIT` |
 | DOT-NFR-003 owner-tied permissions re-evaluated after a transfer | no permission derives from ownership; the access cache is invalidated by the V61 triggers; `OwnershipAccessService` gives the new owner access (Restricted conversion with copied entries) | `OwnershipTransferIT` (restricted folder), `OwnershipBulkIT` (preview/convert) |

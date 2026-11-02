@@ -18,26 +18,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V113-V115 (Document Ownership and Transfer: owner department/state, holding owner, batches and the
+ * V123-V125 (Document Ownership and Transfer: owner department/state, holding owner, batches and the
  * append-only history, the owner-department backfill, the three notification categories) up and down on a
  * throwaway database - same harness as {@link com.oak.dms.relationship.V106ToV109RelationshipMigrationTest}.
  */
-class V113ToV115OwnershipMigrationTest {
+class V123ToV125OwnershipMigrationTest {
 
     private static final String DB_URL = env("DB_URL", "jdbc:postgresql://localhost:5433/dms_dev");
     private static final String DB_USERNAME = env("DB_USERNAME", "postgres");
     private static final String DB_PASSWORD = env("DB_PASSWORD", "password");
     private static final String[] ROLLBACKS = {
-            "/db/rollback/V115__seed_ownership_notification_categories.rollback.sql",
-            "/db/rollback/V114__backfill_document_owner_department.rollback.sql",
-            "/db/rollback/V113__create_document_ownership.rollback.sql"};
+            "/db/rollback/V125__seed_ownership_notification_categories.rollback.sql",
+            "/db/rollback/V124__backfill_document_owner_department.rollback.sql",
+            "/db/rollback/V123__create_document_ownership.rollback.sql"};
     private static final String CATEGORIES =
             "('document.ownership.received','document.ownership.released','document.ownership.holding')";
 
     @Test
     void up_backfillsOwnerDepartmentAndConstraintsBite() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "109");
+            migrate(url, "122");
             Ids a;
             Ids other;
             String dept;
@@ -55,12 +55,12 @@ class V113ToV115OwnershipMigrationTest {
                         + loner + "', 'L', 'L', 'active')");
                 exec(c, "update documents set owner_user_id = '" + loner + "' where document_id = '" + a.documents()[1] + "'");
             }
-            migrate(url, "115");
+            migrate(url, "125");
             try (Connection c = connect(url)) {
                 assertThat(tableExists(c, "ownership_transfers")).isTrue();
                 assertThat(tableExists(c, "ownership_transfer_batches")).isTrue();
 
-                // V114 backfill: owner department = the owner's department, null when none; state defaults.
+                // V124 backfill: owner department = the owner's department, null when none; state defaults.
                 assertThat(count(c, "select count(*) from documents where document_id = '" + a.documents()[0]
                         + "' and owner_department_id = '" + dept + "' and ownership_state = 'assigned'")).isEqualTo(1);
                 assertThat(count(c, "select count(*) from documents where document_id = '" + a.documents()[1]
@@ -107,7 +107,7 @@ class V113ToV115OwnershipMigrationTest {
                         .hasMessageContaining("append-only");
                 assertThat(count(c, "select count(*) from ownership_transfers")).isEqualTo(2);
 
-                // V115 categories
+                // V125 categories
                 assertThat(count(c, "select count(*) from notification_categories where category_code in " + CATEGORIES
                         + " and module = 'documents'")).isEqualTo(3);
                 assertThat(count(c, "select count(*) from notification_categories where category_code = 'document.ownership.released'"
@@ -126,16 +126,16 @@ class V113ToV115OwnershipMigrationTest {
     @Test
     void down_removesEverythingCleanly_andUpCanBeReapplied() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "109");
+            migrate(url, "122");
             try (Connection c = connect(url)) {
                 seed(c);
             }
-            migrate(url, "115");
+            migrate(url, "125");
             try (Connection c = connect(url); Statement s = c.createStatement()) {
                 for (String script : ROLLBACKS) {
                     s.execute(read(script));
                 }
-                s.execute("delete from flyway_schema_history where version in ('113', '114', '115')");
+                s.execute("delete from flyway_schema_history where version in ('123', '124', '125')");
                 assertThat(tableExists(c, "ownership_transfers")).isFalse();
                 assertThat(tableExists(c, "ownership_transfer_batches")).isFalse();
                 assertThat(count(c, "select count(*) from information_schema.columns where column_name in"
@@ -143,13 +143,13 @@ class V113ToV115OwnershipMigrationTest {
                 assertThat(count(c, "select count(*) from notification_categories where category_code in " + CATEGORIES))
                         .isZero();
             }
-            migrate(url, "115");
+            migrate(url, "125");
             try (Connection c = connect(url)) {
                 assertThat(tableExists(c, "ownership_transfers")).isTrue();
                 assertThat(count(c, "select count(*) from notification_categories where category_code in " + CATEGORIES))
                         .isEqualTo(3);
                 assertThat(count(c, "select count(*) from documents where ownership_state = 'assigned'")).isEqualTo(2);
-                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('113','114','115')"
+                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('123','124','125')"
                         + " and success")).isEqualTo(3);
             }
         });
@@ -169,18 +169,18 @@ class V113ToV115OwnershipMigrationTest {
         String staging = uuid();
         String engine = uuid();
         exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('" + tenant
-                + "', 'V113 tenant', 'v113-" + tenant + ".invalid', 'standard', 'active')");
+                + "', 'V123 tenant', 'v123-" + tenant + ".invalid', 'standard', 'active')");
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
-                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v113-" + user + "@test.invalid', 'v113-"
-                + user + "', 'V113', 'V113', 'active')");
+                + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v123-" + user + "@test.invalid', 'v123-"
+                + user + "', 'V123', 'V123', 'active')");
         exec(c, "insert into document_types (document_type_id, tenant_id, type_code, type_name) values ('" + type + "', '"
                 + tenant + "', 'CONTRACT', 'Contract')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
-                + " values ('" + location + "', '" + tenant + "', 'v113', 'FILE_SYSTEM', 'document', '/tmp/v113', 'active')");
+                + " values ('" + location + "', '" + tenant + "', 'v123', 'FILE_SYSTEM', 'document', '/tmp/v123', 'active')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
-                + " values ('" + staging + "', '" + tenant + "', 'v113-staging', 'FILE_SYSTEM', 'staging', '/tmp/v113s', 'active')");
+                + " values ('" + staging + "', '" + tenant + "', 'v123-staging', 'FILE_SYSTEM', 'staging', '/tmp/v123s', 'active')");
         exec(c, "insert into scan_engines (scan_engine_id, tenant_id, name, provider, scan_mode, timeout_seconds,"
-                + " max_file_size_bytes, status) values ('" + engine + "', '" + tenant + "', 'v113', 'CLAMAV',"
+                + " max_file_size_bytes, status) values ('" + engine + "', '" + tenant + "', 'v123', 'CLAMAV',"
                 + " 'pre_store_stream', 60, 1000, 'active')");
         String[] documents = {uuid(), uuid()};
         c.setAutoCommit(false);
@@ -195,7 +195,7 @@ class V113ToV115OwnershipMigrationTest {
             exec(c, "insert into scan_results (tenant_id, scan_engine_id, document_version_id, staging_location_id,"
                     + " original_filename, file_hash, size_bytes, mime_type, status, engine_name, scan_mode, completed_at,"
                     + " uploaded_by, ingestion_kind, created_reason, document_type_id, title) values ('" + tenant + "', '"
-                    + engine + "', '" + version + "', '" + staging + "', 'a.pdf', 'h', 1, 'application/pdf', 'clean', 'v113',"
+                    + engine + "', '" + version + "', '" + staging + "', 'a.pdf', 'h', 1, 'application/pdf', 'clean', 'v123',"
                     + " 'pre_store_stream', now(), '" + user + "', 'new_document', 'initial_upload', '" + type + "', 'Doc')");
         }
         c.commit();
@@ -255,7 +255,7 @@ class V113ToV115OwnershipMigrationTest {
     }
 
     private static String read(String script) throws Exception {
-        try (InputStream in = V113ToV115OwnershipMigrationTest.class.getResourceAsStream(script)) {
+        try (InputStream in = V123ToV125OwnershipMigrationTest.class.getResourceAsStream(script)) {
             assertThat(in).as(script + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
@@ -276,7 +276,7 @@ class V113ToV115OwnershipMigrationTest {
     }
 
     private static void withScratchDatabase(ScratchTest test) throws Exception {
-        String name = "dms_v113_test_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String name = "dms_v123_test_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         String base = DB_URL.substring(0, DB_URL.lastIndexOf('/') + 1);
         try (Connection admin = connect(base + "postgres"); Statement s = admin.createStatement()) {
             s.execute("create database " + name);

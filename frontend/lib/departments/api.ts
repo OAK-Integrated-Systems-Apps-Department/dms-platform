@@ -20,7 +20,7 @@ export interface DepartmentDto {
   memberCount: number
   createdAt: string
   updatedAt: string | null
-  /** Who documents are parked with when their owner leaves and nobody is named (V113); null = fall back to the head. */
+  /** Who documents are parked with when their owner leaves and nobody is named (V123); null = fall back to the head. */
   holdingOwnerUserId?: string | null
   holdingOwnerName?: string | null
 }

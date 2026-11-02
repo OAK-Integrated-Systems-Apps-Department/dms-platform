@@ -51,7 +51,7 @@ public class Department {
     @Column(name = "head_user_id")
     private UUID headUserId;
 
-    /** Who documents are parked with when their owner leaves and nobody is named (V113); null = fall back to the head. */
+    /** Who documents are parked with when their owner leaves and nobody is named (V123); null = fall back to the head. */
     @Column(name = "holding_owner_user_id")
     private UUID holdingOwnerUserId;
 

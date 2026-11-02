@@ -1,6 +1,6 @@
--- Manual rollback ("down") for V113__create_document_ownership.sql.
+-- Manual rollback ("down") for V123__create_document_ownership.sql.
 --
--- Outside classpath:db/migration, so Flyway never runs it. Run in reverse order (V115, V114, V113).
+-- Outside classpath:db/migration, so Flyway never runs it. Run in reverse order (V125, V124, V123).
 DROP TABLE IF EXISTS ownership_transfers;
 DROP FUNCTION IF EXISTS ownership_transfers_immutable();
 DROP TABLE IF EXISTS ownership_transfer_batches;

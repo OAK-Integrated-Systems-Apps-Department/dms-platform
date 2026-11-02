@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V115__seed_ownership_notification_categories.sql.
+-- Manual rollback ("down") for V125__seed_ownership_notification_categories.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Notifications already sent keep their
 -- category, so a category that was used is switched off instead of deleted.
