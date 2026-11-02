@@ -233,6 +233,12 @@ public final class AuditActionCatalog {
     public static final String RELATIONSHIP_UPDATED = "RELATIONSHIP_UPDATED";
     public static final String RELATIONSHIP_REMOVED = "RELATIONSHIP_REMOVED";
     public static final String RELATIONSHIP_BATCH_CREATED = "RELATIONSHIP_BATCH_CREATED";
+
+    // Document Ownership and Transfer (DOT)
+    public static final String DOCUMENT_OWNERSHIP_TRANSFERRED = "DOCUMENT_OWNERSHIP_TRANSFERRED";
+    public static final String OWNERSHIP_BATCH_TRANSFERRED = "OWNERSHIP_BATCH_TRANSFERRED";
+    public static final String USER_OFFBOARDED = "USER_OFFBOARDED";
+    public static final String DEPARTMENT_HOLDING_OWNER_CHANGED = "DEPARTMENT_HOLDING_OWNER_CHANGED";
     public static final String RELATIONSHIP_REMOVED_TARGET_PURGED = "RELATIONSHIP_REMOVED_TARGET_PURGED";
     public static final String RELATIONSHIP_TYPE_CREATED = "RELATIONSHIP_TYPE_CREATED";
     public static final String RELATIONSHIP_TYPE_UPDATED = "RELATIONSHIP_TYPE_UPDATED";
@@ -580,6 +586,10 @@ public final class AuditActionCatalog {
             Map.entry(RELATIONSHIP_UPDATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
             Map.entry(RELATIONSHIP_REMOVED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
             Map.entry(RELATIONSHIP_BATCH_CREATED, new AuditActionSpec("DRM", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_OWNERSHIP_TRANSFERRED, new AuditActionSpec("DOT", AuditSeverity.MEDIUM, false)),
+            Map.entry(OWNERSHIP_BATCH_TRANSFERRED, new AuditActionSpec("DOT", AuditSeverity.HIGH, false)),
+            Map.entry(USER_OFFBOARDED, new AuditActionSpec("DOT", AuditSeverity.HIGH, true)),
+            Map.entry(DEPARTMENT_HOLDING_OWNER_CHANGED, new AuditActionSpec("DOT", AuditSeverity.MEDIUM, false)),
             Map.entry(RELATIONSHIP_REMOVED_TARGET_PURGED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
             Map.entry(RELATIONSHIP_TYPE_CREATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),
             Map.entry(RELATIONSHIP_TYPE_UPDATED, new AuditActionSpec("DRM", AuditSeverity.MEDIUM, false)),

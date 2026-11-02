@@ -33,7 +33,7 @@ public record UpsertWorkflowStageRequest(
         /** Whether approvers may pause their task to request information; null means true (V47 default). */
         Boolean allowInfoRequests,
         /**
-         * Ignored (V117): every stage now requires a digital signature to
+         * Ignored (V118): every stage now requires a digital signature to
          * approve, unconditionally - see
          * {@code WorkflowTemplateServiceImpl#applyStage}. Kept on the
          * request shape only so older clients that still send it don't fail

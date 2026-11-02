@@ -38,7 +38,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             + "and lower(d.title) like lower(concat('%', :title, '%')) ";
     /** The document picker's optional narrowing - both null means "no filter". */
     String NARROWED = "and (:documentTypeId is null or d.documentTypeId = :documentTypeId) "
-            + "and (:excludeDocumentId is null or d.documentId <> :excludeDocumentId) ";
+            + "and (:excludeDocumentId is null or d.documentId <> :excludeDocumentId) "
+            // Find by owner (DOT-NFR-004): ANDed with, never instead of, the access predicate that follows.
+            + "and (:ownerId is null or d.ownerUserId = :ownerId) "
+            + "and (:ownerDepartmentId is null or d.ownerDepartmentId = :ownerDepartmentId) ";
 
     /** "All documents": the top level and every folder the caller can see. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and ((" + FOLLOWS_FOLDER
@@ -48,7 +51,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                @Param("granted") Collection<UUID> grantedDocumentIds,
                                @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
                                @Param("documentTypeId") UUID documentTypeId,
-                               @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                               @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     /** One folder the caller can see. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId and ((" + FOLLOWS_FOLDER
@@ -58,7 +62,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                        @Param("granted") Collection<UUID> grantedDocumentIds,
                                        @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
                                        @Param("documentTypeId") UUID documentTypeId,
-                                       @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                                       @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     /** The top level. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null and ((" + FOLLOWS_FOLDER
@@ -67,7 +72,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                          @Param("granted") Collection<UUID> grantedDocumentIds,
                                          @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
                                          @Param("documentTypeId") UUID documentTypeId,
-                                         @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                                         @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     // The same three listings for a caller who sees everything (an admin, or a tenant with nothing
     // restricted): no access predicate to evaluate, only the browser's own filters.
@@ -76,18 +82,21 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED)
     Page<Document> findLive(@Param("tenantId") UUID tenantId, @Param("title") String title,
                             @Param("documentTypeId") UUID documentTypeId,
-                            @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                            @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId")
     Page<Document> findLiveInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
                                     @Param("folderId") UUID folderId,
                                     @Param("documentTypeId") UUID documentTypeId,
-                                    @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                                    @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null")
     Page<Document> findLiveAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
                                       @Param("documentTypeId") UUID documentTypeId,
-                                      @Param("excludeDocumentId") UUID excludeDocumentId, Pageable pageable);
+                                      @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     // Browsing by relationship (2.8): the same visibility rules as above, over every folder, with the
     // document required to have an active link of the type (any type if :relTypeId is null) to or from
@@ -109,6 +118,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                       @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
                                       @Param("documentTypeId") UUID documentTypeId,
                                       @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId,
                                       @Param("relTypeId") UUID relationshipTypeId, @Param("relatedTo") UUID relatedTo,
                                       @Param("asSource") boolean asSource, @Param("asTarget") boolean asTarget,
                                       Pageable pageable);
@@ -118,6 +128,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     Page<Document> findLiveRelated(@Param("tenantId") UUID tenantId, @Param("title") String title,
                                    @Param("documentTypeId") UUID documentTypeId,
                                    @Param("excludeDocumentId") UUID excludeDocumentId,
+            @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId,
                                    @Param("relTypeId") UUID relationshipTypeId, @Param("relatedTo") UUID relatedTo,
                                    @Param("asSource") boolean asSource, @Param("asTarget") boolean asTarget,
                                    Pageable pageable);

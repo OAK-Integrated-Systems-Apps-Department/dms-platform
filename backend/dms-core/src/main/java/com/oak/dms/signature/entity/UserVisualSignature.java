@@ -17,7 +17,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One saved visual signature per user (V109) - a typed name in a script font,
+ * One saved visual signature per user (V114) - a typed name in a script font,
  * or a small PNG drawn on a canvas, shown next to the real cryptographic
  * signature it accompanies. Purely cosmetic: not part of the signed manifest,
  * never checked by {@code SignatureVerifier} - the password/TOTP step-up and

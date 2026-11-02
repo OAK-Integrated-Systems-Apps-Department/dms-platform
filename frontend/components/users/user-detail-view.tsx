@@ -2,9 +2,12 @@ import { useState } from "react"
 import Link from "next/link"
 import { KeyRound } from "lucide-react"
 
+import { BulkResultsDialog } from "@/components/ownership/bulk-results-dialog"
+import { OffboardDialog } from "@/components/ownership/offboard-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getTooltip } from "@/lib/tooltips"
+import type { BatchSummaryDto } from "@/lib/ownership/types"
 
 import { renderActivityText } from "./render-activity-text"
 import { UserResetPasswordDialog } from "./user-reset-password-dialog"
@@ -36,6 +39,11 @@ interface UserDetailViewProps {
    * permission for.
    */
   canAssignRole: boolean
+  /**
+   * Whether the signed-in user may offboard this user (transfer their documents, then deactivate) - requires
+   * `dot.bulk-transfer-ownership.execute-transfer` and `otua.manage-users.deactivate`. Optional: absent = no action.
+   */
+  canOffboard?: boolean
 }
 
 function initials(name: string): string {
@@ -104,8 +112,11 @@ export function UserDetailView({
   canDeactivate,
   canEdit,
   canAssignRole,
+  canOffboard = false,
 }: UserDetailViewProps) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [offboardOpen, setOffboardOpen] = useState(false)
+  const [offboardResult, setOffboardResult] = useState<BatchSummaryDto | null>(null)
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
 
   const canResetThisUser = canResetPassword && user.status === "Active"
@@ -166,6 +177,15 @@ export function UserDetailView({
                 : getTooltip("users.pending.resetPasswordDisabled")}
             </TooltipContent>
           </Tooltip>
+          )}
+          {canOffboard && user.status === "Active" && !user.platformRoles.includes("TENANT_ADMIN") && (
+            <button
+              type="button"
+              onClick={() => setOffboardOpen(true)}
+              className="rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+            >
+              Offboard user…
+            </button>
           )}
           {(user.status === "Active" ? canDeactivate : canActivate) && (() => {
             // Blanket rule, same as users-table.tsx's row action and
@@ -343,6 +363,20 @@ export function UserDetailView({
           onToggleStatus(reason)
           setStatusDialogOpen(false)
         }}
+      />
+
+      {offboardOpen && (
+        <OffboardDialog
+          user={{ userId: user.id, name: user.name }}
+          open={offboardOpen}
+          onOpenChange={setOffboardOpen}
+          onDone={(response) => setOffboardResult(response.batch)}
+        />
+      )}
+      <BulkResultsDialog
+        summary={offboardResult}
+        open={offboardResult !== null}
+        onOpenChange={(next) => !next && setOffboardResult(null)}
       />
 
       <UserResetPasswordDialog

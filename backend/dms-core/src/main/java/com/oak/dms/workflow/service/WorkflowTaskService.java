@@ -29,7 +29,7 @@ public interface WorkflowTaskService {
     TaskActionResponse actWithSignature(UUID taskId, SignAndApproveRequest request);
 
     /**
-     * V119: step-up re-authentication to even view an already-decided task again, and acquire the soft
+     * V120: step-up re-authentication to even view an already-decided task again, and acquire the soft
      * review lock on its stage. 409 WORKFLOW_RETRACTION_WINDOW_CLOSED if the stage is no longer active
      * (a later decision already closed it) - the caller may still view their own evidence elsewhere, but
      * not through this reviewable session.

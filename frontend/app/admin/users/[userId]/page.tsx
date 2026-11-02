@@ -79,6 +79,9 @@ export default function ViewUserPage() {
             canDeactivate={hasPermission(PermissionCodes.OTUA_USERS_DEACTIVATE)}
             canEdit={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
             canAssignRole={hasPermission(PermissionCodes.OTUA_USERS_ASSIGN_ROLE)}
+            canOffboard={
+              hasPermission(PermissionCodes.DOT_BULK_EXECUTE) && hasPermission(PermissionCodes.OTUA_USERS_DEACTIVATE)
+            }
         />
         )}
         </PermissionGate>

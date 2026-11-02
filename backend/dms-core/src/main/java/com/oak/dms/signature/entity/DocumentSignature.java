@@ -20,7 +20,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One signature (V108) - append-only evidence, enforced in the database by
+ * One signature (V113) - append-only evidence, enforced in the database by
  * {@code trg_document_signatures_append_only}: every field below except
  * {@link #status}, {@link #statusChangedAt}, {@link #statusReason},
  * {@link #lastVerifiedAt} and {@link #lastVerificationResult} is immutable
@@ -59,7 +59,7 @@ public class DocumentSignature {
     @Column(name = "version_id", nullable = false, updatable = false)
     private UUID versionId;
 
-    /** Null for a standalone signature (V118) - signed directly, not as part of any workflow task/instance. */
+    /** Null for a standalone signature (V119) - signed directly, not as part of any workflow task/instance. */
     @Column(name = "workflow_instance_id", updatable = false)
     private UUID workflowInstanceId;
 
@@ -134,7 +134,7 @@ public class DocumentSignature {
      * whatever they typed/drew this time, if different) at the moment of
      * THIS signature - cosmetic only, not part of {@link #manifestText} and
      * never checked by {@code SignatureVerifier}. Null for a signature made
-     * before V109 existed.
+     * before V114 existed.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "visual_signature_kind", updatable = false)

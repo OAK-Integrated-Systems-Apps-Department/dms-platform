@@ -92,12 +92,13 @@ export function CreateDepartmentForm({ onSubmit }: CreateFormProps) {
 interface EditFormProps {
   departmentId: string
   headUserName: string | null
+  holdingOwnerName?: string | null
   defaultValues: UpdateDepartmentFormValues
   onSubmit: (values: UpdateDepartmentFormValues) => Promise<string | null>
 }
 
 /** Edit Department - name, parent, head and status. The code stays fixed. */
-export function UpdateDepartmentForm({ departmentId, headUserName, defaultValues, onSubmit }: EditFormProps) {
+export function UpdateDepartmentForm({ departmentId, headUserName, holdingOwnerName, defaultValues, onSubmit }: EditFormProps) {
   const router = useRouter()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -130,6 +131,23 @@ export function UpdateDepartmentForm({ departmentId, headUserName, defaultValues
         <Controller name="headUserId" control={control} render={({ field }) => (
           <HeadSelect value={field.value} onChange={field.onChange} currentLabel={headUserName} />
         )} />
+      </div>
+
+      <div className="mb-5">
+        <Controller name="holdingOwnerUserId" control={control} render={({ field }) => (
+          <HeadSelect
+            id="department-holding-owner"
+            label="Holding Owner"
+            emptyLabel="None (the head holds them)"
+            value={field.value}
+            onChange={field.onChange}
+            currentLabel={holdingOwnerName}
+          />
+        )} />
+        <p className="mt-2 text-[12.5px] text-muted-foreground">
+          When someone leaves without a successor, their documents are parked with this person until they are
+          reassigned. Without one, the department head holds them, then the administrator.
+        </p>
       </div>
 
       <div>
@@ -175,16 +193,30 @@ function ParentSelect({ value, onChange, excludeId }: { value: string; onChange:
 }
 
 /** Department head picker - "" is no head. Uses the admin user list, which needs a user-management permission. */
-function HeadSelect({ value, onChange, currentLabel }: { value: string; onChange: (value: string) => void; currentLabel?: string | null }) {
+function HeadSelect({
+  value,
+  onChange,
+  currentLabel,
+  id = "department-head",
+  label = "Department Head",
+  emptyLabel = "No head",
+}: {
+  value: string
+  onChange: (value: string) => void
+  currentLabel?: string | null
+  id?: string
+  label?: string
+  emptyLabel?: string
+}) {
   const { data, isPending, isError } = useUserOptions()
   // Keep the saved head selectable even when the user list can't load (or
   // no longer lists them), so saving other fields never clears it silently.
   const missingCurrent = Boolean(value) && !(data ?? []).some((u) => u.value === value)
   return (
     <div>
-      <Label htmlFor="department-head">Department Head <span className="text-[var(--ink-faint)] normal-case">(optional)</span></Label>
-      <NativeSelect id="department-head" value={value} onChange={onChange} disabled={isPending}>
-        <option value="">{isPending ? "Loading…" : "No head"}</option>
+      <Label htmlFor={id}>{label} <span className="text-[var(--ink-faint)] normal-case">(optional)</span></Label>
+      <NativeSelect id={id} value={value} onChange={onChange} disabled={isPending}>
+        <option value="">{isPending ? "Loading…" : emptyLabel}</option>
         {missingCurrent && <option value={value}>{currentLabel ?? "Current head"}</option>}
         {(data ?? []).map((u) => (
           <option key={u.value} value={u.value}>{u.label}{u.hint ? ` (${u.hint})` : ""}</option>

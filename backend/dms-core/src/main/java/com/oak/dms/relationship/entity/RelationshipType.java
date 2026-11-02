@@ -15,7 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * A kind of link between two documents (V106), per tenant and editable by an admin. The ten
+ * A kind of link between two documents (V111), per tenant and editable by an admin. The ten
  * seeded ones are system types: they can be renamed and disabled, never deleted.
  */
 @Entity

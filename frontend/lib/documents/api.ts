@@ -129,6 +129,10 @@ export interface DocumentListItemDto {
   mimeType: string | null
   versionNumber: number | null
   ownerUserId: string
+  /** The owner's department (V123); null when the owner had none. */
+  ownerDepartmentId?: string | null
+  /** assigned, or holding while the document waits for a new owner. */
+  ownershipState?: "assigned" | "holding"
   createdAt: string
   /** Has its own access list (V54) instead of following its folder. */
   restricted: boolean
@@ -205,6 +209,9 @@ export async function fetchDocuments(params: {
   relationshipType?: string
   relatedTo?: string
   direction?: "source" | "target" | "any"
+  /** Find by owner: documents owned by this user and/or department (access filtering still applies). */
+  ownerId?: string
+  ownerDepartmentId?: string
   page: number
   size: number
 }): Promise<DocumentPageDto> {
@@ -222,6 +229,8 @@ export async function fetchDocuments(params: {
   if (params.relationshipType) search.set("relationshipType", params.relationshipType)
   if (params.relatedTo) search.set("relatedTo", params.relatedTo)
   if (params.direction) search.set("direction", params.direction)
+  if (params.ownerId) search.set("ownerId", params.ownerId)
+  if (params.ownerDepartmentId) search.set("ownerDepartmentId", params.ownerDepartmentId)
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
     undefined,
@@ -837,6 +846,10 @@ export interface DocumentDto {
   latestVersionId: string | null
   publishedVersionId: string | null
   ownerUserId: string | null
+  /** The owner's department (V123); null when the owner had none. */
+  ownerDepartmentId: string | null
+  /** assigned, or holding while the document waits for a new owner. */
+  ownershipState: "assigned" | "holding"
   status: string
   createdAt: string
   updatedAt: string | null

@@ -18,8 +18,8 @@ import java.util.UUID;
  * synchronously, rather than through the async "Add watermark" job pipeline
  * ({@code watermark_jobs}/{@code WatermarkJobWorker}, which is unaffected by
  * this table and never reads this entity): {@link #downloadWatermarkEnabled}
- * (V106) covers the plain "Download" action, and
- * {@link #bulkExportWatermarkEnabled} (V107) covers a bulk/ZIP export's files.
+ * (V111) covers the plain "Download" action, and
+ * {@link #bulkExportWatermarkEnabled} (V112) covers a bulk/ZIP export's files.
  * Both share the one {@link #defaultTemplateId} - there is only ever one
  * tenant-standard watermark, not a different one per download path.
  * <p>

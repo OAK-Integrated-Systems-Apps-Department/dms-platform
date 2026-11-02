@@ -119,7 +119,7 @@ public class WorkflowTask {
     private OffsetDateTime inactivityReminderSentAt;
 
     /**
-     * 1.4 Digital Signature Integration (V111) - the document version signature placement started
+     * 1.4 Digital Signature Integration (V116) - the document version signature placement started
      * FROM, set once on this task's first placement and reused on every later one, so re-placing
      * (retrying after a step-up failure, going back and choosing a different mark...) always replaces
      * that one stamp instead of layering a new one on top of this task's own previous attempt. Null
@@ -129,7 +129,7 @@ public class WorkflowTask {
     private UUID signaturePlacementBaseVersionId;
 
     /**
-     * Set together (V119, all-or-nothing per the CHECK) when this task's own decision is retracted -
+     * Set together (V120, all-or-nothing per the CHECK) when this task's own decision is retracted -
      * see {@code WorkflowTaskServiceImpl#retract}'s own doc comment. The original decision/decisionReason/
      * actedBy/actedAt above are NOT cleared by a retraction - they simply get overwritten by whatever the
      * signer re-decides next; the full before/after trail lives in the audit log

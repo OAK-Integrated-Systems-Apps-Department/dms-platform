@@ -200,7 +200,7 @@ public final class PermissionCodes {
     public static final String WA_TEMPLATES_TOGGLE_ACTIVE = "wa.configure-workflow-templates.toggle-active";
     public static final String WA_TASK_APPROVE = "wa.approve-reject-workflow-task.approve";
     public static final String WA_TASK_REJECT = "wa.approve-reject-workflow-task.reject";
-    // V119 - retracting your own already-recorded approval, only while your stage is still active.
+    // V120 - retracting your own already-recorded approval, only while your stage is still active.
     public static final String WA_TASK_RETRACT = "wa.approve-reject-workflow-task.retract";
     // An admin moves any open task to another user (Phase 2); holders are
     // also mailed when a stage has no eligible approver or an escalation
@@ -217,13 +217,13 @@ public final class PermissionCodes {
     public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
 
     // 1.4 Digital Signature Integration - DSI, seeded by V10 (except
-    // UNLOCK, seeded by V107). INTERNAL signing only - deliberately no
+    // UNLOCK, seeded by V112). INTERNAL signing only - deliberately no
     // constant for dsi.sign-documents.request-external-signature or
     // dsi.manage-signature-configuration.configure-provider (both V10 rows,
     // unused by anything in this feature - external signers and a
     // third-party provider are out of scope, see docs/requirement-registry.md 1.4).
     public static final String DSI_SIGN = "dsi.sign-documents.sign";
-    // V118 - signing a document directly, not as part of approving a workflow task. Deliberately
+    // V119 - signing a document directly, not as part of approving a workflow task. Deliberately
     // separate from DSI_SIGN (which is always paired with WA_TASK_APPROVE, task-scoped) so granting
     // one never implicitly grants the other.
     public static final String DSI_SIGN_DOCUMENT_STANDALONE = "dsi.sign-documents.sign-standalone";
@@ -247,4 +247,14 @@ public final class PermissionCodes {
     public static final String DRM_TYPES_CREATE = "drm.configure-relationship-types.create-type";
     public static final String DRM_TYPES_UPDATE = "drm.configure-relationship-types.update-type";
     public static final String DRM_TYPES_DELETE = "drm.configure-relationship-types.delete-type";
+
+    // Document Ownership and Transfer - DOT, seeded by V10. Single transfer = initiate-transfer; the
+    // owned-documents list and offboarding preview = select-documents; bulk transfer and offboarding =
+    // execute-transfer. approve-transfer is seeded but unused - there is no approval step (D2/D15).
+    public static final String DOT_TRANSFER_INITIATE = "dot.transfer-document-ownership.initiate-transfer";
+    public static final String DOT_TRANSFER_APPROVE = "dot.transfer-document-ownership.approve-transfer";
+    public static final String DOT_BULK_SELECT = "dot.bulk-transfer-ownership.select-documents";
+    public static final String DOT_BULK_EXECUTE = "dot.bulk-transfer-ownership.execute-transfer";
+    public static final String DOT_HISTORY_VIEW = "dot.view-ownership-history.view";
+    public static final String DOT_HISTORY_EXPORT = "dot.view-ownership-history.export";
 }

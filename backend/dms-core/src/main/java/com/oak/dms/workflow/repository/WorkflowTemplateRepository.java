@@ -23,7 +23,7 @@ public interface WorkflowTemplateRepository extends JpaRepository<WorkflowTempla
     @Query("select t from WorkflowTemplate t where t.templateId = :id and t.tenantId = :tenantId and t.deleted = false")
     Optional<WorkflowTemplate> lockByTemplateIdAndTenantId(@Param("id") UUID templateId, @Param("tenantId") UUID tenantId);
 
-    /** Every active template of this document type - zero, one, or more since V120 (decision 7 superseded). */
+    /** Every active template of this document type - zero, one, or more since V121 (decision 7 superseded). */
     List<WorkflowTemplate> findByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(UUID tenantId,
                                                                                     UUID documentTypeId,
                                                                                     TemplateStatus status);
