@@ -18,7 +18,8 @@ import java.util.List;
  */
 public final class StarterCatalog {
 
-    public record FieldDef(String key, String label, String helpText, String dataType, boolean systemField) {
+    public record FieldDef(String key, String label, String helpText, String dataType, boolean systemField,
+                            boolean ocrExtractable) {
     }
 
     public record OptionDef(String fieldKey, String value, String label, int displayOrder) {
@@ -32,31 +33,36 @@ public final class StarterCatalog {
                              String fieldGroup) {
     }
 
+    // ocrExtractable mirrors V80__seed_ocr_extractable_flags.sql's own split: true for a value
+    // PRINTED on the document somebody sent us, false for one this organisation assigns at filing
+    // time (or, for description/tags/keywords, generated from the content rather than read off it).
+    // V80 only back-filled tenants that already existed when it ran; a tenant installed from this
+    // catalogue afterwards must get the same flags here, or OCR silently extracts nothing for it.
     public static final List<FieldDef> FIELDS = List.of(
-            new FieldDef("department", "Department", "Owning department or business unit.", "lookup", false),
-            new FieldDef("tags", "Tags", "Free-form labels for grouping and discovery.", "multi_select", false),
-            new FieldDef("retention_class", "Retention Class", "Retention schedule this document falls under.", "dropdown", true),
-            new FieldDef("description", "Description", "Free-text summary of the document.", "long_text", false),
-            new FieldDef("author", "Author", "Person or team who authored the document.", "text", false),
-            new FieldDef("keywords", "Keywords", "Search keywords beyond the free-text tags.", "multi_select", false),
-            new FieldDef("language", "Language", "Primary language of the document content.", "dropdown", false),
-            new FieldDef("reference_number", "Reference Number", "External or internal reference identifier.", "text", false),
-            new FieldDef("effective_date", "Effective Date", "Date the document takes effect.", "date", false),
-            new FieldDef("expiry_date", "Expiry Date", "Date the document expires.", "date", false),
-            new FieldDef("review_due_date", "Review Due Date", "Date the document is next due for review.", "date", false),
-            new FieldDef("invoice_number", "Invoice Number", "Vendor-issued invoice number.", "text", false),
-            new FieldDef("invoice_date", "Invoice Date", "Date the invoice was issued.", "date", false),
-            new FieldDef("amount", "Amount", "Monetary amount on the document.", "decimal", false),
-            new FieldDef("currency", "Currency", "Currency the amount is denominated in.", "dropdown", false),
-            new FieldDef("vendor_supplier_name", "Vendor / Supplier Name", "Name of the vendor or supplier.", "text", false),
-            new FieldDef("purchase_order_number", "Purchase Order Number", "Related purchase order number.", "text", false),
-            new FieldDef("contract_party", "Contract Party", "Counterparty named on the contract.", "text", false),
-            new FieldDef("contract_value", "Contract Value", "Total monetary value of the contract.", "decimal", false),
-            new FieldDef("contract_start_date", "Contract Start Date", "Date the contract starts.", "date", false),
-            new FieldDef("contract_end_date", "Contract End Date", "Date the contract ends.", "date", false),
-            new FieldDef("employee_id", "Employee ID", "Related employee identifier.", "text", false),
-            new FieldDef("project_code", "Project Code", "Project this document belongs to.", "dropdown", false),
-            new FieldDef("cost_centre", "Cost Centre", "Cost centre to charge.", "dropdown", false));
+            new FieldDef("department", "Department", "Owning department or business unit.", "lookup", false, false),
+            new FieldDef("tags", "Tags", "Free-form labels for grouping and discovery.", "multi_select", false, false),
+            new FieldDef("retention_class", "Retention Class", "Retention schedule this document falls under.", "dropdown", true, false),
+            new FieldDef("description", "Description", "Free-text summary of the document.", "long_text", false, false),
+            new FieldDef("author", "Author", "Person or team who authored the document.", "text", false, true),
+            new FieldDef("keywords", "Keywords", "Search keywords beyond the free-text tags.", "multi_select", false, false),
+            new FieldDef("language", "Language", "Primary language of the document content.", "dropdown", false, true),
+            new FieldDef("reference_number", "Reference Number", "External or internal reference identifier.", "text", false, true),
+            new FieldDef("effective_date", "Effective Date", "Date the document takes effect.", "date", false, true),
+            new FieldDef("expiry_date", "Expiry Date", "Date the document expires.", "date", false, true),
+            new FieldDef("review_due_date", "Review Due Date", "Date the document is next due for review.", "date", false, true),
+            new FieldDef("invoice_number", "Invoice Number", "Vendor-issued invoice number.", "text", false, true),
+            new FieldDef("invoice_date", "Invoice Date", "Date the invoice was issued.", "date", false, true),
+            new FieldDef("amount", "Amount", "Monetary amount on the document.", "decimal", false, true),
+            new FieldDef("currency", "Currency", "Currency the amount is denominated in.", "dropdown", false, true),
+            new FieldDef("vendor_supplier_name", "Vendor / Supplier Name", "Name of the vendor or supplier.", "text", false, true),
+            new FieldDef("purchase_order_number", "Purchase Order Number", "Related purchase order number.", "text", false, true),
+            new FieldDef("contract_party", "Contract Party", "Counterparty named on the contract.", "text", false, true),
+            new FieldDef("contract_value", "Contract Value", "Total monetary value of the contract.", "decimal", false, true),
+            new FieldDef("contract_start_date", "Contract Start Date", "Date the contract starts.", "date", false, true),
+            new FieldDef("contract_end_date", "Contract End Date", "Date the contract ends.", "date", false, true),
+            new FieldDef("employee_id", "Employee ID", "Related employee identifier.", "text", false, true),
+            new FieldDef("project_code", "Project Code", "Project this document belongs to.", "dropdown", false, false),
+            new FieldDef("cost_centre", "Cost Centre", "Cost centre to charge.", "dropdown", false, false));
 
     /**
      * language is deliberately left without options (MDTM alternate flow 1:

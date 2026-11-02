@@ -81,6 +81,7 @@ public class TenantStarterCatalogService {
                     .dataType(def.dataType())
                     .systemField(def.systemField())
                     .searchable(true)
+                    .ocrExtractable(def.ocrExtractable())
                     .status(MetadataField.FieldStatus.active)
                     .createdBy(actor)
                     .build();
