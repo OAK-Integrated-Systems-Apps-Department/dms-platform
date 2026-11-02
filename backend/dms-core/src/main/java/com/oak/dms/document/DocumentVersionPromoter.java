@@ -51,6 +51,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
     private final OcrEnqueueService ocrEnqueueService;
     private final com.oak.dms.ocrworker.OcrProperties ocrProperties;
     private final ApplicationEventPublisher eventPublisher;
+    private final com.oak.dms.user.UserRepository userRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -118,6 +119,7 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                     .currentVersionId(plan.versionId())
                     .latestVersionId(plan.versionId())
                     .ownerUserId(uploadedBy)
+                    .ownerDepartmentId(departmentOf(uploadedBy, tenantId))
                     .createdBy(uploadedBy)
                     .build());
             version.majorVersion(1).minorVersion(0).versionLabel("1.0");
@@ -236,5 +238,16 @@ public class DocumentVersionPromoter implements DocumentPromoter {
      */
     private static String buildObjectKey(UUID tenantId, UUID documentId, int versionNumber, UUID versionId) {
         return "documents/" + tenantId + "/" + documentId + "/v" + versionNumber + "/" + versionId;
+    }
+
+    /** The uploader's primary department (the owner department of a new document); null if none or unknown. */
+    private UUID departmentOf(UUID userId, UUID tenantId) {
+        if (userId == null) {
+            return null;
+        }
+        return userRepository.findById(userId)
+                .filter(user -> tenantId.equals(user.getTenantId()))
+                .map(com.oak.dms.user.User::getDepartmentId)
+                .orElse(null);
     }
 }

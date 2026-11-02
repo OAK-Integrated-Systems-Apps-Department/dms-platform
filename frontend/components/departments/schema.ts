@@ -17,5 +17,7 @@ export type CreateDepartmentFormValues = z.infer<typeof createDepartmentSchema>
 export const updateDepartmentSchema = z.object({
   ...departmentShape,
   status: z.enum(["active", "inactive"]),
+  /** Who documents are parked with when their owner leaves ("" = none, fall back to the head). */
+  holdingOwnerUserId: z.string(),
 })
 export type UpdateDepartmentFormValues = z.infer<typeof updateDepartmentSchema>

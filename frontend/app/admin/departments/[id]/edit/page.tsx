@@ -99,11 +99,13 @@ export default function EditDepartmentPage() {
                     key={department.updatedAt ?? department.createdAt}
                     departmentId={department.departmentId}
                     headUserName={department.headUserName}
+                    holdingOwnerName={department.holdingOwnerName}
                     defaultValues={{
                       name: department.name,
                       parentDepartmentId: department.parentDepartmentId ?? "",
                       headUserId: department.headUserId ?? "",
                       status: department.status,
+                      holdingOwnerUserId: department.holdingOwnerUserId ?? "",
                     }}
                     onSubmit={(values) =>
                       update({
@@ -111,6 +113,9 @@ export default function EditDepartmentPage() {
                         parentDepartmentId: values.parentDepartmentId || null,
                         headUserId: values.headUserId || null,
                         status: values.status,
+                        // Omitted keeps it; only an explicit clear removes it.
+                        holdingOwnerUserId: values.holdingOwnerUserId || undefined,
+                        clearHoldingOwner: !values.holdingOwnerUserId && Boolean(department.holdingOwnerUserId) ? true : undefined,
                       })
                     }
                   />
@@ -119,6 +124,7 @@ export default function EditDepartmentPage() {
                     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 pt-3 sm:grid-cols-2">
                       <Field label="Parent" value={department.parentName ?? "—"} />
                       <Field label="Head" value={department.headUserName ?? "—"} />
+                      <Field label="Holding owner" value={department.holdingOwnerName ?? "—"} />
                     </dl>
                   </Panel>
                 )}

@@ -14,6 +14,8 @@ public record DepartmentResponse(
         String status,
         long memberCount,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        UUID holdingOwnerUserId,
+        String holdingOwnerName
 ) {
 }

@@ -23,6 +23,10 @@ public record DocumentResponse(
         String mimeType,
         Long sizeBytes,
         Integer versionNumber,
+        /** The owner's department (V123); null when the owner had none. */
+        UUID ownerDepartmentId,
+        /** assigned, or holding while the document waits for a new owner (V123). */
+        String ownershipState,
         /** Set together (V105) once a workflow with a valid signature approved - null means not locked. */
         OffsetDateTime signatureLockedAt,
         UUID signatureLockedVersionId

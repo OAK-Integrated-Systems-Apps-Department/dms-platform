@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * This tenant's policy for the plain "Download" action (module DW, V106):
+ * This tenant's policy for the plain "Download" action (module DW, V111):
  * whether it watermarks the file inline, synchronously, by default, and with
  * which template.
  * <p>

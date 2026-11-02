@@ -3,7 +3,7 @@ package com.oak.dms.relationship.seed;
 import java.util.List;
 
 /**
- * The ten system relationship types every tenant starts with. V107 backfills existing tenants
+ * The ten system relationship types every tenant starts with. V112 backfills existing tenants
  * with the same rows; {@code RelationshipTypeSeedParityTest} keeps the two lists identical.
  */
 public final class RelationshipTypeCatalog {

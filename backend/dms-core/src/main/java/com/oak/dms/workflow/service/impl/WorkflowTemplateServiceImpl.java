@@ -267,7 +267,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
 
     /**
      * A document type may now have more than one active template, as long as
-     * they're different template families (decision 7 narrowed, V120) - the
+     * they're different template families (decision 7 narrowed, V121) - the
      * submitter picks which one applies when more than one does (see
      * {@code TemplateSelector}). What's unchanged: at most one active
      * version per template family (same code) - activating a new version
@@ -621,7 +621,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         stage.setEscalationUserId(target == EscalationTarget.named_user ? request.escalationUserId() : null);
         stage.setAllowInfoRequests(request.allowInfoRequests() == null || request.allowInfoRequests());
         // 1.4 Digital Signature Integration: every approval stage requires a
-        // digital signature (V117) - no longer a per-stage opt-in, so the
+        // digital signature (V118) - no longer a per-stage opt-in, so the
         // caller's requiresSignature (if sent at all) is ignored rather than
         // honored. Approving a stage with a plain /approve always refuses
         // with 409 WORKFLOW_SIGNATURE_REQUIRED; /sign-and-approve is the only

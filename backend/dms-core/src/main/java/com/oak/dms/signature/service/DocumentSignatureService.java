@@ -114,7 +114,7 @@ public class DocumentSignatureService {
     }
 
     /**
-     * Signs a document directly (V118) - the current version as a standalone e-signature, not as part of
+     * Signs a document directly (V119) - the current version as a standalone e-signature, not as part of
      * approving any workflow task. {@code request.meaning()} is still caller-supplied (the standalone
      * sign endpoint always sends {@code acknowledged}, never {@code approved} - there is no approval
      * here), everything else works exactly like {@link #sign} with no workflow instance or task behind
@@ -249,7 +249,7 @@ public class DocumentSignatureService {
         try {
             saved = signatureRepository.saveAndFlush(row);
         } catch (DataIntegrityViolationException e) {
-            // uq_document_signatures_one_valid_per_task (V121) - a concurrent duplicate attempt on the same task lost
+            // uq_document_signatures_one_valid_per_task (V122) - a concurrent duplicate attempt on the same task lost
             // the race (never fires for a standalone row, whose taskId is always null).
             throw rejected(SignatureException.conflict("SIGNATURE_ALREADY_RECORDED",
                     "This task has already been signed."), tenantId, actorUserId, documentId, taskId);
@@ -322,7 +322,7 @@ public class DocumentSignatureService {
      * <p>
      * Looks up the VALID row directly (never {@code findByTenantIdAndTaskId}, which can no longer assume
      * at most one row per task once a task has been retracted and re-signed more than once -
-     * uq_document_signatures_one_valid_per_task (V121) only guarantees uniqueness among valid rows, so a
+     * uq_document_signatures_one_valid_per_task (V122) only guarantees uniqueness among valid rows, so a
      * plain task_id lookup against a task with prior invalidated attempts throws NonUniqueResultException).
      *
      * @return the version id it was signed against, so the caller can revert the document/instance back

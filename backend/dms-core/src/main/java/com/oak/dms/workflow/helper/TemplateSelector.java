@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 
 /**
  * Which template a document is routed through. A document type can have more
- * than one active template (decision 7 superseded, V120): with exactly one,
+ * than one active template (decision 7 superseded, V121): with exactly one,
  * it's picked automatically as before; with more than one, the submitter
  * must say which (see {@code WorkflowSubmissionServiceImpl#submit}). Condition-
  * based routing (e.g. amount thresholds) is deferred and stays a change to
@@ -34,7 +34,7 @@ public class TemplateSelector {
 
     /**
      * Resolves the template a submission should use.
-     * {@code requestedTemplateId} null and exactly one active candidate -> that one, same as before V120.
+     * {@code requestedTemplateId} null and exactly one active candidate -> that one, same as before V121.
      * {@code requestedTemplateId} null and more than one candidate -> WORKFLOW_TEMPLATE_SELECTION_REQUIRED.
      * {@code requestedTemplateId} null and no candidates -> WORKFLOW_NO_ACTIVE_TEMPLATE.
      * {@code requestedTemplateId} given -> it must be one of the active candidates, else WORKFLOW_TEMPLATE_INVALID_SELECTION

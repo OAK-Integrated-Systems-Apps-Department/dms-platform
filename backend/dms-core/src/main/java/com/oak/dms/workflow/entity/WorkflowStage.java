@@ -95,7 +95,7 @@ public class WorkflowStage {
      * Digital Signature Integration) - when true, the plain
      * {@code /approve} endpoint refuses with 409 WORKFLOW_SIGNATURE_REQUIRED
      * and the approver must use {@code /sign-and-approve} instead.
-     * Mandatory for every stage as of V117 - no longer configurable, never
+     * Mandatory for every stage as of V118 - no longer configurable, never
      * false: {@code WorkflowTemplateServiceImpl#applyStage} forces this true
      * on every create/update regardless of what the caller sends.
      */

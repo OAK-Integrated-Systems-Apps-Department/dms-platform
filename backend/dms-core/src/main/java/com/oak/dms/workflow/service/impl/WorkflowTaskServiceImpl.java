@@ -64,7 +64,7 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     private final StepUpAuthenticator stepUp;
     private final UserRepository userRepository;
 
-    /** How long a review session's soft lock survives without a heartbeat (V119) - long enough to read a document, short enough that an abandoned tab never blocks a stage for long. */
+    /** How long a review session's soft lock survives without a heartbeat (V120) - long enough to read a document, short enough that an abandoned tab never blocks a stage for long. */
     private static final Duration REVIEW_LOCK_TTL = Duration.ofMinutes(2);
 
     /**
@@ -294,7 +294,7 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     // ------------------------------------------------------------ retraction
 
     /**
-     * V119: re-proves it's really the signer (same step-up ceremony signing itself depends on) before
+     * V120: re-proves it's really the signer (same step-up ceremony signing itself depends on) before
      * even showing them their own past decision again, then acquires the soft review lock on the whole
      * stage - every OTHER entry is refused (see {@link #requireActionable}'s own check) until this
      * session ends (close or retract) or the lock's TTL lapses on its own. Deliberately NOT a real row

@@ -64,9 +64,11 @@ public class DepartmentServiceImpl implements DepartmentService {
         });
         departmentRepository.findByDepartmentIdInAndTenantIdAndDeletedFalse(parentIds, tenantId)
                 .forEach(p -> parentNames.put(p.getDepartmentId(), p.getName()));
-        Map<UUID, String> heads = userNames(page.map(Department::getHeadUserId).toList(), tenantId);
+        List<UUID> people = new java.util.ArrayList<>(page.map(Department::getHeadUserId).toList());
+        people.addAll(page.map(Department::getHoldingOwnerUserId).toList());
+        Map<UUID, String> heads = userNames(people, tenantId);
         return page.map(d -> toResponse(d, parentNames.get(d.getParentDepartmentId()), heads.get(d.getHeadUserId()),
-                departmentRepository.countMembers(tenantId, d.getDepartmentId())));
+                heads.get(d.getHoldingOwnerUserId()), departmentRepository.countMembers(tenantId, d.getDepartmentId())));
     }
 
     @Override
@@ -120,8 +122,20 @@ public class DepartmentServiceImpl implements DepartmentService {
             requireNoCycle(departmentId, request.parentDepartmentId(), tenantId);
         }
         requireTenantUser(request.headUserId(), tenantId);
+        UUID holdingBefore = department.getHoldingOwnerUserId();
+        UUID holdingAfter = holdingBefore;
+        if (Boolean.TRUE.equals(request.clearHoldingOwner())) {
+            holdingAfter = null;
+        } else if (request.holdingOwnerUserId() != null) {
+            User holder = findTenantUser(request.holdingOwnerUserId(), tenantId);
+            if (holder.getStatus() != User.UserStatus.active) {
+                throw new DepartmentStateException("HOLDING_OWNER_INACTIVE", "Choose an active user as the holding owner");
+            }
+            holdingAfter = holder.getUserId();
+        }
 
         department.setName(request.name().trim());
+        department.setHoldingOwnerUserId(holdingAfter);
         department.setParentDepartmentId(request.parentDepartmentId());
         department.setHeadUserId(request.headUserId());
         department.setStatus(request.status());
@@ -137,6 +151,20 @@ public class DepartmentServiceImpl implements DepartmentService {
                 .previousValue(before)
                 .newValue(snapshot(saved))
                 .log();
+        if (!java.util.Objects.equals(holdingBefore, holdingAfter)) {
+            Map<String, Object> was = new HashMap<>();
+            was.put("holdingOwnerUserId", holdingBefore);
+            Map<String, Object> now = new HashMap<>();
+            now.put("holdingOwnerUserId", holdingAfter);
+            auditService.event(AuditActionCatalog.DEPARTMENT_HOLDING_OWNER_CHANGED)
+                    .objectType(AuditObjectTypes.DEPARTMENT)
+                    .objectId(saved.getDepartmentId())
+                    .resourceName(saved.getName())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .previousValue(was)
+                    .newValue(now)
+                    .log();
+        }
         return toResponse(saved);
     }
 
@@ -267,15 +295,19 @@ public class DepartmentServiceImpl implements DepartmentService {
         String parentName = d.getParentDepartmentId() == null ? null
                 : departmentRepository.findByDepartmentIdAndTenantIdAndDeletedFalse(d.getParentDepartmentId(), tenantId)
                 .map(Department::getName).orElse(null);
-        String headName = userNames(d.getHeadUserId() == null ? List.of() : List.of(d.getHeadUserId()), tenantId)
-                .get(d.getHeadUserId());
-        return toResponse(d, parentName, headName, departmentRepository.countMembers(tenantId, d.getDepartmentId()));
+        List<UUID> people = new java.util.ArrayList<>();
+        people.add(d.getHeadUserId());
+        people.add(d.getHoldingOwnerUserId());
+        Map<UUID, String> names = userNames(people, tenantId);
+        return toResponse(d, parentName, names.get(d.getHeadUserId()), names.get(d.getHoldingOwnerUserId()),
+                departmentRepository.countMembers(tenantId, d.getDepartmentId()));
     }
 
-    private static DepartmentResponse toResponse(Department d, String parentName, String headName, long members) {
+    private static DepartmentResponse toResponse(Department d, String parentName, String headName,
+                                                 String holdingOwnerName, long members) {
         return new DepartmentResponse(d.getDepartmentId(), d.getName(), d.getCode(), d.getParentDepartmentId(),
                 parentName, d.getHeadUserId(), headName, d.getStatus().name(), members, d.getCreatedAt(),
-                d.getUpdatedAt());
+                d.getUpdatedAt(), d.getHoldingOwnerUserId(), holdingOwnerName);
     }
 
     private Map<UUID, String> userNames(List<UUID> ids, UUID tenantId) {

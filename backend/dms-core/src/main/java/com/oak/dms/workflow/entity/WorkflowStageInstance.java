@@ -76,11 +76,11 @@ public class WorkflowStageInstance {
     private OffsetDateTime completedAt;
 
     /**
-     * Soft, TTL-based lock (V119) - set while one approver of this stage is reviewing/about to retract
+     * Soft, TTL-based lock (V120) - set while one approver of this stage is reviewing/about to retract
      * their own decision, blocking every other entry in the stage from acting meanwhile. Expires on its
      * own ({@link #reviewLockExpiresAt}) rather than requiring an explicit release, so an abandoned
      * browser tab can never leave a stage stuck locked forever - mirrors {@code Document#signatureLockedAt}'s
-     * soft-lock shape (V108), not a real row lock held across HTTP requests.
+     * soft-lock shape (V113), not a real row lock held across HTTP requests.
      */
     @Column(name = "review_locked_by")
     private UUID reviewLockedBy;
