@@ -13,7 +13,6 @@ import com.oak.dms.user.UserRepository;
 import com.oak.dms.workflow.dto.ReviewLockResponse;
 import com.oak.dms.workflow.dto.TaskActionResponse;
 import com.oak.dms.workflow.entity.WorkflowInstance;
-import com.oak.dms.workflow.entity.WorkflowStage;
 import com.oak.dms.workflow.entity.WorkflowStageInstance;
 import com.oak.dms.workflow.entity.WorkflowTask;
 import com.oak.dms.workflow.enums.InstanceStatus;
@@ -180,10 +179,10 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
 
     /** Whether the stage this task belongs to requires a signature to approve (V105, mirrors allow_info_requests). */
     private boolean stageRequiresSignature(UUID taskId, UUID tenantId) {
+        // Scalar queries only: this runs BEFORE lockAndValidate's FOR UPDATE, and loading the stage instance
+        // here would put a stale copy in the persistence context (lost approved_count under concurrency).
         return taskRepository.findStageInstanceIdOfTask(taskId, tenantId)
-                .flatMap(stageInstanceId -> stageInstanceRepository.findByStageInstanceIdAndTenantId(stageInstanceId, tenantId))
-                .flatMap(stageInstance -> stageRepository.findById(stageInstance.getStageId()))
-                .map(WorkflowStage::isRequiresSignature)
+                .flatMap(stageInstanceId -> stageInstanceRepository.findRequiresSignatureOfStage(stageInstanceId, tenantId))
                 .orElse(false);
     }
 
