@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * 1.4 Digital Signature Integration (V118): add an e-signature straight to a
+ * 1.4 Digital Signature Integration (V119): add an e-signature straight to a
  * document - a real mark plus Name/Designation/Date burned into a new
  * version, then cryptographically signed, same ceremony as sign-and-approve
  * but with no workflow task/approval behind it. Gated by a permission

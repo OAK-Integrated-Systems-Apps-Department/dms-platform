@@ -35,7 +35,7 @@ import java.util.UUID;
  * Workflow template versions (W3). Only drafts are editable; activating a
  * version makes it one of the templates new submissions of its document type
  * can use - a document type may have more than one active template (decision
- * 7 superseded, V120), in which case the submitter picks among them (see
+ * 7 superseded, V121), in which case the submitter picks among them (see
  * {@link #activeFor}).
  */
 @RestController

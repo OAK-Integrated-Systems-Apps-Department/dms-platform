@@ -137,7 +137,7 @@ public class WorkflowTaskController {
 
     @PostMapping("/{taskId}/review")
     @PreAuthorize(RETRACT)
-    @Operation(summary = "V119: re-open your own already-decided task for review",
+    @Operation(summary = "V120: re-open your own already-decided task for review",
             description = "Step-up re-authentication (password, TOTP if MFA is enabled) is required just to view "
                     + "it again, not only to retract. Also acquires a soft lock on the stage, refusing every other "
                     + "entry's claim/approve/reject while it's held (expires on its own if never renewed or closed). "

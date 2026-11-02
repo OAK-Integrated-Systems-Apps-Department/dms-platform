@@ -18,9 +18,9 @@
 --                         workflow with at least one valid signature is
 --                         approved - see DocumentSignatureLockService.
 --
--- Numbered V108, not V105: merging in Feat/bulk-import-export brought its own
+-- Numbered V113, not V105: merging in Feat/bulk-import-export brought its own
 -- V103-V105 (notification core/config/permissions, PR #34) - this migration
--- and the two colliding watermark ones (V106 tenant_watermark_settings, V107
+-- and the two colliding watermark ones (V111 tenant_watermark_settings, V112
 -- bulk-export-watermark) were renumbered past them to resolve the collision.
 
 -- =====================================================================
@@ -218,6 +218,6 @@ BEGIN
         ON CONFLICT (permission_code) WHERE tenant_id IS NULL DO NOTHING
         RETURNING 1)
     SELECT count(*) INTO n FROM inserted;
-    RAISE NOTICE 'V108: % digital-signature permission(s) seeded (granted to no role)', n;
+    RAISE NOTICE 'V113: % digital-signature permission(s) seeded (granted to no role)', n;
 END;
 $$;

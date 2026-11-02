@@ -132,7 +132,7 @@ class WorkflowTemplateIT extends WorkflowApiSupport {
         addStage(first, legalStage("Review"), 201);
         adminPost("/api/v1/workflow/templates/" + first + "/activate", w.admin(), null, 200);
 
-        // SECOND is a different template (code), same document type - V120: it does NOT demote FIRST.
+        // SECOND is a different template (code), same document type - V121: it does NOT demote FIRST.
         UUID second = draft("SECOND");
         addStage(second, legalStage("Review"), 201);
         adminPost("/api/v1/workflow/templates/" + second + "/activate", w.admin(), null, 200);

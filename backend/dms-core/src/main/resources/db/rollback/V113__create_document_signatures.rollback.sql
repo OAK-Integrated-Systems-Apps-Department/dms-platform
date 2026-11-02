@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V108__create_document_signatures.sql.
+-- Manual rollback ("down") for V113__create_document_signatures.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it.
 

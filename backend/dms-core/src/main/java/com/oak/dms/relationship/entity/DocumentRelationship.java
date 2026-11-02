@@ -15,7 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * One link between two different documents (V106). One row per pair - the inverse is derived
+ * One link between two different documents (V111). One row per pair - the inverse is derived
  * when reading. A removed link keeps its row ({@code removedAt} set) so the history survives.
  */
 @Entity

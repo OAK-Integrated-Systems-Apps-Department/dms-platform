@@ -67,7 +67,7 @@ public record UserResponse(
         String impersonatorDisplayName,
         /** Primary department (V43), or null. Changed via PUT /api/v1/users/{id}/department. */
         UUID departmentId,
-        /** Job title (V112), or null. Self-set via PUT /api/v1/users/me. */
+        /** Job title (V117), or null. Self-set via PUT /api/v1/users/me. */
         String position,
         /**
          * {@code departmentId}'s resolved name - the same {@code GET /api/v1/users/me}-only story as

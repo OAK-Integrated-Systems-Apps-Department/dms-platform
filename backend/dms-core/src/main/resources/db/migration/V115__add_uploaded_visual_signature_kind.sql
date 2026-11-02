@@ -1,6 +1,6 @@
 -- 1.4 Digital Signature Integration - "uploaded" (a photo/scan, with its
 -- background made transparent client-side) becomes its own visual signature
--- kind, distinct from "drawn" (a canvas doodle). V109 originally stored both
+-- kind, distinct from "drawn" (a canvas doodle). V114 originally stored both
 -- under "drawn" since the backend only ever cared "is this an image or
 -- text" - but that meant re-opening the signing dialog couldn't tell which
 -- editor to default back to for an already-saved image, showing a saved

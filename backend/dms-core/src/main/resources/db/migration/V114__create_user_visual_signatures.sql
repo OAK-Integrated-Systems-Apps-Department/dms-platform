@@ -1,6 +1,6 @@
 -- 1.4 Digital Signature Integration - a cosmetic VISUAL mark (typed name in a
 -- script font, or hand-drawn on a canvas) shown alongside the real
--- cryptographic signature (V108), never a replacement for it. This is purely
+-- cryptographic signature (V113), never a replacement for it. This is purely
 -- decorative evidence of *how the signer chose to represent their name* -
 -- the password/TOTP step-up, the ECDSA signature and its manifest remain the
 -- only thing that is actually verified; nothing here is covered by that

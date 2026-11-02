@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V112__add_position_to_users.sql.
+-- Manual rollback ("down") for V117__add_position_to_users.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it.
 

@@ -18,22 +18,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V113-V116 (2.8 Document Relationships: tables, the 10 system types for existing tenants,
+ * V106-V109 (2.8 Document Relationships: tables, the 10 system types for existing tenants,
  * the duplicate-origin column, the notification category) up and down on a throwaway
  * database - same harness as {@link com.oak.dms.notification.V103ToV105NotificationMigrationTest}.
  * Proves the CHECKs and unique indexes bite, the composite FKs keep a link inside its
  * tenant, an existing tenant is backfilled, and the four rollbacks reverse cleanly.
  */
-class V113ToV116RelationshipMigrationTest {
+class V106ToV109RelationshipMigrationTest {
 
     private static final String DB_URL = env("DB_URL", "jdbc:postgresql://localhost:5433/dms_dev");
     private static final String DB_USERNAME = env("DB_USERNAME", "postgres");
     private static final String DB_PASSWORD = env("DB_PASSWORD", "password");
     private static final String[] ROLLBACKS = {
-            "/db/rollback/V116__seed_relationship_notification_category.rollback.sql",
-            "/db/rollback/V115__link_duplicate_origin_columns.rollback.sql",
-            "/db/rollback/V114__seed_relationship_types_for_existing_tenants.rollback.sql",
-            "/db/rollback/V113__create_relationship_types_and_document_relationships.rollback.sql"};
+            "/db/rollback/V109__seed_relationship_notification_category.rollback.sql",
+            "/db/rollback/V108__link_duplicate_origin_columns.rollback.sql",
+            "/db/rollback/V107__seed_relationship_types_for_existing_tenants.rollback.sql",
+            "/db/rollback/V106__create_relationship_types_and_document_relationships.rollback.sql"};
     private static final Set<String> TYPE_CODES = Set.of("PARENT_CHILD", "MAIN_ATTACHMENT", "CONTRACT_AMENDMENT",
             "SUPERSEDES", "REPLACES", "INVOICE_SUPPORTING", "REPORT_EVIDENCE", "ORIGINAL_TRANSLATION",
             "DUPLICATE_OF", "RELATED");
@@ -41,19 +41,19 @@ class V113ToV116RelationshipMigrationTest {
     @Test
     void up_backfillsTypesAndConstraintsBite() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "112");
+            migrate(url, "105");
             Ids a;
             Ids b;
             try (Connection c = connect(url)) {
                 a = seed(c);
                 b = seed(c);
             }
-            migrate(url, "116");
+            migrate(url, "109");
             try (Connection c = connect(url)) {
                 assertThat(tableExists(c, "relationship_types")).isTrue();
                 assertThat(tableExists(c, "document_relationships")).isTrue();
 
-                // V114 backfilled both existing tenants with the 10 system types.
+                // V107 backfilled both existing tenants with the 10 system types.
                 for (Ids ids : new Ids[]{a, b}) {
                     assertThat(count(c, "select count(*) from relationship_types where tenant_id = '" + ids.tenant()
                             + "' and is_system and is_enabled and not is_deleted")).isEqualTo(10);
@@ -71,7 +71,7 @@ class V113ToV116RelationshipMigrationTest {
                 assertThat(count(c, "select count(*) from relationship_types where tenant_id = '" + a.tenant()
                         + "' and code = 'RELATED' and directionality = 'symmetric'")).isEqualTo(1);
 
-                // V115 columns, V116 category.
+                // V108 columns, V109 category.
                 assertThat(count(c, "select count(*) from information_schema.columns where column_name = 'duplicate_of_document_id'"
                         + " and table_name = 'scan_results'")).isEqualTo(1);
                 assertThat(count(c, "select count(*) from notification_categories where category_code = 'document.relationship-added'"
@@ -133,16 +133,16 @@ class V113ToV116RelationshipMigrationTest {
     @Test
     void down_removesEverythingCleanly_andUpCanBeReapplied() throws Exception {
         withScratchDatabase(url -> {
-            migrate(url, "112");
+            migrate(url, "105");
             try (Connection c = connect(url)) {
                 seed(c);
             }
-            migrate(url, "116");
+            migrate(url, "109");
             try (Connection c = connect(url); Statement s = c.createStatement()) {
                 for (String script : ROLLBACKS) {
                     s.execute(read(script));
                 }
-                s.execute("delete from flyway_schema_history where version in ('113', '114', '115', '116')");
+                s.execute("delete from flyway_schema_history where version in ('106', '107', '108', '109')");
                 assertThat(tableExists(c, "relationship_types")).isFalse();
                 assertThat(tableExists(c, "document_relationships")).isFalse();
                 assertThat(count(c, "select count(*) from information_schema.columns where column_name = 'duplicate_of_document_id'"))
@@ -150,11 +150,11 @@ class V113ToV116RelationshipMigrationTest {
                 assertThat(count(c, "select count(*) from notification_categories where category_code = 'document.relationship-added'"))
                         .isZero();
             }
-            migrate(url, "116");
+            migrate(url, "109");
             try (Connection c = connect(url)) {
                 assertThat(tableExists(c, "document_relationships")).isTrue();
                 assertThat(count(c, "select count(*) from relationship_types")).isEqualTo(10);
-                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('113','114','115','116')"
+                assertThat(count(c, "select count(*) from flyway_schema_history where version in ('106','107','108','109')"
                         + " and success")).isEqualTo(4);
             }
         });
@@ -174,10 +174,10 @@ class V113ToV116RelationshipMigrationTest {
         String staging = uuid();
         String engine = uuid();
         exec(c, "insert into tenants (tenant_id, tenant_name, domain, subscription_tier, status) values ('" + tenant
-                + "', 'V106 tenant', 'v106-" + tenant + ".invalid', 'standard', 'active')");
+                + "', 'V111 tenant', 'v106-" + tenant + ".invalid', 'standard', 'active')");
         exec(c, "insert into users (user_id, tenant_id, keycloak_id, email, username, first_name, display_name, status)"
                 + " values ('" + user + "', '" + tenant + "', '" + uuid() + "', 'v106-" + user + "@test.invalid', 'v106-"
-                + user + "', 'V106', 'V106', 'active')");
+                + user + "', 'V111', 'V111', 'active')");
         exec(c, "insert into document_types (document_type_id, tenant_id, type_code, type_name) values ('" + type + "', '"
                 + tenant + "', 'CONTRACT', 'Contract')");
         exec(c, "insert into storage_locations (storage_location_id, tenant_id, name, provider, purpose, base_path, status)"
@@ -266,7 +266,7 @@ class V113ToV116RelationshipMigrationTest {
     }
 
     private static String read(String script) throws Exception {
-        try (InputStream in = V113ToV116RelationshipMigrationTest.class.getResourceAsStream(script)) {
+        try (InputStream in = V106ToV109RelationshipMigrationTest.class.getResourceAsStream(script)) {
             assertThat(in).as(script + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
