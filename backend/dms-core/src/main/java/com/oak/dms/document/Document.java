@@ -32,6 +32,9 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "documents")
+// Only the columns a caller changed are written. Ownership is changed with set-based SQL by the transfer code; a
+// stale copy of this entity (loaded before a transfer committed) must not write the old owner back when it is saved.
+@org.hibernate.annotations.DynamicUpdate
 @Getter
 @Setter
 @NoArgsConstructor
@@ -68,6 +71,18 @@ public class Document {
 
     @Column(name = "owner_user_id", nullable = false)
     private UUID ownerUserId;
+
+    /** The department the owner belongs to (V113); null when the owner had none. Set with the owner. */
+    @Column(name = "owner_department_id")
+    private UUID ownerDepartmentId;
+
+    /** assigned = a person took ownership; holding = parked with a holding owner pending reassignment (V113). */
+    @Column(name = "ownership_state", nullable = false)
+    @Builder.Default
+    private String ownershipState = OWNERSHIP_ASSIGNED;
+
+    public static final String OWNERSHIP_ASSIGNED = "assigned";
+    public static final String OWNERSHIP_HOLDING = "holding";
 
     @Column(name = "status", nullable = false)
     @Builder.Default

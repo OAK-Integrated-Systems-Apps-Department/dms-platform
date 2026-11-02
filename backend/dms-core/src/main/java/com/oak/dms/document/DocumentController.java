@@ -145,7 +145,8 @@ public class DocumentController {
                     + "excludeDocumentId leaves one document out (the document picker). relationshipType (a type code) and "
                     + "relatedTo (a document id) keep documents linked that way - over every folder; direction (source|target|any) "
                     + "says which side of the link the returned documents are on: relatedTo=X&relationshipType=SUPERSEDES&direction=source "
-                    + "is the documents that supersede X. Newest first by default.")
+                    + "is the documents that supersede X. ownerId and ownerDepartmentId keep documents owned by that user and/or "
+                    + "department (access filtering still applies). Newest first by default.")
     public PageResponse<DocumentListItem> listDocuments(
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "all", defaultValue = "false") boolean all,
@@ -155,14 +156,17 @@ public class DocumentController {
             @RequestParam(value = "relationshipType", required = false) String relationshipType,
             @RequestParam(value = "relatedTo", required = false) UUID relatedTo,
             @RequestParam(value = "direction", required = false) String direction,
+            @RequestParam(value = "ownerId", required = false) UUID ownerId,
+            @RequestParam(value = "ownerDepartmentId", required = false) UUID ownerDepartmentId,
             @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        OwnerFilter owner = new OwnerFilter(ownerId, ownerDepartmentId);
         RelationshipFilter relationship = relationshipBrowseFilter.resolve(relationshipType, relatedTo, direction);
         if (relationship != null) {
             return PageResponse.from(documentService.listRelatedDocuments(query, documentTypeId, excludeDocumentId,
-                    relationship, pageable));
+                    relationship, owner, pageable));
         }
         return PageResponse.from(documentService.listDocuments(folderId, all, query, documentTypeId, excludeDocumentId,
-                pageable));
+                owner, pageable));
     }
 
     @GetMapping("/shared-with-me")

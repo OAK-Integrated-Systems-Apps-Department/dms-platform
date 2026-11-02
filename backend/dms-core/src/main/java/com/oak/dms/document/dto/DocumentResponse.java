@@ -22,6 +22,10 @@ public record DocumentResponse(
         String fileName,
         String mimeType,
         Long sizeBytes,
-        Integer versionNumber
+        Integer versionNumber,
+        /** The owner's department (V113); null when the owner had none. */
+        UUID ownerDepartmentId,
+        /** assigned, or holding while the document waits for a new owner (V113). */
+        String ownershipState
 ) {
 }

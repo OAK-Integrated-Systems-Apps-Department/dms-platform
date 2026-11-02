@@ -20,6 +20,9 @@ export interface DepartmentDto {
   memberCount: number
   createdAt: string
   updatedAt: string | null
+  /** Who documents are parked with when their owner leaves and nobody is named (V113); null = fall back to the head. */
+  holdingOwnerUserId?: string | null
+  holdingOwnerName?: string | null
 }
 
 /** Mirrors backend/dms-core's DepartmentMemberResponse - a direct member (the department's approver pool). */
@@ -56,6 +59,10 @@ export interface UpdateDepartmentPayload {
   parentDepartmentId: string | null
   headUserId: string | null
   status: DepartmentStatus
+  /** Omitted = keep the current holding owner; a user id sets it. */
+  holdingOwnerUserId?: string | null
+  /** true removes the holding owner (omitting the id above leaves it alone). */
+  clearHoldingOwner?: boolean
 }
 
 function jsonInit(method: string, body: unknown): RequestInit {

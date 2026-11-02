@@ -204,6 +204,9 @@ export async function fetchDocuments(params: {
   relationshipType?: string
   relatedTo?: string
   direction?: "source" | "target" | "any"
+  /** Find by owner: documents owned by this user and/or department (access filtering still applies). */
+  ownerId?: string
+  ownerDepartmentId?: string
   page: number
   size: number
 }): Promise<DocumentPageDto> {
@@ -221,6 +224,8 @@ export async function fetchDocuments(params: {
   if (params.relationshipType) search.set("relationshipType", params.relationshipType)
   if (params.relatedTo) search.set("relatedTo", params.relatedTo)
   if (params.direction) search.set("direction", params.direction)
+  if (params.ownerId) search.set("ownerId", params.ownerId)
+  if (params.ownerDepartmentId) search.set("ownerDepartmentId", params.ownerDepartmentId)
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
     undefined,

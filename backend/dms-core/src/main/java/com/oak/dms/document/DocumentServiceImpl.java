@@ -246,7 +246,9 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public Page<DocumentListItem> listDocuments(UUID folderId, boolean allFolders, String query, UUID documentTypeId,
-                                                UUID excludeDocumentId, Pageable pageable) {
+                                                UUID excludeDocumentId, OwnerFilter owner, Pageable pageable) {
+        UUID ownerId = owner.ownerId();
+        UUID ownerDepartmentId = owner.ownerDepartmentId();
         UUID tenantId = TenantContext.getTenantId();
         String title = query == null || query.isBlank() ? "" : LikePatterns.escape(query.strip());
         DocumentAccessView access = documentAccessService.forCaller();
@@ -258,19 +260,22 @@ public class DocumentServiceImpl implements DocumentService {
             // Folder access (V53), document access (V54) and workflow-scoped read access all apply.
             page = allFolders
                     ? documentRepository.findVisible(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
-                    access.grantedIds(), access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable)
+                    access.grantedIds(), access.workflowReadableIds(), documentTypeId, excludeDocumentId, ownerId,
+                    ownerDepartmentId, pageable)
                     : folderId != null
                     ? documentRepository.findVisibleInFolder(tenantId, title, folderId, access.grantedIds(),
-                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable)
+                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, ownerId, ownerDepartmentId, pageable)
                     : documentRepository.findVisibleAtTopLevel(tenantId, title, access.grantedIds(),
-                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, pageable);
+                    access.workflowReadableIds(), documentTypeId, excludeDocumentId, ownerId, ownerDepartmentId, pageable);
         } else if (allFolders) {
-            page = documentRepository.findLive(tenantId, title, documentTypeId, excludeDocumentId, pageable);
+            page = documentRepository.findLive(tenantId, title, documentTypeId, excludeDocumentId, ownerId,
+                    ownerDepartmentId, pageable);
         } else if (folderId != null) {
             page = documentRepository.findLiveInFolder(tenantId, title, folderId, documentTypeId, excludeDocumentId,
-                    pageable);
+                    ownerId, ownerDepartmentId, pageable);
         } else {
-            page = documentRepository.findLiveAtTopLevel(tenantId, title, documentTypeId, excludeDocumentId, pageable);
+            page = documentRepository.findLiveAtTopLevel(tenantId, title, documentTypeId, excludeDocumentId, ownerId,
+                    ownerDepartmentId, pageable);
         }
 
         return toItems(page, access);
@@ -279,16 +284,17 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public Page<DocumentListItem> listRelatedDocuments(String query, UUID documentTypeId, UUID excludeDocumentId,
-                                                       RelationshipFilter filter, Pageable pageable) {
+                                                       RelationshipFilter filter, OwnerFilter owner, Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
         String title = query == null || query.isBlank() ? "" : LikePatterns.escape(query.strip());
         DocumentAccessView access = documentAccessService.forCaller();
         Page<Document> page = access.seesEverything()
                 ? documentRepository.findLiveRelated(tenantId, title, documentTypeId, excludeDocumentId,
+                owner.ownerId(), owner.ownerDepartmentId(),
                 filter.typeId(), filter.relatedTo(), filter.asSource(), filter.asTarget(), pageable)
                 : documentRepository.findVisibleRelated(tenantId, title, nonEmpty(access.folders().hiddenFolderIds()),
                 access.grantedIds(), access.workflowReadableIds(), documentTypeId, excludeDocumentId,
-                filter.typeId(), filter.relatedTo(), filter.asSource(), filter.asTarget(), pageable);
+                owner.ownerId(), owner.ownerDepartmentId(), filter.typeId(), filter.relatedTo(), filter.asSource(), filter.asTarget(), pageable);
         return toItems(page, access);
     }
 
@@ -338,7 +344,7 @@ public class DocumentServiceImpl implements DocumentService {
                     v != null ? v.getOriginalFilename() : null, v != null ? v.getSizeBytes() : null,
                     v != null ? v.getMimeType() : null, v != null ? v.getVersionNumber() : null,
                     d.getOwnerUserId(), d.getCreatedAt(), d.getAccessMode() == FolderAccessMode.restricted,
-                    access.level(d).name());
+                    access.level(d).name(), d.getOwnerDepartmentId(), d.getOwnershipState());
         });
     }
 
@@ -404,7 +410,8 @@ public class DocumentServiceImpl implements DocumentService {
                 version != null ? version.getOriginalFilename() : null,
                 version != null ? version.getMimeType() : null,
                 version != null ? version.getSizeBytes() : null,
-                version != null ? version.getVersionNumber() : null);
+                version != null ? version.getVersionNumber() : null,
+                document.getOwnerDepartmentId(), document.getOwnershipState());
     }
 
     /** The document's type name, or null once the type has been deleted - embedded so viewers without a document-type permission still see it. */
