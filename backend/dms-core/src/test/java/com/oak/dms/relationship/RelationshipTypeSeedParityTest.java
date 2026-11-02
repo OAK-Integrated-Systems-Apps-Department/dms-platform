@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** V107's SQL seed and {@link RelationshipTypeCatalog} (used for new tenants) must list the same ten types. */
+/** V114's SQL seed and {@link RelationshipTypeCatalog} (used for new tenants) must list the same ten types. */
 class RelationshipTypeSeedParityTest {
 
     private static final Pattern ROW = Pattern.compile(
@@ -21,7 +21,7 @@ class RelationshipTypeSeedParityTest {
     @Test
     void sqlSeedMatchesJavaCatalog() throws Exception {
         String sql;
-        try (InputStream in = getClass().getResourceAsStream("/db/migration/V107__seed_relationship_types_for_existing_tenants.sql")) {
+        try (InputStream in = getClass().getResourceAsStream("/db/migration/V114__seed_relationship_types_for_existing_tenants.sql")) {
             assertThat(in).isNotNull();
             sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
