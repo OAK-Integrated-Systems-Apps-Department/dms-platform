@@ -73,10 +73,11 @@ export function useWorkflowActions() {
     isActing: mutation.isPending,
     submit: async (
       documentId: string,
+      templateId?: string,
       supportingDocuments?: SupportingDocumentInput[]
     ): Promise<WorkflowInstanceDto | null> => {
       const instance = await run(
-        () => submitDocumentToWorkflow(documentId, supportingDocuments),
+        () => submitDocumentToWorkflow(documentId, templateId, supportingDocuments),
         "Could not submit this document for approval."
       )
       if (instance) toast.success("Submitted for approval.")

@@ -4,13 +4,15 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.document.Document;
 import com.oak.dms.document.DocumentRepository;
+import com.oak.dms.document.DocumentVersion;
+import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.document.event.DocumentVersionCreatedEvent;
 import com.oak.dms.workflow.entity.WorkflowInstance;
 import com.oak.dms.workflow.entity.WorkflowTemplate;
 import com.oak.dms.workflow.enums.InstanceStatus;
 import com.oak.dms.workflow.enums.OnDocumentChange;
+import com.oak.dms.workflow.enums.TemplateStatus;
 import com.oak.dms.workflow.enums.WorkflowActionType;
-import com.oak.dms.workflow.helper.TemplateSelector;
 import com.oak.dms.workflow.helper.WorkflowActionRecorder;
 import com.oak.dms.workflow.helper.WorkflowLocks;
 import com.oak.dms.workflow.repository.WorkflowInstanceRepository;
@@ -53,9 +55,9 @@ import java.util.UUID;
 public class DocumentVersionChangeListener {
 
     private final DocumentRepository documentRepository;
+    private final DocumentVersionRepository versionRepository;
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowTemplateRepository templateRepository;
-    private final TemplateSelector templateSelector;
     private final WorkflowSubmissionService submissionService;
     private final WorkflowEngine engine;
     private final WorkflowActionRecorder actions;
@@ -65,6 +67,18 @@ public class DocumentVersionChangeListener {
     @EventListener
     @Transactional(propagation = Propagation.MANDATORY)
     public void onDocumentVersionCreated(DocumentVersionCreatedEvent event) {
+        // 1.4 Digital Signature Integration: a version created by SignaturePlacementService's own
+        // stamping step (reason=signed_copy) is this SAME in-progress instance's own doing, not an
+        // external replace mid-approval - it already advances WorkflowInstance.documentVersionId to
+        // this exact version itself (right after the ticket resolves, just outside this transaction).
+        // Treating it as "the document changed under the approvers" would be wrong on both branches
+        // below: flagging would warn about a change the instance is already tracking, and - far worse -
+        // restart would cancel the very instance this signature is being placed for.
+        DocumentVersion createdVersion = versionRepository.findById(event.newVersionId()).orElse(null);
+        if (createdVersion != null && "signed_copy".equals(createdVersion.getCreatedReason())) {
+            return;
+        }
+
         // Scalar lookup, so the instance is first loaded by its lock (a row read
         // earlier in the transaction would come back stale from FOR UPDATE).
         Optional<UUID> inFlight = instanceRepository.findInProgressInstanceId(event.tenantId(), event.documentId());
@@ -85,10 +99,13 @@ public class DocumentVersionChangeListener {
         detail.put("toVersionId", event.newVersionId());
 
         if (template != null && template.getOnDocumentChange() == OnDocumentChange.restart) {
-            Optional<WorkflowTemplate> active = templateSelector.selectFor(document);
-            if (active.isPresent()) {
+            // Restart with the SAME template the instance was already running, never a freshly-selected
+            // one: since V120 a document type can have more than one active template, and this is an
+            // automatic restart, not a submission - there's no one to ask which to use, so it only makes
+            // sense to continue with the template that was already chosen, if it's still active.
+            if (template.getStatus() == TemplateStatus.active) {
                 try {
-                    restart(instance, document, active.get(), event, detail);
+                    restart(instance, document, template, event, detail);
                     return;
                 } catch (ApiException e) {
                     // restart() pre-checks before it cancels, so nothing was written.

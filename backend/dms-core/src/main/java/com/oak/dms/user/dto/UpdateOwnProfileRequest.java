@@ -18,6 +18,10 @@ public record UpdateOwnProfileRequest(
         String firstName,
 
         @Size(max = 255)
-        String lastName
+        String lastName,
+
+        /** Job title (1.4) - shown on a placed signature alongside name/department/date; null clears it. */
+        @Size(max = 150)
+        String position
 ) {
 }

@@ -20,7 +20,7 @@ import {
   isSessionExpired,
 } from "@/lib/api-error"
 import { API_BASE_URL } from "@/lib/api-config"
-import { NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
+import { isIntentionalLogout, NETWORK_ERROR_MESSAGE } from "@/lib/api-fetch"
 import { useProactiveSessionRefresh } from "@/lib/auth/use-proactive-session-refresh"
 
 /**
@@ -99,6 +99,12 @@ export function Providers({
       }
 
       if (isSessionExpired(error)) {
+        // A stray in-flight query's 401 landing right after the explicit
+        // "Log out" action cleared the session cookies - that action is
+        // already navigating to /login itself, so this isn't an unexpected
+        // expiry and shouldn't show "Your session has expired" or redirect
+        // to /session-expired instead.
+        if (isIntentionalLogout()) return
         if (sessionExpiredHandled) return
         sessionExpiredHandled = true
         setTimeout(() => {

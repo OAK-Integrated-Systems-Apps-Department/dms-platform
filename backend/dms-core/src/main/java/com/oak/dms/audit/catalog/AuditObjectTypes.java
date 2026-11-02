@@ -17,7 +17,9 @@ package com.oak.dms.audit.catalog;
  * always match it.
  *
  * DocumentServiceImpl/StorageLocationServiceImpl are also call sites now
- * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below).
+ * (DOCUMENT/DOCUMENT_VERSION/STORAGE_LOCATION below), as are
+ * DocumentSignatureService/WorkflowSignatureListener/SigningKeyService/
+ * DocumentSignatureLockService (DOCUMENT_SIGNATURE/SIGNING_KEY below).
  */
 public final class AuditObjectTypes {
 
@@ -58,6 +60,8 @@ public final class AuditObjectTypes {
     public static final String WATERMARK_TEMPLATE = "WATERMARK_TEMPLATE";
     /** One requested watermarked copy (watermark_jobs) - the object of the other WATERMARK_* events. */
     public static final String WATERMARK_JOB = "WATERMARK_JOB";
+    /** A tenant's download-watermarking policy (tenant_watermark_settings) - object id is the tenant id. */
+    public static final String TENANT_WATERMARK_SETTINGS = "TENANT_WATERMARK_SETTINGS";
     /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
     public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
 
@@ -81,6 +85,12 @@ public final class AuditObjectTypes {
     public static final String WORKFLOW_SUPPORTING_DOCUMENT = "WORKFLOW_SUPPORTING_DOCUMENT";
     /** A comment on a document (document_comments) - every DOCUMENT_COMMENT_* event. */
     public static final String DOCUMENT_COMMENT = "DOCUMENT_COMMENT";
+    /** One signature (document_signatures, V105) - the object of every DOCUMENT_SIGNATURE_* event except LOCKED/UNLOCKED, whose object is the DOCUMENT itself. */
+    public static final String DOCUMENT_SIGNATURE = "DOCUMENT_SIGNATURE";
+    /** One user's signing key (user_signing_keys, V105) - the object of every SIGNING_KEY_* event. */
+    public static final String SIGNING_KEY = "SIGNING_KEY";
+    /** One user's saved visual signature (user_visual_signatures, V109) - cosmetic, the object of VISUAL_SIGNATURE_UPDATED. */
+    public static final String VISUAL_SIGNATURE = "VISUAL_SIGNATURE";
     /** A link between two documents (document_relationships) - every RELATIONSHIP_* event except the type ones. */
     public static final String DOCUMENT_RELATIONSHIP = "DOCUMENT_RELATIONSHIP";
     /** A relationship type (relationship_types) - every RELATIONSHIP_TYPE_* event. */

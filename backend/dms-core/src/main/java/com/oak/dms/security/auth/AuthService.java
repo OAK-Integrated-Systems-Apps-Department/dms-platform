@@ -88,7 +88,21 @@ public class AuthService {
      */
     public void login(String username, String password, String totp, boolean rememberMe,
                        HttpServletResponse response) {
-        KeycloakAuthClient.GrantResult result = keycloakAuthClient.passwordGrant(username, password, totp);
+        KeycloakAuthClient.GrantResult result =
+
+                keycloakAuthClient.passwordGrant(username, password, totp, rememberMe);
+        if (rememberMe && result instanceof KeycloakAuthClient.GrantResult.Failure scopeFailure
+                && ("invalid_scope".equals(scopeFailure.keycloakError())
+                        || "not_allowed".equals(scopeFailure.keycloakError()))) {
+            // invalid_scope: the client doesn't allow offline_access yet; not_allowed: the user
+            // lacks the offline_access role. Either way the credentials were fine (neither is
+            // reported for a wrong password, so this never doubles a failed-login count): sign in
+            // anyway, with a "remembered" session that only lasts the SSO lifetime.
+            log.warn("Keycloak refused the offline_access scope for '{}' ({}) - Remember me will not outlast "
+                    + "the SSO session. Re-run keycloak-bootstrap.", username, scopeFailure.keycloakError());
+            result = keycloakAuthClient.passwordGrant(username, password, totp, false);
+        }
+        
         if (result instanceof KeycloakAuthClient.GrantResult.Failure failure) {
             // No actor/tenant is resolved here on purpose: a failed grant
             // must never be used to confirm whether `username` belongs to
@@ -147,6 +161,32 @@ public class AuthService {
     }
 
     /**
+     * Keycloak's resource-owner password grant does a literal username lookup - unlike its
+     * browser login form, it does NOT honor the realm's {@code loginWithEmailAllowed} and fall
+     * back to an email match (confirmed against a real Keycloak 26 server: a correct email/password
+     * pair for an account whose Keycloak username differs from its email comes back
+     * {@code error=user_not_found}, not a credentials failure). Every account created by
+     * {@link com.oak.dms.tenant.TenantProvisioningService}/{@code UserServiceImpl#createUser} has a
+     * username distinct from its email (see {@link KeycloakUserService#createUser}'s own doc
+     * comment), and the welcome/reset emails only ever give the person their email - so without this
+     * resolution step, nobody who signs in with the email they were invited at could ever log in.
+     * Reuses the same Admin API search {@link #isMfaRequired} and {@link PasswordResetService}
+     * already rely on; falls back to the raw input (letting Keycloak reject it generically) if no
+     * match is found, which keeps {@link #login}'s "never leak account existence" contract intact.
+     */
+    private String resolveKeycloakUsername(String usernameOrEmail) {
+        try {
+            return keycloakUserService.findByUsernameOrEmail(usernameOrEmail)
+                    .map(UserRepresentation::getUsername)
+                    .orElse(usernameOrEmail);
+        } catch (Exception e) {
+            log.warn("Could not resolve '{}' to a Keycloak username, trying it as-is: {}", usernameOrEmail,
+                    e.getMessage());
+            return usernameOrEmail;
+        }
+    }
+
+    /**
      * Whether a token Keycloak has just issued to us (straight from its token endpoint, so not
      * re-verified here) carries a realm role.
      */
@@ -200,12 +240,10 @@ public class AuthService {
 
     /**
      * Exchanges the refresh-token cookie for a fresh token pair, rewriting
-     * both cookies. {@code rememberMe} state isn't itself stored anywhere
-     * server-side, so a refresh always re-issues the refresh cookie as
-     * persistent if one was already present as persistent - in practice,
-     * the browser only sends a persistent refresh cookie back at all if
-     * the original login was rememberMe=true, so mirroring "was a refresh
-     * cookie present" is equivalent without needing separate state.
+     * both cookies. {@code rememberMe} state isn't stored anywhere
+     * server-side; it is read off the token instead: a "Remember me" login
+     * holds an offline token (no expiry reported), so the refresh cookie stays
+     * persistent exactly when the token is one.
      *
      * Deliberately not audited: same reasoning as {@link #recordLastLogin}
      * not being called from here - silently renewing an already-valid
@@ -224,7 +262,10 @@ public class AuthService {
             throw new SessionExpiredException();
         }
         KeycloakTokenResponse tokens = ((KeycloakAuthClient.GrantResult.Success) result).tokens();
-        cookieService.writeSessionCookies(response, tokens, true);
+        // An offline token (a "Remember me" login) reports no expiry; anything
+        // else was a plain session, and must not turn persistent just because
+        // it was refreshed.
+        cookieService.writeSessionCookies(response, tokens, tokens.refreshExpiresInSeconds() == 0);
     }
 
     /** Revokes the refresh token in Keycloak (best-effort) and always clears the local cookies. */

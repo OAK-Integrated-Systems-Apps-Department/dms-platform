@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react"
 
 import { UploadsPanel } from "@/components/documents/uploads-panel"
+import { PinAudienceSheet } from "@/components/pins/pin-audience-sheet"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { useSidebarCookie } from "@/components/providers/sidebar-cookie-provider"
 
@@ -78,6 +79,8 @@ export function DashboardShell({
       </SidebarInset>
       {/* Uploads in progress, bottom right - they carry on from page to page. */}
       <UploadsPanel />
+      {/* Choosing who sees a pin - opened from any pin button or menu (stores/pin-audience-store.ts). */}
+      <PinAudienceSheet />
     </SidebarProvider>
   )
 }

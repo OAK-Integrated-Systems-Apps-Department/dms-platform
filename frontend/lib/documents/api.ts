@@ -6,6 +6,7 @@ import {
   type UploadTransfer,
 } from "@/lib/api-fetch"
 import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
+import type { PageDto } from "@/lib/workflow/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
 export interface SelectableDocumentTypeDto {
@@ -849,6 +850,39 @@ export interface DocumentDto {
   mimeType: string | null
   sizeBytes: number | null
   versionNumber: number | null
+  /** Set (1.4) once a workflow with a valid signature approved - null means not locked. */
+  signatureLockedAt: string | null
+  signatureLockedVersionId: string | null
+}
+
+/** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */
+export interface DocumentSummaryDto {
+  documentId: string
+  title: string
+  documentTypeName: string | null
+  latestVersionId: string | null
+  createdAt: string
+  createdByName: string | null
+}
+
+export interface DocumentSearchOptions {
+  documentTypeId?: string
+  /** Left out of the results - e.g. the document under approval when picking supporting documents. */
+  excludeDocumentId?: string
+}
+
+/** `GET /api/v1/documents` - the tenant's documents, newest first; search matches the title. Needs docm.documents.view. `page` is 0-indexed. */
+export async function searchDocuments(
+  search: string,
+  options: DocumentSearchOptions = {},
+  page = 0,
+  size = 20
+): Promise<PageDto<DocumentSummaryDto>> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) })
+  if (search.trim()) params.set("search", search.trim())
+  if (options.documentTypeId) params.set("documentTypeId", options.documentTypeId)
+  if (options.excludeDocumentId) params.set("excludeDocumentId", options.excludeDocumentId)
+  return apiFetchJson(`${API_BASE_URL}/api/v1/documents?${params.toString()}`, undefined, "Could not load documents.")
 }
 
 /** `GET /api/v1/documents/{id}` - needs docm.documents.view. */

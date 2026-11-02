@@ -45,7 +45,7 @@ function AlertDialogPopup({
     <AlertDialogPrimitive.Popup
       data-slot="alert-dialog-popup"
       className={cn(
-        "fixed top-1/2 left-1/2 z-50 w-full max-w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-border bg-card px-7 py-7 text-center shadow-[var(--ledger-shadow)]",
+        "fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-full max-w-[380px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-md border border-border bg-card px-7 py-7 text-center shadow-[var(--ledger-shadow)]",
         className
       )}
       {...props}

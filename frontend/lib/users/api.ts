@@ -33,6 +33,8 @@ export interface UserResponseDto {
    * of gap as `lastLoginAt` not seeing anything Keycloak-side.
    */
   lastPasswordChangedAt: string | null
+  /** Job title (1.4) - shown on a placed signature alongside name/department/date, or null if unset. */
+  position: string | null
 }
 
 /** Mirrors backend/dms-core's UserRoleResponse DTO (only the fields the UI uses). */
@@ -342,6 +344,8 @@ export async function isEmailAvailable(
 export async function updateCurrentUserProfile(patch: {
   firstName: string
   lastName: string
+  /** Job title (1.4) - shown on a placed signature; empty string clears it. */
+  position?: string
 }): Promise<UserResponseDto> {
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/users/me`,

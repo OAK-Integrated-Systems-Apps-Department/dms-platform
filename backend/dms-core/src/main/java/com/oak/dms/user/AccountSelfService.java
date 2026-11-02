@@ -7,6 +7,7 @@ import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.security.auth.KeycloakAuthClient;
+import com.oak.dms.security.auth.PasswordChangedMailer;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.user.dto.ChangeOwnPasswordRequest;
 import com.oak.dms.user.dto.UpdateOwnIdentityRequest;
@@ -45,6 +46,7 @@ public class AccountSelfService {
     private final KeycloakAuthClient keycloakAuthClient;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final PasswordChangedMailer passwordChangedMailer;
 
     /**
      * Updates the caller's own name and email.
@@ -107,6 +109,24 @@ public class AccountSelfService {
         Optional<User> local = userRepository.findByKeycloakIdAndDeletedFalse(keycloakId);
         audit(AuditActionCatalog.PASSWORD_CHANGED, local.orElse(null), keycloakId, Map.of());
         log.info("Password changed by the account holder for '{}'", username);
+        notifyPasswordChanged(local.orElse(null), username);
+    }
+
+    /**
+     * Security notice to the account holder. A platform administrator has no
+     * local row, so their address comes from Keycloak instead.
+     */
+    private void notifyPasswordChanged(User local, String username) {
+        if (local != null) {
+            passwordChangedMailer.send(local.getEmail(), local.getFirstName());
+            return;
+        }
+        try {
+            keycloakUserService.findByUsernameOrEmail(username).ifPresent(kc ->
+                    passwordChangedMailer.send(kc.getEmail(), kc.getFirstName()));
+        } catch (Exception e) {
+            log.warn("Could not look up '{}' for the password-changed email: {}", username, e.getMessage());
+        }
     }
 
     /**

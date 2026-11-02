@@ -19,6 +19,7 @@ import {
 import { BackendUnavailable } from "@/components/ui/backend-unavailable"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
+import { WatermarkDownloadDefaultsCard } from "@/components/watermarks/watermark-download-defaults-card"
 import {
   WatermarkTemplateForm,
   type FormFailure,
@@ -205,6 +206,13 @@ export function WatermarkTemplatesContent() {
           </Button>
         )}
       </div>
+
+      {!featureOff && (canCreate || canEdit) && (
+        <WatermarkDownloadDefaultsCard
+          templates={(data ?? []).filter((template) => template.active)}
+          canEdit={canCreate || canEdit}
+        />
+      )}
 
       <PermissionGate permission={WATERMARK_ADMIN_PERMISSIONS}>
         {isPending ? (

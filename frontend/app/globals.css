@@ -19,6 +19,8 @@
   --font-heading: var(--font-heading);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  /* A typed e-signature's display font - cursive, never used for body text. */
+  --font-signature: var(--font-signature);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -331,4 +333,42 @@ input[type="password"]::-webkit-textfield-decoration-container {
 .scrollbar-thin::-webkit-scrollbar-thumb {
   border-width: 1px;
   border-radius: var(--radius-lg);
+}
+
+
+/* ==========================================================================
+   LOGIN SCREEN MOTION (components/auth/login-hero.tsx, app/login)
+   Deliberately small: the form fades up once on load and the spheres drift
+   slowly. Nothing else on the screen moves.
+   ========================================================================== */
+
+@keyframes lg-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lg-bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+.lg-bob {
+  animation: lg-bob 24s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-bob {
+    animation: none;
+  }
 }

@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { apiFetch, apiFetchJson, apiFetchVoid } from "@/lib/api-fetch"
 
 const BASE = `${API_BASE_URL}/api/v1/workflow`
 
@@ -115,6 +115,8 @@ export interface WorkflowStageDto {
   escalationUserId: string | null
   /** Whether approvers may pause their task to request information (default true). */
   allowInfoRequests: boolean
+  /** Whether approving this stage requires a digital signature - always true, every stage (V117, 1.4). */
+  requiresSignature: boolean
   participants: WorkflowParticipantDto[]
 }
 
@@ -214,6 +216,28 @@ export async function fetchWorkflowTemplates(
 
 export async function fetchWorkflowTemplate(templateId: string): Promise<WorkflowTemplateDto> {
   return apiFetchJson(`${BASE}/templates/${templateId}`, undefined, "Could not load this workflow template.")
+}
+
+/** Mirrors backend/dms-core's WorkflowTemplateOptionResponse - one choice in a submit-time "which workflow" dropdown. */
+export interface WorkflowTemplateOptionDto {
+  templateId: string
+  name: string
+  code: string
+  versionNumber: number
+}
+
+/**
+ * Every active template of one document type - empty, one, or more. Backs
+ * the "which workflow" choice in {@link submitDocumentToWorkflow}; reachable
+ * by anyone who can submit documents, unlike {@link fetchWorkflowTemplates}
+ * which needs a template-admin permission.
+ */
+export async function fetchActiveWorkflowTemplates(documentTypeId: string): Promise<WorkflowTemplateOptionDto[]> {
+  return apiFetchJson(
+    `${BASE}/templates/active?documentTypeId=${documentTypeId}`,
+    undefined,
+    "Could not load the approval workflows for this document type."
+  )
 }
 
 /** Every version in this template's family (same code). */
@@ -329,6 +353,8 @@ export interface WorkflowStageInstanceDto {
   completedAt: string | null
   tasks: WorkflowTaskDto[]
   allowInfoRequests: boolean
+  /** Whether approving this stage requires a digital signature (1.4). */
+  requiresSignature: boolean
 }
 
 /**
@@ -450,17 +476,20 @@ export interface WorkflowInstanceSummaryDto {
 }
 
 /**
- * Starts the document type's active workflow on this document, optionally
- * attaching supporting documents in the same transaction. An invalid
- * attachment fails the whole submission - nothing is created.
+ * Starts a workflow on this document, optionally attaching supporting
+ * documents in the same transaction. An invalid attachment fails the whole
+ * submission - nothing is created. `templateId` is required when the
+ * document's type has more than one active template (see
+ * {@link fetchActiveWorkflowTemplates}), optional when it has exactly one.
  */
 export async function submitDocumentToWorkflow(
   documentId: string,
+  templateId?: string,
   supportingDocuments?: SupportingDocumentInput[]
 ): Promise<WorkflowInstanceDto> {
   return apiFetchJson(
     `${BASE}/instances`,
-    jsonInit("POST", { documentId, supportingDocuments }),
+    jsonInit("POST", { documentId, templateId, supportingDocuments }),
     "Could not submit this document for approval."
   )
 }
@@ -556,6 +585,8 @@ export interface MyTaskDto {
   route: TaskRoute | null
   delegatedFrom: WorkflowUserRefDto | null
   openInfoRequestCount: number
+  /** Whether approving this task's stage requires a digital signature - open SignAndApproveDialog instead of a plain approve when true (1.4). */
+  requiresSignature: boolean
 }
 
 /** Mirrors backend/dms-core's MyTaskCountResponse. requestsForMe: open information requests addressed to me. */
@@ -608,6 +639,62 @@ export async function approveTask(taskId: string, comment?: string): Promise<Tas
 /** The reason is mandatory (WA-FR-003) - the backend 400s a blank one. */
 export async function rejectTask(taskId: string, reason: string): Promise<TaskActionResultDto> {
   return apiFetchJson(`${BASE}/tasks/${taskId}/reject`, jsonInit("POST", { reason }), "Could not reject this task.")
+}
+
+// ------------------------------------------------------- review / retraction (V119)
+
+/** Mirrors backend/dms-core's ReviewLockResponse - confirms a review session is open and when its soft lock on the rest of the stage expires if not renewed. */
+export interface ReviewLockDto {
+  taskId: string
+  stageInstanceId: string
+  documentId: string
+  documentVersionId: string
+  decision: TaskDecision | null
+  decisionReason: string | null
+  actedAt: string | null
+  reviewLockExpiresAt: string
+}
+
+/**
+ * Re-opens your own already-decided task for review - step-up re-authentication is required just to
+ * view it again, not only to retract (see `ReviewTaskDialog`'s own doc comment). Also acquires the soft
+ * review lock on the stage, refusing every other entry's claim/approve/reject while held.
+ * 409 WORKFLOW_RETRACTION_WINDOW_CLOSED if a later decision already closed the stage.
+ */
+export async function reviewTask(taskId: string, password: string, totp?: string | null): Promise<ReviewLockDto> {
+  return apiFetchJson(
+    `${BASE}/tasks/${taskId}/review`,
+    jsonInit("POST", { password, totp: totp ?? null }),
+    "Could not open this task for review."
+  )
+}
+
+/** Renews the review lock while still looking - call on an interval while the review dialog stays open. */
+export async function renewReviewLock(taskId: string): Promise<ReviewLockDto> {
+  return apiFetchJson(`${BASE}/tasks/${taskId}/review/heartbeat`, { method: "POST" }, "Could not renew the review session.")
+}
+
+/** Ends the review session with no change - releases the lock if held, silently otherwise. */
+export async function closeReview(taskId: string): Promise<void> {
+  await apiFetchVoid(`${BASE}/tasks/${taskId}/review`, { method: "DELETE" }, "Could not close the review session.")
+}
+
+/**
+ * Retracts your own approval and makes the task actionable again - a reason is mandatory, and step-up
+ * re-authentication is required exactly like signing. If a signature was placed, it's invalidated and
+ * the document reverts to the version from before it was signed.
+ */
+export async function retractTask(
+  taskId: string,
+  reason: string,
+  password: string,
+  totp?: string | null
+): Promise<TaskActionResultDto> {
+  return apiFetchJson(
+    `${BASE}/tasks/${taskId}/retract`,
+    jsonInit("POST", { reason, password, totp: totp ?? null }),
+    "Could not retract this decision."
+  )
 }
 
 // ------------------------------------------------------- participant lookups

@@ -29,6 +29,11 @@ import java.util.function.Function;
  * No dedupe key: each event fires once per transaction, and a repeat (a
  * resubmission, a second delegation to the same person) is a genuinely new
  * notification - exactly as the old mails behaved.
+ * <p>
+ * {@link #sendSignatureInvalidated}/{@link #sendSignatureVerificationFailed}
+ * are 1.4 Digital Signature Integration's own notifications, reusing this
+ * class and the same {@link #notifyAbout} plumbing rather than a new one -
+ * called from {@code com.oak.dms.signature.listener.SignatureNotificationListener}.
  */
 @Component
 @RequiredArgsConstructor
@@ -233,5 +238,27 @@ public class WorkflowNotificationMailer {
                 .objectId(objectId)
                 .sourceModule(MODULE)
                 .build());
+    }
+
+    // ---------------------------------------------------------------- 1.4 Digital Signature Integration
+
+    /** To the initiator when a workflow ends cancelled/rejected and invalidated a signature on their document. */
+    public void sendSignatureInvalidated(Collection<User> to, Doc doc, String reason) {
+        notifyAbout(to, doc, "document.signature-invalidated",
+                r -> "Signature no longer valid: " + r.plain(),
+                r -> "A signature on " + r.quoted() + " is no longer valid: " + reason
+                        + "\nIf this document still needs to be approved, it will need to be signed again once its "
+                        + "workflow is resubmitted.",
+                "/documents/" + doc.id(), "/documents/" + doc.id(), "document", doc.id());
+    }
+
+    /** To tenant admins when an on-demand verification finds a signature that no longer checks out. */
+    public void sendSignatureVerificationFailed(Collection<User> to, Doc doc, String verificationResult) {
+        notifyAbout(to, doc, "document.signature-verification-failed",
+                r -> "Signature verification failed: " + r.plain(),
+                r -> "A signature verification on " + r.quoted() + " failed (" + verificationResult + ") - the "
+                        + "document may have been altered after it was signed, or the signature itself no longer "
+                        + "matches. It has been marked invalidated.",
+                "/documents/" + doc.id(), "/documents/" + doc.id(), "document", doc.id());
     }
 }

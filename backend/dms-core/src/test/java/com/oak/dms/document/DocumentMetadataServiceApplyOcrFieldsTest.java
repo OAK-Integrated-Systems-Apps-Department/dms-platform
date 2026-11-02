@@ -56,6 +56,8 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
     private DocumentTypeFieldService documentTypeFieldService;
     @Mock
     private MetadataValidationService metadataValidationService;
+    @Mock
+    private com.oak.dms.signature.service.DocumentSignatureLockService signatureLockService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -87,7 +89,7 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
 
     private DocumentMetadataServiceImpl service() {
         return new DocumentMetadataServiceImpl(documentRepository, documentMetadataRepository,
-                documentTypeFieldService, metadataValidationService, objectMapper);
+                documentTypeFieldService, metadataValidationService, objectMapper, signatureLockService);
     }
 
     /** The document, schema and (optionally) the metadata row already stored. */
@@ -98,7 +100,9 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
                 .build();
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(documentTypeFieldService.getSchema(documentTypeId)).thenReturn(schema);
-        when(documentMetadataRepository.findById(new DocumentMetadataId(tenantId, documentId)))
+        // The service reads the stored values under a row lock (lockedStoredValues ->
+        // findByIdForUpdate) so a manual save racing an OCR result cannot be overwritten.
+        when(documentMetadataRepository.findByIdForUpdate(new DocumentMetadataId(tenantId, documentId)))
                 .thenReturn(stored == null ? Optional.empty() : Optional.of(DocumentMetadata.builder()
                         .id(new DocumentMetadataId(tenantId, documentId))
                         .documentTypeId(documentTypeId)

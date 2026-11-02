@@ -7,6 +7,8 @@ import com.oak.dms.user.dto.UpdateUserRequest;
 import com.oak.dms.user.dto.UserResponse;
 import com.oak.dms.common.exception.DuplicateResourceException;
 import com.oak.dms.common.exception.InvalidUserStateException;
+import com.oak.dms.common.exception.MailDeliveryException;
+import org.springframework.mail.MailException;
 import com.oak.dms.common.exception.EmailInUseException;
 import com.oak.dms.common.exception.UsernameInUseException;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
@@ -17,11 +19,13 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.department.repository.DepartmentRepository;
 import com.oak.dms.outbox.OutboxEventPublisher;
 import com.oak.dms.security.auth.AuthorizationService;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.security.keycloak.KeycloakUserService;
 import com.oak.dms.security.auth.TenantContext;
+import com.oak.dms.signature.service.SigningKeyService;
 import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +66,8 @@ public class UserServiceImpl implements UserService {
     private final AuthorizationService authorizationService;
     private final TenantRepository tenantRepository;
     private final AuditService auditService;
+    private final SigningKeyService signingKeyService;
+    private final DepartmentRepository departmentRepository;
 
     @Override
     public UserResponse provisionCurrentUser(UUID keycloakId, UUID tenantId, String email, String username,
@@ -166,7 +172,22 @@ public class UserServiceImpl implements UserService {
         // Keycloak's hosted executeActionsEmail flow, so the invited
         // person lands on our own /update-password page instead of
         // Keycloak's default-themed one.
-        passwordResetService.issueForNewUser(saved);
+        try {
+            passwordResetService.issueForNewUser(saved);
+        } catch (RuntimeException e) {
+            // The invite is the only way this person can ever sign in, so a user nobody
+            // could tell about is worse than no user. The local row rolls back with this
+            // exception; the Keycloak account does not, so it is removed here - otherwise
+            // the retry would be refused as "email already used".
+            log.error("Invite email to {} could not be sent; undoing the account: {}", email, e.getMessage(), e);
+            try {
+                keycloakUserService.deleteUser(keycloakId);
+            } catch (RuntimeException cleanup) {
+                log.warn("Could not remove Keycloak account {} after a failed invite email: {}", keycloakId,
+                        cleanup.getMessage());
+            }
+            throw new MailDeliveryException();
+        }
 
         // Same transaction as the save() above: either both the user row
         // and this outbox row commit, or neither does. OutboxRelay picks
@@ -205,7 +226,7 @@ public class UserServiceImpl implements UserService {
         User user = findAnyOwnedByCallerTenant(TenantContext.getUserId());
         return userMapper.toResponse(user, resolveTenantName(user.getTenantId()),
                 authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
-                resolveImpersonatorDisplayNameOrNull());
+                resolveImpersonatorDisplayNameOrNull(), resolveDepartmentNameOrNull(user));
     }
 
     @Override
@@ -217,6 +238,7 @@ public class UserServiceImpl implements UserService {
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
         user.setDisplayName(User.displayName(request.firstName(), request.lastName()));
+        user.setPosition(request.position() == null || request.position().isBlank() ? null : request.position().trim());
         user.setUpdatedBy(user.getUserId());
         user.setUpdatedAt(OffsetDateTime.now());
 
@@ -234,7 +256,7 @@ public class UserServiceImpl implements UserService {
 
         return userMapper.toResponse(saved, resolveTenantName(saved.getTenantId()),
                 authorizationService.myEffectivePermissionCodes(), authorizationService.myRoleNames(),
-                resolveImpersonatorDisplayNameOrNull());
+                resolveImpersonatorDisplayNameOrNull(), resolveDepartmentNameOrNull(saved));
     }
 
     @Override
@@ -427,6 +449,10 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
 
         keycloakUserService.disableUser(user.getKeycloakId());
+        // 1.4 Digital Signature Integration: a deactivated user signs nothing new -
+        // their already-made signatures are untouched (decision 9).
+        signingKeyService.revokeActiveKeyIfAny(user.getTenantId(), user.getUserId(),
+                "User account deactivated.", TenantContext.getUserId());
         log.info("Deactivated user {}", userId);
 
         auditService.event(AuditActionCatalog.USER_DEACTIVATED)
@@ -457,6 +483,15 @@ public class UserServiceImpl implements UserService {
         // purges the tenant admin account through this app.
         if (isTenantAdminAccount(user)) {
             throw new InvalidUserStateException("The tenant admin account can't be permanently deleted.");
+        }
+        // 1.4 Digital Signature Integration: the identity behind a legal
+        // signature is never erased - user_signing_keys.user_id (and,
+        // transitively, document_signatures) is RESTRICT, not CASCADE/SET
+        // NULL, so this would fail at the database anyway; checked here
+        // first for a clear message instead of a raw constraint violation.
+        if (signingKeyService.hasEverSigned(user.getTenantId(), user.getUserId())) {
+            throw new InvalidUserStateException(
+                    "This user has signed documents and can't be permanently deleted - deactivate instead.");
         }
 
         UUID keycloakId = user.getKeycloakId();
@@ -528,7 +563,14 @@ public class UserServiceImpl implements UserService {
     @Override
     public void resetPassword(UUID userId) {
         User user = findOwnedByCallerTenant(userId);
-        passwordResetService.issueForAdminReset(user);
+        try {
+            passwordResetService.issueForAdminReset(user);
+        } catch (MailException e) {
+            // Shown to the admin as-is, instead of a generic "unexpected error".
+            log.error("Password reset email to user {} could not be sent: {}", userId, e.getMessage(), e);
+            throw new MailDeliveryException("The reset email could not be sent. "
+                    + "Check the mail settings (SMTP) and try again.");
+        }
         log.info("Sent password reset email for user {}", userId);
 
         auditService.event(AuditActionCatalog.PASSWORD_RESET_REQUESTED)
@@ -625,6 +667,15 @@ public class UserServiceImpl implements UserService {
             return null;
         }
         return userRepository.findById(impersonatorId).map(User::getDisplayName).orElse(null);
+    }
+
+    /** {@code user.getDepartmentId()}'s resolved name, or null if unset/deleted - see {@code UserResponse#departmentName}'s own doc comment on why this has to be resolved here rather than left to the frontend. */
+    private String resolveDepartmentNameOrNull(User user) {
+        if (user.getDepartmentId() == null) {
+            return null;
+        }
+        return departmentRepository.findByDepartmentIdAndTenantIdAndDeletedFalse(user.getDepartmentId(), user.getTenantId())
+                .map(com.oak.dms.department.entity.Department::getName).orElse(null);
     }
 
     private User findOwnedByCallerTenant(UUID userId) {

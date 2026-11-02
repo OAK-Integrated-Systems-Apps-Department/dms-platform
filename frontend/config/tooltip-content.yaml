@@ -65,3 +65,13 @@ documents:
     highlight: Where on the page OCR read this value. Click it to jump to that field
     saveDisabled: Accept or correct at least one field first
     save: Record your decisions. The document leaves the queue once nothing is outstanding
+
+dashboard:
+  impact:
+    about: Every page handled digitally is paper that never had to be made - and the trees, carbon and water behind it
+    method: How is this calculated?
+    measured: Read from your documents
+    calculated: Worked out exactly from measured figures and the stated assumptions
+    estimated: Depends on published average factors - a fair indication, not a verified saving
+    co2e: Paper's life-cycle emissions
+    water: Water it took to make that paper

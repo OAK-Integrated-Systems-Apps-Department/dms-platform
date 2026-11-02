@@ -229,6 +229,16 @@ export const permissionGroups: PermissionGroup[] = [
           },
         ],
       },
+      {
+        id: "dsi.unlock-signed-documents",
+        label: "Unlock Signed Documents",
+        permissions: [
+          {
+            id: "dsi.unlock-signed-documents.unlock",
+            label: "Unlock a signature-locked document",
+          },
+        ],
+      },
     ],
   },
   {

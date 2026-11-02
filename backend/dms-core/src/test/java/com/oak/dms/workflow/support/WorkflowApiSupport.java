@@ -114,6 +114,10 @@ public abstract class WorkflowApiSupport extends NotificationMailSupport {
             adminPost("/api/v1/workflow/templates/" + templateId + "/stages", admin, stage, 201);
         }
         adminPost("/api/v1/workflow/templates/" + templateId + "/activate", admin, null, 200);
+        // Since V117 the API forces requires_signature on every stage, and a plain /approve is refused
+        // (409 WORKFLOW_SIGNATURE_REQUIRED). These ITs exercise routing/concurrency/access with plain
+        // approvals, so opt the stages out directly; signing itself is covered by the signature tests.
+        fx.jdbc().update("update workflow_stages set requires_signature = false where template_id = ?", templateId);
         return templateId;
     }
 
@@ -137,6 +141,14 @@ public abstract class WorkflowApiSupport extends NotificationMailSupport {
 
     protected JsonNode submit(User as, UUID documentId, int expectedStatus) throws Exception {
         return postAs("/api/v1/workflow/instances", as, Map.of("documentId", documentId), expectedStatus);
+    }
+
+    /** Submit naming which active template to use - required once a document type has more than one (V120). */
+    protected JsonNode submit(User as, UUID documentId, UUID templateId, int expectedStatus) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("documentId", documentId);
+        body.put("templateId", templateId);
+        return postAs("/api/v1/workflow/instances", as, body, expectedStatus);
     }
 
     /** Submit with supporting documents attached in the same transaction (each entry a SupportingDocumentInput map). */

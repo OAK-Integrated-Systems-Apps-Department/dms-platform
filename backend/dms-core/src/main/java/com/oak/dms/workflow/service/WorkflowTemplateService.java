@@ -4,6 +4,7 @@ import com.oak.dms.workflow.dto.CreateWorkflowTemplateRequest;
 import com.oak.dms.workflow.dto.ReorderStagesRequest;
 import com.oak.dms.workflow.dto.UpdateWorkflowTemplateRequest;
 import com.oak.dms.workflow.dto.UpsertWorkflowStageRequest;
+import com.oak.dms.workflow.dto.WorkflowTemplateOptionResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateSummaryResponse;
 import com.oak.dms.workflow.enums.TemplateStatus;
@@ -22,6 +23,13 @@ public interface WorkflowTemplateService {
 
     Page<WorkflowTemplateSummaryResponse> list(TemplateStatus status, UUID documentTypeId, String search,
                                                Pageable pageable);
+
+    /**
+     * Every active template of one document type, for a submitter's "which workflow"
+     * dropdown - unlike {@link #list}, needs only {@code dlm.submit-documents-for-review},
+     * not a template-admin permission.
+     */
+    List<WorkflowTemplateOptionResponse> listActiveForDocumentType(UUID documentTypeId);
 
     WorkflowTemplateResponse get(UUID templateId);
 

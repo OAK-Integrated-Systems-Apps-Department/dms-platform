@@ -20,6 +20,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:8080
         NEXT_PUBLIC_KEYCLOAK_ACCOUNT_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/oak-dms/account
+        NEXT_PUBLIC_APP_NAME: ${APP_NAME:-OAK iDocs}
     # The image carries its own code: drop the dev bind mount and the
     # node_modules / .next anonymous volumes that would shadow it.
     volumes: !reset []

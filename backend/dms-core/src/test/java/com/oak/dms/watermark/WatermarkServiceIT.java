@@ -24,6 +24,7 @@ import com.oak.dms.watermark.dto.WatermarkSpec;
 import com.oak.dms.watermark.entity.WatermarkJob;
 import com.oak.dms.watermark.enums.WatermarkJobStatus;
 import com.oak.dms.watermark.exception.WatermarkException;
+import com.oak.dms.watermark.job.WatermarkJobQueue;
 import com.oak.dms.watermark.repository.WatermarkJobRepository;
 import com.oak.dms.watermark.service.WatermarkService;
 import org.junit.jupiter.api.AfterEach;
@@ -33,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.io.ByteArrayInputStream;
 import java.nio.file.Path;
@@ -80,6 +82,14 @@ class WatermarkServiceIT extends WatermarkFixtures {
     private WatermarkJobRepository jobRepository;
     @Autowired
     private ObjectMapper objectMapper;
+
+    // The worker is not under test here and cannot run these jobs: the
+    // fixture users do not exist in the identity provider, so a started job
+    // fails within milliseconds. A failed job releases its idempotency key
+    // (by design), which let a slow caller in the simultaneous-request test
+    // legitimately create a second job. Left pending, the jobs keep their keys.
+    @MockitoBean
+    private WatermarkJobQueue queue;
 
     // ------------------------------------------------------ happy path
 

@@ -23,8 +23,8 @@ const MAX = 200
 
 /**
  * Pinned documents (Module PID): how many documents one person in this organisation may pin.
- * Pins themselves are personal and live on each person's Pinned documents page; this is the one setting the
- * organisation controls (PID-FR-007).
+ * Whoever may pin chooses who sees each pin, and only they can unpin it; this is the one setting the
+ * organisation controls, how many documents each person may pin (PID-FR-007).
  */
 export default function PinnedDocumentsSettingsPage() {
   usePageTitle("Pin Limit")
@@ -42,9 +42,10 @@ export default function PinnedDocumentsSettingsPage() {
           Pin limit
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          People pin the documents they use most, and those appear on their own
-          Pinned documents page. Pins are personal - nobody
-          sees anyone else&apos;s, and a pin never gives access to a document.
+          People with the pin permission pin the documents that matter and
+          choose who sees each pin, and those appear on the audience&apos;s
+          Pinned documents page. Only the person who pinned a document can
+          unpin it, and a pin never gives access to a document.
         </p>
       </div>
       <PermissionGate permission={PermissionCodes.PID_CONFIGURE_LIMITS}>

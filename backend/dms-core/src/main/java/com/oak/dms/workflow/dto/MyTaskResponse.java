@@ -30,6 +30,8 @@ public record MyTaskResponse(
         String route,
         /** The original holder when the task was delegated (or reassigned) to the caller. */
         UserRef delegatedFrom,
-        long openInfoRequestCount
+        long openInfoRequestCount,
+        /** Whether approving this task's stage requires a digital signature (V105) - the frontend opens sign-and-approve instead of a plain approve when true. */
+        boolean requiresSignature
 ) {
 }

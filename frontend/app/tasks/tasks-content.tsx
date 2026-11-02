@@ -12,6 +12,7 @@ import { DelegateTaskDialog } from "@/components/workflow/delegate-task-dialog"
 import { MyTasksTable, stageLabel } from "@/components/workflow/my-tasks-table"
 import { RequestsForMeTable } from "@/components/workflow/requests-for-me-table"
 import { TaskActionDialog, type TaskDecisionKind } from "@/components/workflow/task-action-dialog"
+import { SignAndApproveDialog } from "@/components/signatures/sign-and-approve-dialog"
 import { isNetworkError } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
@@ -169,19 +170,29 @@ export function TasksContent() {
         />
       )}
 
-      {deciding && (
-        <TaskActionDialog
-          decision={deciding.decision}
+      {deciding && deciding.decision === "approve" && deciding.task.requiresSignature ? (
+        <SignAndApproveDialog
+          taskId={deciding.task.taskId}
           documentTitle={deciding.task.documentTitle ?? "Untitled document"}
           stageLabel={stageLabel(deciding.task)}
           versionChanged={deciding.task.versionChangedFlag}
           onOpenChange={(open) => !open && setDeciding(null)}
-          onConfirm={async (text) => {
-            const { task, decision } = deciding
-            const result = decision === "approve" ? await actions.approve(task.taskId, text) : await actions.reject(task.taskId, text)
-            return result !== null
-          }}
         />
+      ) : (
+        deciding && (
+          <TaskActionDialog
+            decision={deciding.decision}
+            documentTitle={deciding.task.documentTitle ?? "Untitled document"}
+            stageLabel={stageLabel(deciding.task)}
+            versionChanged={deciding.task.versionChangedFlag}
+            onOpenChange={(open) => !open && setDeciding(null)}
+            onConfirm={async (text) => {
+              const { task, decision } = deciding
+              const result = decision === "approve" ? await actions.approve(task.taskId, text) : await actions.reject(task.taskId, text)
+              return result !== null
+            }}
+          />
+        )
       )}
     </DashboardShell>
   )

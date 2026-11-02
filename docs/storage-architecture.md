@@ -434,6 +434,47 @@ key (DE-NFR-006).
 6. Back up OpenBao (its storage and unseal keys). **Losing the master key
    makes every document unreadable** - that is the point of the design.
 
+### 8.1 OpenBao policy for digital signatures (1.4, module DSI)
+
+Signing keys use the SAME Transit secrets engine as encryption at rest, but a
+SEPARATE OpenBao token/policy (`dms.signature.openbao.*`, not
+`dms.encryption.openbao.*`) - least-privilege separation even against the
+same server, so a leaked signing token can never unwrap a document and vice
+versa. Each user gets their own ECDSA P-256 key named
+`dms-sig-<tenantId>-<userId>-<generation>`; the prefix (default `dms-sig`,
+`SIGNATURE_OPENBAO_KEY_PREFIX`) is the only thing configured - no single
+shared key name like encryption's `dms-documents`.
+
+A signing policy needs: `transit/keys/dms-sig-*` (read, create - deliberately
+**no** `delete`, since revoking a key must never affect signatures it already
+made, only stop it signing anything new - see `SigningKeyService`) and
+`transit/sign/dms-sig-*/sha2-256` (update). It does NOT need
+`datakey`/`encrypt`/`decrypt`/`rewrap` - those are the encryption policy's
+paths, not this one's.
+
+```
+bao secrets enable transit   # if not already (shared with encryption at rest)
+bao policy write dms-signature - <<'EOF'
+path "transit/keys/dms-sig-*" {
+  capabilities = ["read", "create"]
+}
+path "transit/sign/dms-sig-*/sha2-256" {
+  capabilities = ["update"]
+}
+EOF
+bao auth enable approle   # if not already (shared with encryption at rest)
+bao write auth/approle/role/dms-signature token_policies=dms-signature token_ttl=1h token_max_ttl=24h secret_id_ttl=0
+```
+
+Set `SIGNATURE_PROVIDER=openbao`, `SIGNATURE_ENABLED=true`,
+`SIGNATURE_OPENBAO_ADDR`, `SIGNATURE_OPENBAO_AUTH=approle`, and the
+`SIGNATURE_OPENBAO_ROLE_ID`/`SIGNATURE_OPENBAO_SECRET_ID` this role issues, in
+the same secret store as the encryption AppRole's own credentials. Verification
+of a signature never calls OpenBao - it only ever checks the public key
+already stored on the `document_signatures` row (JCA `SHA256withECDSA`), so a
+signing-policy or OpenBao outage can never block reading existing evidence,
+only making new signatures.
+
 ## 9. How to add a new storage provider (e.g. Google Cloud Storage)
 
 `AzureBlobStorageAdapter` is a worked example of exactly this process - S3

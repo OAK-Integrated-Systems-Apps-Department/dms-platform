@@ -1,0 +1,76 @@
+name: Fleet status
+
+# Is every client's installation up? Checks each client's public address from the
+# runner that can reach it: the login page, the API through nginx, and Keycloak's
+# issuer - the same three things deploy.sh checks after a release. A client that
+# fails fails the run, and a failed scheduled run is what notifies the repository
+# watchers. Clients are listed in infra/clients.yml; one without a `url` is skipped.
+#
+# Not an SSH check on purpose: the deploy environments can require an approver, and
+# a daily job that waits for approval from every client would never finish. It tells
+# you a client is down or unreachable; to see versions and container health, run
+# `./deploy.sh --status` on that server.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 5 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan - which clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: select
+        env:
+          EVENT: workflow_dispatch
+          REF_TYPE: branch
+          REQUESTED: all
+        run: python3 .github/scripts/select-clients.py >> "$GITHUB_OUTPUT"
+
+  check:
+    name: Check ${{ matrix.name }}
+    needs: plan
+    if: ${{ needs.plan.outputs.count != '0' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Skip a client with no url
+        if: ${{ matrix.url == '' }}
+        run: echo "::notice::${{ matrix.name }} has no url in infra/clients.yml - not checked"
+
+      - name: Check ${{ matrix.name }}
+        if: ${{ matrix.url != '' }}
+        env:
+          URL: ${{ matrix.url }}
+          NAME: ${{ matrix.name }}
+        run: |
+          set -u
+          fail=0
+          row() { printf '| %s | %s | %s |\n' "$1" "$2" "$3" >> "$GITHUB_STEP_SUMMARY"; }
+          printf '### %s (%s)\n\n| check | result | status |\n|---|---|---|\n' "$NAME" "$URL" >> "$GITHUB_STEP_SUMMARY"
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$URL/login" || true)"
+          if [ "$code" = "200" ]; then row "frontend /login" "ok" "$code"; else row "frontend /login" "FAILED" "$code"; fail=1; fi
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST "$URL/api/v1/auth/refresh" || true)"
+          case "$code" in 400|401|403) row "API through nginx" "ok" "$code" ;; *) row "API through nginx" "FAILED" "$code"; fail=1 ;; esac
+
+          if curl -fsS --max-time 20 "$URL/realms/oak-dms/.well-known/openid-configuration" | grep -q "\"issuer\":\"$URL/realms/oak-dms\""; then
+            row "Keycloak issuer" "ok" "-"
+          else
+            row "Keycloak issuer" "FAILED" "-"; fail=1
+          fi
+          echo >> "$GITHUB_STEP_SUMMARY"
+          [ "$fail" = 0 ] || { echo "::error::$NAME is not healthy - see the summary"; exit 1; }

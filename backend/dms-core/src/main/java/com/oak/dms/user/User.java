@@ -86,6 +86,10 @@ public class User {
     @Column(name = "department_id")
     private UUID departmentId;
 
+    /** Job title (V112) - self-set via PUT /api/v1/users/me, shown on a placed signature (1.4) alongside name/department/date. */
+    @Column(name = "position")
+    private String position;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

@@ -32,6 +32,14 @@ public record UpsertWorkflowStageRequest(
         UUID escalationUserId,
         /** Whether approvers may pause their task to request information; null means true (V47 default). */
         Boolean allowInfoRequests,
+        /**
+         * Ignored (V117): every stage now requires a digital signature to
+         * approve, unconditionally - see
+         * {@code WorkflowTemplateServiceImpl#applyStage}. Kept on the
+         * request shape only so older clients that still send it don't fail
+         * deserialization.
+         */
+        Boolean requiresSignature,
         @NotEmpty @Size(max = 50) List<@Valid ParticipantRequest> participants
 ) {
 }

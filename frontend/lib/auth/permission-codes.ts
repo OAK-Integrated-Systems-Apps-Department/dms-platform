@@ -170,11 +170,24 @@ export const PermissionCodes = {
   WA_TEMPLATES_TOGGLE_ACTIVE: "wa.configure-workflow-templates.toggle-active",
   WA_TASK_APPROVE: "wa.approve-reject-workflow-task.approve",
   WA_TASK_REJECT: "wa.approve-reject-workflow-task.reject",
+  WA_TASK_RETRACT: "wa.approve-reject-workflow-task.retract",
   WA_TASK_REASSIGN: "wa.reassign-workflow-task",
   WA_REQUEST_INFORMATION: "wa.request-workflow-information.create",
   WA_AUDIT_TRAIL_VIEW: "wa.view-workflow-audit-trail.view",
   // Document Lifecycle Management - starting a workflow on a document.
   DLM_SUBMIT_DOCUMENTS_FOR_REVIEW: "dlm.submit-documents-for-review",
+
+  // 1.4 Digital Signature Integration (DSI) - INTERNAL signing only.
+  // Deliberately no code for dsi.sign-documents.request-external-signature
+  // or dsi.manage-signature-configuration.configure-provider - both are
+  // seeded but unused (external signers/a third-party provider are out of
+  // scope), mirroring PermissionCodes.java's own omission.
+  DSI_SIGN: "dsi.sign-documents.sign",
+  DSI_SIGN_DOCUMENT_STANDALONE: "dsi.sign-documents.sign-standalone",
+  DSI_VIEW_SIGNATURE_HISTORY: "dsi.view-signature-history.view",
+  DSI_MANAGE_CERTIFICATES: "dsi.manage-signature-configuration.manage-certificates",
+  DSI_CONFIGURE_WORKFLOW_RULES: "dsi.manage-signature-configuration.configure-workflow-rules",
+  DSI_UNLOCK_SIGNED_DOCUMENTS: "dsi.unlock-signed-documents.unlock",
 
   // Notifications (3.2) - tenant-admin settings and the delivery log.
   NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",

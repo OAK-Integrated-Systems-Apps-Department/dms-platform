@@ -135,7 +135,7 @@ fi
 : "${KEYCLOAK_SMTP_HOST:?KEYCLOAK_SMTP_HOST is required}"
 : "${KEYCLOAK_SMTP_PORT:?KEYCLOAK_SMTP_PORT is required}"
 : "${KEYCLOAK_SMTP_FROM:?KEYCLOAK_SMTP_FROM is required}"
-KEYCLOAK_SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-Oak DMS}"
+KEYCLOAK_SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-OAK iDocs}"
 KEYCLOAK_SMTP_AUTH="${KEYCLOAK_SMTP_AUTH:-false}"
 KEYCLOAK_SMTP_SSL="${KEYCLOAK_SMTP_SSL:-false}"
 KEYCLOAK_SMTP_STARTTLS="${KEYCLOAK_SMTP_STARTTLS:-false}"
@@ -203,6 +203,20 @@ if [ -n "${KEYCLOAK_WEB_CLIENT_URL:-}" ]; then
     -d "$UPDATED_WEB_CLIENT"
 
   echo "Web client URLs applied"
+
+  # "Remember me": the login asks for the offline_access scope so the refresh
+  # token outlives the 30-minute SSO session (see AuthService#login). The scope
+  # must be an allowed optional scope of the client, or Keycloak answers
+  # invalid_scope. Same IGNORE_EXISTING reason as above; the PUT is idempotent.
+  OFFLINE_SCOPE_ID=$(curl -s -f -X GET "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/client-scopes" \
+    -H "Authorization: Bearer $TOKEN" | jq -r '.[] | select(.name == "offline_access") | .id')
+  if [ -n "$OFFLINE_SCOPE_ID" ]; then
+    curl -s -f -X PUT "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/clients/$WEB_CLIENT_UUID/optional-client-scopes/$OFFLINE_SCOPE_ID" \
+      -H "Authorization: Bearer $TOKEN"
+    echo "offline_access allowed on client $KEYCLOAK_WEB_CLIENT_ID (Remember me)"
+  else
+    echo "WARNING: realm has no offline_access scope - Remember me will only last the SSO session"
+  fi
 fi
 
 # --- Platform superadmin password --------------------------------------
@@ -253,6 +267,22 @@ if [ -n "${KEYCLOAK_SUPERADMIN_USERNAME:-}" ]; then
         -d "$(jq -n --arg p "$KEYCLOAK_SUPERADMIN_PASSWORD" --argjson t "$TEMPORARY" \
               '{type: "password", value: $p, temporary: $t}')"
       echo "Superadmin password set"
+    fi
+
+    # The realm file gives superadmin only PLATFORM_ADMIN, not the realm's default
+    # role - and the offline_access role (needed for "Remember me") comes with that
+    # default role. Without it Keycloak answers not_allowed to a remembered login.
+    # Idempotent: re-adding a role the user already has is a no-op.
+    DEFAULT_ROLE=$(curl -s -f -X GET \
+      "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/roles/default-roles-$KEYCLOAK_REALM" \
+      -H "Authorization: Bearer $TOKEN")
+    if [ -n "$DEFAULT_ROLE" ]; then
+      curl -s -f -X POST \
+        "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM/users/$SUPERADMIN_ID/role-mappings/realm" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "[$DEFAULT_ROLE]"
+      echo "Superadmin has the realm's default roles (Remember me)"
     fi
   fi
 fi

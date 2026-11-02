@@ -91,6 +91,8 @@ export function buildStageSchema(defaults?: TemplateReminderDefaults | null) {
       escalationTarget: z.enum(["none", "department_head", "named_user"]),
       escalationUserId: z.string().nullable(),
       allowInfoRequests: z.boolean(),
+      /** Always true (V117) - not actually sent to the backend, which ignores the field now. Kept so the form has a value to display. */
+      requiresSignature: z.boolean(),
       participants: z
         .array(
           z.object({

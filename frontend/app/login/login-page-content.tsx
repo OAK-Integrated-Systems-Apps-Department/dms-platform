@@ -3,12 +3,19 @@
 
 import { useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { Eye, EyeOff, Layers, ShieldCheck } from "lucide-react"
+import {
+  ArrowRight,
+  Layers,
+  Lock,
+  ShieldCheck,
+  User,
+} from "lucide-react"
 import { toast } from "sonner"
 
+import { LoginHeadline, LoginSpheres } from "@/components/auth/login-hero"
 import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
 import {
   loginCredentialsSchema,
@@ -95,6 +102,12 @@ async function login(
   return { ok: true }
 }
 
+const inputClass =
+  "w-full rounded-xl border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+
+const primaryButtonClass =
+  "group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
+
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
  * accounts with OTP configured, "otp". They have to share this component
@@ -110,11 +123,15 @@ async function login(
  * why login() below checks /mfa-required BEFORE attempting login, instead
  * of reacting to a failed login attempt.
  *
+ * Layout: a brand panel beside the form from `lg` up, the form alone
+ * (with the logo above it) below that.
+ *
  * Rendered inside a <Suspense> boundary by app/login/page.tsx, since
  * useSearchParams() (used for the dev OTP bypass below) requires one.
  */
 export function LoginPageContent() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
@@ -135,14 +152,19 @@ export function LoginPageContent() {
     password: "",
   })
 
+  // Validated on submit and on blur, NOT on every change, and the submit
+  // button is not gated on validity. Browser autofill (and password
+  // managers) fill the fields without firing the change events a form
+  // library listens to, so a button gated on `isValid` stayed disabled over
+  // a visibly filled form. handleSubmit reads the real field values.
   const {
     register,
     handleSubmit,
-    formState: { errors: credentialErrors, isValid: credentialsValid },
+    formState: { errors: credentialErrors },
   } = useForm<LoginCredentialsValues>({
     resolver: zodResolver(loginCredentialsSchema),
     defaultValues: { username: "", password: "" },
-    mode: "onChange",
+    mode: "onTouched",
   })
 
   const mutation = useMutation({
@@ -157,6 +179,13 @@ export function LoginPageContent() {
     }) => login(username, password, rememberMe, totp),
     onSuccess: (result) => {
       if (result.ok) {
+        // Without this, any "me"-scoped data a PREVIOUS session cached (current user, visual
+        // signature, permissions, notifications...) would still be sitting in this tab's React Query
+        // cache - a client-side navigation never remounts the Providers tree that owns it, so a
+        // different person signing in right after someone else, in the same tab, would briefly see
+        // the first person's cached data before anything refetches. router.refresh() only affects
+        // Next's server-component cache, not this one.
+        queryClient.clear()
         toast.success("Signed in successfully.")
         router.push("/")
         router.refresh()
@@ -188,170 +217,259 @@ export function LoginPageContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
-      <div
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
-        }}
-      />
+    <div className="flex min-h-screen items-center justify-center bg-background bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
+      {/* One rounded card, split: brand panel | form */}
+      <div className="grid w-full lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
+        {/* Brand panel: wide screens only */}
+        <aside
+          aria-hidden="true"
+          className="relative hidden flex-col overflow-hidden bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-10 text-primary-foreground lg:flex xl:p-12 [@media(max-height:760px)]:lg:p-7"
+        >
+          {/* Oak-leaf photo, tinted into the brand green and drifting slowly */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.14] mix-blend-luminosity"
+            style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
+          />
+          {/* Bobbing spheres */}
+          <LoginSpheres />
+          {/* Aurora glow */}
+          <div className="pointer-events-none absolute top-1/3 -left-24 size-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
 
-      <div className="relative z-10 w-full max-w-[460px] rounded-xl border border-border bg-card p-9 pb-[34px] shadow-[var(--ledger-shadow)]">
-        <div className="mb-[26px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
-            <Layers size={22} color="var(--primary-foreground)" />
-          </div>
-          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            {APP_NAME}
-          </div>
-          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
-            DOCUMENT VAULT
-          </div>
-        </div>
-
-        {step === "credentials" ? (
-          <>
-            <h1 className="mb-[22px] text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Sign in to your account
-            </h1>
-            {searchParams.get("reason") === "organisation-inactive" && (
-              <p
-                role="alert"
-                className="mb-4 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-              >
-                You were signed out because your organisation&apos;s account is
-                suspended or closed. Contact your administrator.
-              </p>
-            )}
-
-            <form onSubmit={handleSubmit(handleCredentialsSubmit)} noValidate>
-              <div className="mb-[17px]">
-                <label
-                  htmlFor="username"
-                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
-                >
-                  Username or email
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  placeholder="username"
-                  autoComplete="username"
-                  {...register("username")}
-                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-                />
-                {credentialErrors.username && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                    {credentialErrors.username.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="mb-[17px]">
-                <label
-                  htmlFor="password"
-                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
-                >
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••••"
-                    autoComplete="current-password"
-                    {...register("password")}
-                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    tabIndex={-1}
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    aria-pressed={showPassword}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                {credentialErrors.password && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                    {credentialErrors.password.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="mb-[22px] flex items-center justify-between">
-                <label className="flex items-center gap-[7px] text-[13px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="size-3.5 accent-primary"
-                  />
-                  Remember me
-                </label>
-                <a
-                  href="/reset-password"
-                  className="text-[13px] font-semibold text-primary hover:underline"
-                >
-                  Forgot password?
-                </a>
-              </div>
-
-              <button
-                type="submit"
-                disabled={mutation.isPending || !credentialsValid}
-                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {mutation.isPending ? "Signing in…" : "Sign in"}
-              </button>
-            </form>
-
-            <div className="mt-[26px] text-center text-xs text-[var(--ink-faint)]">
-              Need access? Contact your workspace administrator.
+          <div className="relative flex items-center gap-3">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+              <Layers size={22} />
             </div>
-          </>
-        ) : (
-          <div className="text-center">
-            <div className="bg-primary-tint mx-auto mb-[18px] flex size-[52px] items-center justify-center rounded-full border border-border">
-              <ShieldCheck size={24} className="text-primary" />
+            <div>
+              <div className="font-heading text-lg font-semibold tracking-[-0.01em]">
+                {APP_NAME}
+              </div>
+              <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
+                DOCUMENT VAULT
+              </div>
             </div>
-            <h1 className="mb-2 font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Two-factor authentication
-            </h1>
-            <p className="mb-[26px] text-[13.5px] leading-[1.5] text-muted-foreground">
-              Enter the code from your authenticator app
-            </p>
+          </div>
 
-            <form onSubmit={handleOtpSubmit}>
-              <OtpInput
-                value={code}
-                onChange={setCode}
-                disabled={mutation.isPending}
+          <div className="relative my-auto py-8">
+            <LoginHeadline appName={APP_NAME} />
+          </div>
+        </aside>
+
+        {/* Form panel */}
+        <main className="relative flex items-center justify-center overflow-hidden bg-card px-5 py-10 sm:px-10 lg:px-12 xl:px-16">
+          {/* Corner sphere, echoing the brand panel */}
+          <div
+            aria-hidden="true"
+            className="lg-bob pointer-events-none absolute -right-20 -bottom-24 hidden size-[220px] rounded-full opacity-90 shadow-[inset_-10px_-14px_36px_rgb(0_0_0/0.3)] lg:block"
+            style={{
+              background:
+                "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)",
+              animationDuration: "20s",
+            }}
+          />
+
+          <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
+            {/* Compact brand banner: replaces the brand panel below `lg` */}
+            <div className="relative mb-8 overflow-hidden rounded-2xl bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
               />
+              <div className="relative flex items-center gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <Layers size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-heading text-lg font-semibold tracking-[-0.01em]">
+                    {APP_NAME}
+                  </div>
+                  <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
+                    DOCUMENT VAULT
+                  </div>
+                </div>
+              </div>
+              <p className="relative mt-4 text-[13px] leading-[1.5] opacity-85">
+                Your documents, organised and under control.
+              </p>
+            </div>
 
-              <button
-                type="submit"
-                disabled={mutation.isPending || code.length < OTP_LENGTH}
-                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {mutation.isPending ? "Verifying…" : "Submit"}
-              </button>
-            </form>
+            {step === "credentials" ? (
+              <>
+                <h1 className="font-heading text-[40px] leading-none font-extrabold tracking-tight text-foreground">
+                  Sign in
+                </h1>
+                <p className="mt-3 mb-8 text-sm text-muted-foreground">
+                  Welcome back. Sign in to continue to {APP_NAME}.
+                </p>
 
-            <button
-              type="button"
-              onClick={handleBackToCredentials}
-              className="mt-4 text-[13px] font-semibold text-primary hover:underline"
-            >
-              Back to sign in
-            </button>
+                {searchParams.get("reason") === "organisation-inactive" && (
+                  <p
+                    role="alert"
+                    className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
+                  >
+                    You were signed out because your organisation&apos;s account
+                    is suspended or closed. Contact your administrator.
+                  </p>
+                )}
+
+                <form
+                  onSubmit={handleSubmit(handleCredentialsSubmit)}
+                  noValidate
+                  className="space-y-5"
+                >
+                  <div>
+                    <label
+                      htmlFor="username"
+                      className="mb-2 block text-[13px] font-semibold text-foreground"
+                    >
+                      Username or email
+                    </label>
+                    <div className="relative">
+                      <User
+                        size={16}
+                        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-foreground"
+                      />
+                      <input
+                        id="username"
+                        type="text"
+                        placeholder="you@company.com"
+                        autoComplete="username"
+                        aria-invalid={
+                          credentialErrors.username ? true : undefined
+                        }
+                        {...register("username")}
+                        className={inputClass}
+                      />
+                    </div>
+                    {credentialErrors.username && (
+                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                        {credentialErrors.username.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="password"
+                      className="mb-2 block text-[13px] font-semibold text-foreground"
+                    >
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock
+                        size={16}
+                        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-foreground"
+                      />
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        autoComplete="current-password"
+                        aria-invalid={
+                          credentialErrors.password ? true : undefined
+                        }
+                        {...register("password")}
+                        className={`${inputClass} pr-11`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        tabIndex={-1}
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
+                        aria-pressed={showPassword}
+                        className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
+                      >
+                        {showPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    {credentialErrors.password && (
+                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                        {credentialErrors.password.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="size-3.5 accent-primary"
+                      />
+                      Remember me
+                    </label>
+                    <a
+                      href="/reset-password"
+                      className="text-[13px] font-semibold text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </a>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={mutation.isPending}
+                    className={primaryButtonClass}
+                  >
+                    {mutation.isPending ? (
+                      "Signing in…"
+                    ) : (
+                      <>
+                        Sign in
+                        <ArrowRight
+                          size={16}
+                          className="transition-transform group-hover:translate-x-0.5"
+                        />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <p className="mt-8 text-center text-xs text-[var(--ink-faint)]">
+                  Need access? Contact your workspace administrator.
+                </p>
+              </>
+            ) : (
+              <div>
+                <div className="bg-primary-tint mb-5 flex size-[52px] items-center justify-center rounded-full border border-border">
+                  <ShieldCheck size={24} className="text-primary" />
+                </div>
+                <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-foreground">
+                  Two-factor authentication
+                </h1>
+                <p className="mt-1.5 mb-8 text-sm text-muted-foreground">
+                  Enter the code from your authenticator app.
+                </p>
+
+                <form onSubmit={handleOtpSubmit}>
+                  <OtpInput
+                    value={code}
+                    onChange={setCode}
+                    disabled={mutation.isPending}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={mutation.isPending || code.length < OTP_LENGTH}
+                    className={primaryButtonClass}
+                  >
+                    {mutation.isPending ? "Verifying…" : "Submit"}
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={handleBackToCredentials}
+                  className="mt-5 text-[13px] font-semibold text-primary hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </main>
       </div>
     </div>
   )

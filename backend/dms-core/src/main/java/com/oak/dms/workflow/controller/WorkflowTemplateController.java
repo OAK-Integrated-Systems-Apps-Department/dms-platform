@@ -3,6 +3,7 @@ package com.oak.dms.workflow.controller;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.workflow.dto.CreateWorkflowTemplateRequest;
 import com.oak.dms.workflow.dto.UpdateWorkflowTemplateRequest;
+import com.oak.dms.workflow.dto.WorkflowTemplateOptionResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateSummaryResponse;
 import com.oak.dms.workflow.enums.TemplateStatus;
@@ -32,8 +33,10 @@ import java.util.UUID;
 
 /**
  * Workflow template versions (W3). Only drafts are editable; activating a
- * version makes it the one template new submissions of its document type
- * use, demoting the previous active version.
+ * version makes it one of the templates new submissions of its document type
+ * can use - a document type may have more than one active template (decision
+ * 7 superseded, V120), in which case the submitter picks among them (see
+ * {@link #activeFor}).
  */
 @RestController
 @RequestMapping("/api/v1/workflow/templates")
@@ -56,6 +59,15 @@ public class WorkflowTemplateController {
             @RequestParam(required = false) String search,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return PageResponse.from(templateService.list(status, documentTypeId, search, pageable));
+    }
+
+    @GetMapping("/active")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DLM_SUBMIT_DOCUMENTS_FOR_REVIEW)")
+    @Operation(summary = "Active templates for one document type",
+            description = "Backs the \"which workflow\" choice when submitting a document for approval - unlike "
+                    + "list(), reachable by anyone who can submit documents, not just template admins.")
+    public List<WorkflowTemplateOptionResponse> activeFor(@RequestParam UUID documentTypeId) {
+        return templateService.listActiveForDocumentType(documentTypeId);
     }
 
     @GetMapping("/{id}")

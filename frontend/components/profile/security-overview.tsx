@@ -41,6 +41,12 @@ export function SecurityOverview() {
     try {
       await requestPasswordReset(user.email)
       toast.success("Check your email for a link to reset your password.")
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not send the reset link. Please try again."
+      )
     } finally {
       setIsSendingReset(false)
     }

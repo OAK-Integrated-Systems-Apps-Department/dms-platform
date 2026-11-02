@@ -13,6 +13,7 @@ import {
   MessageCircleQuestion,
   PauseCircle,
   TrendingUp,
+  Undo2,
   UserCog,
   X,
   XCircle,
@@ -48,9 +49,12 @@ import { cn, formatDateTime } from "@/lib/utils"
 
 import type { InfoRequestDto, WorkflowInstanceDto, WorkflowStageInstanceDto, WorkflowTaskDto } from "@/lib/workflow/api"
 
+import { SignAndApproveDialog } from "@/components/signatures/sign-and-approve-dialog"
+
 import { DelegateTaskDialog } from "./delegate-task-dialog"
 import { InfoRequestsList } from "./info-requests-list"
 import { RequestInfoDialog } from "./request-info-dialog"
+import { ReviewTaskDialog } from "./review-task-dialog"
 import { SupportingDocumentsList } from "./supporting-documents-list"
 import { TaskActionDialog, type TaskDecisionKind } from "./task-action-dialog"
 
@@ -78,8 +82,10 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
   const { hasPermission } = usePermissions()
   const actions = useWorkflowActions()
   const [decision, setDecision] = useState<TaskDecisionKind | null>(null)
+  const [signing, setSigning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [moving, setMoving] = useState<{ task: WorkflowTaskDto; stage: WorkflowStageInstanceDto; mode: "delegate" | "reassign" } | null>(null)
+  const [reviewing, setReviewing] = useState<WorkflowTaskDto | null>(null)
   const [requestingInfo, setRequestingInfo] = useState(false)
 
   const inProgress = instance.status === "in_progress"
@@ -98,6 +104,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
   const canReject = hasPermission(PermissionCodes.WA_TASK_REJECT)
   const canRequestInfo = Boolean(myStage?.allowInfoRequests) && hasPermission(PermissionCodes.WA_REQUEST_INFORMATION)
   const canReassign = inProgress && hasPermission(PermissionCodes.WA_TASK_REASSIGN)
+  const canRetract = hasPermission(PermissionCodes.WA_TASK_RETRACT)
   const askedOfMe = instance.myOpenInfoRequestIds ?? []
   const infoRequests = instance.infoRequests ?? []
   const waitingOn = openRequestsByTask(infoRequests)
@@ -231,7 +238,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                 <button
                   type="button"
                   disabled={actions.isActing}
-                  onClick={() => setDecision("approve")}
+                  onClick={() => (myStage?.requiresSignature ? setSigning(true) : setDecision("approve"))}
                   className="flex items-center gap-1 rounded-sm border border-primary bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground disabled:opacity-60"
                 >
                   <CheckCircle2 size={13} /> Approve
@@ -261,6 +268,8 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
               totalStages={stages.length}
               waitingOn={waitingOn}
               onReassign={canReassign ? (task) => setMoving({ task, stage, mode: "reassign" }) : undefined}
+              currentUserId={me}
+              onReviewTask={canRetract ? (task) => setReviewing(task) : undefined}
             />
           ))}
         </ol>
@@ -295,6 +304,16 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
         />
       )}
 
+      {signing && myTask && myStage && (
+        <SignAndApproveDialog
+          taskId={myTask.taskId}
+          documentTitle={instance.documentTitle ?? "Untitled document"}
+          stageLabel={`Stage ${myStage.stageOrder} of ${stages.length}: ${myStage.name}`}
+          versionChanged={instance.versionChangedFlag}
+          onOpenChange={(open) => !open && setSigning(false)}
+        />
+      )}
+
       {moving && (
         <DelegateTaskDialog
           mode={moving.mode}
@@ -304,6 +323,8 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
           onOpenChange={(open) => !open && setMoving(null)}
         />
       )}
+
+      {reviewing && <ReviewTaskDialog taskId={reviewing.taskId} onOpenChange={(open) => !open && setReviewing(null)} />}
 
       {requestingInfo && myTask && (
         <RequestInfoDialog
@@ -370,9 +391,13 @@ interface StageStepProps {
   totalStages: number
   waitingOn: Map<string, string[]>
   onReassign?: (task: WorkflowTaskDto) => void
+  /** Whoever's signed in now - used only to find which decided task (if any) is the viewer's own. */
+  currentUserId?: string
+  /** V119: present only when the caller holds WA_TASK_RETRACT - shows "Review again" on the viewer's own approved task while the stage is still active. */
+  onReviewTask?: (task: WorkflowTaskDto) => void
 }
 
-function StageStep({ stage, last, current, totalStages, waitingOn, onReassign }: StageStepProps) {
+function StageStep({ stage, last, current, totalStages, waitingOn, onReassign, currentUserId, onReviewTask }: StageStepProps) {
   const progress = stage.requiredCount > 0 ? Math.min(100, Math.round((stage.approvedCount / stage.requiredCount) * 100)) : 0
   const overdue = stage.status === "active" && isPast(stage.dueAt)
 
@@ -457,6 +482,16 @@ function StageStep({ stage, last, current, totalStages, waitingOn, onReassign }:
                       {task.delegatedFrom && <>, delegated from {task.delegatedFrom.displayName ?? "someone"}</>}
                       {task.actedAt && <> · {formatDateTime(task.actedAt)}</>}
                     </span>
+                  )}
+                  {onReviewTask && stage.status === "active" && task.decision === "approve"
+                    && task.actedBy?.userId === currentUserId && (
+                    <button
+                      type="button"
+                      onClick={() => onReviewTask(task)}
+                      className="ml-auto flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                      <Undo2 size={12} /> Review again
+                    </button>
                   )}
                 </div>
                 {OPEN_TASK_STATUSES.has(task.status) && task.dueAt && task.dueAt !== stage.dueAt && (

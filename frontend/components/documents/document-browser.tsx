@@ -531,12 +531,21 @@ function FolderView({
           }),
       })
     // PID-FR-001: pin from the list (and from search results, which are this list).
-    if (pins.canToggle(row.documentId))
+    // Pinning opens the audience sheet: you choose who sees the pin as part of pinning it.
+    if (pins.canToggle(row.documentId)) {
+      const mine = pins.isMine(row.documentId)
       actions.push({
-        label: pins.isPinned(row.documentId) ? "Unpin" : "Pin",
-        icon: pins.isPinned(row.documentId) ? PinOff : Pin,
-        onSelect: () => void pins.toggle(row),
+        label: mine ? "Change who sees pin…" : "Pin…",
+        icon: Pin,
+        onSelect: () => pins.openPin(row),
       })
+      if (mine && pins.canUnpin)
+        actions.push({
+          label: "Unpin",
+          icon: PinOff,
+          onSelect: () => void pins.unpin(row).catch(() => {}),
+        })
+    }
     if (can.versions)
       actions.push({
         label: "Version history",
@@ -1237,6 +1246,7 @@ function FolderView({
           key={dialog.key}
           documentId={dialog.row.documentId}
           documentTitle={dialog.row.title}
+          documentTypeId={dialog.row.documentTypeId}
           onOpenChange={(open) => !open && setDialog(null)}
           onSubmitted={refresh}
         />

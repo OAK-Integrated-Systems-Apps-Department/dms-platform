@@ -8,6 +8,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { PlatformAdminProfile } from "@/components/profile/platform-admin-profile"
 import { ProfileOverview } from "@/components/profile/profile-overview"
 import { SecurityOverview } from "@/components/profile/security-overview"
+import { VisualSignatureCard } from "@/components/profile/visual-signature-card"
 import { ApiError } from "@/lib/api-error"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 
@@ -62,6 +63,7 @@ export default function ProfilePage() {
         <div className="flex flex-col gap-5">
           <ProfileOverview />
           <SecurityOverview />
+          <VisualSignatureCard />
           <Link
             href="/profile/notifications"
             className="flex items-center gap-3 rounded-lg border border-border bg-card px-5 py-4 shadow-[var(--ledger-shadow)] hover:bg-muted"

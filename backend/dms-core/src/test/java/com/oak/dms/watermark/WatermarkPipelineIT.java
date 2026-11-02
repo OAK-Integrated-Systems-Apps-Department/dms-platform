@@ -204,7 +204,7 @@ class WatermarkPipelineIT extends WatermarkFixtures {
     void theWorkerAuditsCompletion() {
         Fixture fixture = pdfFixture();
         UUID jobId = completedJob(fixture);
-        assertThat(auditCount("WATERMARK_COMPLETED", jobId)).isEqualTo(1);
+        assertThat(auditCountAfterWorker("WATERMARK_COMPLETED", jobId)).isEqualTo(1);
     }
 
     @Test
