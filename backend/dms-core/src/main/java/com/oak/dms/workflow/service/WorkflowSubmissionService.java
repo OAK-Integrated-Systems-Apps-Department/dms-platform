@@ -15,9 +15,9 @@ import java.util.UUID;
  */
 public interface WorkflowSubmissionService {
 
-    /** Submit a document of the caller's tenant as the caller. */
+    /** Submit a document of the caller's tenant as the caller - its document type must resolve to exactly one active template. */
     default UUID submit(UUID documentId) {
-        return submit(documentId, List.of());
+        return submit(documentId, null, List.of());
     }
 
     /**
@@ -26,8 +26,11 @@ public interface WorkflowSubmissionService {
      * is created (decision 11). Each attachment follows the normal
      * supporting-document rules (you can see it, it isn't the document being
      * submitted, its version is clean).
+     *
+     * @param templateId which active template to use, required when the document's type has more than one
+     *                   (see {@code TemplateSelector#selectFor}); may be null when it has exactly one
      */
-    UUID submit(UUID documentId, List<SupportingDocumentInput> supportingDocuments);
+    UUID submit(UUID documentId, UUID templateId, List<SupportingDocumentInput> supportingDocuments);
 
     /** Withdraw an in-progress instance - its initiator, or a tenant admin. */
     void cancel(UUID instanceId, String reason);

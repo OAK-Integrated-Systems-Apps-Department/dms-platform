@@ -13,6 +13,8 @@ const NAME_MAX_LENGTH = 60
 export const profileEditFormSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
   lastName: z.string().trim().min(1, "Last name is required").max(NAME_MAX_LENGTH, "Keep it under 60 characters"),
+  /** Job title (1.4) - shown on a placed signature alongside name/department/date; blank clears it. */
+  position: z.string().trim().max(150, "Keep it under 150 characters"),
 })
 
 export type ProfileEditFormValues = z.infer<typeof profileEditFormSchema>

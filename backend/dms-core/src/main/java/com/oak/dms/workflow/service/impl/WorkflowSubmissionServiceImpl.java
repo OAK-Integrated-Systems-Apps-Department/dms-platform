@@ -84,7 +84,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
 
     @Override
     @Transactional
-    public UUID submit(UUID documentId, List<SupportingDocumentInput> supportingDocuments) {
+    public UUID submit(UUID documentId, UUID templateId, List<SupportingDocumentInput> supportingDocuments) {
         UUID tenantId = TenantContext.getTenantId();
         UUID userId = TenantContext.getUserId();
         locks.applyLockTimeout();
@@ -107,9 +107,7 @@ public class WorkflowSubmissionServiceImpl implements WorkflowSubmissionService 
             throw new WorkflowStateException("WORKFLOW_ALREADY_IN_PROGRESS",
                     "This document is already in an approval workflow");
         }
-        WorkflowTemplate template = templateSelector.selectFor(document)
-                .orElseThrow(() -> new WorkflowValidationException("WORKFLOW_NO_ACTIVE_TEMPLATE",
-                        "No active workflow template is configured for this document's type"));
+        WorkflowTemplate template = templateSelector.selectFor(document, templateId);
         WorkflowInstance instance = start(document, template, userId);
         // Same transaction (decision 11): an invalid attachment rolls the whole submission back.
         // attach() enforces the supporting-document rules and records each as supporting_document_added.

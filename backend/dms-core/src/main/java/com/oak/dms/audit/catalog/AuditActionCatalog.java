@@ -155,6 +155,8 @@ public final class AuditActionCatalog {
     public static final String WATERMARK_COMPLETED = "WATERMARK_COMPLETED";
     public static final String WATERMARK_FAILED = "WATERMARK_FAILED";
     public static final String WATERMARK_RESULT_DOWNLOADED = "WATERMARK_RESULT_DOWNLOADED";
+    /** Changing whether a plain download is watermarked by default, and with which template (V103). */
+    public static final String WATERMARK_DEFAULTS_UPDATED = "WATERMARK_DEFAULTS_UPDATED";
 
     public static final String DEPARTMENT_CREATED = "DEPARTMENT_CREATED";
     public static final String DEPARTMENT_UPDATED = "DEPARTMENT_UPDATED";
@@ -172,6 +174,7 @@ public final class AuditActionCatalog {
     public static final String WORKFLOW_TASK_RELEASED = "WORKFLOW_TASK_RELEASED";
     public static final String WORKFLOW_TASK_APPROVED = "WORKFLOW_TASK_APPROVED";
     public static final String WORKFLOW_TASK_REJECTED = "WORKFLOW_TASK_REJECTED";
+    public static final String WORKFLOW_TASK_RETRACTED = "WORKFLOW_TASK_RETRACTED";
     public static final String WORKFLOW_STAGE_COMPLETED = "WORKFLOW_STAGE_COMPLETED";
     public static final String WORKFLOW_APPROVED = "WORKFLOW_APPROVED";
     public static final String WORKFLOW_REJECTED = "WORKFLOW_REJECTED";
@@ -192,6 +195,30 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_COMMENT_CREATED = "DOCUMENT_COMMENT_CREATED";
     public static final String DOCUMENT_COMMENT_UPDATED = "DOCUMENT_COMMENT_UPDATED";
     public static final String DOCUMENT_COMMENT_DELETED = "DOCUMENT_COMMENT_DELETED";
+
+    // 1.4 Digital Signature Integration (module DSI, INTERNAL signing only -
+    // see com.oak.dms.signature's package docs). DOCUMENT_SIGNED/REJECTED/
+    // INVALIDATED/VERIFICATION_FAILED are HIGH: each is either a legally
+    // meaningful act or a security-relevant failure. VERIFIED is LOW - a
+    // routine, expected, high-frequency check, same tier as DOCUMENT_DOWNLOADED.
+    // LOCKED is MEDIUM (a consequence of an approval, not a decision of its
+    // own); UNLOCKED is HIGH and reason-required, same as a quarantine override.
+    public static final String DOCUMENT_SIGNED = "DOCUMENT_SIGNED";
+    public static final String DOCUMENT_SIGNATURE_REJECTED = "DOCUMENT_SIGNATURE_REJECTED";
+    public static final String DOCUMENT_SIGNATURE_INVALIDATED = "DOCUMENT_SIGNATURE_INVALIDATED";
+    public static final String DOCUMENT_SIGNATURE_VERIFIED = "DOCUMENT_SIGNATURE_VERIFIED";
+    public static final String DOCUMENT_SIGNATURE_VERIFICATION_FAILED = "DOCUMENT_SIGNATURE_VERIFICATION_FAILED";
+    public static final String DOCUMENT_SIGNATURE_LOCKED = "DOCUMENT_SIGNATURE_LOCKED";
+    public static final String DOCUMENT_SIGNATURE_UNLOCKED = "DOCUMENT_SIGNATURE_UNLOCKED";
+    public static final String SIGNING_KEY_CREATED = "SIGNING_KEY_CREATED";
+    public static final String SIGNING_KEY_REVOKED = "SIGNING_KEY_REVOKED";
+    /** A visual signature burned onto a page, producing a new document version (reason=signed_copy) - before sign-and-approve, see SignaturePlacementService. */
+    public static final String DOCUMENT_SIGNATURE_PLACED = "DOCUMENT_SIGNATURE_PLACED";
+    public static final String DOCUMENT_SIGNATURE_PLACEMENT_REMOVED = "DOCUMENT_SIGNATURE_PLACEMENT_REMOVED";
+    // Cosmetic (typed name / drawn mark shown alongside a real signature, never
+    // part of what's cryptographically verified) - LOW, same tier as any other
+    // self-service profile edit.
+    public static final String VISUAL_SIGNATURE_UPDATED = "VISUAL_SIGNATURE_UPDATED";
 
     // Notifications (3.2) - module NOTIF. The main trail gets only these few;
     // every delivery attempt goes to the append-only notification_delivery_attempts table.
@@ -473,6 +500,9 @@ public final class AuditActionCatalog {
             // moment a copy of a document leaves the system - one carrying
             // the name of the person who took it.
             Map.entry(WATERMARK_RESULT_DOWNLOADED, new AuditActionSpec("DW", AuditSeverity.HIGH, false)),
+            // Changes the policy for every future plain download, not any
+            // copy already made - same MEDIUM as a template edit.
+            Map.entry(WATERMARK_DEFAULTS_UPDATED, new AuditActionSpec("DW", AuditSeverity.MEDIUM, false)),
 
             // Departments (DepartmentController) - module OTUA. They define
             // who sits in a department approver pool, hence MEDIUM.
@@ -497,6 +527,7 @@ public final class AuditActionCatalog {
             Map.entry(WORKFLOW_TASK_RELEASED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
             Map.entry(WORKFLOW_TASK_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
             Map.entry(WORKFLOW_TASK_REJECTED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, true)),
+            Map.entry(WORKFLOW_TASK_RETRACTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
             Map.entry(WORKFLOW_STAGE_COMPLETED, new AuditActionSpec("WA", AuditSeverity.LOW, false)),
             Map.entry(WORKFLOW_APPROVED, new AuditActionSpec("WA", AuditSeverity.MEDIUM, false)),
             Map.entry(WORKFLOW_REJECTED, new AuditActionSpec("WA", AuditSeverity.HIGH, true)),
@@ -520,6 +551,22 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_COMMENT_CREATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_COMMENT_UPDATED, new AuditActionSpec("DOCM", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_COMMENT_DELETED, new AuditActionSpec("DOCM", AuditSeverity.MEDIUM, false)),
+
+            // 1.4 Digital Signature Integration (DocumentSignatureService/
+            // WorkflowSignatureListener/SignatureFailureRecorder/
+            // DocumentSignatureLockService/SigningKeyService) - module DSI.
+            Map.entry(DOCUMENT_SIGNED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_REJECTED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_INVALIDATED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_VERIFIED, new AuditActionSpec("DSI", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_SIGNATURE_VERIFICATION_FAILED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
+            Map.entry(DOCUMENT_SIGNATURE_LOCKED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SIGNATURE_UNLOCKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+            Map.entry(SIGNING_KEY_CREATED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+            Map.entry(VISUAL_SIGNATURE_UPDATED, new AuditActionSpec("DSI", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_SIGNATURE_PLACED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_SIGNATURE_PLACEMENT_REMOVED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
 
             // Notifications (3.2) - module NOTIF
             Map.entry(NOTIFICATION_DELIVERY_FAILED, new AuditActionSpec("NOTIF", AuditSeverity.MEDIUM, false)),

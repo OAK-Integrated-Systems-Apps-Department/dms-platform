@@ -16,6 +16,7 @@ import { RelatedDocumentsPanel } from "@/components/relationships/related-docume
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
+import { DocumentSignaturesPanel } from "@/components/signatures/document-signatures-panel"
 import { ApiError, friendlyMessage } from "@/lib/api-error"
 import { downloadDocumentFile } from "@/lib/documents/api"
 import { useDocument } from "@/lib/documents/use-document"
@@ -97,6 +98,7 @@ export default function DocumentPage() {
             <SubmitToWorkflowButton
               documentId={document.documentId}
               documentTitle={document.title}
+              documentTypeId={document.documentTypeId}
               hidden={inProgress || history.isPending}
             />
           </div>
@@ -157,6 +159,8 @@ export default function DocumentPage() {
                   </div>
                 )
               )}
+
+              <DocumentSignaturesPanel document={document} workflowInProgress={inProgress} />
             </div>
 
             <div className="flex min-w-0 flex-col gap-5">

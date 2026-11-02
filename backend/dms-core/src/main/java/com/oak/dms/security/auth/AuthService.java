@@ -89,6 +89,7 @@ public class AuthService {
     public void login(String username, String password, String totp, boolean rememberMe,
                        HttpServletResponse response) {
         KeycloakAuthClient.GrantResult result =
+
                 keycloakAuthClient.passwordGrant(username, password, totp, rememberMe);
         if (rememberMe && result instanceof KeycloakAuthClient.GrantResult.Failure scopeFailure
                 && ("invalid_scope".equals(scopeFailure.keycloakError())
@@ -101,6 +102,7 @@ public class AuthService {
                     + "the SSO session. Re-run keycloak-bootstrap.", username, scopeFailure.keycloakError());
             result = keycloakAuthClient.passwordGrant(username, password, totp, false);
         }
+        
         if (result instanceof KeycloakAuthClient.GrantResult.Failure failure) {
             // No actor/tenant is resolved here on purpose: a failed grant
             // must never be used to confirm whether `username` belongs to
@@ -156,6 +158,32 @@ public class AuthService {
                 // submitted alongside a wrong/unnecessary code.
                 .authMethod(totp != null && !totp.isBlank() ? AuditAuthMethod.MFA : AuditAuthMethod.PASSWORD)
                 .log();
+    }
+
+    /**
+     * Keycloak's resource-owner password grant does a literal username lookup - unlike its
+     * browser login form, it does NOT honor the realm's {@code loginWithEmailAllowed} and fall
+     * back to an email match (confirmed against a real Keycloak 26 server: a correct email/password
+     * pair for an account whose Keycloak username differs from its email comes back
+     * {@code error=user_not_found}, not a credentials failure). Every account created by
+     * {@link com.oak.dms.tenant.TenantProvisioningService}/{@code UserServiceImpl#createUser} has a
+     * username distinct from its email (see {@link KeycloakUserService#createUser}'s own doc
+     * comment), and the welcome/reset emails only ever give the person their email - so without this
+     * resolution step, nobody who signs in with the email they were invited at could ever log in.
+     * Reuses the same Admin API search {@link #isMfaRequired} and {@link PasswordResetService}
+     * already rely on; falls back to the raw input (letting Keycloak reject it generically) if no
+     * match is found, which keeps {@link #login}'s "never leak account existence" contract intact.
+     */
+    private String resolveKeycloakUsername(String usernameOrEmail) {
+        try {
+            return keycloakUserService.findByUsernameOrEmail(usernameOrEmail)
+                    .map(UserRepresentation::getUsername)
+                    .orElse(usernameOrEmail);
+        } catch (Exception e) {
+            log.warn("Could not resolve '{}' to a Keycloak username, trying it as-is: {}", usernameOrEmail,
+                    e.getMessage());
+            return usernameOrEmail;
+        }
     }
 
     /**

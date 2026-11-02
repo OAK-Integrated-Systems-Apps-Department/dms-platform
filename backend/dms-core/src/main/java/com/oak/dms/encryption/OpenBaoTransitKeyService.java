@@ -35,6 +35,18 @@ import java.util.function.Function;
  * Signs in through {@link OpenBaoSession} (AppRole in production, renewed
  * before expiry); a refused request signs in again and is retried once.
  * Bodies are handled as strings with the application's Jackson 2 mapper.
+ * <p>
+ * {@link #ensureSigningKey} / {@link #sign} are the digital-signature
+ * feature's hook into this same class (1.4, module DSI -
+ * {@code com.oak.dms.signature.service.TransitDocumentSigner}): an ECDSA
+ * P-256, non-exportable key named {@code dms-sig-<tenantId>-<userId>-<generation>}
+ * rather than this class's own {@code keyNameFor} scoping, since a signing
+ * key belongs to one user, not one tenant/platform scope. The policy needs
+ * these EXTRA paths for {@code dms-sig-*} (on top of the encryption paths
+ * above, typically a separate token/policy - see
+ * docs/storage-architecture.md): keys (read, create - never delete, since
+ * revoking a key must never affect signatures it already made) and
+ * sign/.../sha2-256 (update).
  */
 @Slf4j
 public class OpenBaoTransitKeyService implements KeyEncryptionService, AutoCloseable {
@@ -214,6 +226,76 @@ public class OpenBaoTransitKeyService implements KeyEncryptionService, AutoClose
         }
         knownKeys.remove(name);
         log.warn("Destroyed OpenBao transit key {}/{} - everything it wrapped is now unreadable", mount, name);
+    }
+
+    /**
+     * Creates {@code fullKeyName} as an ECDSA P-256, non-exportable Transit
+     * key if it doesn't exist yet - the signing counterpart of
+     * {@link #ensureKey}, but taking the caller's own fully-qualified name
+     * (e.g. {@code dms-sig-<tenantId>-<userId>-<generation>}) rather than
+     * this class's tenant/platform {@link #keyNameFor} scoping.
+     */
+    public void ensureSigningKey(String fullKeyName) {
+        if (knownKeys.contains(fullKeyName)) {
+            return;
+        }
+        try {
+            authorised(token -> client.get().uri("/{mount}/keys/{name}", mount, fullKeyName)
+                    .header("X-Vault-Token", token).retrieve().body(String.class));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() != 404) {
+                throw failure("read the signing key", e);
+            }
+            call("create the signing key", token -> client.post().uri("/{mount}/keys/{name}", mount, fullKeyName)
+                    .header("X-Vault-Token", token).contentType(MediaType.APPLICATION_JSON)
+                    .body(json(Map.of("type", "ecdsa-p256", "exportable", false))).retrieve().toBodilessEntity());
+            log.info("Created OpenBao signing key {}/{}", mount, fullKeyName);
+        } catch (RestClientException e) {
+            throw failure("reach OpenBao", e);
+        }
+        knownKeys.add(fullKeyName);
+    }
+
+    /**
+     * A DER-encoded (ASN.1) ECDSA signature of a SHA-256 digest the caller
+     * already computed, via {@code transit/sign/<name>/sha2-256} with
+     * {@code prehashed=true, marshaling_algorithm=asn1} - the exact shape a
+     * plain JCA {@code Signature.getInstance("SHA256withECDSA")} verifies
+     * with no further conversion. Never logs the digest or the signature -
+     * both could be sensitive, and the signature uniquely links a user to a
+     * specific document version.
+     */
+    public byte[] sign(String fullKeyName, byte[] sha256Digest) {
+        ensureSigningKey(fullKeyName);
+        String response = call("sign the document hash", token -> client.post()
+                .uri("/{mount}/sign/{name}/sha2-256", mount, fullKeyName).header("X-Vault-Token", token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json(Map.of("input", Base64.getEncoder().encodeToString(sha256Digest),
+                        "prehashed", true, "marshaling_algorithm", "asn1")))
+                .retrieve().body(String.class));
+        String signature = data("sign the document hash", response).path("signature").asText();
+        // "vault:v<key-version>:<base64 DER>" - the version prefix is stripped; this
+        // class always verifies with the public key copied at signing time, never
+        // by re-reading the (possibly since-rotated) Transit key, so the version
+        // number itself is not needed by any caller.
+        int lastColon = signature.lastIndexOf(':');
+        if (lastColon < 0 || lastColon == signature.length() - 1) {
+            throw new KeyServiceException("OpenBao returned an unrecognised signature format");
+        }
+        return Base64.getDecoder().decode(signature.substring(lastColon + 1));
+    }
+
+    /** The signing key's current public key, PEM-encoded - read once, right after {@link #ensureSigningKey}. */
+    public String signingPublicKeyPem(String fullKeyName) {
+        JsonNode data = data("read the signing key", call("read the signing key",
+                token -> client.get().uri("/{mount}/keys/{name}", mount, fullKeyName).header("X-Vault-Token", token)
+                        .retrieve().body(String.class)));
+        int latest = data.path("latest_version").asInt();
+        String pem = data.path("keys").path(String.valueOf(latest)).path("public_key").asText(null);
+        if (pem == null || pem.isBlank()) {
+            throw new KeyServiceException("OpenBao returned no public key for the signing key");
+        }
+        return pem;
     }
 
     @Override

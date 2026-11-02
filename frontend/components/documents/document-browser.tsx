@@ -1144,6 +1144,7 @@ function FolderView({
           key={dialog.key}
           documentId={dialog.row.documentId}
           documentTitle={dialog.row.title}
+          documentTypeId={dialog.row.documentTypeId}
           onOpenChange={(open) => !open && setDialog(null)}
           onSubmitted={refresh}
         />

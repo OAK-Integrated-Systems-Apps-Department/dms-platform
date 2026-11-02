@@ -5,6 +5,7 @@ import { type DownloadedFile } from "@/lib/download-file"
 const TEMPLATES = `${API_BASE_URL}/api/v1/watermark-templates`
 const JOBS = `${API_BASE_URL}/api/v1/watermark-jobs`
 const DOCUMENTS = `${API_BASE_URL}/api/v1/documents`
+const SETTINGS = `${API_BASE_URL}/api/v1/watermark-settings`
 
 const JSON_HEADERS = { "Content-Type": "application/json" }
 
@@ -108,6 +109,45 @@ export type WatermarkPreviewRequestDto = Omit<WatermarkRequestDto, "versionId">
 /** Not finished yet - worth polling. */
 export function isWatermarkInFlight(status: WatermarkJobStatus): boolean {
   return status === "pending" || status === "processing"
+}
+
+/**
+ * Mirrors WatermarkDefaultsResponse. This is the tenant's policy for the
+ * plain "Download" action (`enabled`) and for a bulk/ZIP export's files
+ * (`bulkExportEnabled`) - both separate from, and unaffected by, the
+ * user-initiated "Add watermark" job above, and sharing one template.
+ * `defaultTemplateId` can be set while both flags are false (a
+ * previously-chosen template kept for next time); the UI should treat that
+ * as "off" either way.
+ */
+export interface WatermarkDefaultsDto {
+  enabled: boolean
+  bulkExportEnabled: boolean
+  defaultTemplateId: string | null
+  defaultTemplateLabel: string | null
+}
+
+/** Mirrors WatermarkDefaultsRequest. templateId is required when enabled or bulkExportEnabled is true. */
+export interface WatermarkDefaultsRequestDto {
+  enabled: boolean
+  bulkExportEnabled: boolean
+  templateId: string | null
+}
+
+/** This tenant's download-watermarking policy (`GET /api/v1/watermark-settings`). */
+export async function fetchWatermarkDefaults(): Promise<WatermarkDefaultsDto> {
+  return apiFetchJson(SETTINGS, undefined, "Could not load the download-watermarking settings.")
+}
+
+/** Saves the policy (`PUT /api/v1/watermark-settings`). */
+export async function updateWatermarkDefaults(
+  request: WatermarkDefaultsRequestDto
+): Promise<WatermarkDefaultsDto> {
+  return apiFetchJson(
+    SETTINGS,
+    { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(request) },
+    "Could not save the download-watermarking settings."
+  )
 }
 
 /**

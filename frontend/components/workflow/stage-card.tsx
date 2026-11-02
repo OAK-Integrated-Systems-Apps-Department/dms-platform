@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, ArrowDown, ArrowUp, BellRing, Clock, MessageSquareMore, Pencil, Trash2, TrendingUp } from "lucide-react"
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, Clock, MessageSquareMore, PenLine, Pencil, Trash2, TrendingUp } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -69,6 +69,10 @@ function toFormValues(stage: WorkflowStageDto | null): StageFormValues {
     escalationTarget: stage?.escalationTarget ?? "none",
     escalationUserId: stage?.escalationUserId ?? null,
     allowInfoRequests: stage?.allowInfoRequests ?? true,
+    // Mandatory for every stage (V117) - never actually sent to the backend, which ignores
+    // the field now, but kept as a constant true here so the read-only summary (and the form
+    // state in general) doesn't have to special-case a stage that hasn't been saved yet.
+    requiresSignature: true,
     participants: (stage?.participants ?? [])
       .slice()
       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -315,6 +319,15 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
             </span>
           </label>
 
+          <p className="flex items-start gap-2 text-[12.5px] text-muted-foreground">
+            <PenLine size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              <strong className="text-foreground">Requires digital signature.</strong> Every stage does - approving
+              needs an explicit signature (password, and an authenticator code if enabled); the plain Approve action
+              is always refused.
+            </span>
+          </p>
+
           <CollapsibleSection
             title="Reminders & escalation"
             summary={remindersSummary(effective)}
@@ -480,6 +493,9 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
                 <MessageSquareMore size={12} /> Information requests are switched off for this stage.
               </p>
             )}
+            <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <PenLine size={12} /> Approving this stage requires a digital signature.
+            </p>
           </div>
         )
       )}

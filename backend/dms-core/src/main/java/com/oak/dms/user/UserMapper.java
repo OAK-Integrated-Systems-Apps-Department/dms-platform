@@ -31,22 +31,22 @@ public interface UserMapper {
 
     /** Every caller resolves and passes `tenantName` - see {@link UserResponse}'s doc comment. */
     default UserResponse toResponse(User user, String tenantName) {
-        return toResponse(user, tenantName, null, null, null);
+        return toResponse(user, tenantName, null, null, null, null);
     }
 
     /**
-     * `permissions`/`roles`/impersonation status populated in addition to
-     * `tenantName` - `getCurrentUser()`/`updateCurrentUser()` only.
-     * `impersonatorDisplayName` non-null implies impersonating; null means
-     * not impersonating, regardless of `permissions`.
+     * `permissions`/`roles`/impersonation status/`departmentName` populated in addition to `tenantName` -
+     * `getCurrentUser()`/`updateCurrentUser()` only. `impersonatorDisplayName` non-null implies
+     * impersonating; null means not impersonating, regardless of `permissions`.
      */
     default UserResponse toResponse(User user, String tenantName, List<String> permissions,
-            List<String> roles, String impersonatorDisplayName) {
+            List<String> roles, String impersonatorDisplayName, String departmentName) {
         UserResponse base = toResponse(user);
         return new UserResponse(base.userId(), base.tenantId(), tenantName, base.keycloakId(), base.email(),
                 base.username(), base.firstName(), base.lastName(), base.displayName(), base.mfaEnabled(),
                 base.status(), base.verified(), base.verifiedAt(), base.createdAt(), base.updatedAt(),
                 base.lastLoginAt(), base.lastPasswordChangedAt(), permissions, roles,
-                impersonatorDisplayName != null, impersonatorDisplayName, base.departmentId());
+                impersonatorDisplayName != null, impersonatorDisplayName, base.departmentId(), base.position(),
+                departmentName);
     }
 }

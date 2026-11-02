@@ -1,7 +1,7 @@
--- Manual rollback ("down") for V107__seed_relationship_types_for_existing_tenants.sql.
+-- Manual rollback ("down") for V114__seed_relationship_types_for_existing_tenants.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Removes the system types
--- that nothing references; a type that already has relationships stays (drop V106's
+-- that nothing references; a type that already has relationships stays (drop V113's
 -- tables to remove those).
 DELETE FROM relationship_types rt
 WHERE rt.is_system

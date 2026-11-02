@@ -8,9 +8,8 @@ import {
   ChevronRight,
   Layers,
   Moon,
-  PenTool,
+  PenLine,
   Settings,
-  ShieldCheck,
   Sun,
   X,
 } from "lucide-react"
@@ -305,8 +304,6 @@ export function AppSidebar({
   }
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [requireSignature, setRequireSignature] = useState(true)
-  const [autoLock, setAutoLock] = useState(false)
   const settingsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -399,42 +396,14 @@ export function AppSidebar({
                 />
               </div>
 
-              <div className="flex items-center justify-between px-3.5 py-2">
-                <div className="flex items-center gap-2">
-                  <PenTool size={15} className="text-muted-foreground" />
-                  <span className="text-[13px]">
-                    Require e-signature on approval
-                  </span>
-                </div>
-                <Toggle
-                  checked={requireSignature}
-                  onChange={setRequireSignature}
-                  label="Require e-signature on approval"
-                />
-              </div>
-
-              <div className="flex items-center justify-between px-3.5 py-2">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={15} className="text-muted-foreground" />
-                  <span className="text-[13px]">
-                    Auto-lock signed documents
-                  </span>
-                </div>
-                <Toggle
-                  checked={autoLock}
-                  onChange={setAutoLock}
-                  label="Auto-lock signed documents"
-                />
-              </div>
-
-              <div className="p-3.5 pt-2.5">
-                <button
-                  type="button"
-                  className="w-full rounded-lg border border-border bg-muted px-2.5 py-2 text-left text-[12.5px]"
-                >
-                  Manage signature certificates →
-                </button>
-              </div>
+              <Link
+                href="/profile#e-signature"
+                onClick={() => setSettingsOpen(false)}
+                className="mt-1 flex items-center gap-2 border-t border-border px-3.5 py-2.5 text-[13px] hover:bg-muted"
+              >
+                <PenLine size={15} className="text-muted-foreground" />
+                Manage digital signature
+              </Link>
             </Dropdown>
           )}
 

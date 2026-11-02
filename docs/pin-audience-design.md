@@ -223,7 +223,7 @@ Decisions taken where the design left them open (follow the recommendations in s
 |---|---|
 | 1. Who holds the pin permission | **Still to do before release:** review which roles hold `pid.pin-unpin-documents.pin`. It now also lets a person show a document to everyone. |
 | 2. Orphaned pins (pinner leaves) | **Deferred.** Nobody but the pinner can remove them. A `pid.manage-others-pins` permission is the follow-up. |
-| 3. Existing personal pins | **Migrated** by `V110` as pinner-only pins (`USERS`, one member). `document_pins` is kept, unread, and marked superseded; drop it in a later migration. |
+| 3. Existing personal pins | **Migrated** by `V122` as pinner-only pins (`USERS`, one member). `document_pins` is kept, unread, and marked superseded; drop it in a later migration. |
 | 4. Audience types | **Individual users only.** Departments and roles are a follow-up. |
 | 5. Notify recipients | **Left out.** |
 | 6. Cap on pins per organisation | **Deferred**, recorded as a FOLLOW-UP comment on `PinService.MAX_READ`: the pinned section reads at most the newest 500 assignments. |

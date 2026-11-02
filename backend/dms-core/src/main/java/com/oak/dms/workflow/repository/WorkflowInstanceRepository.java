@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -44,4 +45,20 @@ public interface WorkflowInstanceRepository extends JpaRepository<WorkflowInstan
                                            @Param("documentIds") Collection<UUID> documentIds);
 
     boolean existsByTemplateId(UUID templateId);
+
+    /**
+     * Advances the instance's signing target to a freshly-stamped version (1.4 signature placement) - a
+     * plain update, deliberately WITHOUT {@link #lockByInstanceIdAndTenantId}'s row lock: this runs
+     * alongside a document-ingestion/scan call that must never happen while any workflow row lock is
+     * held (see {@code DocumentSignatureService}'s own doc comment on the deadlock this avoids). A lost
+     * update race here (two approvers stamping at the exact same instant) only means one of them signs a
+     * slightly older version than intended, never a security issue - {@code documentVersionId} stays
+     * {@code updatable = false} at the entity level everywhere else, so this is the one deliberate,
+     * narrow exception, via JPQL rather than a normal save().
+     */
+    @Modifying
+    @Query("update WorkflowInstance i set i.documentVersionId = :versionId "
+            + "where i.instanceId = :instanceId and i.tenantId = :tenantId")
+    void advanceDocumentVersion(@Param("instanceId") UUID instanceId, @Param("tenantId") UUID tenantId,
+                                @Param("versionId") UUID versionId);
 }

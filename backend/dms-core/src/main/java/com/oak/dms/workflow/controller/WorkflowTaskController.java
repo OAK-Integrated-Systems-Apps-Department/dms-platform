@@ -1,6 +1,7 @@
 package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
+import com.oak.dms.signature.dto.SignAndApproveRequest;
 import com.oak.dms.workflow.dto.ApproveTaskRequest;
 import com.oak.dms.workflow.dto.DelegateTaskRequest;
 import com.oak.dms.workflow.dto.MyTaskCountResponse;
@@ -8,6 +9,9 @@ import com.oak.dms.workflow.dto.MyTaskResponse;
 import com.oak.dms.workflow.dto.PersonOptionResponse;
 import com.oak.dms.workflow.dto.ReassignTaskRequest;
 import com.oak.dms.workflow.dto.RejectTaskRequest;
+import com.oak.dms.workflow.dto.RetractTaskRequest;
+import com.oak.dms.workflow.dto.ReviewLockResponse;
+import com.oak.dms.workflow.dto.ReviewTaskRequest;
 import com.oak.dms.workflow.dto.TaskActionResponse;
 import com.oak.dms.workflow.enums.TaskDecision;
 import com.oak.dms.workflow.service.WorkflowDelegationService;
@@ -21,6 +25,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -93,6 +98,19 @@ public class WorkflowTaskController {
         return taskService.act(taskId, TaskDecision.reject, request.reason());
     }
 
+    @PostMapping("/{taskId}/sign-and-approve")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_APPROVE) "
+            + "and @authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DSI_SIGN)")
+    @Operation(summary = "1.4 Digital Signature Integration: sign AND approve in one transaction",
+            description = "Required instead of plain /approve when the stage has requires_signature=true (409 "
+                    + "WORKFLOW_SIGNATURE_REQUIRED from /approve otherwise). Needs explicit consent plus step-up "
+                    + "re-authentication (password, and TOTP if MFA is enabled) - refused while impersonating. If "
+                    + "the signature cannot be recorded for any reason, nothing is approved (fail closed).")
+    public TaskActionResponse signAndApprove(@PathVariable("taskId") UUID taskId,
+                                             @Valid @RequestBody SignAndApproveRequest request) {
+        return taskService.actWithSignature(taskId, request);
+    }
+
     @PostMapping("/{taskId}/delegate")
     @PreAuthorize(ACT)
     @Operation(summary = "Hand my task to someone else",
@@ -113,6 +131,44 @@ public class WorkflowTaskController {
     public TaskActionResponse reassign(@PathVariable("taskId") UUID taskId,
                                        @Valid @RequestBody ReassignTaskRequest request) {
         return delegationService.reassign(taskId, request.userId(), request.reason());
+    }
+
+    private static final String RETRACT = "@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).WA_TASK_RETRACT)";
+
+    @PostMapping("/{taskId}/review")
+    @PreAuthorize(RETRACT)
+    @Operation(summary = "V119: re-open your own already-decided task for review",
+            description = "Step-up re-authentication (password, TOTP if MFA is enabled) is required just to view "
+                    + "it again, not only to retract. Also acquires a soft lock on the stage, refusing every other "
+                    + "entry's claim/approve/reject while it's held (expires on its own if never renewed or closed). "
+                    + "409 WORKFLOW_RETRACTION_WINDOW_CLOSED if a later decision has already closed the stage.")
+    public ReviewLockResponse review(@PathVariable("taskId") UUID taskId, @Valid @RequestBody ReviewTaskRequest request) {
+        return taskService.openForReview(taskId, request.password(), request.totp());
+    }
+
+    @PostMapping("/{taskId}/review/heartbeat")
+    @PreAuthorize(RETRACT)
+    @Operation(summary = "Renew the review lock while still looking", description = "409 if the session already ended (expired or closed) - call review again to reopen it.")
+    public ReviewLockResponse reviewHeartbeat(@PathVariable("taskId") UUID taskId) {
+        return taskService.renewReviewLock(taskId);
+    }
+
+    @DeleteMapping("/{taskId}/review")
+    @PreAuthorize(RETRACT)
+    @Operation(summary = "End the review session with no change", description = "Releases the lock if you hold it; a no-op otherwise.")
+    public void closeReview(@PathVariable("taskId") UUID taskId) {
+        taskService.closeReview(taskId);
+    }
+
+    @PostMapping("/{taskId}/retract")
+    @PreAuthorize(RETRACT)
+    @Operation(summary = "Retract your own approval and make the task actionable again",
+            description = "A reason is mandatory, and step-up re-authentication is required exactly like signing. "
+                    + "409 WORKFLOW_RETRACTION_WINDOW_CLOSED once the stage has closed (a later decision already "
+                    + "recorded). If a signature was placed, it's invalidated and the document reverts to the "
+                    + "version from before it was signed.")
+    public TaskActionResponse retract(@PathVariable("taskId") UUID taskId, @Valid @RequestBody RetractTaskRequest request) {
+        return taskService.retract(taskId, request.reason(), request.password(), request.totp());
     }
 
     @GetMapping("/{taskId}/delegate-candidates")

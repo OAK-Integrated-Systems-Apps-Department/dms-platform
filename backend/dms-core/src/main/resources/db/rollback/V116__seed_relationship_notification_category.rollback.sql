@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V109__seed_relationship_notification_category.sql.
+-- Manual rollback ("down") for V116__seed_relationship_notification_category.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Notifications already
 -- sent keep their category (delivery attempts are append-only), so a category that

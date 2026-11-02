@@ -1,5 +1,6 @@
+import { Inter, IBM_Plex_Mono, Dancing_Script } from "next/font/google"
 import type { Metadata } from "next"
-import { Inter, IBM_Plex_Mono } from "next/font/google"
+
 import { cookies } from "next/headers"
 
 import "./globals.css"
@@ -20,6 +21,13 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   variable: "--font-mono",
+})
+
+/** A typed e-signature's display font (1.4) - see `SignAndApproveDialog`/`SignatureRow`. */
+const signatureFont = Dancing_Script({
+  subsets: ["latin"],
+  weight: ["600"],
+  variable: "--font-signature",
 })
 
 // One place for the browser-tab title. A page that exports `metadata` (or a layout
@@ -46,7 +54,8 @@ export default async function RootLayout({
         plexMono.variable,
         "font-sans",
         inter.variable,
-        headingFont.variable
+        headingFont.variable,
+        signatureFont.variable
       )}
     >
       <body>

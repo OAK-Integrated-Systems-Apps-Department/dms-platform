@@ -131,7 +131,7 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                     def == null ? null : def.getCompletionRule().name(), def == null ? null : def.getRejectionRule().name(),
                     entryCount, si.getRequiredCount(), si.getApprovedCount(), si.getRejectedCount(),
                     si.getActivatedAt(), si.getDueAt(), si.getCompletedAt(), taskViews,
-                    def == null || def.isAllowInfoRequests()));
+                    def == null || def.isAllowInfoRequests(), def != null && def.isRequiresSignature()));
         }
 
         List<TaskView> nextAssignees = instance.getCurrentStageInstanceId() == null ? List.of()
@@ -340,7 +340,7 @@ public class WorkflowQueryServiceImpl implements WorkflowQueryService {
                             && t.getDueAt().isBefore(now), si.getActivatedAt(),
                     names.user(i.getInitiatedBy()), i.isVersionChangedFlag(), routeName(tenantId, t, userId),
                     t.getDelegatedFrom() == null ? null : names.user(t.getDelegatedFrom()),
-                    openRequests.getOrDefault(t.getTaskId(), 0L));
+                    openRequests.getOrDefault(t.getTaskId(), 0L), def != null && def.isRequiresSignature());
         });
     }
 

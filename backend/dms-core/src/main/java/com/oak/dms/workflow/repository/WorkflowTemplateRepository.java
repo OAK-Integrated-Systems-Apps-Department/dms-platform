@@ -23,16 +23,19 @@ public interface WorkflowTemplateRepository extends JpaRepository<WorkflowTempla
     @Query("select t from WorkflowTemplate t where t.templateId = :id and t.tenantId = :tenantId and t.deleted = false")
     Optional<WorkflowTemplate> lockByTemplateIdAndTenantId(@Param("id") UUID templateId, @Param("tenantId") UUID tenantId);
 
-    /** The template new submissions for this document type use (at most one - uq_workflow_templates_one_active_per_type). */
-    Optional<WorkflowTemplate> findFirstByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(UUID tenantId,
-                                                                                             UUID documentTypeId,
-                                                                                             TemplateStatus status);
+    /** Every active template of this document type - zero, one, or more since V120 (decision 7 superseded). */
+    List<WorkflowTemplate> findByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(UUID tenantId,
+                                                                                    UUID documentTypeId,
+                                                                                    TemplateStatus status);
 
     List<WorkflowTemplate> findByTenantIdAndCodeAndDeletedFalseOrderByVersionNumberDesc(UUID tenantId, String code);
 
     boolean existsByTenantIdAndCodeAndDeletedFalse(UUID tenantId, String code);
 
     boolean existsByTenantIdAndCodeAndStatusAndDeletedFalse(UUID tenantId, String code, TemplateStatus status);
+
+    /** The active version of this template family, if any - at most one (uq_workflow_templates_one_active_per_code). */
+    Optional<WorkflowTemplate> findByTenantIdAndCodeAndStatusAndDeletedFalse(UUID tenantId, String code, TemplateStatus status);
 
     @Query("select coalesce(max(t.versionNumber), 0) from WorkflowTemplate t where t.tenantId = :tenantId and t.code = :code and t.deleted = false")
     int findMaxVersionNumber(@Param("tenantId") UUID tenantId, @Param("code") String code);

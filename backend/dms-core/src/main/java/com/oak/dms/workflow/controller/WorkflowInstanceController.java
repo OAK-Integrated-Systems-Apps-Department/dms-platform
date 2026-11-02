@@ -58,11 +58,14 @@ public class WorkflowInstanceController {
 
     @PostMapping("/workflow/instances")
     @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DLM_SUBMIT_DOCUMENTS_FOR_REVIEW)")
-    @Operation(summary = "Submit a document into its document type's active workflow",
-            description = "All-or-nothing. 409 WORKFLOW_ALREADY_IN_PROGRESS / WORKFLOW_DOCUMENT_NOT_ELIGIBLE; "
-                    + "422 WORKFLOW_NO_ACTIVE_TEMPLATE / WORKFLOW_NO_ELIGIBLE_APPROVERS / WORKFLOW_INITIATOR_IS_APPROVER.")
+    @Operation(summary = "Submit a document into one of its document type's active workflows",
+            description = "All-or-nothing. templateId is required when the document type has more than one "
+                    + "active template (GET /workflow/templates/active?documentTypeId= lists the candidates), "
+                    + "optional when it has exactly one. 409 WORKFLOW_ALREADY_IN_PROGRESS / WORKFLOW_DOCUMENT_NOT_ELIGIBLE; "
+                    + "422 WORKFLOW_NO_ACTIVE_TEMPLATE / WORKFLOW_TEMPLATE_SELECTION_REQUIRED / "
+                    + "WORKFLOW_TEMPLATE_INVALID_SELECTION / WORKFLOW_NO_ELIGIBLE_APPROVERS / WORKFLOW_INITIATOR_IS_APPROVER.")
     public ResponseEntity<WorkflowInstanceResponse> submit(@Valid @RequestBody SubmitWorkflowRequest request) {
-        UUID instanceId = submissionService.submit(request.documentId(), request.supportingDocuments());
+        UUID instanceId = submissionService.submit(request.documentId(), request.templateId(), request.supportingDocuments());
         return ResponseEntity.status(HttpStatus.CREATED).body(queryService.getInstance(instanceId));
     }
 

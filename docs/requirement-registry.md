@@ -1352,9 +1352,17 @@ height="8.617391732283465in"}
 ### Description
 
 The system shall support digital signatures as part of document approval
-workflows. Digital signatures shall ensure document authenticity and
-provide a traceable approval process. The system shall record the
-signer, timestamp, and approval status as part of the document history.
+workflows - **internal signing only**: the signer is always an authorized
+user of this system signing in their own name at the moment they approve a
+workflow stage. Sending a document out for an external party to sign, and
+integrating a third-party signature provider, are out of scope for this
+capability (the permissions for both remain reserved in the catalog for a
+future phase but are not wired to anything). Digital signatures shall ensure
+document authenticity and provide a traceable approval process, binding each
+signature to the exact document version it was made against. The system
+shall record the signer, timestamp, meaning (e.g. approved/reviewed), and
+the signed version\'s content hash as part of the document\'s permanent
+history.
 
 ### Business Objective
 
@@ -1364,35 +1372,91 @@ paperwork and processing delays.
 
 ### Actors
 
--   User (e.g., Department Manager)
+-   User (e.g., Department Manager) - acting as an approver of a workflow
+    stage that requires a signature.
 
--   Document Management System
+-   Tenant Administrator (or a role holding the unlock permission) -
+    unlocks a document a signed approval has locked.
+
+-   Document Management System.
 
 ### Preconditions
 
--   User is logged into the system.
+-   User is logged into the system and holds the permission to sign
+    documents.
 
--   Document exists and is pending approval.
+-   The document is at a workflow stage configured to require a
+    signature (3.1 Workflow Automation).
 
--   User has permission to sign the document.
+-   The user is not currently impersonating another account - signing
+    while impersonating is refused outright, so a signature can never be
+    produced "as" someone else.
 
 ### Functional Requirements
 
   -------------------------------------------------------------------------
   **ID**       **Requirement**
   ------------ ------------------------------------------------------------
-  DSI-FR-001   The system shall allow authorized users to digitally sign a
-               document as part of an approval workflow.
+  DSI-FR-001   The system shall allow an authorized user to digitally sign
+               a document as part of approving a workflow stage configured
+               to require a signature; a plain approval (no signature)
+               shall be refused for such a stage.
 
-  DSI-FR-002   The system shall record the signer\'s identity, timestamp,
-               and approval status as part of the document\'s history.
+  DSI-FR-002   The system shall record the signer\'s identity (name and
+               email at the time of signing), timestamp, the meaning of
+               the signature (e.g. approved/reviewed/authored/
+               acknowledged), any comment, and the content hash of the
+               exact document version signed, as part of the document\'s
+               permanent, append-only history. A signature is bound to one
+               document version forever and is never moved to a later
+               version.
 
   DSI-FR-003   The system shall verify the authenticity of a digital
-               signature before recording it as valid.
+               signature using only the cryptographic material captured at
+               the moment of signing - never a round trip to a signing
+               service that may be unavailable later - before recording it
+               as valid, and again on demand at any later time (including
+               export of enough evidence to verify a signature
+               independently of this system). A verification that finds
+               the document altered, or the signature no longer matching,
+               shall mark that signature invalidated and alert an
+               administrator; a verification that could not be completed
+               (e.g. the stored file is temporarily unreadable) shall
+               change nothing.
 
-  DSI-FR-004   The system shall prevent modification of a document\'s
-               content after it has been digitally signed without
-               invalidating or flagging the signature.
+  DSI-FR-004   Once a workflow with at least one still-valid signature is
+               approved, the system shall lock its document to the signed
+               version: new versions, restoring an older version,
+               metadata edits, moving and deleting the document shall all
+               be refused until the lock is released. Releasing the lock
+               requires a permission reserved for that purpose and a
+               recorded reason, and does not by itself invalidate the
+               signature that triggered the lock - that signature remains
+               valid evidence for the version it signed. If the document\'s
+               workflow instead ends cancelled (including a restart caused
+               by a new version being uploaded) or rejected, the system
+               shall invalidate that instance\'s valid signature(s) instead
+               of locking anything, and require the document to be signed
+               again if it is resubmitted.
+
+  DSI-FR-005   The system shall require explicit, affirmative consent and
+               step-up re-authentication (the signer\'s password, and a
+               second factor if one is enrolled on their account)
+               immediately before recording a signature - a valid session
+               alone is not sufficient proof of intent to sign. Signing
+               shall be refused outright while the signer is impersonating
+               another account; a delegate who approves a task on someone
+               else\'s behalf signs in their own name, never the original
+               holder\'s.
+
+  DSI-FR-006   The system shall maintain one signing key per user, created
+               automatically the first time they sign and never exposed
+               outside the key management service that holds it.
+               Administrators able to manage signature configuration shall
+               be able to revoke a user\'s key (e.g. on suspected
+               compromise, or when the user leaves); revoking a key shall
+               never invalidate a signature it already produced, and
+               issues the user a new key the next time they sign.
   -------------------------------------------------------------------------
 
 ### Non-Functional Requirements
@@ -1400,19 +1464,50 @@ paperwork and processing delays.
   ------------------------------------------------------------------------
   **ID**        **Requirement**
   ------------- ----------------------------------------------------------
-  DSI-NFR-001   Legal Compliance: Digital signatures shall comply with
-                applicable electronic signature regulations relevant to
-                the organization\'s jurisdiction.
+  DSI-NFR-001   Legal Compliance: this feature implements a **strong
+                (advanced) electronic signature** - cryptographically bound
+                to the signer, the document content and the time of
+                signing, and tamper-evident - not a qualified electronic
+                signature under regimes that require one (e.g. eIDAS
+                qualified signatures, which additionally require a
+                qualified trust service provider and a qualified
+                certificate). **This distinction requires legal review**
+                before the organization relies on it for any document class
+                whose jurisdiction or contractual terms mandate a qualified
+                signature; this requirement is not satisfied by the
+                implementation alone.
 
-  DSI-NFR-002   Security: Signature keys/certificates shall be securely
-                managed and protected against unauthorized use.
+  DSI-NFR-002   Security: every signing key shall be managed by a
+                dedicated key management service, held non-exportable, and
+                reachable only over a connection and credential scoped to
+                signing alone (distinct from any credential used for
+                encryption at rest). A development-only, unmanaged signing
+                key shall never be reachable from a deployment that
+                requires managed keys.
 
-  DSI-NFR-003   Auditability: All signing events shall be permanently
-                recorded and retrievable as part of the document\'s audit
-                history.
+  DSI-NFR-003   Auditability: every signature, every refused or failed
+                signing attempt, every verification (successful or not),
+                and every lock/unlock, shall be permanently recorded in the
+                audit trail - including a refused attempt that leaves no
+                other trace of itself (e.g. a wrong password), so a pattern
+                of failed attempts remains visible even though nothing was
+                signed.
 
-  DSI-NFR-004   Performance: Applying and verifying a digital signature
-                shall complete within a few seconds.
+  DSI-NFR-004   Performance: signing and on-demand verification shall each
+                complete within 3 seconds at the 95th percentile under
+                normal load.
+
+  DSI-NFR-005   Fail-closed: if the signing key service cannot be reached,
+                or a signature cannot be confirmed valid the moment it is
+                produced, the system shall record no signature and
+                approve nothing - signing and approving a stage that
+                requires a signature are a single, all-or-nothing
+                operation.
+
+  DSI-NFR-006   Idempotency: repeating the same sign-and-approve request
+                for a task that has already been signed (e.g. a retried
+                network call) shall never produce a second signature for
+                it.
   ------------------------------------------------------------------------
 
 ### Workflow
@@ -1420,43 +1515,61 @@ paperwork and processing delays.
   ------------------------------------------------------------------------
   Step   Actor    Action                     System Response
   ------ -------- -------------------------- -----------------------------
-  1      User     Opens document pending     Displays document with
-                  signature                  \"Sign\" option
+  1      User     Opens the task for a stage Displays the document with a
+                  that requires a signature  \"Sign and Approve\" option
+                                              in place of a plain approval
 
-  2      User     Selects \"Sign & Approve\" Prompts user to confirm
-                                             signature
+  2      User     Selects \"Sign and         Prompts for an optional
+                  Approve\", adds an         comment, step-up
+                  optional comment, and      re-authentication (password
+                  confirms intent to sign    and, if enrolled, a second
+                                              factor) and explicit consent
 
-  3      User     Confirms signature         System applies digital
-                                             signature with name and
-                                             timestamp
-
-  4      System   Updates document status    Marks document as
-                                             \"Signed/Approved\"
-
-  5      System   Forwards to next approver  Notifies next approver in the
-                                             workflow
-
-  6      System   All signatures collected   Document marked as fully
-                                             approved and locked
+  3      User     Completes step-up          Re-hashes the stored document
+                  re-authentication          and confirms it still matches
+                                              its recorded hash, signs it,
+                                              immediately verifies the
+                                              signature it just produced,
+                                              and records the signature and
+                                              the approval together as one
+                                              action - or, if any of that
+                                              fails, records nothing and
+                                              leaves the task undecided
   ------------------------------------------------------------------------
+
+Stage completion, notifying the next approver, final approval, and locking
+the document once approved with a valid signature, are all handled by the
+workflow engine exactly as for a plain approval - see Workflow Automation
+(3.1) for that process; this feature only changes how one task\'s approval
+is recorded.
 
 ### Alternate Flow
 
--   Signatory declines to sign - system updates the document status to
-    Declined, notifies the requesting user, and retains the document in
-    its unsigned state.
+-   Signature verification fails (the stored document no longer matches
+    what was signed, or the signature itself does not check out) - the
+    system marks that signature invalidated and alerts an administrator;
+    the document is not otherwise changed.
 
--   Signature request expires before the signatory acts - system cancels
-    the request, notifies the initiator, and logs the expiry in the
-    audit trail.
+-   The document is modified after signing - while the document is
+    signature-locked (DSI-FR-004), a new version is refused outright, so
+    this can only happen if the workflow that produced the signature was
+    cancelled or rejected first (e.g. a new version restarted it) - in
+    that case the signature is already invalidated as part of that
+    outcome, and the document must be signed again once resubmitted.
 
--   Signature verification fails (invalid certificate or tampered
-    document) - system rejects the signature, flags the document, and
-    alerts the administrator.
+-   Signing is attempted while impersonating another user - refused
+    outright (DSI-FR-005); the impersonating administrator must end the
+    impersonation session and, if appropriate, ask the account\'s own
+    holder to sign.
 
--   Document is modified after signing -system detects content change,
-    invalidates the existing signature, and notifies relevant parties
-    that re-signing is required.
+-   The signing key service is unreachable, or the produced signature
+    fails its own immediate verification - nothing is recorded and the
+    approval does not go through (DSI-NFR-005); the user may retry.
+
+-   An administrator unlocks a signature-locked document to make a
+    necessary change - requires the dedicated unlock permission and a
+    recorded reason; the signature that locked it remains valid evidence
+    of what was signed, unaffected by the unlock.
 
 ![](media/image6.png){width="4.570624453193351in"
 height="8.408695319335083in"}

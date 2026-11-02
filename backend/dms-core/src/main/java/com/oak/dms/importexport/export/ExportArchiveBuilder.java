@@ -2,6 +2,7 @@ package com.oak.dms.importexport.export;
 
 import com.oak.dms.common.exception.ApiException;
 import com.oak.dms.document.Document;
+import com.oak.dms.document.DocumentContentReader.VersionDetails;
 import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.document.DocumentService;
 import com.oak.dms.document.DocumentVersion;
@@ -18,6 +19,7 @@ import com.oak.dms.metadata.repository.DocumentMetadataRepository;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.metadata.repository.MetadataFieldRepository;
 import com.oak.dms.metadata.service.DocumentTypeFieldService;
+import com.oak.dms.watermark.service.WatermarkDefaultsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -74,6 +76,11 @@ import java.util.zip.ZipOutputStream;
  * document whose file can't be served (not scanned clean, for one) is still
  * listed in the manifest, with a note, and its file left out. Needs
  * {@code TenantContext} bound to the requester.
+ *
+ * <p>If the tenant has bulk-export watermarking switched on (a separate
+ * toggle from the plain-download one - see {@link WatermarkDefaultsService}),
+ * each included file is stamped with the tenant's default template before it
+ * is written to the ZIP.
  */
 @Slf4j
 @Component
@@ -114,6 +121,7 @@ public class ExportArchiveBuilder {
     private final DocumentTypeFieldService documentTypeFieldService;
     /** Unwraps a chunk's file keys in bulk first, instead of one key-service request per file. */
     private final com.oak.dms.encryption.KeyPrefetcher keyPrefetcher;
+    private final WatermarkDefaultsService watermarkDefaultsService;
 
     /** @param filesSkipped documents listed whose file couldn't be included */
     public record Result(int documentCount, long filesBytes, int filesSkipped) {
@@ -145,6 +153,9 @@ public class ExportArchiveBuilder {
         Set<String> usedEntryNames = new HashSet<>();
         long filesBytes = 0;
         int skipped = 0;
+        // Checked once per export, not per file: a single settings lookup
+        // either way, and the flag can't change mid-build.
+        boolean watermark = includeFiles && watermarkDefaultsService.isBulkExportWatermarkEnabled();
 
         try (OutputStream out = Files.newOutputStream(target); ZipOutputStream zip = new ZipOutputStream(out)) {
             for (int from = 0; from < documentIds.size(); from += CHUNK) {
@@ -181,7 +192,7 @@ public class ExportArchiveBuilder {
                         }
                         String entryName = entryName(directory(document.getFolderId(), rootFolderId, folders),
                                 version, usedEntryNames);
-                        String note = addFile(zip, document.getDocumentId(), entryName);
+                        String note = addFile(zip, document, version, entryName, watermark);
                         if (note == null) {
                             row.put("File in ZIP", entryName);
                             filesBytes += size;
@@ -208,21 +219,48 @@ public class ExportArchiveBuilder {
         return new Result(rows.size(), filesBytes, skipped);
     }
 
-    /** Streams one document's file into the ZIP; returns why it was left out, or null when added. */
-    private String addFile(ZipOutputStream zip, UUID documentId, String entryName) throws IOException {
+    /**
+     * Streams one document's file into the ZIP; returns why it was left out,
+     * or null when added.
+     *
+     * @param watermark whether this export has bulk-export watermarking
+     *                  switched on - when false, the file is streamed
+     *                  straight through without being read fully into
+     *                  memory first
+     */
+    private String addFile(ZipOutputStream zip, Document document, DocumentVersion version, String entryName,
+                           boolean watermark) throws IOException {
         DownloadedDocument downloaded;
         try {
-            downloaded = documentService.downloadDocumentFromJob(documentId, "bulk_export");
+            downloaded = documentService.downloadDocumentFromJob(document.getDocumentId(), "bulk_export");
         } catch (ApiException e) {
             return "File not included: " + e.getMessage();
         }
         zip.putNextEntry(new ZipEntry(entryName));
         try (InputStream content = downloaded.content()) {
-            content.transferTo(zip);
+            if (watermark) {
+                zip.write(watermarked(content, document, version, downloaded));
+            } else {
+                content.transferTo(zip);
+            }
         } finally {
             zip.closeEntry();
         }
         return null;
+    }
+
+    /** {@link WatermarkDefaultsService#applyForBulkExportIfConfigured} never throws - this just reads the bytes for it. */
+    private byte[] watermarked(InputStream content, Document document, DocumentVersion version,
+                               DownloadedDocument downloaded) throws IOException {
+        byte[] original = content.readAllBytes();
+        VersionDetails details = new VersionDetails(document.getDocumentId(),
+                version != null ? version.getVersionId() : null,
+                version != null ? version.getVersionNumber() : 0,
+                document.getTitle(),
+                version != null ? version.getOriginalFilename() : downloaded.filename(),
+                version != null ? version.getMimeType() : downloaded.contentType(),
+                version != null ? version.getSizeBytes() : original.length);
+        return watermarkDefaultsService.applyForBulkExportIfConfigured(original, details);
     }
 
     private DocumentVersion version(Document document, UUID tenantId) {

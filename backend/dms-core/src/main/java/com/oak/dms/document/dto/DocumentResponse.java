@@ -22,6 +22,9 @@ public record DocumentResponse(
         String fileName,
         String mimeType,
         Long sizeBytes,
-        Integer versionNumber
+        Integer versionNumber,
+        /** Set together (V105) once a workflow with a valid signature approved - null means not locked. */
+        OffsetDateTime signatureLockedAt,
+        UUID signatureLockedVersionId
 ) {
 }

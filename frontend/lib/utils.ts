@@ -22,6 +22,20 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * Formats a `Date` as "d MMM yyyy, HH:mm" (e.g. "27 Oct 2026, 14:05") -
+ * matches the backend's `SignatureStampComposer` timestamp format, so the
+ * signature-placement drag preview's approximate Name/Position/Date text
+ * reads the same as what actually gets stamped (close enough: the backend's
+ * exact signing instant is only known once `place()` is called).
+ */
+export function formatSignatureStampDate(date: Date): string {
+  const day = date.getDate()
+  const month = date.toLocaleString("en-US", { month: "short" })
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${day} ${month} ${date.getFullYear()}, ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
  * A short, human date for file and folder listings (SharePoint style):
  * "Just now", "12 minutes ago", "3 hours ago", "Yesterday at 14:05",
  * "Monday at 09:30", "1 Oct", or "1 Oct 2025" for another year. Pair it with

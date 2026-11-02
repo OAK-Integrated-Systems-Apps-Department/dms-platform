@@ -200,6 +200,8 @@ public final class PermissionCodes {
     public static final String WA_TEMPLATES_TOGGLE_ACTIVE = "wa.configure-workflow-templates.toggle-active";
     public static final String WA_TASK_APPROVE = "wa.approve-reject-workflow-task.approve";
     public static final String WA_TASK_REJECT = "wa.approve-reject-workflow-task.reject";
+    // V119 - retracting your own already-recorded approval, only while your stage is still active.
+    public static final String WA_TASK_RETRACT = "wa.approve-reject-workflow-task.retract";
     // An admin moves any open task to another user (Phase 2); holders are
     // also mailed when a stage has no eligible approver or an escalation
     // target can't be used.
@@ -213,6 +215,22 @@ public final class PermissionCodes {
     // Document Lifecycle - DLM, seeded by V10. Submitting a document into its
     // document type's active workflow.
     public static final String DLM_SUBMIT_DOCUMENTS_FOR_REVIEW = "dlm.submit-documents-for-review";
+
+    // 1.4 Digital Signature Integration - DSI, seeded by V10 (except
+    // UNLOCK, seeded by V107). INTERNAL signing only - deliberately no
+    // constant for dsi.sign-documents.request-external-signature or
+    // dsi.manage-signature-configuration.configure-provider (both V10 rows,
+    // unused by anything in this feature - external signers and a
+    // third-party provider are out of scope, see docs/requirement-registry.md 1.4).
+    public static final String DSI_SIGN = "dsi.sign-documents.sign";
+    // V118 - signing a document directly, not as part of approving a workflow task. Deliberately
+    // separate from DSI_SIGN (which is always paired with WA_TASK_APPROVE, task-scoped) so granting
+    // one never implicitly grants the other.
+    public static final String DSI_SIGN_DOCUMENT_STANDALONE = "dsi.sign-documents.sign-standalone";
+    public static final String DSI_VIEW_SIGNATURE_HISTORY = "dsi.view-signature-history.view";
+    public static final String DSI_MANAGE_CERTIFICATES = "dsi.manage-signature-configuration.manage-certificates";
+    public static final String DSI_CONFIGURE_WORKFLOW_RULES = "dsi.manage-signature-configuration.configure-workflow-rules";
+    public static final String DSI_UNLOCK_SIGNED_DOCUMENTS = "dsi.unlock-signed-documents.unlock";
 
     // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own

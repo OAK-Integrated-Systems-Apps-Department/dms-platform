@@ -23,6 +23,7 @@ import com.oak.dms.workflow.dto.ReorderStagesRequest;
 import com.oak.dms.workflow.dto.UpdateWorkflowTemplateRequest;
 import com.oak.dms.workflow.dto.UpsertWorkflowStageRequest;
 import com.oak.dms.workflow.dto.WorkflowStageResponse;
+import com.oak.dms.workflow.dto.WorkflowTemplateOptionResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateResponse;
 import com.oak.dms.workflow.dto.WorkflowTemplateSummaryResponse;
 import com.oak.dms.workflow.entity.WorkflowStage;
@@ -102,6 +103,16 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         Page<WorkflowTemplate> page = templateRepository.findAll(spec, pageable);
         Map<UUID, String> typeNames = documentTypeNames(page.map(WorkflowTemplate::getDocumentTypeId).toList(), tenantId);
         return page.map(t -> toSummary(t, typeNames.get(t.getDocumentTypeId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkflowTemplateOptionResponse> listActiveForDocumentType(UUID documentTypeId) {
+        UUID tenantId = TenantContext.getTenantId();
+        return templateRepository.findByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(tenantId, documentTypeId,
+                        TemplateStatus.active).stream()
+                .map(t -> new WorkflowTemplateOptionResponse(t.getTemplateId(), t.getName(), t.getCode(), t.getVersionNumber()))
+                .toList();
     }
 
     @Override
@@ -231,6 +242,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                     .escalationTarget(stage.getEscalationTarget())
                     .escalationUserId(stage.getEscalationUserId())
                     .allowInfoRequests(stage.isAllowInfoRequests())
+                    .requiresSignature(stage.isRequiresSignature())
                     .createdBy(userId)
                     .build());
             for (WorkflowStageParticipant p : participants.getOrDefault(stage.getStageId(), List.of())) {
@@ -254,10 +266,14 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
     }
 
     /**
-     * Schema-publish pattern (DocumentTypeFieldServiceImpl#replaceMapping):
-     * lock the parent document_types row so two activations for the same
-     * type serialise, demote the current active version, then promote this
-     * one. uq_workflow_templates_one_active_per_type is the backstop.
+     * A document type may now have more than one active template, as long as
+     * they're different template families (decision 7 narrowed, V120) - the
+     * submitter picks which one applies when more than one does (see
+     * {@code TemplateSelector}). What's unchanged: at most one active
+     * version per template family (same code) - activating a new version
+     * still demotes the previous active version of the SAME code, just not
+     * of every other template sharing this document type.
+     * uq_workflow_templates_one_active_per_code is the backstop.
      */
     @Override
     @Transactional
@@ -277,8 +293,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         }
         validateForActivation(template);
 
-        templateRepository.findFirstByTenantIdAndDocumentTypeIdAndStatusAndDeletedFalse(tenantId,
-                        template.getDocumentTypeId(), TemplateStatus.active)
+        templateRepository.findByTenantIdAndCodeAndStatusAndDeletedFalse(tenantId, template.getCode(), TemplateStatus.active)
                 .filter(current -> !current.getTemplateId().equals(template.getTemplateId()))
                 .ifPresent(current -> {
                     current.setStatus(TemplateStatus.inactive);
@@ -295,7 +310,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
             templateRepository.saveAndFlush(template);
         } catch (DataIntegrityViolationException e) {
             throw new WorkflowStateException("WORKFLOW_TEMPLATE_ACTIVE_CONFLICT",
-                    "Another template was activated for this document type at the same time - retry");
+                    "Another version of this template was activated at the same time - retry");
         }
         audit(AuditActionCatalog.WORKFLOW_TEMPLATE_ACTIVATED, template).newValue(snapshot(template)).log();
         return toResponse(template);
@@ -593,7 +608,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         }
     }
 
-    private static WorkflowStage applyStage(WorkflowStage stage, UpsertWorkflowStageRequest request) {
+    private WorkflowStage applyStage(WorkflowStage stage, UpsertWorkflowStageRequest request) {
         EscalationTarget target = request.escalationTarget() == null ? EscalationTarget.none : request.escalationTarget();
         stage.setName(request.name().trim());
         stage.setCompletionRule(request.completionRule());
@@ -605,6 +620,13 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
         stage.setEscalationTarget(target);
         stage.setEscalationUserId(target == EscalationTarget.named_user ? request.escalationUserId() : null);
         stage.setAllowInfoRequests(request.allowInfoRequests() == null || request.allowInfoRequests());
+        // 1.4 Digital Signature Integration: every approval stage requires a
+        // digital signature (V117) - no longer a per-stage opt-in, so the
+        // caller's requiresSignature (if sent at all) is ignored rather than
+        // honored. Approving a stage with a plain /approve always refuses
+        // with 409 WORKFLOW_SIGNATURE_REQUIRED; /sign-and-approve is the only
+        // path.
+        stage.setRequiresSignature(true);
         return stage;
     }
 
@@ -743,7 +765,7 @@ public class WorkflowTemplateServiceImpl implements WorkflowTemplateService {
                         s.getCompletionRule().name(), s.getRejectionRule().name(), s.getSlaHours(),
                         s.getReminderBeforeHours(), s.getInactivityReminderHours(),
                         s.getEscalateAfterReminderHours(), s.getEscalationTarget().name(), s.getEscalationUserId(),
-                        s.isAllowInfoRequests(),
+                        s.isAllowInfoRequests(), s.isRequiresSignature(),
                         participants.getOrDefault(s.getStageId(), List.of()).stream()
                                 .map(p -> new ParticipantResponse(p.getParticipantId(), p.getAssigneeType().name(),
                                         p.getAssigneeId(), names.get(p.getAssigneeType() + ":" + p.getAssigneeId()),
