@@ -6,6 +6,7 @@ import {
   CalendarRange,
   Droplets,
   Files,
+  Calculator,
   Info,
   Layers,
   Leaf,
@@ -21,6 +22,11 @@ import {
 import { useBox } from "@/components/dashboard/motion"
 import { fileKind } from "@/components/documents/browser-items"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -28,6 +34,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { friendlyMessage } from "@/lib/api-error"
+import { getTooltip } from "@/lib/tooltips"
 import {
   useImpact,
   type DigitalImpactDto,
@@ -39,6 +46,40 @@ import { cn } from "@/lib/utils"
 /** The forest green of the brand, and a soft sage made from it. */
 const FOREST = "var(--primary)"
 const SAGE = "color-mix(in oklab, var(--primary) 30%, var(--card))"
+
+/**
+ * Puts the explanation in a hover/focus tooltip so the card itself can stay
+ * short. A focusable span, so keyboard users get it too.
+ */
+function Hint({
+  text,
+  children,
+  className,
+}: {
+  text: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={(props) => (
+          <span
+            {...props}
+            tabIndex={0}
+            className={cn(
+              "cursor-help focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+              className
+            )}
+          >
+            {children}
+          </span>
+        )}
+      />
+      <TooltipContent>{text}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 type Kind = "Measured" | "Calculated" | "Estimated"
 
@@ -116,25 +157,37 @@ export function DigitalImpact({
               <Leaf size={20} strokeWidth={1.75} />
             </span>
             <div>
-              <h2 className="font-heading text-[18px] font-semibold tracking-[-0.01em]">
+              <h2 className="flex items-center gap-2 font-heading text-[18px] font-semibold tracking-[-0.01em]">
                 Environmental Impact
+                <Hint
+                  text={getTooltip("dashboard.impact.about")}
+                  className="rounded-full text-white/60 hover:text-white"
+                >
+                  <Info size={15} aria-label="About this figure" />
+                </Hint>
               </h2>
-              <p className="mt-0.5 max-w-[460px] text-[12.5px] text-white/70">
-                Every page handled digitally is paper that never had to be made
-                - and the trees, carbon and water behind it.
-              </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <RangePicker range={range} onChange={setRange} />
-            <button
-              type="button"
-              onClick={() => setMethodOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] font-semibold text-[#cfe6d6] transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
-            >
-              <Info size={14} aria-hidden="true" />
-              How is this calculated?
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={(props) => (
+                  <button
+                    {...props}
+                    type="button"
+                    onClick={() => setMethodOpen(true)}
+                    aria-label={getTooltip("dashboard.impact.method")}
+                    className="inline-flex size-8 items-center justify-center rounded-lg text-[#cfe6d6] transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
+                  >
+                    <Calculator size={16} aria-hidden="true" />
+                  </button>
+                )}
+              />
+              <TooltipContent>
+                {getTooltip("dashboard.impact.method")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </header>
 
@@ -320,7 +373,7 @@ const KIND_ON_FOREST: Record<Kind, string> = {
 }
 
 function KindBadge({ kind, onForest }: { kind: Kind; onForest?: boolean }) {
-  return (
+  const badge = (
     <span
       className={cn(
         "rounded-full px-1.5 py-px text-[10px] font-semibold tracking-wide whitespace-nowrap uppercase",
@@ -329,6 +382,18 @@ function KindBadge({ kind, onForest }: { kind: Kind; onForest?: boolean }) {
     >
       {kind}
     </span>
+  )
+  // On the band the badge says what it means on hover; elsewhere the method
+  // sheet already spells it out next to the badge.
+  return onForest ? (
+    <Hint
+      text={getTooltip(`dashboard.impact.${kind.toLowerCase()}`)}
+      className="rounded-full"
+    >
+      {badge}
+    </Hint>
+  ) : (
+    badge
   )
 }
 
@@ -346,12 +411,15 @@ function ForestChange({ now, before }: { now: number; before: number }) {
   if (now === before) return null
   const text =
     before === 0
-      ? "New this period"
-      : `${now > before ? "▲" : "▼"} ${share(Math.abs(now - before), before)} vs the period before`
+      ? "New"
+      : `${now > before ? "▲" : "▼"} ${share(Math.abs(now - before), before)}`
   return (
-    <span className="rounded-full bg-white/12 px-2 py-0.5 text-[11.5px] font-semibold text-[#cfe6d6] ring-1 ring-white/15">
+    <Hint
+      text={before === 0 ? "New this period" : "Change vs the period before"}
+      className="rounded-full bg-white/12 px-2 py-0.5 text-[11.5px] font-semibold text-[#cfe6d6] ring-1 ring-white/15"
+    >
       {text}
-    </span>
+    </Hint>
   )
 }
 
@@ -371,7 +439,10 @@ function Tile({
   caption: string
 }) {
   return (
-    <div className="rounded-xl bg-[rgba(10,28,19,0.45)] p-3.5 ring-1 ring-white/20 backdrop-blur-md transition-colors hover:bg-[rgba(10,28,19,0.55)]">
+    <Hint
+      text={caption}
+      className="block rounded-xl bg-[rgba(10,28,19,0.45)] p-3.5 ring-1 ring-white/20 backdrop-blur-md transition-colors hover:bg-[rgba(10,28,19,0.55)]"
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
           {icon}
@@ -385,8 +456,7 @@ function Tile({
         </span>
         <span className="text-[13px] font-medium text-white/70">{unit}</span>
       </div>
-      <p className="mt-1.5 text-[11.5px] text-white/65">{caption}</p>
-    </div>
+    </Hint>
   )
 }
 
@@ -396,23 +466,28 @@ function BandFigures({ data }: { data: DigitalImpactDto }) {
     <div>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-white/75">
         <Files size={14} aria-hidden="true" />
-        Pages processed digitally
+        Pages processed
         <KindBadge kind="Measured" onForest />
       </div>
       <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
         <span className="font-heading text-[48px] leading-none font-semibold tracking-[-0.02em] tabular-nums sm:text-[54px]">
           {NUMBER.format(totals.pages)}
         </span>
-        <span className="pb-1.5 text-[14px] text-white/75">
-          pages kept off paper {periodWords(data)}
-        </span>
+        <Hint
+          text={`Pages kept off paper ${periodWords(data)}`}
+          className="pb-1.5 text-[14px] text-white/75"
+        >
+          pages saved
+        </Hint>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <ForestChange now={totals.pages} before={previous.pages} />
-        <span className="rounded-full bg-white/12 px-2 py-0.5 text-[11.5px] font-semibold text-[#cfe6d6] ring-1 ring-white/15">
-          {NUMBER.format(data.allTime.pages)} pages all time ·{" "}
-          {amount(data.allTime.paperKg)} kg paper
-        </span>
+        <Hint
+          text={`${NUMBER.format(data.allTime.pages)} pages all time · ${amount(data.allTime.paperKg)} kg paper`}
+          className="rounded-full bg-white/12 px-2 py-0.5 text-[11.5px] font-semibold text-[#cfe6d6] ring-1 ring-white/15"
+        >
+          {NUMBER.format(data.allTime.pages)} all time
+        </Hint>
       </div>
 
       <div className="mt-5 grid gap-2.5 sm:grid-cols-3">
@@ -430,7 +505,7 @@ function BandFigures({ data }: { data: DigitalImpactDto }) {
           value={amount(totals.co2eKg)}
           unit="kg"
           kind="Estimated"
-          caption="Paper's life-cycle emissions"
+          caption={getTooltip("dashboard.impact.co2e")}
         />
         <Tile
           icon={<Droplets size={13} aria-hidden="true" />}
@@ -438,7 +513,7 @@ function BandFigures({ data }: { data: DigitalImpactDto }) {
           value={amount(totals.waterLitres)}
           unit="L"
           kind="Estimated"
-          caption="Water it took to make that paper"
+          caption={getTooltip("dashboard.impact.water")}
         />
       </div>
     </div>

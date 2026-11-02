@@ -581,7 +581,7 @@ jobs:
           EOF
           docker compose -f infra/production/docker-compose.yml --env-file /tmp/external.env config --quiet
           services="$(docker compose -f infra/production/docker-compose.yml --env-file /tmp/external.env config --services)"
-          for bundled in postgres redis rabbitmq seaweedfs mailpit clamav gotenberg postgres-exporter redis-exporter; do
+          for bundled in postgres redis rabbitmq seaweedfs clamav gotenberg postgres-exporter redis-exporter; do
             if grep -qx "$bundled" <<<"$services"; then echo "::error::$bundled still runs with COMPOSE_PROFILES empty"; exit 1; fi
           done
           echo "OK: external configuration is valid and starts none of the bundled services"

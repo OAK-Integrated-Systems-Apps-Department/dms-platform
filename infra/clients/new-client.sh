@@ -207,8 +207,8 @@ cat <<EOF
     'runner' field of $NAME in infra/clients.yml (now: $RUNNER).
  3. nginx$( [ "$SEPARATE_NGINX" = 1 ] && echo " on $NGINX_HOST" ): install $conf as the site, then: nginx -t && systemctl reload nginx
 $( [ "$SEPARATE_NGINX" = 1 ] && echo "    Firewall ports 3000, 8080 and 8081 on $DOCKER_HOST_ADDR to $NGINX_HOST only." )
- 4. In $OUT/env review: KEYCLOAK_SUPERADMIN_USERNAME, SMTP_* (mail is NOT delivered
-    while SMTP_HOST=mailpit), ALERT_EMAIL_TO, COMPOSE_PROFILES (bundled vs the
+ 4. In $OUT/env review: KEYCLOAK_SUPERADMIN_USERNAME, SMTP_* (Gmail: SMTP_USERNAME +
+    a Google app password in SMTP_PASSWORD; no mail is sent without them), ALERT_EMAIL_TO, COMPOSE_PROFILES (bundled vs the
     client's own database/storage, docs/external-services.md).
  5. $PUBLIC_HOST must resolve from the runner (the post-deploy check requests it).
  6. Commit infra/clients.yml, then: Actions -> Deploy -> Run workflow, clients: $NAME

@@ -2,7 +2,7 @@
 #
 # Prometheus's own `up` only says whether a SCRAPE succeeded, so it covers
 # just the handful of services that have an exporter. Keycloak, SeaweedFS,
-# Gotenberg, ClamAV, Mailpit and the frontend have none - and they are
+# Gotenberg, ClamAV and the frontend have none - and they are
 # exactly the ones whose failure is least obvious from the outside, because
 # the DMS keeps serving pages while uploads quietly stop working.
 #

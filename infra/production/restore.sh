@@ -57,7 +57,7 @@ get_var() {
 profiles() {
   if [ -n "${COMPOSE_PROFILES+x}" ]; then printf '%s' "$COMPOSE_PROFILES"
   elif grep -qE '^COMPOSE_PROFILES=' .env; then get_var COMPOSE_PROFILES || true
-  else printf 'postgres,redis,rabbitmq,seaweedfs,mailpit,clamav,gotenberg'; fi
+  else printf 'postgres,redis,rabbitmq,seaweedfs,clamav,gotenberg'; fi
 }
 bundled() { [[ ",$(profiles)," == *",$1,"* ]]; }
 

@@ -33,6 +33,13 @@ export default function ResetPasswordPage() {
     onSuccess: () => {
       toast.success("If that account exists, a reset link is on its way.")
     },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not send the reset link. Please check your connection and try again."
+      )
+    },
   })
 
   function handleSubmit(event: FormEvent) {

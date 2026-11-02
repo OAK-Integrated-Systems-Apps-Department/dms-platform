@@ -1,4 +1,8 @@
+import type { Metadata } from "next"
+
 import { NotFoundView } from "@/components/errors/not-found-view"
+
+export const metadata: Metadata = { title: "Page not found" }
 
 /**
  * The 404 for any address that doesn't exist (and for `notFound()` anywhere
