@@ -247,4 +247,14 @@ public final class PermissionCodes {
     public static final String DRM_TYPES_CREATE = "drm.configure-relationship-types.create-type";
     public static final String DRM_TYPES_UPDATE = "drm.configure-relationship-types.update-type";
     public static final String DRM_TYPES_DELETE = "drm.configure-relationship-types.delete-type";
+
+    // Document Ownership and Transfer - DOT, seeded by V10. Single transfer = initiate-transfer; the
+    // owned-documents list and offboarding preview = select-documents; bulk transfer and offboarding =
+    // execute-transfer. approve-transfer is seeded but unused - there is no approval step (D2/D15).
+    public static final String DOT_TRANSFER_INITIATE = "dot.transfer-document-ownership.initiate-transfer";
+    public static final String DOT_TRANSFER_APPROVE = "dot.transfer-document-ownership.approve-transfer";
+    public static final String DOT_BULK_SELECT = "dot.bulk-transfer-ownership.select-documents";
+    public static final String DOT_BULK_EXECUTE = "dot.bulk-transfer-ownership.execute-transfer";
+    public static final String DOT_HISTORY_VIEW = "dot.view-ownership-history.view";
+    public static final String DOT_HISTORY_EXPORT = "dot.view-ownership-history.export";
 }

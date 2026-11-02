@@ -95,6 +95,8 @@ public final class AuditObjectTypes {
     public static final String DOCUMENT_RELATIONSHIP = "DOCUMENT_RELATIONSHIP";
     /** A relationship type (relationship_types) - every RELATIONSHIP_TYPE_* event. */
     public static final String RELATIONSHIP_TYPE = "RELATIONSHIP_TYPE";
+    /** A bulk/offboarding transfer run (ownership_transfer_batches). */
+    public static final String OWNERSHIP_BATCH = "OWNERSHIP_BATCH";
 
     /**
      * Not a business entity like every other constant here - the "object"

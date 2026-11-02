@@ -642,6 +642,26 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
     module: "DRM",
     label: "Relationship type deleted",
   },
+  {
+    action: "DOCUMENT_OWNERSHIP_TRANSFERRED",
+    module: "DOT",
+    label: "Document ownership transferred",
+  },
+  {
+    action: "OWNERSHIP_BATCH_TRANSFERRED",
+    module: "DOT",
+    label: "Document ownership transferred in bulk",
+  },
+  {
+    action: "USER_OFFBOARDED",
+    module: "DOT",
+    label: "User offboarded",
+  },
+  {
+    action: "DEPARTMENT_HOLDING_OWNER_CHANGED",
+    module: "DOT",
+    label: "Department holding owner changed",
+  },
 ]
 
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
@@ -659,6 +679,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   DSC: "Document Storage & Centralization",
   WA: "Workflow Automation",
   DRM: "Document Relationships Management",
+  DOT: "Document Ownership and Transfer",
 }
 
 export function auditModuleOptions(): string[] {

@@ -202,4 +202,13 @@ export const PermissionCodes = {
   DRM_TYPES_CREATE: "drm.configure-relationship-types.create-type",
   DRM_TYPES_UPDATE: "drm.configure-relationship-types.update-type",
   DRM_TYPES_DELETE: "drm.configure-relationship-types.delete-type",
+
+  // Document Ownership and Transfer (DOT) - approve-transfer is seeded but unused:
+  // there is no approval step for transfers.
+  DOT_TRANSFER_INITIATE: "dot.transfer-document-ownership.initiate-transfer",
+  DOT_TRANSFER_APPROVE: "dot.transfer-document-ownership.approve-transfer",
+  DOT_BULK_SELECT: "dot.bulk-transfer-ownership.select-documents",
+  DOT_BULK_EXECUTE: "dot.bulk-transfer-ownership.execute-transfer",
+  DOT_HISTORY_VIEW: "dot.view-ownership-history.view",
+  DOT_HISTORY_EXPORT: "dot.view-ownership-history.export",
 } as const

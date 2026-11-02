@@ -31,6 +31,7 @@ import {
   SlidersHorizontal,
   Trash2,
   UserCog,
+  UserRoundCog,
   Users,
   Workflow,
   Waypoints,
@@ -217,6 +218,17 @@ export const navSections: NavSection[] = [
               PermissionCodes.OTUA_DEPARTMENTS_CREATE,
               PermissionCodes.OTUA_DEPARTMENTS_UPDATE,
               PermissionCodes.OTUA_DEPARTMENTS_DELETE,
+            ],
+          },
+          // Who owns which documents, transfers, and the documents waiting for a new owner.
+          {
+            label: "Document Ownership",
+            icon: UserRoundCog,
+            href: "/admin/ownership",
+            permission: [
+              PermissionCodes.DOT_BULK_SELECT,
+              PermissionCodes.DOT_TRANSFER_INITIATE,
+              PermissionCodes.DOT_HISTORY_VIEW,
             ],
           },
         ],

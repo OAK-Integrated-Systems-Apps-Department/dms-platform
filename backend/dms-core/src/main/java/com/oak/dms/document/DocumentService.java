@@ -135,17 +135,30 @@ public interface DocumentService {
      * @param excludeDocumentId optional - leaves one document out (the one under approval, when
      *                          picking supporting documents)
      */
+    default org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
+            UUID folderId, boolean allFolders, String query, UUID documentTypeId, UUID excludeDocumentId,
+            org.springframework.data.domain.Pageable pageable) {
+        return listDocuments(folderId, allFolders, query, documentTypeId, excludeDocumentId, OwnerFilter.NONE, pageable);
+    }
+
+    /** {@link #listDocuments} also narrowed to documents owned by a user and/or a department; access filtering is unchanged. */
     org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
             UUID folderId, boolean allFolders, String query, UUID documentTypeId, UUID excludeDocumentId,
-            org.springframework.data.domain.Pageable pageable);
+            OwnerFilter owner, org.springframework.data.domain.Pageable pageable);
 
     /**
      * {@link #listDocuments} narrowed to documents linked to {@code filter.relatedTo()} (or having a link of
      * the type) - over every folder, and with exactly the same access filtering (2.8, DRM-FR-012).
      */
+    default org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listRelatedDocuments(
+            String query, UUID documentTypeId, UUID excludeDocumentId, com.oak.dms.relationship.dto.RelationshipFilter filter,
+            org.springframework.data.domain.Pageable pageable) {
+        return listRelatedDocuments(query, documentTypeId, excludeDocumentId, filter, OwnerFilter.NONE, pageable);
+    }
+
     org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listRelatedDocuments(
             String query, UUID documentTypeId, UUID excludeDocumentId, com.oak.dms.relationship.dto.RelationshipFilter filter,
-            org.springframework.data.domain.Pageable pageable);
+            OwnerFilter owner, org.springframework.data.domain.Pageable pageable);
 
     /**
      * "Shared with me": restricted documents whose own list names the caller

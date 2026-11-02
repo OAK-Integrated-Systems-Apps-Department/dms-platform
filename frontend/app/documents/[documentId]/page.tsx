@@ -9,6 +9,8 @@ import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
+import { OwnerField } from "@/components/ownership/owner-field"
+import { OwnershipHistoryPanel } from "@/components/ownership/ownership-history-panel"
 import { PinButton } from "@/components/pins/pin-button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
@@ -111,6 +113,7 @@ export default function DocumentPage() {
                   <Field label="Status" value={<span className="capitalize">{document.status.replace(/_/g, " ")}</span>} />
                   <Field label="Latest Version" value={document.latestVersionId ?? "—"} mono />
                   <Field label="Published Version" value={document.publishedVersionId ?? "—"} mono />
+                  <OwnerField documentId={document.documentId} title={document.title} />
                 </dl>
                 {document.latestVersionId && (
                   <div className="mt-4 flex items-center gap-2">
@@ -199,6 +202,7 @@ export default function DocumentPage() {
                   </ul>
                 )}
               </Panel>
+              <OwnershipHistoryPanel documentId={document.documentId} />
               <DiscussionPanel documentId={document.documentId} />
             </div>
           </div>

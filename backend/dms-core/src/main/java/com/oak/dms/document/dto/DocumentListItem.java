@@ -22,6 +22,17 @@ public record DocumentListItem(
         /** Has its own access list (V54) instead of following its folder. */
         boolean restricted,
         /** What the caller may do with it: view, edit or manage. */
-        String myAccess
+        String myAccess,
+        /** The owner's department (V123); null when the owner had none. */
+        UUID ownerDepartmentId,
+        /** assigned, or holding while it waits for a new owner (V123). */
+        String ownershipState
 ) {
+
+    public DocumentListItem(UUID documentId, String title, UUID documentTypeId, String documentTypeName, UUID folderId,
+                            String fileName, Long sizeBytes, String mimeType, Integer versionNumber, UUID ownerUserId,
+                            OffsetDateTime createdAt, boolean restricted, String myAccess) {
+        this(documentId, title, documentTypeId, documentTypeName, folderId, fileName, sizeBytes, mimeType, versionNumber,
+                ownerUserId, createdAt, restricted, myAccess, null, "assigned");
+    }
 }
