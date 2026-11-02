@@ -687,7 +687,7 @@ plain HTTP from private addresses, so exposing the site beyond the LAN **require
 4. **Change the settings to HTTPS.**
    - On the Docker server, in `/opt/dms/infra/production/.env`:
      `PUBLIC_URL=https://oakidocs.ois.local`, `AUTH_COOKIE_SECURE=true`,
-     `GRAFANA_ROOT_URL=https://oakidocs.ois.local/grafana/`.
+     `GRAFANA_ROOT_URL=https://oakidocs.ois.local/monitoring/panels/`.
    - In the GitHub environment `client-oakidocs`, change the variable `PUBLIC_URL` to the
      `https://` address.
    - In `infra/clients.yml`, change the client's `url:` to the `https://` address and commit it.

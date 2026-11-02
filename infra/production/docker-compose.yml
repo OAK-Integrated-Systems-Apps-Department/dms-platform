@@ -650,6 +650,13 @@ services:
     # the whole point and also why it is not published.
     expose:
       - "9115"
+    # `previews` as well as the default network: the converter lives ONLY on
+    # the isolated previews network, so without this the gotenberg:3000/health
+    # probe can never resolve and "Document converter" reads as down forever.
+    # Joining gives the converter no new reach - it still has no gateway out.
+    networks:
+      - default
+      - previews
 
   # Log storage, the counterpart to Prometheus. Queried by dms-core for the
   # System Monitoring screen's per-service logs; never published.
