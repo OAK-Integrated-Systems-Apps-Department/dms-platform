@@ -100,7 +100,7 @@ public class DocumentVersionChangeListener {
 
         if (template != null && template.getOnDocumentChange() == OnDocumentChange.restart) {
             // Restart with the SAME template the instance was already running, never a freshly-selected
-            // one: since V120 a document type can have more than one active template, and this is an
+            // one: since V121 a document type can have more than one active template, and this is an
             // automatic restart, not a submission - there's no one to ask which to use, so it only makes
             // sense to continue with the template that was already chosen, if it's still active.
             if (template.getStatus() == TemplateStatus.active) {

@@ -1,4 +1,4 @@
--- Manual rollback ("down") for V110__add_uploaded_visual_signature_kind.sql.
+-- Manual rollback ("down") for V115__add_uploaded_visual_signature_kind.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it. Converts every
 -- 'uploaded' row back to 'drawn' before narrowing the constraints again -

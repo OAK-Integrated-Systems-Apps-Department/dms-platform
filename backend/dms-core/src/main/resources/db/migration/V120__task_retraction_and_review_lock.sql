@@ -13,7 +13,7 @@
 -- A soft, TTL-based lock (decision 2) on the stage instance - while one
 -- approver is reviewing/about to retract their decision, every other entry
 -- in that same stage is blocked from acting, mirroring the existing
--- documents.signature_locked_at soft-lock pattern (V108) rather than trying
+-- documents.signature_locked_at soft-lock pattern (V113) rather than trying
 -- to hold a real row lock open across multiple HTTP requests. Expires on its
 -- own (review_lock_expires_at) so an abandoned browser tab can never leave a
 -- stage stuck locked forever.
@@ -46,7 +46,7 @@ ALTER TABLE workflow_actions ADD CONSTRAINT ck_workflow_actions_action_type CHEC
 -- =====================================================================
 -- Permission: wa.approve-reject-workflow-task.retract - a new child
 -- permission under the existing "Approve/Reject Workflow Task" action
--- (module WA, seeded by V6/V7/V10), same pattern V108/V118 used to add a
+-- (module WA, seeded by V6/V7/V10), same pattern V113/V119 used to add a
 -- leaf permission under an existing action.
 -- =====================================================================
 DO
@@ -65,6 +65,6 @@ BEGIN
         ON CONFLICT (permission_code) WHERE tenant_id IS NULL DO NOTHING
         RETURNING 1)
     SELECT count(*) INTO n FROM inserted;
-    RAISE NOTICE 'V119: % workflow-task permission(s) seeded (granted to no role)', n;
+    RAISE NOTICE 'V120: % workflow-task permission(s) seeded (granted to no role)', n;
 END;
 $$;

@@ -15,7 +15,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * V120: a document type may have more than one active template. With
+ * V121: a document type may have more than one active template. With
  * exactly one, submission resolves it automatically (unchanged); with more
  * than one, the submitter must say which (TemplateSelector).
  */

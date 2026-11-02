@@ -24,7 +24,7 @@ public record DocumentSignatureResponse(
         String lastVerificationResult,
         OffsetDateTime lastVerifiedAt,
         OffsetDateTime signedAt,
-        /** Cosmetic only - see DocumentSignature's own doc comment. Null for a signature made before V109. */
+        /** Cosmetic only - see DocumentSignature's own doc comment. Null for a signature made before V114. */
         String visualSignatureKind,
         String visualSignatureText,
         /** Base64 PNG - null when visualSignatureKind isn't "drawn". */

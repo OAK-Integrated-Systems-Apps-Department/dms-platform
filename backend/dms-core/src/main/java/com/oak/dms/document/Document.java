@@ -150,7 +150,7 @@ public class Document {
 
     /**
      * Set the first time a standalone signing action (adding a page, or
-     * placing a mark) touches this document since it last had none (V118) -
+     * placing a mark) touches this document since it last had none (V119) -
      * the version "remove signature" reverts {@link #currentVersionId} back
      * to. Cleared to null once that removal completes, so the next
      * standalone signing session pins a fresh baseline rather than reverting

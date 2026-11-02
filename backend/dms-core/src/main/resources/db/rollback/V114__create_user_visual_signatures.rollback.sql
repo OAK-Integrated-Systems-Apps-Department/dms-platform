@@ -1,8 +1,8 @@
--- Manual rollback ("down") for V109__create_user_visual_signatures.sql.
+-- Manual rollback ("down") for V114__create_user_visual_signatures.sql.
 --
 -- Outside classpath:db/migration, so Flyway never runs it.
 
--- Restore the V108 version of the append-only guard function (without the
+-- Restore the V113 version of the append-only guard function (without the
 -- three visual_signature_* columns) before dropping those columns.
 CREATE OR REPLACE FUNCTION document_signatures_append_only() RETURNS trigger AS $$
 BEGIN

@@ -145,7 +145,7 @@ public class DocumentStampService {
     }
 
     /**
-     * Appends one blank page/sheet/slide - used by standalone signing (V118) when no existing page has
+     * Appends one blank page/sheet/slide - used by standalone signing (V119) when no existing page has
      * room for the Name/Designation/Date block and the signer chooses "Add signature page" rather than
      * dragging onto an existing one. For a PDF, the new page is the same size as the current last page
      * (or A4 if there are none); DOCX/XLSX/PPTX each have their own {@link DocumentFormatStamper}

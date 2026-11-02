@@ -185,7 +185,7 @@ public class ScanResult {
     private boolean ocrLowPriority = false;
 
     /**
-     * The document the uploader chose to keep a copy of ("Keep both" after duplicate detection, V108),
+     * The document the uploader chose to keep a copy of ("Keep both" after duplicate detection, V113),
      * or null. Read by DocumentVersionPromoter, which raises the event that links the new document to it
      * as "Duplicate of" once it exists.
      */

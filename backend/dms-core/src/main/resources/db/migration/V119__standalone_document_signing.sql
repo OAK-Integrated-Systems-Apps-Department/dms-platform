@@ -10,7 +10,7 @@
 --                         mark) touches this document, cleared back to null
 --                         once fully removed, mirroring
 --                         workflow_tasks.signature_placement_base_version_id
---                         (V111) but reusable across many signing sessions
+--                         (V116) but reusable across many signing sessions
 --                         rather than pinned for one task's whole lifetime.
 --   document_signatures.workflow_instance_id  now nullable - a standalone
 --                         signature has no workflow instance or task behind
@@ -47,6 +47,6 @@ BEGIN
         ON CONFLICT (permission_code) WHERE tenant_id IS NULL DO NOTHING
         RETURNING 1)
     SELECT count(*) INTO n FROM inserted;
-    RAISE NOTICE 'V118: % digital-signature permission(s) seeded (granted to no role)', n;
+    RAISE NOTICE 'V119: % digital-signature permission(s) seeded (granted to no role)', n;
 END;
 $$;
