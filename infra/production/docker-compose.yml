@@ -272,6 +272,37 @@ services:
     networks:
       - previews
 
+  # Online editing engine (2.10, CICO-FR-005/006) - Collabora Online over WOPI. OFF by default (profile
+  # "collabora"); nothing in the DMS needs it, and check-out / download / check-in is the fallback.
+  #
+  # Enabling it on a server needs ALL of these, which is why it is not on by default:
+  #  * RAM: ~1-2 GB once a document is open. This server is already short - size it first.
+  #  * A public address the BROWSER can reach the editor at (set EDITING_COLLABORA_URL), proxied by the host
+  #    nginx with WebSocket upgrade and over HTTPS - none of that is configured here.
+  #  * A strong EDITING_TOKEN_SECRET (openssl rand -hex 32) and COLLABORA_FRAME_ANCESTORS set to PUBLIC_URL.
+  #    Pin COLLABORA_IMAGE to a tested tag - never "latest" on a server.
+  # Even then, no organisation gets online editing until its own administrator turns it on in the app
+  # (cico.configure-editing-engine.select-provider, default off). There is no environment on/off switch.
+  # dms-core is the only WOPI host it will talk to (aliasgroup1); /internal/** is never proxied by nginx.
+  collabora:
+    image: ${COLLABORA_IMAGE:-collabora/code:latest}
+    container_name: oakdms-collabora
+    profiles: [collabora]
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      aliasgroup1: http://dms-core:8080
+      extra_params: --o:ssl.enable=false --o:ssl.termination=true --o:net.frame_ancestors=${COLLABORA_FRAME_ANCESTORS:-${PUBLIC_URL}} --o:admin_console.enable=false --o:document_signing.enable=false
+      DONT_GEN_SSL_CERT: "true"
+    mem_limit: 2g
+    # Host-only: the host nginx proxies it; it is never published on the network.
+    ports:
+      - "127.0.0.1:9980:9980"
+    # No healthcheck on purpose: the image has no shell and no curl, so a CMD-SHELL check can only ever fail.
+    # dms-core asks the engine's discovery document itself and answers 503 EDITING_ENGINE_UNAVAILABLE when it
+    # cannot reach it - that is the real health signal (and the Prometheus blackbox probe could watch /hosting/discovery).
+
   # Virus scanner for every upload (dms-core streams each file to clamd before it
   # becomes a document - see docs/scanning-architecture.md). Same image and
   # limits as infra/local; keep the two in step. No host port: only dms-core
@@ -348,6 +379,13 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       # Office files are converted to PDF for the preview (DocumentRenditionService).
       PREVIEW_CONVERTER_URL: ${PREVIEW_CONVERTER_URL:-http://gotenberg:3000}
+      # Online editing (2.10): WHERE the engine is - blank means this server has none, so no organisation can turn it
+      # on. See the collabora service below for what enabling it needs. Blank secret = sessions cannot start.
+      # On/off and the mode are each organisation's own setting in the app (V128), not environment variables.
+      EDITING_COLLABORA_URL: ${EDITING_COLLABORA_URL:-}
+      EDITING_COLLABORA_INTERNAL_URL: http://collabora:9980
+      EDITING_WOPI_HOST_URL: http://dms-core:8080
+      EDITING_TOKEN_SECRET: ${EDITING_TOKEN_SECRET:-}
       # Every upload is virus scanned by clamd before it becomes a document.
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}

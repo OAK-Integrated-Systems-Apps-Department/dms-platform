@@ -104,7 +104,12 @@ public class SecurityConfig {
             //
             // This path must not be exposed through nginx/ingress - see
             // docs/ocr/internal-endpoint.md.
-            "/internal/v1/ocr/**"
+            "/internal/v1/ocr/**",
+            // The online editor (Collabora, over WOPI) fetches and saves a file server-to-server with no
+            // login. WopiController refuses anything without a valid signed, unexpired token for THAT
+            // document, and re-checks the document's live state on every call. Like /internal/v1/ocr above,
+            // it must never be proxied by nginx - see docs/checkout-design.md.
+            "/internal/v1/wopi/**"
     };
 
     @Bean

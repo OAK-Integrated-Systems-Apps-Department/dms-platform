@@ -21,6 +21,12 @@ interface SearchableSelectProps {
   className?: string
   /** Hides the search box for a short, fixed option list (e.g. outcome/severity) where searching adds nothing. Defaults to true. */
   searchable?: boolean
+  /**
+   * Opens the list in normal page flow, full width of the trigger, instead of floating over the page. Use it
+   * inside a dialog: a floating list is cropped by the dialog's edges (and fixed at 240px), so only the first
+   * option or two are reachable. Inline, the dialog simply grows to show the list.
+   */
+  inline?: boolean
 }
 
 /**
@@ -41,6 +47,7 @@ export function SearchableSelect({
   searchPlaceholder = "Search…",
   className,
   searchable = true,
+  inline = false,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -115,7 +122,14 @@ export function SearchableSelect({
         // tests containerRef.contains(), and this panel is inside that
         // container - so the stop did nothing but make a plain <div> look
         // like a control to anything reading the markup.
-        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
+        <div
+          className={cn(
+            "rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]",
+            inline
+              ? "mt-1.5 w-full"
+              : "absolute top-[calc(100%+6px)] left-0 z-20 w-[240px]"
+          )}
+        >
           {searchable && (
             <div className="relative mb-1.5">
               <Search

@@ -149,6 +149,41 @@ public class Document {
     private UUID signatureLockedVersionId;
 
     /**
+     * Exclusive check-out (V127): set together with {@link #checkedOutAt} and
+     * {@link #checkoutExpiresAt}. Past the expiry the lock no longer blocks anyone - see
+     * {@code com.oak.dms.checkout.DocumentCheckoutService}. Changed only through the
+     * repository's atomic queries, never by saving this entity, so two people checking out at
+     * once cannot both win.
+     */
+    @Column(name = "checked_out_by")
+    private UUID checkedOutBy;
+
+    @Column(name = "checked_out_at")
+    private OffsetDateTime checkedOutAt;
+
+    @Column(name = "checkout_expires_at")
+    private OffsetDateTime checkoutExpiresAt;
+
+    /** Legal hold (V127): while true, check-out and every edit path are refused. */
+    @Column(name = "legal_hold", nullable = false)
+    @Builder.Default
+    private boolean legalHold = false;
+
+    @Column(name = "legal_hold_at")
+    private OffsetDateTime legalHoldAt;
+
+    @Column(name = "legal_hold_by")
+    private UUID legalHoldBy;
+
+    @Column(name = "legal_hold_reason")
+    private String legalHoldReason;
+
+    /** True while an unexpired check-out is in force - the one place "is it locked" is decided. */
+    public boolean isCheckedOutAt(OffsetDateTime now) {
+        return checkedOutBy != null && checkoutExpiresAt != null && checkoutExpiresAt.isAfter(now);
+    }
+
+    /**
      * Set the first time a standalone signing action (adding a page, or
      * placing a mark) touches this document since it last had none (V119) -
      * the version "remove signature" reverts {@link #currentVersionId} back

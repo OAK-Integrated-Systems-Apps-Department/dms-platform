@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { LockStateIndicator } from "@/components/checkout/lock-state-indicator"
 import { ApprovalBadge } from "@/components/documents/approval-badge"
 import type {
   DragBinding,
@@ -528,6 +529,7 @@ export function DocumentTile({
             )}
             <span className="truncate">{row.title}</span>
             <PinnedIndicator documentId={row.documentId} />
+            <LockStateIndicator lockState={row.lockState} />
           </span>
           {flag}
         </p>
@@ -754,6 +756,7 @@ export function BrowserList({
                         )}
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
                         <PinnedIndicator documentId={row.documentId} />
+                        <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}
                       </p>
                       {row.fileName && (

@@ -20,6 +20,50 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     Optional<Document> findByDocumentIdAndTenantIdAndDeletedFalse(UUID documentId, UUID tenantId);
 
+    // Check-out (V127). Each is ONE atomic UPDATE so the decision and the write cannot be split by
+    // a second request: two people checking out at once - exactly one row is updated, the other
+    // gets 0. A free lock and an EXPIRED one both count as free.
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.checkedOutBy = :userId, d.checkedOutAt = :now, d.checkoutExpiresAt = :expires "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.deleted = false "
+            + "and d.legalHold = false and d.signatureLockedAt is null "
+            + "and (d.checkedOutBy is null or d.checkoutExpiresAt <= :now)")
+    int acquireCheckout(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                        @Param("userId") UUID userId, @Param("now") OffsetDateTime now,
+                        @Param("expires") OffsetDateTime expires);
+
+    /** Releases only if {@code holderId} still holds it - a stale click can never free someone else's lock. */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.checkedOutBy = null, d.checkedOutAt = null, d.checkoutExpiresAt = null "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.checkedOutBy = :holderId")
+    int releaseCheckout(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                        @Param("holderId") UUID holderId);
+
+    /** Force-release: whoever holds it. Returns 0 when it was already free. */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.checkedOutBy = null, d.checkedOutAt = null, d.checkoutExpiresAt = null "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.checkedOutBy is not null")
+    int releaseCheckoutAnyHolder(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId);
+
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.legalHold = true, d.legalHoldAt = :now, d.legalHoldBy = :userId, "
+            + "d.legalHoldReason = :reason where d.documentId = :documentId and d.tenantId = :tenantId "
+            + "and d.deleted = false and d.legalHold = false")
+    int placeLegalHold(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                       @Param("userId") UUID userId, @Param("now") OffsetDateTime now,
+                       @Param("reason") String reason);
+
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.legalHold = false, d.legalHoldAt = null, d.legalHoldBy = null, "
+            + "d.legalHoldReason = null where d.documentId = :documentId and d.tenantId = :tenantId "
+            + "and d.legalHold = true")
+    int liftLegalHold(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId);
+
 
     // A document type's templates (V69), by name.
     List<Document> findByTenantIdAndTemplateTrueAndDeletedFalseOrderByTitleAsc(UUID tenantId);

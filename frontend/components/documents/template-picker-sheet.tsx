@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Download, Eye, FilePlus2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -23,6 +24,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { friendlyMessage } from "@/lib/api-error"
+import { usePermissions } from "@/lib/auth/use-permissions"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { useEditingConfig } from "@/lib/checkout/use-checkout"
+import { fetchIngestionTicket, type IngestionTicketDto } from "@/lib/documents/api"
 import {
   copyTemplate,
   fetchTemplates,
@@ -31,6 +36,61 @@ import {
 } from "@/lib/documents/templates"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
+
+const SCAN_POLL_MS = 1_500
+const SCAN_GIVE_UP_MS = 120_000
+
+function fileExtension(fileName: string | null): string | undefined {
+  return fileName?.includes(".") ? fileName.split(".").pop()?.toLowerCase() : undefined
+}
+
+/**
+ * Tells the user how their new document got on - after its virus scan, which is what makes it appear. A clean copy
+ * says so with an "Edit now" button (or "Open" when it can't be edited in the browser); a blocked one says why; one
+ * still scanning after two minutes is left to appear on its own.
+ */
+async function announceCreated(
+  ticket: IngestionTicketDto,
+  name: string,
+  folderName: string,
+  opts: {
+    fileName: string | null
+    canEditOnline: boolean
+    open: (documentId: string, edit: boolean) => void
+    refresh: () => void
+  }
+) {
+  let current = ticket
+  const id = current.status === "pending" ? toast.loading(`Creating "${name}" - checking it for viruses…`) : undefined
+  const started = Date.now()
+  while (current.status === "pending" && Date.now() - started < SCAN_GIVE_UP_MS) {
+    await new Promise((resolve) => setTimeout(resolve, SCAN_POLL_MS))
+    try {
+      current = await fetchIngestionTicket(current.scanResultId)
+    } catch {
+      // Not reachable just now; the scan carries on server-side - ask again.
+    }
+  }
+
+  if (current.status === "pending") {
+    toast.success(`"${name}" will appear in ${folderName} once its virus scan finishes.`, { id })
+  } else if ((current.status === "clean" || current.status === "released_override") && current.documentId) {
+    const documentId = current.documentId
+    opts.refresh()
+    toast.success(`Created "${name}" in ${folderName}.`, {
+      id,
+      description: opts.canEditOnline
+        ? "Edit it online and press Ctrl+S to save your changes."
+        : "Open it to download and fill it in, then check it in.",
+      duration: 15_000,
+      action: opts.canEditOnline
+        ? { label: "Edit now", onClick: () => opts.open(documentId, true) }
+        : { label: "Open", onClick: () => opts.open(documentId, false) },
+    })
+  } else {
+    toast.error(current.message ?? `"${name}" was blocked by the virus scan.`, { id })
+  }
+}
 
 /**
  * "New from template", Google Drive style: every document type's templates,
@@ -59,6 +119,10 @@ export function TemplatePickerSheet({
     queryFn: () => fetchTemplates(),
     enabled: open,
   })
+  const router = useRouter()
+  const { hasPermission } = usePermissions()
+  const { data: editing } = useEditingConfig()
+  const canEditOnline = hasPermission(PermissionCodes.CICO_CHECK_OUT) && Boolean(editing?.enabled)
   const [query, setQuery] = useState("")
   /** "" = every document type. */
   const [typeFilter, setTypeFilter] = useState("")
@@ -103,24 +167,21 @@ export function TemplatePickerSheet({
 
   async function create(template: DocumentTemplateDto, title: string) {
     setCreating(true)
+    const name = title.trim() || template.name
     try {
-      const ticket = await copyTemplate(
-        template.templateId,
-        folderId,
-        title.trim() || template.name
-      )
-      toast.success(
-        ticket.status === "pending"
-          ? `"${title.trim() || template.name}" will appear in ${folderName} once its virus scan finishes.`
-          : `Created "${title.trim() || template.name}" in ${folderName}.`,
-        {
-          description:
-            "Download it to fill it in, then upload it as a new version.",
-        }
-      )
+      const ticket = await copyTemplate(template.templateId, folderId, name)
       setUsing(null)
       onCreated()
       onOpenChange(false)
+      // Not a download-and-upload job any more: when the copy is ready, offer to start editing it right here.
+      void announceCreated(ticket, name, folderName, {
+        fileName: template.fileName,
+        canEditOnline: Boolean(
+          canEditOnline && fileExtension(template.fileName) && editing?.extensions.includes(fileExtension(template.fileName) as string)
+        ),
+        open: (documentId, edit) => router.push(edit ? `/documents/${documentId}/edit` : `/documents/${documentId}`),
+        refresh: onCreated,
+      })
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not create the document."))
     } finally {
@@ -137,8 +198,8 @@ export function TemplatePickerSheet({
         <SheetHeader className="border-b border-border">
           <SheetTitle>New from template</SheetTitle>
           <SheetDescription>
-            Ready-made files for each document type. Download one to fill in, or
-            start a new document from it in {folderName}.
+            Ready-made files for each document type. Start a new document from one in {folderName} and edit it online,
+            or download one to fill in.
           </SheetDescription>
         </SheetHeader>
 

@@ -117,6 +117,36 @@ public class DocumentContentReader {
         return versionContent.open(version);
     }
 
+    /**
+     * A document's current version as the online editor sees it (2.10): the file's name, size and version, and
+     * its bytes. Unlike every other method here it does NOT check the caller's folder access - the editing
+     * engine has no login, only a signed token whose minting ({@code EditingSessionService}) already required
+     * edit access, and the endpoint re-checks the document's live state on each call. What it still enforces is
+     * the storage side (tenant, document-purpose location, scan verdict, not purged) through {@code VersionContent}.
+     * The tenant is passed in, from the verified token, never read from the request.
+     */
+    public record EditableVersion(UUID versionId, int versionNumber, String filename, long sizeBytes,
+                                  java.time.OffsetDateTime createdAt) {
+    }
+
+    @Transactional(readOnly = true)
+    public EditableVersion currentForEditing(UUID tenantId, UUID documentId) {
+        DocumentVersion version = currentVersionOf(tenantId, documentId);
+        return new EditableVersion(version.getVersionId(), version.getVersionNumber(), version.getOriginalFilename(),
+                version.getSizeBytes(), version.getCreatedAt());
+    }
+
+    @Transactional
+    public DownloadedDocument openCurrentForEditing(UUID tenantId, UUID documentId) {
+        return versionContent.open(currentVersionOf(tenantId, documentId));
+    }
+
+    private DocumentVersion currentVersionOf(UUID tenantId, UUID documentId) {
+        Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        return version(document, null);
+    }
+
     /** The caller's tenant's document, if their folder access lets them see it. */
     private Document visible(UUID documentId) {
         Document document = documentRepository

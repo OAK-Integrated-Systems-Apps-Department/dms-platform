@@ -5,7 +5,8 @@ import { notFound, useParams } from "next/navigation"
 import { toast } from "sonner"
 import { ChevronRight, Download, Eye } from "lucide-react"
 
-import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { DocumentActionsMenu } from "@/components/documents/document-actions-menu"
+import { DocumentBreadcrumb } from "@/components/documents/document-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +19,7 @@ import { RelatedDocumentsPanel } from "@/components/relationships/related-docume
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
+import { DocumentCheckoutPanel } from "@/components/checkout/document-checkout-panel"
 import { DocumentSignaturesPanel } from "@/components/signatures/document-signatures-panel"
 import { ApiError, friendlyMessage } from "@/lib/api-error"
 import { downloadDocumentFile } from "@/lib/documents/api"
@@ -64,13 +66,11 @@ export default function DocumentPage() {
 
   return (
     <DashboardShell initialActiveLabel="My Documents">
-      <AdminBreadcrumb
+      <DocumentBreadcrumb
         className="mb-3"
-        segments={[
-          { label: "Dashboard", href: "/" },
-          { label: "My Documents", href: "/documents" },
-          { label: document?.title ?? "Document" },
-        ]}
+        documentId={params.documentId}
+        title={document?.title}
+        folderId={document?.folderId}
       />
 
       {isPending ? (
@@ -97,12 +97,19 @@ export default function DocumentPage() {
                 {document.updatedAt && <> · Updated {formatDateTime(document.updatedAt)}</>}
               </p>
             </div>
-            <SubmitToWorkflowButton
-              documentId={document.documentId}
-              documentTitle={document.title}
-              documentTypeId={document.documentTypeId}
-              hidden={inProgress || history.isPending}
-            />
+            <div className="flex items-center gap-2">
+              <DocumentActionsMenu
+                documentId={document.documentId}
+                title={document.title}
+                folderId={document.folderId ?? null}
+              />
+              <SubmitToWorkflowButton
+                documentId={document.documentId}
+                documentTitle={document.title}
+                documentTypeId={document.documentTypeId}
+                hidden={inProgress || history.isPending}
+              />
+            </div>
           </div>
 
           <div className="grid items-start gap-5 lg:grid-cols-[1.6fr_1fr]">
@@ -162,6 +169,8 @@ export default function DocumentPage() {
                   </div>
                 )
               )}
+
+              <DocumentCheckoutPanel documentId={document.documentId} fileName={document.fileName} />
 
               <DocumentSignaturesPanel document={document} workflowInProgress={inProgress} />
             </div>
