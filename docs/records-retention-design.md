@@ -60,8 +60,8 @@ date later.
 ## The automatic job (CRM-FR-007, 012, 015, CRM-NFR-002, 003)
 
 `RetentionJob` runs hourly (`dms.retention.interval`, default `PT1H`; first run after `PT3M`), one server at a time (a Postgres
-advisory lock). For each organisation that has **at least one enabled rule** and has not switched automation off, it walks the
-live documents and for each one:
+advisory lock). For every active organisation that has not switched automation off, it goes through the documents it needs to
+look at (see "Quick pass and full pass" below) and for each one:
 
 1. skips it entirely if it is under **legal hold** (CRM-FR-015);
 2. finds the winning rule; if none, flags it "no rule" (or ignores it, per setting);
@@ -70,10 +70,26 @@ live documents and for each one:
 
 Every change is a conditional UPDATE (`changeLifecycle`, `flagForReview`, ...), so a second run does nothing, two servers cannot
 both act, and a legal hold placed at the same moment as an archive **always wins** (CRM-NFR-003). A document that fails is
-logged and retried next run. An organisation with no rules is left completely alone.
+logged and retried next run.
+
+**An organisation with no rules yet** has nothing to archive by, so its documents are flagged "no rule" for an administrator to deal
+with (once each, with one notification) - the spec's "no policy configured" alternate flow. If the organisation chose to leave such
+documents alone (setting `whenNoPolicy = ignore`), nothing happens. Adding a rule is a rule change, so the next run is a full pass and
+clears the flags.
+
+### Quick pass and full pass
+
+The job does not walk every document every hour. Most runs are a **quick pass**: only documents that are **due** (an archive or review
+date has passed) or have **never been evaluated**, found through partial indexes (V132). A **full pass** - every live document, its
+rule recomputed - happens when an administrator changed a rule or a setting since the last one, on **Apply rules now**, and at least
+once every `dms.retention.full-pass-interval` (default 24 h), so a document that moved folder, changed type or got new versions is
+picked up. The finish of each full pass is remembered per organisation (`tenant_retention_settings.last_full_pass_at`). Two
+consequences: a document's old versions are trimmed on a full pass (at most a day late), and the stored dates can lag a day behind a
+document edit - but a document is always re-evaluated from its live facts before anything is changed.
 
 **Apply rules now** (`POST /api/v1/retention/run`, `crm.configure-retention`) runs the same pass for your organisation on demand.
-The document page always computes the rule and dates live, so a brand-new document shows "archives on ..." before the next run.
+The document page - and the list badge's hover - compute the rule and dates live, so a brand-new document shows "archives on ..." before
+the next run.
 
 ## Legal hold (CRM-FR-013..017)
 
@@ -163,6 +179,9 @@ each person's own preferences). One notification per kind **per run**, never one
 * **Dashboard:** every count of documents (the total, added per day, by type, by format, per folder, most opened) counts **Active**
   documents only, so it matches what the document browser lists. **Storage is the exception** - an inactive or archived document's
   files still take their space, so storage and version figures include them.
+* **Exports:** a folder export and an export by type and date range take only **Active** documents - what the listing shows, so a
+  folder that says "2 items" exports 2 files. Documents that are inactive or archived are left out; an export of documents chosen by id
+  includes exactly what was chosen.
 * **Folder tiles:** the number on each folder counts **Active** documents only, so it matches what opening the folder lists. A folder
   that holds only inactive or archived documents shows as empty but **cannot be deleted** - the refusal says it holds "N inactive or
   archived documents" and where to find them (Inactive & Archive).
@@ -178,7 +197,7 @@ documents that were Inactive/Archived return to normal listings as active docume
 
 ## FOLLOW-UP (known gaps, deliberately not fixed here)
 
-* **The job walks every live document each run** (paged, indexed by tenant). Fine for the sizes seen so far; a large tenant would
-  want a "due soon" index.
-* **Right-to-erasure / data-subject requests (GDPR)** are not modelled; a retention rule labelled GDPR is only a label.
-* **Bulk import/export** ignore the lifecycle (imported documents start Active; export includes whatever is selected).
+* **Right-to-erasure / data-subject requests (GDPR)** are not modelled. They are a different obligation from retention (a person asks for
+  their data to be deleted, which may override a retention rule) and are not part of 6.1: a rule labelled GDPR is only a label. It would
+  need its own request workflow, an identity for the data subject, and an explicit rule for how it interacts with legal hold.
+* **Bulk import** creates documents as Active (there is nothing to import a status from).

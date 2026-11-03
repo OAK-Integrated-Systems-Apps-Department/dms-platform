@@ -47,6 +47,10 @@ public class TenantRetentionSettings {
     @Builder.Default
     private int versionGraceDays = RetentionSettingsService.DEFAULT_GRACE_DAYS;
 
+    /** When the last FULL pass of every document finished (see RetentionEngine); null = never. */
+    @Column(name = "last_full_pass_at")
+    private OffsetDateTime lastFullPassAt;
+
     @Column(name = "updated_by")
     private UUID updatedBy;
 

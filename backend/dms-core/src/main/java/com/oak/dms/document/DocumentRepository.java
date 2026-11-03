@@ -130,6 +130,24 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     List<Document> findRetentionCandidates(@Param("tenantId") UUID tenantId, @Param("after") UUID after,
                                            Pageable pageable);
 
+    /**
+     * The quick pass: only documents that are DUE - an archive or review date has passed - or have never been evaluated. A
+     * document whose stored dates are in the future is left for the next full pass (see RetentionEngine).
+     */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.template = false "
+            + "and d.legalHold = false and d.reviewFlaggedAt is null and d.documentId > :after and ("
+            + "(d.lifecycleState <> 'archived' and ((d.archiveDueAt is null and d.noPolicyFlaggedAt is null) "
+            + "or d.archiveDueAt <= :now)) "
+            + "or (d.lifecycleState = 'archived' and (d.reviewDueAt is null or d.reviewDueAt <= :now))) "
+            + "order by d.documentId")
+    List<Document> findRetentionDue(@Param("tenantId") UUID tenantId, @Param("after") UUID after,
+                                    @Param("now") OffsetDateTime now, Pageable pageable);
+
+    /** An organisation with no rules at all: the documents not yet flagged "no rule" (each is flagged once). */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.template = false "
+            + "and d.legalHold = false and d.noPolicyFlaggedAt is null and d.documentId > :after order by d.documentId")
+    List<Document> findUnflaggedWithoutPolicy(@Param("tenantId") UUID tenantId, @Param("after") UUID after, Pageable pageable);
+
     /** Documents past their total retention, waiting for an administrator. */
     @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.reviewFlaggedAt is not null "
             + "order by d.reviewFlaggedAt")
@@ -288,11 +306,13 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** Ids of the documents filed in any of the folders, oldest first - a folder export. */
     @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.lifecycleState = 'active' "
             + "and d.folderId in :folderIds and d.documentId not in :hiddenDocs order by d.createdAt, d.documentId")
     List<UUID> findIdsInFolders(@Param("tenantId") UUID tenantId, @Param("folderIds") Collection<UUID> folderIds,
                                 @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds, Pageable limit);
 
     @Query("select count(d) from Document d where d.tenantId = :tenantId and d.deleted = false "
+            + "and d.lifecycleState = 'active' "
             + "and d.folderId in :folderIds and d.documentId not in :hiddenDocs")
     long countInFolders(@Param("tenantId") UUID tenantId, @Param("folderIds") Collection<UUID> folderIds,
                         @Param("hiddenDocs") Collection<UUID> hiddenDocumentIds);
@@ -311,7 +331,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** Ids of one type's documents created in [from, to), outside the hidden folders, oldest first - an export by filter. */
     @Query("select d.documentId from Document d where d.tenantId = :tenantId and d.deleted = false "
-            + "and d.template = false "
+            + "and d.template = false and d.lifecycleState = 'active' "
             + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to "
             + "and d.documentId not in :hiddenDocs and (d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted "
             + "or d.folderId is null or d.folderId not in :hidden) "
@@ -325,7 +345,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                            Pageable limit);
 
     @Query("select count(d) from Document d where d.tenantId = :tenantId and d.deleted = false "
-            + "and d.template = false "
+            + "and d.template = false and d.lifecycleState = 'active' "
             + "and d.documentTypeId = :documentTypeId and d.createdAt >= :from and d.createdAt < :to "
             + "and d.documentId not in :hiddenDocs and (d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted "
             + "or d.folderId is null or d.folderId not in :hidden)")

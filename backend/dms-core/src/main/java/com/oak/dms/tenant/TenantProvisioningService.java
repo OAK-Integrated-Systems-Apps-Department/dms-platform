@@ -112,8 +112,18 @@ public class TenantProvisioningService {
             // invited user - this is the tenant admin's only route to
             // setting a real password and signing in, so a send failure
             // is deliberately left to propagate into the catch block
-            // below rather than being swallowed.
-            passwordResetService.issueForNewUser(savedAdmin);
+            // below rather than being swallowed. It is turned into the same
+            // MAIL_DELIVERY_FAILED answer an ordinary invite gets, so the
+            // platform administrator is told what is wrong (the mail
+            // settings) instead of seeing "An unexpected error occurred".
+            try {
+                passwordResetService.issueForNewUser(savedAdmin);
+            } catch (RuntimeException mailFailure) {
+                log.error("Invitation email to the first admin {} of {} could not be sent; undoing the organisation: {}",
+                        request.adminEmail(), request.domain(), mailFailure.getMessage(), mailFailure);
+                throw new com.oak.dms.common.exception.MailDeliveryException("The organisation's first administrator could not "
+                        + "be invited by email, so the organisation was not created. Check the mail settings (SMTP) and try again.");
+            }
 
             log.info("Provisioned tenant {} ({}) with first admin {} ({})",
                     tenantId, tenant.getDomain(), savedAdmin.getUserId(), savedAdmin.getEmail());

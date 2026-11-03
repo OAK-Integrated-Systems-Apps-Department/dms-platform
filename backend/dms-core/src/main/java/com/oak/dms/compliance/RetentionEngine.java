@@ -27,6 +27,13 @@ import java.util.UUID;
  * version limits. It never deletes a document; old versions are removed in two steps (hidden, then destroyed after the
  * organisation's grace period) - see {@link VersionRetentionService}.
  *
+ * <p><b>What a run looks at.</b> A FULL pass walks every live document and recomputes its rule; the scheduled job does one when an
+ * administrator changed a rule or a setting since the last one, when none has happened for a day (so a document that moved folder,
+ * changed type or got new versions is picked up), and on "Apply rules now". Every other scheduled run is a QUICK pass: only
+ * documents that are due (an archive or review date has passed) or have never been evaluated. An organisation with no rules at
+ * all has nothing to apply, so it only has its not-yet-flagged documents flagged "no rule" (once each) - and does nothing when
+ * its setting says to leave such documents alone.
+ *
  * <p>Safe to run any number of times and from several servers: every change is one conditional UPDATE in the database
  * ({@link DocumentRepository#changeLifecycle}), so a second run finds nothing to do, and a legal hold placed at the same
  * moment as an archive always wins (CRM-NFR-003). A document under hold is not even looked at (CRM-FR-015); when the hold is
@@ -51,6 +58,11 @@ public class RetentionEngine {
     private final AuditService auditService;
     private final VersionRetentionService versions;
     private final RetentionNotifier notifier;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** At most this long between full passes, whatever else happens (a document can change in ways no rule edit reflects). */
+    @org.springframework.beans.factory.annotation.Value("${dms.retention.full-pass-interval:PT24H}")
+    private java.time.Duration fullPassInterval = java.time.Duration.ofHours(24);
 
     /** Counters for one pass. */
     private static final class Tally {
@@ -61,15 +73,31 @@ public class RetentionEngine {
         int failed;
     }
 
-    /** One organisation, start to finish. A document that fails is logged and left for the next run. */
+    /** One organisation, start to finish, as a FULL pass ("Apply rules now"). A document that fails is logged and left for the next run. */
     public Result runForTenant(UUID tenantId) {
+        return run(tenantId, true);
+    }
+
+    /** One organisation as the scheduled job runs it: a quick pass, or a full one when it is time for one (see the class comment). */
+    public Result runScheduled(UUID tenantId) {
+        return run(tenantId, false);
+    }
+
+    private Result run(UUID tenantId, boolean forceFull) {
         Context context = context(tenantId);
         Tally tally = new Tally();
         RetentionNotifier.RunLog runLog = new RetentionNotifier.RunLog();
         OffsetDateTime now = OffsetDateTime.now();
+        boolean noRules = context.policies().isEmpty();
+        boolean full = !noRules && (forceFull || fullPassDue(tenantId, now));
+        // No rules and told to leave such documents alone: nothing to evaluate (versions removed earlier are still destroyed below).
+        boolean skipWalk = noRules && !RetentionSettingsService.FLAG.equals(context.settings().whenNoPolicy());
         UUID after = new UUID(0L, 0L);
-        while (true) {
-            List<Document> batch = documentRepository.findRetentionCandidates(tenantId, after, PageRequest.of(0, BATCH));
+        while (!skipWalk) {
+            List<Document> batch = noRules
+                    ? documentRepository.findUnflaggedWithoutPolicy(tenantId, after, PageRequest.of(0, BATCH))
+                    : full ? documentRepository.findRetentionCandidates(tenantId, after, PageRequest.of(0, BATCH))
+                    : documentRepository.findRetentionDue(tenantId, after, now, PageRequest.of(0, BATCH));
             if (batch.isEmpty()) {
                 break;
             }
@@ -87,6 +115,9 @@ public class RetentionEngine {
                 break;
             }
         }
+        if (full && tally.failed == 0) {
+            markFullPass(tenantId);
+        }
         int destroyed = 0;
         try {
             destroyed = versions.destroyDue(tenantId, OffsetDateTime.now());
@@ -97,6 +128,29 @@ public class RetentionEngine {
         }
         notifier.notifyRun(tenantId, runLog);
         return new Result(tally.archived, tally.flagged, tally.withoutPolicy, tally.versionsRemoved, destroyed, tally.failed);
+    }
+
+    /** Time for a full pass: never done one, a day since the last, or a rule or setting was changed since. */
+    private boolean fullPassDue(UUID tenantId, OffsetDateTime now) {
+        OffsetDateTime last = jdbc.query("select last_full_pass_at from tenant_retention_settings where tenant_id = ?",
+                rs -> rs.next() ? rs.getObject(1, OffsetDateTime.class) : null, tenantId);
+        if (last == null || last.plus(fullPassInterval).isBefore(now)) {
+            return true;
+        }
+        Boolean changed = jdbc.queryForObject("""
+                select exists (select 1 from retention_policies where tenant_id = ?
+                                 and greatest(created_at, coalesce(updated_at, created_at), coalesce(deleted_at, created_at)) > ?)
+                    or exists (select 1 from tenant_retention_settings where tenant_id = ? and updated_by is not null and updated_at > ?)
+                """, Boolean.class, tenantId, last, tenantId, last);
+        return Boolean.TRUE.equals(changed);
+    }
+
+    /** Remembers when the full pass finished (creating the settings row with its defaults if the organisation never had one). */
+    private void markFullPass(UUID tenantId) {
+        jdbc.update("""
+                insert into tenant_retention_settings (tenant_id, last_full_pass_at) values (?, now())
+                on conflict (tenant_id) do update set last_full_pass_at = excluded.last_full_pass_at
+                """, tenantId);
     }
 
     /**

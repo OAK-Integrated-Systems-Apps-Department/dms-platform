@@ -47,6 +47,8 @@ class RecordsRetentionIT extends WorkflowApiSupport {
 
     @Autowired
     RetentionJob job;
+    @Autowired
+    com.oak.dms.document.DocumentRepository documentRepository;
 
     private UUID tenantId;
     private UUID type;
@@ -443,23 +445,118 @@ class RecordsRetentionIT extends WorkflowApiSupport {
         age(documentId, 2);
         saveSettings(false, "longest", "flag", false);
 
-        job.runAll();
-        assertThat(lifecycleState()).isEqualTo("active"); // automation is off for this organisation
+        assertThat(job.runFor(tenantId)).isNull(); // automation is off for this organisation: skipped entirely
+        assertThat(lifecycleState()).isEqualTo("active");
 
         saveSettings(true, "longest", "flag", false);
-        job.runAll();
+        job.runFor(tenantId);
         assertThat(lifecycleState()).isEqualTo("archived");
     }
 
     @Test
-    void anOrganisationWithNoRulesAtAll_isNeverTouched() throws Exception {
+    void anOrganisationWithNoRulesYet_hasItsDocumentsFlaggedForAnAdministrator_onceEach() throws Exception {
         age(documentId, 4000);
-        job.runAll();
-        assertThat(lifecycleState()).isEqualTo("active");
+        job.runFor(tenantId);
+
+        assertThat(lifecycleState()).isEqualTo("active"); // nothing to archive it by
+        assertThat(fx.count("select count(*) from documents where document_id = ? and no_policy_flagged_at is not null", documentId)).isEqualTo(1);
+        assertThat(titles(get200("/api/v1/retention/without-policy", admin).get("content"))).contains("Supplier invoice 1041");
+        assertThat(audit("DOCUMENT_NO_RETENTION_POLICY")).isEqualTo(1);
+        // The people who review retention are told, once.
+        assertThat(fx.count("select count(*) from notifications where recipient_user_id = ? and category_code = 'retention.no-rule'",
+                admin.getUserId())).isEqualTo(1);
+
+        job.runFor(tenantId); // flagged once - not again
+        assertThat(fx.count("select count(*) from notifications where recipient_user_id = ? and category_code = 'retention.no-rule'",
+                admin.getUserId())).isEqualTo(1);
+        assertThat(audit("DOCUMENT_NO_RETENTION_POLICY")).isEqualTo(1);
+
+        // An administrator adds a rule: the next scheduled run notices the change and clears the flag.
+        createPolicy(admin, rule("Default", "organisation", null, 100, "years", 0, "years", null), 200);
+        job.runFor(tenantId);
         assertThat(fx.count("select count(*) from documents where document_id = ? and no_policy_flagged_at is not null", documentId)).isZero();
     }
 
-    // ------------------------------------------------------------------ the other places documents are counted and listed
+    @Test
+    void anOrganisationWithNoRules_canChooseToLeaveItsDocumentsAlone() throws Exception {
+        saveSettings(true, "longest", "ignore", false);
+        age(documentId, 4000);
+        job.runFor(tenantId);
+        assertThat(fx.count("select count(*) from documents where document_id = ? and no_policy_flagged_at is not null", documentId)).isZero();
+    }
+
+    // ------------------------------------------------------------------ the quick pass and the full pass
+
+    @Test
+    void theScheduledJobOnlyLooksAtDueDocuments_untilARuleChangesOrAFullPassIsDue() throws Exception {
+        createPolicy(admin, rule("Default", "organisation", null, 100, "years", 0, "years", null), 200);
+        runNow(); // a full pass: the document's stored dates are now worked out and the pass is remembered
+        assertThat(fx.count("select count(*) from tenant_retention_settings where tenant_id = ? and last_full_pass_at is not null", tenantId)).isEqualTo(1);
+        String sentinel = "2099-01-01 00:00:00+00";
+
+        // Quick pass: this document is not due, so it is not even looked at - its (deliberately wrong) stored date stays.
+        fx.jdbc().update("update documents set archive_due_at = ?::timestamptz where document_id = ?", sentinel, documentId);
+        job.runFor(tenantId);
+        assertThat(storedArchiveDue()).startsWith("2099-01-01");
+
+        // A rule is edited: the next scheduled run is a full pass, which recomputes it.
+        JsonNode rule = get200("/api/v1/retention/policies", admin).get(0);
+        call(put("/api/v1/retention/policies/" + rule.get("policyId").asString()), fx.jwtFor(admin),
+                rule("Default", "organisation", null, 100, "years", 1, "years", null), 200);
+        job.runFor(tenantId);
+        assertThat(storedArchiveDue()).doesNotStartWith("2099");
+
+        // Or a full pass is simply overdue (a day since the last one).
+        fx.jdbc().update("update documents set archive_due_at = ?::timestamptz where document_id = ?", sentinel, documentId);
+        fx.jdbc().update("update tenant_retention_settings set last_full_pass_at = now() - interval '2 days' where tenant_id = ?", tenantId);
+        job.runFor(tenantId);
+        assertThat(storedArchiveDue()).doesNotStartWith("2099");
+    }
+
+    @Test
+    void aDueDocumentIsPickedUpByTheQuickPass_withoutAFullWalk() throws Exception {
+        createPolicy(admin, rule("Short", "organisation", null, 1, "days", 30, "days", null), 200);
+        runNow(); // full pass: stored dates are in the future (the document is new)
+        // Time passes: the document's own date has now gone by.
+        age(documentId, 5);
+        fx.jdbc().update("update documents set archive_due_at = now() - interval '1 hour' where document_id = ?", documentId);
+
+        job.runFor(tenantId); // a quick pass: it is due, so it is looked at
+        assertThat(lifecycleState()).isEqualTo("archived");
+    }
+
+    // ------------------------------------------------------------------ exports and badges match the listings
+
+    @Test
+    void aFolderOrTypeExportTakesOnlyWhatTheListingShows() throws Exception {
+        UUID folder = folder("Invoices 2026", null);
+        UUID second = fx.document(tenantId, type, owner, "A second invoice");
+        fx.jdbc().update("update documents set folder_id = ? where document_id in (?, ?)", folder, documentId, second);
+        status(records, "inactive", null, 200);
+
+        List<UUID> none = List.of(UUID.randomUUID());
+        assertThat(documentRepository.findIdsInFolders(tenantId, List.of(folder), none, org.springframework.data.domain.PageRequest.of(0, 10)))
+                .containsExactly(second);
+        assertThat(documentRepository.countInFolders(tenantId, List.of(folder), none)).isEqualTo(1);
+
+        var from = java.time.OffsetDateTime.now().minusDays(1);
+        var to = java.time.OffsetDateTime.now().plusDays(1);
+        assertThat(documentRepository.findIdsByTypeCreatedBetween(tenantId, type, from, to, none, none,
+                org.springframework.data.domain.PageRequest.of(0, 10))).containsExactly(second);
+        assertThat(documentRepository.countByTypeCreatedBetween(tenantId, type, from, to, none, none)).isEqualTo(1);
+    }
+
+    @Test
+    void aFreshDocumentAlreadyShowsWhenItWillBeArchived_beforeTheJobHasStoredAnything() throws Exception {
+        createPolicy(admin, rule("Default", "organisation", null, 3, "years", 0, "years", null), 200);
+        // No run yet: nothing is stored, but the listing works the date out live.
+        assertThat(fx.count("select count(*) from documents where document_id = ? and archive_due_at is not null", documentId)).isZero();
+        JsonNode row = listed(owner, "").get(0);
+        assertThat(row.get("archiveDueAt").isNull()).isFalse();
+        // And a document no rule covers has none.
+        fx.jdbc().update("update retention_policies set is_deleted = true where tenant_id = ?", tenantId);
+        assertThat(listed(owner, "").get(0).get("archiveDueAt").isNull()).isTrue();
+    }
 
     @Test
     void theDashboardCountsOnlyActiveDocuments_butStorageStillCountsEveryFile() throws Exception {
@@ -609,6 +706,10 @@ class RecordsRetentionIT extends WorkflowApiSupport {
             }
         }
         throw new AssertionError("folder not listed");
+    }
+
+    private String storedArchiveDue() {
+        return fx.jdbc().queryForObject("select archive_due_at::text from documents where document_id = ?", String.class, documentId);
     }
 
     private String lifecycleState() {

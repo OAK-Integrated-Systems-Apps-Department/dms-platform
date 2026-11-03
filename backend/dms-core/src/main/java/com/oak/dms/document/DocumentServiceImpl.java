@@ -147,6 +147,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentSignatureLockService signatureLockService;
     // 2.10 legal hold + check-out (V127) - same two methods.
     private final com.oak.dms.checkout.DocumentEditGuard editGuard;
+    // 6.1: the live "archives on" date for the list badge.
+    private final com.oak.dms.compliance.RetentionDueDates retentionDueDates;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -362,6 +364,9 @@ public class DocumentServiceImpl implements DocumentService {
         Map<UUID, String> typeNames = new HashMap<>();
         documentTypeRepository.findAllById(page.getContent().stream().map(Document::getDocumentTypeId).distinct().toList())
                 .forEach(t -> typeNames.put(t.getDocumentTypeId(), t.getTypeName()));
+        // "Archives on ..." for a document the retention job has not stored a date for yet (a fresh upload).
+        Map<UUID, OffsetDateTime> liveDue = retentionDueDates.archiveDueFor(tenantId, page.getContent().stream()
+                .filter(d -> Document.ACTIVE.equals(d.getLifecycleState()) && d.getArchiveDueAt() == null).toList());
 
         return page.map(d -> {
             DocumentVersion v = versions.get(d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId());
@@ -371,7 +376,7 @@ public class DocumentServiceImpl implements DocumentService {
                     v != null ? v.getMimeType() : null, v != null ? v.getVersionNumber() : null,
                     d.getOwnerUserId(), d.getCreatedAt(), d.getAccessMode() == FolderAccessMode.restricted,
                     access.level(d).name(), d.getOwnerDepartmentId(), d.getOwnershipState(), lockState(d, now, me),
-                    d.getLifecycleState(), d.getArchiveDueAt());
+                    d.getLifecycleState(), d.getArchiveDueAt() != null ? d.getArchiveDueAt() : liveDue.get(d.getDocumentId()));
         });
     }
 

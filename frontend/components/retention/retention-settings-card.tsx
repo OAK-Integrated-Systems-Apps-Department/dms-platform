@@ -81,9 +81,9 @@ function SettingsForm({ initial, canEdit }: { initial: RetentionSettingsDto; can
           <div className="border-t border-border pt-4">
             <h2 className="mb-1 text-[14.5px] font-semibold">A document no rule covers</h2>
             <p className="mb-3 max-w-[540px] text-[12.5px] leading-[1.6] text-muted-foreground">
-              Add an organisation-wide rule to cover everything. Without one, such a document can be flagged so an
-              administrator assigns a rule, or simply left alone. (Nothing is flagged until your organisation has at least
-              one rule.)
+              Add an organisation-wide rule to cover everything. A document no rule covers can be flagged (once) so an
+              administrator assigns a rule - this also applies before you have created any rule at all - or simply left
+              alone.
             </p>
             <SegmentedControl
               value={draft.whenNoPolicy}

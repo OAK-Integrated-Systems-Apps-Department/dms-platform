@@ -15,10 +15,11 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The recurring retention job (CRM-NFR-002): every organisation that has at least one enabled retention rule and has not
- * switched the automation off is processed on each run, so no document misses its transition. One server at a time (a
- * Postgres session lock, like the recycle-bin sweep); a failure is logged and retried on the next run. An organisation
- * with no rules at all is left completely alone - nothing is flagged until someone has set retention up.
+ * The recurring retention job (CRM-NFR-002): every active organisation that has not switched the automation off is processed on
+ * each run, so no document misses its transition. Most runs are a quick pass over the documents that are due; a full pass happens
+ * when a rule changed, and at least daily (see {@link RetentionEngine}). One server at a time (a Postgres session lock, like the
+ * recycle-bin sweep); a failure is logged and retried on the next run. An organisation with no rules has its documents flagged
+ * "no rule" for an administrator to deal with - or is left alone, if its setting says so.
  */
 @Component
 @Slf4j
@@ -41,6 +42,17 @@ public class RetentionJob {
         runAll();
     }
 
+    /**
+     * One organisation as the scheduled job would run it (the same switches: automation off, suspended organisation), without the
+     * lock - for tests and for operators. Returns null when the organisation is skipped.
+     */
+    public RetentionEngine.Result runFor(UUID tenantId) {
+        if (settingsRepository.tenantsWithAutomationOff().contains(tenantId) || organisationStatus.inactiveReason(tenantId).isPresent()) {
+            return null;
+        }
+        return engine.runScheduled(tenantId);
+    }
+
     /** All organisations, or nothing at all when another server is already doing it. */
     public RunSummary runAll() {
         return jdbc.execute((ConnectionCallback<RunSummary>) connection -> {
@@ -49,9 +61,9 @@ public class RetentionJob {
             }
             try {
                 Set<UUID> off = Set.copyOf(settingsRepository.tenantsWithAutomationOff());
-                List<UUID> tenants = jdbc.queryForList("""
-                        select distinct tenant_id from retention_policies where not is_deleted and enabled
-                        """, UUID.class);
+                // Every organisation: one with rules gets them applied, one without has its documents flagged "no rule" (or
+                // nothing, by its own setting) - see RetentionEngine.
+                List<UUID> tenants = jdbc.queryForList("select tenant_id from tenants where not is_deleted and status = 'active'", UUID.class);
                 int organisations = 0;
                 int[] total = new int[6];
                 for (UUID tenantId : tenants) {
@@ -59,7 +71,7 @@ public class RetentionJob {
                         continue;
                     }
                     try {
-                        RetentionEngine.Result r = engine.runForTenant(tenantId);
+                        RetentionEngine.Result r = engine.runScheduled(tenantId);
                         organisations++;
                         total[0] += r.archived();
                         total[1] += r.flagged();
