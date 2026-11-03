@@ -65,6 +65,81 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     int liftLegalHold(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId);
 
 
+    // ---- Records lifecycle (V130). Atomic like the legal-hold queries: the WHERE decides, so a hold placed at the same
+    // moment as an archive or a manual switch always wins (CRM-NFR-003), and a second run of the job is a no-op.
+
+    /**
+     * Moves a document between active / inactive / archived. Refused (0 rows) for a document under legal hold, one that
+     * is gone, or one not in one of the {@code from} states. Bringing it back to Active starts a fresh active period
+     * ({@code reactivatedAt}) and clears any review flag; the stored due dates are recomputed by the next run.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.lifecycleState = :to, d.lifecycleChangedAt = :now, d.lifecycleChangedBy = :userId, "
+            + "d.lifecycleChangeSource = :source, d.lifecycleReason = :reason, "
+            + "d.reactivatedAt = case when :reactivate = true then :now else d.reactivatedAt end, "
+            + "d.reviewFlaggedAt = case when :reactivate = true then null else d.reviewFlaggedAt end, "
+            + "d.archiveDueAt = case when :reactivate = true then null else d.archiveDueAt end, "
+            + "d.reviewDueAt = case when :reactivate = true then null else d.reviewDueAt end "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.deleted = false "
+            + "and d.legalHold = false and d.lifecycleState in :from")
+    int changeLifecycle(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                        @Param("from") Collection<String> from, @Param("to") String to,
+                        @Param("reactivate") boolean reactivate, @Param("source") String source,
+                        @Param("userId") UUID userId, @Param("reason") String reason, @Param("now") OffsetDateTime now);
+
+    /** What the retention run worked out for a document - bookkeeping for the "archives on" display; not an edit. */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.retentionPolicyId = :policyId, d.archiveDueAt = :archiveDue, d.reviewDueAt = :reviewDue, "
+            + "d.noPolicyFlaggedAt = case when :policyId is null then d.noPolicyFlaggedAt else null end "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.deleted = false")
+    int storeRetention(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                       @Param("policyId") UUID policyId, @Param("archiveDue") OffsetDateTime archiveDue,
+                       @Param("reviewDue") OffsetDateTime reviewDue);
+
+    /** Total retention has elapsed: wait for an administrator. Once only (a flagged document is left alone). */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.reviewFlaggedAt = :now where d.documentId = :documentId and d.tenantId = :tenantId "
+            + "and d.deleted = false and d.legalHold = false and d.reviewFlaggedAt is null")
+    int flagForReview(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                      @Param("now") OffsetDateTime now);
+
+    /** No rule covers it: wait for an administrator to assign one. Once only. */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.noPolicyFlaggedAt = :now where d.documentId = :documentId and d.tenantId = :tenantId "
+            + "and d.deleted = false and d.noPolicyFlaggedAt is null")
+    int flagNoPolicy(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                     @Param("now") OffsetDateTime now);
+
+    /** An administrator keeps a flagged document instead of disposing of it: the flag clears and the clock moves on. */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Document d set d.retentionExtendedUntil = :until, d.reviewDueAt = :until, d.reviewFlaggedAt = null "
+            + "where d.documentId = :documentId and d.tenantId = :tenantId and d.deleted = false "
+            + "and d.reviewFlaggedAt is not null")
+    int extendRetention(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
+                        @Param("until") OffsetDateTime until);
+
+    /** The retention run's walk through one organisation: live documents, in id order, a page at a time. */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.template = false "
+            + "and d.legalHold = false and d.reviewFlaggedAt is null and d.documentId > :after "
+            + "order by d.documentId")
+    List<Document> findRetentionCandidates(@Param("tenantId") UUID tenantId, @Param("after") UUID after,
+                                           Pageable pageable);
+
+    /** Documents past their total retention, waiting for an administrator. */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.reviewFlaggedAt is not null "
+            + "order by d.reviewFlaggedAt")
+    Page<Document> findAwaitingReview(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /** Documents no retention rule covers, waiting for an administrator to assign one. */
+    @Query("select d from Document d where d.tenantId = :tenantId and d.deleted = false and d.template = false "
+            + "and d.noPolicyFlaggedAt is not null order by d.noPolicyFlaggedAt")
+    Page<Document> findWithoutPolicy(@Param("tenantId") UUID tenantId, Pageable pageable);
+
     // A document type's templates (V69), by name.
     List<Document> findByTenantIdAndTemplateTrueAndDeletedFalseOrderByTitleAsc(UUID tenantId);
 
@@ -79,6 +154,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     String ON_ITS_LIST = "(d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted and d.documentId in :granted)";
     String IN_MY_WORKFLOW = "d.documentId in :workflowReadable";
     String LIVE_TITLED = "d.tenantId = :tenantId and d.deleted = false and d.template = false "
+            + "and d.lifecycleState in :states "
             + "and lower(d.title) like lower(concat('%', :title, '%')) ";
     /** The document picker's optional narrowing - both null means "no filter". */
     String NARROWED = "and (:documentTypeId is null or d.documentTypeId = :documentTypeId) "
@@ -90,7 +166,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** "All documents": the top level and every folder the caller can see. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and ((" + FOLLOWS_FOLDER
             + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
-    Page<Document> findVisible(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findVisible(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                @Param("hidden") Collection<UUID> hiddenFolderIds,
                                @Param("granted") Collection<UUID> grantedDocumentIds,
                                @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
@@ -101,7 +177,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** One folder the caller can see. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId and ((" + FOLLOWS_FOLDER
             + ") or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
-    Page<Document> findVisibleInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findVisibleInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                        @Param("folderId") UUID folderId,
                                        @Param("granted") Collection<UUID> grantedDocumentIds,
                                        @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
@@ -112,7 +188,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** The top level. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null and ((" + FOLLOWS_FOLDER
             + ") or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
-    Page<Document> findVisibleAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findVisibleAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                          @Param("granted") Collection<UUID> grantedDocumentIds,
                                          @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
                                          @Param("documentTypeId") UUID documentTypeId,
@@ -124,20 +200,20 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** "All documents" for a caller who sees everything. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED)
-    Page<Document> findLive(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findLive(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                             @Param("documentTypeId") UUID documentTypeId,
                             @Param("excludeDocumentId") UUID excludeDocumentId,
             @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId = :folderId")
-    Page<Document> findLiveInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findLiveInFolder(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                     @Param("folderId") UUID folderId,
                                     @Param("documentTypeId") UUID documentTypeId,
                                     @Param("excludeDocumentId") UUID excludeDocumentId,
             @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
 
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + "and d.folderId is null")
-    Page<Document> findLiveAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findLiveAtTopLevel(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                       @Param("documentTypeId") UUID documentTypeId,
                                       @Param("excludeDocumentId") UUID excludeDocumentId,
             @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId, Pageable pageable);
@@ -156,7 +232,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + RELATED + "and ((" + FOLLOWS_FOLDER
             + " and (d.folderId is null or d.folderId not in :hidden)) or " + ON_ITS_LIST + " or " + IN_MY_WORKFLOW + ")")
-    Page<Document> findVisibleRelated(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findVisibleRelated(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                       @Param("hidden") Collection<UUID> hiddenFolderIds,
                                       @Param("granted") Collection<UUID> grantedDocumentIds,
                                       @Param("workflowReadable") Collection<UUID> workflowReadableDocumentIds,
@@ -169,7 +245,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** {@link #findVisibleRelated} for a caller who sees everything. */
     @Query("select d from Document d where " + LIVE_TITLED + NARROWED + RELATED)
-    Page<Document> findLiveRelated(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findLiveRelated(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                    @Param("documentTypeId") UUID documentTypeId,
                                    @Param("excludeDocumentId") UUID excludeDocumentId,
             @Param("ownerId") UUID ownerId, @Param("ownerDepartmentId") UUID ownerDepartmentId,
@@ -187,7 +263,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             + "and d.documentId in (select e.documentId from com.oak.dms.folder.DocumentAccessEntry e "
             + "where e.tenantId = :tenantId and ((e.principalType = com.oak.dms.folder.FolderAccessEntry.PrincipalType.user and e.principalId = :userId) "
             + "or (e.principalType = com.oak.dms.folder.FolderAccessEntry.PrincipalType.role and e.principalId in :roleIds)))")
-    Page<Document> findSharedWith(@Param("tenantId") UUID tenantId, @Param("title") String title,
+    Page<Document> findSharedWith(@Param("tenantId") UUID tenantId, @Param("title") String title, @Param("states") Collection<String> states,
                                   @Param("userId") UUID userId, @Param("roleIds") Collection<UUID> roleIds,
                                   Pageable pageable);
 
@@ -202,9 +278,12 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
     List<UUID> findRestrictedIds(@Param("tenantId") UUID tenantId);
 
-    /** [documentId, folderId] of every restricted document. */
+    /**
+     * [documentId, folderId] of every restricted ACTIVE document - used to take the ones a caller can't see off a folder's
+     * count, which counts active documents only (inactive and archived ones are hidden from folder listings).
+     */
     @Query("select d.documentId, d.folderId from Document d where d.tenantId = :tenantId and d.deleted = false "
-            + "and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
+            + "and d.lifecycleState = 'active' and d.accessMode = com.oak.dms.folder.FolderAccessMode.restricted")
     List<Object[]> findRestrictedIdsWithFolder(@Param("tenantId") UUID tenantId);
 
     /** Ids of the documents filed in any of the folders, oldest first - a folder export. */

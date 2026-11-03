@@ -48,7 +48,8 @@ import java.util.UUID;
  * The home dashboard's figures, worked out for the caller over a period ending today. Documents
  * are counted with the same visibility as the document browser (DocumentRepository#findVisible):
  * a document following its folder counts when that folder isn't hidden from the caller, a
- * restricted one only when the caller is on its list; templates and deleted documents never count.
+ * restricted one only when the caller is on its list; templates, deleted documents and documents that are Inactive or
+ * Archived (6.1) never count - except in the storage figure, which is what the files really take up.
  * Usage - views, downloads, uploads, the activity feed - is the caller's own unless they may read
  * the organisation's audit history.
  */
@@ -110,6 +111,13 @@ public class DashboardService {
     static final String VISIBLE = " d.tenant_id = :tenant and not d.is_deleted and not d.is_template"
             + " and (:everything or (d.access_mode = 'inherit' and (d.folder_id is null or d.folder_id not in (:hidden)))"
             + " or (d.access_mode = 'restricted' and d.document_id in (:granted))) ";
+
+    /**
+     * {@link #VISIBLE} narrowed to documents that are Active (6.1): a document switched off by hand or archived by its
+     * retention rule is hidden from the normal listings, so it is left out of every count of "documents" here too. Storage
+     * is the exception - an archived file still takes its space - so that query keeps using {@link #VISIBLE}.
+     */
+    static final String VISIBLE_ACTIVE = VISIBLE + " and d.lifecycle_state = 'active' ";
 
     /**
      * The lower-cased file extension of {@code v.original_filename}: what follows the last
@@ -213,7 +221,7 @@ public class DashboardService {
                                           and (d.created_at at time zone :zone)::date < :start) as added_before,
                        count(*) filter (where d.owner_user_id = :me) as mine,
                        count(*) filter (where d.access_mode = 'restricted') as restricted
-                from documents d where""" + VISIBLE, params,
+                from documents d where""" + VISIBLE_ACTIVE, params,
                 (rs, i) -> new Documents(rs.getLong("total"), rs.getLong("added"), rs.getLong("added_before"),
                         rs.getLong("mine"), rs.getLong("restricted")));
 
@@ -232,7 +240,7 @@ public class DashboardService {
         jdbc.query("""
                 select (d.created_at at time zone :zone)::date as day, count(*) as added
                 from documents d
-                where (d.created_at at time zone :zone)::date >= :start and""" + VISIBLE + " group by 1", params,
+                where (d.created_at at time zone :zone)::date >= :start and""" + VISIBLE_ACTIVE + " group by 1", params,
                 rs -> {
                     addedPerDay.put(rs.getObject("day", LocalDate.class), rs.getLong("added"));
                 });
@@ -241,7 +249,7 @@ public class DashboardService {
         List<NamedCount> types = jdbc.query("""
                 select t.type_name as name, count(*) as n
                 from documents d join document_types t on t.document_type_id = d.document_type_id
-                where""" + VISIBLE + " group by t.type_name order by n desc, name", params,
+                where""" + VISIBLE_ACTIVE + " group by t.type_name order by n desc, name", params,
                 (rs, i) -> new NamedCount(rs.getString("name"), rs.getLong("n")));
 
         Map<String, long[]> byFormat = new LinkedHashMap<>();
@@ -250,7 +258,7 @@ public class DashboardService {
                        coalesce(sum(v.size_bytes), 0) as bytes
                 from documents d join document_versions v
                   on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
-                where""".formatted(EXTENSION) + VISIBLE + " group by 1", params,
+                where""".formatted(EXTENSION) + VISIBLE_ACTIVE + " group by 1", params,
                 rs -> {
                     long[] sum = byFormat.computeIfAbsent(formatOf(rs.getString("ext")), k -> new long[2]);
                     sum[0] += rs.getLong("files");
@@ -268,7 +276,7 @@ public class DashboardService {
                 from documents d
                 join folders f on f.folder_id = d.folder_id and not f.is_deleted
                 left join document_versions v on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
-                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE + """
+                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE_ACTIVE + """
                 group by f.folder_id, f.folder_name
                 order by n desc, f.folder_name
                 limit :limit""", params.addValue("limit", TOP_FOLDERS),
@@ -281,7 +289,7 @@ public class DashboardService {
         // unboxing is explicit instead of implicit.
         long inFolders = java.util.Objects.requireNonNullElse(jdbc.queryForObject("""
                 select count(*) from documents d join folders f on f.folder_id = d.folder_id and not f.is_deleted
-                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE, params, Long.class), 0L);
+                where (:everything or f.folder_id not in (:hidden)) and""" + VISIBLE_ACTIVE, params, Long.class), 0L);
         long notInFolder = documents.total() - inFolders;
         List<FolderCount> foldersWithTop = new ArrayList<>(folders);
         if (notInFolder > 0) {
@@ -299,7 +307,7 @@ public class DashboardService {
                 left join document_versions v on v.version_id = coalesce(d.current_version_id, d.latest_version_id)
                 where""" + IN_SCOPE + """
                   and a.action in ('DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED')
-                  and (a.occurred_at at time zone :zone)::date >= :start and""" + VISIBLE + """
+                  and (a.occurred_at at time zone :zone)::date >= :start and""" + VISIBLE_ACTIVE + """
                 group by d.document_id, d.title, t.type_name, v.original_filename, v.size_bytes, v.mime_type, d.created_at
                 order by count(*) desc, d.title
                 limit :most""", params.addValue("most", MOST_OPENED),

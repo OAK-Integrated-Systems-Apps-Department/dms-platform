@@ -157,8 +157,10 @@ public class PinService {
 
         Set<UUID> archived = new HashSet<>();
         if (!byId.isEmpty()) {
-            jdbc.query("select document_id from documents where tenant_id = :tenant and status = 'archived' "
-                    + "and document_id in (:ids)",
+            // "Archived" for a pin: the approval status says so, or the document was switched off by hand or archived by
+            // its retention rule (6.1). Either way it stays on the list, flagged (PID-FR-008/009), instead of vanishing.
+            jdbc.query("select document_id from documents where tenant_id = :tenant "
+                    + "and (status = 'archived' or lifecycle_state <> 'active') and document_id in (:ids)",
                     new MapSqlParameterSource(params.getValues()).addValue("ids", byId.keySet()),
                     rs -> {
                         archived.add(rs.getObject("document_id", UUID.class));

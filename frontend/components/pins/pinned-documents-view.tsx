@@ -125,10 +125,13 @@ export function PinnedDocumentsView() {
   const flag = (row: DocumentListItemDto) => {
     const pin = pinOf(row.documentId)
     const isArchived = archived.has(row.documentId)
-    if (!pin && !isArchived) return null
+    // A document switched off by hand or archived by a retention rule already carries its own status badge on the row
+    // (6.1); this flag is for the approval-archived case, so the two never say the same thing twice.
+    const showArchivedFlag = isArchived && (row.lifecycleState ?? "active") === "active"
+    if (!pin && !showArchivedFlag) return null
     return (
       <span className="inline-flex flex-wrap items-center gap-1">
-        {isArchived && (
+        {showArchivedFlag && (
           <Badge
             variant="muted"
             title="This document has been archived - it is still here, but no longer current"
@@ -176,7 +179,7 @@ export function PinnedDocumentsView() {
               ? `${count} of ${limit} pinned by you`
               : `${count} pinned by you`}
             {othersCount > 0 && ` · ${othersCount} by others`}
-            {archived.size > 0 && ` · ${archived.size} archived`}
+            {archived.size > 0 && ` · ${archived.size} inactive or archived`}
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">

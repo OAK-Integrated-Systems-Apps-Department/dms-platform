@@ -27,6 +27,7 @@ public class LegalHoldService {
 
     private final DocumentRepository documentRepository;
     private final AuditService auditService;
+    private final com.oak.dms.compliance.RetentionEngine retentionEngine;
 
     public void place(UUID documentId, String reason) {
         UUID tenantId = TenantContext.getTenantId();
@@ -56,6 +57,8 @@ public class LegalHoldService {
                 .reason(reason)
                 .previousValue(Map.of("placedReason", placedFor == null ? "" : placedFor))
                 .log();
+        // Retention was suspended while the hold lasted; a transition that fell due meanwhile happens now, not next run.
+        retentionEngine.catchUp(documentId, tenantId);
     }
 
     private Document find(UUID documentId, UUID tenantId) {

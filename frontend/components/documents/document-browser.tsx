@@ -7,6 +7,7 @@ import {
   Download,
   FileSearch,
   Droplet,
+  CirclePause,
   FileDown,
   FolderInput,
   FolderOpen,
@@ -45,6 +46,8 @@ import {
 } from "@/components/documents/browser-dnd"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { TemplatePickerSheet } from "@/components/documents/template-picker-sheet"
+import { ReasonDialog } from "@/components/checkout/reason-dialog"
+import { useChangeStatus } from "@/lib/retention/use-retention"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
 import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
@@ -123,6 +126,7 @@ type Dialog =
   | { kind: "ocr"; row: DocumentListItemDto; key: number }
   | { kind: "link-to"; rows: DocumentListItemDto[]; key: number }
   | { kind: "transfer-ownership"; row: DocumentListItemDto; key: number }
+  | { kind: "mark-inactive"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -186,6 +190,7 @@ function FolderView({
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
   const pins = usePins()
+  const markInactive = useChangeStatus()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
     renameMove: hasPermission(PermissionCodes.DSC_FOLDERS_RENAME_MOVE),
@@ -203,6 +208,7 @@ function FolderView({
     manageRelationships: hasPermission(PermissionCodes.DRM_RELATIONSHIPS_CREATE),
     // The server decides whose documents a caller may move (admins any, a department head their people's).
     transferOwnership: hasPermission(PermissionCodes.DOT_TRANSFER_INITIATE),
+    markInactive: hasPermission(PermissionCodes.CRM_MARK_INACTIVE),
     ocrTrigger: hasPermission(PermissionCodes.OS_OCR_TRIGGER),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
@@ -558,6 +564,14 @@ function FolderView({
         icon: Link2,
         onSelect: () =>
           setDialog({ kind: "link-to", rows: [row], key: Date.now() }),
+      })
+    // 6.1: switch an active document off. Not offered under legal hold (its status is locked); normal listings only
+    // ever hold active documents, so this is the only direction here - bringing one back is done from Inactive & Archive.
+    if (can.markInactive && hasAccess(row.myAccess, "edit") && row.lockState !== "legal_hold")
+      actions.push({
+        label: "Mark inactive",
+        icon: CirclePause,
+        onSelect: () => setDialog({ kind: "mark-inactive", row, key: Date.now() }),
       })
     if (can.transferOwnership)
       actions.push({
@@ -1044,6 +1058,19 @@ function FolderView({
             setChecked(new Set())
             toast.success("Documents linked.")
           }}
+        />
+      )}
+      {dialog?.kind === "mark-inactive" && (
+        <ReasonDialog
+          key={dialog.key}
+          required={false}
+          title={`Mark "${dialog.row.title}" inactive?`}
+          description="It disappears from normal listings and search, and moves to Inactive & Archive for people allowed to see it. You can bring it back at any time."
+          confirmLabel="Mark inactive"
+          onConfirm={(reason) =>
+            markInactive.mutateAsync({ documentId: dialog.row.documentId, status: "inactive", reason })
+          }
+          onOpenChange={(next) => !next && setDialog(null)}
         />
       )}
       {dialog?.kind === "transfer-ownership" && (
