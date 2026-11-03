@@ -190,6 +190,22 @@ app:
 dms:
   notification:
     mail-from: ${NOTIFICATION_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
+  # 2.10 Online editing (CICO-FR-005/006/010) through Collabora Online over WOPI.
+  #
+  # These settings only say WHERE the engine is - infrastructure, set once by whoever runs the server. There is
+  # deliberately NO on/off switch here: whether an organisation uses online editing, and in which mode (exclusive
+  # or simultaneous), is that organisation's own setting in the app (table tenant_editing_settings, V128, changed
+  # by someone holding cico.configure-editing-engine.select-provider), default OFF. A server with no
+  # collabora-url simply has no engine: nobody can turn it on, and check-out / download / check-in still work.
+  editing:
+    # What the BROWSER uses to reach Collabora (public address), and what THIS server uses (docker network).
+    collabora-url: ${EDITING_COLLABORA_URL:}
+    collabora-internal-url: ${EDITING_COLLABORA_INTERNAL_URL:http://collabora:9980}
+    # How COLLABORA reaches this server to fetch and save the file (never proxied by nginx - /internal/**).
+    wopi-host-url: ${EDITING_WOPI_HOST_URL:http://dms-core:8080}
+    # HMAC key for the session tokens. Blank = sessions cannot be started. Generate with: openssl rand -hex 32
+    token-secret: ${EDITING_TOKEN_SECRET:}
+    token-ttl: ${EDITING_TOKEN_TTL:PT10H}
   # Folder/document access (V53/V54): each tenant's folder tree and each
   # user's access entries, kept between requests until anything that decides
   # access changes (an access generation moved on by database triggers, V61).

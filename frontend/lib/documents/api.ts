@@ -138,6 +138,8 @@ export interface DocumentListItemDto {
   restricted: boolean
   /** What the caller may do with it. */
   myAccess: FolderAccessLevel
+  /** Why it can't be edited right now (V127): checked out by you or by someone else, or on legal hold; null/absent when free. */
+  lockState?: "checked_out_by_me" | "checked_out" | "legal_hold" | null
 }
 
 /** Mirrors DocumentAccessResponse - who can open a document. */
@@ -842,6 +844,8 @@ export interface DocumentDto {
   /** Embedded by the backend; null when the type has since been deleted. */
   documentTypeName: string | null
   title: string
+  /** The folder it is filed in; null = top level (My Documents). Drives the breadcrumb and "Move to". */
+  folderId?: string | null
   currentVersionId: string | null
   latestVersionId: string | null
   publishedVersionId: string | null

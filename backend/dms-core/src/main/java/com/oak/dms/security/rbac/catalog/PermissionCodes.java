@@ -232,6 +232,19 @@ public final class PermissionCodes {
     public static final String DSI_CONFIGURE_WORKFLOW_RULES = "dsi.manage-signature-configuration.configure-workflow-rules";
     public static final String DSI_UNLOCK_SIGNED_DOCUMENTS = "dsi.unlock-signed-documents.unlock";
 
+    // 2.10 Check-in / Check-out - CICO, all seeded by V10 (exclusive-lock mode only; the editing
+    // engine permissions have no constant because co-editing is out of scope for now). Legal
+    // hold's two CRM codes are V10 rows too - V127 added the document state they act on.
+    public static final String CICO_CHECK_OUT = "cico.check-out-check-in-documents.check-out";
+    public static final String CICO_CHECK_IN = "cico.check-out-check-in-documents.check-in";
+    public static final String CICO_DISCARD = "cico.check-out-check-in-documents.discard-checkout";
+    public static final String CICO_FORCE_RELEASE = "cico.force-release-lock";
+    // Turning online editing on/off for the organisation and choosing its mode (V10 rows, first used by V128's setting).
+    public static final String CICO_EDITING_SELECT_PROVIDER = "cico.configure-editing-engine.select-provider";
+    public static final String CICO_EDITING_CONFIGURE_CONNECTION = "cico.configure-editing-engine.configure-connection";
+    public static final String CRM_PLACE_LEGAL_HOLD = "crm.place-legal-hold";
+    public static final String CRM_LIFT_LEGAL_HOLD = "crm.lift-legal-hold";
+
     // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own
     // preferences gate on identity, not a permission.

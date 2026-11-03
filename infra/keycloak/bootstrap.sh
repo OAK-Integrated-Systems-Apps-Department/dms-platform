@@ -164,14 +164,22 @@ if [ -z "$REALM_REPRESENTATION" ]; then
   exit 1
 fi
 
-UPDATED_REALM=$(echo "$REALM_REPRESENTATION" | jq --argjson smtp "$SMTP_JSON" '.smtpServer = $smtp')
+# How long a signed-in session may sit unused before Keycloak ends it (default 8 h). Keycloak's own default is 30 min,
+# which signed people out mid-day; the access token itself still lives 30 min and is renewed silently while the session
+# is alive. The session's absolute maximum must not be shorter than this, so it is raised if it is.
+SSO_IDLE_SECONDS="${KEYCLOAK_SSO_IDLE_SECONDS:-28800}"
+
+UPDATED_REALM=$(echo "$REALM_REPRESENTATION" | jq --argjson smtp "$SMTP_JSON" --argjson idle "$SSO_IDLE_SECONDS" \
+  '.smtpServer = $smtp
+   | .ssoSessionIdleTimeout = $idle
+   | .ssoSessionMaxLifespan = ([(.ssoSessionMaxLifespan // 0), $idle] | max)')
 
 curl -s -f -X PUT "http://keycloak:8080/admin/realms/$KEYCLOAK_REALM" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "$UPDATED_REALM"
 
-echo "SMTP config applied"
+echo "SMTP config and session idle timeout (${SSO_IDLE_SECONDS}s) applied"
 
 # --- Web client URLs ---------------------------------------------------
 # Same IGNORE_EXISTING problem as the SMTP block above: the realm file's

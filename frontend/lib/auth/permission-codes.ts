@@ -189,6 +189,18 @@ export const PermissionCodes = {
   DSI_CONFIGURE_WORKFLOW_RULES: "dsi.manage-signature-configuration.configure-workflow-rules",
   DSI_UNLOCK_SIGNED_DOCUMENTS: "dsi.unlock-signed-documents.unlock",
 
+  // 2.10 Check-in / Check-out - exclusive lock only (co-editing is not built). The two legal-hold
+  // codes are for the minimal document flag added with it (V127).
+  CICO_CHECK_OUT: "cico.check-out-check-in-documents.check-out",
+  CICO_CHECK_IN: "cico.check-out-check-in-documents.check-in",
+  CICO_DISCARD: "cico.check-out-check-in-documents.discard-checkout",
+  CICO_FORCE_RELEASE: "cico.force-release-lock",
+  CRM_PLACE_LEGAL_HOLD: "crm.place-legal-hold",
+  CRM_LIFT_LEGAL_HOLD: "crm.lift-legal-hold",
+  // Turning online editing on/off for the organisation and choosing its mode (the Online Editing policy page).
+  CICO_EDITING_SELECT_PROVIDER: "cico.configure-editing-engine.select-provider",
+  CICO_EDITING_CONFIGURE_CONNECTION: "cico.configure-editing-engine.configure-connection",
+
   // Notifications (3.2) - tenant-admin settings and the delivery log.
   NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
   NOTIF_DELIVERY_LOG_VIEW: "notif.delivery-log.view",

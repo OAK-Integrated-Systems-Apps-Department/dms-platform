@@ -198,6 +198,11 @@ public class RecycleBinService {
     public void purgeNow(UUID documentId) {
         Document document = inBin(documentId);
         documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.edit);
+        // A legal hold outlives the recycle bin: nothing may destroy the files while it stands (V127).
+        if (document.isLegalHold()) {
+            throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_LEGAL_HOLD",
+                    "\"" + document.getTitle() + "\" is under legal hold, so it can't be deleted permanently.");
+        }
         if (hasProtectedVersion(document)) {
             throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_VERSION_PROTECTED",
                     "\"" + document.getTitle() + "\" has a protected version, so it can't be deleted permanently.");
@@ -291,6 +296,7 @@ public class RecycleBinService {
                         left join recycle_bin_settings s on s.tenant_id = d.tenant_id
                         left join document_types t on t.document_type_id = d.document_type_id
                         where d.is_deleted and d.purged_at is null
+                          and not d.legal_hold
                           and coalesce(d.deleted_at, d.updated_at, d.created_at)
                               < now() - make_interval(days => coalesce(t.recycle_bin_retention_days,
                                                                        s.retention_days, ?))

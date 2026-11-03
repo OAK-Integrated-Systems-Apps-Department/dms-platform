@@ -145,6 +145,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     // 1.4 Digital Signature Integration (V105) - guards moveDocuments/deleteDocument below.
     private final DocumentSignatureLockService signatureLockService;
+    // 2.10 legal hold + check-out (V127) - same two methods.
+    private final com.oak.dms.checkout.DocumentEditGuard editGuard;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -336,8 +338,18 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     /** List rows for a page of documents: current version, type name, and the caller's access. */
+    /** The list's lock icon (V127) - same precedence as the document page's panel: a live check-out, then a hold. */
+    private static String lockState(Document d, OffsetDateTime now, UUID me) {
+        if (d.isCheckedOutAt(now)) {
+            return Objects.equals(d.getCheckedOutBy(), me) ? "checked_out_by_me" : "checked_out";
+        }
+        return d.isLegalHold() ? "legal_hold" : null;
+    }
+
     private Page<DocumentListItem> toItems(Page<Document> page, DocumentAccessView access) {
         UUID tenantId = TenantContext.getTenantId();
+        OffsetDateTime now = OffsetDateTime.now();
+        UUID me = TenantContext.getUserId();
         List<UUID> versionIds = page.getContent().stream()
                 .map(d -> d.getCurrentVersionId() != null ? d.getCurrentVersionId() : d.getLatestVersionId())
                 .toList();
@@ -356,7 +368,7 @@ public class DocumentServiceImpl implements DocumentService {
                     v != null ? v.getOriginalFilename() : null, v != null ? v.getSizeBytes() : null,
                     v != null ? v.getMimeType() : null, v != null ? v.getVersionNumber() : null,
                     d.getOwnerUserId(), d.getCreatedAt(), d.getAccessMode() == FolderAccessMode.restricted,
-                    access.level(d).name(), d.getOwnerDepartmentId(), d.getOwnershipState());
+                    access.level(d).name(), d.getOwnerDepartmentId(), d.getOwnershipState(), lockState(d, now, me));
         });
     }
 
@@ -378,6 +390,7 @@ public class DocumentServiceImpl implements DocumentService {
         for (Document document : documents) {
             documentAccessService.require(access, document, FolderAccessLevel.edit);
             signatureLockService.guard(document);
+            editGuard.guard(document);
         }
         int moved = 0;
         for (Document document : documents) {
@@ -542,6 +555,7 @@ public class DocumentServiceImpl implements DocumentService {
     public void deleteDocument(UUID documentId) {
         Document document = findVisible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
+        editGuard.guard(document);
         // A document under approval must not vanish from under its approvers (3.1 Phase 2).
         if (approvals.inProgress(document.getTenantId(), documentId)) {
             throw new DocumentStateException("DOCUMENT_IN_APPROVAL",

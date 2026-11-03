@@ -63,6 +63,8 @@ public class DocumentVersionService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final DocumentSignatureLockService signatureLockService;
+    // 2.10 legal hold + check-out (V127): a new version or a restore is refused while someone else holds the lock.
+    private final com.oak.dms.checkout.DocumentEditGuard editGuard;
 
     /**
      * One row of the history.
@@ -156,6 +158,7 @@ public class DocumentVersionService {
                                           List<String> requestedFields, boolean lowPriority) {
         Document document = visible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
+        editGuard.guard(document);
         IngestionRequest request = IngestionRequest.newVersion(documentId, REPLACEMENT_UPLOAD, originalFilename,
                 contentLength, content, clean(comment));
         return ingestionGate.submit(
@@ -172,6 +175,7 @@ public class DocumentVersionService {
     public IngestionTicketResponse restore(UUID documentId, UUID versionId) {
         Document document = visible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
+        editGuard.guard(document);
         DocumentVersion version = version(document, versionId);
         if (version.getVersionId().equals(currentVersionId(document))) {
             throw new FolderException(HttpStatus.CONFLICT, "VERSION_ALREADY_CURRENT",

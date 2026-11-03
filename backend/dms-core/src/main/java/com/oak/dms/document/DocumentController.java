@@ -99,6 +99,8 @@ public class DocumentController {
     private final DocumentRenditionService renditionService;
     private final DuplicateFinder duplicateFinder;
     private final DocumentMetadataService documentMetadataService;
+    /** Legal hold / someone else's check-out (V127) - checked on the MANUAL metadata edit only, never OCR's own writes. */
+    private final com.oak.dms.checkout.DocumentEditGuard editGuard;
     private final ObjectMapper objectMapper;
     private final RelationshipBrowseFilter relationshipBrowseFilter;
 
@@ -549,6 +551,7 @@ public class DocumentController {
     @PutMapping("/{documentId}/metadata")
     @PreAuthorize("@authz.hasPermission(" + P + "OS_OCR_EDIT_TEXT)")
     public Map<String, Object> saveMetadata(@PathVariable UUID documentId, @RequestBody Map<String, Object> values) {
+        editGuard.guard(documentId);
         documentMetadataService.saveValues(documentId, values, true);
         return documentMetadataService.getValues(documentId);
     }

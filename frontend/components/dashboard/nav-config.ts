@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Droplet,
+  FilePenLine,
   FileStack,
   FileText,
   GitBranch,
@@ -373,6 +374,16 @@ export const navSections: NavSection[] = [
             icon: Gauge,
             href: "/admin/pinned-documents",
             permission: PermissionCodes.PID_CONFIGURE_LIMITS,
+          },
+          // Online editing (2.10): turn it on for the organisation and choose exclusive or simultaneous (CICO-FR-010).
+          {
+            label: "Online Editing",
+            icon: FilePenLine,
+            href: "/admin/editing",
+            permission: [
+              PermissionCodes.CICO_EDITING_SELECT_PROVIDER,
+              PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,
+            ],
           },
           // Notification settings + delivery log (3.2). Any NOTIF capability gets in.
           {
