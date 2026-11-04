@@ -142,9 +142,20 @@ public interface DocumentService {
     }
 
     /** {@link #listDocuments} also narrowed to documents owned by a user and/or a department; access filtering is unchanged. */
-    org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
+    default org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocuments(
             UUID folderId, boolean allFolders, String query, UUID documentTypeId, UUID excludeDocumentId,
-            OwnerFilter owner, org.springframework.data.domain.Pageable pageable);
+            OwnerFilter owner, org.springframework.data.domain.Pageable pageable) {
+        return listDocumentsIn(DocumentView.ACTIVE, folderId, allFolders, query, documentTypeId, excludeDocumentId, owner,
+                pageable);
+    }
+
+    /**
+     * {@link #listDocuments} for one part of the lifecycle: ACTIVE is what every normal listing shows; ARCHIVE is the
+     * inactive and archived documents, with exactly the same access filtering. The caller decides who may ask for ARCHIVE.
+     */
+    org.springframework.data.domain.Page<com.oak.dms.document.dto.DocumentListItem> listDocumentsIn(
+            DocumentView view, UUID folderId, boolean allFolders, String query, UUID documentTypeId,
+            UUID excludeDocumentId, OwnerFilter owner, org.springframework.data.domain.Pageable pageable);
 
     /**
      * {@link #listDocuments} narrowed to documents linked to {@code filter.relatedTo()} (or having a link of

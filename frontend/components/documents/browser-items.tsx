@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { LockStateIndicator } from "@/components/checkout/lock-state-indicator"
+import { LifecycleBadge } from "@/components/retention/lifecycle-badge"
 import { ApprovalBadge } from "@/components/documents/approval-badge"
 import type {
   DragBinding,
@@ -537,7 +538,10 @@ export function DocumentTile({
           <FriendlyDate iso={row.createdAt} />
           {row.sizeBytes !== null && ` · ${formatBytes(row.sizeBytes)}`}
         </p>
-        {approval && <ApprovalBadge status={approval} className="mt-1.5" />}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {approval && <ApprovalBadge status={approval} />}
+          <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} />
+        </div>
       </div>
       {onToggle && (
         <input
@@ -755,6 +759,7 @@ export function BrowserList({
                           />
                         )}
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
+                        <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} />
                         <PinnedIndicator documentId={row.documentId} />
                         <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}

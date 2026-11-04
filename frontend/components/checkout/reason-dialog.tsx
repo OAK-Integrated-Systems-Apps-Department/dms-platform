@@ -19,12 +19,15 @@ export function ReasonDialog({
   title,
   description,
   confirmLabel,
+  required = true,
   onConfirm,
   onOpenChange,
 }: {
   title: string
   description: string
   confirmLabel: string
+  /** Legal hold and force-release insist on a reason; a plain status change may leave it blank. */
+  required?: boolean
   onConfirm: (reason: string) => Promise<unknown>
   onOpenChange: (open: boolean) => void
 }) {
@@ -34,7 +37,7 @@ export function ReasonDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (!trimmed) return
+    if (required && !trimmed) return
     setPending(true)
     try {
       await onConfirm(trimmed)
@@ -54,7 +57,7 @@ export function ReasonDialog({
             <AlertDialogTitle>{title}</AlertDialogTitle>
             <AlertDialogDescription>{description}</AlertDialogDescription>
             <div className="mb-5 text-left">
-              <Label htmlFor="checkout-reason">Reason (required)</Label>
+              <Label htmlFor="checkout-reason">{required ? "Reason (required)" : "Reason (optional)"}</Label>
               <Textarea
                 id="checkout-reason"
                 rows={3}
@@ -73,7 +76,7 @@ export function ReasonDialog({
               </AlertDialogClose>
               <button
                 type="submit"
-                disabled={pending || !trimmed}
+                disabled={pending || (required && !trimmed)}
                 className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending && <Loader2 size={14} className="animate-spin" />}

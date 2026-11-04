@@ -54,8 +54,16 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
             + "and status in ('pending', 'infected') and not is_deleted", nativeQuery = true)
     long countPendingUploads(@Param("tenantId") UUID tenantId, @Param("folderId") UUID folderId);
 
-    /** Live document counts per folder, as [folderId, count] rows. */
+    /** Active documents filed in the folder - what the folder shows (inactive and archived ones are hidden from its listing). */
+    @Query(value = "select count(*) from documents where tenant_id = :tenantId and folder_id = :folderId "
+            + "and not is_deleted and lifecycle_state = 'active'", nativeQuery = true)
+    long countActiveDocuments(@Param("tenantId") UUID tenantId, @Param("folderId") UUID folderId);
+
+    /**
+     * Active document counts per folder, as [folderId, count] rows - the number on each folder tile, matching what opening
+     * the folder lists (6.1: inactive and archived documents are hidden from the listing, so they are not counted either).
+     */
     @Query(value = "select folder_id, count(*) from documents where tenant_id = :tenantId and folder_id is not null "
-            + "and not is_deleted group by folder_id", nativeQuery = true)
+            + "and not is_deleted and lifecycle_state = 'active' group by folder_id", nativeQuery = true)
     List<Object[]> countDocumentsPerFolder(@Param("tenantId") UUID tenantId);
 }

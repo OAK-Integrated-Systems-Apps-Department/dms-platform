@@ -29,6 +29,8 @@ public record DocumentResponse(
         String ownershipState,
         /** Set together (V105) once a workflow with a valid signature approved - null means not locked. */
         OffsetDateTime signatureLockedAt,
-        UUID signatureLockedVersionId
+        UUID signatureLockedVersionId,
+        /** active, inactive or archived (V130) - the status badge on the document page. */
+        String lifecycleState
 ) {
 }

@@ -178,6 +178,57 @@ public class Document {
     @Column(name = "legal_hold_reason")
     private String legalHoldReason;
 
+    // ---- Records lifecycle (V130, CRM) - separate from the approval status above. Changed only through the
+    // repository's atomic queries (so a legal hold placed at the same moment always wins), never by saving this entity.
+
+    public static final String ACTIVE = "active";
+    public static final String INACTIVE = "inactive";
+    public static final String ARCHIVED = "archived";
+
+    /** active, inactive (switched off by hand) or archived (by its retention policy). */
+    @Column(name = "lifecycle_state", nullable = false, insertable = false, updatable = false)
+    @Builder.Default
+    private String lifecycleState = ACTIVE;
+
+    @Column(name = "lifecycle_changed_at", insertable = false, updatable = false)
+    private OffsetDateTime lifecycleChangedAt;
+
+    @Column(name = "lifecycle_changed_by", insertable = false, updatable = false)
+    private UUID lifecycleChangedBy;
+
+    /** manual, retention or legal_hold. */
+    @Column(name = "lifecycle_change_source", insertable = false, updatable = false)
+    private String lifecycleChangeSource;
+
+    @Column(name = "lifecycle_reason", insertable = false, updatable = false)
+    private String lifecycleReason;
+
+    /** When it was last brought back to Active by hand - a reinstated document gets a fresh active period. */
+    @Column(name = "reactivated_at", insertable = false, updatable = false)
+    private OffsetDateTime reactivatedAt;
+
+    /** The retention rule that applied at the last run, and the dates it gave (for the "archives on" display). */
+    @Column(name = "retention_policy_id", insertable = false, updatable = false)
+    private UUID retentionPolicyId;
+
+    @Column(name = "archive_due_at", insertable = false, updatable = false)
+    private OffsetDateTime archiveDueAt;
+
+    @Column(name = "review_due_at", insertable = false, updatable = false)
+    private OffsetDateTime reviewDueAt;
+
+    /** Set once its total retention has elapsed - it waits here for an administrator's decision. */
+    @Column(name = "review_flagged_at", insertable = false, updatable = false)
+    private OffsetDateTime reviewFlaggedAt;
+
+    /** An administrator extended retention (instead of proceeding to disposal) until this moment. */
+    @Column(name = "retention_extended_until", insertable = false, updatable = false)
+    private OffsetDateTime retentionExtendedUntil;
+
+    /** No rule covered it, so it waits for an administrator to assign one. */
+    @Column(name = "no_policy_flagged_at", insertable = false, updatable = false)
+    private OffsetDateTime noPolicyFlaggedAt;
+
     /** True while an unexpired check-out is in force - the one place "is it locked" is decided. */
     public boolean isCheckedOutAt(OffsetDateTime now) {
         return checkedOutBy != null && checkoutExpiresAt != null && checkoutExpiresAt.isAfter(now);
