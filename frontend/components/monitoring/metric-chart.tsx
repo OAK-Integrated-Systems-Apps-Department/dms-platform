@@ -59,7 +59,7 @@ export function MetricChart({
       })) ?? []
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <h2 className="text-[14px] font-semibold">{series?.label ?? "Metric"}</h2>
       <p className="mb-3 text-[12px] text-muted-foreground">{subtitle}</p>
       <TrendChart

@@ -193,13 +193,13 @@ function MonitoringSkeleton() {
       aria-live="polite"
       aria-label="Reading the system metrics"
     >
-      <div className="sm-skeleton h-[120px] rounded-xl border border-border" />
+      <div className="sm-skeleton h-[120px] rounded-lg border border-border" />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="sm-skeleton sm-reveal h-[104px] rounded-xl border border-border"
+            className="sm-skeleton sm-reveal h-[104px] rounded-lg border border-border"
             style={stagger(i)}
           />
         ))}
@@ -209,7 +209,7 @@ function MonitoringSkeleton() {
         {Array.from({ length: 7 }).map((_, i) => (
           <div
             key={i}
-            className="sm-skeleton sm-reveal h-[92px] rounded-xl border border-border"
+            className="sm-skeleton sm-reveal h-[92px] rounded-lg border border-border"
             style={stagger(i)}
           />
         ))}
@@ -222,7 +222,7 @@ function MonitoringSkeleton() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="sm-skeleton sm-reveal h-[240px] rounded-xl border border-border"
+              className="sm-skeleton sm-reveal h-[240px] rounded-lg border border-border"
               style={stagger(i, 70)}
             />
           ))}
@@ -353,7 +353,7 @@ export default function SystemMonitoringPage() {
             <div
               role="radiogroup"
               aria-label="Time range"
-              className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5"
+              className="flex items-center gap-1 rounded-btn border border-border bg-card p-0.5"
             >
               {MONITORING_RANGES.map((option) => (
                 <button
@@ -409,7 +409,7 @@ export default function SystemMonitoringPage() {
       {isPending ? (
         <LoadingState message="Checking your access…" />
       ) : !canView ? (
-        <div className="sm-reveal rounded-xl border border-border bg-card px-6 py-16 text-center">
+        <div className="sm-reveal rounded-lg border border-border bg-card px-6 py-16 text-center">
           <p className="text-[14px] font-semibold">
             You don&apos;t have access to system monitoring
           </p>
@@ -455,7 +455,7 @@ export default function SystemMonitoringPage() {
               {gauges.map((reading, i) => (
                 <div
                   key={reading.id}
-                  className="sm-reveal sm-lift rounded-xl"
+                  className="sm-reveal sm-lift rounded-lg"
                   style={stagger(i)}
                 >
                   <MetricGauge
@@ -602,7 +602,7 @@ export default function SystemMonitoringPage() {
             ].map((tile, i) => (
               <div
                 key={tile.key}
-                className="sm-reveal sm-lift h-full rounded-xl"
+                className="sm-reveal sm-lift h-full rounded-lg"
                 style={stagger(i)}
               >
                 {tile}
@@ -630,7 +630,7 @@ export default function SystemMonitoringPage() {
                     // the card inside was only as tall as its own content -
                     // so beside a taller panel a second, empty card edge
                     // showed below it.
-                    className="sm-reveal h-full rounded-xl"
+                    className="sm-reveal h-full rounded-lg"
                     style={stagger(i, 60)}
                   >
                     <PanelFrame

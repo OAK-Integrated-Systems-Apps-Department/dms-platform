@@ -350,7 +350,7 @@ export function UserAccessSummary({
       .toUpperCase() || "?"
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity — name, status, and role badges inline on one wrapping
           row (role badges used to live in their own "Roles Held" section
           below; merging them here removes that section's header/margin

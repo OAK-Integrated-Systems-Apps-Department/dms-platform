@@ -92,7 +92,7 @@ const ACTIONS: QuickAction[] = [
 ]
 
 const tileClass =
-  "group flex h-full w-full items-center gap-3 rounded-xl border border-border bg-card px-3.5 py-3 text-left shadow-[var(--ledger-shadow)] transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+  "group flex h-full w-full items-center gap-3 rounded-lg border border-border bg-card px-3.5 py-3 text-left shadow-[var(--ledger-shadow)] transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
 
 /** Shortcuts to the places people go most - only the ones the user may open. */
 export function QuickActions() {

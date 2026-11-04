@@ -84,7 +84,7 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
     .sort((a, b) => a.module.localeCompare(b.module))
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
         <h2 className="font-heading text-[20px] font-semibold">{role.name}</h2>

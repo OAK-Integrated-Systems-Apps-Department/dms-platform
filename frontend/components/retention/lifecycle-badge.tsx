@@ -15,12 +15,16 @@ export function LifecycleBadge({
   state,
   archiveDueAt,
   className,
+  hideActive = false,
 }: {
   state: LifecycleState | undefined
   archiveDueAt?: string | null
   className?: string
+  /** Document cards and rows only mark the exception (Inactive / Archived); an Active document needs no badge. */
+  hideActive?: boolean
 }) {
   const current: LifecycleState = state ?? "active"
+  if (hideActive && current === "active") return null
   const title =
     current === "active" && archiveDueAt
       ? `Active - will be archived on ${formatDateTime(archiveDueAt)}`

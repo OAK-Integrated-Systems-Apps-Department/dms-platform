@@ -100,7 +100,7 @@ export function Organisations() {
           <Plus size={14} aria-hidden="true" /> Add organisation
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full min-w-[820px] text-[13px]">
           <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
             <tr>

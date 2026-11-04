@@ -87,7 +87,7 @@ export default function DocumentPage() {
               <div className="mb-2 flex flex-wrap items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{document.title}</h1>
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
-                <LifecycleBadge state={document.lifecycleState} />
+                <LifecycleBadge state={document.lifecycleState} hideActive />
                 <PinButton row={{ documentId: document.documentId, title: document.title }} />
               </div>
               <p className="text-[13px] text-muted-foreground">

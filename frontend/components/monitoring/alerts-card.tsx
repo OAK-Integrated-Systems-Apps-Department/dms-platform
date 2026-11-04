@@ -199,7 +199,7 @@ export function AlertsCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card",
+        "overflow-hidden rounded-lg border border-border bg-card",
         className
       )}
     >

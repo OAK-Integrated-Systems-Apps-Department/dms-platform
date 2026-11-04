@@ -52,7 +52,7 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card">
+    <section className="rounded-lg border border-border bg-card">
       <header className="border-b border-border px-5 py-3.5">
         <h2 className="text-[14.5px] font-semibold">{title}</h2>
         <p className="mt-0.5 text-[12.5px] text-muted-foreground">{hint}</p>
@@ -255,7 +255,7 @@ function SettingsForm({
         </Section>
       </div>
 
-      <div className="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/95 px-4 py-3 backdrop-blur">
+      <div className="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/95 px-4 py-3 backdrop-blur">
         <Button
           type="button"
           disabled={!canEdit || !changed || save.isPending}

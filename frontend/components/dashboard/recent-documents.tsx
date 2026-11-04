@@ -167,7 +167,7 @@ export function RecentDocuments({
             {documents.map((doc) => (
               <li
                 key={doc.documentId}
-                className="rounded-xl border border-border p-3"
+                className="rounded-lg border border-border p-3"
               >
                 <NameCell doc={doc} onOpen={onOpen} />
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-12 text-[11.5px] text-muted-foreground">

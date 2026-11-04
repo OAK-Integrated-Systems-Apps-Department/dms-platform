@@ -338,7 +338,7 @@ function AccessEditor({
                           )
                         )
                       }
-                      className="h-8 rounded-md border border-border bg-card px-2 text-[12.5px]"
+                      className="h-8 rounded-btn border border-border bg-card px-2 text-[12.5px]"
                     >
                       {LEVELS.map((l) => (
                         <option key={l.value} value={l.value}>

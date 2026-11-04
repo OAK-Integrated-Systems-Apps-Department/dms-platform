@@ -132,7 +132,7 @@ export function UploadsPanel() {
   return (
     <section
       aria-label="Uploads and downloads"
-      className="fixed right-4 bottom-4 z-50 w-[380px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
+      className="fixed right-4 bottom-4 z-50 w-[380px] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
     >
       <header className="flex items-center gap-2 bg-muted/60 py-2.5 pr-2 pl-4">
         <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">

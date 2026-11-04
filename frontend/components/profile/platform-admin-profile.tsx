@@ -114,7 +114,7 @@ function IdentityCard({ me }: { me: CurrentIdentityDto }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4 flex items-start gap-4">
         <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/10 text-[15px] font-semibold text-primary">
           {initials}
@@ -220,7 +220,7 @@ function PasswordCard() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <h2 className="mb-1 flex items-center gap-1.5 text-[14px] font-semibold">
         <KeyRound size={14} aria-hidden="true" /> Password
       </h2>

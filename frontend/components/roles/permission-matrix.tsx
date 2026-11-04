@@ -242,7 +242,7 @@ export function PermissionMatrix() {
 
   if (catalogLoading || grantsLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
         <Loader2 size={16} className="animate-spin" />
         Loading the permission matrix…
       </div>
@@ -250,7 +250,7 @@ export function PermissionMatrix() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Toolbar */}
       <div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Left: filters */}

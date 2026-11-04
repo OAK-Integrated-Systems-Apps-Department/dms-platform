@@ -98,7 +98,7 @@ function DeliveryLogSection() {
             setStatus(e.target.value)
             setPage(1)
           }}
-          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-[12.5px]"
+          className="rounded-btn border border-border bg-card px-2.5 py-1.5 text-[12.5px]"
         >
           {STATUSES.map((s) => (
             <option key={s} value={s}>

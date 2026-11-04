@@ -30,7 +30,7 @@ export function StepCard({
     <section
       aria-labelledby={headingId}
       className={cn(
-        "rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6",
+        "rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6",
         className
       )}
     >

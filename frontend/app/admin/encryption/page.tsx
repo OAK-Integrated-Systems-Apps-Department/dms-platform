@@ -303,7 +303,7 @@ function KeyCard({ status }: { status: EncryptionStatusDto }) {
   const { hasPermission } = usePermissions()
   const canSeeActivity = hasPermission(PermissionCodes.ABDR_VIEW_AUDIT_HISTORY)
   return (
-    <section className="rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
         <span
           aria-hidden="true"

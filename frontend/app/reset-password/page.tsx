@@ -57,7 +57,7 @@ export default function ResetPasswordPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-xl border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-lg border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
         <div className="mb-7 flex flex-col items-center">
           <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />

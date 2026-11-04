@@ -192,7 +192,7 @@ export function DigitalImpact({
         </header>
 
         {impact.isError && !data ? (
-          <div className="rounded-xl bg-white/95 text-foreground">
+          <div className="rounded-lg bg-white/95 text-foreground">
             <SectionError
               message={friendlyMessage(
                 impact.error,
@@ -203,11 +203,11 @@ export function DigitalImpact({
           </div>
         ) : !data ? (
           <div aria-busy="true" className="grid gap-3 sm:grid-cols-3">
-            <div className="h-[86px] animate-pulse rounded-xl bg-white/10 sm:col-span-3" />
+            <div className="h-[86px] animate-pulse rounded-lg bg-white/10 sm:col-span-3" />
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-[92px] animate-pulse rounded-xl bg-white/10"
+                className="h-[92px] animate-pulse rounded-lg bg-white/10"
               />
             ))}
           </div>
@@ -242,8 +242,8 @@ export function DigitalImpact({
         ) : !impact.isError ? (
           <div aria-busy="true">
             <DashSkeleton className="mb-4 h-3 w-2/3" />
-            <DashSkeleton className="mb-4 h-[200px] w-full rounded-xl" />
-            <DashSkeleton className="h-[56px] w-full rounded-xl" />
+            <DashSkeleton className="mb-4 h-[200px] w-full rounded-lg" />
+            <DashSkeleton className="h-[56px] w-full rounded-lg" />
           </div>
         ) : null}
       </div>
@@ -598,7 +598,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
 
   return (
     <div
-      className="mb-4 rounded-xl border p-3.5"
+      className="mb-4 rounded-lg border p-3.5"
       style={{
         borderColor: "color-mix(in oklab, var(--primary) 16%, var(--border))",
         background: `linear-gradient(180deg, color-mix(in oklab, ${SAGE} 22%, var(--card)), var(--card) 70%)`,
@@ -766,7 +766,7 @@ const KINDS: Record<PageKind, { label: string; color: string }> = {
   other: { label: "Other", color: "#8b968f" },
 }
 
-const panel = "rounded-xl border p-3.5"
+const panel = "rounded-lg border p-3.5"
 const panelStyle = {
   borderColor: "color-mix(in oklab, var(--primary) 16%, var(--border))",
   background: `color-mix(in oklab, ${SAGE} 14%, var(--card))`,
@@ -1027,7 +1027,7 @@ function MethodSheet({
 
           <section>
             <h3 className="mb-2 font-semibold">Assumptions in use</h3>
-            <dl className="rounded-xl border border-border">
+            <dl className="rounded-lg border border-border">
               {rows.map(([term, value]) => (
                 <div
                   key={term}

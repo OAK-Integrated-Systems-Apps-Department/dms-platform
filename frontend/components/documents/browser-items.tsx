@@ -257,7 +257,7 @@ export function FolderGlyph({
   )
 }
 
-const MENU_WIDTH = 184
+const MENU_WIDTH = 224
 const MENU_ROW = 36
 
 /**
@@ -540,7 +540,7 @@ export function DocumentTile({
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {approval && <ApprovalBadge status={approval} />}
-          <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} />
+          <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
         </div>
       </div>
       {onToggle && (
@@ -759,7 +759,7 @@ export function BrowserList({
                           />
                         )}
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
-                        <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} />
+                        <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
                         <PinnedIndicator documentId={row.documentId} />
                         <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}

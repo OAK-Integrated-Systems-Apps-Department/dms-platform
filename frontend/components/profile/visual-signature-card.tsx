@@ -67,7 +67,7 @@ function VisualSignatureEditor({ saved }: { saved: VisualSignatureDto | null }) 
   return (
     <div
       id="e-signature"
-      className="scroll-mt-6 rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
+      className="scroll-mt-6 rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]"
     >
       <div className="mb-1 flex items-center gap-2">
         <PenLine size={15} className="text-primary" aria-hidden="true" />

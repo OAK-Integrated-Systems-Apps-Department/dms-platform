@@ -68,7 +68,7 @@ export function PanelFrame({
         // h-full + flex column: the card fills its grid cell, and the frame
         // below takes whatever height is left, so panels in one row line up
         // instead of each stopping where its own content ends.
-        "flex h-full flex-col rounded-xl border border-border bg-card p-4",
+        "flex h-full flex-col rounded-lg border border-border bg-card p-4",
         className
       )}
     >

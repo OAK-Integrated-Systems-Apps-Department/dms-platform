@@ -265,7 +265,7 @@ export function CheckboxFilter({
               width: Math.max(position.width, popoverMinWidth),
               maxHeight: position.maxHeight,
             }}
-            className="z-50 flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--ledger-shadow)]"
+            className="z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]"
           >
             <div className="shrink-0 border-b border-border p-2">
               <div className="relative">

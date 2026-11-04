@@ -154,7 +154,7 @@ export function VersionHistorySheet({
 
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
           {canUpload && (
-            <section className="flex flex-col gap-3 rounded-xl border border-border bg-muted/20 p-4">
+            <section className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
               <h3 className="text-[13px] font-semibold">
                 Upload a new version
               </h3>
@@ -208,7 +208,7 @@ export function VersionHistorySheet({
                 <li
                   key={version.versionId}
                   className={cn(
-                    "rounded-xl border bg-card p-3.5",
+                    "rounded-lg border bg-card p-3.5",
                     version.current ? "border-primary/50" : "border-border"
                   )}
                 >
