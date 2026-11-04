@@ -35,7 +35,7 @@ export function DepartmentsTable({ rows, onView }: DepartmentsTableProps) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={8} className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No departments match your search or filters.
                 </td>
               </tr>

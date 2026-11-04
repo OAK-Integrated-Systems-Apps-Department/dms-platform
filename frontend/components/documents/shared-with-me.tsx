@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -230,12 +231,7 @@ export function SharedWithMe() {
       {loading ? (
         <LoadingState message="Loading…" />
       ) : folders.isError || documents.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">
-          {friendlyMessage(
-            folders.error ?? documents.error,
-            "Could not load what's shared with you."
-          )}
-        </p>
+        <LoadFailed error={folders.error} fallback="Could not load what's shared with you." />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
         <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
           {empty}

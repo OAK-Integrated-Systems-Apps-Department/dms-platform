@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   transferAll: vi.fn(),
 }))
 
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }))
 vi.mock("@/lib/ownership/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ownership/api")>()),
   previewDocumentTransfer: mocks.previewDoc,
@@ -153,6 +155,6 @@ describe("TransferDialog", () => {
     renderDialog(DOCUMENT)
     fireEvent.click(screen.getByRole("button", { name: "pick person" }))
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }))
-    expect(await screen.findByRole("alert")).toHaveTextContent("already owns")
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringContaining("already owns"), expect.anything()))
   })
 })

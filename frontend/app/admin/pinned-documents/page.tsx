@@ -37,7 +37,7 @@ export default function PinnedDocumentsSettingsPage() {
           { label: "Pin Limit" },
         ]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Pin limit
         </h1>
@@ -83,7 +83,7 @@ function PinLimit() {
   }
 
   return (
-    <div className="max-w-[760px]">
+    <div>
       <Panel title="Pins per person">
         <form
           className="flex flex-wrap items-end gap-3 pt-3"

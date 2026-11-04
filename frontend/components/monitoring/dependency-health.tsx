@@ -316,7 +316,7 @@ export function DependencyHealthCard({
           </p>
         </div>
         <span
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-semibold"
+          className="inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
           style={{
             color: STATES[worst].colour,
             background: tint(STATES[worst].colour, 12),

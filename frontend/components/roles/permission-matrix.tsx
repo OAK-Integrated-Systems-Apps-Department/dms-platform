@@ -256,11 +256,11 @@ export function PermissionMatrix() {
         {/* Left: filters */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Functional area */}
-          <div className="relative">
+          <div className="relative max-w-full min-w-0">
             <select
               value={area}
               onChange={(event) => setArea(event.target.value)}
-              className="h-9 appearance-none rounded-lg border border-border bg-background pr-8 pl-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
+              className="h-9 max-w-full appearance-none rounded-lg border border-border bg-background pr-8 pl-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
             >
               <option value={ALL_AREAS}>{ALL_AREAS}</option>
               {permissionGroups.map((group) => (
@@ -283,7 +283,7 @@ export function PermissionMatrix() {
               type="button"
               onClick={() => setRoleFilterOpen((v) => !v)}
               className={cn(
-                "flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors",
+                "flex items-center gap-1.5 border transition-colors h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
                 hiddenCount > 0
                   ? "border-primary/30 bg-primary/5 text-primary"
                   : "border-border bg-background text-foreground hover:bg-muted",
@@ -294,7 +294,7 @@ export function PermissionMatrix() {
               Roles
               <span
                 className={cn(
-                  "rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold",
+                  "font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap",
                   hiddenCount > 0
                     ? "bg-primary/10 text-primary"
                     : "bg-muted text-muted-foreground"
@@ -488,7 +488,7 @@ export function PermissionMatrix() {
                               {group.moduleCode}
                             </span>
                           </span>
-                          <span className="mt-0.5 shrink-0 rounded-full bg-background px-2 py-0.5 font-mono text-[10.5px] font-semibold text-muted-foreground">
+                          <span className="mt-0.5 shrink-0 bg-background font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground">
                             {groupIds.length}
                           </span>
                         </button>
@@ -539,7 +539,7 @@ export function PermissionMatrix() {
                                   <span className="min-w-0 flex-1 text-[12px] leading-snug font-semibold break-words whitespace-normal text-foreground">
                                     {permission.label}
                                   </span>
-                                  <span className="mt-0.5 shrink-0 rounded-full bg-background px-2 py-0.5 font-mono text-[10.5px] font-semibold text-muted-foreground">
+                                  <span className="mt-0.5 shrink-0 bg-background font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground">
                                     {permission.permissions!.length}
                                   </span>
                                 </button>

@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -70,7 +71,7 @@ export function WorkflowsContent() {
   return (
     <DashboardShell initialActiveLabel="Workflow Templates">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Workflow Templates" }]} />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Workflow Templates</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Approval chains per document type. Each template is versioned: edit a draft, activate it, and create a new
@@ -115,7 +116,7 @@ export function WorkflowsContent() {
           {canCreate && (
             <Link
               href="/admin/workflows/new"
-              className="ml-auto flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+              className="ml-auto flex items-center gap-1.5 border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
             >
               <Plus size={16} />
               New Template
@@ -129,9 +130,7 @@ export function WorkflowsContent() {
           isNetworkError(error) ? (
             <BackendUnavailable onRetry={refetch} />
           ) : (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load workflow templates."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load workflow templates." />
           )
         ) : (
           <>

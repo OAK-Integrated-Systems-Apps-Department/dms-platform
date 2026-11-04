@@ -349,7 +349,7 @@ export function ItemMenu({
         aria-expanded={open}
         onClick={(e) => toggle(e.currentTarget)}
         className={cn(
-          "flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+          "flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn",
           open && "bg-muted text-foreground"
         )}
       >
@@ -442,7 +442,7 @@ export function FolderTile({
       {folder.restricted && (
         <span
           title="Only specific people and roles can open this folder"
-          className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+          className="absolute top-2.5 left-2.5 inline-flex h-6 items-center justify-center gap-1 rounded-btn bg-muted px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
         >
           <Lock size={11} aria-hidden="true" />
           Restricted

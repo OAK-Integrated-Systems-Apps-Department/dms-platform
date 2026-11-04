@@ -103,7 +103,7 @@ export function CategoryGroups({
                   {item.displayName}
                   <span
                     title={TIER_NOTE[item.tier]}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-px text-[10.5px] font-semibold ${TIER_CHIP[item.tier]}`}
+                    className={`border-transparent inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap ${TIER_CHIP[item.tier]}`}
                   >
                     {item.locked && <Lock size={10} />}
                     {TIER_LABEL[item.tier]}

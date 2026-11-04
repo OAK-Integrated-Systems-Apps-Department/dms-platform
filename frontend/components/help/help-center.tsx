@@ -276,7 +276,7 @@ function Answer({ lines }: { lines: string[] }) {
     }
   }
   return (
-    <div className="flex max-w-[760px] flex-col gap-2.5">
+    <div className="flex flex-col gap-2.5">
       {blocks.map((block, i) =>
         Array.isArray(block) ? (
           <ul key={i} className="ml-4 list-disc space-y-1 marker:text-primary">

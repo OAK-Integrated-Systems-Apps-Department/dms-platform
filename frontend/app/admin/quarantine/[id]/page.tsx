@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { notFound, useParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -69,7 +70,7 @@ export default function QuarantineDetailPage() {
         ]}
       />
       <div className="mb-[22px] flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-[640px]">
+        <div className="min-w-0 flex-1">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Quarantined File</h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
             A file the malware scan blocked before it reached the repository, with the scan result that caught
@@ -103,9 +104,7 @@ export default function QuarantineDetailPage() {
       ) : (
         <PermissionGate permission={QUARANTINE_ANY_PERMISSION}>
           {isError ? (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load this quarantined file."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load this quarantined file." />
           ) : record ? (
             <QuarantineDetail record={record} />
           ) : null}

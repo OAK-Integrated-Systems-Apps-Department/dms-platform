@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileText, Lock, RotateCcw, Trash2 } from "lucide-react"
@@ -63,9 +64,7 @@ export function RecycleBin() {
   if (bin.isPending) return <LoadingState message="Loading the recycle bin…" />
   if (bin.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(bin.error, "Could not load the recycle bin.")}
-      </p>
+      <LoadFailed error={bin.error} fallback="Could not load the recycle bin." />
     )
   }
   const { items, retentionDays, byType } = bin.data

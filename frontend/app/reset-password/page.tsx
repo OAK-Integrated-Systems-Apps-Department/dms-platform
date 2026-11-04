@@ -117,7 +117,7 @@ export default function ResetPasswordPage() {
               <button
                 type="submit"
                 disabled={mutation.isPending || !usernameOrEmail.trim()}
-                className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {mutation.isPending ? "Sending…" : "Submit"}
               </button>

@@ -4,7 +4,6 @@ import { useState, type CSSProperties } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Activity,
-  AlertTriangle,
   Database,
   FileStack,
   Gauge,
@@ -29,7 +28,7 @@ import { ServiceStatusList } from "@/components/monitoring/service-status"
 import { MetricTile } from "@/components/monitoring/metric-tiles"
 import { Button } from "@/components/ui/button"
 import { LoadingState } from "@/components/ui/loading-state"
-import { friendlyMessage } from "@/lib/api-error"
+import { useErrorToast } from "@/lib/use-error-toast"
 import { useMonitoringAccess } from "@/lib/auth/use-monitoring-access"
 import {
   fetchAlerts,
@@ -261,6 +260,14 @@ export default function SystemMonitoringPage() {
     enabled: canView,
     refetchInterval: REFRESH_MS,
   })
+  useErrorToast(snapshot.error, "Could not load the system metrics.")
+  // Prometheus itself being unreachable: say so once, as every other error. The tiles then read "no data" rather than 0.
+  useErrorToast(
+    snapshot.data && !snapshot.data.reachable
+      ? `${snapshot.data.error ?? "Prometheus did not answer."} Nothing on this page is current. The DMS itself is unaffected - monitoring runs separately.`
+      : null,
+    "No metrics are coming through."
+  )
   const services = useQuery({
     queryKey: ["monitoring", "services"],
     queryFn: fetchMonitoringServices,
@@ -331,7 +338,7 @@ export default function SystemMonitoringPage() {
       />
 
       <div className="sm-reveal mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div className="max-w-[760px]">
+        <div className="min-w-0 flex-1">
           <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             System Monitoring
           </h1>
@@ -416,37 +423,9 @@ export default function SystemMonitoringPage() {
       ) : snapshot.isPending ? (
         <MonitoringSkeleton />
       ) : snapshot.isError ? (
-        <p className="sm-reveal text-[13px] text-[var(--rust)]">
-          {friendlyMessage(snapshot.error, "Could not load the system metrics.")}
-        </p>
+        null
       ) : (
         <div className="flex flex-col gap-5">
-          {/* Prometheus itself being unreachable is its own banner: without
-              it every tile would just say "no data", which looks like a
-              healthy-but-idle system rather than a blind one. */}
-          {!snapshot.data.reachable && (
-            <div
-              role="alert"
-              className="sm-reveal flex items-start gap-2.5 rounded-xl border border-[var(--rust)] bg-[var(--rust-tint)] p-4"
-            >
-              <AlertTriangle
-                size={16}
-                className="mt-0.5 shrink-0 text-[var(--rust)]"
-                aria-hidden="true"
-              />
-              <div>
-                <p className="text-[13px] font-semibold text-[var(--rust-foreground)]">
-                  No metrics are coming through
-                </p>
-                <p className="mt-0.5 text-[12.5px] leading-[1.6] text-[var(--rust-foreground)]">
-                  {snapshot.data.error ??
-                    "Prometheus did not answer. Nothing below is current."}{" "}
-                  The DMS itself is unaffected — monitoring runs separately.
-                </p>
-              </div>
-            </div>
-          )}
-
           {services.data && (
             <div className="sm-reveal" style={stagger(1)}>
               <ServiceStatusList services={services.data.services} />

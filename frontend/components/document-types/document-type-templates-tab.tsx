@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Download, Eye, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-react"
@@ -164,7 +165,7 @@ export function DocumentTypeTemplatesTab({
   const rows = templates.data ?? []
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <p className="text-[13px] leading-[1.6] text-muted-foreground">
         Ready-made files for this document type - a blank contract, a proposal,
         a form. People download them, or start a new document from one, in My
@@ -196,9 +197,7 @@ export function DocumentTypeTemplatesTab({
             Loading templates…
           </p>
         ) : templates.isError ? (
-          <p className="px-4 py-8 text-center text-[13px] text-[var(--rust)]">
-            {friendlyMessage(templates.error, "Could not load templates.")}
-          </p>
+          <LoadFailed error={templates.error} fallback="Could not load templates." />
         ) : rows.length === 0 ? (
           <p className="px-4 py-8 text-center text-[13px] text-muted-foreground">
             No templates yet.

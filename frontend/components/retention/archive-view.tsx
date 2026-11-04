@@ -11,7 +11,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { SearchInput } from "@/components/ui/search-input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { TablePagination } from "@/components/ui/table-pagination"
-import { friendlyMessage } from "@/lib/api-error"
+import { LoadFailed } from "@/components/ui/load-failed"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { fetchDocuments, type DocumentListItemDto } from "@/lib/documents/api"
@@ -46,7 +46,7 @@ export function ArchiveView() {
   const rows = (documents.data?.content ?? []).filter((d) => show === "all" || d.lifecycleState === show)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput
           value={q}
@@ -72,11 +72,9 @@ export function ArchiveView() {
       {documents.isPending ? (
         <LoadingState message="Loading…" />
       ) : documents.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">
-          {friendlyMessage(documents.error, "Could not load the inactive and archived documents.")}
-        </p>
+        <LoadFailed error={documents.error} fallback="Could not load the inactive and archived documents." onRetry={() => void documents.refetch()} />
       ) : rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
           {q || show !== "all" ? "No inactive or archived document matches." : "Nothing here yet. Documents appear when they are marked inactive or archived by a retention rule."}
         </p>
       ) : (
@@ -103,7 +101,7 @@ export function ArchiveView() {
                   disabled={row.lockState === "legal_hold" || changeStatus.isPending}
                   onClick={() => setReinstating(row)}
                   title={row.lockState === "legal_hold" ? "Under legal hold - lift the hold first" : undefined}
-                  className="rounded-md border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
                 >
                   {row.lifecycleState === "archived" ? "Bring back to Active" : "Mark active"}
                 </button>

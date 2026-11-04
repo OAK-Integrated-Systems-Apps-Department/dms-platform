@@ -49,6 +49,8 @@ class RecordsRetentionIT extends WorkflowApiSupport {
     RetentionJob job;
     @Autowired
     com.oak.dms.document.DocumentRepository documentRepository;
+    @Autowired
+    com.oak.dms.encryption.TenantKeyShredder shredder;
 
     private UUID tenantId;
     private UUID type;
@@ -612,6 +614,84 @@ class RecordsRetentionIT extends WorkflowApiSupport {
         assertThat(refused.get("message").asString()).contains("2 inactive or archived documents").contains("Inactive & Archive");
     }
 
+    // ------------------------------------------------------------------ legal hold vs destroying an organisation
+
+    @Test
+    void anOrganisationWithADocumentUnderLegalHold_cannotHaveItsKeysShredded() throws Exception {
+        placeHold("Investigation");
+        String name = fx.jdbc().queryForObject("select tenant_name from tenants where tenant_id = ?", String.class, tenantId);
+        fx.jdbc().update("update tenants set is_deleted = true where tenant_id = ?", tenantId); // deactivated, as shredding requires
+
+        // Shredding would destroy every document for good - the held one included - so it is refused, whoever asks.
+        assertThatThrownByShred(name).hasMessageContaining("1 document is under legal hold").hasMessageContaining("Lift the hold");
+        assertThat(fx.count("select count(*) from tenants where tenant_id = ? and keys_shredded_at is not null", tenantId)).isZero();
+    }
+
+    private org.assertj.core.api.AbstractThrowableAssert<?, ? extends Throwable> assertThatThrownByShred(String name) {
+        return org.assertj.core.api.Assertions.assertThatThrownBy(() -> shredder.shred(tenantId, name, "offboarded", true))
+                .isInstanceOf(com.oak.dms.encryption.EncryptionException.class);
+    }
+
+    // ------------------------------------------------------------------ protect from deletion
+
+    @Test
+    void whenProtectionIsOn_aDocumentARuleStillCoversCannotBeDeleted_untilItsRetentionEnds() throws Exception {
+        User deleter = fx.user(tenantId, "Dee");
+        fx.role(tenantId, "Deleters", new String[]{VIEW, "docm.documents.delete"}, deleter);
+        createPolicy(admin, rule("Invoices", "document_type", type, 1, "years", 6, "years", "HMRC"), 200);
+
+        // Off by default: a covered document can be deleted as before (this one is a different document, so it stays).
+        UUID other = fx.document(tenantId, type, owner, "Scratch copy");
+        call(delete("/api/v1/documents/" + other), fx.jwtFor(deleter), null, 204);
+
+        // On: now the rule protects it, and the refusal names the rule, the regulation and the date.
+        saveProtection(true);
+        JsonNode refused = call(delete("/api/v1/documents/" + documentId), fx.jwtFor(deleter), null, 409);
+        assertThat(refused.get("code").asString()).isEqualTo("DOCUMENT_UNDER_RETENTION");
+        assertThat(refused.get("message").asString()).contains("\"Invoices\"").contains("HMRC").containsPattern("until [0-9]{4}-[0-9]{2}-[0-9]{2}");
+        assertThat(fx.count("select count(*) from documents where document_id = ? and not is_deleted", documentId)).isEqualTo(1);
+
+        // A document no rule covers is not affected.
+        UUID memoType = fx.documentType(tenantId, "Memo");
+        UUID memo = fx.document(tenantId, memoType, owner, "A memo");
+        call(delete("/api/v1/documents/" + memo), fx.jwtFor(deleter), null, 204);
+
+        // Once its total retention has ended (flagged for review) the guard lets go - that is when disposal is decided.
+        fx.jdbc().update("update documents set review_flagged_at = now() where document_id = ?", documentId);
+        call(delete("/api/v1/documents/" + documentId), fx.jwtFor(deleter), null, 204);
+    }
+
+    @Test
+    void protectionNeverOverridesLegalHold_andOffMeansOff() throws Exception {
+        User deleter = fx.user(tenantId, "Dee");
+        fx.role(tenantId, "Deleters", new String[]{VIEW, "docm.documents.delete"}, deleter);
+        // No rule at all, protection off: only the hold stops a delete.
+        placeHold("Investigation");
+        assertThat(call(delete("/api/v1/documents/" + documentId), fx.jwtFor(deleter), null, 409).get("code").asString())
+                .isNotEqualTo("DOCUMENT_UNDER_RETENTION");
+    }
+
+    // ------------------------------------------------------------------ the review lists respect document access
+
+    @Test
+    void theReviewListsShowOnlyDocumentsTheReviewerCouldOpenAnyway() throws Exception {
+        User reviewer = fx.user(tenantId, "Rev");
+        fx.role(tenantId, "Reviewers", new String[]{VIEW, REVIEW}, reviewer);
+        UUID secret = fx.document(tenantId, type, owner, "Restricted settlement");
+        fx.jdbc().update("update documents set access_mode = 'restricted', review_flagged_at = now(), lifecycle_state = 'archived' "
+                + "where document_id = ?", secret);
+        fx.jdbc().update("update documents set review_flagged_at = now(), lifecycle_state = 'archived' where document_id = ?", documentId);
+
+        // The reviewer may decide about documents - but is not told the titles of ones in a restricted list they are not on.
+        JsonNode seen = call(get("/api/v1/retention/review"), fx.jwtFor(reviewer), null, 200).get("content");
+        assertThat(titles(seen)).contains("Supplier invoice 1041").doesNotContain("Restricted settlement");
+
+        // And the same for a document waiting for a rule.
+        fx.jdbc().update("update documents set review_flagged_at = null, no_policy_flagged_at = now() where document_id in (?, ?)", secret, documentId);
+        assertThat(titles(call(get("/api/v1/retention/without-policy"), fx.jwtFor(reviewer), null, 200).get("content")))
+                .contains("Supplier invoice 1041").doesNotContain("Restricted settlement");
+    }
+
     @Test
     void runningTheJobNow_needsItsPermission() throws Exception {
         call(post("/api/v1/retention/run"), fx.jwtFor(owner), null, 403);
@@ -706,6 +786,11 @@ class RecordsRetentionIT extends WorkflowApiSupport {
             }
         }
         throw new AssertionError("folder not listed");
+    }
+
+    private void saveProtection(boolean on) throws Exception {
+        call(put("/api/v1/retention/settings"), fx.jwtFor(admin), Map.of("automationEnabled", true, "precedence", "longest",
+                "whenNoPolicy", "flag", "requireStatusReason", false, "protectFromDeletion", on), 200);
     }
 
     private String storedArchiveDue() {

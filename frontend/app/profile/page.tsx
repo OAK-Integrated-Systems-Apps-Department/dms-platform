@@ -48,7 +48,7 @@ export default function ProfilePage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "My Profile" }]}
       />
-      <div className="mb-[22px] max-w-[640px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           My Profile
         </h1>

@@ -17,7 +17,7 @@ export default function TypeFieldMappingPage() {
   return (
     <DashboardShell initialActiveLabel="Metadata">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Type Field Mapping" }]} />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Type Field Mapping</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Compare which fields each document type uses, and bulk-edit mandatory/optional across types. Click a cell

@@ -47,7 +47,7 @@ function SessionRow({
         <button
           type="button"
           onClick={onRevoke}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--rust)]"
+          className="flex shrink-0 items-center gap-1.5 border border-[var(--rust)] bg-[var(--rust-tint)] font-semibold text-[var(--rust)] h-[38px] rounded-btn px-4 text-[13px]"
         >
           <LogOut size={13} />
           Revoke
@@ -139,7 +139,7 @@ export function UserSessions({
             type="button"
             onClick={() => setPendingTarget({ kind: "all" })}
             disabled={user.sessions.length === 0}
-            className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="border border-[var(--rust)] bg-[var(--rust)] text-white disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
           >
             Revoke All Sessions
           </button>

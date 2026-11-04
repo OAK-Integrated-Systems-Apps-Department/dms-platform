@@ -47,7 +47,7 @@ export default function AddMetadataFieldPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Metadata Fields", href: "/admin/metadata/fields" }, { label: "Add Field" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Add Metadata Field</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Field key and data type can&apos;t be changed after creation — choose carefully.

@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -177,7 +178,7 @@ export function AuditLogContent() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Audit Log" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Audit Log
         </h1>
@@ -205,11 +206,7 @@ export function AuditLogContent() {
           isNetworkError(error) ? (
             <BackendUnavailable onRetry={refetch} />
           ) : (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error
-                ? error.message
-                : "Could not load audit events."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load audit events." />
           )
         ) : (
           <>

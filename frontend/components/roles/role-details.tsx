@@ -295,7 +295,7 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--rust)]"
+              className="flex items-center gap-1.5 border border-[var(--rust)] text-[var(--rust)] h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
             >
               <Trash2 size={14} />
               Delete Role
@@ -304,7 +304,7 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
             {canEdit && (
             <Link
               href={`/admin/roles/${role.id}/edit`}
-              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+              className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
             >
               <Pencil size={14} />
               Edit Role

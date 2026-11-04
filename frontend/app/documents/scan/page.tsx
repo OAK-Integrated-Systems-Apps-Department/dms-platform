@@ -34,7 +34,7 @@ export default function ScanDocumentsPage() {
           { label: "Scan documents" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Scan documents
         </h1>

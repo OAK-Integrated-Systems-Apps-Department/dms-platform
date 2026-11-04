@@ -150,7 +150,7 @@ function Item({
               {title}
             </span>
             {badge && (
-              <span className="rounded-full bg-[var(--gold-tint)] px-2 py-px text-[10px] font-semibold tracking-wide text-[var(--gold-foreground)] uppercase dark:text-[var(--gold)]">
+              <span className="bg-[var(--gold-tint)] text-[var(--gold-foreground)] dark:text-[var(--gold)] inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
                 {badge}
               </span>
             )}

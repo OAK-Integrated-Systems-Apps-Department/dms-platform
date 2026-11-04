@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useMemo, useState } from "react"
 import { History, MessagesSquare } from "lucide-react"
 
@@ -83,7 +84,7 @@ export function DiscussionPanel({ documentId, workflowInstanceId = null, title =
             type="button"
             onClick={() => setFullHistory((v) => !v)}
             className={cn(
-              "flex items-center gap-1.5 self-start rounded-btn border px-2.5 py-1 text-[12px] font-semibold",
+              "flex items-center gap-1.5 self-start border h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
               fullHistory ? "border-primary bg-primary/10 text-primary" : "border-[var(--border-strong)] text-muted-foreground"
             )}
           >
@@ -94,9 +95,7 @@ export function DiscussionPanel({ documentId, workflowInstanceId = null, title =
         {comments.isPending ? (
           <p className="text-[13px] text-muted-foreground">Loading the discussion…</p>
         ) : comments.isError ? (
-          <p className="text-[13px] text-[var(--rust)]">
-            {comments.error instanceof Error ? comments.error.message : "Could not load the discussion."}
-          </p>
+          <LoadFailed error={comments.error} fallback="Could not load the discussion." />
         ) : entries.length === 0 ? (
           <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <MessagesSquare size={14} /> No comments yet.

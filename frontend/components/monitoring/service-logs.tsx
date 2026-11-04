@@ -524,7 +524,7 @@ function LogsModal({
             type="button"
             onClick={onClose}
             aria-label="Close logs"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none inline-flex size-8 items-center justify-center rounded-btn"
           >
             <X size={18} />
           </button>

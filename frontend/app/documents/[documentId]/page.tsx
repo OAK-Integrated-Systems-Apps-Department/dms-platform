@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { toast } from "sonner"
@@ -78,17 +79,11 @@ export default function DocumentPage() {
       {isPending ? (
         <LoadingState message="Loading document…" />
       ) : isError || !document ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-          {error instanceof ApiError && error.status === 403
-            ? "You don't have permission to view this document."
-            : error instanceof Error
-              ? error.message
-              : "Could not load this document."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load this document." forbiddenMessage="You don't have permission to view this document." />
       ) : (
         <>
           <div className="mb-[22px] flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-[640px]">
+            <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{document.title}</h1>
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
@@ -140,14 +135,14 @@ export default function DocumentPage() {
                           createdAt: document.createdAt,
                         })
                       }
-                      className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary/10 px-3.5 py-2 text-[13px] font-semibold text-primary"
+                      className="flex items-center gap-1.5 border border-primary bg-primary/10 font-semibold text-primary h-[38px] rounded-btn px-4 text-[13px] justify-center"
                     >
                       <Eye size={15} /> Preview
                     </button>
                     <button
                       type="button"
                       onClick={() => void downloadFile()}
-                      className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground"
+                      className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
                     >
                       <Download size={15} /> Download
                     </button>

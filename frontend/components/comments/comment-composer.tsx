@@ -50,7 +50,7 @@ export function CommentComposer({ id, initial, submitLabel, placeholder, busy, o
               type="button"
               onClick={onCancel}
               disabled={busy}
-              className="rounded-btn border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground"
+              className="rounded-btn border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </button>
@@ -59,7 +59,7 @@ export function CommentComposer({ id, initial, submitLabel, placeholder, busy, o
             type="button"
             onClick={() => void submit()}
             disabled={!canSubmit}
-            className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-1.5 text-[12.5px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
             {submitLabel}

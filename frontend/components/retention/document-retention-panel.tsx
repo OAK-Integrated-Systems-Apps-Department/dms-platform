@@ -13,12 +13,13 @@ import { usePermissions } from "@/lib/auth/use-permissions"
 import type { RetentionUnit, RetentionViewDto } from "@/lib/retention/api"
 import { formatPeriod, formatPeriodText } from "@/lib/retention/format"
 import { useChangeStatus, useDocumentRetention, useReviewActions } from "@/lib/retention/use-retention"
+import { useErrorToast } from "@/lib/use-error-toast"
 import { formatDateTime } from "@/lib/utils"
 
 import { LifecycleBadge } from "./lifecycle-badge"
 
 const BUTTON =
-  "flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+  "flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] justify-center"
 
 type Dialog = null | "inactive" | "active" | "extend" | "dispose"
 
@@ -28,7 +29,8 @@ type Dialog = null | "inactive" | "active" | "extend" | "dispose"
  * Everything the buttons can do is checked again by the server; this only stops offering what would be refused.
  */
 export function DocumentRetentionPanel({ documentId }: { documentId: string }) {
-  const { data, isPending, isError } = useDocumentRetention(documentId)
+  const { data, isPending, isError, error } = useDocumentRetention(documentId)
+  useErrorToast(error, "Could not load this document's retention.")
   const { hasPermission } = usePermissions()
   const changeStatus = useChangeStatus()
   const { extend, dispose } = useReviewActions()
@@ -38,11 +40,7 @@ export function DocumentRetentionPanel({ documentId }: { documentId: string }) {
 
   if (isPending) return <LoadingState message="Loading status…" />
   if (isError || !data) {
-    return (
-      <Panel title="Status & retention">
-        <p className="pt-3 text-[13px] text-muted-foreground">Could not load this document&apos;s retention.</p>
-      </Panel>
-    )
+    return <Panel title="Status & retention">{null}</Panel>
   }
 
   const canInactive = hasPermission(PermissionCodes.CRM_MARK_INACTIVE)
@@ -229,14 +227,14 @@ function ReviewBox({
               max={1000}
               value={amount}
               onChange={(e) => onAmount(e.target.value)}
-              className="h-9 w-24 bg-card"
+              className="h-[38px] w-24 bg-card text-[13px]"
             />
           </div>
           <select
             aria-label="Extension unit"
             value={unit}
             onChange={(e) => onUnit(e.target.value as RetentionUnit)}
-            className="h-9 rounded-btn border border-[var(--border-strong)] bg-card px-2.5 text-[12.5px] text-foreground"
+            className="h-[38px] rounded-btn border border-[var(--border-strong)] bg-card px-2.5 text-[13px] text-foreground"
           >
             <option value="days">days</option>
             <option value="months">months</option>

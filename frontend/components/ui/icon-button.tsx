@@ -20,7 +20,7 @@ export function IconButton({
     <button
       type="button"
       className={cn(
-        "relative flex size-[38px] items-center justify-center rounded-md border border-border transition-colors",
+        "relative flex size-[38px] items-center justify-center rounded-btn border border-border transition-colors",
         active
           ? "bg-primary/10 text-primary"
           : "bg-card text-muted-foreground hover:bg-muted",

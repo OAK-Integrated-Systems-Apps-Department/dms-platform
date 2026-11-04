@@ -835,7 +835,7 @@ export function ServiceStatusList({
             type="button"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
-            className="ml-auto rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="ml-auto border border-border transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
           >
             More details
           </button>

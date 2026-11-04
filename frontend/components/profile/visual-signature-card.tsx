@@ -107,7 +107,7 @@ function VisualSignatureEditor({ saved }: { saved: VisualSignatureDto | null }) 
         type="button"
         onClick={() => setConfirming(true)}
         disabled={!canSave || !dirty || isSavingVisualSignature}
-        className="mt-4 flex items-center gap-1.5 rounded-md border border-primary bg-primary px-4 py-2 text-[12.5px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
       >
         {isSavingVisualSignature && <Loader2 size={13} className="animate-spin" />}
         Save signature

@@ -181,7 +181,7 @@ export function DocumentTypeFieldsTab({ currentFields, availableFields, onPublis
               </div>
 
               {canUpdate && (
-                <button type="button" onClick={() => removeRow(row.fieldId)} aria-label={`Remove ${row.label}`} className="flex size-8 items-center justify-center rounded-sm text-[var(--rust)] hover:bg-[var(--rust-tint)]">
+                <button type="button" onClick={() => removeRow(row.fieldId)} aria-label={`Remove ${row.label}`} className="flex items-center justify-center text-[var(--rust)] hover:bg-[var(--rust-tint)] size-8 rounded-btn">
                   <Trash2 size={15} />
                 </button>
               )}
@@ -219,7 +219,7 @@ export function DocumentTypeFieldsTab({ currentFields, availableFields, onPublis
             onClick={handlePublish}
             disabled={submitting}
             className={cn(
-              "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+              "rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground",
               "disabled:cursor-not-allowed disabled:opacity-60"
             )}
           >

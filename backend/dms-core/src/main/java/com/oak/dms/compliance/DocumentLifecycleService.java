@@ -21,7 +21,9 @@ import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +60,7 @@ public class DocumentLifecycleService {
     private final DocumentService documentService;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final JdbcTemplate jdbc;
 
     /** What the document page shows about a document's lifecycle and retention. */
     public record RetentionView(String lifecycleState, String changeSource, String changeReason, OffsetDateTime changedAt,
@@ -173,29 +176,35 @@ public class DocumentLifecycleService {
     @Transactional(readOnly = true)
     public Page<ReviewItem> awaitingReview(Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        return toReviewItems(documentRepository.findAwaitingReview(tenantId, pageable), tenantId);
+        return toReviewItems(documentRepository.findAwaitingReview(tenantId, pageable), documentAccessService.forCaller());
     }
 
     @Transactional(readOnly = true)
     public Page<ReviewItem> withoutPolicy(Pageable pageable) {
         UUID tenantId = TenantContext.getTenantId();
-        return toReviewItems(documentRepository.findWithoutPolicy(tenantId, pageable), tenantId);
+        return toReviewItems(documentRepository.findWithoutPolicy(tenantId, pageable), documentAccessService.forCaller());
     }
 
-    private Page<ReviewItem> toReviewItems(Page<Document> page, UUID tenantId) {
+    /**
+     * The review lists name documents, so a reviewer sees only the ones they could open anyway - the same access rules as the
+     * document browser. Holding the review permission lets someone decide about a document; it does not show them titles in
+     * a restricted folder they have no access to.
+     */
+    private Page<ReviewItem> toReviewItems(Page<Document> page, DocumentAccessService.DocumentAccessView access) {
+        List<Document> visible = page.getContent().stream().filter(access::canSee).toList();
         Map<UUID, String> types = new HashMap<>();
-        documentTypeRepository.findAllById(page.getContent().stream().map(Document::getDocumentTypeId).distinct().toList())
+        documentTypeRepository.findAllById(visible.stream().map(Document::getDocumentTypeId).distinct().toList())
                 .forEach((DocumentType t) -> types.put(t.getDocumentTypeId(), t.getTypeName()));
         Map<UUID, RetentionPolicy> policies = new HashMap<>();
-        policyRepository.findAllById(page.getContent().stream().map(Document::getRetentionPolicyId)
+        policyRepository.findAllById(visible.stream().map(Document::getRetentionPolicyId)
                         .filter(java.util.Objects::nonNull).distinct().toList())
                 .forEach(p -> policies.put(p.getPolicyId(), p));
-        return page.map(d -> {
+        return new PageImpl<>(visible.stream().map(d -> {
             RetentionPolicy p = d.getRetentionPolicyId() == null ? null : policies.get(d.getRetentionPolicyId());
             return new ReviewItem(d.getDocumentId(), d.getTitle(), d.getDocumentTypeId(), types.get(d.getDocumentTypeId()),
                     d.getFolderId(), d.getLifecycleState(), p == null ? null : p.getName(), p == null ? null : p.getFramework(),
                     d.getReviewDueAt(), d.getReviewFlaggedAt());
-        });
+        }).toList(), page.getPageable(), page.getTotalElements());
     }
 
     /**
@@ -252,6 +261,15 @@ public class DocumentLifecycleService {
         if (links > 0) {
             throw ComplianceException.conflict("DOCUMENT_REFERENCED", "\"" + document.getTitle() + "\" is linked to " + links
                     + " other document" + (links == 1 ? "" : "s") + ". Remove the links first.");
+        }
+        // Used as a supporting document in an approval that is still running: that approval needs it.
+        Long supporting = jdbc.queryForObject("""
+                select count(*) from workflow_supporting_documents w join workflow_instances i on i.instance_id = w.instance_id
+                where w.tenant_id = ? and w.document_id = ? and not w.is_deleted and i.status = 'in_progress'
+                """, Long.class, tenantId, documentId);
+        if (supporting != null && supporting > 0) {
+            throw ComplianceException.conflict("DOCUMENT_REFERENCED", "\"" + document.getTitle()
+                    + "\" is a supporting document in an approval that is still in progress. Finish or cancel the approval first.");
         }
         documentService.deleteDocument(documentId);
         auditService.event(AuditActionCatalog.DOCUMENT_RETENTION_DISPOSED).objectType(AuditObjectTypes.DOCUMENT)

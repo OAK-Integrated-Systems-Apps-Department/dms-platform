@@ -1,7 +1,7 @@
 // app/login/login-page-content.tsx
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -133,6 +133,14 @@ export function LoginPageContent() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
+  const organisationInactive = searchParams.get("reason") === "organisation-inactive"
+  useEffect(() => {
+    if (organisationInactive) {
+      toast.error("You were signed out because your organisation's account is suspended or closed. Contact your administrator.", {
+        id: "organisation-inactive",
+      })
+    }
+  }, [organisationInactive])
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
   // Stripped out entirely in production builds — see the check below.
@@ -300,16 +308,6 @@ export function LoginPageContent() {
                 <p className="mt-3 mb-8 text-sm text-muted-foreground">
                   Welcome back. Sign in to continue to {APP_NAME}.
                 </p>
-
-                {searchParams.get("reason") === "organisation-inactive" && (
-                  <p
-                    role="alert"
-                    className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-                  >
-                    You were signed out because your organisation&apos;s account
-                    is suspended or closed. Contact your administrator.
-                  </p>
-                )}
 
                 <form
                   onSubmit={handleSubmit(handleCredentialsSubmit)}

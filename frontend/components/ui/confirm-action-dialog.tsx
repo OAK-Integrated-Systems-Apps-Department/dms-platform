@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react"
 import { AlertTriangle } from "lucide-react"
+import { toast } from "sonner"
 
 import {
   AlertDialog,
@@ -26,7 +27,7 @@ interface ConfirmActionDialogProps {
 
 /**
  * Confirmation for the bulk import's Submit and Cancel actions. Modeled on
- * `FieldDeprecateDialog`: stays open and shows the error inline on
+ * `FieldDeprecateDialog`: stays open and toasts the error on
  * failure, only closes once the action actually succeeds.
  */
 export function ConfirmActionDialog({
@@ -40,14 +41,14 @@ export function ConfirmActionDialog({
   onConfirm,
 }: ConfirmActionDialogProps) {
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function handleConfirm() {
     setSubmitting(true)
     const message = await onConfirm()
     setSubmitting(false)
     if (message) {
-      setError(message)
+      // Shown as a toast like every other error in the app; the dialog stays open so the action can be retried.
+      toast.error(message, { id: message })
       return
     }
     onOpenChange(false)
@@ -58,7 +59,6 @@ export function ConfirmActionDialog({
       open={open}
       onOpenChange={(next) => {
         if (submitting) return
-        setError(null)
         onOpenChange(next)
       }}
     >
@@ -70,19 +70,10 @@ export function ConfirmActionDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
 
-          {error && (
-            <p
-              role="alert"
-              className="mb-4 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-center text-[12.5px] text-[var(--rust)]"
-            >
-              {error}
-            </p>
-          )}
-
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose
               disabled={submitting}
-              className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:opacity-60"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               {cancelLabel}
             </AlertDialogClose>
@@ -90,7 +81,7 @@ export function ConfirmActionDialog({
               type="button"
               onClick={handleConfirm}
               disabled={submitting}
-              className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:opacity-60"
+              className="border border-[var(--rust)] bg-[var(--rust)] text-white disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {submitting ? pendingLabel : confirmLabel}
             </button>

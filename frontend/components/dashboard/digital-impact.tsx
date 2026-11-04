@@ -356,7 +356,7 @@ function RangePicker({
           <button
             type="submit"
             disabled={!valid}
-            className="h-8 rounded-md bg-[#cfe6d6] px-3 text-[12px] font-semibold text-[#163828] disabled:opacity-50"
+            className="inline-flex h-[38px] items-center justify-center rounded-btn bg-[#cfe6d6] px-4 text-[13px] font-semibold text-[#163828] disabled:opacity-50"
           >
             Apply
           </button>
@@ -376,7 +376,7 @@ function KindBadge({ kind, onForest }: { kind: Kind; onForest?: boolean }) {
   const badge = (
     <span
       className={cn(
-        "rounded-full px-1.5 py-px text-[10px] font-semibold tracking-wide whitespace-nowrap uppercase",
+        "inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap",
         onForest ? KIND_ON_FOREST[kind] : KIND_STYLE[kind]
       )}
     >

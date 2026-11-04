@@ -167,7 +167,7 @@ export default function RoleListPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Roles" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Role Management - Role List
         </h1>
@@ -203,7 +203,7 @@ export default function RoleListPage() {
 
         <Link
           href="/admin/roles/matrix"
-          className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
         >
           <Grid3x3 size={16} />
           Permission Matrix
@@ -211,7 +211,7 @@ export default function RoleListPage() {
         {canCreateRole && (
           <Link
             href="/admin/roles/new"
-            className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+            className="flex items-center gap-1.5 border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
           >
             <Plus size={16} />
             Add Role
@@ -235,7 +235,7 @@ export default function RoleListPage() {
             <button
               type="button"
               onClick={() => fetchRoles()}
-              className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               Try again
             </button>

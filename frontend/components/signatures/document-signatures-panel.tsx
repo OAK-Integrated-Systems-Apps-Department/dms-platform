@@ -97,15 +97,15 @@ export function DocumentSignaturesPanel({
   return (
     <Panel title="Signatures">
       {canSignStandalone && (
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <span className="text-[12.5px] text-muted-foreground">
             Add your own e-signature directly, outside of any approval.
           </span>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => preview.open(document)}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted"
+              className="flex items-center gap-1.5 border border-[var(--border-strong)] text-foreground hover:bg-muted h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
             >
               <Eye size={13} />
               View document
@@ -116,7 +116,7 @@ export function DocumentSignaturesPanel({
                 onClick={handleRemoveStandalone}
                 disabled={isRemovingStandalone || workflowInProgress}
                 title={workflowInProgress ? "This document has an approval workflow in progress." : undefined}
-                className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex items-center gap-1.5 border border-[var(--border-strong)] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px]"
               >
                 {isRemovingStandalone ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                 Remove signature
@@ -131,7 +131,7 @@ export function DocumentSignaturesPanel({
                   ? "This document has an approval workflow in progress - standalone signing isn't available until it finishes."
                   : undefined
               }
-              className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2.5 py-1 text-[12px] font-bold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
             >
               <PenLine size={13} />
               Sign document
@@ -157,7 +157,7 @@ export function DocumentSignaturesPanel({
             <button
               type="button"
               onClick={() => setUnlocking(true)}
-              className="shrink-0 whitespace-nowrap rounded-md border border-[var(--gold-foreground)]/30 px-2.5 py-1 text-[12px] font-semibold text-[var(--gold-foreground)] hover:bg-[var(--gold-foreground)]/10"
+              className="shrink-0 whitespace-nowrap border border-[var(--gold-foreground)]/30 text-[var(--gold-foreground)] hover:bg-[var(--gold-foreground)]/10 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               Unlock
             </button>
@@ -175,7 +175,7 @@ export function DocumentSignaturesPanel({
               type="button"
               onClick={() => verifyAll(document.documentId)}
               disabled={isVerifying}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex items-center gap-1.5 border border-[var(--border-strong)] text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
             >
               {isVerifying ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
               Verify all

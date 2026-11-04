@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Panel } from "@/components/ui/panel"
 import { friendlyMessage } from "@/lib/api-error"
+import { useErrorToast } from "@/lib/use-error-toast"
 import {
   useDocumentRelationships,
   useRemoveRelationship,
@@ -35,6 +36,7 @@ interface RelatedDocumentsPanelProps {
  */
 export function RelatedDocumentsPanel({ documentId, readOnly = false }: RelatedDocumentsPanelProps) {
   const { data, isPending, isError, error } = useDocumentRelationships(documentId)
+  useErrorToast(error, "Could not load the related documents.")
   const remove = useRemoveRelationship()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<{ item: RelatedItemDto; group: RelatedGroupDto } | null>(null)
@@ -53,11 +55,6 @@ export function RelatedDocumentsPanel({ documentId, readOnly = false }: RelatedD
       <Panel title="Related Documents">
         <div className="mt-2 flex flex-col gap-3">
           {isPending && <p className="text-[12.5px] text-muted-foreground">Loading related documents…</p>}
-          {isError && (
-            <p role="alert" className="text-[12.5px] text-[var(--rust)]">
-              {friendlyMessage(error, "Could not load the related documents.")}
-            </p>
-          )}
           {data && data.groups.length === 0 && (
             <p className="text-[12.5px] text-muted-foreground">No documents are linked to this one yet.</p>
           )}
@@ -183,7 +180,7 @@ function RelatedRow({
             <button
               type="button"
               onClick={onEdit}
-              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+              className="flex items-center justify-center text-muted-foreground hover:text-foreground size-8 rounded-btn"
               aria-label="Edit relationship"
               title="Edit relationship"
             >
@@ -194,7 +191,7 @@ function RelatedRow({
             <button
               type="button"
               onClick={onRemove}
-              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-[var(--rust)]"
+              className="flex items-center justify-center text-muted-foreground hover:text-[var(--rust)] size-8 rounded-btn"
               aria-label="Remove relationship"
               title="Remove relationship"
             >

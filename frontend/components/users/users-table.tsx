@@ -189,7 +189,7 @@ export function UsersTable({
               <tr>
                 <td
                   colSpan={7}
-                  className="px-3 py-10 text-center text-[13px] text-muted-foreground"
+                  className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No users match your search or filters.
                 </td>
@@ -261,7 +261,7 @@ export function UsersTable({
                             type="button"
                             onClick={() => onView(user)}
                             aria-label={`View ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                            className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                           >
                             <Eye size={15} />
                           </button>
@@ -279,7 +279,7 @@ export function UsersTable({
                               type="button"
                               onClick={() => onEdit(user)}
                               aria-label={`Edit ${user.name}`}
-                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                              className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                             >
                               <Pencil size={15} />
                             </button>

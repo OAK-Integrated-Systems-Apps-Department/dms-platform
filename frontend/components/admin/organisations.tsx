@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -82,9 +83,7 @@ export function Organisations() {
   if (orgs.isPending) return <LoadingState message="Loading organisations…" />
   if (orgs.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(orgs.error, "Could not load the organisations.")}
-      </p>
+      <LoadFailed error={orgs.error} fallback="Could not load the organisations." />
     )
   }
 

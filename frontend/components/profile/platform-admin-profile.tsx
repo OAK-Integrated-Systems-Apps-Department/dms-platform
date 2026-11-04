@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Loader2, ShieldCheck, UserCog } from "lucide-react"
@@ -44,12 +45,7 @@ export function PlatformAdminProfile() {
     return <LoadingState message="Loading your account…" />
   if (identity.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(
-          identity.error,
-          "Could not load your account details."
-        )}
-      </p>
+      <LoadFailed error={identity.error} fallback="Could not load your account details." />
     )
   }
 
@@ -233,7 +229,7 @@ function PasswordCard() {
         characters. If you have multi-factor authentication enrolled, add a
         current code as well.
       </p>
-      <div className="grid max-w-[520px] gap-4">
+      <div className="grid gap-4">
         <Labelled label="Current password">
           <Input
             type="password"
@@ -285,7 +281,7 @@ function PasswordCard() {
       {error && (
         <p className="mt-3 text-[12.5px] text-[var(--rust)]">{error}</p>
       )}
-      <div className="mt-4 flex max-w-[520px] justify-end">
+      <div className="mt-4 flex justify-end">
         <Button
           size="sm"
           onClick={() => void save()}

@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { notFound, useParams, useRouter } from "next/navigation"
 import { Trash2 } from "lucide-react"
@@ -63,13 +64,11 @@ export default function EditDepartmentPage() {
       ) : (
         <PermissionGate permission={DEPARTMENT_ANY_PERMISSION}>
           {isError || !department ? (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load this department."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load this department." />
           ) : (
             <>
               <div className="mb-[22px] flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-[640px]">
+                <div className="min-w-0 flex-1">
                   <div className="mb-2 flex items-center gap-2.5">
                     <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{department.name}</h1>
                     <Badge variant={department.status === "active" ? "default" : "muted"}>
@@ -86,7 +85,7 @@ export default function EditDepartmentPage() {
                     type="button"
                     onClick={() => setConfirmDelete(true)}
                     disabled={isDeleting}
-                    className="flex items-center gap-1.5 rounded-btn border border-[var(--rust)] bg-card px-4 py-2 text-[13px] font-bold text-[var(--rust)] disabled:opacity-60"
+                    className="flex items-center gap-1.5 border border-[var(--rust)] bg-card text-[var(--rust)] disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                   >
                     <Trash2 size={15} /> Delete
                   </button>
@@ -151,12 +150,12 @@ export default function EditDepartmentPage() {
                 can only be deleted once it has no members, no sub-departments, and no workflow stage routes to it.
               </AlertDialogDescription>
               <div className="flex items-center justify-center gap-2.5">
-                <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+                <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
                   Cancel
                 </AlertDialogClose>
                 <AlertDialogClose
                   onClick={() => void handleDelete()}
-                  className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white"
+                  className="border border-[var(--rust)] bg-[var(--rust)] text-white h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
                 >
                   Delete Department
                 </AlertDialogClose>

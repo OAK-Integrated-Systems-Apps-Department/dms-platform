@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -171,7 +172,7 @@ export default function UserListPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Users" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           User Management — User List
         </h1>
@@ -232,7 +233,7 @@ export default function UserListPage() {
         {canCreateUser && (
           <Link
             href="/admin/users/new"
-            className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+            className="flex items-center gap-1.5 border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
           >
             <Plus size={16} />
             Add user
@@ -243,9 +244,7 @@ export default function UserListPage() {
       {isPending ? (
         <LoadingState message="Loading users…" />
       ) : isError ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-          {error instanceof Error ? error.message : "Could not load users."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load users." />
       ) : (
         <>
       <UsersTable
@@ -293,7 +292,7 @@ export default function UserListPage() {
               </p>
               <Link
                 href="/admin/users/new"
-                className="inline-flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+                className="inline-flex items-center gap-1.5 border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
               >
                 <Plus size={16} />
                 Add user

@@ -380,7 +380,7 @@ function outcomeOf(error: unknown): Partial<UploadJob> {
         message: "You don't have permission to upload here.",
       }
     if (error.status === 0)
-      return { state: "failed", message: "Could not reach the server." }
+      return { state: "failed", message: "Connection lost. Please try again." }
     return { state: "failed", message: error.message }
   }
   return { state: "failed", message: "Upload failed." }

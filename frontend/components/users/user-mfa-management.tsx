@@ -142,7 +142,7 @@ export function UserMfaManagement({
           <button
             type="button"
             onClick={() => setPendingAction("require-setup")}
-            className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+            className="flex h-[38px] items-center justify-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-4 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
           >
             <ShieldAlert size={14} />
             Require MFA Setup
@@ -151,7 +151,7 @@ export function UserMfaManagement({
             type="button"
             onClick={() => setPendingAction("reset-credentials")}
             disabled={!user.mfaEnrolled}
-            className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border-strong)] disabled:hover:bg-card disabled:hover:text-foreground"
+            className="flex h-[38px] items-center justify-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-4 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border-strong)] disabled:hover:bg-card disabled:hover:text-foreground"
           >
             <ShieldOff size={14} />
             Reset MFA Credentials

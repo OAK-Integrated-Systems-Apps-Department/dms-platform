@@ -6,7 +6,7 @@ import Link from "next/link"
 import { LifecycleBadge } from "@/components/retention/lifecycle-badge"
 import { LoadingState } from "@/components/ui/loading-state"
 import { TablePagination } from "@/components/ui/table-pagination"
-import { friendlyMessage } from "@/lib/api-error"
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useReviewQueue, useWithoutPolicy } from "@/lib/retention/use-retention"
 import { formatDateTime } from "@/lib/utils"
 
@@ -25,7 +25,7 @@ export function RetentionReviewQueue({ kind }: { kind: "review" | "without-polic
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="max-w-[640px] text-[12.5px] leading-[1.6] text-muted-foreground">
+      <p className="text-[12.5px] leading-[1.6] text-muted-foreground">
         {kind === "review"
           ? "These documents have been kept for their whole retention period. Nothing has been deleted. Open one to keep it longer or send it to the recycle bin."
           : "No retention rule covers these documents. Add a rule on the Rules tab (an organisation-wide one covers everything), then apply the rules - the flag clears on the next run."}
@@ -33,9 +33,9 @@ export function RetentionReviewQueue({ kind }: { kind: "review" | "without-polic
       {query.isPending ? (
         <LoadingState message="Loading…" />
       ) : query.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">{friendlyMessage(query.error, "Could not load the list.")}</p>
+        <LoadFailed error={query.error} fallback="Could not load the list." onRetry={() => void query.refetch()} />
       ) : query.data.content.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
           {kind === "review" ? "No documents are waiting for a retention review." : "Every document is covered by a rule."}
         </p>
       ) : (

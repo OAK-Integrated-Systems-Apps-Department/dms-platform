@@ -98,8 +98,20 @@ Placing/lifting a hold is the check-out module's (`DocumentCheckoutController`, 
 * the **status cannot be changed either way** (409 `DOCUMENT_ON_LEGAL_HOLD`, naming the hold and its reason) - CRM-FR-014;
 * the job **skips** the document, and the document page says archiving is paused - CRM-FR-015;
 * it **cannot be deleted** by anyone, administrators included (the delete path and the recycle-bin purge both refuse) - CRM-FR-016;
+* **destroying the organisation is refused too:** crypto-shredding a deactivated organisation's keys (platform administrators) would
+  destroy every document for good, so it is refused (409 `LEGAL_HOLD_ACTIVE`, naming how many are held) until the holds are lifted;
 * lifting needs `crm.lift-legal-hold`, and then **whatever fell due during the hold is applied at once**
   (`RetentionEngine.catchUp`), not at the next scheduled run.
+
+## Protecting a document from premature deletion
+
+The module's business objective is neither premature deletion nor over-retention. Over-retention is what the review flag is for;
+**premature deletion** is the setting **Protect documents from deletion during retention** (`protectFromDeletion`, off by default,
+`crm.configure-retention`). When it is on, **nobody** - an administrator included - can delete a document that a retention rule still
+covers until its total retention (active + archive + any extension) has ended: the delete is refused with 409
+`DOCUMENT_UNDER_RETENTION`, naming the rule, its regulation label and the date. The guard lets go as soon as the document is flagged
+for review (that is when disposal is decided, and disposal itself is a delete). A document no rule covers is unaffected. Legal hold
+blocks deletion regardless of this setting.
 
 ## After total retention: review, never auto-delete (CRM-FR-012 and the alternate flows)
 
@@ -107,7 +119,12 @@ A flagged document appears under **Records Retention > Awaiting review** (`crm.r
 
 * **Keep longer** - extend by N days/months/years with a mandatory reason; the flag clears and the review date moves out;
 * **Send to the recycle bin** - with a mandatory reason; it then follows the recycle bin's own retention. Refused while the
-  document is under legal hold, in an active approval, or linked to other documents (409 `DOCUMENT_REFERENCED`).
+  document is under legal hold, in an active approval, **used as a supporting document in an approval that is still running**, or linked
+  to other documents (409 `DOCUMENT_REFERENCED`).
+
+The **review lists** (Awaiting review, Without a rule, Removed versions) name documents, so each shows only the documents the reviewer
+could open anyway - the document browser's access rules. Holding the review permission lets someone decide about a document; it does
+not reveal titles in a restricted folder they have no access to.
 
 Documents no rule covers appear under **Without a rule**; add a rule (an organisation-wide one covers everything) and apply the
 rules - the flag clears.
@@ -119,6 +136,7 @@ rules - the flag clears.
 | `automationEnabled` | on | the scheduled job runs for this organisation (a paused organisation can still use "Apply rules now") |
 | `precedence` | `longest` | which rule wins when several cover a document |
 | `whenNoPolicy` | `flag` | flag a document no rule covers for an administrator, or `ignore` it |
+| `protectFromDeletion` | off | nobody can delete a document while a rule still covers it (see above) |
 | `requireStatusReason` | off | a reason is mandatory for a manual status change |
 
 Changing any is audited (`RETENTION_SETTINGS_CHANGED`) and needs `crm.configure-retention`.
@@ -189,6 +207,14 @@ each person's own preferences). One notification per kind **per run**, never one
   leave inactive and archived documents out as well.
 * **Pinned:** a pinned document that becomes inactive or archived **stays on the list**, flagged (the existing PID rule: a pin never
   just vanishes), and its row carries the Inactive/Archived badge. The Pinned count line says "inactive or archived".
+
+## Audit log screen
+
+The Audit Log page filters by module and action from its own copy of the action catalogue
+(`frontend/lib/audit-events/audit-action-catalog.ts`). The retention, legal-hold, version-retention and check-out / online-editing
+events are listed there (modules **CRM**, **DVC**, **CICO**) so they can be found and filtered. Events of other modules that are not in the
+copy yet (watermarking, digital signatures, notifications, pins) still appear in the list but cannot be picked in the filter - keep the
+copy in step with `AuditActionCatalog.java` when adding events.
 
 ## Rolling back
 

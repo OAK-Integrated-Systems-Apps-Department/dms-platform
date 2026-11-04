@@ -157,7 +157,7 @@ export function AppTopbar() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex min-w-0 items-center gap-3.5 border-b border-border bg-card px-[26px] py-3.5">
+    <header className="sticky top-0 z-20 flex min-w-0 items-center gap-2 border-b border-border bg-card px-4 py-3.5 sm:gap-3.5 sm:px-[26px]">
       <SidebarTrigger className="shrink-0" />
 
       {canSearch && (
@@ -174,7 +174,7 @@ export function AppTopbar() {
         href="/help"
         title="Help"
         aria-label="Help"
-        className="relative flex size-[38px] shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="relative flex size-[38px] shrink-0 items-center justify-center rounded-btn border border-border bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <HelpCircle size={17} />
       </Link>
@@ -213,7 +213,7 @@ export function AppTopbar() {
                       className={`${rowClass} w-full text-left hover:bg-muted`}
                     >
                       <span
-                        className={`flex size-7 shrink-0 items-center justify-center rounded-md ${kind.tone}`}
+                        className={`flex size-7 shrink-0 items-center justify-center rounded-btn ${kind.tone}`}
                       >
                         <kind.icon size={14} />
                       </span>
@@ -334,7 +334,7 @@ export function AppTopbar() {
             setNotifOpen(false)
             setPinOpen(false)
           }}
-          className="flex items-center gap-2 rounded-md border border-border py-[5px] pr-2.5 pl-[5px]"
+          className="flex items-center gap-2 rounded-btn border border-border h-[38px] pr-2.5 pl-[5px]"
           style={{
             background: accountOpen ? "var(--primary-tint)" : "var(--card)",
           }}

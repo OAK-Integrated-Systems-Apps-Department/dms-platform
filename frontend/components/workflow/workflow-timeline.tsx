@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import {
   AlertTriangle,
   Ban,
@@ -119,9 +120,7 @@ export function WorkflowTimeline({ instanceId }: { instanceId: string }) {
   if (isPending) return <p className="pt-3 text-[13px] text-muted-foreground">Loading history…</p>
   if (isError) {
     return (
-      <p className="pt-3 text-[13px] text-[var(--rust)]">
-        {error instanceof Error ? error.message : "Could not load this workflow's history."}
-      </p>
+      <LoadFailed error={error} fallback="Could not load this workflow's history." />
     )
   }
   if (data.content.length === 0) return <p className="pt-3 text-[13px] text-muted-foreground">No activity yet.</p>

@@ -43,7 +43,7 @@ function EditingSettingsForm({ initial, canEdit }: { initial: EditingSettingsDto
   const cannotEnable = !initial.engineConfigured && !initial.enabled
 
   return (
-    <div className="max-w-[760px]">
+    <div>
       <Panel title="Online editing">
         <div className="flex flex-col gap-5 pt-3">
           <div className="flex flex-wrap items-start justify-between gap-4">

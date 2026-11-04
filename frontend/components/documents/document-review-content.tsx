@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -246,9 +247,7 @@ export function DocumentReviewContent({ documentId }: { documentId: string }) {
         {isNetworkError(error) ? (
           <BackendUnavailable onRetry={refetch} />
         ) : (
-          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)]">
-            {error instanceof Error ? error.message : "Could not load this document."}
-          </div>
+          <LoadFailed error={error} fallback="Could not load this document." />
         )}
       </DashboardShell>
     )

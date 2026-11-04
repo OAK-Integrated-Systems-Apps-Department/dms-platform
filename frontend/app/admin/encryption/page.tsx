@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -60,7 +61,7 @@ export default function EncryptionKeysPage() {
           { label: "Encryption Keys" },
         ]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Encryption keys
         </h1>
@@ -125,9 +126,7 @@ function EncryptionKeys() {
     return <LoadingState message="Loading encryption status…" />
   if (status.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(status.error, "Could not load the encryption status.")}
-      </p>
+      <LoadFailed error={status.error} fallback="Could not load the encryption status." />
     )
   }
   const s = status.data

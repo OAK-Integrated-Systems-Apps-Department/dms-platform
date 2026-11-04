@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { toast } from "sonner"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -31,7 +32,7 @@ export default function NotificationPreferencesPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Profile", href: "/profile" }, { label: "Notifications" }]}
       />
-      <div className="mb-5 max-w-[680px]">
+      <div className="mb-5">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Notification preferences</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Choose which notifications also reach you by email. You always see every notification in your inbox.
@@ -41,9 +42,7 @@ export default function NotificationPreferencesPage() {
       {isPending ? (
         <LoadingState message="Loading your preferences…" />
       ) : isError ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)]">
-          {error instanceof Error ? error.message : "Could not load your preferences."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load your preferences." />
       ) : (
         <CategoryGroups
           items={(data ?? []).map((p) => ({ ...p, enabled: p.emailEnabled }))}

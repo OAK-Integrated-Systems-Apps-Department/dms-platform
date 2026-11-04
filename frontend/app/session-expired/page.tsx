@@ -70,7 +70,7 @@ export default function SessionExpiredPage() {
         <button
           type="button"
           onClick={handleSignInAgain}
-          className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
+          className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
         >
           Sign in again
         </button>

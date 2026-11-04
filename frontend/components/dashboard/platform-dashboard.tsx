@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { Fragment, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
@@ -22,7 +23,6 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadingState } from "@/components/ui/loading-state"
-import { friendlyMessage } from "@/lib/api-error"
 import {
   fetchPlatformOrganisationBreakdown,
   fetchPlatformOverview,
@@ -126,12 +126,7 @@ export function PlatformDashboard() {
     return <LoadingState message="Loading the platform overview…" />
   if (overview.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(
-          overview.error,
-          "Could not load the platform overview."
-        )}
-      </p>
+      <LoadFailed error={overview.error} fallback="Could not load the platform overview." />
     )
   }
 
@@ -790,12 +785,7 @@ function OrganisationBreakdown({ org }: { org: PlatformOrganisationDto }) {
   }
   if (breakdown.isError) {
     return (
-      <p className="mt-4 border-t border-border pt-4 text-[12.5px] text-[var(--rust)]">
-        {friendlyMessage(
-          breakdown.error,
-          "Could not load this organisation's breakdown."
-        )}
-      </p>
+      <LoadFailed error={breakdown.error} fallback="Could not load this organisation's breakdown." quiet />
     )
   }
 

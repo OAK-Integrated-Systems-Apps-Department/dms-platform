@@ -364,7 +364,7 @@ export function CheckboxFilter({
                 {selected.map((value) => (
                   <span
                     key={value}
-                    className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-foreground"
+                    className="border border-border bg-muted text-foreground inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
                   >
                     {getLabel(value)}
                     <button

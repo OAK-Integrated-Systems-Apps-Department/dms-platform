@@ -210,14 +210,14 @@ export function UserInviteForm() {
           <button
             type="button"
             onClick={() => setInvitedEmail(null)}
-            className="rounded-btn border border-[var(--border-strong)] px-4 py-2 text-[13px] font-semibold text-foreground"
+            className="border border-[var(--border-strong)] font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
           >
             Add another user
           </button>
           <button
             type="button"
             onClick={() => router.push("/admin/users")}
-            className="rounded-btn border border-primary bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground"
+            className="border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
           >
             Back to user list
           </button>
@@ -309,14 +309,14 @@ export function UserInviteForm() {
         <button
           type="button"
           onClick={() => router.push("/admin/users")}
-          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="border border-[var(--border-strong)] font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting || !isValid || checkingEmail || errors.email?.type === "taken"}
-          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Creating…" : "Create user"}
         </button>

@@ -78,12 +78,12 @@ export function RevokeSessionDialog({
             )}
           </AlertDialogDescription>
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
               onClick={onConfirm}
-              className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white"
+              className="border border-[var(--rust)] bg-[var(--rust)] text-white h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {isAll ? "Revoke All Sessions" : "Revoke Session"}
             </AlertDialogClose>

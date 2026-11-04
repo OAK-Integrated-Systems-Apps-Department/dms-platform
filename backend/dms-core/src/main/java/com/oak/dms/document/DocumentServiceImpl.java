@@ -149,6 +149,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final com.oak.dms.checkout.DocumentEditGuard editGuard;
     // 6.1: the live "archives on" date for the list badge.
     private final com.oak.dms.compliance.RetentionDueDates retentionDueDates;
+    // 6.1: "protect from deletion" while a retention rule still covers the document.
+    private final com.oak.dms.compliance.RetentionDeletionGuard retentionDeletionGuard;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -564,6 +566,7 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = findVisible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
         editGuard.guard(document);
+        retentionDeletionGuard.guardDeletion(document);
         // A document under approval must not vanish from under its approvers (3.1 Phase 2).
         if (approvals.inProgress(document.getTenantId(), documentId)) {
             throw new DocumentStateException("DOCUMENT_IN_APPROVAL",

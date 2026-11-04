@@ -41,7 +41,7 @@ export function ImpersonationBanner() {
         type="button"
         onClick={() => stopImpersonation()}
         disabled={isStopping}
-        className="ml-1 shrink-0 rounded-btn border border-[var(--gold-foreground)] px-2.5 py-1 text-[12px] font-semibold text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+        className="ml-1 shrink-0 border border-[var(--gold-foreground)] text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold)]/20 disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
       >
         {isStopping ? "Returning…" : "Return to Admin"}
       </button>

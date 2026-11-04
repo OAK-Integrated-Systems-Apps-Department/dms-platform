@@ -99,6 +99,8 @@ export interface RetentionSettingsDto {
   requireStatusReason: boolean
   /** How long a version removed by retention stays hidden and restorable before its files are destroyed. */
   versionGraceDays: number
+  /** A document a rule still covers can't be deleted until its total retention has ended. */
+  protectFromDeletion: boolean
 }
 
 /** Mirrors DocumentLifecycleService.ReviewItem - a document waiting for an administrator. */

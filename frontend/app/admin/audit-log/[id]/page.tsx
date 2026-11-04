@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 
@@ -50,9 +51,7 @@ export default function ViewAuditEventPage() {
       ) : (
         <PermissionGate permission={PermissionCodes.ABDR_VIEW_AUDIT_HISTORY}>
           {isError ? (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load this audit event."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load this audit event." />
           ) : event ? (
             <AuditEventDetail event={event} />
           ) : null}

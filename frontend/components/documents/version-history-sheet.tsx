@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -200,12 +201,7 @@ export function VersionHistorySheet({
               <Loader2 size={14} className="animate-spin" /> Loading versions…
             </p>
           ) : versions.isError ? (
-            <p className="text-[13px] text-[var(--rust)]">
-              {friendlyMessage(
-                versions.error,
-                "Could not load the version history."
-              )}
-            </p>
+            <LoadFailed error={versions.error} fallback="Could not load the version history." />
           ) : (
             <ol className="flex flex-col gap-2.5">
               {versions.data.map((version) => (
@@ -216,17 +212,17 @@ export function VersionHistorySheet({
                     version.current ? "border-primary/50" : "border-border"
                   )}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-7 min-w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 px-2 font-mono text-[12px] font-semibold text-primary">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-btn bg-primary/10 px-2.5 font-mono text-[12px] font-semibold whitespace-nowrap text-primary">
                       v{version.versionLabel}
                     </span>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-[160px] flex-1">
                       <p className="flex flex-wrap items-center gap-x-2 text-[13px] font-medium">
                         <span className="truncate">
                           {version.originalFilename}
                         </span>
                         {version.current && (
-                          <span className="rounded-full bg-primary/10 px-2 py-px text-[11px] font-semibold text-primary">
+                          <span className="bg-primary/10 text-primary inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
                             Current
                           </span>
                         )}

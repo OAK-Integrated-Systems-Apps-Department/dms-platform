@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { useQuery } from "@tanstack/react-query"
@@ -100,7 +101,6 @@ export function WatermarkDialog({
   const { hasPermission } = usePermissions()
   const canChooseVersion = hasPermission(PermissionCodes.DVC_VERSIONS_VIEW)
 
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const [unrenderable, setUnrenderable] = useState<string | null>(null)
   const [job, setJob] = useState<WatermarkJobDto | null>(null)
   const textRef = useRef<HTMLTextAreaElement | null>(null)
@@ -216,7 +216,6 @@ export function WatermarkDialog({
   }
 
   async function onSubmit(form: WatermarkRequestFormValues) {
-    setSubmitError(null)
     try {
       const created = await requestWatermark(
         documentId,
@@ -239,7 +238,7 @@ export function WatermarkDialog({
       if (failure.field) {
         setError(failure.field, { type: "server", message: failure.message })
       } else {
-        setSubmitError(failure.message)
+        toast.error(failure.message)
       }
     }
   }
@@ -266,15 +265,6 @@ export function WatermarkDialog({
             noValidate
           >
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
-              {submitError && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-                >
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>{submitError}</span>
-                </div>
-              )}
 
               {/* ---------------------------------------- what it says */}
               <section className="flex flex-col gap-3">
@@ -432,7 +422,7 @@ export function WatermarkDialog({
                     <button
                       {...props}
                       type="button"
-                      className="flex w-full items-center justify-between rounded-btn border border-border bg-muted/20 px-3.5 py-2.5 text-[12.5px] font-semibold text-foreground transition-colors hover:bg-muted/40"
+                      className="flex w-full items-center justify-between rounded-btn border border-border bg-muted/20 font-semibold text-foreground transition-colors hover:bg-muted/40 h-[38px] px-4 text-[13px]"
                     >
                       Style
                       <ChevronDown size={14} aria-hidden="true" />

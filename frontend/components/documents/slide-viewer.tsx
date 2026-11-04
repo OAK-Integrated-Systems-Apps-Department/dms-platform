@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import {
   useEffect,
   useRef,
@@ -14,7 +15,6 @@ import {
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { friendlyMessage } from "@/lib/api-error"
 import { openSlides, slideImage } from "@/lib/documents/api"
 import { cn } from "@/lib/utils"
 
@@ -179,9 +179,7 @@ export function SlideViewer({
   }
   if (deck.isError) {
     return (
-      <p className="m-auto max-w-[420px] text-center text-[13px] text-[var(--rust)]">
-        {friendlyMessage(deck.error, "Could not prepare the slides.")}
-      </p>
+      <LoadFailed error={deck.error} fallback="Could not prepare the slides." />
     )
   }
   if (count === 0) {
@@ -238,7 +236,7 @@ export function SlideViewer({
                 />
               ) : image.isError ? (
                 <div className="flex size-full flex-col items-center justify-center gap-2 p-4 text-center text-[13px] text-[var(--rust)]">
-                  {friendlyMessage(image.error, "Could not show this slide.")}
+                  <LoadFailed error={image.error} fallback="Could not show this slide." quiet />
                   <Button
                     size="sm"
                     variant="outline"

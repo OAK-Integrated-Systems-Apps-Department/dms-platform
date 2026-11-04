@@ -33,10 +33,10 @@ public class RetentionSettingsService {
     public static final int DEFAULT_GRACE_DAYS = 30;
 
     public record Settings(boolean automationEnabled, String precedence, String whenNoPolicy, boolean requireStatusReason,
-                           int versionGraceDays) {
+                           int versionGraceDays, boolean protectFromDeletion) {
     }
 
-    private static final Settings DEFAULT = new Settings(true, RetentionResolver.LONGEST, FLAG, false, DEFAULT_GRACE_DAYS);
+    private static final Settings DEFAULT = new Settings(true, RetentionResolver.LONGEST, FLAG, false, DEFAULT_GRACE_DAYS, false);
 
     private final TenantRetentionSettingsRepository repository;
     private final AuditService auditService;
@@ -45,7 +45,7 @@ public class RetentionSettingsService {
     public Settings forTenant(UUID tenantId) {
         return repository.findById(tenantId)
                 .map(s -> new Settings(s.isAutomationEnabled(), s.getPrecedence(), s.getWhenNoPolicy(), s.isRequireStatusReason(),
-                        s.getVersionGraceDays()))
+                        s.getVersionGraceDays(), s.isProtectFromDeletion()))
                 .orElse(DEFAULT);
     }
 
@@ -81,12 +81,13 @@ public class RetentionSettingsService {
         row.setWhenNoPolicy(whenNone);
         row.setRequireStatusReason(wanted.requireStatusReason());
         row.setVersionGraceDays(wanted.versionGraceDays());
+        row.setProtectFromDeletion(wanted.protectFromDeletion());
         row.setUpdatedBy(TenantContext.getUserId());
         row.setUpdatedAt(OffsetDateTime.now());
         repository.save(row);
 
         Settings after = new Settings(wanted.automationEnabled(), precedence, whenNone, wanted.requireStatusReason(),
-                wanted.versionGraceDays());
+                wanted.versionGraceDays(), wanted.protectFromDeletion());
         auditService.event(AuditActionCatalog.RETENTION_SETTINGS_CHANGED)
                 .objectType(AuditObjectTypes.TENANT).objectId(tenantId)
                 .outcome(AuditOutcome.SUCCESS).previousValue(asMap(before)).newValue(asMap(after)).log();
@@ -100,6 +101,7 @@ public class RetentionSettingsService {
         m.put("whenNoPolicy", s.whenNoPolicy());
         m.put("requireStatusReason", s.requireStatusReason());
         m.put("versionGraceDays", s.versionGraceDays());
+        m.put("protectFromDeletion", s.protectFromDeletion());
         return m;
     }
 }

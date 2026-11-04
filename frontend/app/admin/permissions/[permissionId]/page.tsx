@@ -41,7 +41,7 @@ export default function PermissionDetailsPage() {
           { label: permission?.name ?? "Permission Details" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             Permission Details
           </h1>

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { friendlyMessage } from "@/lib/api-error"
+import { retentionError } from "./messages"
 
 import {
   changeDocumentStatus,
@@ -64,7 +64,7 @@ export function useChangeStatus() {
       refresh(documentId)
       toast.success(status === "inactive" ? "Marked inactive. It now lives in the Archive view." : "Marked active.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not change the status.")),
+    onError: (error) => toast.error(retentionError(error, "Could not change the status.", { action: "change a document's status", needs: "Mark document active/inactive" })),
   })
 }
 
@@ -79,7 +79,7 @@ export function useReviewActions() {
       refresh(documentId)
       toast.success("Retention extended.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not extend the retention.")),
+    onError: (error) => toast.error(retentionError(error, "Could not extend the retention.", { action: "extend a retention", needs: "Review documents past their retention period" })),
   })
   const dispose = useMutation({
     mutationFn: (vars: { documentId: string; reason: string }) => disposeDocument(vars.documentId, vars.reason),
@@ -88,7 +88,7 @@ export function useReviewActions() {
       void queryClient.invalidateQueries({ queryKey: ["recycle-bin"] })
       toast.success("Moved to the recycle bin.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not dispose of the document.")),
+    onError: (error) => toast.error(retentionError(error, "Could not dispose of the document.", { action: "dispose of a document", needs: "Review documents past their retention period" })),
   })
   return { extend, dispose }
 }
@@ -114,7 +114,7 @@ export function usePolicyActions() {
       refresh()
       toast.success("Rule created. It applies the next time retention runs.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not create the rule.")),
+    onError: (error) => toast.error(retentionError(error, "Could not create the rule.", { action: "create retention rules", needs: "Create retention policy" })),
   })
   const update = useMutation({
     mutationFn: ({ policyId, request }: { policyId: string; request: RetentionPolicyRequest }) =>
@@ -123,7 +123,7 @@ export function usePolicyActions() {
       refresh()
       toast.success("Rule saved. It applies the next time retention runs.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not save the rule.")),
+    onError: (error) => toast.error(retentionError(error, "Could not save the rule.", { action: "change retention rules", needs: "Update retention policy" })),
   })
   const remove = useMutation({
     mutationFn: (policyId: string) => deleteRetentionPolicy(policyId),
@@ -131,7 +131,7 @@ export function usePolicyActions() {
       refresh()
       toast.success("Rule deleted.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not delete the rule.")),
+    // No error toast here: the confirmation dialog that calls this shows the failure (once) and stays open.
   })
   return { create, update, remove }
 }
@@ -148,7 +148,7 @@ export function useSaveRetentionSettings() {
       queryClient.setQueryData(SETTINGS_KEY, saved)
       toast.success("Retention settings saved.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not save the retention settings.")),
+    onError: (error) => toast.error(retentionError(error, "Could not save the retention settings.", { action: "change the retention settings", needs: "Configure retention settings" })),
   })
 }
 
@@ -182,7 +182,7 @@ export function useRunRetention() {
         `Retention applied: ${result.archived} archived, ${result.flagged} flagged for review, ${result.withoutPolicy} without a rule, ${result.versionsRemoved} old version${result.versionsRemoved === 1 ? "" : "s"} removed.`
       )
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not run the retention rules.")),
+    onError: (error) => toast.error(retentionError(error, "Could not run the retention rules.", { action: "run retention", needs: "Configure retention settings" })),
   })
 }
 
@@ -208,6 +208,6 @@ export function useRestoreVersion() {
       void queryClient.invalidateQueries({ queryKey: ["documents", "versions"] })
       toast.success("Version restored. It will be kept from now on.")
     },
-    onError: (error) => toast.error(friendlyMessage(error, "Could not restore the version.")),
+    onError: (error) => toast.error(retentionError(error, "Could not restore the version.", { action: "restore a removed version", needs: "Review documents past their retention period" })),
   })
 }

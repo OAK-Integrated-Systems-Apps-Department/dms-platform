@@ -45,7 +45,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
           <tbody>
             {documentTypes.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3.5 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-380px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground">
                   No document types match your search.
                 </td>
               </tr>
@@ -65,7 +65,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                   <div className="flex items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger render={(props) => (
-                        <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}`} aria-label={`View ${type.typeName}`} className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted">
+                        <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}`} aria-label={`View ${type.typeName}`} className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn">
                           <Eye size={15} />
                         </Link>
                       )} />
@@ -75,7 +75,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                     {canUpdate && (
                       <Tooltip>
                         <TooltipTrigger render={(props) => (
-                          <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}/edit`} aria-label={`Edit ${type.typeName}`} className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted">
+                          <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}/edit`} aria-label={`Edit ${type.typeName}`} className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn">
                             <Pencil size={15} />
                           </Link>
                         )} />

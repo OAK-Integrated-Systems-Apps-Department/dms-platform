@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { X } from "lucide-react"
 
@@ -104,7 +105,7 @@ export function AddRelationshipDialog({ documentId, linkedIds, open, onOpenChang
           />
         </label>
         {types.isError && (
-          <p className="text-[12px] text-[var(--rust)]">{friendlyMessage(types.error, "Could not load the types.")}</p>
+          <LoadFailed error={types.error} fallback="Could not load the types." quiet />
         )}
 
         {type && directional && (
