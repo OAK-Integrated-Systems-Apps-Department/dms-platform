@@ -66,7 +66,7 @@ export function RoleDeleteDialog({
     >
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[460px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>
           <AlertDialogTitle>Delete this role?</AlertDialogTitle>

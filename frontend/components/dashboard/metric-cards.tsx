@@ -228,7 +228,7 @@ export function MetricCard({
         <Link
           href={href}
           aria-label={`${label}: ${format(value)} ${caption}`}
-          className="group block h-full rounded-2xl focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="group block h-full rounded-lg focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {body}
         </Link>

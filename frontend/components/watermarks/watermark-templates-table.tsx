@@ -44,7 +44,7 @@ export function WatermarkTemplatesTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse">
+        <table className="tbl-card w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Name</th>
@@ -100,7 +100,7 @@ export function WatermarkTemplatesTable({
                   {describeStyle(row)}
                 </td>
                 <td className="px-3 py-3">
-                  <Badge variant={row.active ? "default" : "outline"} className="gap-1.5 rounded-md">
+                  <Badge variant={row.active ? "default" : "outline"} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {row.active ? "Active" : "Retired"}
                   </Badge>

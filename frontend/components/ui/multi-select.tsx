@@ -145,7 +145,7 @@ export function MultiSelect({
         // already tests containerRef.contains(), and this panel is inside
         // that container - so the stop was doing nothing except making a
         // plain <div> look like a control.
-        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
+        <div className="absolute top-[calc(100%+6px)] left-0 z-20 w-[240px] rounded-btn border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           {searchable && (
             <div className="relative mb-1.5">
               <Search

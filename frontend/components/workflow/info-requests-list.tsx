@@ -42,7 +42,7 @@ export function InfoRequestsList({ requests, documentTitle, currentUserId, canRe
           const forMe = open && currentUserId === r.requestedFrom.userId
           const mine = open && currentUserId === r.requestedBy.userId
           return (
-            <li key={r.infoRequestId} className="rounded-md border border-border px-3.5 py-2.5 text-[12.5px]">
+            <li key={r.infoRequestId} className="rounded-btn border border-border px-3.5 py-2.5 text-[12.5px]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-foreground">
                   <span className="font-semibold">{r.requestedBy.displayName ?? "An approver"}</span> asked{" "}

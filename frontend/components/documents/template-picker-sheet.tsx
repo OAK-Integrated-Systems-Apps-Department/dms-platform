@@ -231,7 +231,7 @@ export function TemplatePickerSheet({
           ) : templates.isError ? (
             <LoadFailed error={templates.error} fallback="Could not load templates." />
           ) : groups.size === 0 ? (
-            <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+            <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground bg-card">
               {q || typeFilter
                 ? "No template matches your search."
                 : "No templates yet. Administrators add them to a document type, under Document Types › Templates."}
@@ -244,7 +244,7 @@ export function TemplatePickerSheet({
                   <h3 className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                     {typeName}
                   </h3>
-                  <ul className="divide-y divide-border rounded-lg border border-border">
+                  <ul className="divide-y divide-border rounded-lg border border-border bg-card">
                     {list.map((template) => {
                       const kind = fileKind(template.fileName)
                       const isUsing = using?.id === template.templateId

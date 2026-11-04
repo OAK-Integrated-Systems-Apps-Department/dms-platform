@@ -64,7 +64,7 @@ export function PermissionDeleteDialog({
     >
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[740px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>
           <AlertDialogTitle>Delete this permission?</AlertDialogTitle>

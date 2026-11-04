@@ -68,7 +68,7 @@ export function DashboardHeader({
     <section
       aria-label="Overview"
       style={{ "--dash-order": 0 } as CSSProperties}
-      className="dash-rise dash-hero mb-5 rounded-2xl border border-border px-5 py-5 shadow-[var(--ledger-shadow)] sm:px-7"
+      className="dash-rise dash-hero mb-5 rounded-lg border border-border px-5 py-5 shadow-[var(--ledger-shadow)] sm:px-7"
     >
       <span
         aria-hidden="true"

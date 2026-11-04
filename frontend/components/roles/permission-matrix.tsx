@@ -305,7 +305,7 @@ export function PermissionMatrix() {
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
             {roleFilterOpen && (
-              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-md border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
+              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-btn border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
                 <div className="flex items-center justify-between border-b border-border px-3.5 pt-1 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                     Show roles
@@ -393,7 +393,7 @@ export function PermissionMatrix() {
                   )
                 )
               }}
-              className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-btn px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               Expand all
             </button>
@@ -404,7 +404,7 @@ export function PermissionMatrix() {
                 setOpenModules({})
                 setOpenActions({})
               }}
-              className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-btn px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               Collapse all
             </button>
@@ -413,7 +413,7 @@ export function PermissionMatrix() {
       </div>
 
       {/* Matrix — horizontal scroll only; vertical scroll is the page's */}
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table
           className="w-full border-collapse"
           style={{

@@ -301,7 +301,7 @@ export function ServiceLogs({
         <div
           role="radiogroup"
           aria-label="Log level"
-          className="flex items-center gap-0.5 rounded-md border border-border p-0.5"
+          className="flex items-center gap-0.5 rounded-btn border border-border p-0.5"
         >
           {([undefined, ...LOG_LEVELS] as (LogLevel | undefined)[]).map(
             (option) => (
@@ -312,7 +312,7 @@ export function ServiceLogs({
                 aria-checked={level === option}
                 onClick={() => setLevel(option)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[11px] font-medium",
+                  "rounded-btn px-1.5 py-0.5 text-[11px] font-medium",
                   level === option
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -328,7 +328,7 @@ export function ServiceLogs({
           value={range}
           onChange={(event) => setRange(event.target.value as LogRange)}
           aria-label="Time window"
-          className="h-6 rounded-md border border-border bg-card px-1.5 text-[11px]"
+          className="h-6 rounded-btn border border-border bg-card px-1.5 text-[11px]"
         >
           {LOG_RANGES.map((option) => (
             <option key={option} value={option}>
@@ -342,7 +342,7 @@ export function ServiceLogs({
           onClick={() => setLive((value) => !value)}
           aria-pressed={live}
           title={live ? "Pause updates" : "Resume updates"}
-          className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="ml-auto inline-flex items-center gap-1 rounded-btn border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           {live ? <Pause size={11} /> : <Play size={11} />}
           {live ? "Live" : "Paused"}
@@ -352,7 +352,7 @@ export function ServiceLogs({
             type="button"
             onClick={() => setExpanded(true)}
             title="Open in a large panel"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-btn border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Maximize2 size={11} />
             Expand
@@ -373,7 +373,7 @@ export function ServiceLogs({
           aria-label="Search logs"
           maxLength={200}
           className={cn(
-            "w-full rounded-md border border-border bg-card pr-2 pl-7",
+            "w-full rounded-btn border border-border bg-card pr-2 pl-7",
             large ? "h-8 text-[13px]" : "h-7 text-[12px]"
           )}
         />
@@ -399,7 +399,7 @@ export function ServiceLogs({
         <>
           <ol
             className={cn(
-              "overflow-auto rounded-md border border-border bg-card",
+              "overflow-auto rounded-btn border border-border bg-card",
               // Large: take whatever height is left under the controls, so
               // the list is as tall as the panel, not a fixed box inside it.
               large ? "min-h-0 flex-1" : "max-h-[440px]"

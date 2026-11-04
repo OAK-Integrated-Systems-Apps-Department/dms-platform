@@ -98,7 +98,7 @@ export function SecurityOverview() {
           </p>
           <Badge
             variant={user?.mfaEnabled ? "default" : "muted"}
-            className="gap-1.5 rounded-md"
+            className="gap-1.5 rounded-btn"
           >
             <span className="size-[5px] rounded-full bg-current" />
             {user?.mfaEnabled ? "Enrolled" : "Not enrolled"}

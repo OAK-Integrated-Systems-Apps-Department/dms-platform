@@ -49,7 +49,7 @@ export function WorkflowFormDialog({
     <AlertDialog open onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-xl">
-          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-md", TONE[tone].icon)}>
+          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-btn", TONE[tone].icon)}>
             <Icon size={20} aria-hidden="true" />
           </span>
           <AlertDialogTitle>{title}</AlertDialogTitle>

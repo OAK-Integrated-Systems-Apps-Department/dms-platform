@@ -106,7 +106,7 @@ export function ProfileOverview() {
     <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center gap-4">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-primary font-heading text-[18px] font-bold text-primary-foreground">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-btn bg-primary font-heading text-[18px] font-bold text-primary-foreground">
           {initials ?? "…"}
         </span>
         <div>
@@ -122,7 +122,7 @@ export function ProfileOverview() {
       {isEditing ? (
         <form onSubmit={handleSubmit(onSubmit)}>
           {submitError && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+            <div className="mb-5 flex items-start gap-2.5 rounded-btn border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
               <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
               {submitError}
             </div>
@@ -233,7 +233,7 @@ export function ProfileOverview() {
           <div className="flex flex-wrap gap-1.5">
             {user?.roles?.length ? (
               user.roles.map((role) => (
-                <Badge key={role} variant="outline" className="rounded-md">
+                <Badge key={role} variant="outline" className="rounded-btn">
                   {PLATFORM_ROLE_LABELS[role] ?? role}
                 </Badge>
               ))

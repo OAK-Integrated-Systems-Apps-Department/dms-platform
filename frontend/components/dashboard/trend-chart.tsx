@@ -168,7 +168,7 @@ export function TrendChart({
       {shown && (
         <div
           className={cn(
-            "pointer-events-none absolute top-0 rounded-md border border-border bg-card px-2.5 py-1.5 shadow-sm",
+            "pointer-events-none absolute top-0 rounded-btn border border-border bg-card px-2.5 py-1.5 shadow-sm",
             // Flips side past the midpoint so the tooltip never leaves the card.
             active !== null && active > points.length / 2 ? "left-2" : "right-2"
           )}

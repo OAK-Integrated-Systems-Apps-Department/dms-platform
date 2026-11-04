@@ -81,7 +81,7 @@ export default function WorkflowTemplatePage() {
                 <div className="min-w-0 flex-1">
                   <div className="mb-2 flex flex-wrap items-center gap-2.5">
                     <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{template.name}</h1>
-                    <Badge variant={TEMPLATE_STATUS_BADGE_VARIANT[template.status]} className="gap-1.5 rounded-md">
+                    <Badge variant={TEMPLATE_STATUS_BADGE_VARIANT[template.status]} className="gap-1.5 rounded-btn">
                       <span className="size-[5px] rounded-full bg-current" />
                       {TEMPLATE_STATUS_LABELS[template.status]}
                     </Badge>

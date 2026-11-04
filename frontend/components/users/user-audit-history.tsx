@@ -341,14 +341,14 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
           value={keyword}
           onChange={(value) => handleFilterChange(() => setKeyword(value))}
           placeholder="Search activity…"
-          inputClassName="rounded-md text-[13px] font-medium placeholder:font-normal placeholder:text-muted-foreground"
+          inputClassName="rounded-btn text-[13px] font-medium placeholder:font-normal placeholder:text-muted-foreground"
         />
 
         {filtersActive && (
           <button
             type="button"
             onClick={clearFilters}
-            className="flex h-[38px] items-center gap-1 rounded-md px-2.5 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
+            className="flex h-[38px] items-center gap-1 rounded-btn px-2.5 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
           >
             <X size={13} />
             Clear filters
@@ -406,7 +406,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
               type="button"
               onClick={() => setPage(n)}
               className={
-                "flex size-7 items-center justify-center rounded-md border text-[12.5px] " +
+                "flex size-7 items-center justify-center rounded-btn border text-[12.5px] " +
                 (n === currentPage
                   ? "bg-primary-tint border-primary font-semibold text-primary"
                   : "border-border bg-card text-muted-foreground")
@@ -419,7 +419,7 @@ export function UserAuditHistory({ user }: UserAuditHistoryProps) {
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
-            className="ml-1 rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary disabled:cursor-not-allowed disabled:text-muted-foreground"
+            className="ml-1 rounded-btn px-2 py-1 text-[12.5px] font-semibold text-primary disabled:cursor-not-allowed disabled:text-muted-foreground"
           >
             Next ›
           </button>

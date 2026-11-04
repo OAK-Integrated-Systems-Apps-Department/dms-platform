@@ -174,7 +174,7 @@ export function RetentionPoliciesTab() {
       </div>
 
       {data.length === 0 ? (
-        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground bg-card">
           No retention rules yet. Until you add one, nothing is archived and no document is flagged.
         </p>
       ) : (

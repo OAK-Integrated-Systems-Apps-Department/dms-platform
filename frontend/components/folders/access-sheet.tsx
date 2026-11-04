@@ -259,7 +259,7 @@ function AccessEditor({
               >
                 <span
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-md",
+                    "flex size-8 shrink-0 items-center justify-center rounded-btn",
                     selected
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground"
@@ -300,12 +300,12 @@ function AccessEditor({
               />
             )}
             {entries.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-dashed border-border px-3.5 py-4 text-center text-[12.5px] text-muted-foreground">
+              <p className="mt-3 rounded-lg border border-dashed border-border px-3.5 py-4 text-center text-[12.5px] text-muted-foreground bg-card">
                 Nobody added yet. You&apos;ll be kept as a manager, and admins
                 always have access.
               </p>
             ) : (
-              <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
+              <ul className="mt-3 divide-y divide-border rounded-lg border border-border bg-card">
                 {entries.map((entry, i) => (
                   <li
                     key={`${entry.principalType}:${entry.principalId}`}

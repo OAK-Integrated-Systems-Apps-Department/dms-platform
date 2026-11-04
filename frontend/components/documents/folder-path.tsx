@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils"
 const MAX_VISIBLE = 3
 
 const SEGMENT =
-  "inline-flex max-w-[220px] items-center gap-1.5 rounded-md px-2 py-1 text-[14px] transition-colors"
+  "inline-flex max-w-[220px] items-center gap-1.5 rounded-btn px-2 py-1 text-[14px] transition-colors"
 
 /**
  * Where you are in My Documents: an "up one level" button, then

@@ -344,14 +344,14 @@ export function DocumentUploadForm() {
       <div className="flex w-full flex-col gap-5">
         <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
           {uploadError && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+            <div className="mb-5 flex items-start gap-2.5 rounded-btn border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
               <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
               {uploadError}
             </div>
           )}
 
           {version ? (
-            <div className="mb-5 flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-[13px] py-[11px]">
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-btn border border-dashed border-border px-[13px] py-[11px]">
               <p className="text-[13px] text-muted-foreground">
                 Reviewing <span className="font-semibold text-foreground">{ticket?.originalFilename ?? "this document"}</span> below.
               </p>
@@ -485,7 +485,7 @@ export function DocumentUploadForm() {
             </div>
 
             {phase === "failed" && (
-              <div className="mb-4 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+              <div className="mb-4 flex items-start gap-2.5 rounded-btn border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
                 <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
                 {ocrStatusQuery.data?.friendlyError ?? "OCR could not process this document."}{" "}
                 {retryable ? "You can still fill in fields manually, or retry below." : "You can still fill in the fields manually."}

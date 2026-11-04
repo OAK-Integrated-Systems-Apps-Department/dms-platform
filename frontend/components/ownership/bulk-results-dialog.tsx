@@ -29,7 +29,7 @@ export function BulkResultsDialog({ summary, open, onOpenChange }: BulkResultsDi
         <AlertDialogPopup className="max-w-[520px] text-left">
           {summary && (
             <>
-              <span className="mb-3 flex size-10 items-center justify-center rounded-md bg-[var(--sage-tint,var(--muted))] text-primary">
+              <span className="mb-3 flex size-10 items-center justify-center rounded-btn bg-[var(--sage-tint,var(--muted))] text-primary">
                 <CheckCircle2 size={20} aria-hidden="true" />
               </span>
               <AlertDialogTitle>

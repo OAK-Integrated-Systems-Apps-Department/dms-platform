@@ -50,7 +50,7 @@ export function RevokeSessionDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup>
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Icon size={20} />
           </span>
           <AlertDialogTitle>

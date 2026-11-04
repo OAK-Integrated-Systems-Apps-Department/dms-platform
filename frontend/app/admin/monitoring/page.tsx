@@ -363,7 +363,7 @@ export default function SystemMonitoringPage() {
                   aria-checked={range === option}
                   onClick={() => setRange(option)}
                   className={cn(
-                    "rounded px-2.5 py-1 text-[12px] font-medium",
+                    "rounded-btn px-2.5 py-1 text-[12px] font-medium",
                     "transition-[background-color,color,transform] duration-150",
                     "motion-safe:active:scale-95",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",

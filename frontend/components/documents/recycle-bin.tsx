@@ -87,7 +87,7 @@ export function RecycleBin() {
       )}
 
       {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border p-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border p-10 text-center bg-card">
           <Trash2 className="mx-auto mb-2 text-muted-foreground" size={22} />
           <p className="text-[13.5px] font-medium">The recycle bin is empty</p>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
@@ -97,7 +97,7 @@ export function RecycleBin() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="w-full min-w-[760px] text-[13px]">
+          <table className="tbl-card w-full min-w-[760px] text-[13px]">
             <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
               <tr>
                 <th className="px-4 py-2.5 font-semibold">Document</th>

@@ -68,7 +68,7 @@ export function DocumentRetentionPanel({ documentId }: { documentId: string }) {
           </div>
 
           {held && (
-            <p className="flex items-start gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+            <p className="flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
               <Gavel size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>
                 Under legal hold{data.legalHoldReason ? ` (${data.legalHoldReason})` : ""}. Its status is locked and
@@ -210,7 +210,7 @@ function ReviewBox({
   onDispose: () => void
 }) {
   return (
-    <div className="rounded-md border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-3 text-[12.5px] text-[var(--gold-foreground)]">
+    <div className="rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-3 text-[12.5px] text-[var(--gold-foreground)]">
       <p className="font-semibold">Retention period ended - waiting for an administrator</p>
       <p className="mt-0.5">
         Flagged on {formatDateTime(data.reviewFlaggedAt as string)}. Nothing has been deleted: choose whether to keep it
