@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -40,7 +41,7 @@ export default function EditUserPage() {
           { label: "Edit" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Edit User</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Maintain permitted user profile information such as name, email, and other administrative
@@ -50,9 +51,7 @@ export default function EditUserPage() {
       {isPending ? (
         <LoadingState message="Loading user…" />
       ) : isError ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-          {error instanceof Error ? error.message : "Could not load this user."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load this user." />
       ) : (
         // This form calls both PUT /api/v1/users/{userId} (update) and, if
         // roles changed, POST/DELETE /api/v1/users/{userId}/roles

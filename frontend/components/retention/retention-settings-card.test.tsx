@@ -26,6 +26,7 @@ const DEFAULTS: RetentionSettingsDto = {
   whenNoPolicy: "flag",
   requireStatusReason: false,
   versionGraceDays: 30,
+  protectFromDeletion: false,
 }
 
 describe("RetentionSettingsCard", () => {
@@ -43,6 +44,7 @@ describe("RetentionSettingsCard", () => {
     expect(screen.getByRole("radio", { name: "Longest retention" })).toHaveAttribute("aria-checked", "true")
     expect(screen.getByRole("radio", { name: "Flag it for an administrator" })).toHaveAttribute("aria-checked", "true")
     expect(screen.getByLabelText("Days a removed version stays restorable")).toHaveValue(30)
+    expect(screen.getByRole("switch", { name: "Protect documents from deletion during retention" })).not.toBeChecked()
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
   })
 
@@ -53,6 +55,7 @@ describe("RetentionSettingsCard", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Most specific rule" }))
     fireEvent.click(screen.getByRole("radio", { name: "Leave it alone" }))
     fireEvent.click(screen.getByRole("switch", { name: "Require a reason for status changes" }))
+    fireEvent.click(screen.getByRole("switch", { name: "Protect documents from deletion during retention" }))
     fireEvent.change(screen.getByLabelText("Days a removed version stays restorable"), { target: { value: "90" } })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(save).toHaveBeenCalledWith({
@@ -61,6 +64,7 @@ describe("RetentionSettingsCard", () => {
       whenNoPolicy: "ignore",
       requireStatusReason: true,
       versionGraceDays: 90,
+      protectFromDeletion: true,
     })
   })
 

@@ -36,7 +36,7 @@ public class RetentionController {
             + P + "CRM_POLICY_UPDATE, " + P + "CRM_POLICY_DELETE, " + P + "CRM_CONFIGURE_RETENTION)";
 
     public record SettingsRequest(boolean automationEnabled, String precedence, String whenNoPolicy, boolean requireStatusReason,
-                                  Integer versionGraceDays) {
+                                  Integer versionGraceDays, Boolean protectFromDeletion) {
     }
 
     private final RetentionPolicyService policies;
@@ -96,12 +96,13 @@ public class RetentionController {
     @PreAuthorize("@authz.hasPermission(" + P + "CRM_CONFIGURE_RETENTION)")
     @Operation(summary = "Change the retention settings",
             description = "automationEnabled, precedence (longest | most_specific), whenNoPolicy (flag | ignore), "
-                    + "requireStatusReason, versionGraceDays (optional: how long a version removed by retention stays restorable). Audited.")
+                    + "requireStatusReason, protectFromDeletion (optional: block deleting a document while its retention runs), versionGraceDays (optional: how long a version removed by retention stays restorable). Audited.")
     public RetentionSettingsService.Settings saveSettings(@RequestBody SettingsRequest request) {
         return settings.save(new RetentionSettingsService.Settings(request.automationEnabled(), request.precedence(),
                 request.whenNoPolicy(), request.requireStatusReason(),
                 // Left out = unchanged (older clients do not send it).
-                request.versionGraceDays() != null ? request.versionGraceDays() : settings.mine().versionGraceDays()));
+                request.versionGraceDays() != null ? request.versionGraceDays() : settings.mine().versionGraceDays(),
+                request.protectFromDeletion() != null ? request.protectFromDeletion() : settings.mine().protectFromDeletion()));
     }
 
     @GetMapping("/review")

@@ -4,7 +4,9 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.document.DocumentRepository;
 import com.oak.dms.document.DocumentVersion;
+import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.document.DocumentVersionRepository;
 import com.oak.dms.document.RecycleBinService;
 import com.oak.dms.document.Document;
@@ -55,6 +57,8 @@ public class VersionRetentionService {
     private final RecycleBinService recycleBin;
     private final RetentionSettingsService settings;
     private final AuditService auditService;
+    private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
 
     /**
      * Applies the rule's version limits to one document. Returns how many versions were removed (hidden).
@@ -177,7 +181,14 @@ public class VersionRetentionService {
                             rs.getString("title"), rs.getInt("version_number"), rs.getString("original_filename"),
                             rs.getLong("size_bytes"), removedAt, removedAt.plusDays(graceDays));
                 }, tenantId, pageable.getPageSize(), pageable.getOffset());
-        return new PageImpl<>(rows, pageable, total == null ? 0 : total);
+        // Titles and file names: only for documents the caller could open anyway (the document browser's access rules).
+        var access = documentAccessService.forCaller();
+        Map<UUID, Document> documents = new LinkedHashMap<>();
+        documentRepository.findAllById(rows.stream().map(RemovedVersion::documentId).distinct().toList())
+                .forEach(d -> documents.put(d.getDocumentId(), d));
+        List<RemovedVersion> visible = rows.stream()
+                .filter(v -> documents.get(v.documentId()) != null && access.canSee(documents.get(v.documentId()))).toList();
+        return new PageImpl<>(visible, pageable, total == null ? 0 : total);
     }
 
     /**

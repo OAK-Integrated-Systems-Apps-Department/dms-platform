@@ -29,6 +29,21 @@ public class RetentionDueDates {
     private final RetentionSettingsService settingsService;
     private final FolderRepository folderRepository;
 
+    /** The rule that covers one document and the dates it gives (live), or empty when none does. */
+    public java.util.Optional<RetentionResolver.Resolution> resolve(UUID tenantId, Document d) {
+        List<RetentionPolicy> policies = policyRepository.findByTenantIdAndDeletedFalseAndEnabledTrue(tenantId);
+        if (policies.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        Map<UUID, UUID> parents = new HashMap<>();
+        for (Folder folder : folderRepository.findByTenantIdAndDeletedFalseOrderByFolderNameAsc(tenantId)) {
+            parents.put(folder.getFolderId(), folder.getParentFolderId());
+        }
+        return RetentionResolver.resolve(new RetentionResolver.Facts(d.getDocumentTypeId(), d.getOwnerDepartmentId(), d.getFolderId(),
+                d.getCreatedAt(), d.getUpdatedAt(), d.getReactivatedAt(), d.getRetentionExtendedUntil()), policies,
+                settingsService.forTenant(tenantId).precedence(), parents);
+    }
+
     /** The archive date for each given document a rule covers; documents no rule covers are simply absent. */
     public Map<UUID, OffsetDateTime> archiveDueFor(UUID tenantId, Collection<Document> documents) {
         Map<UUID, OffsetDateTime> due = new HashMap<>();

@@ -61,7 +61,7 @@ public class DocumentEditGuard {
      * A moment as people read it in a refusal - "2026-11-03 03:47 UTC", not "2026-11-03T03:47:19.671824Z". Always UTC
      * and says so, because the server cannot know the reader's time zone (the pages show their own local time).
      */
-    static String when(OffsetDateTime moment) {
+    public static String when(OffsetDateTime moment) {
         return moment == null ? "an unknown time" : WHEN.format(moment.withOffsetSameInstant(java.time.ZoneOffset.UTC));
     }
 

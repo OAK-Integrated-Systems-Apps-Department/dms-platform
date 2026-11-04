@@ -19,6 +19,31 @@ export interface AuditActionCatalogEntry {
 }
 
 export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
+  // Records retention, legal hold, version retention and check-out / online editing (6.1, 2.10).
+  { action: "DOCUMENT_LEGAL_HOLD_PLACED", module: "CRM", label: "Legal hold placed" },
+  { action: "DOCUMENT_LEGAL_HOLD_LIFTED", module: "CRM", label: "Legal hold lifted" },
+  { action: "DOCUMENT_STATUS_CHANGED", module: "CRM", label: "Document status changed (Active / Inactive)" },
+  { action: "DOCUMENT_AUTO_ARCHIVED", module: "CRM", label: "Document archived by retention rule" },
+  { action: "DOCUMENT_RETENTION_FLAGGED", module: "CRM", label: "Document flagged for retention review" },
+  { action: "DOCUMENT_RETENTION_EXTENDED", module: "CRM", label: "Document retention extended" },
+  { action: "DOCUMENT_RETENTION_DISPOSED", module: "CRM", label: "Document disposed after retention" },
+  { action: "DOCUMENT_NO_RETENTION_POLICY", module: "CRM", label: "Document found without a retention rule" },
+  { action: "RETENTION_POLICY_CREATED", module: "CRM", label: "Retention rule created" },
+  { action: "RETENTION_POLICY_UPDATED", module: "CRM", label: "Retention rule updated" },
+  { action: "RETENTION_POLICY_DELETED", module: "CRM", label: "Retention rule deleted" },
+  { action: "RETENTION_SETTINGS_CHANGED", module: "CRM", label: "Retention settings changed" },
+  { action: "RETENTION_RUN_REQUESTED", module: "CRM", label: "Retention rules applied on request" },
+  { action: "DOCUMENT_VERSIONS_REMOVED", module: "DVC", label: "Old versions removed by retention" },
+  { action: "RETENTION_VERSION_RESTORED", module: "DVC", label: "Removed version restored" },
+  { action: "DOCUMENT_VERSIONS_DESTROYED", module: "DVC", label: "Removed versions destroyed" },
+  { action: "DOCUMENT_CHECKED_OUT", module: "CICO", label: "Document checked out" },
+  { action: "DOCUMENT_CHECKED_IN", module: "CICO", label: "Document checked in" },
+  { action: "DOCUMENT_CHECKOUT_DISCARDED", module: "CICO", label: "Check-out discarded" },
+  { action: "DOCUMENT_CHECKOUT_FORCE_RELEASED", module: "CICO", label: "Check-out force-released" },
+  { action: "DOCUMENT_CHECKOUT_EXPIRED", module: "CICO", label: "Check-out expired" },
+  { action: "DOCUMENT_EDIT_SESSION_STARTED", module: "CICO", label: "Online editing session started" },
+  { action: "DOCUMENT_EDIT_SESSION_SAVED", module: "CICO", label: "Document saved from the online editor" },
+  { action: "EDITING_SETTINGS_CHANGED", module: "CICO", label: "Online editing settings changed" },
   { action: "ROLE_CREATED", module: "ASM", label: "Role created" },
   { action: "ROLE_UPDATED", module: "ASM", label: "Role updated" },
   { action: "ROLE_DELETED", module: "ASM", label: "Role deleted" },
@@ -680,6 +705,8 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   WA: "Workflow Automation",
   DRM: "Document Relationships Management",
   DOT: "Document Ownership and Transfer",
+  CRM: "Records Retention and Compliance",
+  CICO: "Check-in / Check-out and Online Editing",
 }
 
 export function auditModuleOptions(): string[] {

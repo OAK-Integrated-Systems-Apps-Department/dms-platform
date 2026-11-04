@@ -15,7 +15,7 @@ import { LastEdited } from "./last-edited"
 import { ReasonDialog } from "./reason-dialog"
 
 const BUTTON =
-  "flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-[12.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+  "flex items-center gap-1.5 border font-semibold disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] justify-center"
 const PRIMARY = `${BUTTON} border-primary bg-primary text-primary-foreground`
 const SECONDARY = `${BUTTON} border-[var(--border-strong)] bg-card text-foreground`
 

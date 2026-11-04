@@ -30,7 +30,7 @@ export function StepCard({
     <section
       aria-labelledby={headingId}
       className={cn(
-        "rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6",
+        "rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6",
         className
       )}
     >
@@ -94,11 +94,11 @@ export function StatTile({
   children: ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-border bg-muted/30 px-3.5 py-3">
+    <div className="min-w-0 rounded-lg border border-border bg-muted/30 px-3.5 py-3">
       <dt className="text-[11.5px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </dt>
-      <dd className="mt-1 flex flex-wrap items-center gap-2 text-[14px] font-semibold">
+      <dd className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[14px] font-semibold">
         {children}
       </dd>
     </div>

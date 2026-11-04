@@ -110,7 +110,7 @@ export function FileDropzone({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={cn(
-        "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-strong)] bg-card px-6 py-9 text-center transition-colors outline-none",
+        "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-9 text-center transition-colors outline-none",
         "hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         "data-[dragging]:border-primary data-[dragging]:bg-primary/5",
         "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-card",

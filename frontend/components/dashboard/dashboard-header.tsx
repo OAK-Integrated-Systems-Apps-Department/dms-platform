@@ -115,7 +115,7 @@ export function DashboardHeader({
                 </span>
                 <span className="font-medium text-foreground">{name}</span>
                 {role && (
-                  <span className="rounded-full border border-border bg-card/70 px-2 py-px text-[11px] font-medium">
+                  <span className="border border-border bg-card/70 inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
                     {ROLE_NAMES[role] ?? role}
                   </span>
                 )}
@@ -139,7 +139,7 @@ export function DashboardHeader({
           <div
             role="radiogroup"
             aria-label="Period the figures cover"
-            className="relative grid grid-cols-3 rounded-xl border border-border bg-card/80 p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] backdrop-blur"
+            className="relative grid grid-cols-3 rounded-lg border border-border bg-card/80 p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] backdrop-blur"
           >
             {/* The highlight slides to the chosen period. */}
             <span

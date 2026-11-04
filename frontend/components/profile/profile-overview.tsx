@@ -103,7 +103,7 @@ export function ProfileOverview() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Identity */}
       <div className="mb-6 flex items-center gap-4">
         <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-primary font-heading text-[18px] font-bold text-primary-foreground">
@@ -163,14 +163,14 @@ export function ProfileOverview() {
               type="button"
               onClick={cancelEditing}
               disabled={isSubmitting}
-              className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-btn border border-[var(--border-strong)] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70 h-[38px] px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || !isValid}
-              className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-btn border border-[var(--primary-hover)] bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSubmitting ? "Saving…" : "Save changes"}
             </button>
@@ -207,7 +207,7 @@ export function ProfileOverview() {
               type="button"
               onClick={startEditing}
               disabled={isLoading}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70 h-[38px] rounded-btn px-4 text-[13px]"
             >
               <Pencil size={13} />
               Edit

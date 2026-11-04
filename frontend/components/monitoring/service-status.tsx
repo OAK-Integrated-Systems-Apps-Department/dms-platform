@@ -279,7 +279,7 @@ function ServiceTile({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex min-w-0 flex-col rounded-xl border p-3 text-left transition-[border-color,box-shadow] duration-200",
+        "flex min-w-0 flex-col rounded-lg border p-3 text-left transition-[border-color,box-shadow] duration-200",
         "hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         "motion-reduce:transition-none",
         service.up
@@ -410,7 +410,7 @@ function ServiceDetail({
     <div
       role="region"
       aria-label={`Details for ${service.label}`}
-      className="rounded-xl border border-border bg-muted/30 p-4"
+      className="rounded-lg border border-border bg-muted/30 p-4"
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -534,7 +534,7 @@ function DetailsModal({
         aria-label="All services"
         tabIndex={-1}
         className={cn(
-          "relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-xl outline-none sm:rounded-2xl",
+          "relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-xl outline-none sm:rounded-lg",
           "transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
           shown ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
         )}
@@ -738,7 +738,7 @@ export function ServiceStatusList({
   const allUp = total > 0 && down.length === 0
 
   return (
-    <div className={cn("rounded-xl border border-border bg-card", className)}>
+    <div className={cn("rounded-lg border border-border bg-card", className)}>
       <div className="flex flex-wrap items-center gap-x-8 gap-y-4 p-4">
         {/* Overall reading */}
         <div className="flex items-center gap-3">
@@ -835,7 +835,7 @@ export function ServiceStatusList({
             type="button"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
-            className="ml-auto rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="ml-auto border border-border transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
           >
             More details
           </button>

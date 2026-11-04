@@ -11,6 +11,8 @@ const create = vi.fn()
 const update = vi.fn()
 const remove = vi.fn()
 
+const toastError = vi.fn()
+vi.mock("sonner", () => ({ toast: { error: (...args: unknown[]) => toastError(...args), success: vi.fn() } }))
 vi.mock("@/lib/retention/use-retention", () => ({
   useRetentionPolicies: () => ({ data: rules, isPending: false, isError: false }),
   useRetentionScopes: () => ({
@@ -223,7 +225,8 @@ describe("RetentionPoliciesTab", () => {
     render(<RetentionPoliciesTab />)
     fireEvent.click(screen.getByRole("button", { name: /New rule/ }))
     fireEvent.click(screen.getByRole("button", { name: "Create rule" }))
-    expect(screen.getByRole("alert")).toHaveTextContent("Give the rule a name.")
+    expect(toastError).toHaveBeenCalledWith("Give the rule a name.", expect.anything())
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     expect(create).not.toHaveBeenCalled()
   })
 })

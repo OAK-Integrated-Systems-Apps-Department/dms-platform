@@ -16,7 +16,7 @@ export function Dropdown({ children, title, width = 260, noPad, className }: Dro
     <div
       style={{ width }}
       className={cn(
-        "absolute top-[46px] right-0 z-40 overflow-hidden rounded-xl border border-border bg-popover shadow-[var(--ledger-shadow)]",
+        "absolute top-[46px] right-0 z-40 overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--ledger-shadow)]",
         noPad ? "" : "py-1.5",
         className
       )}

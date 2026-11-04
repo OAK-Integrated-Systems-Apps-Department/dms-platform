@@ -92,7 +92,7 @@ export function NotFoundView() {
 
         <Link
           href="/"
-          className="nf-fade mt-8 inline-flex items-center justify-center gap-2 rounded-btn border border-primary bg-primary px-5 py-2.5 text-[13.5px] font-semibold text-primary-foreground shadow-[0_3px_0_var(--nf-depth),0_10px_20px_-10px_var(--nf-glow)] transition-[transform,box-shadow] duration-150 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px"
+          className="nf-fade mt-8 inline-flex items-center justify-center gap-2 border border-primary bg-primary font-semibold text-primary-foreground shadow-[0_3px_0_var(--nf-depth),0_10px_20px_-10px_var(--nf-glow)] transition-[transform,box-shadow] duration-150 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px h-[38px] rounded-btn px-4 text-[13px]"
           style={delay(0.65)}
         >
           <LayoutDashboard size={16} aria-hidden="true" />

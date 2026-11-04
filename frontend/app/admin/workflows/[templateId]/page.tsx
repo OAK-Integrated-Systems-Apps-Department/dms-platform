@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams, useRouter } from "next/navigation"
 import { Lock } from "lucide-react"
 
@@ -73,13 +74,11 @@ export default function WorkflowTemplatePage() {
       ) : (
         <PermissionGate permission={WORKFLOW_TEMPLATE_ANY_PERMISSION}>
           {isError || !template ? (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load this workflow template."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load this workflow template." />
           ) : (
             <>
               <div className="mb-[22px] flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-[640px]">
+                <div className="min-w-0 flex-1">
                   <div className="mb-2 flex flex-wrap items-center gap-2.5">
                     <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{template.name}</h1>
                     <Badge variant={TEMPLATE_STATUS_BADGE_VARIANT[template.status]} className="gap-1.5 rounded-md">

@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
+import { toast } from "sonner"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm, useWatch } from "react-hook-form"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -88,7 +89,6 @@ export function WatermarkTemplateForm({
   onOpenChange,
   onSubmit,
 }: WatermarkTemplateFormProps) {
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const editing = template !== null
 
   const {
@@ -133,13 +133,12 @@ export function WatermarkTemplateForm({
   )
 
   async function handleFormSubmit(form: WatermarkTemplateFormValues) {
-    setSubmitError(null)
     const failure = await onSubmit(form)
     if (!failure) return
     if (failure.field) {
       setError(failure.field, { type: "server", message: failure.message })
     } else {
-      setSubmitError(failure.message)
+      toast.error(failure.message)
     }
   }
 
@@ -180,15 +179,6 @@ export function WatermarkTemplateForm({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="flex min-h-0 flex-1 flex-col" noValidate>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
-            {submitError && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-              >
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span>{submitError}</span>
-              </div>
-            )}
 
             <div>
               <Label htmlFor="template-label">Name</Label>

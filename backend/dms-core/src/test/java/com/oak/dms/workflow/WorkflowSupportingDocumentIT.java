@@ -76,6 +76,19 @@ class WorkflowSupportingDocumentIT extends WorkflowApiSupport {
     }
 
     @Test
+    void aSupportingDocumentOfARunningApproval_cannotBeDisposedOfByRetention() throws Exception {
+        postAs(path(), w.chamath(), link(annex, null, "linked_existing"), 201);
+        // The annex has reached the end of its retention and waits for an administrator...
+        fx.jdbc().update("update documents set lifecycle_state = 'archived', review_flagged_at = now() where document_id = ?", annex);
+
+        // ...but the approval that is still running needs it, so disposal is refused with the reason.
+        JsonNode refused = adminPost("/api/v1/documents/" + annex + "/retention/dispose", w.admin(), Map.of("reason", "Retention ended"), 409);
+        assertThat(refused.get("code").asString()).isEqualTo("DOCUMENT_REFERENCED");
+        assertThat(refused.get("message").asString()).contains("supporting document");
+        assertThat(fx.count("select count(*) from documents where document_id = ? and not is_deleted", annex)).isEqualTo(1);
+    }
+
+    @Test
     void anApproverWithoutViewPermission_seesTitleAndNote_butCantOpenIt() throws Exception {
         postAs(path(), w.chamath(), link(annex, null, "linked_existing"), 201);
         JsonNode seen = get200(path(), w.nimal()).get(0);

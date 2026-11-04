@@ -150,7 +150,7 @@ export function HelpCenter() {
                 <li key={topic.id}>
                   <a
                     href={`#${topic.id}`}
-                    className="group flex h-full items-start gap-3 rounded-xl border border-border bg-card p-4 shadow-[var(--ledger-shadow)] transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    className="group flex h-full items-start gap-3 rounded-lg border border-border bg-card p-4 shadow-[var(--ledger-shadow)] transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-[var(--border-strong)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   >
                     <TopicIcon topic={topic} />
                     <span className="min-w-0 flex-1">
@@ -235,7 +235,7 @@ function Articles({
       multiple
       value={open}
       onValueChange={(value) => onOpenChange(value as string[])}
-      className="rounded-xl border border-border bg-card px-4 shadow-[var(--ledger-shadow)] @2xl:px-5"
+      className="rounded-lg border border-border bg-card px-4 shadow-[var(--ledger-shadow)] @2xl:px-5"
     >
       {articles.map((article) => (
         <AccordionItem
@@ -276,7 +276,7 @@ function Answer({ lines }: { lines: string[] }) {
     }
   }
   return (
-    <div className="flex max-w-[760px] flex-col gap-2.5">
+    <div className="flex flex-col gap-2.5">
       {blocks.map((block, i) =>
         Array.isArray(block) ? (
           <ul key={i} className="ml-4 list-disc space-y-1 marker:text-primary">
@@ -336,7 +336,7 @@ function SearchResults({
 }
 
 const card =
-  "rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)]"
+  "rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)]"
 
 function QuickReference() {
   return (

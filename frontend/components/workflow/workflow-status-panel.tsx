@@ -142,7 +142,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
             type="button"
             onClick={() => setCancelling(true)}
             disabled={actions.isActing}
-            className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[13px] font-semibold text-muted-foreground hover:border-[var(--rust)] hover:text-[var(--rust)] disabled:opacity-60"
+            className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-muted-foreground hover:border-[var(--rust)] hover:text-[var(--rust)] disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] justify-center"
           >
             <Ban size={14} /> Cancel Workflow
           </button>
@@ -209,7 +209,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   type="button"
                   disabled={actions.isActing}
                   onClick={() => setRequestingInfo(true)}
-                  className="flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:opacity-60"
+                  className="flex items-center gap-1 border border-[var(--border-strong)] bg-card text-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                 >
                   <MessageCircleQuestion size={13} /> Request Info
                 </button>
@@ -219,7 +219,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   type="button"
                   disabled={actions.isActing}
                   onClick={() => setMoving({ task: myTask, stage: myStage, mode: "delegate" })}
-                  className="flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:opacity-60"
+                  className="flex items-center gap-1 border border-[var(--border-strong)] bg-card text-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                 >
                   <Forward size={13} /> Delegate
                 </button>
@@ -229,7 +229,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   type="button"
                   disabled={actions.isActing}
                   onClick={() => void actions.claim(myTask.taskId)}
-                  className="flex items-center gap-1 rounded-sm border border-primary bg-primary/10 px-3 py-1.5 text-[12.5px] font-semibold text-primary disabled:opacity-60"
+                  className="flex items-center gap-1 border border-primary bg-primary/10 text-primary disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                 >
                   <Hand size={13} /> Claim
                 </button>
@@ -239,7 +239,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   type="button"
                   disabled={actions.isActing}
                   onClick={() => (myStage?.requiresSignature ? setSigning(true) : setDecision("approve"))}
-                  className="flex items-center gap-1 rounded-sm border border-primary bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground disabled:opacity-60"
+                  className="flex items-center gap-1 border border-primary bg-primary text-primary-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                 >
                   <CheckCircle2 size={13} /> Approve
                 </button>
@@ -249,7 +249,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
                   type="button"
                   disabled={actions.isActing}
                   onClick={() => setDecision("reject")}
-                  className="flex items-center gap-1 rounded-sm border border-[var(--rust)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-[var(--rust)] disabled:opacity-60"
+                  className="flex items-center gap-1 border border-[var(--rust)] bg-card text-[var(--rust)] disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                 >
                   <XCircle size={13} /> Reject
                 </button>
@@ -471,7 +471,7 @@ function StageStep({ stage, last, current, totalStages, waitingOn, onReassign, c
                     <button
                       type="button"
                       onClick={() => onReassign(task)}
-                      className="ml-auto flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground hover:text-foreground"
+                      className="ml-auto flex items-center gap-1 border border-[var(--border-strong)] bg-card text-muted-foreground hover:text-foreground h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                     >
                       <UserCog size={12} /> Reassign
                     </button>
@@ -488,7 +488,7 @@ function StageStep({ stage, last, current, totalStages, waitingOn, onReassign, c
                     <button
                       type="button"
                       onClick={() => onReviewTask(task)}
-                      className="ml-auto flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground hover:text-foreground"
+                      className="ml-auto flex items-center gap-1 border border-[var(--border-strong)] bg-card text-muted-foreground hover:text-foreground h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                     >
                       <Undo2 size={12} /> Review again
                     </button>
@@ -551,14 +551,14 @@ function CancelWorkflowDialog({ onOpenChange, onConfirm }: { onOpenChange: (open
             />
           </div>
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
               Keep Workflow
             </AlertDialogClose>
             <button
               type="button"
               onClick={() => void handleConfirm()}
               disabled={trimmed.length === 0 || submitting}
-              className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="border border-[var(--rust)] bg-[var(--rust)] text-white disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               Cancel Workflow
             </button>

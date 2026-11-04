@@ -29,7 +29,7 @@ const ACCESS: Record<
 }
 
 const iconButton =
-  "flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+  "flex items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none size-8 rounded-btn"
 
 /**
  * The newest documents the user can open (GET /api/v1/documents, newest
@@ -140,7 +140,7 @@ export function RecentDocuments({
                     </td>
                     <td className="px-3 py-2.5">
                       {doc.versionNumber !== null && (
-                        <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold">
+                        <span className="inline-flex h-6 items-center justify-center rounded-btn bg-muted px-2.5 font-mono text-[12px] font-semibold whitespace-nowrap">
                           v{doc.versionNumber}
                         </span>
                       )}
@@ -167,7 +167,7 @@ export function RecentDocuments({
             {documents.map((doc) => (
               <li
                 key={doc.documentId}
-                className="rounded-xl border border-border p-3"
+                className="rounded-lg border border-border p-3"
               >
                 <NameCell doc={doc} onOpen={onOpen} />
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-12 text-[11.5px] text-muted-foreground">

@@ -410,7 +410,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
               type="button"
               onClick={handleCancel}
               disabled={busy}
-              className="rounded-btn border border-[var(--border-strong)] bg-card px-4 py-2 text-[13px] font-semibold text-foreground disabled:opacity-60"
+              className="rounded-btn border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:opacity-60 h-[38px] px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </button>
@@ -418,7 +418,7 @@ export function StageCard({ stage, position, total, editable, busy, templateDefa
               type="button"
               onClick={handleSave}
               disabled={busy}
-              className="rounded-btn border border-primary bg-primary px-[18px] py-2 text-[13px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              className="border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {isNew ? "Add Stage" : "Save Stage"}
             </button>

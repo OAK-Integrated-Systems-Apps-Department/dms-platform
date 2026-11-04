@@ -17,7 +17,7 @@ export default function RecycleBinPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Recycle bin" }]}
       />
-      <div className="mb-5 max-w-[720px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Recycle bin
         </h1>

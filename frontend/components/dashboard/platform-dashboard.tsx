@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { Fragment, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
@@ -22,7 +23,6 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadingState } from "@/components/ui/loading-state"
-import { friendlyMessage } from "@/lib/api-error"
 import {
   fetchPlatformOrganisationBreakdown,
   fetchPlatformOverview,
@@ -126,12 +126,7 @@ export function PlatformDashboard() {
     return <LoadingState message="Loading the platform overview…" />
   if (overview.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(
-          overview.error,
-          "Could not load the platform overview."
-        )}
-      </p>
+      <LoadFailed error={overview.error} fallback="Could not load the platform overview." />
     )
   }
 
@@ -395,7 +390,7 @@ export function PlatformDashboard() {
         />
       </ChartCard>
 
-      <div className="rounded-xl border border-border bg-card">
+      <div className="rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div>
             <h2 className="text-[14px] font-semibold">Organisations</h2>
@@ -446,7 +441,7 @@ export function PlatformDashboard() {
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
               aria-label="Sort organisations"
-              className="h-8 rounded-md border border-border bg-card px-2 text-[12.5px]"
+              className="h-8 rounded-btn border border-border bg-card px-2 text-[12.5px]"
             >
               {SORTS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -790,12 +785,7 @@ function OrganisationBreakdown({ org }: { org: PlatformOrganisationDto }) {
   }
   if (breakdown.isError) {
     return (
-      <p className="mt-4 border-t border-border pt-4 text-[12.5px] text-[var(--rust)]">
-        {friendlyMessage(
-          breakdown.error,
-          "Could not load this organisation's breakdown."
-        )}
-      </p>
+      <LoadFailed error={breakdown.error} fallback="Could not load this organisation's breakdown." quiet />
     )
   }
 
@@ -898,7 +888,7 @@ function ChartCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <h2 className="text-[14px] font-semibold">{title}</h2>
       <p className="mb-3 text-[12px] text-muted-foreground">{subtitle}</p>
       {children}
@@ -939,7 +929,7 @@ function Tile({
   detail: string
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-muted-foreground">
         <Icon size={15} aria-hidden="true" />
         <span className="text-[12px] font-medium">{label}</span>

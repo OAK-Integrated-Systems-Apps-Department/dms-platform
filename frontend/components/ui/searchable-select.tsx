@@ -124,7 +124,7 @@ export function SearchableSelect({
         // like a control to anything reading the markup.
         <div
           className={cn(
-            "rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]",
+            "rounded-lg border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]",
             inline
               ? "mt-1.5 w-full"
               : "absolute top-[calc(100%+6px)] left-0 z-20 w-[240px]"

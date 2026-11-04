@@ -94,7 +94,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
               <tr>
                 <td
                   colSpan={5}
-                  className="px-3.5 py-10 text-center text-[13px] text-muted-foreground"
+                  className="h-[max(160px,calc(100svh-380px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No roles match your search.
                 </td>
@@ -134,7 +134,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
                             {...props}
                             href={`/admin/roles/${role.id}`}
                             aria-label={`View ${displayName}`}
-                            className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                            className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                           >
                             <Eye size={15} />
                           </Link>
@@ -158,7 +158,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
                                 {...props}
                                 href={`/admin/roles/${role.id}/edit`}
                                 aria-label={`Edit ${displayName}`}
-                                className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                                className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                               >
                                 <Pencil size={15} />
                               </Link>
@@ -213,7 +213,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
                                 type="button"
                                 onClick={() => setPendingDeleteRole(role)}
                                 aria-label={`Delete ${displayName}`}
-                                className="flex size-7 items-center justify-center rounded-sm text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)]"
+                                className="flex items-center justify-center text-[var(--rust)] transition-colors hover:bg-[var(--rust-tint)] size-8 rounded-btn"
                               >
                                 <Trash2 size={15} />
                               </button>

@@ -19,7 +19,7 @@ import { useCheckoutStatus, useUserPreferences } from "@/lib/checkout/use-checko
 import { LastEdited } from "./last-edited"
 
 const BUTTON =
-  "flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+  "flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] justify-center"
 
 /** How long "Open full screen" waits for the editor to confirm its save before moving on anyway. */
 const SAVE_WAIT_MS = 4_000

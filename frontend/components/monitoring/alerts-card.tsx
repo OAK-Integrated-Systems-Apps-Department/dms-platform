@@ -12,6 +12,7 @@ import {
   Clock,
 } from "lucide-react"
 
+import { useErrorToast } from "@/lib/use-error-toast"
 import { cn } from "@/lib/utils"
 import type { AlertRule, AlertsResponse } from "@/lib/monitoring/api"
 
@@ -143,6 +144,10 @@ export function AlertsCard({
   className?: string
 }) {
   const [showQuiet, setShowQuiet] = useState(false)
+  useErrorToast(
+    alerts.reachable ? null : (alerts.error ?? "Whether anything is firing is unknown, not clear."),
+    "Could not read the alerts."
+  )
 
   const active = alerts.rules.filter(
     (rule) => rule.broken || rule.state === "firing" || rule.state === "pending"
@@ -194,7 +199,7 @@ export function AlertsCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card",
+        "overflow-hidden rounded-lg border border-border bg-card",
         className
       )}
     >
@@ -224,10 +229,7 @@ export function AlertsCard({
       </div>
 
       {!alerts.reachable ? (
-        <p className="border-t border-border bg-muted/40 px-4 py-3 text-[12.5px] text-muted-foreground">
-          {alerts.error ??
-            "Whether anything is firing is unknown, not clear."}
-        </p>
+        null
       ) : (
         <>
           {active.length > 0 && (

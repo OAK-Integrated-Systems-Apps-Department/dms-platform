@@ -281,7 +281,7 @@ export function UserEditForm({ user }: UserEditFormProps) {
           <span className="text-[11px] font-semibold tracking-[0.07em] text-muted-foreground uppercase">
             Username / login ID
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-strong)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+          <span className="border border-[var(--border-strong)] text-muted-foreground inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
             <Lock size={10} />
             Read-only
           </span>
@@ -328,14 +328,14 @@ export function UserEditForm({ user }: UserEditFormProps) {
         <button
           type="button"
           onClick={() => router.push(`/admin/users/${user.id}`)}
-          className="rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="border border-[var(--border-strong)] font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSubmitting || !isValid || checkingEmail || errors.email?.type === "taken"}
-          className="rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-btn border border-[var(--primary-hover)] bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving…" : "Save changes"}
         </button>

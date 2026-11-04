@@ -72,7 +72,7 @@ export function PermissionsTable({ permissions }: PermissionsTableProps) {
               <tr>
                 <td
                   colSpan={4}
-                  className="px-3.5 py-10 text-center text-[13px] text-muted-foreground"
+                  className="h-[max(160px,calc(100svh-400px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No permissions match your search.
                 </td>

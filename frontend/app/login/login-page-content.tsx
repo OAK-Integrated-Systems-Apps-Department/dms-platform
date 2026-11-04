@@ -1,7 +1,7 @@
 // app/login/login-page-content.tsx
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -103,10 +103,10 @@ async function login(
 }
 
 const inputClass =
-  "w-full rounded-xl border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+  "w-full rounded-btn border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
 
 const primaryButtonClass =
-  "group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
+  "group flex w-full items-center justify-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
 
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
@@ -133,6 +133,14 @@ export function LoginPageContent() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
+  const organisationInactive = searchParams.get("reason") === "organisation-inactive"
+  useEffect(() => {
+    if (organisationInactive) {
+      toast.error("You were signed out because your organisation's account is suspended or closed. Contact your administrator.", {
+        id: "organisation-inactive",
+      })
+    }
+  }, [organisationInactive])
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
   // Stripped out entirely in production builds — see the check below.
@@ -300,16 +308,6 @@ export function LoginPageContent() {
                 <p className="mt-3 mb-8 text-sm text-muted-foreground">
                   Welcome back. Sign in to continue to {APP_NAME}.
                 </p>
-
-                {searchParams.get("reason") === "organisation-inactive" && (
-                  <p
-                    role="alert"
-                    className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-                  >
-                    You were signed out because your organisation&apos;s account
-                    is suspended or closed. Contact your administrator.
-                  </p>
-                )}
 
                 <form
                   onSubmit={handleSubmit(handleCredentialsSubmit)}

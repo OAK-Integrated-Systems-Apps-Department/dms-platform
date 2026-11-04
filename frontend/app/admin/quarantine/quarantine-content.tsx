@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 
@@ -69,7 +70,7 @@ export function QuarantineContent() {
   return (
     <DashboardShell initialActiveLabel="Quarantine">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Quarantine" }]} />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Quarantine</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Uploads the malware scan blocked. Nothing here ever reached the document repository. Review each
@@ -86,9 +87,7 @@ export function QuarantineContent() {
           isNetworkError(error) ? (
             <BackendUnavailable onRetry={refetch} />
           ) : (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load quarantined files."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load quarantined files." />
           )
         ) : (
           <>

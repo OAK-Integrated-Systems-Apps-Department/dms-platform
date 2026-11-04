@@ -40,9 +40,9 @@ export default function RetentionPage() {
   const tab: Tab = chosen && tabs.some((t) => t.value === chosen) ? chosen : (tabs[0]?.value ?? "rules")
 
   return (
-    <DashboardShell initialActiveLabel="Records Retention">
+    <DashboardShell initialActiveLabel="Records Retention" fillHeight>
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Records Retention" }]} />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">Records retention</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Decide how long documents stay active and archived, for the whole organisation or per document type, department
@@ -62,11 +62,14 @@ export default function RetentionPage() {
         <div className="mb-4">
           <SegmentedControl value={tab} onChange={setChosen} options={tabs} />
         </div>
-        {tab === "rules" && <RetentionPoliciesTab />}
-        {tab === "settings" && <RetentionSettingsCard />}
-        {tab === "review" && <RetentionReviewQueue kind="review" />}
-        {tab === "without-policy" && <RetentionReviewQueue kind="without-policy" />}
-        {tab === "versions" && <RemovedVersionsList />}
+        {/* The tab fills the height that is left, so an empty list is one box to the bottom of the page, not a strip. */}
+        <div className="flex min-h-0 flex-1 flex-col [&>div]:flex-1">
+          {tab === "rules" && <RetentionPoliciesTab />}
+          {tab === "settings" && <RetentionSettingsCard />}
+          {tab === "review" && <RetentionReviewQueue kind="review" />}
+          {tab === "without-policy" && <RetentionReviewQueue kind="without-policy" />}
+          {tab === "versions" && <RemovedVersionsList />}
+        </div>
       </PermissionGate>
     </DashboardShell>
   )

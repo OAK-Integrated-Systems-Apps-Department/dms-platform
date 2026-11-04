@@ -61,7 +61,7 @@ export function AttentionPanel({
           skeleton={
             <div className="flex flex-col gap-3">
               {[1, 2].map((row) => (
-                <DashSkeleton key={row} className="h-16 w-full rounded-xl" />
+                <DashSkeleton key={row} className="h-16 w-full rounded-lg" />
               ))}
             </div>
           }
@@ -130,7 +130,7 @@ function Item({
   return (
     <li
       className={cn(
-        "rounded-xl border p-3",
+        "rounded-lg border p-3",
         tone === "rust"
           ? "border-[color-mix(in_oklab,var(--rust)_35%,transparent)] bg-[var(--rust-tint)]"
           : "border-border bg-muted/30"
@@ -150,7 +150,7 @@ function Item({
               {title}
             </span>
             {badge && (
-              <span className="rounded-full bg-[var(--gold-tint)] px-2 py-px text-[10px] font-semibold tracking-wide text-[var(--gold-foreground)] uppercase dark:text-[var(--gold)]">
+              <span className="bg-[var(--gold-tint)] text-[var(--gold-foreground)] dark:text-[var(--gold)] inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
                 {badge}
               </span>
             )}

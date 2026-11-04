@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
@@ -59,9 +60,7 @@ export default function UserAccessSummaryPage() {
         {isPending ? (
           <LoadingState message="Loading user…" />
         ) : isError ? (
-          <div className="rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-            {error instanceof Error ? error.message : "Could not load this user."}
-          </div>
+          <LoadFailed error={error} fallback="Could not load this user." />
         ) : (
           <UserAccessSummary
             user={user}

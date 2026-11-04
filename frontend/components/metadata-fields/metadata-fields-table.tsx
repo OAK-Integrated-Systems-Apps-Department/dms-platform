@@ -65,7 +65,7 @@ export function MetadataFieldsTable({
           <tbody>
             {fields.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3.5 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-400px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground">
                   No metadata fields match your search.
                 </td>
               </tr>
@@ -93,7 +93,7 @@ export function MetadataFieldsTable({
                               {...props}
                               href={`/admin/metadata/fields/${field.fieldId}/edit`}
                               aria-label={`Edit ${field.label}`}
-                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                              className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                             >
                               <Pencil size={15} />
                             </Link>
@@ -150,7 +150,7 @@ export function MetadataFieldsTable({
                                   type="button"
                                   onClick={() => setPendingDeprecate(field)}
                                   aria-label={`Deprecate ${field.label}`}
-                                  className="flex size-7 items-center justify-center rounded-sm text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold-tint)]"
+                                  className="flex items-center justify-center text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold-tint)] size-8 rounded-btn"
                                 >
                                   <ArchiveX size={15} />
                                 </button>

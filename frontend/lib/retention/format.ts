@@ -15,7 +15,7 @@ export function formatPeriodText(text: string | null): string {
   return formatPeriod(n, unit as RetentionUnit)
 }
 
-/** "1 year active, then 6 years archived"; "30 days active" when there is no archive period. */
+/** "1 year active, then 6 years archived"; "30 days active, no archive period" when there is none. */
 export function describeRule(rule: {
   activeAmount: number
   activeUnit: RetentionUnit
@@ -23,7 +23,7 @@ export function describeRule(rule: {
   archiveUnit: RetentionUnit
 }): string {
   const active = `${formatPeriod(rule.activeAmount, rule.activeUnit)} active`
-  return rule.archiveAmount > 0 ? `${active}, then ${formatPeriod(rule.archiveAmount, rule.archiveUnit)} archived` : active
+  return rule.archiveAmount > 0 ? `${active}, then ${formatPeriod(rule.archiveAmount, rule.archiveUnit)} archived` : `${active}, no archive period`
 }
 
 export const SCOPE_LABELS: Record<PolicyScope, string> = {

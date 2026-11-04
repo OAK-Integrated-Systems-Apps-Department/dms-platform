@@ -45,7 +45,7 @@ export function WorkflowTemplatesTable({ rows, onView }: WorkflowTemplatesTableP
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={9} className="h-[max(160px,calc(100svh-400px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No workflow templates match your search or filters.
                 </td>
               </tr>

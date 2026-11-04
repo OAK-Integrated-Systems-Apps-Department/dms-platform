@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound } from "next/navigation"
 import { useParams } from "next/navigation"
 
@@ -64,11 +65,7 @@ export default function ViewUserPage() {
           ]}
         >
         {isError ? (
-          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-            {error instanceof Error
-              ? error.message
-              : "Could not load this user."}
-          </div>
+          <LoadFailed error={error} fallback="Could not load this user." />
         ) : (
         <UserDetailView
           user={user}

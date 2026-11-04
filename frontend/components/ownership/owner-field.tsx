@@ -52,7 +52,7 @@ export function OwnerField({ documentId, title }: OwnerFieldProps) {
           <button
             type="button"
             onClick={() => setTransferring(true)}
-            className="rounded-btn border border-[var(--border-strong)] bg-card px-2.5 py-1 text-[12px] font-semibold text-foreground hover:border-primary hover:text-primary"
+            className="border border-[var(--border-strong)] bg-card text-foreground hover:border-primary hover:text-primary h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
           >
             Transfer
           </button>

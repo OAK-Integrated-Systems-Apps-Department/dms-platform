@@ -17,11 +17,11 @@ describe("retention period wording", () => {
     expect(formatPeriodText("soon")).toBe("soon")
   })
 
-  it("describes a rule as active then archived, or just active when there is no archive period", () => {
+  it("describes a rule as active then archived, or says there is no archive period", () => {
     expect(describeRule({ activeAmount: 1, activeUnit: "years", archiveAmount: 6, archiveUnit: "years" })).toBe(
       "1 year active, then 6 years archived"
     )
-    expect(describeRule({ activeAmount: 30, activeUnit: "days", archiveAmount: 0, archiveUnit: "years" })).toBe("30 days active")
+    expect(describeRule({ activeAmount: 30, activeUnit: "days", archiveAmount: 0, archiveUnit: "years" })).toBe("30 days active, no archive period")
   })
 })
 

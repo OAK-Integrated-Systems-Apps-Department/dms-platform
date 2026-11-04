@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   transferBulk: vi.fn(),
 }))
 
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }))
 vi.mock("@/lib/ownership/use-ownership", () => ({ useOffboardingPreview: () => mocks.preview }))
 vi.mock("@/lib/ownership/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ownership/api")>()),
@@ -156,7 +158,7 @@ describe("OffboardDialog", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /I understand 2 tasks will stay stuck/ }))
     fireEvent.click(confirm())
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("now 3")
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringContaining("now 3"), expect.anything()))
     expect(mocks.preview.refetch).toHaveBeenCalled()
     expect(screen.getByRole("checkbox", { name: /I understand/ })).toHaveAttribute("aria-checked", "false")
   })

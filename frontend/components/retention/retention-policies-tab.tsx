@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -12,7 +13,8 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { friendlyMessage } from "@/lib/api-error"
+import { retentionError } from "@/lib/retention/messages"
+import { LoadFailed } from "@/components/ui/load-failed"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import type {
@@ -144,7 +146,7 @@ function folderPaths(scopes: RetentionScopesDto): { id: string; label: string }[
  * or a folder - each with its own active and archive periods, clock and regulatory label, all running side by side.
  */
 export function RetentionPoliciesTab() {
-  const { data, isPending, isError, error } = useRetentionPolicies()
+  const { data, isPending, isError, error, refetch } = useRetentionPolicies()
   const { hasPermission } = usePermissions()
   const { create, update, remove } = usePolicyActions()
   const [editing, setEditing] = useState<RetentionPolicyDto | "new" | null>(null)
@@ -154,14 +156,12 @@ export function RetentionPoliciesTab() {
   const canDelete = hasPermission(PermissionCodes.CRM_POLICY_DELETE)
 
   if (isPending) return <LoadingState message="Loading retention rules…" />
-  if (isError) {
-    return <p className="text-[13px] text-[var(--rust)]">{friendlyMessage(error, "Could not load the retention rules.")}</p>
-  }
+  if (isError) return <LoadFailed error={error} fallback="Could not load the retention rules." onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-[640px] text-[12.5px] leading-[1.6] text-muted-foreground">
+        <p className="text-[12.5px] leading-[1.6] text-muted-foreground">
           A rule says how long documents stay <strong>Active</strong>, and how long they are then kept <strong>Archived</strong>
           , before an administrator decides what happens next. Nothing is ever deleted automatically. When several rules
           cover one document, the winner is chosen by the precedence on the Settings tab.
@@ -174,7 +174,7 @@ export function RetentionPoliciesTab() {
       </div>
 
       {data.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
           No retention rules yet. Until you add one, nothing is archived and no document is flagged.
         </p>
       ) : (
@@ -201,7 +201,7 @@ export function RetentionPoliciesTab() {
                   type="button"
                   aria-label={`Edit ${rule.name}`}
                   onClick={() => setEditing(rule)}
-                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
                 >
                   <Pencil size={15} />
                 </button>
@@ -211,7 +211,7 @@ export function RetentionPoliciesTab() {
                   type="button"
                   aria-label={`Delete ${rule.name}`}
                   onClick={() => setDeleting(rule)}
-                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-[var(--rust)]"
+                  className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-[var(--rust)] size-8 rounded-btn"
                 >
                   <Trash2 size={15} />
                 </button>
@@ -248,7 +248,7 @@ export function RetentionPoliciesTab() {
             await remove.mutateAsync(deleting.policyId)
             return null
           } catch (e) {
-            return friendlyMessage(e, "Could not delete the rule.")
+            return retentionError(e, "Could not delete the rule.", { action: "delete retention rules", needs: "Delete retention policy" })
           }
         }}
       />
@@ -268,7 +268,6 @@ function PolicyForm({
   onSave: (request: RetentionPolicyRequest) => Promise<void>
 }) {
   const [form, setForm] = useState<FormState>(rule ? toForm(rule) : EMPTY)
-  const [problem, setProblem] = useState<string | null>(null)
   const { hasPermission } = usePermissions()
   // The limits on old versions are their own permissions (the maximum and the age are separate) - the server enforces them.
   const canSetMax = hasPermission(PermissionCodes.DVC_SET_MAX_VERSIONS)
@@ -289,10 +288,9 @@ function PolicyForm({
     event.preventDefault()
     const result = toRequest(form)
     if ("problem" in result) {
-      setProblem(result.problem)
+      toast.error(result.problem, { id: "retention-rule-invalid" })
       return
     }
-    setProblem(null)
     try {
       await onSave(result.request)
     } catch {
@@ -423,8 +421,6 @@ function PolicyForm({
             <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} aria-label="Rule is on" />
             {form.enabled ? "On" : "Off - ignored until switched on"}
           </label>
-
-          {problem && <p role="alert" className="text-[12.5px] text-[var(--rust)]">{problem}</p>}
 
           <div className="mt-auto flex gap-2 border-t border-border pt-4">
             <Button type="submit" disabled={saving}>

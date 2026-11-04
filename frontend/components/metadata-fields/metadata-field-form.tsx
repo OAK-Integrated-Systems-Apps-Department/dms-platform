@@ -147,7 +147,7 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
         <button
           type="button"
           onClick={() => router.push("/admin/metadata/fields")}
-          className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Cancel
         </button>
@@ -155,7 +155,7 @@ export function CreateMetadataFieldForm({ onSubmit }: CreateFieldFormProps) {
           type="submit"
           disabled={isSubmitting || !isValid}
           className={cn(
-            "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+            "rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >
@@ -249,7 +249,7 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
         <button
           type="button"
           onClick={() => router.push("/admin/metadata/fields")}
-          className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Cancel
         </button>
@@ -257,7 +257,7 @@ export function UpdateMetadataFieldForm({ defaultValues, onSubmit }: EditFieldFo
           type="submit"
           disabled={isSubmitting || !isValid}
           className={cn(
-            "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+            "rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >

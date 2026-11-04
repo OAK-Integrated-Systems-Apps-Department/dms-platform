@@ -187,7 +187,7 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
           disabled={disabled}
           aria-pressed={tool === "eraser"}
           className={cn(
-            "flex items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-semibold disabled:cursor-not-allowed disabled:opacity-60",
+            "flex items-center gap-1 border disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
             tool === "eraser"
               ? "border-primary bg-primary/10 text-primary"
               : "border-[var(--border-strong)] text-muted-foreground hover:text-foreground"

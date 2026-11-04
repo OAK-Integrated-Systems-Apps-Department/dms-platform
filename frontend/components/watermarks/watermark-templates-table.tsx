@@ -60,7 +60,7 @@ export function WatermarkTemplatesTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={6} className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No watermark templates yet.
                 </td>
               </tr>
@@ -76,7 +76,7 @@ export function WatermarkTemplatesTable({
                           render={(props) => (
                             <span
                               {...props}
-                              className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] text-muted-foreground uppercase"
+                              className="inline-flex items-center gap-1 border border-border text-muted-foreground uppercase h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                             >
                               <Lock size={10} aria-hidden="true" />
                               Built-in

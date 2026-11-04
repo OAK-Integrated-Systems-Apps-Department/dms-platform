@@ -30,7 +30,7 @@ export default function LoginTimeoutPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[404px] rounded-xl border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
+      <div className="relative z-10 w-full max-w-[404px] rounded-lg border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
         <div className="mb-[30px] flex flex-col items-center">
           <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
             <Layers size={22} color="var(--primary-foreground)" />
@@ -57,7 +57,7 @@ export default function LoginTimeoutPage() {
         <button
           type="button"
           onClick={handleRestart}
-          className="w-full rounded-md border border-[var(--primary-hover)] bg-primary py-[12.5px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
+          className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
         >
           Restart login
         </button>

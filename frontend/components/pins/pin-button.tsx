@@ -61,7 +61,7 @@ export function PinButton({
         openPin(row)
       }}
       className={cn(
-        "flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "flex size-8 items-center justify-center rounded-btn transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
         pinned
           ? "text-primary hover:bg-primary/10"
           : "text-muted-foreground hover:bg-muted hover:text-primary",

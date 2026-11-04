@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
@@ -228,9 +229,7 @@ export function TemplatePickerSheet({
               Loading templates…
             </p>
           ) : templates.isError ? (
-            <p className="py-8 text-center text-[13px] text-[var(--rust)]">
-              {friendlyMessage(templates.error, "Could not load templates.")}
-            </p>
+            <LoadFailed error={templates.error} fallback="Could not load templates." />
           ) : groups.size === 0 ? (
             <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
               {q || typeFilter
@@ -251,7 +250,7 @@ export function TemplatePickerSheet({
                       const isUsing = using?.id === template.templateId
                       return (
                         <li key={template.templateId} className="p-3">
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-3">
                             <span
                               className={cn(
                                 "flex size-9 shrink-0 items-center justify-center rounded",
@@ -260,7 +259,7 @@ export function TemplatePickerSheet({
                             >
                               <kind.icon size={18} aria-hidden="true" />
                             </span>
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-[140px] flex-1">
                               <p className="truncate text-[13.5px] font-semibold">
                                 {template.name}
                               </p>
@@ -275,7 +274,7 @@ export function TemplatePickerSheet({
                               title="Preview"
                               aria-label={`Preview ${template.name}`}
                               onClick={() => setPreview(template)}
-                              className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
                             >
                               <Eye size={15} />
                             </button>
@@ -284,7 +283,7 @@ export function TemplatePickerSheet({
                               title="Download"
                               aria-label={`Download ${template.name}`}
                               onClick={() => void downloadTemplate(template)}
-                              className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
                             >
                               <Download size={15} />
                             </button>
@@ -306,7 +305,7 @@ export function TemplatePickerSheet({
                           </div>
                           {isUsing && (
                             <form
-                              className="mt-2.5 flex items-center gap-2 pl-12"
+                              className="mt-2.5 flex flex-wrap items-center gap-2 sm:pl-12"
                               onSubmit={(e) => {
                                 e.preventDefault()
                                 void create(template, using.title)

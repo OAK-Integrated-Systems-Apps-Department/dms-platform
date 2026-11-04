@@ -57,7 +57,7 @@ export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHin
         <button
           type="button"
           onClick={() => onChange(null)}
-          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+          className="flex shrink-0 items-center justify-center text-muted-foreground hover:text-foreground size-8 rounded-btn"
           aria-label="Choose someone else"
         >
           <X size={14} />

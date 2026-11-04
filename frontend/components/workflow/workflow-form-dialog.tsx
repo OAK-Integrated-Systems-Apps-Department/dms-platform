@@ -59,7 +59,7 @@ export function WorkflowFormDialog({
             <AlertDialogClose
               type="button"
               disabled={submitting}
-              className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </AlertDialogClose>
@@ -68,7 +68,7 @@ export function WorkflowFormDialog({
               onClick={onConfirm}
               disabled={!canConfirm || submitting}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] disabled:cursor-not-allowed disabled:opacity-50",
+                "flex items-center gap-1.5 border disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
                 TONE[tone].button
               )}
             >

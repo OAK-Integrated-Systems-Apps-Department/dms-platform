@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -933,9 +934,7 @@ function FolderView({
           </p>
         </div>
       ) : current && documents.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">
-          {friendlyMessage(documents.error, "Could not load documents.")}
-        </p>
+        <LoadFailed error={documents.error} fallback="Could not load documents." />
       ) : view === "list" ? (
         <BrowserList
           folders={shownFolders}

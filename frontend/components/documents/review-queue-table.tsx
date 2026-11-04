@@ -49,7 +49,7 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-340px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   Nothing needs review. Every document processed cleanly.
                 </td>
               </tr>

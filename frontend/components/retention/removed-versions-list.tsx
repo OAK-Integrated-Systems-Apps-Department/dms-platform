@@ -5,7 +5,7 @@ import Link from "next/link"
 
 import { LoadingState } from "@/components/ui/loading-state"
 import { TablePagination } from "@/components/ui/table-pagination"
-import { friendlyMessage } from "@/lib/api-error"
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRemovedVersions, useRestoreVersion } from "@/lib/retention/use-retention"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { formatDateTime } from "@/lib/utils"
@@ -24,16 +24,16 @@ export function RemovedVersionsList() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="max-w-[640px] text-[12.5px] leading-[1.6] text-muted-foreground">
+      <p className="text-[12.5px] leading-[1.6] text-muted-foreground">
         These old versions were removed by a retention rule. They are hidden from the version history, and their files are
         destroyed for good on the date shown. Restore one to bring it back and keep it.
       </p>
       {versions.isPending ? (
         <LoadingState message="Loading…" />
       ) : versions.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">{friendlyMessage(versions.error, "Could not load the removed versions.")}</p>
+        <LoadFailed error={versions.error} fallback="Could not load the removed versions." onRetry={() => void versions.refetch()} />
       ) : versions.data.content.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
           No versions are waiting out their grace period.
         </p>
       ) : (
@@ -54,7 +54,7 @@ export function RemovedVersionsList() {
                   type="button"
                   disabled={restore.isPending}
                   onClick={() => restore.mutate(v.versionId)}
-                  className="rounded-md border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
                 >
                   Restore version {v.versionNumber}
                 </button>

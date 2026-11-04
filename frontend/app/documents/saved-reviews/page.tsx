@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
@@ -59,7 +60,7 @@ export default function SavedReviewsPage() {
           { label: "Saved reviews" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Saved reviews</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Documents somebody has already reviewed, newest first. Open one to see what was
@@ -73,9 +74,7 @@ export default function SavedReviewsPage() {
         isNetworkError(error) ? (
           <BackendUnavailable onRetry={refetch} />
         ) : (
-          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-            {error instanceof Error ? error.message : "Could not load saved reviews."}
-          </div>
+          <LoadFailed error={error} fallback="Could not load saved reviews." />
         )
       ) : (
         <>

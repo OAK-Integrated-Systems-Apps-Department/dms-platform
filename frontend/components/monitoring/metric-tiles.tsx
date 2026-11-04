@@ -137,7 +137,7 @@ export function MetricTile({
   return (
     <div
       className={cn(
-        "flex h-full flex-col rounded-xl border bg-card p-4 transition-colors",
+        "flex h-full flex-col rounded-lg border bg-card p-4 transition-colors",
         // The border carries the alarm, not the whole card: a tinted block
         // for every raised figure turns a busy minute into a wall of colour.
         tone === "bad"

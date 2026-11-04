@@ -388,7 +388,7 @@ export function ServiceLogs({
           {friendlyMessage(logs.error, "Could not load the logs.")}
         </p>
       ) : !logs.data.reachable ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-3 text-[12px] text-muted-foreground">
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-[12px] text-muted-foreground">
           {logs.data.error ?? "The log store did not answer."}
         </p>
       ) : logs.data.lines.length === 0 ? (
@@ -506,7 +506,7 @@ function LogsModal({
         aria-label={`${serviceLabel} logs`}
         tabIndex={-1}
         className={cn(
-          "relative flex h-full w-full max-w-[1500px] flex-col overflow-hidden border border-border bg-card shadow-2xl outline-none sm:h-[94vh] sm:rounded-2xl",
+          "relative flex h-full w-full max-w-[1500px] flex-col overflow-hidden border border-border bg-card shadow-2xl outline-none sm:h-[94vh] sm:rounded-lg",
           "transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
           shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
         )}
@@ -524,7 +524,7 @@ function LogsModal({
             type="button"
             onClick={onClose}
             aria-label="Close logs"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none inline-flex size-8 items-center justify-center rounded-btn"
           >
             <X size={18} />
           </button>

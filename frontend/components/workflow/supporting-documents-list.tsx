@@ -77,7 +77,7 @@ export function SupportingDocumentRow({ document, onRemove }: { document: Suppor
         <button
           type="button"
           onClick={onRemove}
-          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-[var(--rust)]"
+          className="flex shrink-0 items-center justify-center text-muted-foreground hover:text-[var(--rust)] size-8 rounded-btn"
           aria-label={`Remove ${document.title ?? "document"}`}
         >
           <Trash2 size={13} />
@@ -115,7 +115,7 @@ export function SupportingDocumentsList({ instanceId, documentId, documents, cur
           <button
             type="button"
             onClick={() => setAttaching(true)}
-            className="flex items-center gap-1 rounded-sm border border-[var(--border-strong)] bg-card px-2.5 py-1 text-[12px] font-semibold text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 border border-[var(--border-strong)] bg-card text-muted-foreground hover:text-foreground h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
           >
             <Paperclip size={12} /> Attach
           </button>

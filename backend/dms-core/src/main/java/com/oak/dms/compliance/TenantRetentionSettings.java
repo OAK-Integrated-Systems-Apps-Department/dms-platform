@@ -47,6 +47,10 @@ public class TenantRetentionSettings {
     @Builder.Default
     private int versionGraceDays = RetentionSettingsService.DEFAULT_GRACE_DAYS;
 
+    /** When on, a document a rule still covers cannot be deleted until its total retention has ended (see RetentionDeletionGuard). */
+    @Column(name = "protect_from_deletion", nullable = false)
+    private boolean protectFromDeletion;
+
     /** When the last FULL pass of every document finished (see RetentionEngine); null = never. */
     @Column(name = "last_full_pass_at")
     private OffsetDateTime lastFullPassAt;

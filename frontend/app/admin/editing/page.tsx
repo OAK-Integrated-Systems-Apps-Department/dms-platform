@@ -21,7 +21,7 @@ export default function OnlineEditingSettingsPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Online Editing" }]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">Online editing</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Choose whether people in your organisation can edit documents in the browser, and how they share a document

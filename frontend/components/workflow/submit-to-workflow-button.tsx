@@ -48,7 +48,7 @@ export function SubmitToWorkflowButton({
         type="button"
         onClick={() => setConfirming(true)}
         disabled={isActing}
-        className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-4 py-2 text-[13px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
       >
         {isActing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
         Submit for Approval

@@ -11,12 +11,12 @@ import { usePageTitle } from "@/lib/use-page-title"
 export default function ArchivePage() {
   usePageTitle("Inactive & Archive")
   return (
-    <DashboardShell initialActiveLabel="Inactive & Archive">
+    <DashboardShell initialActiveLabel="Inactive & Archive" fillHeight>
       <AdminBreadcrumb
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "My Documents", href: "/documents" }, { label: "Inactive & Archive" }]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">Inactive &amp; Archive</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Documents switched off by hand or archived by a retention rule. They are hidden from normal listings and search

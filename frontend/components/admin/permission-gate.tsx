@@ -3,7 +3,9 @@
 import type { ReactNode } from "react"
 import { AlertTriangle } from "lucide-react"
 
+import { BackendUnavailable } from "@/components/ui/backend-unavailable"
 import { LoadingState } from "@/components/ui/loading-state"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { usePermissions } from "@/lib/auth/use-permissions"
 
 interface PermissionGateProps {
@@ -38,11 +40,18 @@ interface PermissionGateProps {
  */
 export function PermissionGate({ permission, children, message }: PermissionGateProps) {
   const { hasAnyPermission, isLoading } = usePermissions()
+  const currentUser = useCurrentUser()
   const codes = Array.isArray(permission) ? permission : [permission]
   const allowed = hasAnyPermission(...codes)
 
   if (isLoading) {
     return <LoadingState />
+  }
+
+  // The permissions could not be loaded (connection lost): that says nothing about what the user may do, so do not
+  // tell them they are denied. The toast explains the failure; this offers the way out.
+  if (!allowed && currentUser.isError) {
+    return <BackendUnavailable onRetry={() => void currentUser.refetch()} />
   }
 
   if (!allowed) {

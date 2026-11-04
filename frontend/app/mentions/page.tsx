@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import Link from "next/link"
 import { AtSign, Lock } from "lucide-react"
@@ -27,9 +28,9 @@ export default function MentionsPage() {
   const rows = data?.content ?? []
 
   return (
-    <DashboardShell initialActiveLabel="Mentions">
+    <DashboardShell initialActiveLabel="Mentions" fillHeight>
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Mentions" }]} />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Mentions</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">Comments where someone mentioned you, newest first.</p>
       </div>
@@ -37,11 +38,9 @@ export default function MentionsPage() {
       {isPending ? (
         <LoadingState message="Loading your mentions…" />
       ) : isError ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)]">
-          {error instanceof Error ? error.message : "Could not load your mentions."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load your mentions." />
       ) : rows.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-8 text-[13px] text-muted-foreground">
+        <div className="flex min-h-[160px] flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-8 text-[13px] text-muted-foreground">
           <AtSign size={15} /> Nobody has mentioned you yet.
         </div>
       ) : (

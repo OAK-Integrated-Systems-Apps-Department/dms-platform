@@ -265,7 +265,7 @@ export function CheckboxFilter({
               width: Math.max(position.width, popoverMinWidth),
               maxHeight: position.maxHeight,
             }}
-            className="z-50 flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--ledger-shadow)]"
+            className="z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]"
           >
             <div className="shrink-0 border-b border-border p-2">
               <div className="relative">
@@ -364,7 +364,7 @@ export function CheckboxFilter({
                 {selected.map((value) => (
                   <span
                     key={value}
-                    className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-foreground"
+                    className="border border-border bg-muted text-foreground inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
                   >
                     {getLabel(value)}
                     <button

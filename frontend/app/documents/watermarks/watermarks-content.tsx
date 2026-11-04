@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 
 import { DocumentsHub } from "@/components/documents/documents-hub"
@@ -85,11 +86,7 @@ export function WatermarksContent() {
               isNetworkError(error) ? (
                 <BackendUnavailable onRetry={refetch} />
               ) : (
-                <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-                  {error instanceof Error
-                    ? error.message
-                    : "Could not load your watermarked copies."}
-                </div>
+                <LoadFailed error={error} fallback="Could not load your watermarked copies." />
               )
             ) : (
               <>

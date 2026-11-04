@@ -41,7 +41,7 @@ export function DashCard({
       style={{ "--dash-order": order } as CSSProperties}
       aria-label={title}
       className={cn(
-        "dash-rise relative flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
+        "dash-rise relative flex min-w-0 flex-col rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
         className
       )}
     >

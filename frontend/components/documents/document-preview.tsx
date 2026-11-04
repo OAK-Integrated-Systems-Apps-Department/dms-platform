@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { PinButton } from "@/components/pins/pin-button"
 import {
   useCallback,
@@ -31,7 +32,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { friendlyMessage } from "@/lib/api-error"
 import {
   previewConvertedPdf,
   previewDocumentFile,
@@ -359,7 +359,7 @@ export function DocumentPreview({
                 {version && (
                   <span
                     className={cn(
-                      "shrink-0 rounded-full px-2 py-px font-mono text-[11px] font-semibold",
+                      "shrink-0 font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap",
                       version.current
                         ? "bg-primary/10 text-primary"
                         : "bg-[var(--gold-tint)] text-foreground"
@@ -480,9 +480,7 @@ export function DocumentPreview({
               <Loader2 size={16} className="animate-spin" /> Opening…
             </p>
           ) : file.isError ? (
-            <p className="m-auto max-w-[420px] text-center text-[13px] text-[var(--rust)]">
-              {friendlyMessage(file.error, "Could not open the document.")}
-            </p>
+            <LoadFailed error={file.error} fallback="Could not open the document." />
           ) : (
             <Viewer
               renderer={renderer}

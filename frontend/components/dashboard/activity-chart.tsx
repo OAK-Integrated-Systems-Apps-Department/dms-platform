@@ -205,7 +205,7 @@ export function ActivityChart({
                     })
                   }
                   className={cn(
-                    "flex min-w-[130px] flex-1 flex-col items-start rounded-xl border px-3 py-2 text-left transition-all",
+                    "flex min-w-[130px] flex-1 flex-col items-start rounded-lg border px-3 py-2 text-left transition-all",
                     off
                       ? "border-dashed border-border opacity-50"
                       : "border-border bg-muted/40 hover:bg-muted"

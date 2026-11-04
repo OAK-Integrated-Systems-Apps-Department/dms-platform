@@ -14,7 +14,7 @@ import { RequestInfoDialog } from "./request-info-dialog"
 import { RespondInfoDialog } from "./respond-info-dialog"
 import { SupportingDocumentRow } from "./supporting-documents-list"
 
-const BTN = "flex items-center gap-1 rounded-sm border px-2.5 py-1 text-[12px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+const BTN = "flex items-center gap-1 border disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
 
 interface InfoRequestsListProps {
   requests: InfoRequestDto[]

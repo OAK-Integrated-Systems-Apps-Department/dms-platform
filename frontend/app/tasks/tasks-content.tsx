@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useSearchParams } from "next/navigation"
 
@@ -80,7 +81,7 @@ export function TasksContent() {
     <DashboardShell initialActiveLabel="My Tasks">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "My Tasks" }]} />
       <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
-        <div className="max-w-[680px]">
+        <div className="min-w-0 flex-1">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">My Tasks</h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
             Documents waiting for your approval. Tasks sent to a role or department are shared: claim one to take it
@@ -106,7 +107,7 @@ export function TasksContent() {
         )}
       </div>
 
-      <div className="mb-4 flex items-center gap-1 border-b border-border" role="tablist">
+      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-border" role="tablist">
         {VIEWS.map((v) => (
           <button
             key={v.value}
@@ -115,7 +116,7 @@ export function TasksContent() {
             aria-selected={view === v.value}
             onClick={() => changeView(v.value)}
             className={cn(
-              "border-b-2 px-4 py-2.5 text-[13px] font-semibold transition-colors",
+              "shrink-0 border-b-2 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition-colors",
               view === v.value ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
@@ -130,9 +131,7 @@ export function TasksContent() {
         isNetworkError(error) ? (
           <BackendUnavailable onRetry={refetch} />
         ) : (
-          <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-            {error instanceof Error ? error.message : "Could not load your tasks."}
-          </div>
+          <LoadFailed error={error} fallback="Could not load your tasks." />
         )
       ) : (
         <>

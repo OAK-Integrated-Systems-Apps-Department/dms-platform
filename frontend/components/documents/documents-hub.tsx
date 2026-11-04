@@ -95,7 +95,7 @@ export function DocumentsHub({
         ]}
       />
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-        <div className="max-w-[720px]">
+        <div>
           <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
             {current.label}
           </h1>

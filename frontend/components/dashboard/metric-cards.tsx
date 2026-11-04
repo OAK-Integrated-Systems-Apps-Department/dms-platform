@@ -174,7 +174,7 @@ export function MetricCard({
     <div
       ref={card}
       className={cn(
-        "dash-tilt relative flex h-full flex-col rounded-2xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
+        "dash-tilt relative flex h-full flex-col rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
         href && "transition-colors group-hover:border-[var(--border-strong)]"
       )}
     >

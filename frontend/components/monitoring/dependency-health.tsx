@@ -155,7 +155,7 @@ function DependencyTile({
         onClick={onSelect}
         aria-pressed={selected}
         className={cn(
-          "flex w-full flex-col items-center gap-2 rounded-xl border px-2 py-3.5 transition-[border-color,box-shadow,transform] duration-200",
+          "flex w-full flex-col items-center gap-2 rounded-lg border px-2 py-3.5 transition-[border-color,box-shadow,transform] duration-200",
           "hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
           "motion-reduce:transition-none motion-reduce:hover:translate-y-0",
           state.bad
@@ -307,7 +307,7 @@ export function DependencyHealthCard({
     sorted.find((d) => d.id === selectedId) ?? null
 
   return (
-    <div className={cn("rounded-xl border border-border bg-card", className)}>
+    <div className={cn("rounded-lg border border-border bg-card", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div>
           <h2 className="text-[14px] font-semibold">Backend dependencies</h2>
@@ -316,7 +316,7 @@ export function DependencyHealthCard({
           </p>
         </div>
         <span
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-semibold"
+          className="inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
           style={{
             color: STATES[worst].colour,
             background: tint(STATES[worst].colour, 12),

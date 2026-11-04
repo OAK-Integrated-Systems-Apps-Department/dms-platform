@@ -101,7 +101,7 @@ export function Gauge({
   return (
     <div
       className={cn(
-        "flex flex-col items-center rounded-xl border border-border bg-card p-3",
+        "flex flex-col items-center rounded-lg border border-border bg-card p-3",
         className
       )}
     >
