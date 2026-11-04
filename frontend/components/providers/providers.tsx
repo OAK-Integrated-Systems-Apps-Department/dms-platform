@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner"
 
 import { ThemeProvider } from "@/components/theme-provider"
+import { NavProgress } from "@/components/layout/nav-progress"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
@@ -154,6 +155,7 @@ export function Providers({
           <SidebarCookieProvider initialOpen={initialSidebarOpen}>
             {children}
           </SidebarCookieProvider>
+          <NavProgress />
           <Toaster position="top-right" />
         </TooltipProvider>
       </ThemeProvider>
