@@ -54,7 +54,7 @@ export function FieldDeprecateDialog({ field, open, onOpenChange, onConfirm }: F
     >
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[460px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
             <ArchiveX size={20} />
           </span>
           <AlertDialogTitle>Deprecate this field?</AlertDialogTitle>

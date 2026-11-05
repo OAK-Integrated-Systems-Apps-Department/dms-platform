@@ -220,7 +220,7 @@ export default function RoleListPage() {
       </div>
 
       {actionError && (
-        <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
+        <div className="mb-4 flex items-start gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{actionError}</span>
         </div>

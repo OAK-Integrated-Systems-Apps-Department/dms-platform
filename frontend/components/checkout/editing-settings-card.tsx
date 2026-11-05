@@ -67,7 +67,7 @@ function EditingSettingsForm({ initial, canEdit }: { initial: EditingSettingsDto
           </div>
 
           {!initial.engineConfigured && (
-            <p className="rounded-md border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
+            <p className="rounded-btn border border-[var(--gold)] bg-[var(--gold-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--gold-foreground)]">
               This server has no editing engine set up, so online editing cannot be turned on. Ask whoever runs the
               server to configure one.
             </p>

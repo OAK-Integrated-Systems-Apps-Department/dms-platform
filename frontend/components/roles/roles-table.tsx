@@ -53,7 +53,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse">
+        <table className="tbl-card w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh
@@ -116,7 +116,7 @@ export function RolesTable({ roles, onToggleStatus, onDeleteRole, canUpdate, can
                 <td className="px-3.5 py-3">
                   <Badge
                     variant={role.status === "Active" ? "default" : "muted"}
-                    className="gap-1.5 rounded-md"
+                    className="gap-1.5 rounded-btn"
                   >
                     <span className="size-[5px] rounded-full bg-current" />
                     {role.status}

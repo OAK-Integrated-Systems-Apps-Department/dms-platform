@@ -28,7 +28,7 @@ export function WorkflowTemplatesTable({ rows, onView }: WorkflowTemplatesTableP
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] border-collapse">
+        <table className="tbl-card w-full min-w-[880px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Name</th>
@@ -63,7 +63,7 @@ export function WorkflowTemplatesTable({ rows, onView }: WorkflowTemplatesTableP
                 <td className="px-3 py-3 text-[13px] text-foreground">{row.stageCount}</td>
                 <td className="px-3 py-3 text-[13px] text-muted-foreground">{ON_DOCUMENT_CHANGE_LABELS[row.onDocumentChange]}</td>
                 <td className="px-3 py-3">
-                  <Badge variant={TEMPLATE_STATUS_BADGE_VARIANT[row.status]} className="gap-1.5 rounded-md">
+                  <Badge variant={TEMPLATE_STATUS_BADGE_VARIANT[row.status]} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {TEMPLATE_STATUS_LABELS[row.status]}
                   </Badge>

@@ -3,6 +3,8 @@ package com.oak.dms.tenant;
 import com.oak.dms.tenant.dto.CreateTenantRequest;
 import com.oak.dms.tenant.dto.ProvisionTenantRequest;
 import com.oak.dms.tenant.dto.TenantProvisioningResponse;
+import com.oak.dms.tenant.dto.TenantAdminResponse;
+import com.oak.dms.tenant.dto.UpdateTenantAdminRequest;
 import com.oak.dms.tenant.dto.UpdateTenantRequest;
 import com.oak.dms.common.dto.PageResponse;
 import com.oak.dms.tenant.dto.TenantResponse;
@@ -17,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,6 +36,7 @@ public class TenantController {
 
     private final TenantService tenantService;
     private final TenantProvisioningService tenantProvisioningService;
+    private final TenantAdminService tenantAdminService;
 
     @PostMapping
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
@@ -53,6 +57,29 @@ public class TenantController {
         TenantProvisioningResponse response = tenantProvisioningService.provisionTenant(request);
         return ResponseEntity.created(URI.create("/api/v1/tenants/" + response.tenant().tenantId()))
                 .body(response);
+    }
+
+    @GetMapping("/{tenantId}/admins")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "List a tenant's administrators (the users holding TENANT_ADMIN)")
+    public List<TenantAdminResponse> listTenantAdmins(@PathVariable UUID tenantId) {
+        return tenantAdminService.listAdmins(tenantId);
+    }
+
+    @PutMapping("/{tenantId}/admins/{userId}")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "Correct a tenant administrator's name or email")
+    public TenantAdminResponse updateTenantAdmin(@PathVariable UUID tenantId, @PathVariable UUID userId,
+                                                 @Valid @RequestBody UpdateTenantAdminRequest request) {
+        return tenantAdminService.updateAdmin(tenantId, userId, request);
+    }
+
+    @PostMapping("/{tenantId}/admins/{userId}/resend-invite")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Send the invitation email again to an administrator who has not set up their account")
+    public void resendTenantAdminInvite(@PathVariable UUID tenantId, @PathVariable UUID userId) {
+        tenantAdminService.resendInvite(tenantId, userId);
     }
 
     @GetMapping("/{tenantId}")

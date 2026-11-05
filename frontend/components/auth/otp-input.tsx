@@ -59,7 +59,7 @@ export function OtpInput({ length = OTP_LENGTH, value, onChange, disabled }: Otp
   }
 
   return (
-    <div className="mb-[26px] flex justify-center gap-[9px]">
+    <div className="mb-5 flex sm:mb-[26px] justify-center gap-1.5 sm:gap-[9px]">
       {digits.map((digit, index) => (
         <input
           key={index}
@@ -76,7 +76,7 @@ export function OtpInput({ length = OTP_LENGTH, value, onChange, disabled }: Otp
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={(e) => handlePaste(index, e)}
           className={cn(
-            "h-[52px] w-[44px] rounded-md border-[1.5px] bg-[var(--secondary)] text-center font-mono text-xl outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15 disabled:opacity-60",
+            "h-11 w-[44px] min-w-0 sm:h-[52px] shrink flex-1 max-w-[44px] rounded-btn border-[1.5px] bg-[var(--secondary)] text-center font-mono text-xl outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15 disabled:opacity-60",
             digit
               ? "border-primary font-bold text-[var(--primary-dark,var(--primary))]"
               : "border-[var(--border-strong)] text-foreground"

@@ -32,7 +32,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] border-collapse">
+        <table className="tbl-card w-full min-w-[780px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh label="Name" active={sortKey === "typeName"} direction={direction} onClick={() => toggleSort("typeName")} className="px-3.5" />
@@ -56,7 +56,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">{type.typeCode}</td>
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">v{type.currentSchemaVersion}</td>
                 <td className="px-3.5 py-3">
-                  <Badge variant={type.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-md">
+                  <Badge variant={type.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {type.status}
                   </Badge>

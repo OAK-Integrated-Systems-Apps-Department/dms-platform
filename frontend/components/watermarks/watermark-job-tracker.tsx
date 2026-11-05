@@ -57,7 +57,7 @@ export function WatermarkJobTracker({ job: initial, onClose }: WatermarkJobTrack
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2.5">
-        <Badge variant={WATERMARK_JOB_STATUS_BADGE_VARIANT[job.status]} className="gap-1.5 rounded-md">
+        <Badge variant={WATERMARK_JOB_STATUS_BADGE_VARIANT[job.status]} className="gap-1.5 rounded-btn">
           {inFlight ? (
             <Loader2 className="size-3 animate-spin" aria-hidden="true" />
           ) : job.status === "completed" ? (

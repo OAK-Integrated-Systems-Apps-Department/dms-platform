@@ -99,7 +99,8 @@ describe("TransferDialog", () => {
     mocks.transferDoc.mockResolvedValue({ accessConvertedToRestricted: false })
     const onDone = renderDialog(DOCUMENT)
     fireEvent.click(screen.getByRole("button", { name: "pick person" }))
-    fireEvent.change(screen.getByLabelText("Department"), { target: { value: "d-legal" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Department/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Legal" }))
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }))
 
     await waitFor(() => expect(mocks.transferDoc).toHaveBeenCalled())

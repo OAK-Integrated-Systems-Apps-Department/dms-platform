@@ -45,11 +45,19 @@ export interface ProvisionOrganisationRequest {
   adminUsername: string
   adminFirstName: string
   adminLastName?: string
+  /** More administrators created with the organisation (up to 9). Each is invited by email. */
+  additionalAdmins?: {
+    email: string
+    username: string
+    firstName: string
+    lastName?: string
+  }[]
 }
 
 export interface ProvisionOrganisationResult {
   tenant: OrganisationDto
   admin: { userId: string; email: string; username: string }
+  additionalAdmins: { userId: string; email: string; username: string }[]
 }
 
 /**
@@ -157,5 +165,61 @@ export async function destroyOrganisationKeys(
       }),
     },
     "Could not destroy the organisation's keys."
+  )
+}
+
+/** Mirrors TenantAdminResponse: one administrator of an organisation. */
+export interface TenantAdminDto {
+  userId: string
+  username: string
+  email: string
+  firstName: string
+  lastName: string | null
+  displayName: string
+  /** active | locked | disabled */
+  status: string
+  /** they have set their own password (accepted the invitation) */
+  verified: boolean
+  lastLoginAt: string | null
+  createdAt: string
+}
+
+/** The people who administer an organisation - platform admins only. */
+export async function fetchTenantAdmins(
+  tenantId: string
+): Promise<TenantAdminDto[]> {
+  return apiFetchJson(
+    `${BASE}/${tenantId}/admins`,
+    undefined,
+    "Could not load the organisation's administrators."
+  )
+}
+
+/** Corrects an administrator's name or email. The username is fixed. */
+export async function updateTenantAdmin(
+  tenantId: string,
+  userId: string,
+  changes: { firstName: string; lastName: string; email: string }
+): Promise<TenantAdminDto> {
+  return apiFetchJson(
+    `${BASE}/${tenantId}/admins/${userId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    },
+    "Could not update the administrator."
+  )
+}
+
+/** Sends the invitation email again, to an administrator who has not set a password yet. */
+export async function resendTenantAdminInvite(
+  tenantId: string,
+  userId: string
+): Promise<void> {
+  await apiFetch(
+    `${BASE}/${tenantId}/admins/${userId}/resend-invite`,
+    { method: "POST" },
+    "Could not send the invitation."
   )
 }

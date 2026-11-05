@@ -93,7 +93,7 @@ export function VisualSignatureFields({
 
   return (
     <div>
-      <div className="mb-1.5 flex rounded-btn border border-[var(--border-strong)] p-0.5 text-[13px] font-semibold">
+      <div className="mb-1.5 flex rounded-btn bg-card border border-[var(--border-strong)] p-0.5 text-[13px] font-semibold">
         {KINDS.map(({ value, label }) => (
           <button
             key={value}

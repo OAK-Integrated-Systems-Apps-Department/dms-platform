@@ -132,7 +132,7 @@ export function UserDetailView({
             {user.name}
             <Badge
               variant={user.status === "Active" ? "default" : "muted"}
-              className="gap-1.5 rounded-md align-middle text-[11px] font-semibold"
+              className="gap-1.5 rounded-btn align-middle text-[11px] font-semibold"
             >
               <span className="size-[5px] rounded-full bg-current" />
               {user.status}
@@ -252,7 +252,7 @@ export function UserDetailView({
                 {user.roles.map((role) => (
                   <span
                     key={role}
-                    className="rounded-[6px] border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                    className="rounded-btn border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground"
                   >
                     {role}
                   </span>

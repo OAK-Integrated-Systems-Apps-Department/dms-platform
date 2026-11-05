@@ -510,7 +510,7 @@ export function DocumentTile({
         aria-label={`Open ${row.title}`}
         title="Open preview"
         className={cn(
-          "m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-md",
+          "m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-btn",
           kind.tone
         )}
       >
@@ -565,7 +565,7 @@ export function DocumentTile({
       <ItemMenu
         label={row.title}
         actions={actions}
-        className="absolute top-3 right-3 rounded-md bg-card/90 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+        className="absolute top-3 right-3 rounded-btn bg-card/90 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
       />
     </li>
   )
@@ -630,7 +630,7 @@ export function BrowserList({
     )
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-      <table className="w-full min-w-[680px] border-collapse">
+      <table className="tbl-card w-full min-w-[680px] border-collapse">
         <thead>
           <tr className="group border-b border-border">
             <th className={`${TH} w-10`}>
@@ -658,7 +658,7 @@ export function BrowserList({
             <tr>
               <td
                 colSpan={6}
-                className="px-3 py-10 text-center text-[13px] text-muted-foreground"
+                className="h-[max(160px,calc(100svh-425px))] px-3 py-10 text-center text-[13px] text-muted-foreground"
               >
                 {empty}
               </td>

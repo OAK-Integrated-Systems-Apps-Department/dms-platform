@@ -163,7 +163,7 @@ function Item({
         {link && (
           <Link
             href={link.href}
-            className="flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 text-[12px] font-semibold text-[var(--rust)] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="flex shrink-0 items-center gap-0.5 rounded-btn px-2 py-1 text-[12px] font-semibold text-[var(--rust)] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
           >
             {link.label}
             <ArrowUpRight size={13} aria-hidden="true" />

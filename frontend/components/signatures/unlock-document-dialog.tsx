@@ -52,7 +52,7 @@ export function UnlockDocumentDialog({
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-lg">
           <form onSubmit={handleSubmit(submit)}>
-            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
+            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
               <Unlock size={20} aria-hidden="true" />
             </span>
             <AlertDialogTitle>Unlock this document?</AlertDialogTitle>

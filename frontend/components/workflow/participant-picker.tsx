@@ -110,7 +110,7 @@ export function ParticipantPicker({ value, onChange, disabled }: ParticipantPick
       )}
 
       {!disabled && (
-        <div className="rounded-md border border-border bg-card">
+        <div className="rounded-btn border border-border bg-card">
           <div className="flex items-center gap-1 border-b border-border px-2" role="tablist">
             {TABS.map((t) => {
               const Icon = t.icon

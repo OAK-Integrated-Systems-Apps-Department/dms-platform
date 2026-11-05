@@ -666,7 +666,7 @@ function StatusSegment({
       onClick={onSelect}
       aria-label={`${service.label}: ${service.up ? "up" : "down"}. Open details.`}
       className={cn(
-        "group relative flex h-full min-w-[6px] flex-1 items-center justify-center rounded-md transition-[filter] duration-150",
+        "group relative flex h-full min-w-[6px] flex-1 items-center justify-center rounded-btn transition-[filter] duration-150",
         "hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-none",
         !service.up && "motion-safe:animate-pulse"
       )}
@@ -678,7 +678,7 @@ function StatusSegment({
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute bottom-full z-20 mb-2 rounded-md border border-border bg-popover px-2 py-1 text-[12px] font-medium whitespace-nowrap text-popover-foreground opacity-0 shadow-md transition-opacity duration-150",
+          "pointer-events-none absolute bottom-full z-20 mb-2 rounded-btn border border-border bg-popover px-2 py-1 text-[12px] font-medium whitespace-nowrap text-popover-foreground opacity-0 shadow-md transition-opacity duration-150",
           "group-hover:opacity-100 group-focus-visible:opacity-100",
           side
         )}

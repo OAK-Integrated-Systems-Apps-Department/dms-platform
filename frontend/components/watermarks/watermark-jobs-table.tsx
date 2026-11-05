@@ -42,7 +42,7 @@ export function WatermarkJobsTable({ rows, filtered }: WatermarkJobsTableProps) 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Requested</th>
@@ -81,7 +81,7 @@ export function WatermarkJobsTable({ rows, filtered }: WatermarkJobsTableProps) 
                 <td className="px-3 py-3">
                   <Badge
                     variant={WATERMARK_JOB_STATUS_BADGE_VARIANT[row.status]}
-                    className="gap-1.5 rounded-md"
+                    className="gap-1.5 rounded-btn"
                   >
                     {row.status === "processing" ? (
                       <Loader2 className="size-3 animate-spin" aria-hidden="true" />

@@ -142,7 +142,7 @@ function QuarantineDetail({ record }: { record: QuarantineRecordDetailDto }) {
           <Field
             label="Status"
             value={
-              <Badge variant={QUARANTINE_STATUS_BADGE_VARIANT[record.status]} className="gap-1.5 rounded-md">
+              <Badge variant={QUARANTINE_STATUS_BADGE_VARIANT[record.status]} className="gap-1.5 rounded-btn">
                 <span className="size-[5px] rounded-full bg-current" />
                 {QUARANTINE_STATUS_LABELS[record.status]}
               </Badge>
@@ -190,7 +190,7 @@ function QuarantineDetail({ record }: { record: QuarantineRecordDetailDto }) {
           <p className="pt-3 text-[13px] text-muted-foreground">No release has been attempted.</p>
         ) : (
           <div className="overflow-x-auto pt-3">
-            <table className="w-full min-w-[760px] border-collapse">
+            <table className="tbl-card w-full min-w-[760px] border-collapse">
               <thead>
                 <tr className="border-b border-border">
                   {["Requested", "Requested By", "Outcome", "Reason", "Detail"].map((h) => (

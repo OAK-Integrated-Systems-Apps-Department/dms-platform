@@ -52,7 +52,7 @@ export function MetadataFieldsTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh label="Label" active={sortKey === "label"} direction={direction} onClick={() => toggleSort("label")} className="px-3.5" />
@@ -78,7 +78,7 @@ export function MetadataFieldsTable({
                   {DATA_TYPE_LABELS[field.dataType as DataType] ?? field.dataType}
                 </td>
                 <td className="px-3.5 py-3">
-                  <Badge variant={STATUS_VARIANT[field.status]} className="gap-1.5 rounded-md">
+                  <Badge variant={STATUS_VARIANT[field.status]} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {field.status}
                   </Badge>

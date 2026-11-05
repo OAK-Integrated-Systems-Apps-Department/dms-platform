@@ -28,7 +28,7 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card tbl-last-fit w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">

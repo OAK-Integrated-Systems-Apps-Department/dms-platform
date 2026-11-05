@@ -119,7 +119,7 @@ export function WorkflowStatusPanel({ instance, showDocumentLink = true }: Workf
             <h2 className="font-heading text-[16.5px] font-semibold">
               {instance.templateName} <span className="text-[13px] font-normal text-muted-foreground">v{instance.templateVersionNumber}</span>
             </h2>
-            <Badge variant={INSTANCE_STATUS_BADGE_VARIANT[instance.status]} className="gap-1.5 rounded-md">
+            <Badge variant={INSTANCE_STATUS_BADGE_VARIANT[instance.status]} className="gap-1.5 rounded-btn">
               <span className="size-[5px] rounded-full bg-current" />
               {INSTANCE_STATUS_LABELS[instance.status]}
             </Badge>
@@ -407,7 +407,7 @@ function StageStep({ stage, last, current, totalStages, waitingOn, onReassign, c
       <span className={cn("relative z-[1] flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-[12.5px] font-bold", STEP_DOT[stage.status])}>
         {stage.status === "approved" ? <Check size={15} /> : stage.status === "rejected" ? <X size={15} /> : stage.stageOrder}
       </span>
-      <div className={cn("min-w-0 flex-1 rounded-md border px-3.5 py-3", current ? "border-[var(--gold)]" : "border-border")}>
+      <div className={cn("min-w-0 flex-1 rounded-btn border px-3.5 py-3", current ? "border-[var(--gold)]" : "border-border")}>
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-[13.5px] font-semibold text-foreground">
             <span className="sr-only">Stage {stage.stageOrder} of {totalStages}: </span>
@@ -531,7 +531,7 @@ function CancelWorkflowDialog({ onOpenChange, onConfirm }: { onOpenChange: (open
     <AlertDialog open onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-xl">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Ban size={20} aria-hidden="true" />
           </span>
           <AlertDialogTitle>Cancel this workflow?</AlertDialogTitle>

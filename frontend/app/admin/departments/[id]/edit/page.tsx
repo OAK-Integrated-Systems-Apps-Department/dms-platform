@@ -141,7 +141,7 @@ export default function EditDepartmentPage() {
         <AlertDialog open onOpenChange={(open) => !open && setConfirmDelete(false)}>
           <AlertDialogPortal>
             <AlertDialogPopup className="sm:max-w-md">
-              <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+              <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
                 <Trash2 size={20} aria-hidden="true" />
               </span>
               <AlertDialogTitle>Delete this department?</AlertDialogTitle>

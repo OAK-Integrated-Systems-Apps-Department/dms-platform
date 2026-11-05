@@ -45,7 +45,7 @@ export function UserDeleteDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-2xl">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} aria-hidden="true" />
           </span>
           <AlertDialogTitle>Delete this user?</AlertDialogTitle>

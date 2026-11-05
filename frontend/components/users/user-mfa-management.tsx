@@ -35,7 +35,7 @@ function MfaKvItem({
   value: React.ReactNode
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted px-4 py-3">
+    <div className="rounded-btn border border-border bg-muted px-4 py-3">
       <div className="mb-1 text-[10.5px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
         {label}
       </div>
@@ -53,7 +53,7 @@ function MfaKvItem({
  *
  * Read-only status + action buttons, same split as `UserAccessSummary`
  * (A1): a status/info card up top, actions below, both wrapped in a single
- * `rounded-md` card. Both actions route through `UserMfaActionDialog`
+ * `rounded-btn` card. Both actions route through `UserMfaActionDialog`
  * (U8's confirmation step) rather than firing instantly — resetting
  * credentials removes a real login factor and requiring setup forces a
  * re-enrollment flow, so neither should be a one-click accident, same
@@ -101,7 +101,7 @@ export function UserMfaManagement({
           </h3>
           <Badge
             variant={user.mfaEnrolled ? "default" : "muted"}
-            className="gap-1.5 rounded-md"
+            className="gap-1.5 rounded-btn"
           >
             <span className="size-[5px] rounded-full bg-current" />
             {user.mfaEnrolled ? "Enrolled" : "Not Enrolled"}
@@ -121,7 +121,7 @@ export function UserMfaManagement({
             value={
               <Badge
                 variant={user.mfaRequiredByPolicy ? "gold" : "outline"}
-                className="rounded-md"
+                className="rounded-btn"
               >
                 {user.mfaRequiredByPolicy
                   ? "Required for this role"

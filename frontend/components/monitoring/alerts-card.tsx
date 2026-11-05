@@ -91,7 +91,7 @@ function ActiveRow({ rule }: { rule: AlertRule }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <p className="text-[13.5px] font-semibold">{readable(rule.name)}</p>
           <span
-            className="rounded px-1.5 py-px text-[10.5px] font-semibold tracking-[0.03em] uppercase"
+            className="rounded-btn px-1.5 py-px text-[10.5px] font-semibold tracking-[0.03em] uppercase"
             style={{ color: tone.colour, background: tint(tone.colour, 14) }}
           >
             {tone.label}

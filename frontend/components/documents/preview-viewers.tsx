@@ -180,7 +180,7 @@ export function SheetViewer({
               type="button"
               onClick={() => setActive(i)}
               className={cn(
-                "rounded-md px-3 py-1 text-[12.5px] whitespace-nowrap",
+                "rounded-btn px-3 py-1 text-[12.5px] whitespace-nowrap",
                 i === active
                   ? "bg-card font-semibold text-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-card/60"
@@ -493,7 +493,7 @@ export function TiffViewer({
               maxWidth: "none",
               height: "auto",
             }}
-            className="mx-auto shrink-0 rounded-md bg-white shadow-[var(--ledger-shadow)]"
+            className="mx-auto shrink-0 rounded-btn bg-white shadow-[var(--ledger-shadow)]"
           />
         ))
       )}
@@ -570,7 +570,7 @@ export function ZoomableImage({
             ? { width, maxWidth: "none", height: "auto" }
             : { maxWidth: "100%", maxHeight: "100%" }
         }
-        className="m-auto shrink-0 rounded-md bg-white shadow-[var(--ledger-shadow)]"
+        className="m-auto shrink-0 rounded-btn bg-white shadow-[var(--ledger-shadow)]"
       />
     </div>
   )
