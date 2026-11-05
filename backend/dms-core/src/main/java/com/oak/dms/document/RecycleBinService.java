@@ -389,6 +389,14 @@ public class RecycleBinService {
                 // already gone
             }
         }
+        if (version.getThumbnailObjectKey() != null) {
+            // Its thumbnail (V135) is a picture of the document's first page - it goes too.
+            try {
+                storage.resolve(location).delete(location, version.getThumbnailObjectKey());
+            } catch (StorageObjectNotFoundException e) {
+                // already gone
+            }
+        }
         // And everything OCR derived from it. OCR output IS the document's
         // text and the searchable PDF IS the document, so a purge that
         // left them behind would leave the document behind under another

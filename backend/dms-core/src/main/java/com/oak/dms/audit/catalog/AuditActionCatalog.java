@@ -136,6 +136,10 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
     public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** What a user may do from a document preview - print, download, copy (DPRM-FR-005). */
+    public static final String PREVIEW_POLICY_CHANGED = "PREVIEW_POLICY_CHANGED";
+    /** A preview could not be made for a version (DPRM workflow step 6) - listed for the administrator. */
+    public static final String PREVIEW_RENDITION_FAILED = "PREVIEW_RENDITION_FAILED";
     /** The organisation's cap on how many documents one person may pin (PID). */
     public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
     /** A document pinned for an audience, the audience changed, or the pin removed (PID). */
@@ -498,6 +502,8 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(PREVIEW_POLICY_CHANGED, new AuditActionSpec("DPRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(PREVIEW_RENDITION_FAILED, new AuditActionSpec("DPRM", AuditSeverity.LOW, false)),
             Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
             // A pin decides who sees a document's shortcut, so who pinned what for whom is on the record.
             Map.entry(PIN_ADDED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),

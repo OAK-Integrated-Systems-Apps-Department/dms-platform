@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Link2 } from "lucide-react"
 
+import { buttonVariants } from "@/components/ui/button"
 import { useRelationshipCounts } from "@/lib/relationships/use-document-relationships"
 
 /**
@@ -16,9 +17,10 @@ export function RelationshipsLink({ documentId }: { documentId: string }) {
   return (
     <Link
       href={`/documents/${documentId}#relationships`}
-      className="inline-flex h-7 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium whitespace-nowrap hover:bg-muted"
+      // The same look and size as the other buttons beside it (View details, Download).
+      className={buttonVariants({ variant: "outline", size: "sm" })}
     >
-      <Link2 className="size-3.5" />
+      <Link2 />
       Relationships ({count})
     </Link>
   )

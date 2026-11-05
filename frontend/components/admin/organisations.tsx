@@ -96,7 +96,7 @@ export function Organisations() {
   const copy = pending ? PENDING_COPY[pending.kind](pending.org) : null
 
   return (
-    <div className="flex max-w-[1100px] flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[12.5px] text-muted-foreground">
           {orgs.data.length}{" "}

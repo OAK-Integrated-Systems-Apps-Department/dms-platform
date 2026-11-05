@@ -216,7 +216,17 @@ dms:
   preview:
     converter-url: ${PREVIEW_CONVERTER_URL:}
     timeout: ${PREVIEW_TIMEOUT:PT90S}
+    # Past max-bytes a file gets a partial preview (its first partial-pages pages); past partial-max-bytes it is
+    # flagged for an administrator's manual review (DPRM alternate flow).
     max-bytes: ${PREVIEW_MAX_BYTES:52428800}
+    partial-max-bytes: ${PREVIEW_PARTIAL_MAX_BYTES:157286400}
+    partial-pages: ${PREVIEW_PARTIAL_PAGES:20}
+    # A watermarked download from a preview is refused past this many pages.
+    download-max-pages: ${PREVIEW_DOWNLOAD_MAX_PAGES:200}
+    # Previews and thumbnails are made in the background when a version is stored: this many at a time, this many
+    # waiting (DPRM-NFR-004). A version that doesn't fit the queue is made when first opened.
+    workers: ${PREVIEW_WORKERS:2}
+    queue: ${PREVIEW_QUEUE:500}
   # Deleted documents stay in the recycle bin this long (each tenant can set
   # its own), then the sweep purges them: files and keys destroyed for good.
   # Digital Impact on the dashboard (DigitalImpactService). Pages are read from the files

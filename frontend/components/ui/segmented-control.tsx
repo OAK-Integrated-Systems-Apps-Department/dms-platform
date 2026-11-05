@@ -12,6 +12,8 @@ interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void
   options: SegmentedOption<T>[]
   disabled?: boolean
+  /** Names the group for assistive technology - needed when the surrounding text is not a label. */
+  "aria-label"?: string
 }
 
 /**
@@ -23,9 +25,14 @@ export function SegmentedControl<T extends string>({
   onChange,
   options,
   disabled,
+  "aria-label": ariaLabel,
 }: SegmentedControlProps<T>) {
   return (
-    <div className="inline-flex flex-wrap gap-2" role="radiogroup">
+    <div
+      className="inline-flex flex-wrap gap-2"
+      role="radiogroup"
+      aria-label={ariaLabel}
+    >
       {options.map((option) => {
         const active = option.value === value
         return (
