@@ -25,6 +25,7 @@ import type {
 } from "@/components/documents/browser-dnd"
 import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
+import { BookmarkedIndicator } from "@/components/bookmarks/bookmark-button"
 import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
@@ -472,6 +473,7 @@ export function DocumentTile({
   actions,
   drag,
   approval,
+  bookmarked,
   flag,
 }: {
   row: DocumentListItemDto
@@ -485,6 +487,8 @@ export function DocumentTile({
   drag?: DragBinding
   /** Its newest approval, when it has one. */
   approval?: DocumentWorkflowStatusDto
+  /** Bookmarked by the caller - the parent batches one status call per page (BD-NFR-002). */
+  bookmarked?: boolean
   /** A small badge shown beside the name - e.g. "Archived". */
   flag?: ReactNode
 }) {
@@ -530,6 +534,7 @@ export function DocumentTile({
             )}
             <span className="truncate">{row.title}</span>
             <PinnedIndicator documentId={row.documentId} />
+            <BookmarkedIndicator documentId={row.documentId} bookmarked={bookmarked} />
             <LockStateIndicator lockState={row.lockState} />
           </span>
           {flag}
@@ -581,6 +586,7 @@ export function BrowserList({
   folderActions,
   documentActions,
   approvals,
+  bookmarkedIds,
   empty,
   selectable = true,
   folderDrag,
@@ -599,6 +605,8 @@ export function BrowserList({
   documentActions: (row: DocumentListItemDto) => ItemAction[]
   /** Newest approval per document id - absent while loading, or for documents never submitted. */
   approvals?: Map<string, DocumentWorkflowStatusDto>
+  /** Document ids the caller has bookmarked, batched once for the whole page (BD-NFR-002). */
+  bookmarkedIds?: Set<string>
   empty: ReactNode
   /** false for a listing without checkboxes. */
   selectable?: boolean
@@ -761,6 +769,7 @@ export function BrowserList({
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
                         <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
                         <PinnedIndicator documentId={row.documentId} />
+                        <BookmarkedIndicator documentId={row.documentId} bookmarked={bookmarkedIds?.has(row.documentId)} />
                         <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}
                       </p>

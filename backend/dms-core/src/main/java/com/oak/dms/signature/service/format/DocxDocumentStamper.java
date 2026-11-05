@@ -25,11 +25,17 @@ import java.util.List;
 
 /**
  * Word has no page-addressable coordinate system the way a PDF page does -
- * {@code page} here is therefore an APPROXIMATION: the body paragraph at
- * {@code round(page / pageCount * paragraphCount)} is picked as the anchor
- * point, proportionally scaled from the real page count (via
- * {@link OfficePreviewRenderer}, the same conversion used for the preview the
- * user actually sees).
+ * {@code page} and {@code yRatio} together are therefore an APPROXIMATION:
+ * the body paragraph at {@code round((page + yRatio) / pageCount * paragraphCount)}
+ * is picked as the anchor point. Folding {@code yRatio} into the page fraction
+ * (rather than using only {@code page}, which used to put every placement on
+ * one page at the SAME paragraph regardless of whether the user dropped it
+ * near the top or the bottom) assumes paragraphs are spread roughly evenly
+ * across pages - true often enough to turn "bottom of the page" into "near
+ * the end of that page's share of paragraphs" instead of "wherever that
+ * page's first paragraph happens to be." It is still only an approximation:
+ * a page with one giant table and three short paragraphs will not divide
+ * evenly, and nothing here can know that from paragraph count alone.
  * <p>
  * The mark is inserted as an ordinary INLINE picture in a new paragraph right
  * after that one - deliberately NOT a floating, page-positioned anchor (an
@@ -42,11 +48,12 @@ import java.util.List;
  * lands far from where it was placed and is effectively invisible in the
  * app's own preview. An inline picture has no such ambiguity: every renderer
  * (real Word, LibreOffice/Gotenberg, docx-preview) lays it out identically,
- * as part of the normal text flow. The trade-off is real: x/y/height are no
- * longer meaningful coordinates - only which paragraph (approximate page),
- * width, and a left/center/right alignment derived from xRatio are honored.
- * This is the roughest placement of the three new formats, by far, but it is
- * the only version of "roughest" that is actually visible everywhere.
+ * as part of the normal text flow. The trade-off is real: exact x/y/height
+ * are no longer meaningful coordinates - only an approximate vertical
+ * position (paragraph), width, and a left/center/right alignment derived
+ * from xRatio are honored. This is the roughest placement of the three new
+ * formats, by far, but it is the only version of "roughest" that is
+ * actually visible everywhere.
  */
 @Slf4j
 @Component
@@ -90,8 +97,9 @@ public class DocxDocumentStamper implements DocumentFormatStamper {
                 throw SignatureException.badRequest("SIGNATURE_PLACEMENT_DOCX_EMPTY",
                         "This document has no content to place a signature on.");
             }
-            int target = Math.min(paragraphs.size() - 1,
-                    (int) Math.round((double) page / Math.max(1, realPageCount) * paragraphs.size()));
+            double pageFraction = (page + yRatio) / Math.max(1, realPageCount);
+            int target = Math.max(0, Math.min(paragraphs.size() - 1,
+                    (int) Math.round(pageFraction * paragraphs.size())));
             XWPFParagraph anchorParagraph = paragraphs.get(target);
 
             BufferedImage markImage = ImageIO.read(new ByteArrayInputStream(signaturePng));

@@ -5225,12 +5225,15 @@ height="8.63478237095363in"}
 The system shall provide a bookmarking functionality that enables users
 to save documents for future reference without altering their storage
 location. Bookmarked documents shall be accessible through a
-personalized bookmark section, allowing users to efficiently manage
-documents that require future review or action. **Any user with view
-access to a document can bookmark it for themselves, and it appears only
-in that individual\'s private \"My Bookmarks\" section, visible to no
-one else. Bookmarks reflect an individual\'s own working habits and
-require no elevated permission.**
+personalized \"My Bookmarks\" section, allowing users to efficiently
+manage documents that require future review or action. **Any user with
+view access to a document can bookmark it for themselves, and it appears
+only in that individual\'s private My Bookmarks section, visible to no
+one else - not even an administrator. Bookmarks reflect an individual\'s
+own working habits and require no elevated permission beyond document
+view. A pin (4.3) is a separate, shared shortcut whose audience the
+pinner chooses; a document can be both pinned and bookmarked,
+independently.**
 
 ### Business Objective
 
@@ -5259,25 +5262,54 @@ workflows.
   ----------- ------------------------------------------------------------
   BD-FR-001   The system shall allow users to bookmark any document they
               have permission to view, saving a reference to it in their
-              personal Bookmarks section without altering its storage
+              personal My Bookmarks section without altering its storage
               location or access permissions.
 
   BD-FR-002   The system shall allow users to remove a bookmark from a
               previously bookmarked document at any time, without
-              affecting the underlying document.
+              affecting the underlying document. Removing one\'s own
+              bookmark requires only authentication, never a separate
+              permission, so nobody is ever stuck unable to clean up
+              their own shortcut.
 
-  BD-FR-003   The system shall provide a personalized bookmarks section
-              listing all documents a user has bookmarked.
+  BD-FR-003   The system shall provide a personalized My Bookmarks
+              section (My Work \> My Bookmarks) listing the user\'s
+              available bookmarks, with paging, sorting (by date
+              bookmarked or title) and a title search.
 
-  BD-FR-004   The system shall allow users to navigate directly from the
-              bookmarks section to a bookmarked document.
+  BD-FR-004   The system shall allow users to navigate directly from
+              My Bookmarks to a bookmarked document\'s own page.
 
   BD-FR-005   The system shall prevent duplicate bookmark entries if a
-              user attempts to bookmark an already-bookmarked document.
+              user attempts to bookmark an already-bookmarked document;
+              bookmarking it again is a no-op that reports it was
+              already bookmarked, rather than an error.
 
-  BD-FR-006   The system shall flag or automatically remove a bookmark if
-              the referenced document is deleted, archived, or
-              access-revoked.
+  BD-FR-006   The system shall distinguish three outcomes for a bookmark
+              whose document has changed state, rather than treating
+              them alike: an **archived** document stays listed, flagged;
+              a document in the **recycle bin** or one whose **access has
+              been revoked** is hidden from the list (and counted, never
+              shown with a title) until it becomes available again,
+              reappearing on its own if the document is restored or
+              access returns; only a **permanent purge** deletes the
+              bookmark for good.
+
+  BD-FR-007   The system shall visibly indicate a document\'s bookmarked
+              state, with a filled icon, everywhere the bookmark control
+              appears.
+
+  BD-FR-008   The system shall allow an optional private note (up to 500
+              characters) on each bookmark, editable from the My
+              Bookmarks section.
+
+  BD-FR-009   The system shall cap how many documents one person may
+              bookmark, and refuse a new bookmark over that cap with a
+              clear message naming the limit.
+
+  BD-FR-010   The system shall tell the user, on the My Bookmarks list,
+              how many of their bookmarks are currently unavailable
+              (BD-FR-006), without naming them.
   ------------------------------------------------------------------------
 
 ### Non-Functional Requirements
@@ -5286,19 +5318,32 @@ workflows.
   **ID**       **Requirement**
   ------------ -----------------------------------------------------------
   BD-NFR-001   **Usability**: Bookmarking shall be achievable directly
-               from a document list or document view in a single intuitive
-               action, without extra navigation steps.
+               from a document list, its preview, its own page, search
+               results and Shared with me, in a single intuitive action,
+               without extra navigation steps.
 
-  BD-NFR-002   **Performance**: The bookmarks section shall load within a
-               few seconds regardless of the total number of documents in
-               the repository.
+  BD-NFR-002   **Performance**: My Bookmarks shall load within a second
+               for up to 500 bookmarks; toggling a bookmark shall respond
+               within half a second.
 
   BD-NFR-003   **Personalization**: Bookmarks shall be private to each
-               user and persist across sessions and devices.
+               user, persist across sessions and devices, and be scoped
+               to the user\'s organisation (tenant).
 
-  BD-NFR-004   **Data Integrity**: Removing a bookmark shall not affect
-               the underlying document\'s storage location, metadata, or
-               access permissions in any way.
+  BD-NFR-004   **Data Integrity**: Adding, editing or removing a bookmark
+               shall not affect the underlying document\'s storage
+               location, metadata, or access permissions in any way.
+
+  BD-NFR-005   **Security**: Every bookmark action shall act only on the
+               signed-in user\'s own bookmarks, identified from their
+               session rather than any id supplied in the request - one
+               user can never read, edit or remove another user\'s
+               bookmark.
+
+  BD-NFR-006   **Accessibility**: The bookmark control shall be keyboard
+               operable, carry a proper pressed state and label for
+               assistive technology, and remain usable on a narrow
+               screen.
   ------------------------------------------------------------------------
 
 ### Workflow
@@ -5310,32 +5355,45 @@ workflows.
                          document/document list   bookmark option (e.g., icon/button)
 
   2          User        Selects \"Bookmark\" on  Saves document reference to user\'s
-                         a specific document      personal Bookmarks section
+                         a specific document      personal My Bookmarks section
 
   3          System      Confirms bookmark action Displays confirmation (e.g., icon
                                                   highlighted/toast message)
 
   4          User        Navigates to             Displays a list of all bookmarked
-                         \"Bookmarks\" section    documents for that user
+                         \"My Bookmarks\"         documents for that user, with a
+                                                  count of any unavailable ones
 
-  5          User        Selects a bookmarked     Opens the document directly without
-                         document                 searching
+  5          User        Selects a bookmarked     Opens the document\'s own page
+                         document                 directly without searching
 
-  6          User        Removes a document from  Updates Bookmarks list, removes the
-                         Bookmarks                entry
+  6          User        Removes a document from  Updates the My Bookmarks list,
+                         My Bookmarks             removes the entry
   -----------------------------------------------------------------------------------
 
 ### Alternate Flow
 
 -   User attempts to bookmark a document they no longer have access
-    permission to view; system removes it from the visible bookmark list
-    or shows an access-restricted notice.
+    permission to view, or one that does not exist; system responds with
+    the same \"not found\" either way, so existence is never leaked.
 
--   User bookmarks a document that is later deleted or archived; system
-    flags the bookmark as \"unavailable\" or removes it automatically.
+-   A document the user already bookmarked is sent to the recycle bin,
+    or the user\'s access to it is revoked; My Bookmarks hides the entry
+    and counts it as unavailable, and it reappears automatically if the
+    document is restored or access is granted again.
+
+-   A document the user already bookmarked is archived; My Bookmarks
+    keeps listing it, flagged \"Archived\".
+
+-   A document the user already bookmarked is permanently purged; the
+    bookmark is deleted for good.
 
 -   User bookmarks the same document twice; system prevents a duplicate
     entry and informs the user it is already saved.
+
+-   User is at their bookmark cap and adds one more; the system first
+    drops any of that user\'s own bookmarks that are no longer available,
+    then re-checks the cap before refusing.
 
 ![](media/image26.png){width="3.215048118985127in"
 height="8.626087051618548in"}

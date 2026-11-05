@@ -5,6 +5,8 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  Bookmark,
+  BookmarkMinus,
   Download,
   Eye,
   FolderOpen,
@@ -52,6 +54,7 @@ import {
   type FolderNode,
 } from "@/lib/folders/api"
 import { FOLDERS_KEY } from "@/lib/folders/use-folders"
+import { useBookmarkStatus, useBookmarkToggle } from "@/lib/bookmarks/use-bookmarks"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 25
@@ -77,6 +80,7 @@ export function SharedWithMe() {
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
       PermissionCodes.DSC_FOLDER_ACCESS_ASSIGN
     ),
+    bookmark: hasPermission(PermissionCodes.BD_BOOKMARK),
   }
   const view = useBrowserView()
   const [query, setQuery] = useState("")
@@ -104,6 +108,9 @@ export function SharedWithMe() {
     .map(asNode)
   const rows = documents.data?.content ?? []
   const loading = folders.isPending || documents.isPending
+  // Which of this page's documents the caller bookmarked - one status call for the whole page (BD-NFR-002).
+  const bookmarkStatus = useBookmarkStatus(rows.map((r) => r.documentId))
+  const bookmarks = useBookmarkToggle()
 
   function openFolder(folder: FolderNode) {
     router.push(`/documents?folder=${encodeURIComponent(folder.folderId)}`)
@@ -139,6 +146,15 @@ export function SharedWithMe() {
       { label: "Open", icon: Eye, onSelect: () => setPreview(row) },
       { label: "Download", icon: Download, onSelect: () => void download(row) },
     ]
+    // BD-NFR-001: bookmark from Shared with me too, one click, no audience to choose.
+    const isBookmarked = bookmarkStatus.isBookmarked(row.documentId)
+    if (isBookmarked || can.bookmark) {
+      actions.push({
+        label: isBookmarked ? "Remove bookmark" : "Bookmark",
+        icon: isBookmarked ? BookmarkMinus : Bookmark,
+        onSelect: () => void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
+      })
+    }
     if (can.seeAccess)
       actions.push({
         label: "Manage access",
@@ -248,6 +264,7 @@ export function SharedWithMe() {
           onOpenDocument={(row) => setPreview(row)}
           folderActions={folderActions}
           documentActions={documentActions}
+          bookmarkedIds={bookmarkStatus.bookmarkedIds}
           empty={empty}
         />
       ) : (
@@ -267,6 +284,7 @@ export function SharedWithMe() {
               checked={false}
               onOpen={() => setPreview(row)}
               actions={documentActions(row)}
+              bookmarked={bookmarkStatus.isBookmarked(row.documentId)}
             />
           ))}
         </ul>

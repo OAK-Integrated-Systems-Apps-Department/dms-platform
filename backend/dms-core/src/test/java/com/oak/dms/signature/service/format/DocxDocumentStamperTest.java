@@ -68,6 +68,35 @@ class DocxDocumentStamperTest {
     }
 
     @Test
+    void stamp_placesTheMarkFurtherDown_whenYRatioIsNearTheBottomOfTheSamePage() throws IOException {
+        // Ten paragraphs, one page: previously `page` alone (always 0 here) pinned the mark to the
+        // same paragraph no matter where on the page the user dropped it. Folding yRatio in moves it
+        // from near the top to near the bottom of that page's own paragraphs.
+        byte[] topDoc = documentWith(10);
+        byte[] bottomDoc = documentWith(10);
+        byte[] fakePdf = {1, 2, 3};
+        when(previewRenderer.toPdf(any(), any())).thenReturn(fakePdf);
+        when(previewRenderer.pageCount(fakePdf)).thenReturn(1);
+
+        byte[] stampedNearTop = stamper.stamp(topDoc, 0, 0.5, 0.1, 0.3, 0.1, SignaturePngFixture.bytes());
+        byte[] stampedNearBottom = stamper.stamp(bottomDoc, 0, 0.5, 0.9, 0.3, 0.1, SignaturePngFixture.bytes());
+
+        assertThat(pictureParagraphIndex(stampedNearTop)).isLessThan(pictureParagraphIndex(stampedNearBottom));
+    }
+
+    private static int pictureParagraphIndex(byte[] stamped) throws IOException {
+        try (XWPFDocument result = new XWPFDocument(new ByteArrayInputStream(stamped))) {
+            List<XWPFParagraph> paragraphs = result.getParagraphs();
+            for (int i = 0; i < paragraphs.size(); i++) {
+                boolean hasPicture = paragraphs.get(i).getRuns().stream()
+                        .anyMatch(r -> !r.getEmbeddedPictures().isEmpty());
+                if (hasPicture) return i;
+            }
+            throw new AssertionError("no paragraph with a picture");
+        }
+    }
+
+    @Test
     void stamp_picturesAreInlineNotFloating_soEveryRendererLaysThemOutTheSameWay() throws IOException {
         byte[] doc = documentWith(3);
         byte[] fakePdf = {1, 2, 3};
