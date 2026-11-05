@@ -656,6 +656,10 @@ dms:
     # How many documents one person may pin (PID-FR-007) until the organisation sets its own
     # (PUT /api/v1/pins/limit, pid.configure-pin-limits).
     default-max: ${DMS_PINS_DEFAULT_MAX:20}
+  bookmarks:
+    # How many documents one person may bookmark (BD-FR-009). No per-tenant override, unlike pins -
+    # see docs/bookmark-design.md.
+    max-per-user: ${DMS_BOOKMARKS_MAX_PER_USER:500}
   dashboard:
     # How long the home dashboard's figures are served from Redis before they are worked
     # out again (DashboardCache). They scan every document the caller may see - seconds at

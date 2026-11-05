@@ -3,6 +3,7 @@ import {
   AtSign,
   Bell,
   BellRing,
+  Bookmark,
   Building2,
   ClipboardCheck,
   ClipboardList,
@@ -83,6 +84,13 @@ export const navSections: NavSection[] = [
       },
       // Comments that mention me - readable even without document access (Phase 2).
       { label: "Mentions", icon: AtSign, href: "/mentions" },
+      // The caller's own private bookmarks (4.4) - never shown to anyone else.
+      {
+        label: "My Bookmarks",
+        icon: Bookmark,
+        href: "/bookmarks",
+        permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
     ],
   },
   {

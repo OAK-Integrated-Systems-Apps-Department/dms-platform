@@ -13,6 +13,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
 import { OwnerField } from "@/components/ownership/owner-field"
 import { OwnershipHistoryPanel } from "@/components/ownership/ownership-history-panel"
+import { BookmarkButton } from "@/components/bookmarks/bookmark-button"
 import { PinButton } from "@/components/pins/pin-button"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
@@ -89,6 +90,7 @@ export default function DocumentPage() {
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
                 <LifecycleBadge state={document.lifecycleState} hideActive />
                 <PinButton row={{ documentId: document.documentId, title: document.title }} />
+                <BookmarkButton row={{ documentId: document.documentId, title: document.title }} />
               </div>
               <p className="text-[13px] text-muted-foreground">
                 {document.documentTypeName ?? "—"} · Created {formatDateTime(document.createdAt)}

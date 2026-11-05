@@ -18,6 +18,8 @@ import {
   Link2,
   Pin,
   PinOff,
+  Bookmark,
+  BookmarkMinus,
   LayoutGrid,
   List,
   Pencil,
@@ -73,6 +75,7 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { saveDownloadedFile } from "@/lib/download-file"
 import { usePins } from "@/lib/pins/use-pins"
+import { useBookmarkStatus, useBookmarkToggle } from "@/lib/bookmarks/use-bookmarks"
 import {
   deleteDocument,
   downloadDocumentFile,
@@ -191,6 +194,7 @@ function FolderView({
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
   const pins = usePins()
+  const bookmarks = useBookmarkToggle()
   const markInactive = useChangeStatus()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
@@ -264,6 +268,8 @@ function FolderView({
   const rows = documents.data?.content ?? []
   // Where each document on this page stands in its newest approval - one call for the whole page.
   const approvals = useDocumentWorkflowStatuses(rows.map((r) => r.documentId))
+  // Which of this page's documents the caller bookmarked - one status call for the whole page (BD-NFR-002).
+  const bookmarkStatus = useBookmarkStatus(rows.map((r) => r.documentId))
 
   function open(next: string | null) {
     router.push(
@@ -535,6 +541,16 @@ function FolderView({
           icon: PinOff,
           onSelect: () => void pins.unpin(row).catch(() => {}),
         })
+    }
+    // BD-NFR-001: bookmark from the list (and from search results, which are this list). Unlike
+    // pinning, a bookmark has no audience to choose, so this is a plain one-click toggle.
+    const isBookmarked = bookmarkStatus.isBookmarked(row.documentId)
+    if (isBookmarked || hasPermission(PermissionCodes.BD_BOOKMARK)) {
+      actions.push({
+        label: isBookmarked ? "Remove bookmark" : "Bookmark",
+        icon: isBookmarked ? BookmarkMinus : Bookmark,
+        onSelect: () => void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
+      })
     }
     if (can.versions)
       actions.push({
@@ -953,6 +969,7 @@ function FolderView({
           folderActions={folderActions}
           documentActions={documentActions}
           approvals={approvals.data}
+          bookmarkedIds={bookmarkStatus.bookmarkedIds}
           empty={emptyMessage}
           folderDrag={folderDrag}
           folderDrop={dnd.target}
@@ -984,6 +1001,7 @@ function FolderView({
               actions={documentActions(row)}
               drag={documentDrag(row)}
               approval={approvals.data?.get(row.documentId)}
+              bookmarked={bookmarkStatus.isBookmarked(row.documentId)}
             />
           ))}
         </ul>
