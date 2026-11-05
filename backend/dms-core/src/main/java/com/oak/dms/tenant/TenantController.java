@@ -11,7 +11,9 @@ import com.oak.dms.tenant.dto.TenantResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import com.oak.dms.security.auth.PasswordConfirmation;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +39,8 @@ public class TenantController {
     private final TenantService tenantService;
     private final TenantProvisioningService tenantProvisioningService;
     private final TenantAdminService tenantAdminService;
+    private final PasswordConfirmation passwordConfirmation;
+    private final com.oak.dms.editing.PlatformEditingAccess platformEditingAccess;
 
     @PostMapping
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
@@ -53,10 +57,40 @@ public class TenantController {
             + "there's no other endpoint that can create a user in a tenant other than the caller's own or "
             + "grant TENANT_ADMIN.")
     public ResponseEntity<TenantProvisioningResponse> provisionTenant(
-            @Valid @RequestBody ProvisionTenantRequest request) {
+            @Valid @RequestBody ProvisionTenantRequest request, HttpServletRequest http) {
+        passwordConfirmation.require(http);
         TenantProvisioningResponse response = tenantProvisioningService.provisionTenant(request);
         return ResponseEntity.created(URI.create("/api/v1/tenants/" + response.tenant().tenantId()))
                 .body(response);
+    }
+
+    /** Which organisations the platform administrator has allowed online editing - one call for the whole list. */
+    public record OnlineEditingAllowed(java.util.List<UUID> tenantIds) {
+    }
+
+    public record OnlineEditingRequest(boolean allowed) {
+    }
+
+    public record OnlineEditingResult(UUID tenantId, boolean allowed) {
+    }
+
+    @GetMapping("/online-editing")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "The organisations the platform administrator has allowed to use online editing")
+    public OnlineEditingAllowed onlineEditingAllowed() {
+        return new OnlineEditingAllowed(platformEditingAccess.allowedTenants());
+    }
+
+    @PutMapping("/{tenantId}/online-editing")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    @Operation(summary = "Allow or stop online editing for an organisation",
+            description = "While allowed, the organisation's own administrator can turn it on or off for its people; "
+                    + "while not, nobody there gets the editor and its settings page is not shown. Needs the platform "
+                    + "administrator's own password (X-Confirm-Password). Audited.")
+    public OnlineEditingResult setOnlineEditing(@PathVariable UUID tenantId,
+                                                @RequestBody OnlineEditingRequest request, HttpServletRequest http) {
+        passwordConfirmation.require(http);
+        return new OnlineEditingResult(tenantId, platformEditingAccess.setAllowed(tenantId, request.allowed()));
     }
 
     @GetMapping("/{tenantId}/admins")
@@ -70,7 +104,9 @@ public class TenantController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "Correct a tenant administrator's name or email")
     public TenantAdminResponse updateTenantAdmin(@PathVariable UUID tenantId, @PathVariable UUID userId,
-                                                 @Valid @RequestBody UpdateTenantAdminRequest request) {
+                                                 @Valid @RequestBody UpdateTenantAdminRequest request,
+                                                 HttpServletRequest http) {
+        passwordConfirmation.require(http);
         return tenantAdminService.updateAdmin(tenantId, userId, request);
     }
 
@@ -109,7 +145,11 @@ public class TenantController {
     @PutMapping("/{tenantId}")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or @tenantSecurity.isSameTenant(#tenantId)")
     @Operation(summary = "Update a tenant")
-    public TenantResponse updateTenant(@PathVariable UUID tenantId, @Valid @RequestBody UpdateTenantRequest request) {
+    public TenantResponse updateTenant(@PathVariable UUID tenantId, @Valid @RequestBody UpdateTenantRequest request,
+                                       HttpServletRequest http) {
+        // A platform administrator confirms with their own password; an organisation's own administrator
+        // editing their own organisation is not asked.
+        passwordConfirmation.requireIfPlatformAdmin(http);
         return tenantService.updateTenant(tenantId, request);
     }
 
@@ -117,7 +157,8 @@ public class TenantController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate (soft-delete) a tenant")
-    public void deactivateTenant(@PathVariable UUID tenantId) {
+    public void deactivateTenant(@PathVariable UUID tenantId, HttpServletRequest http) {
+        passwordConfirmation.require(http);
         tenantService.deactivateTenant(tenantId);
     }
 }

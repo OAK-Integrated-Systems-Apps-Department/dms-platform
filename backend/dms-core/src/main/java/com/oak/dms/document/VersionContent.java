@@ -29,7 +29,11 @@ class VersionContent {
     private final ObjectStorageServiceFactory objectStorageServiceFactory;
 
     DownloadedDocument open(DocumentVersion version) {
-        UUID tenantId = TenantContext.getTenantId();
+        return open(version, TenantContext.getTenantId());
+    }
+
+    /** For background work (no caller, so no TenantContext): the same checks, against the tenant the version belongs to. */
+    DownloadedDocument open(DocumentVersion version, UUID tenantId) {
         UUID documentId = version.getDocumentId();
         if (version.getPurgedAt() != null) {
             throw new ResourceNotFoundException("DocumentVersion", version.getVersionId());

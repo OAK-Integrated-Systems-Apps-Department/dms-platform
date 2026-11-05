@@ -26,6 +26,7 @@ import type {
 import type { DocumentListItemDto } from "@/lib/documents/api"
 import type { FolderNode } from "@/lib/folders/api"
 import { BookmarkedIndicator } from "@/components/bookmarks/bookmark-button"
+import { DocumentThumbnail } from "@/components/documents/document-thumbnail"
 import { PinnedIndicator } from "@/components/pins/pin-button"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn, formatDateTime, formatFriendlyDate } from "@/lib/utils"
@@ -510,16 +511,22 @@ export function DocumentTile({
         aria-label={`Open ${row.title}`}
         title="Open preview"
         className={cn(
-          "m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-btn",
+          "relative m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-btn",
           kind.tone
         )}
       >
-        <kind.icon size={40} strokeWidth={1.4} aria-hidden="true" />
-        {ext && (
-          <span className="font-mono text-[11px] font-semibold tracking-[0.06em] uppercase">
-            {ext}
-          </span>
-        )}
+        <DocumentThumbnail
+          documentId={row.documentId}
+          fileName={row.fileName}
+          versionNumber={row.versionNumber}
+        >
+          <kind.icon size={40} strokeWidth={1.4} aria-hidden="true" />
+          {ext && (
+            <span className="font-mono text-[11px] font-semibold tracking-[0.06em] uppercase">
+              {ext}
+            </span>
+          )}
+        </DocumentThumbnail>
       </button>
       <div className="px-3.5 pt-2 pb-3" title={row.fileName ?? row.title}>
         {/* The flag wraps onto its own line instead of squeezing the title to a few letters. */}

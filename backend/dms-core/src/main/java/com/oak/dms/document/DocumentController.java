@@ -49,6 +49,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -261,8 +262,13 @@ public class DocumentController {
     @Operation(summary = "Download a document's current (or latest) version; inline=true to show it in the browser (preview)")
     public ResponseEntity<StreamingResponseBody> downloadDocument(
             @PathVariable("id") UUID id,
-            @RequestParam(value = "inline", defaultValue = "false") boolean inline) {
-        DownloadedDocument downloaded = inline ? documentService.previewDocument(id) : documentService.downloadDocument(id);
+            @RequestParam(value = "inline", defaultValue = "false") boolean inline,
+            @RequestParam(value = "channel", required = false) String channel) {
+        // The Download button of a preview (channel=preview) follows the organisation's preview policy.
+        DownloadedDocument downloaded = inline ? documentService.previewDocument(id)
+                : "preview".equals(channel)
+                ? renditionService.downloadFromPreview(id, null).orElseGet(() -> documentService.downloadDocument(id))
+                : documentService.downloadDocument(id);
         StreamingResponseBody body = outputStream -> {
             try (InputStream content = downloaded.content()) {
                 content.transferTo(outputStream);
@@ -344,6 +350,79 @@ public class DocumentController {
         return slideImage(renditionService.slide(id, versionId, number, width));
     }
 
+    /** Any previewable file as pages drawn on the server - the protected view (DPRM-FR-005). */
+    @GetMapping("/{id}/preview/pages")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Open a document as pages drawn on the server (watermarked when the preview policy says so); audited as viewed")
+    public DocumentRenditionService.PageDeck pages(@PathVariable("id") UUID id) {
+        return renditionService.pages(id, null);
+    }
+
+    @GetMapping("/{id}/preview/pages/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "One page of a document as a JPEG about `width` pixels wide")
+    public ResponseEntity<byte[]> pageImage(@PathVariable("id") UUID id, @PathVariable("number") int number,
+                                            @RequestParam(name = "width", defaultValue = "1200") int width) {
+        return slideImage(renditionService.page(id, null, number, width));
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/pages")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Open an older version as pages drawn on the server")
+    public DocumentRenditionService.PageDeck versionPages(@PathVariable("id") UUID id,
+                                                          @PathVariable("versionId") UUID versionId) {
+        return renditionService.pages(id, versionId);
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/preview/pages/{number}")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "One page of an older version as a JPEG")
+    public ResponseEntity<byte[]> versionPageImage(@PathVariable("id") UUID id, @PathVariable("versionId") UUID versionId,
+                                                   @PathVariable("number") int number,
+                                                   @RequestParam(name = "width", defaultValue = "1200") int width) {
+        return slideImage(renditionService.page(id, versionId, number, width));
+    }
+
+    /** The first page as a small picture, for lists and cards; 204 when the file has none (show an icon instead). */
+    @GetMapping("/{id}/thumbnail")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DOCM_DOCUMENTS_VIEW)")
+    @Operation(summary = "Thumbnail of the document's current version - made once, then kept; 204 when there is none")
+    public ResponseEntity<byte[]> thumbnail(@PathVariable("id") UUID id,
+                                            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+        return thumbnailResponse(id, null, ifNoneMatch);
+    }
+
+    @GetMapping("/{id}/versions/{versionId}/thumbnail")
+    @PreAuthorize("@authz.hasPermission(T(com.oak.dms.security.rbac.catalog.PermissionCodes).DVC_VERSIONS_VIEW)")
+    @Operation(summary = "Thumbnail of one version of a document")
+    public ResponseEntity<byte[]> versionThumbnail(@PathVariable("id") UUID id, @PathVariable("versionId") UUID versionId,
+                                                   @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+        return thumbnailResponse(id, versionId, ifNoneMatch);
+    }
+
+    /**
+     * The tag is the version's id, which never changes what it points at - so a browser may keep the picture, but
+     * must ask again every time ({@code no-cache}), which is when access is checked again: permissions revoked
+     * after the thumbnail was cached stop it at once.
+     */
+    private ResponseEntity<byte[]> thumbnailResponse(UUID id, UUID versionId, String ifNoneMatch) {
+        java.util.Optional<byte[]> jpeg = renditionService.thumbnail(id, versionId);
+        if (jpeg.isEmpty()) {
+            return ResponseEntity.noContent().header(HttpHeaders.CACHE_CONTROL, "private, no-store").build();
+        }
+        String etag = "\"" + renditionService.versionToShow(id, versionId) + "\"";
+        if (etag.equals(ifNoneMatch)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_MODIFIED)
+                    .header(HttpHeaders.ETAG, etag).header(HttpHeaders.CACHE_CONTROL, "private, no-cache").build();
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-cache")
+                .header(HttpHeaders.ETAG, etag)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(jpeg.get());
+    }
+
     private static ResponseEntity<byte[]> slideImage(byte[] jpeg) {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
@@ -384,8 +463,11 @@ public class DocumentController {
     public ResponseEntity<StreamingResponseBody> downloadVersion(
             @PathVariable("id") UUID id,
             @PathVariable("versionId") UUID versionId,
-            @RequestParam(value = "inline", defaultValue = "false") boolean inline) {
+            @RequestParam(value = "inline", defaultValue = "false") boolean inline,
+            @RequestParam(value = "channel", required = false) String channel) {
         DownloadedDocument downloaded = inline ? versionService.preview(id, versionId)
+                : "preview".equals(channel)
+                ? renditionService.downloadFromPreview(id, versionId).orElseGet(() -> versionService.download(id, versionId))
                 : versionService.download(id, versionId);
         StreamingResponseBody body = outputStream -> {
             try (InputStream content = downloaded.content()) {

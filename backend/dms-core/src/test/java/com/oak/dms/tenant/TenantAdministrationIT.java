@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -31,15 +32,24 @@ class TenantAdministrationIT {
     @Autowired
     private TenantRepository tenantRepository;
 
+    /** Platform actions ask for the caller's own password; here Keycloak always accepts it. */
+    @MockitoBean
+    private com.oak.dms.security.auth.KeycloakAuthClient keycloakAuthClient;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        org.mockito.Mockito.when(keycloakAuthClient.passwordGrant(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.oak.dms.security.auth.KeycloakAuthClient.GrantResult.Success(
+                        new com.oak.dms.security.auth.dto.KeycloakTokenResponse("a", 300, "r", 300, "Bearer")));
     }
 
     private MockHttpServletRequestBuilder asPlatformAdmin(MockHttpServletRequestBuilder request) {
-        return request.with(jwt().jwt(b -> b.subject(UUID.randomUUID().toString()))
+        return request.header("X-Confirm-Password", "correct horse")
+                .with(jwt().jwt(b -> b.subject(UUID.randomUUID().toString()).claim("preferred_username", "platform.admin"))
                 .authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")));
     }
 

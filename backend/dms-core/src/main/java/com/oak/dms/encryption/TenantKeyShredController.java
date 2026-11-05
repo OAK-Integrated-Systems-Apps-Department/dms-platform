@@ -32,6 +32,7 @@ import java.util.UUID;
 public class TenantKeyShredController {
 
     private final TenantKeyShredder shredder;
+    private final com.oak.dms.security.auth.PasswordConfirmation passwordConfirmation;
 
     /**
      * @param confirmTenantName       the organisation's exact name
@@ -46,7 +47,10 @@ public class TenantKeyShredController {
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @Operation(summary = "Destroy a deactivated organisation's encryption keys - its documents become unreadable"
             + " for good")
-    public ShredResult shred(@PathVariable UUID tenantId, @Valid @RequestBody ShredRequest request) {
+    public ShredResult shred(@PathVariable UUID tenantId, @Valid @RequestBody ShredRequest request,
+                             jakarta.servlet.http.HttpServletRequest http) {
+        // The most destructive thing a platform administrator can do: confirm with their own password first.
+        passwordConfirmation.require(http);
         return shredder.shred(tenantId, request.confirmTenantName(), request.reason(),
                 request.acknowledgeUnencrypted());
     }

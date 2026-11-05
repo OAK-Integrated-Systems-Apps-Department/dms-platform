@@ -225,6 +225,11 @@ public class WopiController {
                 .filter(g -> g.documentId().equals(documentId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired access token."));
         TenantContext.set(grant.tenantId(), grant.userId());
+        // The token outlives a decision to switch editing off (it lasts hours): the platform administrator stopping it
+        // for the organisation, or its own administrator turning it off, ends an open editor's loading and saving now.
+        if (!sessions.editingEnabled(grant.tenantId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Online editing is turned off.");
+        }
         return grant;
     }
 

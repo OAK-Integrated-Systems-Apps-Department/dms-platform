@@ -34,6 +34,7 @@ import {
   Trash2,
   Archive,
   Hourglass,
+  ScanEye,
   UserCog,
   UserRoundCog,
   Users,
@@ -392,6 +393,16 @@ export const navSections: NavSection[] = [
             href: "/admin/pinned-documents",
             permission: PermissionCodes.PID_CONFIGURE_LIMITS,
           },
+          // Document preview (DPRM): what people may print, download or copy from a preview, and the previews that failed.
+          {
+            label: "Document Preview",
+            icon: ScanEye,
+            href: "/admin/preview",
+            permission: [
+              PermissionCodes.DPRM_RESTRICT_PRINT_DOWNLOAD,
+              PermissionCodes.DPRM_TOGGLE_PREVIEW_WATERMARK,
+            ],
+          },
           // Records retention (6.1): the rules, the settings, and the documents waiting for a decision.
           {
             label: "Records Retention",
@@ -411,6 +422,8 @@ export const navSections: NavSection[] = [
             label: "Online Editing",
             icon: FilePenLine,
             href: "/admin/editing",
+            // Only once the platform administrator has allowed it for this organisation (nothing to switch before).
+            feature: "onlineEditing",
             permission: [
               PermissionCodes.CICO_EDITING_SELECT_PROVIDER,
               PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,

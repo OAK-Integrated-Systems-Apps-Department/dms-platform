@@ -32,6 +32,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Any user in the tenant - deactivated ones included (uq_users_tenant_username) - has this username, ignoring case. */
     boolean existsByTenantIdAndUsernameIgnoreCase(UUID tenantId, String username);
 
+    /** As above, not counting the user {@code userId} themselves - for renaming one. */
+    boolean existsByTenantIdAndUsernameIgnoreCaseAndUserIdNot(UUID tenantId, String username, UUID userId);
+
     /**
      * Active users of the tenant whose display name, username or email
      * contains {@code search} (lower-cased, wrapped in %), by name - for

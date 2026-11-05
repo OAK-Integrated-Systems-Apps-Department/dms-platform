@@ -136,6 +136,12 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
     public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** The own-password confirmation for a sensitive platform action was wrong (the password itself is never recorded). */
+    public static final String PASSWORD_CONFIRMATION_FAILED = "PASSWORD_CONFIRMATION_FAILED";
+    /** What a user may do from a document preview - print, download, copy (DPRM-FR-005). */
+    public static final String PREVIEW_POLICY_CHANGED = "PREVIEW_POLICY_CHANGED";
+    /** A preview could not be made for a version (DPRM workflow step 6) - listed for the administrator. */
+    public static final String PREVIEW_RENDITION_FAILED = "PREVIEW_RENDITION_FAILED";
     /** The organisation's cap on how many documents one person may pin (PID). */
     public static final String PIN_LIMIT_CHANGED = "PIN_LIMIT_CHANGED";
     /** A document pinned for an audience, the audience changed, or the pin removed (PID). */
@@ -223,6 +229,8 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_EDIT_SESSION_STARTED = "DOCUMENT_EDIT_SESSION_STARTED";
     public static final String DOCUMENT_EDIT_SESSION_SAVED = "DOCUMENT_EDIT_SESSION_SAVED";
     public static final String EDITING_SETTINGS_CHANGED = "EDITING_SETTINGS_CHANGED";
+    /** The platform administrator allowed or stopped online editing for one organisation (V136). */
+    public static final String TENANT_ONLINE_EDITING_CHANGED = "TENANT_ONLINE_EDITING_CHANGED";
     public static final String DOCUMENT_LEGAL_HOLD_PLACED = "DOCUMENT_LEGAL_HOLD_PLACED";
     public static final String DOCUMENT_LEGAL_HOLD_LIFTED = "DOCUMENT_LEGAL_HOLD_LIFTED";
     // 6.1 Records retention (CRM-FR-018): every status change, retention transition and rule/setting change.
@@ -498,6 +506,9 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(PASSWORD_CONFIRMATION_FAILED, new AuditActionSpec("IAM", AuditSeverity.HIGH, false)),
+            Map.entry(PREVIEW_POLICY_CHANGED, new AuditActionSpec("DPRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(PREVIEW_RENDITION_FAILED, new AuditActionSpec("DPRM", AuditSeverity.LOW, false)),
             Map.entry(PIN_LIMIT_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
             // A pin decides who sees a document's shortcut, so who pinned what for whom is on the record.
             Map.entry(PIN_ADDED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
@@ -609,6 +620,7 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_EDIT_SESSION_STARTED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
             Map.entry(DOCUMENT_EDIT_SESSION_SAVED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
             Map.entry(EDITING_SETTINGS_CHANGED, new AuditActionSpec("CICO", AuditSeverity.MEDIUM, false)),
+            Map.entry(TENANT_ONLINE_EDITING_CHANGED, new AuditActionSpec("CICO", AuditSeverity.HIGH, false)),
             Map.entry(DOCUMENT_LEGAL_HOLD_PLACED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
             Map.entry(DOCUMENT_LEGAL_HOLD_LIFTED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
             Map.entry(DOCUMENT_STATUS_CHANGED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),

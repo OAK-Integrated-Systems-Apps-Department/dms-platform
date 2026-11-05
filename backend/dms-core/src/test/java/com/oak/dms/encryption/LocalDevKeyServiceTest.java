@@ -121,6 +121,66 @@ class LocalDevKeyServiceTest {
         assertThat(reread.unwrap(PLATFORM, platformKey.wrapped())).isEqualTo(platformKey.plaintext());
     }
 
+    // ------------------------------------------------------------------ several instances on one file
+
+    @Test
+    void aStaleInstanceSavingItsOwnNewScope_doesNotDropTheScopeAnotherInstanceCreatedMeanwhile() {
+        Path file = dir.resolve("shared.json");
+        LocalDevKeyService early = new LocalDevKeyService(file, mapper, true);   // reads the file now
+        LocalDevKeyService other = new LocalDevKeyService(file, mapper, false);
+        DataKey madeByOther = other.generateDataKey(tenantA);                    // tenant A's scope is added after
+
+        early.generateDataKey(tenantB);                                          // the stale one saves its own
+
+        LocalDevKeyService reloaded = new LocalDevKeyService(file, mapper, false);
+        assertThat(reloaded.hasScope(tenantA)).as("tenant A's scope survived").isTrue();
+        assertThat(reloaded.hasScope(tenantB)).isTrue();
+        assertThat(reloaded.unwrap(tenantA, madeByOther.wrapped())).isEqualTo(madeByOther.plaintext());
+    }
+
+    @Test
+    void anInstanceThatDoesntKnowAScopeYet_findsItInTheFile_beforeGivingUp() {
+        Path file = dir.resolve("shared.json");
+        LocalDevKeyService early = new LocalDevKeyService(file, mapper, true);
+        LocalDevKeyService other = new LocalDevKeyService(file, mapper, false);
+        DataKey madeByOther = other.generateDataKey(tenantA);
+
+        // Never saw tenant A at all, yet can open what the other wrapped - and doesn't invent a second key for it.
+        assertThat(early.unwrap(tenantA, madeByOther.wrapped())).isEqualTo(madeByOther.plaintext());
+        assertThat(early.generateDataKey(tenantA).version()).isEqualTo(1);
+        assertThat(early.unwrap(tenantA, madeByOther.wrapped())).isEqualTo(madeByOther.plaintext());
+    }
+
+    @Test
+    void aRotationDoneByAnotherInstance_isTakenIn_notOverwrittenWithTheOlderKeys() {
+        Path file = dir.resolve("shared.json");
+        LocalDevKeyService early = new LocalDevKeyService(file, mapper, true);
+        DataKey v1 = early.generateDataKey(tenantA);
+        LocalDevKeyService other = new LocalDevKeyService(file, mapper, false);
+        other.rotate(tenantA);                                                    // now version 2 in the file
+
+        early.generateDataKey(tenantB);                                           // a save from the stale instance
+
+        LocalDevKeyService reloaded = new LocalDevKeyService(file, mapper, false);
+        assertThat(reloaded.info(tenantA).latestVersion()).isEqualTo(2);
+        assertThat(reloaded.unwrap(tenantA, v1.wrapped())).isEqualTo(v1.plaintext());
+    }
+
+    @Test
+    void aScopeDestroyedHere_isNotBroughtBackByTheFile_andStaysGoneForOthers() {
+        Path file = dir.resolve("shared.json");
+        LocalDevKeyService first = new LocalDevKeyService(file, mapper, true);
+        first.generateDataKey(tenantA);
+        first.generateDataKey(tenantB);
+
+        first.destroy(tenantA);
+
+        assertThat(first.hasScope(tenantA)).isFalse();
+        LocalDevKeyService reloaded = new LocalDevKeyService(file, mapper, false);
+        assertThat(reloaded.hasScope(tenantA)).isFalse();
+        assertThat(reloaded.hasScope(tenantB)).isTrue();
+    }
+
     @Test
     void aKeyFileThatDoesntMatchTheStoredKeys_isRefusedAtStart() {
         LocalDevKeyService real = new LocalDevKeyService(dir.resolve("real.json"), mapper, true);

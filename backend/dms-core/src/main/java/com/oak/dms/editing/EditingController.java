@@ -29,9 +29,15 @@ public class EditingController {
     private final EditingSessionService sessions;
     private final EditingSettingsService settings;
     private final EditingEngine engine;
+    private final PlatformEditingAccess platformAccess;
 
-    /** @param enabled the organisation turned it on AND the engine is answering now; the UI hides "Edit online" otherwise */
-    public record EditingConfig(boolean enabled, String mode, Set<String> extensions) {
+    /**
+     * @param enabled           the platform allowed it, the organisation turned it on AND the engine is answering now;
+     *                          the UI hides "Edit online" otherwise
+     * @param allowedByPlatform the platform administrator allowed this organisation online editing at all - when false
+     *                          the organisation's own Online Editing page and menu item are not shown
+     */
+    public record EditingConfig(boolean enabled, String mode, Set<String> extensions, boolean allowedByPlatform) {
     }
 
     /** What an administrator edits. {@code engineConfigured} false means the server has no engine, so it cannot be turned on. */
@@ -45,7 +51,8 @@ public class EditingController {
         EditingSettingsService.Settings policy = settings.forTenant(TenantContext.getTenantId());
         // Not even asking the engine while the organisation has it off.
         Set<String> extensions = policy.enabled() ? engine.supportedExtensions() : Set.of();
-        return new EditingConfig(policy.enabled() && !extensions.isEmpty(), policy.mode(), extensions);
+        return new EditingConfig(policy.enabled() && !extensions.isEmpty(), policy.mode(), extensions,
+                platformAccess.allowed(TenantContext.getTenantId()));
     }
 
     @GetMapping("/api/v1/editing/settings")

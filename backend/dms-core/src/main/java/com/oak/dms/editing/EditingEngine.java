@@ -144,6 +144,11 @@ public class EditingEngine {
                 if (!"edit".equals(action.getAttribute("name")) || action.getAttribute("urlsrc").isBlank()) {
                     continue;
                 }
+                // Some engines list an action with no extension at all (it is keyed by MIME type there): not a file
+                // type anyone can pick, and not one to hand to the browser as if it were.
+                if (action.getAttribute("ext").isBlank()) {
+                    continue;
+                }
                 URI src = URI.create(action.getAttribute("urlsrc").trim());
                 // Leave the path ending so that "WOPISrc=..." can simply be appended: "?" or "?x=1&".
                 String query = src.getRawQuery();

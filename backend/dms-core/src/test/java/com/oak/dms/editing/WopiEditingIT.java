@@ -264,6 +264,8 @@ class WopiEditingIT extends WorkflowApiSupport {
     void aTokenForATenantsDocument_cannotReachItFromAnotherTenant() throws Exception {
         UUID otherTenant = fx.tenant();
         User outsider = fx.user(otherTenant, "Outsider");
+        // That organisation is fully switched on, so what is tested here is tenant isolation - not the on/off switches.
+        setEditing(otherTenant, true, "exclusive");
         // A forged-in-spirit grant: right document id, wrong tenant. The document is simply not there.
         String token = tokens.mint(new WopiTokenCodec.Grant(otherTenant, outsider.getUserId(), documentId, "O",
                 Instant.now().plusSeconds(600)));
@@ -601,9 +603,121 @@ class WopiEditingIT extends WorkflowApiSupport {
         verify(ingestionGate, never()).submit(any());
     }
 
+
+    // ------------------------------------------------------------------ the platform administrator's switch (V136)
+
+    @Test
+    void anOrganisationThePlatformHasNotAllowed_getsNoEditor_whateverItsOwnSettingSays() throws Exception {
+        platformAllows(tenantId, false); // its own setting stays ON
+
+        JsonNode refused = postAs(path("edit-session"), alice, null, 503);
+
+        assertThat(refused.get("code").asString()).isEqualTo("EDITING_DISABLED");
+        assertThat(holder()).isNull();
+        JsonNode config = get200("/api/v1/editing/config", alice);
+        assertThat(config.get("enabled").asBoolean()).isFalse();
+        assertThat(config.get("allowedByPlatform").asBoolean()).isFalse();
+        assertThat(config.get("extensions").size()).isZero();
+    }
+
+    @Test
+    void whileNotAllowed_theOrganisationsAdministratorCantTurnItOn_andIsToldWhy() throws Exception {
+        platformAllows(tenantId, false);
+
+        JsonNode view = get200("/api/v1/editing/settings", admin);
+        assertThat(view.get("allowedByPlatform").asBoolean()).isFalse();
+        JsonNode refused = call(put("/api/v1/editing/settings"), fx.jwtFor(admin),
+                Map.of("enabled", true, "mode", "exclusive"), 409);
+
+        assertThat(refused.get("code").asString()).isEqualTo("EDITING_NOT_ALLOWED");
+        assertThat(refused.get("message").asString()).contains("platform administrator");
+    }
+
+    @Test
+    void whatTheOrganisationChose_comesBackWhenThePlatformAllowsItAgain() throws Exception {
+        setEditing(tenantId, true, "exclusive");
+        platformAllows(tenantId, false);
+        assertThat(get200("/api/v1/editing/config", alice).get("enabled").asBoolean()).isFalse();
+
+        platformAllows(tenantId, true);
+
+        JsonNode config = get200("/api/v1/editing/config", alice);
+        assertThat(config.get("enabled").asBoolean()).isTrue();
+        assertThat(config.get("allowedByPlatform").asBoolean()).isTrue();
+        // Its own choice was never touched.
+        assertThat(fx.count("select count(*) from tenant_editing_settings where tenant_id = ? and enabled", tenantId))
+                .isEqualTo(1);
+        postAs(path("edit-session"), alice, null, 200);
+    }
+
+    @Test
+    void anOrganisationThePlatformHasAllowed_decidesForItself_theAdministratorCanTurnItOffAndOn() throws Exception {
+        platformAllows(tenantId, true);
+        JsonNode off = call(put("/api/v1/editing/settings"), fx.jwtFor(admin), Map.of("enabled", false, "mode", "exclusive"), 200);
+        assertThat(off.get("allowedByPlatform").asBoolean()).isTrue();
+        assertThat(get200("/api/v1/editing/config", alice).get("enabled").asBoolean()).isFalse();
+
+        call(put("/api/v1/editing/settings"), fx.jwtFor(admin), Map.of("enabled", true, "mode", "exclusive"), 200);
+        assertThat(get200("/api/v1/editing/config", alice).get("enabled").asBoolean()).isTrue();
+    }
+
+    @Test
+    void anEditorAlreadyOpen_stopsLoadingAndSaving_theMomentThePlatformStopsIt_andResumesWhenAllowedAgain() throws Exception {
+        String token = sessionToken(alice);   // an editor is open, with a token that lasts hours
+        assertThat(mvc.perform(get(wopi("")).param("access_token", token)).andReturn().getResponse().getStatus()).isEqualTo(200);
+
+        platformAllows(tenantId, false);
+
+        assertThat(mvc.perform(get(wopi("")).param("access_token", token)).andReturn().getResponse().getStatus()).isEqualTo(403);
+        assertThat(mvc.perform(get(wopi("/contents")).param("access_token", token)).andReturn().getResponse().getStatus()).isEqualTo(403);
+        assertThat(mvc.perform(post(wopi("/contents")).param("access_token", token)
+                .content("late edit".getBytes(StandardCharsets.UTF_8))).andReturn().getResponse().getStatus()).isEqualTo(403);
+        verify(ingestionGate, never()).submit(any());
+
+        platformAllows(tenantId, true);
+        assertThat(mvc.perform(get(wopi("")).param("access_token", token)).andReturn().getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void anEditorAlreadyOpen_alsoStops_whenTheOrganisationsOwnAdministratorTurnsItOff() throws Exception {
+        String token = sessionToken(alice);
+
+        setEditing(tenantId, false, "exclusive");
+
+        assertThat(mvc.perform(get(wopi("")).param("access_token", token)).andReturn().getResponse().getStatus()).isEqualTo(403);
+        assertThat(mvc.perform(post(wopi("/contents")).param("access_token", token)
+                .content("late edit".getBytes(StandardCharsets.UTF_8))).andReturn().getResponse().getStatus()).isEqualTo(403);
+        verify(ingestionGate, never()).submit(any());
+    }
+
+    @Test
+    void oneOrganisationBeingAllowed_doesNotAllowAnother() throws Exception {
+        UUID other = fx.tenant();
+        User outsider = fx.user(other, "Outsider");
+        fx.role(other, "Editors", new String[]{VIEW, CHECK_OUT}, outsider);
+        UUID otherDoc = fx.document(other, fx.documentType(other, "Contract"), outsider, "Their file");
+        fx.jdbc().update("update document_versions set original_filename = 'Their file.docx' "
+                + "where version_id = (select latest_version_id from documents where document_id = ?)", otherDoc);
+        // They turned it on for themselves, but the platform never allowed them.
+        fx.jdbc().update("insert into tenant_editing_settings (tenant_id, enabled, mode) values (?, true, 'exclusive')", other);
+
+        JsonNode refused = postAs("/api/v1/documents/" + otherDoc + "/edit-session", outsider, null, 503);
+
+        assertThat(refused.get("code").asString()).isEqualTo("EDITING_DISABLED");
+        postAs(path("edit-session"), alice, null, 200); // ...while ours, which is allowed, works
+    }
+
     // ------------------------------------------------------------------ helpers
 
+    /** The platform administrator allows (or stops) online editing for one organisation (V136). */
+    private void platformAllows(UUID tenant, boolean allowed) {
+        fx.jdbc().update("insert into tenant_platform_settings (tenant_id, online_editing_allowed) values (?, ?) "
+                + "on conflict (tenant_id) do update set online_editing_allowed = excluded.online_editing_allowed",
+                tenant, allowed);
+    }
+
     private void setEditing(UUID tenant, boolean enabled, String mode) {
+        platformAllows(tenant, true);
         fx.jdbc().update("insert into tenant_editing_settings (tenant_id, enabled, mode) values (?, ?, ?) "
                 + "on conflict (tenant_id) do update set enabled = excluded.enabled, mode = excluded.mode",
                 tenant, enabled, mode);

@@ -47,9 +47,19 @@ import {
   TiffViewer,
   ZoomableImage,
 } from "@/components/documents/preview-viewers"
+import { PageViewer } from "@/components/documents/page-viewer"
 import { SlideViewer } from "@/components/documents/slide-viewer"
+import { saveDownloadedFile } from "@/lib/download-file"
+import {
+  canDrawAsPages,
+  downloadFromPreview,
+  isOpenPolicy,
+  OPEN_POLICY,
+} from "@/lib/preview/api"
+import { usePreviewPolicy } from "@/lib/preview/use-preview"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 /** Text files bigger than this are offered as a download instead of shown. */
 const MAX_TEXT_BYTES = 2 * 1024 * 1024
@@ -273,10 +283,40 @@ export function DocumentPreview({
   const [width, setWidth] = useStoredWidth()
   const [dragging, setDragging] = useState(false)
   const [zoom, setZoom] = useState(1)
-  const zoomable = renderer !== null && ZOOMABLE.has(renderer)
+
+  // The organisation's preview policy (DPRM-FR-005). Raw-bytes previews (contentSource) aren't covered by it.
+  const policyQuery = usePreviewPolicy(!contentSource)
+  const policy = contentSource ? OPEN_POLICY : policyQuery.data
+  const policyPending = !contentSource && policyQuery.isPending
+  const policyFailed = !contentSource && policyQuery.isError
+  const restricted = policy !== undefined && !isOpenPolicy(policy)
+  // A restricted preview is drawn on the server as pictures of pages; a file that can't be drawn can't be shown.
+  const showPages = restricted && canDrawAsPages(row.fileName)
+  const blockedByPolicy = restricted && !showPages
+  const policyReady = policy !== undefined && !restricted
+
+  const zoomable =
+    showPages || (renderer !== null && ZOOMABLE.has(renderer))
   const content = useRef<HTMLDivElement>(null)
   const tooBigForText =
     renderer === "text" && (row.sizeBytes ?? 0) > MAX_TEXT_BYTES
+
+  // The Download button follows the policy: hidden when blocked, a watermarked copy when it says so.
+  const downloadBlocked = policy?.download === "block"
+  async function download() {
+    if (!policy || policy.download === "allow") return onDownload()
+    try {
+      saveDownloadedFile(
+        await downloadFromPreview(row.documentId, version?.versionId)
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not download the document."
+      )
+    }
+  }
 
   const file = useQuery({
     queryKey: [
@@ -301,8 +341,13 @@ export function DocumentPreview({
         blob,
       }
     },
-    // A slide show fetches its own slides, one at a time.
-    enabled: renderer !== null && renderer !== "slides" && !tooBigForText,
+    // A slide show fetches its own slides, one at a time; a restricted preview draws its own pages. Nothing is
+    // fetched before the policy is known - a restricted preview must never start as the plain one.
+    enabled:
+      policyReady &&
+      renderer !== null &&
+      renderer !== "slides" &&
+      !tooBigForText,
     gcTime: 0,
     staleTime: Infinity,
     retry: false,
@@ -385,11 +430,12 @@ export function DocumentPreview({
             </div>
             <PinButton row={row} />
             <BookmarkButton row={row} />
-            {zoomable && (renderer === "slides" || file.isSuccess) && (
+            {zoomable &&
+              (showPages || renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"
                 aria-label="Zoom"
-                className="flex items-center rounded-btn border border-border"
+                className="flex h-[38px] items-center rounded-btn border border-border"
               >
                 <Button
                   size="icon-sm"
@@ -452,15 +498,45 @@ export function DocumentPreview({
                 )}
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={onDownload}>
-              <Download />
-              Download
-            </Button>
+            {!downloadBlocked && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void download()}
+              >
+                <Download />
+                {policy?.download === "watermark"
+                  ? "Download (watermarked)"
+                  : "Download"}
+              </Button>
+            )}
           </div>
         </SheetHeader>
 
         <div ref={content} className="flex min-h-0 flex-1 flex-col bg-muted/30">
-          {renderer === null || tooBigForText ? (
+          {policyPending ? (
+            <p className="m-auto inline-flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Loader2 size={16} className="animate-spin" /> Opening…
+            </p>
+          ) : policyFailed ? (
+            <LoadFailed
+              error={policyQuery.error}
+              fallback="Could not check your organisation's preview settings."
+            />
+          ) : blockedByPolicy ? (
+            <NoPreview
+              reason="While your organisation restricts what a preview may do, this kind of file can't be shown here."
+              onDownload={downloadBlocked ? undefined : () => void download()}
+            />
+          ) : showPages && policy ? (
+            <PageViewer
+              documentId={row.documentId}
+              versionId={version?.versionId}
+              title={row.title}
+              zoom={zoom}
+              policy={policy}
+            />
+          ) : renderer === null || tooBigForText ? (
             <NoPreview
               archive={extensionOf(row.fileName) === "zip"}
               reason={
@@ -468,7 +544,7 @@ export function DocumentPreview({
                   ? "This file is too large to show here."
                   : noPreviewReason(row.fileName, kind.label)
               }
-              onDownload={onDownload}
+              onDownload={() => void download()}
             />
           ) : renderer === "slides" ? (
             <SlideViewer
@@ -492,7 +568,7 @@ export function DocumentPreview({
               text={file.data.text}
               title={row.title}
               zoom={zoom}
-              onDownload={onDownload}
+              onDownload={() => void download()}
             />
           )}
         </div>
@@ -763,7 +839,8 @@ function NoPreview({
   reason: string
   /** A ZIP: shown as a downloadable archive rather than "no preview". */
   archive?: boolean
-  onDownload: () => void
+  /** Absent when downloading isn't allowed from a preview. */
+  onDownload?: () => void
 }) {
   const Icon = archive ? FileArchive : FileQuestion
   return (
@@ -783,14 +860,18 @@ function NoPreview({
       </p>
       <p className="text-[13px] text-muted-foreground">
         {reason}{" "}
-        {archive
-          ? "Download it to see the files inside."
-          : "Download it to open it on your computer."}
+        {!onDownload
+          ? ""
+          : archive
+            ? "Download it to see the files inside."
+            : "Download it to open it on your computer."}
       </p>
-      <Button size="sm" onClick={onDownload}>
-        <Download />
-        {archive ? "Download ZIP" : "Download"}
-      </Button>
+      {onDownload && (
+        <Button size="sm" onClick={onDownload}>
+          <Download />
+          {archive ? "Download ZIP" : "Download"}
+        </Button>
+      )}
     </div>
   )
 }

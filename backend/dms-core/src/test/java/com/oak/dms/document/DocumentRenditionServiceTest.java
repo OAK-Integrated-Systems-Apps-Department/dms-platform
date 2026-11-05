@@ -26,6 +26,26 @@ class DocumentRenditionServiceTest {
     }
 
     @Test
+    void theProtectedViewAndThumbnails_coverPdfsPicturesAndWhatConvertsToAPdf() {
+        for (String name : new String[]{"a.pdf", "A.PDF", "b.docx", "c.xlsx", "d.csv", "e.txt", "f.png", "g.JPG", "h.tiff",
+                "i.pptx", "j.rtf", "k.vsdx"}) {
+            assertThat(DocumentRenditionService.protectable(name)).as(name).isTrue();
+        }
+        for (String name : new String[]{"a.zip", "b.dwg", "c.eml", "d.mp4", "noextension", null}) {
+            assertThat(DocumentRenditionService.protectable(name)).as(String.valueOf(name)).isFalse();
+        }
+    }
+
+    @Test
+    void onlyOfficeStyleFilesNeedConverting_pdfsAndPicturesAreDrawnAsTheyAre() {
+        assertThat(DocumentRenditionService.needsConversion("a.docx")).isTrue();
+        assertThat(DocumentRenditionService.needsConversion("a.doc")).isTrue();
+        assertThat(DocumentRenditionService.needsConversion("a.csv")).isTrue();
+        assertThat(DocumentRenditionService.needsConversion("a.pdf")).isFalse();
+        assertThat(DocumentRenditionService.needsConversion("a.png")).isFalse();
+    }
+
+    @Test
     void filesTheBrowserShowsItself_orCantBeConverted_areNot() {
         for (String name : new String[]{"a.pdf", "b.docx", "c.xlsx", "d.csv", "e.eml", "f.png", "g.tiff", "h.dwg",
                 "noextension", null}) {
