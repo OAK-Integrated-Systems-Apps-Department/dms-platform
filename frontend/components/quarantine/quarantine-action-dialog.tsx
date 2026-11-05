@@ -112,7 +112,7 @@ export function QuarantineActionDialog({ action, filename, open, onOpenChange, o
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-2xl">
-          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-md", config.iconClassName)}>
+          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-btn", config.iconClassName)}>
             <Icon size={20} aria-hidden="true" />
           </span>
           <AlertDialogTitle>{config.title}</AlertDialogTitle>
@@ -131,14 +131,14 @@ export function QuarantineActionDialog({ action, filename, open, onOpenChange, o
           </div>
 
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
               onClick={() => onConfirm(trimmedReason)}
               disabled={trimmedReason.length === 0}
               className={cn(
-                "rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
+                "border h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center",
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 config.confirmClassName
               )}

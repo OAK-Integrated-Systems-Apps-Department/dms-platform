@@ -19,6 +19,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="toaster group"
       richColors
       closeButton
+      toastOptions={{
+        classNames: {
+          // The same look as the app's other secondary buttons (white, bordered, green on hover), instead of
+          // sonner's black pill, which clashes with the red error and green success toasts.
+          actionButton:
+            "!h-8 !rounded-btn !border !border-[var(--border-strong)] !bg-card !px-3 !text-[12.5px] !font-semibold !text-foreground hover:!border-primary hover:!bg-muted hover:!text-primary",
+        },
+      }}
       style={
         {
           "--normal-bg": "var(--popover)",

@@ -78,7 +78,7 @@ export function TaskActionDialog({ decision, documentTitle, stageLabel, versionC
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-xl">
           <form onSubmit={handleSubmit(submit)}>
-            <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-md", config.iconClassName)}>
+            <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-btn", config.iconClassName)}>
               <Icon size={20} aria-hidden="true" />
             </span>
             <AlertDialogTitle>{config.title}</AlertDialogTitle>
@@ -112,7 +112,7 @@ export function TaskActionDialog({ decision, documentTitle, stageLabel, versionC
               <AlertDialogClose
                 type="button"
                 disabled={isSubmitting}
-                className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+                className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
               >
                 Cancel
               </AlertDialogClose>
@@ -120,7 +120,7 @@ export function TaskActionDialog({ decision, documentTitle, stageLabel, versionC
                 type="submit"
                 disabled={isSubmitting}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] disabled:cursor-not-allowed disabled:opacity-60",
+                  "flex items-center gap-1.5 border disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
                   config.confirmClassName
                 )}
               >

@@ -37,7 +37,7 @@ export function RelationshipTypesTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse">
+        <table className="tbl-card w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Type</th>
@@ -53,7 +53,7 @@ export function RelationshipTypesTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={6} className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No relationship types yet.
                 </td>
               </tr>

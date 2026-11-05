@@ -122,6 +122,25 @@ class TenantCatalogueProvisioningIT {
         verify(keycloakUserService, never()).createUser(any(), any(), any(), any(), any());
     }
 
+    @Test
+    void provisionTenant_whenTheInvitationEmailCannotBeSent_saysSoClearly_andUndoesEverything() throws Exception {
+        UUID keycloakId = UUID.randomUUID();
+        when(keycloakUserService.createUser(any(), any(), any(), any(), any())).thenReturn(keycloakId);
+        // What a bad SMTP password looks like (Gmail: 535 Username and Password not accepted).
+        org.mockito.Mockito.doThrow(new org.springframework.mail.MailAuthenticationException("Authentication failed"))
+                .when(passwordResetService).issueForNewUser(any());
+        ProvisionTenantRequest request = provisionRequest();
+
+        // Not the generic "An unexpected error occurred": the same MAIL_DELIVERY_FAILED answer an ordinary invite gets.
+        assertThatThrownBy(() -> tenantProvisioningService.provisionTenant(request))
+                .isInstanceOf(com.oak.dms.common.exception.MailDeliveryException.class)
+                .hasMessageContaining("mail settings");
+
+        // Nothing is left behind: no organisation, and the Keycloak account made for its first admin is removed.
+        assertThat(tenantRepository.existsByDomainAndDeletedFalse(request.domain())).isFalse();
+        verify(keycloakUserService).deleteUser(keycloakId);
+    }
+
     /** The real install runs and writes its rows, then fails - so the rollback has something to undo. */
     private void failAfterInstalling() {
         doAnswer(invocation -> {

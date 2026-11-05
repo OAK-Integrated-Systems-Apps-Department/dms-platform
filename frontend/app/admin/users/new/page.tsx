@@ -21,7 +21,7 @@ export default function AddUserPage() {
           { label: "Add User" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Add User</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Invite a new user into the current tenant. They&apos;ll get an email to verify their address

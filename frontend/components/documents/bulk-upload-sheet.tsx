@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -545,11 +546,7 @@ export function BulkUploadSheet({
               className="w-full"
             />
             {types.isError && (
-              <p className="mt-1.5 text-[12.5px] text-[var(--rust)]">
-                {types.error instanceof Error
-                  ? types.error.message
-                  : "Could not load document types."}
-              </p>
+              <LoadFailed error={types.error} fallback="Could not load document types." quiet />
             )}
             {types.data && types.data.length === 0 && (
               <p className="mt-1.5 text-[12.5px] text-muted-foreground">
@@ -557,7 +554,7 @@ export function BulkUploadSheet({
               </p>
             )}
             {documentTypeId && (templates.data ?? []).length > 0 && (
-              <div className="mt-2 rounded-md bg-muted/50 px-3 py-2 text-[12.5px]">
+              <div className="mt-2 rounded-btn bg-muted/50 px-3 py-2 text-[12.5px]">
                 <p className="mb-1 text-muted-foreground">
                   Templates for this type - fill one in, then upload it here:
                 </p>
@@ -684,7 +681,7 @@ export function BulkUploadSheet({
           )}
 
           {items.length > 0 && (
-            <ul className="divide-y divide-border rounded-lg border border-border">
+            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
               {items.map((item) => (
                 <li key={item.id} className="flex items-start gap-3 p-3">
                   <div className="min-w-0 flex-1">
@@ -728,7 +725,7 @@ export function BulkUploadSheet({
                   </div>
                   <Badge
                     variant={item.state.kind === "queued" ? "outline" : "rust"}
-                    className="shrink-0 rounded-md"
+                    className="shrink-0 rounded-btn"
                   >
                     {STATE_LABEL[item.state.kind]}
                   </Badge>
@@ -821,7 +818,7 @@ function DuplicateChoicePicker({
   onChange: (choice: DuplicateChoice) => void
 }) {
   return (
-    <div className="mt-2 rounded-md border border-[var(--gold)]/60 bg-[var(--gold-tint)] p-2.5">
+    <div className="mt-2 rounded-btn border border-[var(--gold)]/60 bg-[var(--gold-tint)] p-2.5">
       <p className="text-[12px] leading-[1.45] text-foreground">
         {matchReason(match)}
       </p>
@@ -850,7 +847,7 @@ function DuplicateChoicePicker({
               }
               onClick={() => onChange(option.value)}
               className={cn(
-                "rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "border transition-colors disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center",
                 choice === option.value
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-card text-foreground hover:border-primary/60"

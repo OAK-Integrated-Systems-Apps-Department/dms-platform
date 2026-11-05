@@ -87,10 +87,10 @@ export function CreateWorkflowTemplateForm({ onSubmit }: CreateFormProps) {
       <hr className="my-6 border-dashed border-border" />
 
       <div className="flex items-center justify-end gap-2.5">
-        <button type="button" onClick={() => router.push("/admin/workflows")} className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+        <button type="button" onClick={() => router.push("/admin/workflows")} className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
           Cancel
         </button>
-        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
+        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
           Create Template
         </button>
       </div>
@@ -138,11 +138,11 @@ export function WorkflowTemplateDetailsForm({ defaultValues, documentTypeLocked,
           type="button"
           disabled={!isDirty || isSubmitting}
           onClick={() => reset(defaultValues)}
-          className="rounded-btn border border-[var(--border-strong)] bg-card px-4 py-2 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Discard
         </button>
-        <button type="submit" disabled={isSubmitting || !isValid || !isDirty} className="rounded-btn border border-primary bg-primary px-[18px] py-2 text-[13px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="submit" disabled={isSubmitting || !isValid || !isDirty} className="border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center">
           Save Details
         </button>
       </div>

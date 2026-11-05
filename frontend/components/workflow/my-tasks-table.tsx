@@ -22,7 +22,7 @@ interface MyTasksTableProps {
 }
 
 const TH = "px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
-const BTN = "flex items-center gap-1 rounded-sm border px-2.5 py-1.5 text-[12px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+const BTN = "flex items-center gap-1 border disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
 
 /** "Stage k of n: name" - the shared way a task's position in its workflow is described. */
 export function stageLabel(task: Pick<MyTaskDto, "stageOrder" | "totalStages" | "stageName">) {
@@ -51,7 +51,7 @@ export function MyTasksTable({ rows, busy, canApprove, canReject, onClaim, onRel
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse">
+        <table className="tbl-card w-full min-w-[1040px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Document</th>
@@ -66,7 +66,7 @@ export function MyTasksTable({ rows, busy, canApprove, canReject, onClaim, onRel
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={7} className="h-[max(160px,calc(100svh-430px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   Nothing waiting for you here.
                 </td>
               </tr>

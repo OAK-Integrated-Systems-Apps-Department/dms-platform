@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -82,9 +83,7 @@ export function Organisations() {
   if (orgs.isPending) return <LoadingState message="Loading organisations…" />
   if (orgs.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(orgs.error, "Could not load the organisations.")}
-      </p>
+      <LoadFailed error={orgs.error} fallback="Could not load the organisations." />
     )
   }
 
@@ -101,8 +100,8 @@ export function Organisations() {
           <Plus size={14} aria-hidden="true" /> Add organisation
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[820px] text-[13px]">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <table className="tbl-card w-full min-w-[820px] text-[13px]">
           <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
             <tr>
               <th className="px-4 py-2.5 font-semibold">Organisation</th>
@@ -132,7 +131,7 @@ export function Organisations() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={state.variant} className="rounded-md">
+                    <Badge variant={state.variant} className="rounded-btn">
                       {state.label}
                     </Badge>
                   </td>

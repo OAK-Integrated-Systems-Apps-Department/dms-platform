@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -7,6 +8,7 @@ import {
   Download,
   FileSearch,
   Droplet,
+  CirclePause,
   FileDown,
   FolderInput,
   FolderOpen,
@@ -45,6 +47,8 @@ import {
 } from "@/components/documents/browser-dnd"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
 import { TemplatePickerSheet } from "@/components/documents/template-picker-sheet"
+import { ReasonDialog } from "@/components/checkout/reason-dialog"
+import { useChangeStatus } from "@/lib/retention/use-retention"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { VersionHistorySheet } from "@/components/documents/version-history-sheet"
 import { WatermarkDialog } from "@/components/watermarks/watermark-dialog"
@@ -101,9 +105,6 @@ import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
 import { useDocumentWorkflowStatuses } from "@/lib/workflow/use-document-workflow-statuses"
 import { LinkToDialog } from "@/components/relationships/link-to-dialog"
 import { TransferDialog } from "@/components/ownership/transfer-dialog"
-import { PersonPicker } from "@/components/workflow/person-picker"
-import { lookupPeople, type PersonOptionDto } from "@/lib/workflow/api"
-import { useDepartmentOptions } from "@/lib/workflow/use-participant-options"
 import { useDocument } from "@/lib/documents/use-document"
 import { cn } from "@/lib/utils"
 
@@ -126,6 +127,7 @@ type Dialog =
   | { kind: "ocr"; row: DocumentListItemDto; key: number }
   | { kind: "link-to"; rows: DocumentListItemDto[]; key: number }
   | { kind: "transfer-ownership"; row: DocumentListItemDto; key: number }
+  | { kind: "mark-inactive"; row: DocumentListItemDto; key: number }
   | null
 
 /**
@@ -153,8 +155,6 @@ export function DocumentBrowser() {
   // searches every folder for documents linked to that one.
   const relatedTo = params.get("relatedTo")
   const relationshipType = params.get("relationshipType")
-  // Notifications link to the documents a person owns: ?ownerId=<user id> lists them across every folder.
-  const urlOwnerId = params.get("ownerId")
   const rawDirection = params.get("direction")
   const direction =
     rawDirection === "source" || rawDirection === "target" || rawDirection === "any"
@@ -162,9 +162,8 @@ export function DocumentBrowser() {
       : undefined
   return (
     <FolderView
-      key={`${folderId ?? "root"}|${relatedTo ?? ""}|${relationshipType ?? ""}|${direction ?? ""}|${urlOwnerId ?? ""}`}
+      key={`${folderId ?? "root"}|${relatedTo ?? ""}|${relationshipType ?? ""}|${direction ?? ""}`}
       folderId={folderId}
-      urlOwnerId={urlOwnerId}
       related={
         relatedTo
           ? { relatedTo, relationshipType: relationshipType ?? undefined, direction }
@@ -183,17 +182,16 @@ interface RelatedFilter {
 function FolderView({
   folderId,
   related,
-  urlOwnerId,
 }: {
   folderId: string | null
   related: RelatedFilter | null
-  urlOwnerId: string | null
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const queryClient = useQueryClient()
   const { hasPermission, hasAnyPermission } = usePermissions()
   const pins = usePins()
+  const markInactive = useChangeStatus()
   const can = {
     createFolder: hasPermission(PermissionCodes.DSC_FOLDERS_CREATE),
     renameMove: hasPermission(PermissionCodes.DSC_FOLDERS_RENAME_MOVE),
@@ -211,6 +209,7 @@ function FolderView({
     manageRelationships: hasPermission(PermissionCodes.DRM_RELATIONSHIPS_CREATE),
     // The server decides whose documents a caller may move (admins any, a department head their people's).
     transferOwnership: hasPermission(PermissionCodes.DOT_TRANSFER_INITIATE),
+    markInactive: hasPermission(PermissionCodes.CRM_MARK_INACTIVE),
     ocrTrigger: hasPermission(PermissionCodes.OS_OCR_TRIGGER),
     // Who can get into a folder (V53) - viewing the list or changing it.
     seeAccess: hasAnyPermission(
@@ -234,13 +233,6 @@ function FolderView({
   const relatedDocument = useDocument(related?.relatedTo ?? "")
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
-  // Find by owner: a person and/or a department; either one lists across every folder, like the relationship filter.
-  const [ownerOpen, setOwnerOpen] = useState(false)
-  const [ownerPerson, setOwnerPerson] = useState<PersonOptionDto | null>(null)
-  const [ownerDepartmentId, setOwnerDepartmentId] = useState("")
-  const ownerActive = ownerPerson !== null || ownerDepartmentId !== "" || urlOwnerId !== null
-  const ownerId = ownerPerson?.userId ?? urlOwnerId ?? undefined
-  const departmentOptions = useDepartmentOptions(ownerOpen)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<Dialog>(null)
   const [upload, setUpload] = useState<{
@@ -258,16 +250,14 @@ function FolderView({
   // The top level is open to everyone; inside a folder, the caller's own level applies.
   const canEditHere = hasAccess(current?.myAccess, "edit")
   const documents = useQuery({
-    queryKey: ["documents", "browse", current?.folderId, query, page, related, ownerId, ownerDepartmentId],
+    queryKey: ["documents", "browse", current?.folderId, query, page, related],
     queryFn: () =>
       fetchDocuments({
-        folderId: related || ownerActive ? null : (current?.folderId ?? null),
-        all: related !== null || ownerActive,
+        folderId: related ? null : (current?.folderId ?? null),
+        all: related !== null,
         q: query,
         page: page - 1,
         size: PAGE_SIZE,
-        ownerId,
-        ownerDepartmentId: ownerDepartmentId || undefined,
         ...(related ?? {}),
       }),
   })
@@ -576,6 +566,14 @@ function FolderView({
         onSelect: () =>
           setDialog({ kind: "link-to", rows: [row], key: Date.now() }),
       })
+    // 6.1: switch an active document off. Not offered under legal hold (its status is locked); normal listings only
+    // ever hold active documents, so this is the only direction here - bringing one back is done from Inactive & Archive.
+    if (can.markInactive && hasAccess(row.myAccess, "edit") && row.lockState !== "legal_hold")
+      actions.push({
+        label: "Mark inactive",
+        icon: CirclePause,
+        onSelect: () => setDialog({ kind: "mark-inactive", row, key: Date.now() }),
+      })
     if (can.transferOwnership)
       actions.push({
         label: "Transfer ownership",
@@ -705,68 +703,8 @@ function FolderView({
           </span>
         </div>
       )}
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-        <button
-          type="button"
-          aria-expanded={ownerOpen}
-          onClick={() => setOwnerOpen(!ownerOpen)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-btn border px-2.5 py-1 font-semibold",
-            ownerActive ? "border-primary/40 bg-primary/5 text-primary" : "border-[var(--border-strong)] bg-card text-foreground"
-          )}
-        >
-          <UserRoundCog size={13} aria-hidden="true" />
-          Owner{ownerActive ? ": filtered" : ""}
-        </button>
-        {ownerOpen && (
-          <>
-            <div className="min-w-[240px]">
-              <PersonPicker
-                queryKey={["browser-owner"]}
-                fetchPeople={(search) => lookupPeople(search, 20)}
-                value={ownerPerson}
-                onChange={(next) => {
-                  setOwnerPerson(next)
-                  setPage(1)
-                }}
-                placeholder="Owned by…"
-              />
-            </div>
-            <select
-              aria-label="Owner department"
-              value={ownerDepartmentId}
-              onChange={(e) => {
-                setOwnerDepartmentId(e.target.value)
-                setPage(1)
-              }}
-              className="h-9 rounded-btn border border-[var(--border-strong)] bg-card px-2.5 text-[12.5px]"
-            >
-              <option value="">Any owner department</option>
-              {(departmentOptions.data ?? []).map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-            {ownerActive && (
-              <button
-                type="button"
-                className="text-primary hover:underline"
-                onClick={() => {
-                  setOwnerPerson(null)
-                  setOwnerDepartmentId("")
-                  setPage(1)
-                  if (urlOwnerId) router.replace(pathname)
-                }}
-              >
-                Clear owner filter
-              </button>
-            )}
-          </>
-        )}
-      </div>
       <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-        <div className="border-b border-border px-2.5 py-2">
+        <div className="border-b border-border px-4 py-2">
           <FolderPath
             trail={trail}
             onOpen={open}
@@ -774,7 +712,7 @@ function FolderView({
             dropTarget={dnd.target}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           {can.createFolder && canEditHere && !missing && (
             <Button
               variant="ghost"
@@ -877,7 +815,7 @@ function FolderView({
             <div
               role="radiogroup"
               aria-label="View"
-              className="inline-flex rounded-md border border-border p-0.5"
+              className="inline-flex rounded-btn border border-border p-0.5"
             >
               {(
                 [
@@ -909,7 +847,7 @@ function FolderView({
       </div>
 
       {checked.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-btn border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]">
           <span className="font-semibold">{checked.size} selected</span>
           {can.moveDocuments && canEditHere && (
             <Button
@@ -980,7 +918,7 @@ function FolderView({
       {folders.isPending || loadingDocuments ? (
         <LoadingState message="Loading…" />
       ) : missing ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center">
+        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center bg-card">
           <p className="text-[13.5px] font-medium">
             This folder doesn&apos;t exist any more.
           </p>
@@ -996,9 +934,7 @@ function FolderView({
           </p>
         </div>
       ) : current && documents.isError ? (
-        <p className="text-[13px] text-[var(--rust)]">
-          {friendlyMessage(documents.error, "Could not load documents.")}
-        </p>
+        <LoadFailed error={documents.error} fallback="Could not load documents." />
       ) : view === "list" ? (
         <BrowserList
           folders={shownFolders}
@@ -1023,7 +959,7 @@ function FolderView({
           documentDrag={documentDrag}
         />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
           {emptyMessage}
         </p>
       ) : (
@@ -1121,6 +1057,19 @@ function FolderView({
             setChecked(new Set())
             toast.success("Documents linked.")
           }}
+        />
+      )}
+      {dialog?.kind === "mark-inactive" && (
+        <ReasonDialog
+          key={dialog.key}
+          required={false}
+          title={`Mark "${dialog.row.title}" inactive?`}
+          description="It disappears from normal listings and search, and moves to Inactive & Archive for people allowed to see it. You can bring it back at any time."
+          confirmLabel="Mark inactive"
+          onConfirm={(reason) =>
+            markInactive.mutateAsync({ documentId: dialog.row.documentId, status: "inactive", reason })
+          }
+          onOpenChange={(next) => !next && setDialog(null)}
         />
       )}
       {dialog?.kind === "transfer-ownership" && (
@@ -1351,6 +1300,7 @@ function MoveDialog({
         exclude={exclude}
         noneLabel={noneLabel}
         className="w-full"
+        inline
       />
     </ActionDialog>
   )

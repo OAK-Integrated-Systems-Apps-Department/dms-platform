@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   types: [] as unknown[],
 }))
 
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }))
 vi.mock("@/lib/relationships/use-document-relationships", () => ({
   useCreateRelationship: () => ({ mutateAsync: mocks.create }),
   useCreateRelationshipsBulk: () => ({ mutateAsync: mocks.bulk }),
@@ -115,7 +117,7 @@ describe("AddRelationshipDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "pick doc-2" }))
     fireEvent.click(screen.getByRole("button", { name: "Link" }))
 
-    expect(await screen.findByText(/This would create a loop/)).toBeInTheDocument()
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/This would create a loop/), expect.anything()))
     const chain = screen.getByRole("list", { name: "Loop chain" })
     expect(chain).toHaveTextContent("Policy B")
     expect(chain).toHaveTextContent("A document you can't open")
@@ -134,7 +136,8 @@ describe("AddRelationshipDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "pick doc-3" }))
     fireEvent.click(screen.getByRole("button", { name: "Link 2 documents" }))
 
-    expect(await screen.findByText(/nothing was saved/)).toBeInTheDocument()
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/nothing was saved/), expect.anything()))
+    await screen.findByRole("list", { name: "Documents that can't be linked" })
     const list = screen.getByRole("list", { name: "Documents that can't be linked" })
     expect(list).toHaveTextContent("Title doc-3")
     expect(list).toHaveTextContent("These documents are already linked this way.")

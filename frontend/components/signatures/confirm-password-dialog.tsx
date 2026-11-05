@@ -55,7 +55,7 @@ export function ConfirmPasswordDialog({ title, description, onConfirm, onOpenCha
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-sm">
           <form onSubmit={handleSubmit}>
-            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-primary/10 text-primary">
               <ShieldCheck size={20} aria-hidden="true" />
             </span>
             <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -83,14 +83,14 @@ export function ConfirmPasswordDialog({ title, description, onConfirm, onOpenCha
               <AlertDialogClose
                 type="button"
                 disabled={submitting}
-                className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+                className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
               >
                 Cancel
               </AlertDialogClose>
               <button
                 type="submit"
                 disabled={submitting || password.length === 0}
-                className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold"
               >
                 {submitting && <Loader2 size={14} className="animate-spin" />}
                 Confirm

@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileText, Lock, RotateCcw, Trash2 } from "lucide-react"
@@ -63,9 +64,7 @@ export function RecycleBin() {
   if (bin.isPending) return <LoadingState message="Loading the recycle bin…" />
   if (bin.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(bin.error, "Could not load the recycle bin.")}
-      </p>
+      <LoadFailed error={bin.error} fallback="Could not load the recycle bin." />
     )
   }
   const { items, retentionDays, byType } = bin.data
@@ -88,7 +87,7 @@ export function RecycleBin() {
       )}
 
       {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-border p-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border p-10 text-center bg-card">
           <Trash2 className="mx-auto mb-2 text-muted-foreground" size={22} />
           <p className="text-[13.5px] font-medium">The recycle bin is empty</p>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
@@ -97,8 +96,8 @@ export function RecycleBin() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[760px] text-[13px]">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="tbl-card w-full min-w-[760px] text-[13px]">
             <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
               <tr>
                 <th className="px-4 py-2.5 font-semibold">Document</th>
@@ -253,7 +252,7 @@ function TypeRetentions({
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card text-[13px]">
+    <section className="rounded-lg border border-border bg-card text-[13px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -345,7 +344,7 @@ function RetentionBar({
   }
 
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-[13px]">
+    <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-[13px]">
       <span className="text-muted-foreground">
         Deleted documents are kept for
       </span>

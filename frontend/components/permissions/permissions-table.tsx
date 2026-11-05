@@ -38,7 +38,7 @@ export function PermissionsTable({ permissions }: PermissionsTableProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse">
+        <table className="tbl-card w-full min-w-[900px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh
@@ -72,7 +72,7 @@ export function PermissionsTable({ permissions }: PermissionsTableProps) {
               <tr>
                 <td
                   colSpan={4}
-                  className="px-3.5 py-10 text-center text-[13px] text-muted-foreground"
+                  className="h-[max(160px,calc(100svh-400px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No permissions match your search.
                 </td>

@@ -154,7 +154,7 @@ export function ActivityChart({
         <div
           role="radiogroup"
           aria-label="Engagement view"
-          className="flex shrink-0 rounded-md bg-muted p-0.5"
+          className="flex shrink-0 rounded-btn bg-muted p-0.5"
         >
           {(
             [
@@ -169,7 +169,7 @@ export function ActivityChart({
               aria-checked={view === value}
               onClick={() => setView(value)}
               className={cn(
-                "rounded px-2.5 py-1 text-[12px] font-semibold transition-colors",
+                "rounded-btn px-2.5 py-1 text-[12px] font-semibold transition-colors",
                 view === value
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -205,7 +205,7 @@ export function ActivityChart({
                     })
                   }
                   className={cn(
-                    "flex min-w-[130px] flex-1 flex-col items-start rounded-xl border px-3 py-2 text-left transition-all",
+                    "flex min-w-[130px] flex-1 flex-col items-start rounded-lg border px-4 py-2 text-left transition-all",
                     off
                       ? "border-dashed border-border opacity-50"
                       : "border-border bg-muted/40 hover:bg-muted"

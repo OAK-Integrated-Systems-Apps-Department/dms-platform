@@ -193,7 +193,7 @@ export default function PermissionListPage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Permissions" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Permission Catalog
         </h1>
@@ -260,7 +260,7 @@ export default function PermissionListPage() {
             <button
               type="button"
               onClick={() => fetchPermissions()}
-              className="rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[12.5px] font-semibold text-foreground"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               Try again
             </button>

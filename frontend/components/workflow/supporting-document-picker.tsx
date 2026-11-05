@@ -88,7 +88,7 @@ export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }:
                         createdAt: doc.createdAt ?? new Date().toISOString(),
                       })
                     }
-                    className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                    className="flex items-center justify-center text-muted-foreground hover:text-foreground size-8 rounded-btn"
                     aria-label={`View ${doc.title}`}
                   >
                     <Eye size={13} />
@@ -97,7 +97,7 @@ export function SupportingDocumentPicker({ value, onChange, excludeDocumentId }:
                 <button
                   type="button"
                   onClick={() => onChange(value.filter((d) => d.documentId !== doc.documentId))}
-                  className="flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                  className="flex items-center justify-center text-muted-foreground hover:text-foreground size-8 rounded-btn"
                   aria-label={`Remove ${doc.title}`}
                 >
                   <X size={13} />
@@ -220,7 +220,7 @@ function UploadNew({ onAdd }: { onAdd: (doc: PickedSupportingDocument) => void }
           type="button"
           disabled={!file || !typeId || busy}
           onClick={() => void upload()}
-          className="flex items-center gap-1 rounded-btn border border-primary bg-primary/10 px-3 py-2 text-[12.5px] font-semibold text-primary disabled:opacity-50"
+          className="flex items-center gap-1 border border-primary bg-primary/10 font-semibold text-primary disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] justify-center"
         >
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload and attach
         </button>

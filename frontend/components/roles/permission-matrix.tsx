@@ -242,7 +242,7 @@ export function PermissionMatrix() {
 
   if (catalogLoading || grantsLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-16 text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
         <Loader2 size={16} className="animate-spin" />
         Loading the permission matrix…
       </div>
@@ -250,17 +250,17 @@ export function PermissionMatrix() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Toolbar */}
       <div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Left: filters */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Functional area */}
-          <div className="relative">
+          <div className="relative max-w-full min-w-0">
             <select
               value={area}
               onChange={(event) => setArea(event.target.value)}
-              className="h-9 appearance-none rounded-lg border border-border bg-background pr-8 pl-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
+              className="h-9 max-w-full appearance-none rounded-lg border border-border bg-background pr-8 pl-3 text-[13px] font-medium text-foreground outline-none focus-visible:border-primary"
             >
               <option value={ALL_AREAS}>{ALL_AREAS}</option>
               {permissionGroups.map((group) => (
@@ -283,7 +283,7 @@ export function PermissionMatrix() {
               type="button"
               onClick={() => setRoleFilterOpen((v) => !v)}
               className={cn(
-                "flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors",
+                "flex items-center gap-1.5 border transition-colors h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
                 hiddenCount > 0
                   ? "border-primary/30 bg-primary/5 text-primary"
                   : "border-border bg-background text-foreground hover:bg-muted",
@@ -294,7 +294,7 @@ export function PermissionMatrix() {
               Roles
               <span
                 className={cn(
-                  "rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold",
+                  "font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap",
                   hiddenCount > 0
                     ? "bg-primary/10 text-primary"
                     : "bg-muted text-muted-foreground"
@@ -305,7 +305,7 @@ export function PermissionMatrix() {
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
             {roleFilterOpen && (
-              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-md border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
+              <div className="absolute top-[44px] left-0 z-30 w-[240px] rounded-btn border border-border bg-popover py-1.5 shadow-[var(--ledger-shadow)]">
                 <div className="flex items-center justify-between border-b border-border px-3.5 pt-1 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                     Show roles
@@ -393,7 +393,7 @@ export function PermissionMatrix() {
                   )
                 )
               }}
-              className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-btn px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               Expand all
             </button>
@@ -404,7 +404,7 @@ export function PermissionMatrix() {
                 setOpenModules({})
                 setOpenActions({})
               }}
-              className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-btn px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               Collapse all
             </button>
@@ -413,7 +413,7 @@ export function PermissionMatrix() {
       </div>
 
       {/* Matrix — horizontal scroll only; vertical scroll is the page's */}
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table
           className="w-full border-collapse"
           style={{
@@ -488,7 +488,7 @@ export function PermissionMatrix() {
                               {group.moduleCode}
                             </span>
                           </span>
-                          <span className="mt-0.5 shrink-0 rounded-full bg-background px-2 py-0.5 font-mono text-[10.5px] font-semibold text-muted-foreground">
+                          <span className="mt-0.5 shrink-0 bg-background font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground">
                             {groupIds.length}
                           </span>
                         </button>
@@ -539,7 +539,7 @@ export function PermissionMatrix() {
                                   <span className="min-w-0 flex-1 text-[12px] leading-snug font-semibold break-words whitespace-normal text-foreground">
                                     {permission.label}
                                   </span>
-                                  <span className="mt-0.5 shrink-0 rounded-full bg-background px-2 py-0.5 font-mono text-[10.5px] font-semibold text-muted-foreground">
+                                  <span className="mt-0.5 shrink-0 bg-background font-mono inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground">
                                     {permission.permissions!.length}
                                   </span>
                                 </button>

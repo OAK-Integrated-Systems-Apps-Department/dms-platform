@@ -52,7 +52,7 @@ export function MetadataFieldsTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh label="Label" active={sortKey === "label"} direction={direction} onClick={() => toggleSort("label")} className="px-3.5" />
@@ -65,7 +65,7 @@ export function MetadataFieldsTable({
           <tbody>
             {fields.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3.5 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-400px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground">
                   No metadata fields match your search.
                 </td>
               </tr>
@@ -78,7 +78,7 @@ export function MetadataFieldsTable({
                   {DATA_TYPE_LABELS[field.dataType as DataType] ?? field.dataType}
                 </td>
                 <td className="px-3.5 py-3">
-                  <Badge variant={STATUS_VARIANT[field.status]} className="gap-1.5 rounded-md">
+                  <Badge variant={STATUS_VARIANT[field.status]} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {field.status}
                   </Badge>
@@ -93,7 +93,7 @@ export function MetadataFieldsTable({
                               {...props}
                               href={`/admin/metadata/fields/${field.fieldId}/edit`}
                               aria-label={`Edit ${field.label}`}
-                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                              className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                             >
                               <Pencil size={15} />
                             </Link>
@@ -150,7 +150,7 @@ export function MetadataFieldsTable({
                                   type="button"
                                   onClick={() => setPendingDeprecate(field)}
                                   aria-label={`Deprecate ${field.label}`}
-                                  className="flex size-7 items-center justify-center rounded-sm text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold-tint)]"
+                                  className="flex items-center justify-center text-[var(--gold-foreground)] transition-colors hover:bg-[var(--gold-tint)] size-8 rounded-btn"
                                 >
                                   <ArchiveX size={15} />
                                 </button>

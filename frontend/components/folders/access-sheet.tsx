@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -158,9 +159,7 @@ export function AccessSheet({
             <Loader2 size={14} className="animate-spin" /> Loading…
           </p>
         ) : access.isError ? (
-          <p className="p-5 text-[13px] text-[var(--rust)]">
-            {friendlyMessage(access.error, "Could not load who has access.")}
-          </p>
+          <LoadFailed error={access.error} fallback="Could not load who has access." />
         ) : (
           <AccessEditor
             key={access.dataUpdatedAt}
@@ -194,7 +193,6 @@ function AccessEditor({
   // Starting to restrict an inheriting folder copies the list it inherits.
   const [entries, setEntries] = useState<Draft[]>(access.entries)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const readOnly = !access.canManage
   const inheritedLabel =
     access.effectiveMode === "restricted"
@@ -203,7 +201,6 @@ function AccessEditor({
 
   async function save() {
     setSaving(true)
-    setError(null)
     try {
       const list =
         mode === "restricted"
@@ -229,7 +226,7 @@ function AccessEditor({
       void queryClient.invalidateQueries({ queryKey: ["document-access"] })
       onDone()
     } catch (e) {
-      setError(friendlyMessage(e, "Could not save who has access."))
+      toast.error(friendlyMessage(e, "Could not save who has access."))
     } finally {
       setSaving(false)
     }
@@ -262,7 +259,7 @@ function AccessEditor({
               >
                 <span
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-md",
+                    "flex size-8 shrink-0 items-center justify-center rounded-btn",
                     selected
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground"
@@ -303,12 +300,12 @@ function AccessEditor({
               />
             )}
             {entries.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-dashed border-border px-3.5 py-4 text-center text-[12.5px] text-muted-foreground">
+              <p className="mt-3 rounded-lg border border-dashed border-border px-3.5 py-4 text-center text-[12.5px] text-muted-foreground bg-card">
                 Nobody added yet. You&apos;ll be kept as a manager, and admins
                 always have access.
               </p>
             ) : (
-              <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
+              <ul className="mt-3 divide-y divide-border rounded-lg border border-border bg-card">
                 {entries.map((entry, i) => (
                   <li
                     key={`${entry.principalType}:${entry.principalId}`}
@@ -341,7 +338,7 @@ function AccessEditor({
                           )
                         )
                       }
-                      className="h-8 rounded-md border border-border bg-card px-2 text-[12.5px]"
+                      className="h-8 rounded-btn border border-border bg-card px-2 text-[12.5px]"
                     >
                       {LEVELS.map((l) => (
                         <option key={l.value} value={l.value}>
@@ -356,7 +353,7 @@ function AccessEditor({
                         onClick={() =>
                           setEntries(entries.filter((_, j) => j !== i))
                         }
-                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
                       >
                         <X size={14} />
                       </button>
@@ -371,14 +368,6 @@ function AccessEditor({
               What people can do still depends on their role&apos;s permissions.
             </p>
           </section>
-        )}
-        {error && (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-          >
-            {error}
-          </p>
         )}
       </div>
       <SheetFooter className="flex-row justify-end gap-2 border-t border-border">

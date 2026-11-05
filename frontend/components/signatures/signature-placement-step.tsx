@@ -1,11 +1,11 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Eye, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { friendlyMessage } from "@/lib/api-error"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 import { useDocument } from "@/lib/documents/use-document"
 import {
@@ -228,14 +228,14 @@ export function SignaturePlacementStep({
           <button
             type="button"
             onClick={onBack}
-            className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+            className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
           >
             Back
           </button>
           <button
             type="button"
             onClick={onDone}
-            className="rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground"
+            className="border border-primary bg-primary text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
           >
             Continue
           </button>
@@ -252,7 +252,7 @@ export function SignaturePlacementStep({
           <button
             type="button"
             onClick={() => preview.open(document)}
-            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-[var(--border-strong)] text-foreground hover:bg-muted h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
           >
             <Eye size={13} />
             Read document
@@ -387,15 +387,11 @@ export function SignaturePlacementStep({
       )}
 
       {place.isError && (
-        <p className="mt-3 rounded-btn border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-          {friendlyMessage(place.error, "Could not place your signature on the document.")}
-        </p>
+        <LoadFailed error={place.error} fallback="Could not place your signature on the document." quiet />
       )}
 
       {remove.isError && (
-        <p className="mt-3 rounded-btn border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-          {friendlyMessage(remove.error, "Could not remove the placed signature.")}
-        </p>
+        <LoadFailed error={remove.error} fallback="Could not remove the placed signature." quiet />
       )}
 
       <div className="mt-5 flex items-center justify-center gap-2.5">
@@ -403,7 +399,7 @@ export function SignaturePlacementStep({
           type="button"
           onClick={onBack}
           disabled={place.isPending}
-          className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
         >
           Back
         </button>
@@ -412,7 +408,7 @@ export function SignaturePlacementStep({
           onClick={() => place.mutate()}
           disabled={place.isPending || anyPagePending}
           className={cn(
-            "flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            "flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
           )}
         >
           {place.isPending && <Loader2 size={14} className="animate-spin" />}

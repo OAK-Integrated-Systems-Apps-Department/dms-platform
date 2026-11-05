@@ -12,13 +12,16 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000
 /**
  * How recently the user must have interacted with the page for a check to
  * trigger a refresh. Comfortably under both Keycloak's accessTokenLifespan
- * and ssoSessionIdleTimeout (1800s/30 min in this realm - see
+ * and ssoSessionIdleTimeout (access token 1800s/30 min; idle timeout 8 h since the realm file and bootstrap.sh set it - see
  * AuthCookieService's and AuditRequestContextFilter's own doc comments) -
  * as long as the user does anything at least this often, a check is never
  * more than CHECK_INTERVAL_MS away from firing a refresh, well inside
  * either deadline.
  */
 const ACTIVITY_WINDOW_MS = 10 * 60 * 1000
+
+/** Coming back to the tab renews the session when the last renewal is at least this old. */
+const RETURN_REFRESH_AFTER_MS = 2 * 60 * 1000
 
 /** How many pieces of long-running work currently want the session kept alive. */
 let keepAliveCount = 0
@@ -78,21 +81,41 @@ export function useProactiveSessionRefresh(): void {
       lastActivityAt = Date.now()
     }
     for (const event of ACTIVITY_EVENTS) {
-      window.addEventListener(event, markActive, { passive: true })
+      window.addEventListener(event, markActive, { passive: true, capture: true })
+    }
+
+    let lastRefreshAt = Date.now()
+    const refresh = () => {
+      lastRefreshAt = Date.now()
+      void refreshSession()
     }
 
     const intervalId = window.setInterval(() => {
       const recentlyActive = Date.now() - lastActivityAt < ACTIVITY_WINDOW_MS
       if (keepAliveCount > 0 || (recentlyActive && document.visibilityState === "visible")) {
-        void refreshSession()
+        refresh()
       }
     }, CHECK_INTERVAL_MS)
 
+    // Coming back to the tab (it was covered, minimised or in another window, so the timer above skipped it, and
+    // browsers also slow timers in hidden tabs): renew right away if it has been a while, instead of finding out
+    // from a request that the token - and, with a short idle limit, the whole session - has already lapsed.
+    const onReturn = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastRefreshAt >= RETURN_REFRESH_AFTER_MS) {
+        markActive()
+        refresh()
+      }
+    }
+    document.addEventListener("visibilitychange", onReturn)
+    window.addEventListener("focus", onReturn)
+
     return () => {
       for (const event of ACTIVITY_EVENTS) {
-        window.removeEventListener(event, markActive)
+        window.removeEventListener(event, markActive, { capture: true })
       }
       window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", onReturn)
+      window.removeEventListener("focus", onReturn)
     }
   }, [])
 }

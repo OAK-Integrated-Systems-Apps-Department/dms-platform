@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -76,7 +77,7 @@ export function OwnershipContent() {
   return (
     <DashboardShell initialActiveLabel="Document Ownership">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Document Ownership" }]} />
-      <div className="mb-[22px] max-w-[720px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Document Ownership</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           See who owns which documents and move them when people change roles or leave. The previous owner is always
@@ -141,9 +142,7 @@ function ListState({ query, children }: { query: { isPending: boolean; isError: 
     return isNetworkError(query.error) ? (
       <BackendUnavailable onRetry={() => void query.refetch()} />
     ) : (
-      <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-        {friendlyMessage(query.error, "Could not load the documents.")}
-      </div>
+      <LoadFailed error={query.error} fallback="Could not load the documents." />
     )
   }
   return <>{children(query.data)}</>

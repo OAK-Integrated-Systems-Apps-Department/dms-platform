@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 
@@ -50,9 +51,7 @@ export default function ViewAuditEventPage() {
       ) : (
         <PermissionGate permission={PermissionCodes.ABDR_VIEW_AUDIT_HISTORY}>
           {isError ? (
-            <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-              {error instanceof Error ? error.message : "Could not load this audit event."}
-            </div>
+            <LoadFailed error={error} fallback="Could not load this audit event." />
           ) : event ? (
             <AuditEventDetail event={event} />
           ) : null}
@@ -73,7 +72,7 @@ function AuditEventDetail({ event }: { event: AuditEventDetailResponseDto }) {
           <Field
             label="Outcome"
             value={
-              <Badge variant={OUTCOME_BADGE_VARIANT[event.outcome]} className="gap-1.5 rounded-md">
+              <Badge variant={OUTCOME_BADGE_VARIANT[event.outcome]} className="gap-1.5 rounded-btn">
                 <span className="size-[5px] rounded-full bg-current" />
                 {event.outcome}
               </Badge>
@@ -197,7 +196,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">{label}</p>
-      <pre className="max-h-[320px] overflow-auto rounded-md border border-border bg-muted p-3 text-[12px] leading-[1.5] whitespace-pre-wrap text-foreground">
+      <pre className="max-h-[320px] overflow-auto rounded-btn border border-border bg-muted p-3 text-[12px] leading-[1.5] whitespace-pre-wrap text-foreground">
         {value != null ? JSON.stringify(value, null, 2) : "—"}
       </pre>
     </div>

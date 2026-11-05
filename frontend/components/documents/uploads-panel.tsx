@@ -132,7 +132,7 @@ export function UploadsPanel() {
   return (
     <section
       aria-label="Uploads and downloads"
-      className="fixed right-4 bottom-4 z-50 w-[380px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
+      className="fixed right-4 bottom-4 z-50 w-[380px] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
     >
       <header className="flex items-center gap-2 bg-muted/60 py-2.5 pr-2 pl-4">
         <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">
@@ -143,7 +143,7 @@ export function UploadsPanel() {
           aria-label={collapsed ? "Show uploads" : "Hide uploads"}
           aria-expanded={!collapsed}
           onClick={() => setUploadsCollapsed(!collapsed)}
-          className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
         >
           {collapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
         </button>
@@ -151,7 +151,7 @@ export function UploadsPanel() {
           type="button"
           aria-label={inProgress ? "Cancel everything in progress" : "Close"}
           onClick={() => (inProgress ? setConfirmCancel(true) : clearUploads())}
-          className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
         >
           <X size={18} />
         </button>
@@ -203,7 +203,7 @@ export function UploadsPanel() {
             <button
               type="button"
               onClick={() => setConfirmCancel(false)}
-              className="rounded-md px-2.5 py-1 font-medium text-primary hover:bg-primary/10"
+              className="rounded-btn px-2.5 py-1 font-medium text-primary hover:bg-primary/10"
             >
               Continue
             </button>
@@ -213,7 +213,7 @@ export function UploadsPanel() {
                 cancelAllUploads()
                 setConfirmCancel(false)
               }}
-              className="rounded-md bg-destructive px-2.5 py-1 font-medium text-white hover:bg-destructive/90"
+              className="bg-destructive text-white hover:bg-destructive/90 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               Cancel all
             </button>
@@ -286,7 +286,7 @@ function DownloadRow({ item }: { item: DownloadJob }) {
             title="Try again"
             aria-label={`Try again: ${item.name}`}
             onClick={() => retryDownload(item.id)}
-            className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
           >
             <RotateCcw size={15} />
           </button>
@@ -298,7 +298,7 @@ function DownloadRow({ item }: { item: DownloadJob }) {
               title="Cancel"
               aria-label={`Cancel ${item.name}`}
               onClick={() => cancelDownload(item.id)}
-              className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
             >
               <X size={15} />
             </button>
@@ -423,7 +423,7 @@ function UploadRow({
             title={job.state === "duplicate" ? "Upload anyway" : "Retry"}
             aria-label={`${job.state === "duplicate" ? "Upload anyway" : "Retry"}: ${job.name}`}
             onClick={() => retryUpload(job.id)}
-            className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
           >
             <RotateCcw size={15} />
           </button>
@@ -434,7 +434,7 @@ function UploadRow({
             title="Cancel"
             aria-label={`Cancel ${job.name}`}
             onClick={() => cancelUpload(job.id)}
-            className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn"
           >
             <X size={15} />
           </button>

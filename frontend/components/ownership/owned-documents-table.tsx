@@ -42,7 +42,7 @@ export function OwnedDocumentsTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               {canSelect && (
@@ -116,7 +116,7 @@ export function OwnedDocumentsTable({
                     <button
                       type="button"
                       onClick={() => onTransferOne(item)}
-                      className="rounded-btn border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground hover:border-primary hover:text-primary"
+                      className="border border-[var(--border-strong)] bg-card font-semibold text-foreground hover:border-primary hover:text-primary h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
                     >
                       Transfer
                     </button>

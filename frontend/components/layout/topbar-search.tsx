@@ -114,7 +114,7 @@ export function TopbarSearch({
         }}
       />
       {showList && (
-        <div className="absolute top-[46px] left-0 z-40 w-full min-w-[340px] overflow-hidden rounded-xl border border-border bg-popover shadow-[var(--ledger-shadow)]">
+        <div className="absolute top-[46px] left-0 z-40 w-full min-w-[340px] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--ledger-shadow)]">
           {results.isError ? (
             <p className="px-3.5 py-3 text-[12.5px] text-[var(--rust)]">
               Could not search just now - try again.

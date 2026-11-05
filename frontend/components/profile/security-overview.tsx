@@ -57,7 +57,7 @@ export function SecurityOverview() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+    <div className="rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
       {/* Password */}
       <h2 className="mb-3 font-heading text-[15px] font-semibold">Password</h2>
       <div className="mb-6 grid grid-cols-2 gap-x-6 gap-y-4">
@@ -98,7 +98,7 @@ export function SecurityOverview() {
           </p>
           <Badge
             variant={user?.mfaEnabled ? "default" : "muted"}
-            className="gap-1.5 rounded-md"
+            className="gap-1.5 rounded-btn"
           >
             <span className="size-[5px] rounded-full bg-current" />
             {user?.mfaEnabled ? "Enrolled" : "Not enrolled"}

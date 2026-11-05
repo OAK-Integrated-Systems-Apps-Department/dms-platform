@@ -139,7 +139,7 @@ export function UserStatusDialog({
         <AlertDialogPopup className="sm:max-w-2xl">
           <span
             className={cn(
-              "mx-auto mb-4 flex size-11 items-center justify-center rounded-md",
+              "mx-auto mb-4 flex size-11 items-center justify-center rounded-btn",
               variant.iconClassName
             )}
           >
@@ -165,7 +165,7 @@ export function UserStatusDialog({
           )}
 
           <div className="flex items-center justify-center gap-2.5">
-            <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+            <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
               Cancel
             </AlertDialogClose>
             <AlertDialogClose
@@ -174,7 +174,7 @@ export function UserStatusDialog({
               }
               disabled={reasonMissing}
               className={cn(
-                "rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]",
+                "border h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center",
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 variant.confirmClassName
               )}

@@ -143,7 +143,7 @@ export function UsersTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse">
+        <table className="tbl-card w-full min-w-[860px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh
@@ -189,7 +189,7 @@ export function UsersTable({
               <tr>
                 <td
                   colSpan={7}
-                  className="px-3 py-10 text-center text-[13px] text-muted-foreground"
+                  className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground"
                 >
                   No users match your search or filters.
                 </td>
@@ -229,7 +229,7 @@ export function UsersTable({
                     {user.roles.map((role) => (
                       <span
                         key={role}
-                        className="rounded-[6px] border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-foreground"
+                        className="rounded-btn border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-foreground"
                       >
                         {role}
                       </span>
@@ -242,7 +242,7 @@ export function UsersTable({
                 <td className="px-3 py-3">
                   <Badge
                     variant={user.status === "Active" ? "default" : "muted"}
-                    className="gap-1.5 rounded-md"
+                    className="gap-1.5 rounded-btn"
                   >
                     <span className="size-[5px] rounded-full bg-current" />
                     {user.status}
@@ -261,7 +261,7 @@ export function UsersTable({
                             type="button"
                             onClick={() => onView(user)}
                             aria-label={`View ${user.name}`}
-                            className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                            className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                           >
                             <Eye size={15} />
                           </button>
@@ -279,7 +279,7 @@ export function UsersTable({
                               type="button"
                               onClick={() => onEdit(user)}
                               aria-label={`Edit ${user.name}`}
-                              className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted"
+                              className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn"
                             >
                               <Pencil size={15} />
                             </button>

@@ -372,3 +372,294 @@ input[type="password"]::-webkit-textfield-decoration-container {
     animation: none;
   }
 }
+
+/*
+ * List tables sit inside rounded cards (14px). Cell padding of 12px put the first and last column right against the
+ * curve, so the first/last cell of every row of a `tbl-card` table gets extra room. Unlayered on purpose: it must win
+ * over the px-* utilities on the cells.
+ */
+.tbl-card > thead > tr > :first-child,
+.tbl-card > tbody > tr > :first-child,
+.tbl-card > tfoot > tr > :first-child {
+  padding-left: 1.75rem;
+}
+
+.tbl-card > thead > tr > :last-child,
+.tbl-card > tbody > tr > :last-child,
+.tbl-card > tfoot > tr > :last-child {
+  padding-right: 1.75rem;
+}
+
+/*
+ * A last column that only holds action buttons / links shrinks to its content, so the icons end the same distance from the
+ * card's right edge as the first column starts from its left edge (28px each) instead of floating in a wide empty cell.
+ */
+.tbl-card > tbody > tr > :last-child:has(> button, > a, > div > button, > div > a) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* ...and a group of action buttons in that column stays on one line instead of stacking in the narrowed cell. */
+.tbl-card > tbody > tr > :last-child:has(> div > button, > div > a) > div {
+  flex-wrap: nowrap;
+}
+
+/* Opt-in: a table whose last column is a short status/label shrinks that column to its content too. */
+.tbl-last-fit > tbody > tr > :last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/*
+ * An error toast's action button (Retry) follows the toast's red theme instead of the neutral white button. Inside the
+ * utilities layer on purpose: the white look comes from !important utilities in that layer, and an !important rule outside
+ * any layer would lose to them.
+ */
+@layer utilities {
+  [data-sonner-toast][data-type="error"] [data-button] {
+    background: var(--rust) !important;
+    border-color: var(--rust) !important;
+    color: #fff !important;
+  }
+
+  [data-sonner-toast][data-type="error"] [data-button]:hover {
+    background: color-mix(in srgb, var(--rust) 85%, black) !important;
+    border-color: color-mix(in srgb, var(--rust) 85%, black) !important;
+    color: #fff !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Loading state (components/ui/loading-state.tsx, app/loading.tsx): a stack of document sheets with a scan line.
+ * Colours come from the theme variables, so it follows the green / gold brand in light and dark mode.
+ * ------------------------------------------------------------------------------------------------------------- */
+/* Fade in after a short delay so quick loads never flash the loader, and promote moving parts to the compositor. */
+.dms-loader {
+  animation: dms-fade-in 0.3s ease-out 0.15s both;
+}
+
+.dms-loader-art,
+.dms-sheet-back,
+.dms-sheet-mid,
+.dms-seal,
+.dms-scan,
+.dms-loader-dots i {
+  will-change: transform, opacity;
+}
+
+@keyframes dms-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dms-loader-art {
+  position: relative;
+  width: 96px;
+  height: 116px;
+  margin-bottom: 14px;
+  animation: dms-float 3.2s ease-in-out infinite;
+}
+
+.dms-sheet {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.dms-sheet-back {
+  background: color-mix(in srgb, var(--gold) 22%, var(--card));
+  transform: rotate(-9deg) translateX(-8px);
+  animation: dms-fan-back 3.2s ease-in-out infinite;
+}
+
+.dms-sheet-mid {
+  background: var(--primary-tint);
+  transform: rotate(7deg) translateX(8px);
+  animation: dms-fan-mid 3.2s ease-in-out infinite;
+}
+
+.dms-sheet-front {
+  overflow: hidden;
+  background: var(--card);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 16%, transparent);
+  padding: 18px 14px;
+}
+
+.dms-line {
+  display: block;
+  height: 7px;
+  margin-bottom: 9px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--primary-tint) 0%,
+    color-mix(in srgb, var(--primary) 22%, var(--primary-tint)) 50%,
+    var(--primary-tint) 100%
+  );
+  background-size: 200% 100%;
+  animation: dms-shimmer 1.6s linear infinite;
+}
+
+.dms-line-title {
+  width: 58%;
+  height: 9px;
+  background-color: var(--primary);
+  background-image: none;
+  animation: none;
+  opacity: 0.85;
+}
+
+.dms-line-short {
+  width: 64%;
+}
+
+.dms-seal {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 28%, transparent);
+  animation: dms-pulse 1.8s ease-in-out infinite;
+}
+
+.dms-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 26px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--primary) 26%, transparent) 55%,
+    color-mix(in srgb, var(--primary) 55%, transparent) 100%
+  );
+  border-bottom: 2px solid var(--primary);
+  animation: dms-scan 2s ease-in-out infinite;
+}
+
+.dms-loader-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.dms-loader-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary);
+  animation: dms-dot 1.2s ease-in-out infinite;
+}
+
+.dms-loader-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dms-loader-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dms-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes dms-fan-back {
+  0%,
+  100% {
+    transform: rotate(-9deg) translateX(-8px);
+  }
+  50% {
+    transform: rotate(-13deg) translateX(-12px);
+  }
+}
+
+@keyframes dms-fan-mid {
+  0%,
+  100% {
+    transform: rotate(7deg) translateX(8px);
+  }
+  50% {
+    transform: rotate(11deg) translateX(12px);
+  }
+}
+
+@keyframes dms-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes dms-scan {
+  0% {
+    transform: translateY(-26px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(116px);
+    opacity: 0;
+  }
+}
+
+@keyframes dms-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+@keyframes dms-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dms-loader,
+  .dms-loader-art,
+  .dms-sheet-back,
+  .dms-sheet-mid,
+  .dms-line,
+  .dms-seal,
+  .dms-scan,
+  .dms-loader-dots i {
+    animation: none;
+  }
+  .dms-scan {
+    opacity: 0;
+  }
+  .dms-loader-dots i {
+    opacity: 0.6;
+  }
+}

@@ -167,7 +167,7 @@ public class FolderService {
         touch(folder);
         Folder saved = save(folder);
         audit(AuditActionCatalog.FOLDER_RENAMED, saved, before);
-        return toResponse(saved, repository.countDocuments(tenantId, folderId), access.forCaller());
+        return toResponse(saved, repository.countActiveDocuments(tenantId, folderId), access.forCaller());
     }
 
     @Transactional
@@ -193,7 +193,7 @@ public class FolderService {
         touch(folder);
         Folder saved = save(folder);
         audit(AuditActionCatalog.FOLDER_MOVED, saved, before);
-        return toResponse(saved, repository.countDocuments(tenantId, folderId), access.forCaller());
+        return toResponse(saved, repository.countActiveDocuments(tenantId, folderId), access.forCaller());
     }
 
     @Transactional
@@ -205,10 +205,15 @@ public class FolderService {
             throw FolderException.conflict("FOLDER_NOT_EMPTY", "\"" + folder.getFolderName()
                     + "\" has subfolders. Move or delete them first.");
         }
+        // Every live document counts here - including inactive and archived ones, which the folder's listing hides but which
+        // would be orphaned if the folder went. So the message says so when that is all that is left.
         long documents = repository.countDocuments(tenantId, folderId);
         if (documents > 0) {
+            boolean onlyHidden = repository.countActiveDocuments(tenantId, folderId) == 0;
             throw FolderException.conflict("FOLDER_NOT_EMPTY", "\"" + folder.getFolderName() + "\" holds " + documents
-                    + (documents == 1 ? " document" : " documents") + ". Move them to another folder first.");
+                    + (onlyHidden ? " inactive or archived " : " ") + (documents == 1 ? "document" : "documents")
+                    + (onlyHidden ? " (hidden from the folder's list - find them in Inactive & Archive)" : "")
+                    + ". Move them to another folder first.");
         }
         if (repository.countPendingUploads(tenantId, folderId) > 0) {
             throw FolderException.conflict("FOLDER_NOT_EMPTY", "Files are still being uploaded into \""

@@ -1,11 +1,13 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import Link from "next/link"
 import { notFound, useParams } from "next/navigation"
 import { toast } from "sonner"
 import { ChevronRight, Download, Eye } from "lucide-react"
 
-import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { DocumentActionsMenu } from "@/components/documents/document-actions-menu"
+import { DocumentBreadcrumb } from "@/components/documents/document-breadcrumb"
 import { DiscussionPanel } from "@/components/comments/discussion-panel"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +20,9 @@ import { RelatedDocumentsPanel } from "@/components/relationships/related-docume
 import { SubmitToWorkflowButton } from "@/components/workflow/submit-to-workflow-button"
 import { useDocumentPreview } from "@/components/workflow/use-document-preview"
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel"
+import { DocumentCheckoutPanel } from "@/components/checkout/document-checkout-panel"
+import { DocumentRetentionPanel } from "@/components/retention/document-retention-panel"
+import { LifecycleBadge } from "@/components/retention/lifecycle-badge"
 import { DocumentSignaturesPanel } from "@/components/signatures/document-signatures-panel"
 import { ApiError, friendlyMessage } from "@/lib/api-error"
 import { downloadDocumentFile } from "@/lib/documents/api"
@@ -64,32 +69,25 @@ export default function DocumentPage() {
 
   return (
     <DashboardShell initialActiveLabel="My Documents">
-      <AdminBreadcrumb
+      <DocumentBreadcrumb
         className="mb-3"
-        segments={[
-          { label: "Dashboard", href: "/" },
-          { label: "My Documents", href: "/documents" },
-          { label: document?.title ?? "Document" },
-        ]}
+        documentId={params.documentId}
+        title={document?.title}
+        folderId={document?.folderId}
       />
 
       {isPending ? (
         <LoadingState message="Loading document…" />
       ) : isError || !document ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)] shadow-[var(--ledger-shadow)]">
-          {error instanceof ApiError && error.status === 403
-            ? "You don't have permission to view this document."
-            : error instanceof Error
-              ? error.message
-              : "Could not load this document."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load this document." forbiddenMessage="You don't have permission to view this document." />
       ) : (
         <>
           <div className="mb-[22px] flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-[640px]">
+            <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{document.title}</h1>
                 <Badge variant="outline" className="capitalize">{document.status.replace(/_/g, " ")}</Badge>
+                <LifecycleBadge state={document.lifecycleState} hideActive />
                 <PinButton row={{ documentId: document.documentId, title: document.title }} />
               </div>
               <p className="text-[13px] text-muted-foreground">
@@ -97,12 +95,19 @@ export default function DocumentPage() {
                 {document.updatedAt && <> · Updated {formatDateTime(document.updatedAt)}</>}
               </p>
             </div>
-            <SubmitToWorkflowButton
-              documentId={document.documentId}
-              documentTitle={document.title}
-              documentTypeId={document.documentTypeId}
-              hidden={inProgress || history.isPending}
-            />
+            <div className="flex items-center gap-2">
+              <DocumentActionsMenu
+                documentId={document.documentId}
+                title={document.title}
+                folderId={document.folderId ?? null}
+              />
+              <SubmitToWorkflowButton
+                documentId={document.documentId}
+                documentTitle={document.title}
+                documentTypeId={document.documentTypeId}
+                hidden={inProgress || history.isPending}
+              />
+            </div>
           </div>
 
           <div className="grid items-start gap-5 lg:grid-cols-[1.6fr_1fr]">
@@ -130,14 +135,14 @@ export default function DocumentPage() {
                           createdAt: document.createdAt,
                         })
                       }
-                      className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary/10 px-3.5 py-2 text-[13px] font-semibold text-primary"
+                      className="flex items-center gap-1.5 border border-primary bg-primary/10 font-semibold text-primary h-[38px] rounded-btn px-4 text-[13px] justify-center"
                     >
                       <Eye size={15} /> Preview
                     </button>
                     <button
                       type="button"
                       onClick={() => void downloadFile()}
-                      className="flex items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground"
+                      className="flex items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
                     >
                       <Download size={15} /> Download
                     </button>
@@ -162,6 +167,10 @@ export default function DocumentPage() {
                   </div>
                 )
               )}
+
+              <DocumentCheckoutPanel documentId={document.documentId} fileName={document.fileName} />
+
+              <DocumentRetentionPanel documentId={document.documentId} />
 
               <DocumentSignaturesPanel document={document} workflowInProgress={inProgress} />
             </div>

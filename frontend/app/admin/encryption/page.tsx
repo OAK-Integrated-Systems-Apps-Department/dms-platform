@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -60,7 +61,7 @@ export default function EncryptionKeysPage() {
           { label: "Encryption Keys" },
         ]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Encryption keys
         </h1>
@@ -125,9 +126,7 @@ function EncryptionKeys() {
     return <LoadingState message="Loading encryption status…" />
   if (status.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(status.error, "Could not load the encryption status.")}
-      </p>
+      <LoadFailed error={status.error} fallback="Could not load the encryption status." />
     )
   }
   const s = status.data
@@ -304,7 +303,7 @@ function KeyCard({ status }: { status: EncryptionStatusDto }) {
   const { hasPermission } = usePermissions()
   const canSeeActivity = hasPermission(PermissionCodes.ABDR_VIEW_AUDIT_HISTORY)
   return (
-    <section className="rounded-xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)] sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
         <span
           aria-hidden="true"

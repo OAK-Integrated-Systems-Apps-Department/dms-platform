@@ -46,7 +46,7 @@ export default function AddDocumentTypePage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Document Types", href: "/admin/metadata/document-types" }, { label: "Add Document Type" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Add Document Type</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           Type code can&apos;t be changed after creation. Field mapping is added from the detail page&apos;s Fields tab once created.

@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils"
 const MAX_VISIBLE = 3
 
 const SEGMENT =
-  "inline-flex max-w-[220px] items-center gap-1.5 rounded-md px-2 py-1 text-[14px] transition-colors"
+  "inline-flex max-w-[220px] items-center gap-1.5 rounded-btn px-2 py-1 text-[14px] transition-colors"
 
 /**
  * Where you are in My Documents: an "up one level" button, then
@@ -55,7 +55,7 @@ export function FolderPath({
         aria-label="Up one level"
         disabled={!current}
         onClick={() => onOpen(parent?.folderId ?? null)}
-        className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+        className="flex shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40 size-8 rounded-btn"
       >
         <ArrowUp size={16} />
       </button>

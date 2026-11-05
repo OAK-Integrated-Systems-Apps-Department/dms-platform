@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { LockStateIndicator } from "@/components/checkout/lock-state-indicator"
+import { LifecycleBadge } from "@/components/retention/lifecycle-badge"
 import { ApprovalBadge } from "@/components/documents/approval-badge"
 import type {
   DragBinding,
@@ -255,7 +257,7 @@ export function FolderGlyph({
   )
 }
 
-const MENU_WIDTH = 184
+const MENU_WIDTH = 224
 const MENU_ROW = 36
 
 /**
@@ -347,7 +349,7 @@ export function ItemMenu({
         aria-expanded={open}
         onClick={(e) => toggle(e.currentTarget)}
         className={cn(
-          "flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+          "flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn",
           open && "bg-muted text-foreground"
         )}
       >
@@ -440,7 +442,7 @@ export function FolderTile({
       {folder.restricted && (
         <span
           title="Only specific people and roles can open this folder"
-          className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+          className="absolute top-2.5 left-2.5 inline-flex h-6 items-center justify-center gap-1 rounded-btn bg-muted px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
         >
           <Lock size={11} aria-hidden="true" />
           Restricted
@@ -504,7 +506,7 @@ export function DocumentTile({
         aria-label={`Open ${row.title}`}
         title="Open preview"
         className={cn(
-          "m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-md",
+          "m-2 mb-0 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-btn",
           kind.tone
         )}
       >
@@ -528,6 +530,7 @@ export function DocumentTile({
             )}
             <span className="truncate">{row.title}</span>
             <PinnedIndicator documentId={row.documentId} />
+            <LockStateIndicator lockState={row.lockState} />
           </span>
           {flag}
         </p>
@@ -535,7 +538,10 @@ export function DocumentTile({
           <FriendlyDate iso={row.createdAt} />
           {row.sizeBytes !== null && ` · ${formatBytes(row.sizeBytes)}`}
         </p>
-        {approval && <ApprovalBadge status={approval} className="mt-1.5" />}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {approval && <ApprovalBadge status={approval} />}
+          <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
+        </div>
       </div>
       {onToggle && (
         <input
@@ -554,7 +560,7 @@ export function DocumentTile({
       <ItemMenu
         label={row.title}
         actions={actions}
-        className="absolute top-3 right-3 rounded-md bg-card/90 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+        className="absolute top-3 right-3 rounded-btn bg-card/90 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
       />
     </li>
   )
@@ -616,7 +622,7 @@ export function BrowserList({
     )
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-      <table className="w-full min-w-[680px] border-collapse">
+      <table className="tbl-card w-full min-w-[680px] border-collapse">
         <thead>
           <tr className="group border-b border-border">
             <th className={`${TH} w-10`}>
@@ -644,7 +650,7 @@ export function BrowserList({
             <tr>
               <td
                 colSpan={6}
-                className="px-3 py-10 text-center text-[13px] text-muted-foreground"
+                className="h-[max(160px,calc(100svh-425px))] px-3 py-10 text-center text-[13px] text-muted-foreground"
               >
                 {empty}
               </td>
@@ -753,7 +759,9 @@ export function BrowserList({
                           />
                         )}
                         <ApprovalBadge status={approvals?.get(row.documentId)} />
+                        <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
                         <PinnedIndicator documentId={row.documentId} />
+                        <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}
                       </p>
                       {row.fileName && (

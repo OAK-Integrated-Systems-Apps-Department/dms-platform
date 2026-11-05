@@ -210,10 +210,10 @@ export function DocumentTypeFieldMatrix({ canUpdate }: { canUpdate: boolean }) {
         <div className="mb-3 flex items-center justify-between rounded-btn border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-[12.5px]">
           <span>{changedTypeIds.length} document type(s) have unsaved changes.</span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={handleDiscard} disabled={saving} className="rounded-btn border border-[var(--border-strong)] bg-card px-3 py-1.5 text-[12.5px] font-semibold text-foreground disabled:opacity-60">
+            <button type="button" onClick={handleDiscard} disabled={saving} className="border border-[var(--border-strong)] bg-card text-foreground disabled:opacity-60 inline-flex items-center justify-center h-[38px] rounded-btn px-4 text-[13px] font-semibold">
               Discard
             </button>
-            <button type="button" onClick={handleSave} disabled={saving} className="rounded-btn border border-primary bg-primary px-3.5 py-1.5 text-[12.5px] font-bold text-primary-foreground disabled:opacity-60">
+            <button type="button" onClick={handleSave} disabled={saving} className="border border-primary bg-primary text-primary-foreground disabled:opacity-60 inline-flex items-center justify-center h-[38px] rounded-btn px-4 text-[13px] font-semibold">
               {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -222,7 +222,7 @@ export function DocumentTypeFieldMatrix({ canUpdate }: { canUpdate: boolean }) {
 
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
         <div className="overflow-x-auto">
-          <table className="border-collapse">
+          <table className="tbl-card w-full border-collapse">
             <thead>
               <tr className="border-b border-border">
                 <th

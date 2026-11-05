@@ -12,6 +12,7 @@ import {
   Clock,
 } from "lucide-react"
 
+import { useErrorToast } from "@/lib/use-error-toast"
 import { cn } from "@/lib/utils"
 import type { AlertRule, AlertsResponse } from "@/lib/monitoring/api"
 
@@ -90,7 +91,7 @@ function ActiveRow({ rule }: { rule: AlertRule }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <p className="text-[13.5px] font-semibold">{readable(rule.name)}</p>
           <span
-            className="rounded px-1.5 py-px text-[10.5px] font-semibold tracking-[0.03em] uppercase"
+            className="rounded-btn px-1.5 py-px text-[10.5px] font-semibold tracking-[0.03em] uppercase"
             style={{ color: tone.colour, background: tint(tone.colour, 14) }}
           >
             {tone.label}
@@ -143,6 +144,10 @@ export function AlertsCard({
   className?: string
 }) {
   const [showQuiet, setShowQuiet] = useState(false)
+  useErrorToast(
+    alerts.reachable ? null : (alerts.error ?? "Whether anything is firing is unknown, not clear."),
+    "Could not read the alerts."
+  )
 
   const active = alerts.rules.filter(
     (rule) => rule.broken || rule.state === "firing" || rule.state === "pending"
@@ -194,7 +199,7 @@ export function AlertsCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card",
+        "overflow-hidden rounded-lg border border-border bg-card",
         className
       )}
     >
@@ -224,10 +229,7 @@ export function AlertsCard({
       </div>
 
       {!alerts.reachable ? (
-        <p className="border-t border-border bg-muted/40 px-4 py-3 text-[12.5px] text-muted-foreground">
-          {alerts.error ??
-            "Whether anything is firing is unknown, not clear."}
-        </p>
+        null
       ) : (
         <>
           {active.length > 0 && (

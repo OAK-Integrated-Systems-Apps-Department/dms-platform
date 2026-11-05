@@ -138,6 +138,12 @@ export interface DocumentListItemDto {
   restricted: boolean
   /** What the caller may do with it. */
   myAccess: FolderAccessLevel
+  /** Why it can't be edited right now (V127): checked out by you or by someone else, or on legal hold; null/absent when free. */
+  lockState?: "checked_out_by_me" | "checked_out" | "legal_hold" | null
+  /** active, inactive or archived (6.1) - the status badge. Normal listings only ever hold active ones. */
+  lifecycleState?: "active" | "inactive" | "archived"
+  /** When the retention rule will archive it; null when none covers it or it is already archived. */
+  archiveDueAt?: string | null
 }
 
 /** Mirrors DocumentAccessResponse - who can open a document. */
@@ -212,6 +218,8 @@ export async function fetchDocuments(params: {
   /** Find by owner: documents owned by this user and/or department (access filtering still applies). */
   ownerId?: string
   ownerDepartmentId?: string
+  /** "archive" lists the inactive and archived documents instead (needs crm.view-archive). */
+  view?: "active" | "archive"
   page: number
   size: number
 }): Promise<DocumentPageDto> {
@@ -231,6 +239,7 @@ export async function fetchDocuments(params: {
   if (params.direction) search.set("direction", params.direction)
   if (params.ownerId) search.set("ownerId", params.ownerId)
   if (params.ownerDepartmentId) search.set("ownerDepartmentId", params.ownerDepartmentId)
+  if (params.view === "archive") search.set("view", "archive")
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents?${search.toString()}`,
     undefined,
@@ -842,6 +851,8 @@ export interface DocumentDto {
   /** Embedded by the backend; null when the type has since been deleted. */
   documentTypeName: string | null
   title: string
+  /** The folder it is filed in; null = top level (My Documents). Drives the breadcrumb and "Move to". */
+  folderId?: string | null
   currentVersionId: string | null
   latestVersionId: string | null
   publishedVersionId: string | null
@@ -861,6 +872,8 @@ export interface DocumentDto {
   /** Set (1.4) once a workflow with a valid signature approved - null means not locked. */
   signatureLockedAt: string | null
   signatureLockedVersionId: string | null
+  /** active, inactive or archived (6.1) - the status badge on the document page. */
+  lifecycleState?: "active" | "inactive" | "archived"
 }
 
 /** Mirrors backend/dms-core's DocumentSummaryResponse - one row of the document list/picker. */

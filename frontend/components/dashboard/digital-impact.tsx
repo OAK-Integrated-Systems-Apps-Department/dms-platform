@@ -192,7 +192,7 @@ export function DigitalImpact({
         </header>
 
         {impact.isError && !data ? (
-          <div className="rounded-xl bg-white/95 text-foreground">
+          <div className="rounded-lg bg-white/95 text-foreground">
             <SectionError
               message={friendlyMessage(
                 impact.error,
@@ -203,11 +203,11 @@ export function DigitalImpact({
           </div>
         ) : !data ? (
           <div aria-busy="true" className="grid gap-3 sm:grid-cols-3">
-            <div className="h-[86px] animate-pulse rounded-xl bg-white/10 sm:col-span-3" />
+            <div className="h-[86px] animate-pulse rounded-lg bg-white/10 sm:col-span-3" />
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-[92px] animate-pulse rounded-xl bg-white/10"
+                className="h-[92px] animate-pulse rounded-lg bg-white/10"
               />
             ))}
           </div>
@@ -242,8 +242,8 @@ export function DigitalImpact({
         ) : !impact.isError ? (
           <div aria-busy="true">
             <DashSkeleton className="mb-4 h-3 w-2/3" />
-            <DashSkeleton className="mb-4 h-[200px] w-full rounded-xl" />
-            <DashSkeleton className="h-[56px] w-full rounded-xl" />
+            <DashSkeleton className="mb-4 h-[200px] w-full rounded-lg" />
+            <DashSkeleton className="h-[56px] w-full rounded-lg" />
           </div>
         ) : null}
       </div>
@@ -295,7 +295,7 @@ function RangePicker({
                 onChange({ kind: "days", days })
               }}
               className={cn(
-                "rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+                "rounded-btn px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
                 on
                   ? "bg-white text-[#163828] shadow-sm"
                   : "text-white/75 hover:text-white"
@@ -311,7 +311,7 @@ function RangePicker({
           aria-checked={custom}
           onClick={() => setCustom(true)}
           className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+            "inline-flex items-center gap-1 rounded-btn px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
             custom
               ? "bg-white text-[#163828] shadow-sm"
               : "text-white/75 hover:text-white"
@@ -338,7 +338,7 @@ function RangePicker({
             value={from}
             max={to || today}
             onChange={(e) => setFrom(e.target.value)}
-            className="h-8 rounded-md border-0 bg-white px-2 text-[12px] text-foreground"
+            className="h-8 rounded-btn border-0 bg-white px-2 text-[12px] text-foreground"
           />
           <span className="text-white/70">to</span>
           <label className="sr-only" htmlFor="impact-to">
@@ -351,12 +351,12 @@ function RangePicker({
             min={from}
             max={today}
             onChange={(e) => setTo(e.target.value)}
-            className="h-8 rounded-md border-0 bg-white px-2 text-[12px] text-foreground"
+            className="h-8 rounded-btn border-0 bg-white px-2 text-[12px] text-foreground"
           />
           <button
             type="submit"
             disabled={!valid}
-            className="h-8 rounded-md bg-[#cfe6d6] px-3 text-[12px] font-semibold text-[#163828] disabled:opacity-50"
+            className="inline-flex h-[38px] items-center justify-center rounded-btn bg-[#cfe6d6] px-4 text-[13px] font-semibold text-[#163828] disabled:opacity-50"
           >
             Apply
           </button>
@@ -376,7 +376,7 @@ function KindBadge({ kind, onForest }: { kind: Kind; onForest?: boolean }) {
   const badge = (
     <span
       className={cn(
-        "rounded-full px-1.5 py-px text-[10px] font-semibold tracking-wide whitespace-nowrap uppercase",
+        "inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap",
         onForest ? KIND_ON_FOREST[kind] : KIND_STYLE[kind]
       )}
     >
@@ -598,7 +598,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
 
   return (
     <div
-      className="mb-4 rounded-xl border p-3.5"
+      className="mb-4 rounded-lg border p-3.5"
       style={{
         borderColor: "color-mix(in oklab, var(--primary) 16%, var(--border))",
         background: `linear-gradient(180deg, color-mix(in oklab, ${SAGE} 22%, var(--card)), var(--card) 70%)`,
@@ -609,7 +609,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
         <div
           role="radiogroup"
           aria-label="Savings measure"
-          className="flex rounded-md bg-muted p-0.5"
+          className="flex rounded-btn bg-muted p-0.5"
         >
           {METRICS.map((m) => (
             <button
@@ -619,7 +619,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
               aria-checked={metric === m.key}
               onClick={() => setMetric(m.key)}
               className={cn(
-                "rounded px-2 py-0.5 text-[11.5px] font-semibold transition-colors",
+                "rounded-btn px-2 py-0.5 text-[11.5px] font-semibold transition-colors",
                 metric === m.key
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -766,7 +766,7 @@ const KINDS: Record<PageKind, { label: string; color: string }> = {
   other: { label: "Other", color: "#8b968f" },
 }
 
-const panel = "rounded-xl border p-3.5"
+const panel = "rounded-lg border p-3.5"
 const panelStyle = {
   borderColor: "color-mix(in oklab, var(--primary) 16%, var(--border))",
   background: `color-mix(in oklab, ${SAGE} 14%, var(--card))`,
@@ -890,7 +890,7 @@ function TopSavers({
                   </span>
                   <span
                     className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-md",
+                      "flex size-7 shrink-0 items-center justify-center rounded-btn",
                       kind.tone
                     )}
                   >
@@ -1027,7 +1027,7 @@ function MethodSheet({
 
           <section>
             <h3 className="mb-2 font-semibold">Assumptions in use</h3>
-            <dl className="rounded-xl border border-border">
+            <dl className="rounded-lg border border-border">
               {rows.map(([term, value]) => (
                 <div
                   key={term}

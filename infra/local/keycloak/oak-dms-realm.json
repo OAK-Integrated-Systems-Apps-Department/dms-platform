@@ -10,6 +10,7 @@
   "bruteForceProtected": true,
 
   "accessTokenLifespan": 1800,
+  "ssoSessionIdleTimeout": 28800,
 
   "smtpServer": {
     "host": "smtp.gmail.com",

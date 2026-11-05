@@ -335,6 +335,32 @@ services:
       retries: 5
       start_period: 30s
 
+  # Online editing engine (2.10, CICO-FR-005/006) - Collabora Online over WOPI. Start it with
+  #   docker compose --profile collabora up -d collabora
+  # dms-core already knows where it is (EDITING_COLLABORA_URL below) - no .env change needed. Whether online editing
+  # is ON is NOT an environment setting: an administrator with cico.configure-editing-engine.select-provider turns it
+  # on for their organisation in the app (default off). Everything works without the engine: check-out / download /
+  # check-in is the fallback and "Edit online" stays hidden. Roughly 1-2 GB of RAM once a document is open.
+  collabora:
+    image: ${COLLABORA_IMAGE:-collabora/code:latest}
+    container_name: oakdms-collabora
+    profiles: [collabora]
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      # Which WOPI hosts may use this engine: ONLY dms-core. A document host not listed here is refused.
+      aliasgroup1: http://dms-core:8080
+      # Plain HTTP between the browser, nginx and here in development; the iframe may be embedded only by the DMS web app.
+      extra_params: --o:ssl.enable=false --o:ssl.termination=false --o:net.frame_ancestors=http://localhost:3000 --o:admin_console.enable=false --o:document_signing.enable=false
+      DONT_GEN_SSL_CERT: "true"
+    mem_limit: 2g
+    ports:
+      - "127.0.0.1:9980:9980"
+    # No healthcheck on purpose: the image has no shell and no curl, so a CMD-SHELL check can only ever fail
+    # ("unhealthy" while it is actually serving). dms-core asks the engine's discovery document itself, with a
+    # short cache, and answers 503 EDITING_ENGINE_UNAVAILABLE when it cannot - that is the real health signal.
+
   dms-core:
     build:
       context: ../../backend
@@ -422,6 +448,12 @@ services:
       # default to FILE_SYSTEM on the same documents_data volume below, in
       # directories separate from /data/dms/documents.
       CLAMAV_HOST: clamav
+      # Online editing (2.10): WHERE the engine is. On/off and exclusive/simultaneous are each organisation's own
+      # setting in the app (V128), not environment variables.
+      EDITING_COLLABORA_URL: ${EDITING_COLLABORA_URL:-http://localhost:9980}
+      EDITING_COLLABORA_INTERNAL_URL: http://collabora:9980
+      EDITING_WOPI_HOST_URL: http://dms-core:8080
+      EDITING_TOKEN_SECRET: ${EDITING_TOKEN_SECRET:-changeme-editing-token-secret-local-dev-only}
       # OCR (module OS). OFF by default - with it off nothing is published to
       # the queue and no upload path depends on ocr-worker being reachable.
       OCR_ENABLED: ${OCR_ENABLED:-true}

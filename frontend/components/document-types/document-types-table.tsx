@@ -32,7 +32,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] border-collapse">
+        <table className="tbl-card w-full min-w-[780px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh label="Name" active={sortKey === "typeName"} direction={direction} onClick={() => toggleSort("typeName")} className="px-3.5" />
@@ -45,7 +45,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
           <tbody>
             {documentTypes.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3.5 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-380px))] px-3.5 py-10 text-center text-[13px] text-muted-foreground">
                   No document types match your search.
                 </td>
               </tr>
@@ -56,7 +56,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">{type.typeCode}</td>
                 <td className="px-3.5 py-3 font-mono text-[12.5px] text-muted-foreground">v{type.currentSchemaVersion}</td>
                 <td className="px-3.5 py-3">
-                  <Badge variant={type.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-md">
+                  <Badge variant={type.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {type.status}
                   </Badge>
@@ -65,7 +65,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                   <div className="flex items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger render={(props) => (
-                        <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}`} aria-label={`View ${type.typeName}`} className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted">
+                        <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}`} aria-label={`View ${type.typeName}`} className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn">
                           <Eye size={15} />
                         </Link>
                       )} />
@@ -75,7 +75,7 @@ export function DocumentTypesTable({ documentTypes, onToggleStatus, canUpdate, c
                     {canUpdate && (
                       <Tooltip>
                         <TooltipTrigger render={(props) => (
-                          <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}/edit`} aria-label={`Edit ${type.typeName}`} className="flex size-7 items-center justify-center rounded-sm text-primary transition-colors hover:bg-muted">
+                          <Link {...props} href={`/admin/metadata/document-types/${type.documentTypeId}/edit`} aria-label={`Edit ${type.typeName}`} className="flex items-center justify-center text-primary transition-colors hover:bg-muted size-8 rounded-btn">
                             <Pencil size={15} />
                           </Link>
                         )} />

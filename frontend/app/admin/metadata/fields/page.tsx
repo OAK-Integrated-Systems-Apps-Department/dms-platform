@@ -72,7 +72,7 @@ export default function MetadataFieldsListPage() {
   return (
     <DashboardShell initialActiveLabel="Metadata">
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Metadata Fields" }]} />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Metadata Fields</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           The centralized metadata schema registry every document type draws its fields from. Search or filter by
@@ -115,7 +115,7 @@ export default function MetadataFieldsListPage() {
           {canCreate && (
             <Link
               href="/admin/metadata/fields/new"
-              className="flex items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+              className="flex items-center gap-1.5 border border-primary bg-primary font-semibold text-primary-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
             >
               <Plus size={16} />
               Add Field

@@ -32,7 +32,7 @@ export function UserDepartmentSelect({ userId }: { userId: string }) {
   }
 
   return (
-    <div className="mt-5 max-w-[760px] rounded-lg border border-border bg-card px-[30px] py-[22px] shadow-[var(--ledger-shadow)]">
+    <div className="mt-5 rounded-lg border border-border bg-card px-[30px] py-[22px] shadow-[var(--ledger-shadow)]">
       <h2 className="mb-1 font-heading text-[16.5px] font-semibold">Department</h2>
       <p className="mb-4 text-[12.5px] text-muted-foreground">
         The user&apos;s primary department. Workflow stages routed to a department can be claimed by its members.
@@ -61,7 +61,7 @@ export function UserDepartmentSelect({ userId }: { userId: string }) {
           type="button"
           onClick={handleSave}
           disabled={!dirty || current.isAssigning}
-          className="flex h-10 items-center gap-1.5 rounded-btn border border-primary bg-primary px-[18px] text-[13px] font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
         >
           {current.isAssigning && <Loader2 size={14} className="animate-spin" />}
           Save Department

@@ -1,0 +1,91 @@
+"use client"
+
+import { useState } from "react"
+import { Loader2 } from "lucide-react"
+
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogPopup,
+  AlertDialogPortal,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+
+/** Force-release and legal hold both need a written reason (HIGH audit) - this asks for it, then calls `onConfirm`. */
+export function ReasonDialog({
+  title,
+  description,
+  confirmLabel,
+  required = true,
+  onConfirm,
+  onOpenChange,
+}: {
+  title: string
+  description: string
+  confirmLabel: string
+  /** Legal hold and force-release insist on a reason; a plain status change may leave it blank. */
+  required?: boolean
+  onConfirm: (reason: string) => Promise<unknown>
+  onOpenChange: (open: boolean) => void
+}) {
+  const [reason, setReason] = useState("")
+  const [pending, setPending] = useState(false)
+  const trimmed = reason.trim()
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (required && !trimmed) return
+    setPending(true)
+    try {
+      await onConfirm(trimmed)
+      onOpenChange(false)
+    } catch {
+      // The mutation already toasted the server's message; keep the dialog open so the reason isn't lost.
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <AlertDialog open onOpenChange={onOpenChange}>
+      <AlertDialogPortal>
+        <AlertDialogPopup className="sm:max-w-lg">
+          <form onSubmit={submit}>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription>{description}</AlertDialogDescription>
+            <div className="mb-5 text-left">
+              <Label htmlFor="checkout-reason">{required ? "Reason (required)" : "Reason (optional)"}</Label>
+              <Textarea
+                id="checkout-reason"
+                rows={3}
+                maxLength={2000}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </div>
+            <div className="flex items-center justify-center gap-2.5">
+              <AlertDialogClose
+                type="button"
+                disabled={pending}
+                className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
+              >
+                Cancel
+              </AlertDialogClose>
+              <button
+                type="submit"
+                disabled={pending || (required && !trimmed)}
+                className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold"
+              >
+                {pending && <Loader2 size={14} className="animate-spin" />}
+                {confirmLabel}
+              </button>
+            </div>
+          </form>
+        </AlertDialogPopup>
+      </AlertDialogPortal>
+    </AlertDialog>
+  )
+}

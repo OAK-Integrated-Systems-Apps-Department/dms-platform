@@ -74,6 +74,15 @@ public class TenantKeyShredder {
             throw new EncryptionException(HttpStatus.CONFLICT, "TENANT_STILL_ACTIVE",
                     "Deactivate the organisation first - its keys can only be destroyed once it is removed.");
         }
+        // Shredding destroys every document of the organisation for good - including one under legal hold, which no one may delete
+        // until the hold is lifted (6.1, CRM-FR-016). A platform administrator is no exception.
+        Long held = jdbc.queryForObject("select count(*) from documents where tenant_id = ? and legal_hold and purged_at is null",
+                Long.class, tenantId);
+        if (held != null && held > 0) {
+            throw new EncryptionException(HttpStatus.CONFLICT, "LEGAL_HOLD_ACTIVE", held + (held == 1 ? " document is" : " documents are")
+                    + " under legal hold, so this organisation's keys can't be destroyed - that would destroy "
+                    + (held == 1 ? "it" : "them") + " for good. Lift the hold" + (held == 1 ? "" : "s") + " first.");
+        }
         if (confirmTenantName == null || !confirmTenantName.trim().equals(name)) {
             throw new EncryptionException(HttpStatus.BAD_REQUEST, "CONFIRMATION_MISMATCH",
                     "Type the organisation's name exactly to confirm.");

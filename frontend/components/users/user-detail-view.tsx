@@ -123,7 +123,7 @@ export function UserDetailView({
 
   return (
     <div className="rounded-lg border border-border bg-card p-[26px] pt-[26px] pb-[28px] shadow-[var(--ledger-shadow)]">
-      <div className="mb-[26px] flex items-center gap-4">
+      <div className="mb-[26px] flex flex-wrap items-center gap-4">
         <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-xl font-semibold text-primary-foreground">
           {initials(user.name)}
         </div>
@@ -132,7 +132,7 @@ export function UserDetailView({
             {user.name}
             <Badge
               variant={user.status === "Active" ? "default" : "muted"}
-              className="gap-1.5 rounded-md align-middle text-[11px] font-semibold"
+              className="gap-1.5 rounded-btn align-middle text-[11px] font-semibold"
             >
               <span className="size-[5px] rounded-full bg-current" />
               {user.status}
@@ -150,7 +150,7 @@ export function UserDetailView({
             {user.username} &nbsp;·&nbsp; {user.email}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           {canResetPassword && (
           <Tooltip>
             <TooltipTrigger
@@ -162,8 +162,8 @@ export function UserDetailView({
                   disabled={!canResetThisUser}
                   className={
                     canResetThisUser
-                      ? "flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
-                      : "flex cursor-not-allowed items-center gap-1.5 rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
+                      ? "flex h-[38px] items-center justify-center gap-1.5 rounded-btn border border-[var(--border-strong)] px-4 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+                      : "flex cursor-not-allowed items-center gap-1.5 border border-[var(--border-strong)] font-semibold text-muted-foreground opacity-50 h-[38px] rounded-btn px-4 text-[13px] justify-center"
                   }
                 >
                   <KeyRound size={14} />
@@ -182,7 +182,7 @@ export function UserDetailView({
             <button
               type="button"
               onClick={() => setOffboardOpen(true)}
-              className="rounded-md border border-[var(--border-strong)] px-4 py-2.5 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+              className="inline-flex h-[38px] items-center justify-center rounded-btn border border-[var(--border-strong)] px-4 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
             >
               Offboard user…
             </button>
@@ -206,10 +206,10 @@ export function UserDetailView({
                     disabled={blockDeactivate}
                     className={
                       blockDeactivate
-                        ? "cursor-not-allowed rounded-md border border-border px-4 py-2.5 text-[13px] font-semibold text-muted-foreground opacity-50"
+                        ? "cursor-not-allowed border border-border font-semibold text-muted-foreground opacity-50 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
                         : user.status === "Active"
-                          ? "rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] px-4 py-2.5 text-[13px] font-semibold text-[var(--rust)]"
-                          : "rounded-md border border-primary bg-primary/10 px-4 py-2.5 text-[13px] font-semibold text-primary"
+                          ? "border border-[var(--rust)] bg-[var(--rust-tint)] font-semibold text-[var(--rust)] h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
+                          : "border border-primary bg-primary/10 font-semibold text-primary h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
                     }
                   >
                     {user.status === "Active" ? "Deactivate User" : "Activate User"}
@@ -252,7 +252,7 @@ export function UserDetailView({
                 {user.roles.map((role) => (
                   <span
                     key={role}
-                    className="rounded-[6px] border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                    className="rounded-btn border border-[var(--border-strong)] bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground"
                   >
                     {role}
                   </span>
@@ -348,7 +348,7 @@ export function UserDetailView({
         {(canEdit || canAssignRole) && (
           <Link
             href={`/admin/users/${user.id}/edit`}
-            className="rounded-btn border border-[var(--border-strong)] px-[26px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-foreground hover:border-primary hover:bg-muted hover:text-primary"
+            className="rounded-btn border border-[var(--border-strong)] inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-foreground hover:border-primary hover:bg-muted hover:text-primary"
           >
             Edit
           </Link>

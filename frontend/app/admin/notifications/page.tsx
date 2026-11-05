@@ -36,7 +36,7 @@ export default function AdminNotificationsPage() {
         segments={[{ label: "Dashboard", href: "/" }, { label: "Notification settings" }]}
       />
       <PermissionGate permission={[PermissionCodes.NOTIF_SETTINGS_MANAGE, PermissionCodes.NOTIF_DELIVERY_LOG_VIEW]}>
-        <div className="mb-[22px] max-w-[680px]">
+        <div className="mb-[22px]">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Notification settings</h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
             Set which categories are emailed by default for everyone in your organisation, and review delivery.
@@ -98,7 +98,7 @@ function DeliveryLogSection() {
             setStatus(e.target.value)
             setPage(1)
           }}
-          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-[12.5px]"
+          className="rounded-btn border border-border bg-card px-2.5 py-1.5 text-[12.5px]"
         >
           {STATUSES.map((s) => (
             <option key={s} value={s}>
@@ -158,7 +158,7 @@ function DeliveryLogSection() {
                               onError: (e) => toast.error(friendlyMessage(e, "Could not retry.")),
                             })
                           }
-                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 font-semibold hover:bg-muted"
+                          className="inline-flex items-center gap-1 border border-border hover:bg-muted h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                         >
                           <RefreshCw size={12} /> Retry
                         </button>

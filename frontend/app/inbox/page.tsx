@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Bell, Check, Inbox as InboxIcon, X } from "lucide-react"
@@ -36,10 +37,10 @@ export default function InboxPage() {
   }
 
   return (
-    <DashboardShell initialActiveLabel="Inbox">
+    <DashboardShell initialActiveLabel="Inbox" fillHeight>
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Inbox" }]} />
       <div className="mb-[22px] flex flex-wrap items-end justify-between gap-3">
-        <div className="max-w-[680px]">
+        <div className="min-w-0 flex-1">
           <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Inbox</h1>
           <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
             Your notifications, newest first. Critical alerts always reach you by email too.
@@ -52,14 +53,14 @@ export default function InboxPage() {
               setUnreadOnly((v) => !v)
               setPage(1)
             }}
-            className="rounded-md border border-border px-3 py-1.5 text-[12.5px] font-semibold hover:bg-muted"
+            className="inline-flex h-[38px] items-center justify-center rounded-btn border border-border px-4 text-[13px] font-semibold hover:bg-muted"
           >
             {unreadOnly ? "Showing unread" : "Show unread only"}
           </button>
           <button
             type="button"
             onClick={() => markAllRead.mutate()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[12.5px] font-semibold hover:bg-muted"
+            className="inline-flex h-[38px] items-center justify-center gap-1.5 rounded-btn border border-border px-4 text-[13px] font-semibold hover:bg-muted"
           >
             <Check size={14} /> Mark all read
           </button>
@@ -69,11 +70,9 @@ export default function InboxPage() {
       {isPending ? (
         <LoadingState message="Loading your notifications…" />
       ) : isError ? (
-        <div className="rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] p-[26px] text-[13.5px] text-[var(--rust)]">
-          {error instanceof Error ? error.message : "Could not load your notifications."}
-        </div>
+        <LoadFailed error={error} fallback="Could not load your notifications." />
       ) : rows.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-8 text-[13px] text-muted-foreground">
+        <div className="flex min-h-[160px] flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-8 text-[13px] text-muted-foreground">
           <InboxIcon size={15} /> {unreadOnly ? "No unread notifications." : "Nothing here yet."}
         </div>
       ) : (
@@ -97,7 +96,7 @@ export default function InboxPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-[13.5px] font-semibold text-foreground">{n.title}</span>
                     {n.tier === "critical" && (
-                      <span className="rounded-full bg-[var(--rust-tint)] px-2 py-px text-[10.5px] font-semibold text-[var(--rust)]">
+                      <span className="bg-[var(--rust-tint)] text-[var(--rust)] inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap">
                         Critical
                       </span>
                     )}
@@ -112,7 +111,7 @@ export default function InboxPage() {
                   type="button"
                   title="Archive"
                   onClick={() => archive.mutate(n.notificationId)}
-                  className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                  className="shrink-0 text-muted-foreground hover:bg-muted inline-flex size-8 items-center justify-center rounded-btn"
                 >
                   <X size={15} />
                 </button>

@@ -68,6 +68,8 @@ import java.util.UUID;
 public class StandaloneSignaturePlacementService {
 
     private final DocumentRepository documentRepository;
+    /** Legal hold / someone else's check-out (V127): adding a page, placing or removing a mark all make a new version. */
+    private final com.oak.dms.checkout.DocumentEditGuard editGuard;
     private final DocumentVersionRepository versionRepository;
     private final DocumentContentReader contentReader;
     private final DocumentStampService stampService;
@@ -112,6 +114,7 @@ public class StandaloneSignaturePlacementService {
     public SignaturePlacementInfoResponse addPage(UUID documentId) {
         Document document = resolve(documentId);
         lockService.guard(document);
+        editGuard.guard(document);
         guardNoActiveWorkflow(documentId);
         boolean firstAction = document.getStandaloneSignatureBaseVersionId() == null;
         UUID baseVersionId = baseVersionId(document);
@@ -140,6 +143,7 @@ public class StandaloneSignaturePlacementService {
     public PlaceSignatureResponse place(UUID documentId, PlaceSignatureRequest request) {
         Document document = resolve(documentId);
         lockService.guard(document);
+        editGuard.guard(document);
         guardNoActiveWorkflow(documentId);
         boolean firstAction = document.getStandaloneSignatureBaseVersionId() == null;
         UUID baseVersionId = baseVersionId(document);
@@ -195,6 +199,7 @@ public class StandaloneSignaturePlacementService {
     public void remove(UUID documentId) {
         Document document = resolve(documentId);
         lockService.guard(document);
+        editGuard.guard(document);
         UUID baseline = document.getStandaloneSignatureBaseVersionId();
         if (baseline == null) {
             throw SignatureException.conflict("SIGNATURE_PLACEMENT_NONE",

@@ -95,7 +95,7 @@ export function FieldOptionEditor({ options, onAdd, onUpdate, onRemove, adding }
           type="button"
           onClick={handleAdd}
           disabled={adding || !newValue.trim() || !newLabel.trim()}
-          className="flex h-9 items-center gap-1.5 rounded-btn border border-primary bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
         >
           <Plus size={14} />
           Add Option
@@ -159,7 +159,7 @@ function OptionRow({
           type="button"
           onClick={save}
           aria-label="Save option"
-          className="flex size-9 items-center justify-center rounded-sm text-primary hover:bg-muted"
+          className="flex items-center justify-center text-primary hover:bg-muted size-8 rounded-btn"
         >
           <Check size={16} />
         </button>
@@ -168,7 +168,7 @@ function OptionRow({
         type="button"
         onClick={onRemove}
         aria-label="Delete option"
-        className={cn("flex size-9 items-center justify-center rounded-sm text-[var(--rust)] hover:bg-[var(--rust-tint)]")}
+        className={cn("flex items-center justify-center text-[var(--rust)] hover:bg-[var(--rust-tint)] size-8 rounded-btn")}
       >
         <Trash2 size={15} />
       </button>

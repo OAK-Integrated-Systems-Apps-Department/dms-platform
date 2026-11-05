@@ -52,7 +52,7 @@ export function UnlockDocumentDialog({
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-lg">
           <form onSubmit={handleSubmit(submit)}>
-            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
+            <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
               <Unlock size={20} aria-hidden="true" />
             </span>
             <AlertDialogTitle>Unlock this document?</AlertDialogTitle>
@@ -78,14 +78,14 @@ export function UnlockDocumentDialog({
               <AlertDialogClose
                 type="button"
                 disabled={isSubmitting}
-                className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+                className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
               >
                 Cancel
               </AlertDialogClose>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-1.5 rounded-md border border-primary bg-primary px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex items-center gap-1.5 border border-primary bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold"
               >
                 {isSubmitting && <Loader2 size={14} className="animate-spin" />}
                 Unlock

@@ -48,7 +48,7 @@ export default function NewWorkflowTemplatePage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "Workflow Templates", href: "/admin/workflows" }, { label: "New Template" }]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">New Workflow Template</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           The template starts as a draft (version 1). You&apos;ll add its approval stages on the next page, then activate

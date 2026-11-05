@@ -16,6 +16,8 @@ interface FolderSelectProps {
   disabled?: boolean
   /** Only folders the caller has at least this access to (V53) - edit for filing things, view for exports. */
   needs?: FolderAccessLevel
+  /** Open the list in page flow, full width - for a picker inside a dialog, where a floating list is cropped. */
+  inline?: boolean
 }
 
 /** Pick a folder by its full path ("Finance / Invoices / 2026"). */
@@ -27,6 +29,7 @@ export function FolderSelect({
   className,
   disabled,
   needs = "edit",
+  inline,
 }: FolderSelectProps) {
   const { flat, isPending } = useFolders()
   const options = flat
@@ -43,6 +46,7 @@ export function FolderSelect({
         onChange={onChange}
         allLabel={isPending ? "Loading folders…" : noneLabel}
         searchPlaceholder="Search folders…"
+        inline={inline}
         className={className ?? "w-[300px] max-w-full"}
       />
     </div>

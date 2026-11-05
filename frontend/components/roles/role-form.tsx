@@ -207,7 +207,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
         <button
           type="button"
           onClick={handleCancel}
-          className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground"
+          className="rounded-btn border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] px-4 text-[13px] inline-flex items-center justify-center"
         >
           Cancel
         </button>
@@ -215,7 +215,7 @@ export function RoleForm({ mode, role, onSubmit }: RoleFormProps) {
           type="submit"
           disabled={isSubmitting || isSystemRole || !isValid}
           className={cn(
-            "rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground",
+            "rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground",
             "disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >

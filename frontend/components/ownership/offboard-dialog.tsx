@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { Textarea } from "@/components/ui/textarea"
 import { PersonPicker } from "@/components/workflow/person-picker"
 import { friendlyMessage } from "@/lib/api-error"
+import { useErrorToast } from "@/lib/use-error-toast"
 import { confirmationFlagsOf, MAX_TRANSFER_DOCUMENTS, offboardUser, transferBulk } from "@/lib/ownership/api"
 import { useOffboardingPreview } from "@/lib/ownership/use-ownership"
 import { lookupPeople } from "@/lib/workflow/api"
@@ -46,6 +47,7 @@ interface OffboardDialogProps {
 export function OffboardDialog({ user, open, onOpenChange, onDone }: OffboardDialogProps) {
   const queryClient = useQueryClient()
   const preview = useOffboardingPreview(user.userId, open)
+  useErrorToast(preview.error, "Could not load what offboarding this user involves.")
   const [mode, setMode] = useState<"transfer" | "holding">("transfer")
   const [person, setPerson] = useState<PersonOptionDto | null>(null)
   const [grantAccess, setGrantAccess] = useState(true)
@@ -119,9 +121,7 @@ export function OffboardDialog({ user, open, onOpenChange, onDone }: OffboardDia
       {preview.isPending ? (
         <LoadingState message="Checking what this involves…" />
       ) : preview.isError || !data ? (
-        <p role="alert" className="text-[12.5px] text-[var(--rust)]">
-          {friendlyMessage(preview.error, "Could not load what offboarding this user involves.")}
-        </p>
+        null
       ) : (
         <div className="flex max-h-[60vh] flex-col gap-3.5 overflow-y-auto pr-1">
           {data.blockers.length > 0 && (

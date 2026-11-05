@@ -93,7 +93,7 @@ export function VisualSignatureFields({
 
   return (
     <div>
-      <div className="mb-1.5 flex rounded-md border border-[var(--border-strong)] p-0.5 text-[11.5px] font-semibold">
+      <div className="mb-1.5 flex rounded-btn bg-card border border-[var(--border-strong)] p-0.5 text-[13px] font-semibold">
         {KINDS.map(({ value, label }) => (
           <button
             key={value}
@@ -101,7 +101,7 @@ export function VisualSignatureFields({
             onClick={() => selectKind(value)}
             disabled={disabled}
             className={cn(
-              "flex-1 rounded-[5px] px-2 py-1 disabled:cursor-not-allowed",
+              "h-8 flex-1 rounded-[7px] px-2 disabled:cursor-not-allowed",
               kind === value ? "bg-primary text-primary-foreground" : "text-muted-foreground"
             )}
           >
@@ -152,7 +152,7 @@ export function VisualSignatureFields({
             accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
             onChange={handleFileChange}
             disabled={disabled || uploading}
-            className="text-[12.5px] file:mr-3 file:rounded-md file:border file:border-[var(--border-strong)] file:bg-card file:px-3 file:py-1.5 file:text-[12px] file:font-semibold"
+            className="text-[12.5px] file:mr-3 file:rounded-btn file:border file:border-[var(--border-strong)] file:bg-card file:px-3 file:py-1.5 file:text-[12px] file:font-semibold"
           />
           {uploading && (
             <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">

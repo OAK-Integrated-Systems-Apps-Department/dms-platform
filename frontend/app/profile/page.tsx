@@ -9,6 +9,7 @@ import { PlatformAdminProfile } from "@/components/profile/platform-admin-profil
 import { ProfileOverview } from "@/components/profile/profile-overview"
 import { SecurityOverview } from "@/components/profile/security-overview"
 import { VisualSignatureCard } from "@/components/profile/visual-signature-card"
+import { EditorLayoutCard } from "@/components/profile/editor-layout-card"
 import { ApiError } from "@/lib/api-error"
 import { useCurrentUser } from "@/lib/auth/use-current-user"
 
@@ -47,7 +48,7 @@ export default function ProfilePage() {
         className="mb-3"
         segments={[{ label: "Dashboard", href: "/" }, { label: "My Profile" }]}
       />
-      <div className="mb-[22px] max-w-[640px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           My Profile
         </h1>
@@ -64,6 +65,7 @@ export default function ProfilePage() {
           <ProfileOverview />
           <SecurityOverview />
           <VisualSignatureCard />
+          <EditorLayoutCard />
           <Link
             href="/profile/notifications"
             className="flex items-center gap-3 rounded-lg border border-border bg-card px-5 py-4 shadow-[var(--ledger-shadow)] hover:bg-muted"

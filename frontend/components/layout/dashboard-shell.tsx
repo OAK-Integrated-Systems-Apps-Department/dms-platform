@@ -1,5 +1,6 @@
 "use client"
 
+import { cn } from "@/lib/utils"
 import { useState, type ReactNode } from "react"
 
 import { UploadsPanel } from "@/components/documents/uploads-panel"
@@ -14,6 +15,8 @@ import { ImpersonationBanner } from "./impersonation-banner"
 interface DashboardShellProps {
   children: ReactNode
   initialActiveLabel?: string
+  /** Lets a page stretch a section (an empty state, a list) to fill the height that is left below its header. */
+  fillHeight?: boolean
 }
 
 /**
@@ -43,6 +46,7 @@ interface DashboardShellProps {
 export function DashboardShell({
   children,
   initialActiveLabel = "My Documents",
+  fillHeight = false,
 }: DashboardShellProps) {
   const [activeLabel, setActiveLabel] = useState(initialActiveLabel)
   const defaultSidebarOpen = useSidebarCookie()
@@ -73,7 +77,7 @@ export function DashboardShell({
       <SidebarInset className="min-w-0">
         <ImpersonationBanner />
         <AppTopbar />
-        <div className="min-w-0 flex-1 px-[30px] pt-[26px] pb-[50px]">
+        <div className={cn("min-w-0 flex-1 px-[30px] pt-[26px] pb-[50px]", fillHeight && "flex flex-col")}>
           {children}
         </div>
       </SidebarInset>

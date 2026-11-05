@@ -344,21 +344,21 @@ export function DocumentUploadForm() {
       <div className="flex w-full flex-col gap-5">
         <div className="rounded-lg border border-border bg-card p-[30px] pb-[26px]">
           {uploadError && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+            <div className="mb-5 flex items-start gap-2.5 rounded-btn border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
               <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
               {uploadError}
             </div>
           )}
 
           {version ? (
-            <div className="mb-5 flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-[13px] py-[11px]">
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-btn border border-dashed border-border px-[13px] py-[11px]">
               <p className="text-[13px] text-muted-foreground">
                 Reviewing <span className="font-semibold text-foreground">{ticket?.originalFilename ?? "this document"}</span> below.
               </p>
               <button
                 type="button"
                 onClick={handleReset}
-                className="shrink-0 rounded-btn border border-[var(--border-strong)] px-3 py-1.5 text-[12.5px] font-semibold text-foreground"
+                className="shrink-0 rounded-btn border border-[var(--border-strong)] font-semibold text-foreground h-[38px] px-4 text-[13px] inline-flex items-center justify-center"
               >
                 Upload another document
               </button>
@@ -444,7 +444,7 @@ export function DocumentUploadForm() {
                   type="button"
                   disabled={!file || !documentType || uploading}
                   onClick={handleUpload}
-                  className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.03em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {uploading && <Loader2 size={14} className="animate-spin" />}
                   {uploading ? "Uploading…" : "Upload"}
@@ -485,7 +485,7 @@ export function DocumentUploadForm() {
             </div>
 
             {phase === "failed" && (
-              <div className="mb-4 flex items-start gap-2.5 rounded-md border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
+              <div className="mb-4 flex items-start gap-2.5 rounded-btn border border-[var(--rust)]/30 bg-[var(--rust-tint)] px-[13px] py-[11px] text-[13px] leading-[1.4] text-[var(--rust-foreground)]">
                 <AlertTriangle size={16} className="mt-px shrink-0 text-[var(--rust)]" />
                 {ocrStatusQuery.data?.friendlyError ?? "OCR could not process this document."}{" "}
                 {retryable ? "You can still fill in fields manually, or retry below." : "You can still fill in the fields manually."}
@@ -543,7 +543,7 @@ export function DocumentUploadForm() {
                   type="button"
                   disabled={savingFields || hasMissingMandatoryField(schemaQuery.data, fieldValues)}
                   onClick={handleSaveFields}
-                  className="flex items-center gap-2 rounded-btn border border-[var(--border-strong)] px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex items-center gap-2 rounded-btn border border-[var(--border-strong)] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-70 h-[38px] px-4 text-[13px]"
                 >
                   {savingFields && <Loader2 size={14} className="animate-spin" />}
                   {savingFields ? "Saving…" : "Save fields"}

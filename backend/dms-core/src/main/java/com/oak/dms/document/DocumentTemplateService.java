@@ -166,12 +166,33 @@ public class DocumentTemplateService {
         }
         DownloadedDocument file = documentService.downloadDocument(templateId);
         try (InputStream content = file.content()) {
-            return documentService.uploadDocument(template.getDocumentTypeId(),
-                    title == null || title.isBlank() ? template.getTitle() : name(title, null),
-                    file.filename(), file.sizeBytes(), content, folderId);
+            String documentTitle = title == null || title.isBlank() ? template.getTitle() : name(title, null);
+            return documentService.uploadDocument(template.getDocumentTypeId(), documentTitle,
+                    filenameFor(documentTitle, file.filename()), file.sizeBytes(), content, folderId);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * The new document's file is named after the document, not the template ("Client agreement - ACME.docx", not
+     * "Service Agreement Template.docx"): the name shows in the editor and on download. Keeps the template's extension.
+     */
+    static String filenameFor(String title, String templateFilename) {
+        String ext = "";
+        if (templateFilename != null) {
+            String file = templateFilename.replace('\\', '/');
+            file = file.substring(file.lastIndexOf('/') + 1);
+            int dot = file.lastIndexOf('.');
+            if (dot > 0 && file.length() - dot <= 10) {
+                ext = file.substring(dot);
+            }
+        }
+        String base = title.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ").replaceAll("\\s+", " ").strip();
+        if (base.length() > 120) {
+            base = base.substring(0, 120).strip();
+        }
+        return base.isEmpty() ? templateFilename : base + ext;
     }
 
     private Document find(UUID templateId) {

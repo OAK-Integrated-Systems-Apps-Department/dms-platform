@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner"
 
 import { ThemeProvider } from "@/components/theme-provider"
+import { NavProgress } from "@/components/layout/nav-progress"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SidebarCookieProvider } from "@/components/providers/sidebar-cookie-provider"
@@ -115,7 +116,7 @@ export function Providers({
         // everything) is now stale/unreachable — clear it rather than risk
         // briefly showing authenticated data that no longer applies.
         client.clear()
-        toast.error("Your session has expired.")
+        toast.error("Your session has expired.", { id: "session-expired" })
         router.push("/session-expired")
         return
       }
@@ -130,7 +131,11 @@ export function Providers({
         // No redirect and no client.clear() here, deliberately — this is
         // very likely transient, and the user's already-loaded data/page
         // is still probably fine. Just make sure it's never silent.
-        toast.error(NETWORK_ERROR_MESSAGE)
+        toast.error(NETWORK_ERROR_MESSAGE, {
+          id: NETWORK_ERROR_MESSAGE,
+          // One tap to try again, without reloading the page: re-run whatever the open page is showing.
+          action: { label: "Retry", onClick: () => void client.refetchQueries({ type: "active" }) },
+        })
       }
     }
 
@@ -150,6 +155,7 @@ export function Providers({
           <SidebarCookieProvider initialOpen={initialSidebarOpen}>
             {children}
           </SidebarCookieProvider>
+          <NavProgress />
           <Toaster position="top-right" />
         </TooltipProvider>
       </ThemeProvider>

@@ -157,18 +157,18 @@ export function TemplateStatusActions({ template, busy, onActivate, onDeactivate
         <AlertDialog open onOpenChange={(open) => !open && setDialog(null)}>
           <AlertDialogPortal>
             <AlertDialogPopup className="sm:max-w-lg">
-              <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-md", config.iconClassName)}>
+              <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-btn", config.iconClassName)}>
                 <Icon size={20} aria-hidden="true" />
               </span>
               <AlertDialogTitle>{config.title}</AlertDialogTitle>
               <AlertDialogDescription>{config.description(template)}</AlertDialogDescription>
               <div className="flex items-center justify-center gap-2.5">
-                <AlertDialogClose className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+                <AlertDialogClose className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
                   Cancel
                 </AlertDialogClose>
                 <AlertDialogClose
                   onClick={() => confirm(dialog)}
-                  className={cn("rounded-md border px-5 py-2.5 text-[13px] font-bold tracking-[0.02em]", config.confirmClassName)}
+                  className={cn("border h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center", config.confirmClassName)}
                 >
                   {config.confirmLabel}
                 </AlertDialogClose>
@@ -201,7 +201,7 @@ function ActionButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "flex items-center gap-1.5 rounded-btn border px-4 py-2 text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-60",
+        "flex items-center gap-1.5 border disabled:cursor-not-allowed disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center",
         className
       )}
     >

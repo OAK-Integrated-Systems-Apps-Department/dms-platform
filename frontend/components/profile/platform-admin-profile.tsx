@@ -1,5 +1,6 @@
 "use client"
 
+import { LoadFailed } from "@/components/ui/load-failed"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Loader2, ShieldCheck, UserCog } from "lucide-react"
@@ -44,12 +45,7 @@ export function PlatformAdminProfile() {
     return <LoadingState message="Loading your account…" />
   if (identity.isError) {
     return (
-      <p className="text-[13px] text-[var(--rust)]">
-        {friendlyMessage(
-          identity.error,
-          "Could not load your account details."
-        )}
-      </p>
+      <LoadFailed error={identity.error} fallback="Could not load your account details." />
     )
   }
 
@@ -118,7 +114,7 @@ function IdentityCard({ me }: { me: CurrentIdentityDto }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4 flex items-start gap-4">
         <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/10 text-[15px] font-semibold text-primary">
           {initials}
@@ -127,7 +123,7 @@ function IdentityCard({ me }: { me: CurrentIdentityDto }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-[15px] font-semibold">{fullName}</p>
             {me.platformRoles.map((role) => (
-              <Badge key={role} variant="outline" className="gap-1 rounded-md">
+              <Badge key={role} variant="outline" className="gap-1 rounded-btn">
                 <ShieldCheck size={11} aria-hidden="true" />
                 {role.replace(/_/g, " ").toLowerCase()}
               </Badge>
@@ -224,7 +220,7 @@ function PasswordCard() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <h2 className="mb-1 flex items-center gap-1.5 text-[14px] font-semibold">
         <KeyRound size={14} aria-hidden="true" /> Password
       </h2>
@@ -233,7 +229,7 @@ function PasswordCard() {
         characters. If you have multi-factor authentication enrolled, add a
         current code as well.
       </p>
-      <div className="grid max-w-[520px] gap-4">
+      <div className="grid gap-4">
         <Labelled label="Current password">
           <Input
             type="password"
@@ -285,7 +281,7 @@ function PasswordCard() {
       {error && (
         <p className="mt-3 text-[12.5px] text-[var(--rust)]">{error}</p>
       )}
-      <div className="mt-4 flex max-w-[520px] justify-end">
+      <div className="mt-4 flex justify-end">
         <Button
           size="sm"
           onClick={() => void save()}

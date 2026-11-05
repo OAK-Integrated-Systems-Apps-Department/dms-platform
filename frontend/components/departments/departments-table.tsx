@@ -19,7 +19,7 @@ export function DepartmentsTable({ rows, onView }: DepartmentsTableProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Name</th>
@@ -35,7 +35,7 @@ export function DepartmentsTable({ rows, onView }: DepartmentsTableProps) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={8} className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No departments match your search or filters.
                 </td>
               </tr>
@@ -52,7 +52,7 @@ export function DepartmentsTable({ rows, onView }: DepartmentsTableProps) {
                 <td className="px-3 py-3 text-[13px] text-foreground">{row.headUserName ?? "—"}</td>
                 <td className="px-3 py-3 text-[13px] text-foreground">{row.memberCount}</td>
                 <td className="px-3 py-3">
-                  <Badge variant={row.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-md">
+                  <Badge variant={row.status === "active" ? "default" : "muted"} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {row.status === "active" ? "Active" : "Inactive"}
                   </Badge>

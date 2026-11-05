@@ -159,25 +159,22 @@ function AudienceEditor({
     ...initial,
     members: initial.members.filter((m) => m.userId !== me?.userId),
   }))
-  const [error, setError] = useState<string | null>(null)
 
   const problem = audienceProblem(draft)
   // A new pin at the limit is refused by the server; say so before they build an audience for it.
   const blockedByLimit = !editing && atLimit
 
   async function save() {
-    setError(null)
     try {
       await pin(target, toInput(draft))
       toast.success(editing ? "Pin updated." : "Pinned.")
       onDone()
     } catch (e) {
-      setError(friendlyMessage(e, "Could not pin the document."))
+      toast.error(friendlyMessage(e, "Could not pin the document."))
     }
   }
 
   async function remove() {
-    setError(null)
     try {
       await unpin(target)
       toast.success("Unpinned.")
@@ -265,12 +262,6 @@ function AudienceEditor({
         >
           {problem ?? summarizeAudience(draft)}
         </p>
-
-        {error && (
-          <p role="alert" className="text-[12.5px] text-destructive">
-            {error}
-          </p>
-        )}
       </div>
 
       <SheetFooter className="flex-row justify-end gap-2 border-t border-border">

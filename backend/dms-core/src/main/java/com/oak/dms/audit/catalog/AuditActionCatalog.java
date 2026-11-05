@@ -210,6 +210,33 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_SIGNATURE_VERIFICATION_FAILED = "DOCUMENT_SIGNATURE_VERIFICATION_FAILED";
     public static final String DOCUMENT_SIGNATURE_LOCKED = "DOCUMENT_SIGNATURE_LOCKED";
     public static final String DOCUMENT_SIGNATURE_UNLOCKED = "DOCUMENT_SIGNATURE_UNLOCKED";
+
+    // 2.10 Check-in / Check-out (DocumentCheckoutService, LegalHoldService) - module CICO / CRM.
+    public static final String DOCUMENT_CHECKED_OUT = "DOCUMENT_CHECKED_OUT";
+    public static final String DOCUMENT_CHECKED_IN = "DOCUMENT_CHECKED_IN";
+    public static final String DOCUMENT_CHECKOUT_DISCARDED = "DOCUMENT_CHECKOUT_DISCARDED";
+    public static final String DOCUMENT_CHECKOUT_FORCE_RELEASED = "DOCUMENT_CHECKOUT_FORCE_RELEASED";
+    public static final String DOCUMENT_CHECKOUT_EXPIRED = "DOCUMENT_CHECKOUT_EXPIRED";
+    public static final String DOCUMENT_EDIT_SESSION_STARTED = "DOCUMENT_EDIT_SESSION_STARTED";
+    public static final String DOCUMENT_EDIT_SESSION_SAVED = "DOCUMENT_EDIT_SESSION_SAVED";
+    public static final String EDITING_SETTINGS_CHANGED = "EDITING_SETTINGS_CHANGED";
+    public static final String DOCUMENT_LEGAL_HOLD_PLACED = "DOCUMENT_LEGAL_HOLD_PLACED";
+    public static final String DOCUMENT_LEGAL_HOLD_LIFTED = "DOCUMENT_LEGAL_HOLD_LIFTED";
+    // 6.1 Records retention (CRM-FR-018): every status change, retention transition and rule/setting change.
+    public static final String DOCUMENT_STATUS_CHANGED = "DOCUMENT_STATUS_CHANGED";
+    public static final String DOCUMENT_AUTO_ARCHIVED = "DOCUMENT_AUTO_ARCHIVED";
+    public static final String DOCUMENT_RETENTION_FLAGGED = "DOCUMENT_RETENTION_FLAGGED";
+    public static final String DOCUMENT_RETENTION_EXTENDED = "DOCUMENT_RETENTION_EXTENDED";
+    public static final String DOCUMENT_RETENTION_DISPOSED = "DOCUMENT_RETENTION_DISPOSED";
+    public static final String DOCUMENT_NO_RETENTION_POLICY = "DOCUMENT_NO_RETENTION_POLICY";
+    public static final String RETENTION_POLICY_CREATED = "RETENTION_POLICY_CREATED";
+    public static final String RETENTION_POLICY_UPDATED = "RETENTION_POLICY_UPDATED";
+    public static final String RETENTION_POLICY_DELETED = "RETENTION_POLICY_DELETED";
+    public static final String RETENTION_SETTINGS_CHANGED = "RETENTION_SETTINGS_CHANGED";
+    public static final String RETENTION_RUN_REQUESTED = "RETENTION_RUN_REQUESTED";
+    public static final String DOCUMENT_VERSIONS_REMOVED = "DOCUMENT_VERSIONS_REMOVED";
+    public static final String RETENTION_VERSION_RESTORED = "RETENTION_VERSION_RESTORED";
+    public static final String DOCUMENT_VERSIONS_DESTROYED = "DOCUMENT_VERSIONS_DESTROYED";
     public static final String SIGNING_KEY_CREATED = "SIGNING_KEY_CREATED";
     public static final String SIGNING_KEY_REVOKED = "SIGNING_KEY_REVOKED";
     /** A visual signature burned onto a page, producing a new document version (reason=signed_copy) - before sign-and-approve, see SignaturePlacementService. */
@@ -568,6 +595,30 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_SIGNATURE_VERIFICATION_FAILED, new AuditActionSpec("DSI", AuditSeverity.HIGH, false)),
             Map.entry(DOCUMENT_SIGNATURE_LOCKED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_SIGNATURE_UNLOCKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_CHECKED_OUT, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_CHECKED_IN, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_CHECKOUT_DISCARDED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_CHECKOUT_FORCE_RELEASED, new AuditActionSpec("CICO", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_CHECKOUT_EXPIRED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_EDIT_SESSION_STARTED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(DOCUMENT_EDIT_SESSION_SAVED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
+            Map.entry(EDITING_SETTINGS_CHANGED, new AuditActionSpec("CICO", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_LEGAL_HOLD_PLACED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_LEGAL_HOLD_LIFTED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_STATUS_CHANGED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_AUTO_ARCHIVED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_RETENTION_FLAGGED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_RETENTION_EXTENDED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_RETENTION_DISPOSED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
+            Map.entry(DOCUMENT_NO_RETENTION_POLICY, new AuditActionSpec("CRM", AuditSeverity.LOW, false)),
+            Map.entry(RETENTION_POLICY_CREATED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
+            Map.entry(RETENTION_POLICY_UPDATED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
+            Map.entry(RETENTION_POLICY_DELETED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
+            Map.entry(RETENTION_SETTINGS_CHANGED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
+            Map.entry(RETENTION_RUN_REQUESTED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_VERSIONS_REMOVED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
+            Map.entry(RETENTION_VERSION_RESTORED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
+            Map.entry(DOCUMENT_VERSIONS_DESTROYED, new AuditActionSpec("DVC", AuditSeverity.HIGH, false)),
             Map.entry(SIGNING_KEY_CREATED, new AuditActionSpec("DSI", AuditSeverity.MEDIUM, false)),
             Map.entry(SIGNING_KEY_REVOKED, new AuditActionSpec("DSI", AuditSeverity.HIGH, true)),
             Map.entry(VISUAL_SIGNATURE_UPDATED, new AuditActionSpec("DSI", AuditSeverity.LOW, false)),

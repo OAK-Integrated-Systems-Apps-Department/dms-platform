@@ -44,7 +44,7 @@ export function WatermarkTemplatesTable({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse">
+        <table className="tbl-card w-full min-w-[760px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>Name</th>
@@ -60,7 +60,7 @@ export function WatermarkTemplatesTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={6} className="h-[max(160px,calc(100svh-380px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   No watermark templates yet.
                 </td>
               </tr>
@@ -76,7 +76,7 @@ export function WatermarkTemplatesTable({
                           render={(props) => (
                             <span
                               {...props}
-                              className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] text-muted-foreground uppercase"
+                              className="inline-flex items-center gap-1 border border-border text-muted-foreground uppercase h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
                             >
                               <Lock size={10} aria-hidden="true" />
                               Built-in
@@ -100,7 +100,7 @@ export function WatermarkTemplatesTable({
                   {describeStyle(row)}
                 </td>
                 <td className="px-3 py-3">
-                  <Badge variant={row.active ? "default" : "outline"} className="gap-1.5 rounded-md">
+                  <Badge variant={row.active ? "default" : "outline"} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {row.active ? "Active" : "Retired"}
                   </Badge>

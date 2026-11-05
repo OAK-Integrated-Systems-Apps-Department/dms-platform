@@ -109,8 +109,15 @@ class FolderServiceTest {
                 .isInstanceOf(FolderException.class).hasMessageContaining("has subfolders");
 
         when(repository.countDocuments(TENANT, y2026.getFolderId())).thenReturn(3L);
+        when(repository.countActiveDocuments(TENANT, y2026.getFolderId())).thenReturn(3L);
         assertThatThrownBy(() -> service.delete(y2026.getFolderId()))
                 .isInstanceOf(FolderException.class).hasMessageContaining("holds 3 documents");
+
+        // Only inactive or archived documents left: hidden from the folder's list, but they would be orphaned - and it says so.
+        when(repository.countActiveDocuments(TENANT, y2026.getFolderId())).thenReturn(0L);
+        assertThatThrownBy(() -> service.delete(y2026.getFolderId()))
+                .isInstanceOf(FolderException.class).hasMessageContaining("holds 3 inactive or archived documents")
+                .hasMessageContaining("Inactive & Archive");
 
         when(repository.countDocuments(TENANT, y2026.getFolderId())).thenReturn(0L);
         when(repository.countPendingUploads(TENANT, y2026.getFolderId())).thenReturn(1L);

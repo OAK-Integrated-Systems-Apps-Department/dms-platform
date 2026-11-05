@@ -66,7 +66,7 @@ export function RoleDeleteDialog({
     >
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[460px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--rust-tint)] text-[var(--rust)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <Trash2 size={20} />
           </span>
           <AlertDialogTitle>Delete this role?</AlertDialogTitle>
@@ -89,7 +89,7 @@ export function RoleDeleteDialog({
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose
               disabled={deleting}
-              className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:opacity-60"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </AlertDialogClose>
@@ -97,7 +97,7 @@ export function RoleDeleteDialog({
               type="button"
               onClick={handleConfirm}
               disabled={deleting}
-              className="rounded-md border border-[var(--rust)] bg-[var(--rust)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-white disabled:opacity-60"
+              className="border border-[var(--rust)] bg-[var(--rust)] text-white disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {deleting ? "Deleting…" : "Delete Role"}
             </button>

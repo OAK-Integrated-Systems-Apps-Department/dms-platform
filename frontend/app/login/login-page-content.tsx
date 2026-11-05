@@ -1,7 +1,7 @@
 // app/login/login-page-content.tsx
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -103,10 +103,10 @@ async function login(
 }
 
 const inputClass =
-  "w-full rounded-xl border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-sm text-foreground transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+  "w-full rounded-btn border border-transparent bg-[#f0efea] py-3.5 pr-3.5 pl-11 text-base text-foreground sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
 
 const primaryButtonClass =
-  "group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
+  "group flex w-full items-center justify-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
 
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
@@ -133,6 +133,14 @@ export function LoginPageContent() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
+  const organisationInactive = searchParams.get("reason") === "organisation-inactive"
+  useEffect(() => {
+    if (organisationInactive) {
+      toast.error("You were signed out because your organisation's account is suspended or closed. Contact your administrator.", {
+        id: "organisation-inactive",
+      })
+    }
+  }, [organisationInactive])
   // Dev-only: visiting /login?step=otp lands straight on the OTP screen
   // without needing dms-core's /mfa-required endpoint or Keycloak at all.
   // Stripped out entirely in production builds — see the check below.
@@ -217,9 +225,9 @@ export function LoginPageContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
+    <div className="flex min-h-svh items-center justify-center bg-card lg:bg-background lg:bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
       {/* One rounded card, split: brand panel | form */}
-      <div className="grid w-full lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
+      <div className="grid min-h-svh w-full lg:min-h-0 lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
         {/* Brand panel: wide screens only */}
         <aside
           aria-hidden="true"
@@ -255,7 +263,7 @@ export function LoginPageContent() {
         </aside>
 
         {/* Form panel */}
-        <main className="relative flex items-center justify-center overflow-hidden bg-card px-5 py-10 sm:px-10 lg:px-12 xl:px-16">
+        <main className="relative flex items-center justify-center overflow-hidden bg-card px-5 py-8 sm:px-10 sm:py-10 lg:px-12 xl:px-16">
           {/* Corner sphere, echoing the brand panel */}
           <div
             aria-hidden="true"
@@ -269,7 +277,7 @@ export function LoginPageContent() {
 
           <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
             {/* Compact brand banner: replaces the brand panel below `lg` */}
-            <div className="relative mb-8 overflow-hidden rounded-2xl bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
+            <div className="relative mb-6 overflow-hidden rounded-lg sm:mb-8 bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
@@ -294,22 +302,12 @@ export function LoginPageContent() {
 
             {step === "credentials" ? (
               <>
-                <h1 className="font-heading text-[40px] leading-none font-extrabold tracking-tight text-foreground">
+                <h1 className="font-heading text-[32px] leading-none font-extrabold sm:text-[40px] tracking-tight text-foreground">
                   Sign in
                 </h1>
                 <p className="mt-3 mb-8 text-sm text-muted-foreground">
                   Welcome back. Sign in to continue to {APP_NAME}.
                 </p>
-
-                {searchParams.get("reason") === "organisation-inactive" && (
-                  <p
-                    role="alert"
-                    className="mb-5 rounded-lg border border-[var(--rust)] bg-[var(--rust-tint)] px-3.5 py-2.5 text-[12.5px] text-[var(--rust)]"
-                  >
-                    You were signed out because your organisation&apos;s account
-                    is suspended or closed. Contact your administrator.
-                  </p>
-                )}
 
                 <form
                   onSubmit={handleSubmit(handleCredentialsSubmit)}

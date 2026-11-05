@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-[5px] border px-2.5 py-0.5 text-[11.5px] font-semibold whitespace-nowrap [&_svg]:pointer-events-none [&_svg]:size-3",
+  "inline-flex h-6 w-fit shrink-0 items-center justify-center gap-1 rounded-btn border px-2.5 text-[12px] font-semibold whitespace-nowrap [&_svg]:pointer-events-none [&_svg]:size-3",
   {
     variants: {
       variant: {
@@ -30,25 +30,22 @@ interface BadgeProps extends VariantProps<typeof badgeVariants> {
 /**
  * Small pill label — role name tags, selected-count and read-only indicators.
  *
- * Corner radius is intentionally NOT overridable per call site: any
- * `rounded-*` class passed in via `className` is stripped before merging,
- * so every badge in the app shares exactly one radius, controlled only by
- * `rounded-[5px]` above. Plenty of call sites still pass a leftover
- * `rounded-md` from before this existed — that's harmless now, it's
- * dropped here rather than needing to be cleaned up at 15+ call sites.
- * Change the radius by editing the line above, not by passing one in.
+ * Size and corner radius are intentionally NOT overridable per call site: any `rounded-*`, `text-[..px]`, `px-*`,
+ * `py-*`, `h-*`, `tracking-*` or `uppercase` class passed via `className` is stripped before merging, so every label
+ * in the app is the same height (24px), the same radius as the buttons (`rounded-btn`) and the same type size. Change
+ * it by editing the base classes above, not by passing one in. (`font-mono` and `gap-*` are still allowed.)
  */
 function Badge({ className, variant, children, title }: BadgeProps) {
-  const withoutRadius = className
+  const withoutSizing = className
     ?.split(" ")
-    .filter((token) => token && !/^rounded(-|$)/.test(token))
+    .filter((token) => token && !/^(rounded(-|$)|text-\[\d|px-|py-|h-|tracking-|uppercase$|normal-case$)/.test(token))
     .join(" ")
 
   return (
     <span
       data-slot="badge"
       title={title}
-      className={cn(badgeVariants({ variant }), withoutRadius)}
+      className={cn(badgeVariants({ variant }), withoutSizing)}
     >
       {children}
     </span>

@@ -117,7 +117,7 @@ export function DocumentFieldsForm({
                     render={(props) => (
                       <span
                         {...props}
-                        className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground"
+                        className="border border-border text-muted-foreground inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
                       >
                         OCR
                       </span>
@@ -216,7 +216,7 @@ function OcrResultBadge({ result }: { result: FieldOcrBadgeInfo }) {
         render={(props) => (
           <span
             {...props}
-            className={cn("rounded-full border px-1.5 py-0.5 text-[10px] normal-case", badge.className)}
+            className={cn("border inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap", badge.className)}
           >
             {badge.text}
           </span>
@@ -378,7 +378,7 @@ export function FieldChips({
             type="button"
             disabled={disabled}
             onClick={onSelectAll}
-            className="text-[11.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+            className="text-[13px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
           >
             Select all
           </button>
@@ -386,7 +386,7 @@ export function FieldChips({
             type="button"
             disabled={disabled}
             onClick={onClear}
-            className="text-[11.5px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+            className="text-[13px] font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
           >
             Clear
           </button>
@@ -406,7 +406,7 @@ export function FieldChips({
               aria-pressed={isSelected}
               disabled={disabled || field.mandatory}
               onClick={() => onToggle(field.fieldKey)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed ${chipClassName} ${field.mandatory ? "disabled:opacity-100" : "disabled:opacity-60"}`}
+              className={`inline-flex h-[38px] items-center justify-center gap-1.5 rounded-btn border px-4 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed ${chipClassName} ${field.mandatory ? "disabled:opacity-100" : "disabled:opacity-60"}`}
             >
               {field.label}
               {field.mandatory && (
@@ -429,8 +429,8 @@ export function FieldChips({
                         {...props}
                         className={
                           isSelected
-                            ? "rounded-full border border-primary-foreground/40 px-1.5 py-0.5 text-[10px] font-normal normal-case"
-                            : "rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal normal-case text-muted-foreground"
+                            ? "border border-primary-foreground/40 inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
+                            : "border border-border inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
                         }
                       >
                         OCR

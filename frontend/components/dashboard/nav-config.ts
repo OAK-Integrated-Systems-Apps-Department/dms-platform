@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Droplet,
+  FilePenLine,
   FileStack,
   FileText,
   GitBranch,
@@ -30,6 +31,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Archive,
+  Hourglass,
   UserCog,
   UserRoundCog,
   Users,
@@ -105,6 +108,13 @@ export const navSections: NavSection[] = [
         icon: Pin,
         href: "/pinned",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
+      },
+      // 6.1: documents switched off by hand or archived by a retention rule (CRM-FR-005).
+      {
+        label: "Inactive & Archive",
+        icon: Archive,
+        href: "/documents/archive",
+        permission: PermissionCodes.CRM_VIEW_ARCHIVE,
       },
       {
         label: "Recycle Bin",
@@ -373,6 +383,30 @@ export const navSections: NavSection[] = [
             icon: Gauge,
             href: "/admin/pinned-documents",
             permission: PermissionCodes.PID_CONFIGURE_LIMITS,
+          },
+          // Records retention (6.1): the rules, the settings, and the documents waiting for a decision.
+          {
+            label: "Records Retention",
+            icon: Hourglass,
+            href: "/admin/retention",
+            permission: [
+              PermissionCodes.CRM_POLICY_VIEW,
+              PermissionCodes.CRM_POLICY_CREATE,
+              PermissionCodes.CRM_POLICY_UPDATE,
+              PermissionCodes.CRM_POLICY_DELETE,
+              PermissionCodes.CRM_CONFIGURE_RETENTION,
+              PermissionCodes.CRM_REVIEW_RETENTION,
+            ],
+          },
+          // Online editing (2.10): turn it on for the organisation and choose exclusive or simultaneous (CICO-FR-010).
+          {
+            label: "Online Editing",
+            icon: FilePenLine,
+            href: "/admin/editing",
+            permission: [
+              PermissionCodes.CICO_EDITING_SELECT_PROVIDER,
+              PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,
+            ],
           },
           // Notification settings + delivery log (3.2). Any NOTIF capability gets in.
           {

@@ -21,7 +21,7 @@ export default function OrganisationsPage() {
           { label: "Organisations" },
         ]}
       />
-      <div className="mb-5 max-w-[760px]">
+      <div className="mb-5">
         <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
           Organisations
         </h1>

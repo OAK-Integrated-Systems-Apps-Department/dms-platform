@@ -342,8 +342,8 @@ export function AuditLogFilters({
             // No onClick={stopPropagation}: the outside-click handler
             // already tests containerRef.contains(), and this panel is
             // inside it.
-            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
-              <div className="grid max-h-[65vh] grid-cols-2 gap-3 overflow-y-auto pr-1">
+            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] max-w-[calc(100vw-60px)] rounded-btn border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
+              <div className="grid max-h-[65vh] grid-cols-1 gap-3 sm:grid-cols-2 overflow-y-auto pr-1">
                 <Field label="Module">
                   <MultiSelect
                     allLabel="All modules"
@@ -475,7 +475,7 @@ export function AuditLogFilters({
                 <button
                   type="button"
                   onClick={applyDraft}
-                  className="rounded-btn border border-primary bg-primary px-4 py-2 text-[13px] font-bold text-primary-foreground"
+                  className="rounded-btn border border-primary bg-primary text-primary-foreground h-[38px] px-4 text-[13px] font-semibold inline-flex items-center justify-center"
                 >
                   Apply
                 </button>

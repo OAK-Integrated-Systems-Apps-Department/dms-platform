@@ -14,7 +14,7 @@ import { RequestInfoDialog } from "./request-info-dialog"
 import { RespondInfoDialog } from "./respond-info-dialog"
 import { SupportingDocumentRow } from "./supporting-documents-list"
 
-const BTN = "flex items-center gap-1 rounded-sm border px-2.5 py-1 text-[12px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+const BTN = "flex items-center gap-1 border disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold justify-center"
 
 interface InfoRequestsListProps {
   requests: InfoRequestDto[]
@@ -42,7 +42,7 @@ export function InfoRequestsList({ requests, documentTitle, currentUserId, canRe
           const forMe = open && currentUserId === r.requestedFrom.userId
           const mine = open && currentUserId === r.requestedBy.userId
           return (
-            <li key={r.infoRequestId} className="rounded-md border border-border px-3.5 py-2.5 text-[12.5px]">
+            <li key={r.infoRequestId} className="rounded-btn border border-border px-3.5 py-2.5 text-[12.5px]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-foreground">
                   <span className="font-semibold">{r.requestedBy.displayName ?? "An approver"}</span> asked{" "}

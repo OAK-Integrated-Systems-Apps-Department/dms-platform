@@ -265,7 +265,7 @@ export function CheckboxFilter({
               width: Math.max(position.width, popoverMinWidth),
               maxHeight: position.maxHeight,
             }}
-            className="z-50 flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--ledger-shadow)]"
+            className="z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]"
           >
             <div className="shrink-0 border-b border-border p-2">
               <div className="relative">
@@ -335,7 +335,7 @@ export function CheckboxFilter({
                         event.preventDefault()
                         toggleOption(option)
                       }}
-                      className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12.5px] text-foreground hover:bg-muted"
+                      className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-foreground hover:bg-muted"
                     >
                       <span
                         className={`flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
@@ -364,7 +364,7 @@ export function CheckboxFilter({
                 {selected.map((value) => (
                   <span
                     key={value}
-                    className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-foreground"
+                    className="border border-border bg-muted text-foreground inline-flex h-6 items-center justify-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold whitespace-nowrap"
                   >
                     {getLabel(value)}
                     <button

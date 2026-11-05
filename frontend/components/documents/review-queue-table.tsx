@@ -28,7 +28,7 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse">
+        <table className="tbl-card tbl-last-fit w-full min-w-[820px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
@@ -49,7 +49,7 @@ export function ReviewQueueTable({ rows, onOpen }: ReviewQueueTableProps) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="h-[max(160px,calc(100svh-340px))] px-3 py-10 text-center text-[13px] text-muted-foreground">
                   Nothing needs review. Every document processed cleanly.
                 </td>
               </tr>

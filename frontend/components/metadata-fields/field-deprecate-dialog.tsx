@@ -54,7 +54,7 @@ export function FieldDeprecateDialog({ field, open, onOpenChange, onConfirm }: F
     >
       <AlertDialogPortal>
         <AlertDialogPopup className="max-w-[460px]">
-          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-md bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
+          <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--gold-tint)] text-[var(--gold-foreground)]">
             <ArchiveX size={20} />
           </span>
           <AlertDialogTitle>Deprecate this field?</AlertDialogTitle>
@@ -73,7 +73,7 @@ export function FieldDeprecateDialog({ field, open, onOpenChange, onConfirm }: F
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose
               disabled={submitting}
-              className="rounded-md border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground disabled:opacity-60"
+              className="border border-[var(--border-strong)] bg-card font-semibold text-foreground disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center"
             >
               Cancel
             </AlertDialogClose>
@@ -81,7 +81,7 @@ export function FieldDeprecateDialog({ field, open, onOpenChange, onConfirm }: F
               type="button"
               onClick={handleConfirm}
               disabled={submitting}
-              className="rounded-md border border-[var(--gold)] bg-[var(--gold)] px-5 py-2.5 text-[13px] font-bold tracking-[0.02em] text-[var(--gold-foreground)] disabled:opacity-60"
+              className="border border-[var(--gold)] bg-[var(--gold)] text-[var(--gold-foreground)] disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {submitting ? "Deprecating…" : "Deprecate Field"}
             </button>

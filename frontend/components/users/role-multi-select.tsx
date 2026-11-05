@@ -132,7 +132,7 @@ export function RoleMultiSelect({
         {selected.map((role) => (
           <span
             key={role}
-            className="bg-primary-tint relative inline-flex items-center gap-1.5 rounded-[6px] border border-primary py-[3px] pr-1.5 pl-2.5 text-[12px] font-semibold text-[var(--primary-dark,var(--primary))]"
+            className="bg-primary-tint relative inline-flex items-center gap-1.5 rounded-btn border border-primary py-[3px] pr-1.5 pl-2.5 text-[12px] font-semibold text-[var(--primary-dark,var(--primary))]"
           >
             {role}
             <button
@@ -153,7 +153,7 @@ export function RoleMultiSelect({
       {open && (
         // No onClick={stopPropagation}: the outside-click handler already
         // tests containerRef.contains(), and this panel is inside it.
-        <div className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-md border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
+        <div className="absolute top-[calc(100%+6px)] right-0 left-0 z-20 rounded-btn border border-border bg-card p-1.5 shadow-[var(--ledger-shadow)]">
           <div className="relative mb-1.5">
             <Search
               size={13}

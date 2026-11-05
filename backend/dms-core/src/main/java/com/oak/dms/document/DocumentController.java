@@ -94,11 +94,14 @@ public class DocumentController {
     private static final String P = "T(com.oak.dms.security.rbac.catalog.PermissionCodes).";
 
     private final DocumentService documentService;
+    private final com.oak.dms.security.auth.AuthorizationService authorizationService;
     private final DocumentAccessService documentAccessService;
     private final DocumentVersionService versionService;
     private final DocumentRenditionService renditionService;
     private final DuplicateFinder duplicateFinder;
     private final DocumentMetadataService documentMetadataService;
+    /** Legal hold / someone else's check-out (V127) - checked on the MANUAL metadata edit only, never OCR's own writes. */
+    private final com.oak.dms.checkout.DocumentEditGuard editGuard;
     private final ObjectMapper objectMapper;
     private final RelationshipBrowseFilter relationshipBrowseFilter;
 
@@ -146,7 +149,8 @@ public class DocumentController {
                     + "relatedTo (a document id) keep documents linked that way - over every folder; direction (source|target|any) "
                     + "says which side of the link the returned documents are on: relatedTo=X&relationshipType=SUPERSEDES&direction=source "
                     + "is the documents that supersede X. ownerId and ownerDepartmentId keep documents owned by that user and/or "
-                    + "department (access filtering still applies). Newest first by default.")
+                    + "department (access filtering still applies). Normal listings hold only Active documents; view=archive "
+                    + "lists the Inactive and Archived ones instead (needs crm.view-archive). Newest first by default.")
     public PageResponse<DocumentListItem> listDocuments(
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "all", defaultValue = "false") boolean all,
@@ -158,8 +162,17 @@ public class DocumentController {
             @RequestParam(value = "direction", required = false) String direction,
             @RequestParam(value = "ownerId", required = false) UUID ownerId,
             @RequestParam(value = "ownerDepartmentId", required = false) UUID ownerDepartmentId,
+            @RequestParam(value = "view", defaultValue = "active") String view,
             @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         OwnerFilter owner = new OwnerFilter(ownerId, ownerDepartmentId);
+        if ("archive".equalsIgnoreCase(view)) {
+            // CRM-FR-005: the Inactive / Archive view is for people allowed to see it, over every folder they can access.
+            if (!authorizationService.hasPermission(com.oak.dms.security.rbac.catalog.PermissionCodes.CRM_VIEW_ARCHIVE)) {
+                throw new org.springframework.security.access.AccessDeniedException("You are not allowed to see inactive and archived documents.");
+            }
+            return PageResponse.from(documentService.listDocumentsIn(com.oak.dms.document.DocumentView.ARCHIVE, folderId, true,
+                    query, documentTypeId, excludeDocumentId, owner, pageable));
+        }
         RelationshipFilter relationship = relationshipBrowseFilter.resolve(relationshipType, relatedTo, direction);
         if (relationship != null) {
             return PageResponse.from(documentService.listRelatedDocuments(query, documentTypeId, excludeDocumentId,
@@ -549,6 +562,7 @@ public class DocumentController {
     @PutMapping("/{documentId}/metadata")
     @PreAuthorize("@authz.hasPermission(" + P + "OS_OCR_EDIT_TEXT)")
     public Map<String, Object> saveMetadata(@PathVariable UUID documentId, @RequestBody Map<String, Object> values) {
+        editGuard.guard(documentId);
         documentMetadataService.saveValues(documentId, values, true);
         return documentMetadataService.getValues(documentId);
     }

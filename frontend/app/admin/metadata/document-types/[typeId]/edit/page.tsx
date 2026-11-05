@@ -42,7 +42,7 @@ export default function EditDocumentTypePage() {
           { label: "Edit" },
         ]}
       />
-      <div className="mb-[22px] max-w-[680px]">
+      <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Edit Document Type</h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           {documentType ? <>Update {documentType.typeName}&apos;s attributes.</> : "Update this document type's attributes."}

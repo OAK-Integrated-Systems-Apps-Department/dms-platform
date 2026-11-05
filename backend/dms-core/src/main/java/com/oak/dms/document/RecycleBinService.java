@@ -198,6 +198,11 @@ public class RecycleBinService {
     public void purgeNow(UUID documentId) {
         Document document = inBin(documentId);
         documentAccessService.require(documentAccessService.forCaller(), document, FolderAccessLevel.edit);
+        // A legal hold outlives the recycle bin: nothing may destroy the files while it stands (V127).
+        if (document.isLegalHold()) {
+            throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_LEGAL_HOLD",
+                    "\"" + document.getTitle() + "\" is under legal hold, so it can't be deleted permanently.");
+        }
         if (hasProtectedVersion(document)) {
             throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_VERSION_PROTECTED",
                     "\"" + document.getTitle() + "\" has a protected version, so it can't be deleted permanently.");
@@ -291,6 +296,7 @@ public class RecycleBinService {
                         left join recycle_bin_settings s on s.tenant_id = d.tenant_id
                         left join document_types t on t.document_type_id = d.document_type_id
                         where d.is_deleted and d.purged_at is null
+                          and not d.legal_hold
                           and coalesce(d.deleted_at, d.updated_at, d.created_at)
                               < now() - make_interval(days => coalesce(t.recycle_bin_retention_days,
                                                                        s.retention_days, ?))
@@ -325,45 +331,9 @@ public class RecycleBinService {
             if (version.getPurgedAt() != null) {
                 continue;
             }
-            StorageLocation location = storageLocationRepository.findById(version.getStorageLocationId())
-                    .orElse(null);
-            if (location == null) {
-                continue; // its location is gone - so is the file
+            if (destroyFiles(version)) {
+                files++;
             }
-            try {
-                storage.resolve(location).delete(location, version.getStorageObjectKey());
-            } catch (StorageObjectNotFoundException e) {
-                // already gone
-            }
-            if (version.getRenditionObjectKey() != null) {
-                // Its preview PDF (V64) holds the same content - it goes too.
-                try {
-                    storage.resolve(location).delete(location, version.getRenditionObjectKey());
-                } catch (StorageObjectNotFoundException e) {
-                    // already gone
-                }
-            }
-            // And everything OCR derived from it. OCR output IS the document's
-            // text and the searchable PDF IS the document, so a purge that
-            // left them behind would leave the document behind under another
-            // name. Each key is deleted explicitly - see OcrArtifactWriter.
-            //
-            // Deliberately NOT swallowed. A failure here must stop the purge
-            // before `purged_at` is set, because once it is set this document
-            // is out of the sweep's query for good - a swallowed failure would
-            // strand the document's text in storage permanently, and the log
-            // line saying so would scroll away. Letting it throw leaves the
-            // document in the bin, and `purgeExpired` retries it next hour
-            // ("Could not purge deleted document ... - will try again").
-            // Re-running is safe: deleting an object that is already gone is a
-            // no-op, which is the same property the file deletion above
-            // relies on.
-            ocrArtifactWriter.deleteFor(version);
-            // And any page image of it still held in memory. A page image is
-            // the document as a picture; a purged document must not stay
-            // readable in a cache for the rest of the process's life.
-            pageImageCache.invalidate(version.getVersionId());
-            files++;
         }
         transactions.executeWithoutResult(status -> {
             jdbc.update("update document_versions set purged_at = now(), is_deleted = true, "
@@ -384,6 +354,56 @@ public class RecycleBinService {
                 .newValue(Map.of("why", why, "versions", versions.size(), "filesDestroyed", files))
                 .log();
         log.info("Purged document {} ({}): {} file(s) destroyed", document.getDocumentId(), why, files);
+    }
+
+/**
+     * Destroys everything stored for one version: its file, its preview PDF, what OCR derived from it, and any page image
+     * of it held in memory. Deleting what is already gone is a no-op, so this is safe to run again after a failure. A
+     * failure of the OCR clean-up is deliberately NOT swallowed - the caller must not mark the version purged while its
+     * text is still in storage. Shared by the document purge above and the version-retention sweep.
+     *
+     * @return false when its storage location no longer exists (so there was nothing to destroy)
+     */
+    public boolean destroyFiles(DocumentVersion version) {
+        StorageLocation location = storageLocationRepository.findById(version.getStorageLocationId())
+                .orElse(null);
+        if (location == null) {
+            return false; // its location is gone - so is the file
+        }
+        try {
+            storage.resolve(location).delete(location, version.getStorageObjectKey());
+        } catch (StorageObjectNotFoundException e) {
+            // already gone
+        }
+        if (version.getRenditionObjectKey() != null) {
+            // Its preview PDF (V64) holds the same content - it goes too.
+            try {
+                storage.resolve(location).delete(location, version.getRenditionObjectKey());
+            } catch (StorageObjectNotFoundException e) {
+                // already gone
+            }
+        }
+        // And everything OCR derived from it. OCR output IS the document's
+        // text and the searchable PDF IS the document, so a purge that
+        // left them behind would leave the document behind under another
+        // name. Each key is deleted explicitly - see OcrArtifactWriter.
+        //
+        // Deliberately NOT swallowed. A failure here must stop the purge
+        // before `purged_at` is set, because once it is set this document
+        // is out of the sweep's query for good - a swallowed failure would
+        // strand the document's text in storage permanently, and the log
+        // line saying so would scroll away. Letting it throw leaves the
+        // document in the bin, and `purgeExpired` retries it next hour
+        // ("Could not purge deleted document ... - will try again").
+        // Re-running is safe: deleting an object that is already gone is a
+        // no-op, which is the same property the file deletion above
+        // relies on.
+        ocrArtifactWriter.deleteFor(version);
+        // And any page image of it still held in memory. A page image is
+        // the document as a picture; a purged document must not stay
+        // readable in a cache for the rest of the process's life.
+        pageImageCache.invalidate(version.getVersionId());
+        return true;
     }
 
     private Document inBin(UUID documentId) {

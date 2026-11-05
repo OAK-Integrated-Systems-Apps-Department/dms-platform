@@ -86,10 +86,10 @@ export function CreateDocumentTypeForm({ onSubmit }: CreateFormProps) {
       <hr className="my-6 border-dashed border-border" />
 
       <div className="flex items-center justify-end gap-2.5">
-        <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+        <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
           Cancel
         </button>
-        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
+        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
           Create Document Type
         </button>
       </div>
@@ -159,10 +159,10 @@ export function UpdateDocumentTypeForm({ defaultValues, onSubmit }: EditFormProp
       <hr className="my-6 border-dashed border-border" />
 
       <div className="flex items-center justify-end gap-2.5">
-        <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="rounded-btn border border-[var(--border-strong)] bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground">
+        <button type="button" onClick={() => router.push("/admin/metadata/document-types")} className="border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] inline-flex items-center justify-center">
           Cancel
         </button>
-        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary px-[22px] py-2.5 text-[13px] font-bold tracking-[0.02em] text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
+        <button type="submit" disabled={isSubmitting || !isValid} className={cn("rounded-btn border border-primary bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground", "disabled:cursor-not-allowed disabled:opacity-60")}>
           Save Changes
         </button>
       </div>

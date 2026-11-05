@@ -76,11 +76,11 @@ export default function DocumentTypeDetailPage() {
             PermissionCodes.MDTM_DOCUMENT_TEMPLATES_DELETE,
           ]}
         >
-          <div className="mb-[22px] flex max-w-[860px] items-start justify-between gap-4">
+          <div className="mb-[22px] flex items-start justify-between gap-4">
             <div>
               <div className="mb-2 flex items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{documentType.typeName}</h1>
-                <Badge variant={documentType.status === "active" ? "default" : "muted"} className="rounded-md">{documentType.status}</Badge>
+                <Badge variant={documentType.status === "active" ? "default" : "muted"} className="rounded-btn">{documentType.status}</Badge>
               </div>
               <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
                 {documentType.description || "No description."} Current schema version v{documentType.currentSchemaVersion}.
@@ -89,7 +89,7 @@ export default function DocumentTypeDetailPage() {
             {canUpdate && (
               <Link
                 href={`/admin/metadata/document-types/${documentType.documentTypeId}/edit`}
-                className="flex shrink-0 items-center gap-1.5 rounded-btn border border-[var(--border-strong)] bg-card px-3.5 py-2.5 text-[13px] font-semibold text-foreground"
+                className="flex shrink-0 items-center gap-1.5 border border-[var(--border-strong)] bg-card font-semibold text-foreground h-[38px] rounded-btn px-4 text-[13px] justify-center"
               >
                 <Pencil size={15} />
                 Edit
@@ -114,7 +114,7 @@ export default function DocumentTypeDetailPage() {
           </div>
 
           {tab === "details" ? (
-            <div className="grid max-w-[680px] grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-border bg-card px-[30px] py-[26px] shadow-[var(--ledger-shadow)]">
               <DetailRow label="Type Code" value={documentType.typeCode} mono />
               <DetailRow label="Display Order" value={String(documentType.displayOrder)} />
               <DetailRow label="Requires Watermark" value={documentType.requiresWatermark ? "Yes" : "No"} />

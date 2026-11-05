@@ -41,7 +41,7 @@ export function DashCard({
       style={{ "--dash-order": order } as CSSProperties}
       aria-label={title}
       className={cn(
-        "dash-rise relative flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
+        "dash-rise relative flex min-w-0 flex-col rounded-lg border border-border bg-card p-5 shadow-[var(--ledger-shadow)]",
         className
       )}
     >
@@ -59,7 +59,7 @@ export function DashCard({
           {link && (
             <Link
               href={link.href}
-              className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-1 text-[12.5px] font-semibold text-primary transition-colors hover:bg-[var(--primary-tint)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="flex shrink-0 items-center gap-0.5 rounded-btn px-1.5 py-1 text-[12.5px] font-semibold text-primary transition-colors hover:bg-[var(--primary-tint)] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               {link.label}
               <ArrowUpRight size={13} aria-hidden="true" />
@@ -145,7 +145,7 @@ export function EmptyState({
         className
       )}
     >
-      <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-[var(--primary-tint)] text-primary">
+      <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-[var(--primary-tint)] text-primary">
         <Icon size={20} aria-hidden="true" />
       </span>
       <p className="text-[13.5px] font-semibold">{title}</p>
@@ -157,7 +157,7 @@ export function EmptyState({
       {action && (
         <Link
           href={action.href}
-          className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-[var(--primary-tint)]"
+          className="mt-3 inline-flex items-center gap-1 rounded-btn px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-[var(--primary-tint)]"
         >
           {action.label}
           <ArrowUpRight size={13} aria-hidden="true" />
