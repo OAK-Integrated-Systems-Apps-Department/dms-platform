@@ -16,6 +16,7 @@ import { OwnershipHistoryPanel } from "@/components/ownership/ownership-history-
 import { TransferDialog, type TransferOutcome, type TransferSubject } from "@/components/ownership/transfer-dialog"
 import { BackendUnavailable } from "@/components/ui/backend-unavailable"
 import { Button } from "@/components/ui/button"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { LoadingState } from "@/components/ui/loading-state"
 import { SearchInput } from "@/components/ui/search-input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -75,7 +76,7 @@ export function OwnershipContent() {
   }
 
   return (
-    <DashboardShell initialActiveLabel="Document Ownership">
+    <DashboardShell initialActiveLabel="Document Ownership" fillHeight>
       <AdminBreadcrumb className="mb-3" segments={[{ label: "Dashboard", href: "/" }, { label: "Document Ownership" }]} />
       <div className="mb-[22px]">
         <h1 className="mb-2 font-heading text-[26px] font-semibold tracking-[-0.01em]">Document Ownership</h1>
@@ -93,9 +94,12 @@ export function OwnershipContent() {
             <div className="mb-4">
               <SegmentedControl value={tab} onChange={selectTab} options={tabs} />
             </div>
-            {tab === "owned" && <OwnedTab />}
-            {tab === "pending" && <PendingTab />}
-            {tab === "history" && <HistoryTab />}
+            {/* The tab fills the height that is left, so an empty state is one box to the bottom of the page. */}
+            <div className="flex min-h-0 flex-1 flex-col [&>div]:flex-1">
+              {tab === "owned" && <OwnedTab />}
+              {tab === "pending" && <PendingTab />}
+              {tab === "history" && <HistoryTab />}
+            </div>
           </>
         )}
       </PermissionGate>
@@ -197,22 +201,17 @@ function useSelection() {
   }
 }
 
-function DepartmentSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+function DepartmentSelect({ value, onChange, label, className }: { value: string; onChange: (value: string) => void; label: string; className?: string }) {
   const departments = useDepartmentOptions()
   return (
-    <select
-      aria-label={label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px]"
-    >
-      <option value="">{label}</option>
-      {(departments.data ?? []).map((d) => (
-        <option key={d.value} value={d.value}>
-          {d.label}
-        </option>
-      ))}
-    </select>
+    <SearchableSelect
+      options={departments.data ?? []}
+      selected={value}
+      onChange={onChange}
+      allLabel={label}
+      searchPlaceholder="Search departments"
+      className={className}
+    />
   )
 }
 
@@ -246,7 +245,7 @@ function OwnedTab() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col">
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <SegmentedControl
           value={by}
@@ -270,6 +269,7 @@ function OwnedTab() {
                 resetPaging()
               }}
               placeholder="Search for the owner"
+              popover
             />
           ) : (
             <DepartmentSelect
@@ -292,36 +292,38 @@ function OwnedTab() {
           className="min-w-[200px]"
           aria-label="Search titles"
         />
-        <select
-          aria-label="State"
-          value={state}
-          onChange={(e) => {
-            setState(e.target.value as OwnershipState | "")
+        <SearchableSelect
+          className="w-[160px]"
+          searchable={false}
+          allLabel="Any state"
+          selected={state}
+          onChange={(next) => {
+            setState(next as OwnershipState | "")
             resetPaging()
           }}
-          className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px]"
-        >
-          <option value="">Any state</option>
-          <option value="assigned">Assigned</option>
-          <option value="holding">Holding</option>
-        </select>
-        <select
-          aria-label="Recycle Bin"
-          value={bin}
-          onChange={(e) => {
-            setBin(e.target.value as "" | "true" | "false")
+          options={[
+            { value: "assigned", label: "Assigned" },
+            { value: "holding", label: "Holding" },
+          ]}
+        />
+        <SearchableSelect
+          className="w-[200px]"
+          searchable={false}
+          allLabel="With Recycle Bin"
+          selected={bin}
+          onChange={(next) => {
+            setBin(next as "" | "true" | "false")
             resetPaging()
           }}
-          className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px]"
-        >
-          <option value="">With Recycle Bin</option>
-          <option value="false">Not in Recycle Bin</option>
-          <option value="true">Only Recycle Bin</option>
-        </select>
+          options={[
+            { value: "false", label: "Not in Recycle Bin" },
+            { value: "true", label: "Only Recycle Bin" },
+          ]}
+        />
       </div>
 
       {!chosen ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <div className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-10 text-center text-[13px] text-muted-foreground">
           Choose a person or a department to see the documents they own.
         </div>
       ) : (
@@ -403,7 +405,7 @@ function PendingTab() {
   const query = usePendingDocuments({ departmentId: departmentId || undefined, q: q.trim() || undefined }, page, PAGE_SIZE)
 
   return (
-    <div>
+    <div className="flex flex-col">
       <p className="mb-3 max-w-[720px] text-[13px] text-muted-foreground">
         Documents parked with a holding owner, and documents whose owner has been deactivated or deleted. Choose a new
         owner for them.
@@ -416,6 +418,7 @@ function PendingTab() {
             setPage(0)
           }}
           label="All departments"
+          className="w-[220px]"
         />
         <SearchInput
           value={q}
@@ -537,29 +540,24 @@ function HistoryTab() {
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-[12.5px] font-semibold">
                 From
-                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px] font-normal" />
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-[38px] rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px] font-normal" />
               </label>
               <label className="flex flex-col gap-1 text-[12.5px] font-semibold">
                 To
-                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px] font-normal" />
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-[38px] rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px] font-normal" />
               </label>
             </div>
             <div className="flex flex-col gap-1 text-[12.5px] font-semibold">
               Person (previous or new owner)
-              <PersonPicker queryKey={["ownership-export"]} fetchPeople={(s) => lookupPeople(s, 20)} value={person} onChange={setPerson} />
+              <PersonPicker popover queryKey={["ownership-export"]} fetchPeople={(s) => lookupPeople(s, 20)} value={person} onChange={setPerson} />
             </div>
-            <select
-              aria-label="Reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="h-10 rounded-btn border border-[var(--border-strong)] bg-card px-3 text-[13px]"
-            >
-              {EXPORT_REASONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              searchable={false}
+              allLabel="Any reason"
+              selected={reason}
+              onChange={setReason}
+              options={EXPORT_REASONS.filter((r) => r.value !== "")}
+            />
             <div>
               <Button type="button" onClick={() => void exportCsv()} disabled={exporting}>
                 <Download size={14} aria-hidden="true" />

@@ -66,5 +66,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u from User u where u.tenantId = :tenantId")
     Page<User> findAllByTenant(@Param("tenantId") UUID tenantId, Pageable pageable);
 
+    /** The tenant's users whose Keycloak id is one of keycloakIds - picks the tenant admins out of a realm-role member list. */
+    java.util.List<User> findAllByTenantIdAndKeycloakIdInAndDeletedFalse(UUID tenantId, java.util.Collection<UUID> keycloakIds);
+
     java.util.List<User> findAllByUserIdInAndTenantIdAndDeletedFalse(java.util.Collection<UUID> userIds, UUID tenantId);
 }
