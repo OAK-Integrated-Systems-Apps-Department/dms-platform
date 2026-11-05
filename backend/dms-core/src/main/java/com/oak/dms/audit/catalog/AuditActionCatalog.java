@@ -142,6 +142,9 @@ public final class AuditActionCatalog {
     public static final String PIN_ADDED = "PIN_ADDED";
     public static final String PIN_AUDIENCE_CHANGED = "PIN_AUDIENCE_CHANGED";
     public static final String PIN_REMOVED = "PIN_REMOVED";
+    /** A private bookmark added or removed (BD). Never carries the bookmark's note. */
+    public static final String BOOKMARK_ADDED = "BOOKMARK_ADDED";
+    public static final String BOOKMARK_REMOVED = "BOOKMARK_REMOVED";
     public static final String IMPORT_TEMPLATE_CREATED = "IMPORT_TEMPLATE_CREATED";
     public static final String IMPORT_TEMPLATE_UPDATED = "IMPORT_TEMPLATE_UPDATED";
     public static final String IMPORT_TEMPLATE_DELETED = "IMPORT_TEMPLATE_DELETED";
@@ -500,6 +503,9 @@ public final class AuditActionCatalog {
             Map.entry(PIN_ADDED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
             Map.entry(PIN_AUDIENCE_CHANGED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
             Map.entry(PIN_REMOVED, new AuditActionSpec("PID", AuditSeverity.LOW, false)),
+            // A bookmark is private, but who bookmarked what is still on the record (never the note - see BookmarkService).
+            Map.entry(BOOKMARK_ADDED, new AuditActionSpec("BD", AuditSeverity.LOW, false)),
+            Map.entry(BOOKMARK_REMOVED, new AuditActionSpec("BD", AuditSeverity.LOW, false)),
 
             // Saved import templates (ImportTemplateService) - module FIE.
             Map.entry(IMPORT_TEMPLATE_CREATED, new AuditActionSpec("FIE", AuditSeverity.MEDIUM, false)),

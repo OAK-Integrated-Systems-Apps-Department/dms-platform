@@ -4,6 +4,7 @@ import com.oak.dms.audit.catalog.AuditActionCatalog;
 import com.oak.dms.audit.catalog.AuditObjectTypes;
 import com.oak.dms.audit.enums.AuditOutcome;
 import com.oak.dms.audit.service.AuditService;
+import com.oak.dms.bookmark.BookmarkPurgeHandler;
 import com.oak.dms.common.exception.ResourceNotFoundException;
 import com.oak.dms.folder.DocumentAccessService;
 import com.oak.dms.folder.DocumentAccessService.DocumentAccessView;
@@ -80,6 +81,7 @@ public class RecycleBinService {
     private final PageImageCache pageImageCache;
     private final TransactionTemplate transactions;
     private final RelationshipPurgeHandler relationshipPurge;
+    private final BookmarkPurgeHandler bookmarkPurge;
     private final int defaultRetentionDays;
 
     public RecycleBinService(DocumentRepository documentRepository, DocumentVersionRepository versionRepository,
@@ -88,6 +90,7 @@ public class RecycleBinService {
                              UserRepository userRepository, AuditService auditService, JdbcTemplate jdbc,
                              OcrArtifactWriter ocrArtifactWriter, PageImageCache pageImageCache,
                              PlatformTransactionManager transactionManager, RelationshipPurgeHandler relationshipPurge,
+                             BookmarkPurgeHandler bookmarkPurge,
                              @Value("${dms.documents.recycle-bin.retention-days:30}") int defaultRetentionDays) {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
@@ -101,6 +104,7 @@ public class RecycleBinService {
         this.pageImageCache = pageImageCache;
         this.transactions = new TransactionTemplate(transactionManager);
         this.relationshipPurge = relationshipPurge;
+        this.bookmarkPurge = bookmarkPurge;
         this.defaultRetentionDays = defaultRetentionDays;
     }
 
@@ -343,6 +347,8 @@ public class RecycleBinService {
             jdbc.update("delete from document_access where document_id = ?", document.getDocumentId());
             // Links to or from it are removed (the history and an audit record per link stay) - 2.8 DRM-FR-011.
             relationshipPurge.removeLinksOf(document.getTenantId(), document.getDocumentId(), document.getTitle());
+            // Bookmarks go for good too - unlike a link, there's no history to keep (4.4).
+            bookmarkPurge.removeBookmarksOf(document.getTenantId(), document.getDocumentId());
             jdbc.update("update documents set purged_at = now() where document_id = ?", document.getDocumentId());
         });
         auditService.event(AuditActionCatalog.DOCUMENT_PURGED)
