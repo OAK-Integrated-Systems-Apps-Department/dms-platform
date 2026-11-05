@@ -29,6 +29,17 @@ export function EditingSettingsCard({ canEdit }: { canEdit: boolean }) {
       </Panel>
     )
   }
+  if (!data.allowedByPlatform) {
+    // The menu item is hidden in this case; this is for a bookmarked or typed address.
+    return (
+      <Panel title="Online editing">
+        <p className="pt-3 text-[13px] leading-[1.6] text-muted-foreground">
+          Online editing isn&apos;t available to your organisation. The platform administrator can make it available;
+          once they do, you can turn it on for your people here.
+        </p>
+      </Panel>
+    )
+  }
   return <EditingSettingsForm initial={data} canEdit={canEdit} />
 }
 

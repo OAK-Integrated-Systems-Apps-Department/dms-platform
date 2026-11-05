@@ -206,4 +206,28 @@ public class DocumentVersion {
     /** The PDF it is previewed as, when it is an Office file (V64) - beside the original, same location. */
     @Column(name = "rendition_object_key")
     private String renditionObjectKey;
+
+    /** The JPEG thumbnail of its first page (V135) - beside the original, same location, encrypted like it. */
+    @Column(name = "thumbnail_object_key")
+    private String thumbnailObjectKey;
+
+    /** 'pending' | 'completed' | 'failed' | 'unsupported' (V135). */
+    @Column(name = "thumbnail_status", nullable = false)
+    @Builder.Default
+    private String thumbnailStatus = "pending";
+
+    /** Why the last rendition attempt failed, and when - what the administrator's failure list shows (V135). */
+    @Column(name = "rendition_failure_reason")
+    private String renditionFailureReason;
+
+    @Column(name = "rendition_failed_at")
+    private OffsetDateTime renditionFailedAt;
+
+    /** The stored preview PDF is only the first pages of a file past the conversion size limit (V135). */
+    @Column(name = "rendition_partial", nullable = false)
+    private boolean renditionPartial;
+
+    /** How many pages the whole file has, when known - for "showing the first N of M pages" (V135). */
+    @Column(name = "rendition_total_pages")
+    private Integer renditionTotalPages;
 }

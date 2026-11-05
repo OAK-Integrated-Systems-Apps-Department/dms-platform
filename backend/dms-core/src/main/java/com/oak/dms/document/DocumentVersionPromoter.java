@@ -213,6 +213,10 @@ public class DocumentVersionPromoter implements DocumentPromoter {
         if (pendingVersionEvent != null) {
             eventPublisher.publishEvent(pendingVersionEvent);
         }
+        // Its preview and thumbnail are made once this commits (DPRM-FR-001/003) - in the background, so the
+        // upload never waits for a conversion.
+        eventPublisher.publishEvent(new com.oak.dms.document.event.DocumentVersionStoredEvent(tenantId,
+                plan.documentId(), plan.versionId()));
         log.info("Promoted scan result {} to document {} version {} (tenant {})", cleanResult.getScanResultId(),
                 plan.documentId(), plan.versionId(), tenantId);
     }

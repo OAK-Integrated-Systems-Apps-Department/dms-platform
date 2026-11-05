@@ -116,6 +116,10 @@ public final class PermissionCodes {
     public static final String RBR_PURGE = "rbr.permanently-purge-documents";
     public static final String RBR_RETENTION = "rbr.manage-recycle-bin-retention";
 
+    // Document preview and rendition management - DPRM, seeded by V10. TENANT_ADMIN holds them like every code.
+    public static final String DPRM_PREVIEW_RESTRICT = "dprm.configure-preview-security-policy.restrict-print-download";
+    public static final String DPRM_PREVIEW_WATERMARK = "dprm.configure-preview-security-policy.toggle-preview-watermark";
+
     // Folders - DSC (Document Storage & Categorization) / Manage Folder
     // Structure, seeded by V10. Browsing the tree needs DOCM_DOCUMENTS_VIEW.
     public static final String DSC_FOLDERS_CREATE = "dsc.manage-folder-structure.create-folder";

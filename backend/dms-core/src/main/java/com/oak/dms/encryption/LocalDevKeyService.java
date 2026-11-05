@@ -19,7 +19,9 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -34,6 +36,12 @@ import java.util.TreeMap;
  * Every change is written to the key file and, when configured, to a backup
  * copy outside Docker (locally: a gitignored folder of the repository). If the
  * key file's volume is lost, the backup is restored on start.
+ * <p>
+ * More than one instance can share one file - the integration tests keep several Spring contexts alive at once, each
+ * with its own instance. So an instance never writes only what it holds: it first takes in what the others have
+ * added since it last read the file, and looks in the file again before deciding that a scope is unknown. Without
+ * that, an instance that read the file early would, on its next save, drop every scope another one created after -
+ * and the objects encrypted under them could never be opened again.
  */
 @Slf4j
 public class LocalDevKeyService implements KeyEncryptionService {
@@ -47,6 +55,10 @@ public class LocalDevKeyService implements KeyEncryptionService {
     private final ObjectMapper mapper;
     private final SecureRandom random = new SecureRandom();
     private final Map<String, List<MasterKey>> scopes = new TreeMap<>();
+    /** Scopes destroyed through this instance - never brought back by taking in what the file still says. */
+    private final Set<String> destroyed = new HashSet<>();
+    /** One lock for every instance in the process: reading the file, merging and writing it happen as one step. */
+    private static final Object FILE_LOCK = new Object();
 
     /** One master-key version. */
     public record MasterKey(int version, String key) {
@@ -111,10 +123,14 @@ public class LocalDevKeyService implements KeyEncryptionService {
     @Override
     public synchronized byte[] unwrap(String scope, String wrappedKey) {
         int version = KeyEncryptionService.versionOf(wrappedKey);
-        MasterKey master = scopes.getOrDefault(scope, List.of()).stream().filter(k -> k.version() == version)
-                .findFirst()
-                .orElseThrow(() -> new KeyServiceException("Unknown development key version " + version
-                        + " for scope " + scope));
+        MasterKey master = find(scope, version);
+        if (master == null) {
+            takeInFile(); // another instance may have created it since this one read the file
+            master = find(scope, version);
+        }
+        if (master == null) {
+            throw new KeyServiceException("Unknown development key version " + version + " for scope " + scope);
+        }
         byte[] payload = Base64.getDecoder().decode(wrappedKey.split(":", 3)[2]);
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -158,6 +174,7 @@ public class LocalDevKeyService implements KeyEncryptionService {
     @Override
     public synchronized void destroy(String scope) {
         KeyEncryptionService.requireTenantScope(scope);
+        destroyed.add(scope);
         if (scopes.remove(scope) != null) {
             save(); // the backup copy too - otherwise a restore would bring the key back
         }
@@ -165,7 +182,14 @@ public class LocalDevKeyService implements KeyEncryptionService {
 
     /** Whether the file has keys for a scope - for the startup check against stored objects. */
     synchronized boolean hasScope(String scope) {
+        if (!scopes.containsKey(scope)) {
+            takeInFile();
+        }
         return scopes.containsKey(scope);
+    }
+
+    private MasterKey find(String scope, int version) {
+        return scopes.getOrDefault(scope, List.of()).stream().filter(k -> k.version() == version).findFirst().orElse(null);
     }
 
     private String wrap(String scope, byte[] dataKey, MasterKey master) {
@@ -195,11 +219,16 @@ public class LocalDevKeyService implements KeyEncryptionService {
     private MasterKey latest(String scope, boolean create) {
         List<MasterKey> keys = scopes.get(scope);
         if (keys == null || keys.isEmpty()) {
+            takeInFile(); // it may exist already, made by another instance on this file
+            keys = scopes.get(scope);
+        }
+        if (keys == null || keys.isEmpty()) {
             if (!create) {
                 throw new KeyServiceException("No development key for scope " + scope);
             }
             keys = List.of(new MasterKey(1, newKey()));
             scopes.put(scope, keys);
+            destroyed.remove(scope);
             save();
         }
         return keys.stream().reduce((a, b) -> a.version() >= b.version() ? a : b).orElseThrow();
@@ -233,15 +262,58 @@ public class LocalDevKeyService implements KeyEncryptionService {
     }
 
     private void save() {
-        KeyFile content = new KeyFile(null, Map.copyOf(scopes));
-        write(keyFile, content);
-        if (backupFile != null) {
-            try {
-                write(backupFile, content);
-            } catch (UncheckedIOException e) {
-                log.warn("Could not update the development key backup {}: {}", backupFile, e.getMessage());
+        synchronized (FILE_LOCK) {
+            mergeFile();
+            KeyFile content = new KeyFile(null, Map.copyOf(scopes));
+            write(keyFile, content);
+            if (backupFile != null) {
+                try {
+                    write(backupFile, content);
+                } catch (UncheckedIOException e) {
+                    log.warn("Could not update the development key backup {}: {}", backupFile, e.getMessage());
+                }
             }
         }
+    }
+
+    /** Takes in what other instances have written to the file since this one read it. */
+    private void takeInFile() {
+        synchronized (FILE_LOCK) {
+            mergeFile();
+        }
+    }
+
+    /**
+     * Adds to {@link #scopes} every scope the file has that this instance lacks, and any scope whose file copy has a
+     * newer key (it was rotated elsewhere). Never takes a key away from this instance and never brings back a scope
+     * destroyed here. Called with {@link #FILE_LOCK} held.
+     */
+    private void mergeFile() {
+        if (!Files.exists(keyFile)) {
+            return;
+        }
+        try {
+            KeyFile content = mapper.readValue(keyFile.toFile(), KeyFile.class);
+            if (content.scopes() == null) {
+                return;
+            }
+            content.scopes().forEach((scope, keys) -> {
+                if (destroyed.contains(scope) || keys == null || keys.isEmpty()) {
+                    return;
+                }
+                List<MasterKey> mine = scopes.get(scope);
+                if (mine == null || mine.isEmpty() || newest(keys) > newest(mine)) {
+                    scopes.put(scope, keys);
+                }
+            });
+        } catch (IOException e) {
+            // An unreadable file is not worth losing this instance's keys over: it is written again from memory.
+            log.warn("Could not read the development key file {} to take in other instances' keys: {}", keyFile, e.getMessage());
+        }
+    }
+
+    private static int newest(List<MasterKey> keys) {
+        return keys.stream().mapToInt(MasterKey::version).max().orElse(0);
     }
 
     /** Written to a temp file and moved into place, so a crash never leaves half a key file. */

@@ -98,6 +98,11 @@ export interface EditingConfigDto {
   mode: "exclusive" | "simultaneous"
   /** Lower-case file extensions the engine can edit. */
   extensions: string[]
+  /**
+   * The platform administrator has allowed this organisation online editing at all. When false the organisation's
+   * own Online Editing page and menu item are not shown: there is nothing for its administrator to switch.
+   */
+  allowedByPlatform: boolean
 }
 
 /** Mirrors EditingSessionService.Session. The token goes to the editor in a form POST - never in a URL. */
@@ -124,6 +129,8 @@ export interface EditingSettingsDto {
   mode: "exclusive" | "simultaneous"
   /** The SERVER has an editing engine; when false it cannot be turned on (it can always be turned off). */
   engineConfigured: boolean
+  /** The platform administrator allowed this organisation online editing; while false nothing here can be changed. */
+  allowedByPlatform: boolean
 }
 
 /** `GET /api/v1/editing/settings` - needs one of the cico.configure-editing-engine permissions. */

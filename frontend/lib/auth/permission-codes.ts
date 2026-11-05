@@ -135,6 +135,9 @@ export const PermissionCodes = {
   RBR_RESTORE: "rbr.restore-deleted-documents",
   RBR_PURGE: "rbr.permanently-purge-documents",
   RBR_RETENTION: "rbr.manage-recycle-bin-retention",
+  // Document preview and rendition management (DPRM), seeded by V10 - the preview security policy.
+  DPRM_RESTRICT_PRINT_DOWNLOAD: "dprm.configure-preview-security-policy.restrict-print-download",
+  DPRM_TOGGLE_PREVIEW_WATERMARK: "dprm.configure-preview-security-policy.toggle-preview-watermark",
   // Watermarking (DW), seeded by V68. Asking for a watermarked COPY needs
   // only DOCM_DOCUMENTS_VIEW - these two are about administering the
   // tenant's templates. There is deliberately no separate "delete template"

@@ -663,3 +663,21 @@ input[type="password"]::-webkit-textfield-decoration-container {
     opacity: 0.6;
   }
 }
+
+/*
+ * Preview security policy (DPRM-FR-005): while the organisation restricts printing from a preview, PageViewer adds
+ * `dms-print-restricted` to <body> and the browser's own print of the page comes out blank - the only way such a
+ * preview reaches paper is the viewer's own "Print with watermark" (or not at all when printing is blocked).
+ */
+@media print {
+  body.dms-print-restricted > * {
+    display: none !important;
+  }
+  body.dms-print-restricted::before {
+    content: "Printing isn't allowed from a document preview. Use the Print button in the preview if your organisation permits it.";
+    display: block;
+    padding: 2rem;
+    font: 14px/1.5 system-ui, sans-serif;
+    color: #111;
+  }
+}

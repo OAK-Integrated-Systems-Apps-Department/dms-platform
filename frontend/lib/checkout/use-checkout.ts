@@ -107,11 +107,15 @@ export function useCheckoutActions(documentId: string) {
   return { checkOut, checkIn, discard, forceRelease, hold }
 }
 
-/** Whether online editing is on, in which mode, and for which file types. Cached for a minute - it rarely changes. */
-export function useEditingConfig() {
+/**
+ * Whether online editing is on, in which mode, and for which file types. Cached for a minute - it rarely changes.
+ * `enabled` false skips the request - for someone who has no organisation (a platform administrator) or no right to ask.
+ */
+export function useEditingConfig(enabled = true) {
   return useQuery({
     queryKey: ["editing-config"],
     queryFn: fetchEditingConfig,
+    enabled,
     staleTime: 60_000,
     retry: false,
   })

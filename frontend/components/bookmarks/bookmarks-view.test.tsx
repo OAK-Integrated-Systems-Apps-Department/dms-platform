@@ -37,6 +37,10 @@ vi.mock("@/components/documents/document-preview", () => ({
 // real permission/status data - irrelevant to what this test file checks.
 vi.mock("@/components/pins/pin-button", () => ({ PinnedIndicator: () => null }))
 vi.mock("@/components/bookmarks/bookmark-button", () => ({ BookmarkedIndicator: () => null }))
+// ...and so does the tile's first-page thumbnail; it shows its children (the file icon) until a picture is loaded.
+vi.mock("@/components/documents/document-thumbnail", () => ({
+  DocumentThumbnail: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
 
 import { BookmarksView } from "./bookmarks-view"
 
