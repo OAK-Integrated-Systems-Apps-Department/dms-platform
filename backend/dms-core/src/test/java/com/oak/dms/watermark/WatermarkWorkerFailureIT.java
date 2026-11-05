@@ -2,6 +2,7 @@ package com.oak.dms.watermark;
 
 import com.oak.dms.common.exception.KeycloakIntegrationException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
+import com.oak.dms.watermark.config.WatermarkExecutorConfig;
 import com.oak.dms.watermark.dto.WatermarkJobResponse;
 import com.oak.dms.watermark.entity.WatermarkJob;
 import com.oak.dms.watermark.enums.WatermarkJobStatus;
@@ -21,7 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.io.InputStream;
@@ -71,6 +74,9 @@ class WatermarkWorkerFailureIT extends WatermarkFixtures {
     private WatermarkJobRepository jobRepository;
     @Autowired
     private WatermarkJobWorker worker;
+    @Autowired
+    @Qualifier(WatermarkExecutorConfig.JOB_EXECUTOR)
+    private ThreadPoolTaskExecutor jobExecutor;
     @Autowired
     private WatermarkMetrics metrics;
     @Autowired
@@ -209,6 +215,7 @@ class WatermarkWorkerFailureIT extends WatermarkFixtures {
         Fixture fixture = fixture();
         UUID jobId = watermarkService.apply(fixture.documentId(), customText("CONFIDENTIAL"), null).jobId();
         awaitFinish(jobId);
+        awaitJobThreadsIdle();
 
         // Put it back the way a killed process would have left it: claimed,
         // started a moment ago, with no thread behind it.
@@ -231,6 +238,7 @@ class WatermarkWorkerFailureIT extends WatermarkFixtures {
         Fixture fixture = fixture();
         UUID jobId = watermarkService.apply(fixture.documentId(), customText("CONFIDENTIAL"), null).jobId();
         awaitFinish(jobId);
+        awaitJobThreadsIdle();
 
         // Older than stuck-after: most likely the file itself killed the
         // last process, and resuming it on every restart would be a loop.
@@ -302,6 +310,27 @@ class WatermarkWorkerFailureIT extends WatermarkFixtures {
                 .describedAs("the format service should have been reached")
                 .isTrue();
         return response.jobId();
+    }
+
+    /**
+     * The row turns {@code failed} a moment before the job thread has finished with it: the worker still
+     * audits, records metrics and only then drops the id from its in-flight set. A test that puts the row
+     * back to {@code processing} and calls {@code resumeInterrupted()} in that gap has its resume ignored
+     * as "already in flight", and the job then never runs. Waiting for the job pool to go idle closes the gap.
+     */
+    private void awaitJobThreadsIdle() {
+        Instant deadline = Instant.now().plus(PATIENCE);
+        while (jobExecutor.getActiveCount() > 0) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new AssertionError("The watermark job threads did not go idle within " + PATIENCE);
+            }
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        }
     }
 
     private WatermarkJob awaitFinish(UUID jobId) {
