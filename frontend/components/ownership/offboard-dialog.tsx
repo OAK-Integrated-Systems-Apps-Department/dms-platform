@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import Link from "next/link"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -133,18 +135,21 @@ export function OffboardDialog({ user, open, onOpenChange, onDone }: OffboardDia
           )}
           <OwnedSummary data={data} />
 
-          <label className="flex flex-col gap-1.5 text-[12.5px] font-semibold">
+          <div className="flex flex-col gap-1.5 text-[12.5px] font-semibold">
             What happens to their documents
-            <select
-              aria-label="What happens to their documents"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as "transfer" | "holding")}
-              className="rounded-btn border border-[var(--border-strong)] bg-card px-3 py-2 text-[13px] font-normal"
-            >
-              <option value="transfer">Transfer them to a person</option>
-              <option value="holding">Park them with a holding owner</option>
-            </select>
-          </label>
+            <SearchableSelect
+              inline
+              searchable={false}
+              allowClear={false}
+              allLabel="What happens to their documents"
+              selected={mode}
+              onChange={(next) => setMode(next as "transfer" | "holding")}
+              options={[
+                { value: "transfer", label: "Transfer them to a person" },
+                { value: "holding", label: "Park them with a holding owner" },
+              ]}
+            />
+          </div>
           {mode === "transfer" ? (
             <div className="flex flex-col gap-1.5 text-[12.5px] font-semibold">
               New owner

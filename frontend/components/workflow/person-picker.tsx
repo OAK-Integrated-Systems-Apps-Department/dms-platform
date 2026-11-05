@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Check, Lock, X } from "lucide-react"
 
@@ -18,6 +18,11 @@ interface PersonPickerProps {
   /** Explain that someone without document access can still be picked (information requests, mentions). */
   accessHint?: string
   placeholder?: string
+  /**
+   * Float the results under the search box (opens on focus, closes on an outside click) instead of laying them
+   * out in the page. Use it in a filter bar, where an in-flow list would stretch the whole row.
+   */
+  popover?: boolean
 }
 
 /**
@@ -25,9 +30,20 @@ interface PersonPickerProps {
  * requests. The search is debounced and runs server side, so it also works
  * in tenants with many users.
  */
-export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHint, placeholder = "Search by name or username" }: PersonPickerProps) {
+export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHint, placeholder = "Search by name or username", popover = false }: PersonPickerProps) {
   const [search, setSearch] = useState("")
   const [debounced, setDebounced] = useState("")
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!popover) return
+    function onDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [popover])
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebounced(search), 250)
@@ -44,7 +60,7 @@ export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHin
 
   if (value) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-btn border border-primary bg-primary/5 px-3 py-2 text-[13px]">
+      <div className="flex min-h-[38px] items-center justify-between gap-2 rounded-btn border border-primary bg-primary/5 px-3 py-1 text-[13px]">
         <span className="min-w-0">
           <span className="font-semibold text-foreground">{value.displayName ?? value.username ?? "Unnamed"}</span>
           {value.departmentName && <span className="ml-1.5 text-muted-foreground">· {value.departmentName}</span>}
@@ -68,9 +84,21 @@ export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHin
 
   const rows = people.data ?? []
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      ref={containerRef}
+      className={cn("flex flex-col gap-2", popover && "relative")}
+      onFocusCapture={popover ? () => setOpen(true) : undefined}
+      onKeyDown={popover ? (e) => e.key === "Escape" && setOpen(false) : undefined}
+    >
       <SearchInput value={search} onChange={setSearch} placeholder={placeholder} />
-      <ul className="max-h-[220px] overflow-y-auto rounded-btn border border-border" role="listbox">
+      <ul
+        hidden={popover && !open}
+        className={cn(
+          "max-h-[220px] overflow-y-auto rounded-lg border border-border bg-card p-1.5",
+          popover && "absolute top-[calc(100%+6px)] left-0 z-20 w-[380px] max-w-[85vw] shadow-[var(--ledger-shadow)]"
+        )}
+        role="listbox"
+      >
         {people.isPending && <li className="px-3 py-2 text-[12.5px] text-muted-foreground">Searching…</li>}
         {people.isError && (
           <li className="px-3 py-2 text-[12.5px] text-[var(--rust)]">
@@ -86,8 +114,11 @@ export function PersonPicker({ queryKey, fetchPeople, value, onChange, accessHin
               type="button"
               role="option"
               aria-selected={false}
-              onClick={() => onChange(person)}
-              className={cn("flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] hover:bg-muted")}
+              onClick={() => {
+                setOpen(false)
+                onChange(person)
+              }}
+              className={cn("flex w-full items-center justify-between gap-2 rounded-sm px-2.5 py-2 text-left text-[13px] hover:bg-muted")}
             >
               <span className="min-w-0">
                 <span className="font-medium text-foreground">{person.displayName ?? person.username ?? "Unnamed"}</span>
