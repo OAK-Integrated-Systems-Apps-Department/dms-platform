@@ -1,9 +1,12 @@
 package com.oak.dms.tenant.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.util.List;
 
 /**
  * Request body for onboarding a brand-new client in one call: the tenant
@@ -51,6 +54,29 @@ public record ProvisionTenantRequest(
         String adminFirstName,
 
         @Size(max = 255)
-        String adminLastName
+        String adminLastName,
+        /** More administrators created with the organisation (optional, at most 9 beyond the first). */
+        @Valid
+        @Size(max = 9)
+        List<AdditionalAdmin> additionalAdmins
 ) {
+
+    /** Another TENANT_ADMIN created alongside the first; same rules as the first administrator's fields. */
+    public record AdditionalAdmin(
+            @NotBlank
+            @Email
+            @Size(max = 320)
+            String email,
+            @NotBlank
+            @Size(min = 3, max = 100)
+            @Pattern(regexp = "^[a-zA-Z0-9._-]+$",
+                    message = "username may only contain letters, numbers, dots, hyphens, and underscores")
+            String username,
+            @NotBlank
+            @Size(max = 255)
+            String firstName,
+            @Size(max = 255)
+            String lastName
+    ) {
+    }
 }

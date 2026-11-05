@@ -19,7 +19,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -81,59 +86,66 @@ public class TenantProvisioningService {
         starterCatalogService.install(tenantId);
         relationshipTypeSeeder.install(tenantId);
 
-        // Creates the Keycloak user and sets an unguessable temporary
-        // password nobody is told - same as a normal user invite (see
-        // KeycloakUserService#createUser). It does NOT send any email
-        // itself; the welcome/set-password email is sent below, once the
-        // local User row exists, via the same PasswordResetService path
-        // UserServiceImpl#createUser uses for invited users. If this
-        // throws, nothing else has happened yet: the tenant insert
-        // above rolls back automatically with the rest of this
-        // transaction, so no manual cleanup is needed.
-        UUID keycloakId = keycloakUserService.createUser(request.adminUsername(), request.adminEmail(),
-                request.adminFirstName(), request.adminLastName(), tenantId);
+        // Every administrator - the first, then any extra ones - is an invited TENANT_ADMIN. Distinct
+        // usernames and emails across the request are checked up front: Keycloak would catch a clash too,
+        // but only after some of the accounts already exist.
+        List<AdminSpec> specs = new ArrayList<>();
+        specs.add(new AdminSpec(request.adminEmail(), request.adminUsername(), request.adminFirstName(),
+                request.adminLastName()));
+        if (request.additionalAdmins() != null) {
+            request.additionalAdmins().forEach(extra -> specs.add(
+                    new AdminSpec(extra.email(), extra.username(), extra.firstName(), extra.lastName())));
+        }
+        requireDistinct(specs);
 
+        // Keycloak accounts created so far. They are not part of this DB transaction, so a failure part-way
+        // must delete exactly these - an orphaned account with no tenant/user row would be invisible to the
+        // app yet still able to sign in.
+        List<UUID> createdInKeycloak = new ArrayList<>();
+        List<User> savedAdmins = new ArrayList<>();
         try {
-            keycloakUserService.assignPlatformRealmRole(keycloakId, TENANT_ADMIN_ROLE);
+            for (AdminSpec spec : specs) {
+                // Creates the Keycloak user with an unguessable temporary password nobody is told - same as
+                // a normal user invite. The set-password email is sent below, once the local User row exists.
+                UUID keycloakId = keycloakUserService.createUser(spec.username(), spec.email(), spec.firstName(),
+                        spec.lastName(), tenantId);
+                createdInKeycloak.add(keycloakId);
+                keycloakUserService.assignPlatformRealmRole(keycloakId, TENANT_ADMIN_ROLE);
 
-            User admin = User.builder()
-                    .tenantId(tenantId)
-                    .keycloakId(keycloakId)
-                    .email(request.adminEmail())
-                    .username(request.adminUsername())
-                    .firstName(request.adminFirstName())
-                    .lastName(request.adminLastName())
-                    .displayName(User.displayName(request.adminFirstName(), request.adminLastName()))
-                    .status(User.UserStatus.active)
-                    .build();
-            User savedAdmin = userRepository.save(admin);
-
-            // Same call UserServiceImpl#createUser makes for an ordinary
-            // invited user - this is the tenant admin's only route to
-            // setting a real password and signing in, so a send failure
-            // is deliberately left to propagate into the catch block
-            // below rather than being swallowed. It is turned into the same
-            // MAIL_DELIVERY_FAILED answer an ordinary invite gets, so the
-            // platform administrator is told what is wrong (the mail
-            // settings) instead of seeing "An unexpected error occurred".
-            try {
-                passwordResetService.issueForNewUser(savedAdmin);
-            } catch (RuntimeException mailFailure) {
-                log.error("Invitation email to the first admin {} of {} could not be sent; undoing the organisation: {}",
-                        request.adminEmail(), request.domain(), mailFailure.getMessage(), mailFailure);
-                throw new com.oak.dms.common.exception.MailDeliveryException("The organisation's first administrator could not "
-                        + "be invited by email, so the organisation was not created. Check the mail settings (SMTP) and try again.");
+                User saved = userRepository.save(User.builder()
+                        .tenantId(tenantId)
+                        .keycloakId(keycloakId)
+                        .email(spec.email())
+                        .username(spec.username())
+                        .firstName(spec.firstName())
+                        .lastName(spec.lastName())
+                        .displayName(User.displayName(spec.firstName(), spec.lastName()))
+                        .status(User.UserStatus.active)
+                        .build());
+                savedAdmins.add(saved);
             }
 
-            log.info("Provisioned tenant {} ({}) with first admin {} ({})",
-                    tenantId, tenant.getDomain(), savedAdmin.getUserId(), savedAdmin.getEmail());
+            // The invitation is each administrator's only route to a real password, so a send failure is
+            // not swallowed: it undoes the whole organisation, and the platform administrator is told what
+            // is wrong (the mail settings) instead of "An unexpected error occurred".
+            for (User saved : savedAdmins) {
+                try {
+                    passwordResetService.issueForNewUser(saved);
+                } catch (RuntimeException mailFailure) {
+                    log.error("Invitation email to administrator {} of {} could not be sent; undoing the organisation: {}",
+                            saved.getEmail(), request.domain(), mailFailure.getMessage(), mailFailure);
+                    throw new com.oak.dms.common.exception.MailDeliveryException("An administrator of the organisation "
+                            + "could not be invited by email, so the organisation was not created. Check the mail settings (SMTP) and try again.");
+                }
+            }
 
-            // platformLevel() - same reasoning as TenantServiceImpl's own
-            // tenant-lifecycle events: this isn't about the caller's own
-            // tenant. objectType is TENANT (not USER), even though a user
-            // is created too, since the tenant is the primary resource
-            // this endpoint exists to create - the new admin's own
-            // USER_CREATED-shaped detail is already captured in newValue.
+            User first = savedAdmins.get(0);
+            log.info("Provisioned tenant {} ({}) with {} admin(s), first {} ({})",
+                    tenantId, tenant.getDomain(), savedAdmins.size(), first.getUserId(), first.getEmail());
+
+            // platformLevel() - same reasoning as TenantServiceImpl's own tenant-lifecycle events: this isn't
+            // about the caller's own tenant. objectType is TENANT (not USER), since the tenant is the primary
+            // resource this endpoint creates - the administrators are captured in newValue.
             auditService.event(AuditActionCatalog.TENANT_PROVISIONED)
                     .platformLevel()
                     .objectType(AuditObjectTypes.TENANT)
@@ -144,29 +156,45 @@ public class TenantProvisioningService {
                             "tenantName", tenant.getTenantName(),
                             "domain", tenant.getDomain(),
                             "subscriptionTier", tenant.getSubscriptionTier(),
-                            "adminUserId", savedAdmin.getUserId(),
-                            "adminUsername", savedAdmin.getUsername(),
-                            "adminEmail", savedAdmin.getEmail()))
+                            "adminUserId", first.getUserId(),
+                            "adminUsername", first.getUsername(),
+                            "adminEmail", first.getEmail(),
+                            "adminCount", savedAdmins.size(),
+                            "adminEmails", savedAdmins.stream().map(User::getEmail).toList()))
                     .log();
 
+            String tenantName = tenant.getTenantName();
             return new TenantProvisioningResponse(tenantMapper.toResponse(tenant),
-                    userMapper.toResponse(savedAdmin, tenant.getTenantName()));
+                    userMapper.toResponse(first, tenantName),
+                    savedAdmins.stream().skip(1).map(u -> userMapper.toResponse(u, tenantName)).toList());
         } catch (RuntimeException e) {
-            // The Keycloak user (and possibly the TENANT_ADMIN grant) from
-            // above is not covered by this method's DB transaction, so it
-            // will NOT be rolled back automatically when we rethrow below.
-            // Delete it explicitly so a failed provisioning attempt never
-            // leaves an orphaned Keycloak account with no corresponding
-            // tenant/user - that account would otherwise be invisible to
-            // the app (no local user row) yet still able to authenticate.
-            try {
-                keycloakUserService.deleteUser(keycloakId);
-            } catch (RuntimeException cleanupFailure) {
-                log.error("Failed to clean up orphaned Keycloak user {} after a failed provisioning attempt "
-                        + "for domain {}; manual cleanup required in the Keycloak console",
-                        keycloakId, request.domain(), cleanupFailure);
+            for (UUID keycloakId : createdInKeycloak) {
+                try {
+                    keycloakUserService.deleteUser(keycloakId);
+                } catch (RuntimeException cleanupFailure) {
+                    log.error("Failed to clean up orphaned Keycloak user {} after a failed provisioning attempt "
+                            + "for domain {}; manual cleanup required in the Keycloak console",
+                            keycloakId, request.domain(), cleanupFailure);
+                }
             }
             throw e;
         }
+    }
+
+    /** Two administrators of one organisation can't share a username or an email (case-insensitive). */
+    private static void requireDistinct(List<AdminSpec> specs) {
+        Set<String> usernames = new HashSet<>();
+        Set<String> emails = new HashSet<>();
+        for (AdminSpec spec : specs) {
+            if (!usernames.add(spec.username().toLowerCase(Locale.ROOT))) {
+                throw new DuplicateResourceException("Two administrators have the username " + spec.username());
+            }
+            if (!emails.add(spec.email().toLowerCase(Locale.ROOT))) {
+                throw new DuplicateResourceException("Two administrators have the email " + spec.email());
+            }
+        }
+    }
+
+    private record AdminSpec(String email, String username, String firstName, String lastName) {
     }
 }
