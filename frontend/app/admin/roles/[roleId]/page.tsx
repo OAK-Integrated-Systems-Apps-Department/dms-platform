@@ -65,7 +65,7 @@ export default function RoleDetailsPage() {
           )}
         />
       ) : (
-        <div className="flex flex-col items-center gap-2 rounded-md border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
+        <div className="flex flex-col items-center gap-2 rounded-btn border border-border bg-card py-16 text-center text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">
           <AlertTriangle size={20} className="text-[var(--rust)]" />
           Couldn&apos;t load this role.
         </div>

@@ -704,7 +704,7 @@ function FolderView({
         </div>
       )}
       <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-        <div className="border-b border-border px-2.5 py-2">
+        <div className="border-b border-border px-4 py-2">
           <FolderPath
             trail={trail}
             onOpen={open}
@@ -712,7 +712,7 @@ function FolderView({
             dropTarget={dnd.target}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           {can.createFolder && canEditHere && !missing && (
             <Button
               variant="ghost"
@@ -815,7 +815,7 @@ function FolderView({
             <div
               role="radiogroup"
               aria-label="View"
-              className="inline-flex rounded-md border border-border p-0.5"
+              className="inline-flex rounded-btn border border-border p-0.5"
             >
               {(
                 [
@@ -847,7 +847,7 @@ function FolderView({
       </div>
 
       {checked.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-btn border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]">
           <span className="font-semibold">{checked.size} selected</span>
           {can.moveDocuments && canEditHere && (
             <Button
@@ -918,7 +918,7 @@ function FolderView({
       {folders.isPending || loadingDocuments ? (
         <LoadingState message="Loading…" />
       ) : missing ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center">
+        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center bg-card">
           <p className="text-[13.5px] font-medium">
             This folder doesn&apos;t exist any more.
           </p>
@@ -959,7 +959,7 @@ function FolderView({
           documentDrag={documentDrag}
         />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
           {emptyMessage}
         </p>
       ) : (

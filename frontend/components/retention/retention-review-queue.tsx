@@ -35,7 +35,7 @@ export function RetentionReviewQueue({ kind }: { kind: "review" | "without-polic
       ) : query.isError ? (
         <LoadFailed error={query.error} fallback="Could not load the list." onRetry={() => void query.refetch()} />
       ) : query.data.content.length === 0 ? (
-        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground">
+        <p className="flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-10 text-center text-[13px] text-muted-foreground bg-card">
           {kind === "review" ? "No documents are waiting for a retention review." : "Every document is covered by a rule."}
         </p>
       ) : (

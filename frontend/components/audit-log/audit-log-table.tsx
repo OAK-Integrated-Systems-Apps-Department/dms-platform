@@ -34,7 +34,7 @@ export function AuditLogTable({ rows, onView, sortField, sortDirection, onSortCh
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px] border-collapse">
+        <table className="tbl-card w-full min-w-[920px] border-collapse">
           <thead>
             <tr className="border-b border-border">
               <SortableTh
@@ -107,7 +107,7 @@ export function AuditLogTable({ rows, onView, sortField, sortDirection, onSortCh
                   {row.actorDisplayName ?? (row.actorType === "SYSTEM" ? "System" : "—")}
                 </td>
                 <td className="px-3 py-3">
-                  <Badge variant={OUTCOME_BADGE_VARIANT[row.outcome]} className="gap-1.5 rounded-md">
+                  <Badge variant={OUTCOME_BADGE_VARIANT[row.outcome]} className="gap-1.5 rounded-btn">
                     <span className="size-[5px] rounded-full bg-current" />
                     {row.outcome}
                   </Badge>

@@ -258,7 +258,7 @@ export function AppSidebar({
         >
           <CollapsibleTrigger
             className={cn(
-              "flex h-auto w-full items-center gap-2 rounded-md p-2 py-[9px] text-left text-[13.5px] ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2",
+              "flex h-auto w-full items-center gap-2 rounded-btn p-2 py-[9px] text-left text-[13.5px] ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2",
               hasActive && !open && "font-semibold"
             )}
           >

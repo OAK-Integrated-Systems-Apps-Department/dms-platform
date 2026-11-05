@@ -295,7 +295,7 @@ function RangePicker({
                 onChange({ kind: "days", days })
               }}
               className={cn(
-                "rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+                "rounded-btn px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
                 on
                   ? "bg-white text-[#163828] shadow-sm"
                   : "text-white/75 hover:text-white"
@@ -311,7 +311,7 @@ function RangePicker({
           aria-checked={custom}
           onClick={() => setCustom(true)}
           className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+            "inline-flex items-center gap-1 rounded-btn px-2.5 py-1 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
             custom
               ? "bg-white text-[#163828] shadow-sm"
               : "text-white/75 hover:text-white"
@@ -338,7 +338,7 @@ function RangePicker({
             value={from}
             max={to || today}
             onChange={(e) => setFrom(e.target.value)}
-            className="h-8 rounded-md border-0 bg-white px-2 text-[12px] text-foreground"
+            className="h-8 rounded-btn border-0 bg-white px-2 text-[12px] text-foreground"
           />
           <span className="text-white/70">to</span>
           <label className="sr-only" htmlFor="impact-to">
@@ -351,7 +351,7 @@ function RangePicker({
             min={from}
             max={today}
             onChange={(e) => setTo(e.target.value)}
-            className="h-8 rounded-md border-0 bg-white px-2 text-[12px] text-foreground"
+            className="h-8 rounded-btn border-0 bg-white px-2 text-[12px] text-foreground"
           />
           <button
             type="submit"
@@ -609,7 +609,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
         <div
           role="radiogroup"
           aria-label="Savings measure"
-          className="flex rounded-md bg-muted p-0.5"
+          className="flex rounded-btn bg-muted p-0.5"
         >
           {METRICS.map((m) => (
             <button
@@ -619,7 +619,7 @@ function Trend({ data }: { data: DigitalImpactDto }) {
               aria-checked={metric === m.key}
               onClick={() => setMetric(m.key)}
               className={cn(
-                "rounded px-2 py-0.5 text-[11.5px] font-semibold transition-colors",
+                "rounded-btn px-2 py-0.5 text-[11.5px] font-semibold transition-colors",
                 metric === m.key
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -890,7 +890,7 @@ function TopSavers({
                   </span>
                   <span
                     className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-md",
+                      "flex size-7 shrink-0 items-center justify-center rounded-btn",
                       kind.tone
                     )}
                   >

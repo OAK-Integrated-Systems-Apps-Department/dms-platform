@@ -80,7 +80,7 @@ export default function DocumentTypeDetailPage() {
             <div>
               <div className="mb-2 flex items-center gap-2.5">
                 <h1 className="font-heading text-[26px] font-semibold tracking-[-0.01em]">{documentType.typeName}</h1>
-                <Badge variant={documentType.status === "active" ? "default" : "muted"} className="rounded-md">{documentType.status}</Badge>
+                <Badge variant={documentType.status === "active" ? "default" : "muted"} className="rounded-btn">{documentType.status}</Badge>
               </div>
               <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
                 {documentType.description || "No description."} Current schema version v{documentType.currentSchemaVersion}.

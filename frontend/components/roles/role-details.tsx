@@ -90,13 +90,13 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
         <h2 className="font-heading text-[20px] font-semibold">{role.name}</h2>
         <Badge
           variant={role.status === "Active" ? "default" : "muted"}
-          className="gap-1.5 rounded-md"
+          className="gap-1.5 rounded-btn"
         >
           <span className="size-[5px] rounded-full bg-current" />
           {role.status}
         </Badge>
         {role.system && (
-          <Badge variant="gold" className="rounded-md">
+          <Badge variant="gold" className="rounded-btn">
             <ShieldCheck size={12} />
             System role
           </Badge>
@@ -147,13 +147,13 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
                 >
                   <Badge
                     variant="outline"
-                    className="rounded-md py-1 transition-colors hover:border-primary hover:text-primary"
+                    className="rounded-btn py-1 transition-colors hover:border-primary hover:text-primary"
                   >
                     {label}
                   </Badge>
                 </Link>
               ) : (
-                <Badge key={group.module} variant="outline" className="rounded-md py-1">
+                <Badge key={group.module} variant="outline" className="rounded-btn py-1">
                   {label}
                 </Badge>
               )
@@ -195,18 +195,18 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
       </div>
 
       {usersLoading ? (
-        <div className="flex items-center gap-2 rounded-md border border-border py-8 text-[13px] text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-btn border border-border py-8 text-[13px] text-muted-foreground">
           <Loader2 size={14} className="mx-auto animate-spin" />
           <span className="mx-auto">Loading assigned users…</span>
         </div>
       ) : usersError ? (
-        <div className="flex items-center justify-center gap-2 rounded-md border border-[var(--rust)] bg-[var(--rust-tint)] py-6 text-[13px] text-[var(--rust)]">
+        <div className="flex items-center justify-center gap-2 rounded-btn border border-[var(--rust)] bg-[var(--rust-tint)] py-6 text-[13px] text-[var(--rust)]">
           <AlertTriangle size={14} />
           Could not load assigned users.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border">
-          <table className="w-full border-collapse">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="tbl-card tbl-last-fit w-full border-collapse">
             <thead>
               <tr className="border-b border-border bg-muted">
                 <SortableTh
@@ -268,7 +268,7 @@ export function RoleDetails({ role, canEdit, canDelete, canManagePermissions }: 
                   <td className="px-3.5 py-3">
                     <Badge
                       variant={user.status === "Active" ? "default" : "muted"}
-                      className="gap-1.5 rounded-md"
+                      className="gap-1.5 rounded-btn"
                     >
                       <span className="size-[5px] rounded-full bg-current" />
                       {user.status}

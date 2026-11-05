@@ -90,7 +90,7 @@
 .dash-sheet {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   transform-style: preserve-3d;
   /* Close enough together that the whole stack fits inside the panel. */
   transform: translateZ(calc(var(--layer) * 9px));

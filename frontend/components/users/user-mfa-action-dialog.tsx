@@ -53,7 +53,7 @@ export function UserMfaActionDialog({
         <AlertDialogPopup>
           <span
             className={cn(
-              "mx-auto mb-4 flex size-11 items-center justify-center rounded-md",
+              "mx-auto mb-4 flex size-11 items-center justify-center rounded-btn",
               isReset
                 ? "bg-[var(--rust-tint)] text-[var(--rust)]"
                 : "bg-primary/10 text-primary"

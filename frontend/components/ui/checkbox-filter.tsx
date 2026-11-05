@@ -335,7 +335,7 @@ export function CheckboxFilter({
                         event.preventDefault()
                         toggleOption(option)
                       }}
-                      className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12.5px] text-foreground hover:bg-muted"
+                      className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-foreground hover:bg-muted"
                     >
                       <span
                         className={`flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${

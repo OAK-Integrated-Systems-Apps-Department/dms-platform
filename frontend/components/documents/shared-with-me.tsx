@@ -167,7 +167,7 @@ export function SharedWithMe() {
     // Fills the window down to the bottom, like My Documents, so the empty state
     // is a full-height box instead of a thin strip under the toolbar.
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-[var(--ledger-shadow)]">
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 shadow-[var(--ledger-shadow)]">
         <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
           <Users size={16} className="text-primary" />
           Shared with me
@@ -198,7 +198,7 @@ export function SharedWithMe() {
           <div
             role="radiogroup"
             aria-label="View"
-            className="inline-flex rounded-md border border-border p-0.5"
+            className="inline-flex rounded-btn border border-border p-0.5"
           >
             {(
               [
@@ -233,7 +233,7 @@ export function SharedWithMe() {
       ) : folders.isError || documents.isError ? (
         <LoadFailed error={folders.error} fallback="Could not load what's shared with you." />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
           {empty}
         </p>
       ) : view === "list" ? (

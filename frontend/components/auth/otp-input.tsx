@@ -76,7 +76,7 @@ export function OtpInput({ length = OTP_LENGTH, value, onChange, disabled }: Otp
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={(e) => handlePaste(index, e)}
           className={cn(
-            "h-[52px] w-[44px] rounded-md border-[1.5px] bg-[var(--secondary)] text-center font-mono text-xl outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15 disabled:opacity-60",
+            "h-[52px] w-[44px] rounded-btn border-[1.5px] bg-[var(--secondary)] text-center font-mono text-xl outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15 disabled:opacity-60",
             digit
               ? "border-primary font-bold text-[var(--primary-dark,var(--primary))]"
               : "border-[var(--border-strong)] text-foreground"

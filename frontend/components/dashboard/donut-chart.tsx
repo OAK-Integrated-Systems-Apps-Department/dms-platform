@@ -148,7 +148,7 @@ export function DonutChart({
               onBlur={() => setActive(null)}
               aria-label={`${slice.label}: ${slice.valueLabel ?? slice.value}, ${share(slice.value, whole)}${slice.detail ? `, ${slice.detail}` : ""}`}
               className={cn(
-                "grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                "grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-btn px-1.5 py-1 text-left text-[12px] transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                 active === slice.key ? "bg-muted" : "hover:bg-muted/60"
               )}
             >

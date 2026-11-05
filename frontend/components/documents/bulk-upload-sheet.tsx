@@ -554,7 +554,7 @@ export function BulkUploadSheet({
               </p>
             )}
             {documentTypeId && (templates.data ?? []).length > 0 && (
-              <div className="mt-2 rounded-md bg-muted/50 px-3 py-2 text-[12.5px]">
+              <div className="mt-2 rounded-btn bg-muted/50 px-3 py-2 text-[12.5px]">
                 <p className="mb-1 text-muted-foreground">
                   Templates for this type - fill one in, then upload it here:
                 </p>
@@ -681,7 +681,7 @@ export function BulkUploadSheet({
           )}
 
           {items.length > 0 && (
-            <ul className="divide-y divide-border rounded-lg border border-border">
+            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
               {items.map((item) => (
                 <li key={item.id} className="flex items-start gap-3 p-3">
                   <div className="min-w-0 flex-1">
@@ -725,7 +725,7 @@ export function BulkUploadSheet({
                   </div>
                   <Badge
                     variant={item.state.kind === "queued" ? "outline" : "rust"}
-                    className="shrink-0 rounded-md"
+                    className="shrink-0 rounded-btn"
                   >
                     {STATE_LABEL[item.state.kind]}
                   </Badge>
@@ -818,7 +818,7 @@ function DuplicateChoicePicker({
   onChange: (choice: DuplicateChoice) => void
 }) {
   return (
-    <div className="mt-2 rounded-md border border-[var(--gold)]/60 bg-[var(--gold-tint)] p-2.5">
+    <div className="mt-2 rounded-btn border border-[var(--gold)]/60 bg-[var(--gold-tint)] p-2.5">
       <p className="text-[12px] leading-[1.45] text-foreground">
         {matchReason(match)}
       </p>

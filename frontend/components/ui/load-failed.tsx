@@ -41,7 +41,7 @@ export function LoadFailed({ error, fallback, forbiddenMessage, onRetry, quiet, 
 
   return (
     <div
-      className={`flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground ${className ?? ""}`}
+      className={`flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground ${className ?? ""}`}
     >
       <p>Nothing to show right now.</p>
       {onRetry && (

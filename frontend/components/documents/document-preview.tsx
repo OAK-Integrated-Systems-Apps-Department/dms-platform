@@ -387,7 +387,7 @@ export function DocumentPreview({
               <div
                 role="group"
                 aria-label="Zoom"
-                className="flex items-center rounded-md border border-border"
+                className="flex items-center rounded-btn border border-border"
               >
                 <Button
                   size="icon-sm"
@@ -680,7 +680,7 @@ function Viewer({
             src={url}
             controls
             onError={() => setBroken(true)}
-            className="max-h-full max-w-full rounded-md"
+            className="max-h-full max-w-full rounded-btn"
           />
         </div>
       )

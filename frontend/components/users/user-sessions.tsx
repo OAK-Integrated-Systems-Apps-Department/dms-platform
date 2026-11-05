@@ -30,7 +30,7 @@ function SessionRow({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-dashed border-border py-3 last:border-b-0">
       <div className="flex items-center gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-btn bg-muted text-muted-foreground">
           <Monitor size={16} />
         </span>
         <div>
@@ -66,7 +66,7 @@ function SessionRow({
  *
  * Same "screen card" shape as `UserMfaManagement` (U8) and
  * `UserAccessSummary` (A1) — identity header, then the feature content,
- * all in one `rounded-md` card. Both revoke actions route through
+ * all in one `rounded-btn` card. Both revoke actions route through
  * `RevokeSessionDialog` rather than firing instantly, same reasoning as
  * every other account-affecting action in this feature (U6/U7/U8) — a
  * revoke signs a real device out immediately and can't be undone from

@@ -139,7 +139,7 @@ export function UserStatusDialog({
         <AlertDialogPopup className="sm:max-w-2xl">
           <span
             className={cn(
-              "mx-auto mb-4 flex size-11 items-center justify-center rounded-md",
+              "mx-auto mb-4 flex size-11 items-center justify-center rounded-btn",
               variant.iconClassName
             )}
           >

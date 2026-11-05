@@ -203,7 +203,7 @@ export function UploadsPanel() {
             <button
               type="button"
               onClick={() => setConfirmCancel(false)}
-              className="rounded-md px-2.5 py-1 font-medium text-primary hover:bg-primary/10"
+              className="rounded-btn px-2.5 py-1 font-medium text-primary hover:bg-primary/10"
             >
               Continue
             </button>

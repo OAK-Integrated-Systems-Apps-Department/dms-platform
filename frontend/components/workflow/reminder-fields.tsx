@@ -55,7 +55,7 @@ export function CollapsibleSection({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-border">
+    <div className="rounded-lg border border-dashed border-border bg-card">
       <button
         type="button"
         aria-expanded={open}

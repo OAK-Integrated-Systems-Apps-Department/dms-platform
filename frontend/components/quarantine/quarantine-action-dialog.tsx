@@ -112,7 +112,7 @@ export function QuarantineActionDialog({ action, filename, open, onOpenChange, o
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPortal>
         <AlertDialogPopup className="sm:max-w-2xl">
-          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-md", config.iconClassName)}>
+          <span className={cn("mx-auto mb-4 flex size-11 items-center justify-center rounded-btn", config.iconClassName)}>
             <Icon size={20} aria-hidden="true" />
           </span>
           <AlertDialogTitle>{config.title}</AlertDialogTitle>

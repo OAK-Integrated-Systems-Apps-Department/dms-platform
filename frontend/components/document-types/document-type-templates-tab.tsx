@@ -388,7 +388,7 @@ function IconButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors disabled:opacity-40",
+        "flex size-8 items-center justify-center rounded-btn text-muted-foreground transition-colors disabled:opacity-40",
         danger
           ? "hover:bg-destructive/10 hover:text-destructive"
           : "hover:bg-muted hover:text-foreground"

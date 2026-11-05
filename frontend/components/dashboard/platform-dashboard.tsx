@@ -417,7 +417,7 @@ export function PlatformDashboard() {
             <div
               role="radiogroup"
               aria-label="Filter by state"
-              className="flex items-center gap-1 rounded-md border border-border p-0.5"
+              className="flex items-center gap-1 rounded-btn border border-border p-0.5"
             >
               {FILTERS.map((option) => (
                 <button
@@ -427,7 +427,7 @@ export function PlatformDashboard() {
                   aria-checked={filter === option.value}
                   onClick={() => setFilter(option.value)}
                   className={cn(
-                    "rounded px-2 py-1 text-[12px] font-medium",
+                    "rounded-btn px-2 py-1 text-[12px] font-medium",
                     filter === option.value
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -478,7 +478,7 @@ export function PlatformDashboard() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-[13px]">
+            <table className="tbl-card w-full min-w-[860px] text-[13px]">
               <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
                 <tr>
                   <th className="px-4 py-2.5 font-semibold">Organisation</th>
@@ -526,7 +526,7 @@ export function PlatformDashboard() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant={state.variant} className="rounded-md">
+                          <Badge variant={state.variant} className="rounded-btn">
                             {state.label}
                           </Badge>
                         </td>

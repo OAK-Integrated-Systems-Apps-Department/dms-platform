@@ -342,7 +342,7 @@ export function AuditLogFilters({
             // No onClick={stopPropagation}: the outside-click handler
             // already tests containerRef.contains(), and this panel is
             // inside it.
-            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] max-w-[calc(100vw-60px)] rounded-md border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
+            <div className="absolute top-[calc(100%+6px)] left-[10px] z-20 w-[600px] max-w-[calc(100vw-60px)] rounded-btn border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
               <div className="grid max-h-[65vh] grid-cols-1 gap-3 sm:grid-cols-2 overflow-y-auto pr-1">
                 <Field label="Module">
                   <MultiSelect

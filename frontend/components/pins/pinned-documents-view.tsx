@@ -168,7 +168,7 @@ export function PinnedDocumentsView() {
     // Fills the window down to the bottom, like My Documents, so the empty state
     // is a full-height box instead of a thin strip under the toolbar.
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-[var(--ledger-shadow)]">
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 shadow-[var(--ledger-shadow)]">
         <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
           <Pin size={16} className="text-primary" />
           Pinned documents
@@ -186,7 +186,7 @@ export function PinnedDocumentsView() {
           <div
             role="radiogroup"
             aria-label="Show"
-            className="inline-flex rounded-md border border-border p-0.5 text-[12.5px]"
+            className="inline-flex rounded-btn border border-border p-0.5 text-[12.5px]"
           >
             {(
               [
@@ -202,7 +202,7 @@ export function PinnedDocumentsView() {
                 aria-checked={filter === option.value}
                 onClick={() => setFilter(option.value)}
                 className={cn(
-                  "rounded px-2.5 py-1",
+                  "rounded-btn px-2.5 py-1",
                   filter === option.value
                     ? "bg-primary/15 font-medium text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -222,7 +222,7 @@ export function PinnedDocumentsView() {
           <div
             role="radiogroup"
             aria-label="View"
-            className="inline-flex rounded-md border border-border p-0.5"
+            className="inline-flex rounded-btn border border-border p-0.5"
           >
             {(
               [
@@ -260,7 +260,7 @@ export function PinnedDocumentsView() {
           onRetry={() => void refetch()}
         />
       ) : rows.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground">
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
           {empty}
         </p>
       ) : view === "list" ? (

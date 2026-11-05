@@ -222,7 +222,7 @@ export function DocumentTypeFieldMatrix({ canUpdate }: { canUpdate: boolean }) {
 
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
         <div className="overflow-x-auto">
-          <table className="border-collapse">
+          <table className="tbl-card w-full border-collapse">
             <thead>
               <tr className="border-b border-border">
                 <th

@@ -123,7 +123,7 @@ function IdentityCard({ me }: { me: CurrentIdentityDto }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-[15px] font-semibold">{fullName}</p>
             {me.platformRoles.map((role) => (
-              <Badge key={role} variant="outline" className="gap-1 rounded-md">
+              <Badge key={role} variant="outline" className="gap-1 rounded-btn">
                 <ShieldCheck size={11} aria-hidden="true" />
                 {role.replace(/_/g, " ").toLowerCase()}
               </Badge>

@@ -358,7 +358,7 @@ export function UserAccessSummary({
           for a user with only one or two roles). The platform-role note
           below still explains the gold/outline badge distinction. */}
       <div className="mb-6 flex items-center gap-4">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-primary font-heading text-[18px] font-bold text-primary-foreground">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-btn bg-primary font-heading text-[18px] font-bold text-primary-foreground">
           {initials}
         </span>
         <div>
@@ -368,18 +368,18 @@ export function UserAccessSummary({
             </p>
             <Badge
               variant={user.status === "Active" ? "default" : "muted"}
-              className="gap-1.5 rounded-md"
+              className="gap-1.5 rounded-btn"
             >
               <span className="size-[5px] rounded-full bg-current" />
               {user.status}
             </Badge>
             {user.platformRoles.map((role) => (
-              <Badge key={role} variant="gold" className="rounded-md">
+              <Badge key={role} variant="gold" className="rounded-btn">
                 {role}
               </Badge>
             ))}
             {rolesHeld.map((role) => (
-              <Badge key={role.id} variant="outline" className="rounded-md">
+              <Badge key={role.id} variant="outline" className="rounded-btn">
                 {role.name}
               </Badge>
             ))}
@@ -438,7 +438,7 @@ export function UserAccessSummary({
             >
               <Badge
                 variant="outline"
-                className="rounded-md py-1 transition-colors hover:border-primary hover:text-primary"
+                className="rounded-btn py-1 transition-colors hover:border-primary hover:text-primary"
               >
                 {group.moduleCode} — {group.module} — {grantedCount}{" "}
                 {grantedCount === 1 ? "permission" : "permissions"}
@@ -484,7 +484,7 @@ export function UserAccessSummary({
           </div>
 
           {sortedGroups.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+            <p className="rounded-btn border border-dashed border-border px-3.5 py-6 text-center text-[13px] text-muted-foreground">
               No permissions match &quot;{query}&quot;.
             </p>
           ) : (
@@ -504,7 +504,7 @@ export function UserAccessSummary({
                       }))
                     }
                     className={cn(
-                      "overflow-hidden rounded-md border border-border",
+                      "overflow-hidden rounded-lg border border-border bg-card",
                       isOpen && "sm:col-span-2 lg:col-span-3"
                     )}
                   >

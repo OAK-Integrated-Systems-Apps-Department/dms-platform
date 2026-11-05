@@ -277,7 +277,7 @@ export function LoginPageContent() {
 
           <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
             {/* Compact brand banner: replaces the brand panel below `lg` */}
-            <div className="relative mb-8 overflow-hidden rounded-2xl bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
+            <div className="relative mb-8 overflow-hidden rounded-lg bg-[linear-gradient(150deg,var(--primary)_0%,var(--primary-hover)_100%)] p-5 text-primary-foreground sm:p-6 lg:hidden">
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
