@@ -23,6 +23,10 @@ interface ConfirmActionDialogProps {
   cancelLabel?: string
   /** Performs the action and resolves with an error message, or null on success. */
   onConfirm: () => Promise<string | null>
+  /** Extra content under the description - e.g. a password field that must be filled in first. */
+  children?: ReactNode
+  /** Holds the confirm button back until what the children ask for is filled in. */
+  confirmDisabled?: boolean
 }
 
 /**
@@ -39,6 +43,8 @@ export function ConfirmActionDialog({
   pendingLabel,
   cancelLabel = "Go back",
   onConfirm,
+  children,
+  confirmDisabled = false,
 }: ConfirmActionDialogProps) {
   const [submitting, setSubmitting] = useState(false)
 
@@ -69,6 +75,7 @@ export function ConfirmActionDialog({
           </span>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
+          {children && <div className="mb-4 text-left">{children}</div>}
 
           <div className="flex items-center justify-center gap-2.5">
             <AlertDialogClose
@@ -80,7 +87,7 @@ export function ConfirmActionDialog({
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={submitting}
+              disabled={submitting || confirmDisabled}
               className="border border-[var(--rust)] bg-[var(--rust)] text-white disabled:opacity-60 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center"
             >
               {submitting ? pendingLabel : confirmLabel}

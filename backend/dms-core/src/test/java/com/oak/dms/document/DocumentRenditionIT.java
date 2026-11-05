@@ -8,8 +8,6 @@ import com.oak.dms.folder.FolderException;
 import com.oak.dms.metadata.entity.DocumentType;
 import com.oak.dms.metadata.repository.DocumentTypeRepository;
 import com.oak.dms.preview.PreviewPolicyService;
-import com.oak.dms.scanning.dto.IngestionTicketResponse;
-import com.oak.dms.scanning.enums.ScanResultStatus;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
@@ -21,6 +19,7 @@ import com.oak.dms.tenant.Tenant;
 import com.oak.dms.tenant.TenantRepository;
 import com.oak.dms.user.User;
 import com.oak.dms.user.UserRepository;
+import com.oak.dms.workflow.support.WorkflowFixtures;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -34,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -53,8 +53,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Document previews and renditions (DPRM) end to end against the FILE_SYSTEM storage provider: pages drawn on the
  * server, thumbnails made once and kept encrypted, the organisation's preview policy, failures kept for the
  * administrator, and everything removed with the version's file.
+ * <p>
+ * Documents are made through the promoter fixtures, not the upload scan gate: this must run where there is no ClamAV
+ * (CI), which is why DocumentUploadIT is excluded from it.
  */
 @SpringBootTest
+@Import(WorkflowFixtures.class)
 class DocumentRenditionIT {
 
     @Autowired
@@ -76,7 +80,7 @@ class DocumentRenditionIT {
     @Autowired
     private DocumentVersionRepository versionRepository;
     @Autowired
-    private DocumentVersionService versionService;
+    private WorkflowFixtures fx;
     @Autowired
     private RecycleBinService recycleBin;
     @Autowired
@@ -184,10 +188,8 @@ class DocumentRenditionIT {
         byte[] before = renditions.thumbnail(doc.documentId(), null).orElseThrow();
         UUID firstVersion = doc.currentVersionId();
 
-        byte[] redrawn = png(300, 200, 0xFF112233);
-        IngestionTicketResponse ticket = versionService.upload(doc.documentId(), "drawing.png", redrawn.length,
-                new ByteArrayInputStream(redrawn), "Redrawn");
-        assertThat(ticket.status()).isEqualTo(ScanResultStatus.clean);
+        UUID secondVersion = fx.newVersion(f.tenantId(), doc.documentId(), f.user());
+        retarget(secondVersion, "drawing.png", png(300, 200, 0xFF112233));
         DocumentResponse updated = documentService.getDocument(doc.documentId());
         assertThat(updated.currentVersionId()).isNotEqualTo(firstVersion);
 
@@ -346,7 +348,7 @@ class DocumentRenditionIT {
 
     // ------------------------------------------------------------------ helpers
 
-    private record Fixture(UUID tenantId, UUID userId, UUID documentTypeId) {
+    private record Fixture(UUID tenantId, UUID userId, UUID documentTypeId, User user) {
     }
 
     private Fixture fixture() {
@@ -390,14 +392,23 @@ class DocumentRenditionIT {
                 .typeName("Rendition test type")
                 .build()).getDocumentTypeId();
         TenantContext.set(tenant.getTenantId(), user.getUserId(), "Test Viewer", keycloakId);
-        return new Fixture(tenant.getTenantId(), user.getUserId(), typeId);
+        return new Fixture(tenant.getTenantId(), user.getUserId(), typeId, user);
     }
 
+    /** A document with one clean version holding {@code content}, made as the promoter makes it (no scan gate). */
     private DocumentResponse upload(Fixture f, String title, String filename, byte[] content) {
-        IngestionTicketResponse ticket = documentService.uploadDocument(f.documentTypeId(), title, filename,
-                content.length, new ByteArrayInputStream(content));
-        assertThat(ticket.status()).as(ticket.message()).isEqualTo(ScanResultStatus.clean);
-        return documentService.getDocument(ticket.documentId());
+        UUID documentId = fx.document(f.tenantId(), f.documentTypeId(), f.user(), title);
+        UUID versionId = jdbc.queryForObject("select current_version_id from documents where document_id = ?",
+                UUID.class, documentId);
+        retarget(versionId, filename, content);
+        return documentService.getDocument(documentId);
+    }
+
+    /** Makes a version the file {@code filename} holding {@code content}, written to storage the way it reads it back. */
+    private void retarget(UUID versionId, String filename, byte[] content) {
+        jdbc.update("update document_versions set original_filename = ?, size_bytes = ? where version_id = ?",
+                filename, content.length, versionId);
+        fx.putVersionContent(versionId, content);
     }
 
     private java.util.List<UUID> failedIds() {

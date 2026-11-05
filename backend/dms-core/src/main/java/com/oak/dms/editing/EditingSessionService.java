@@ -73,6 +73,15 @@ public class EditingSessionService {
     @Value("${dms.editing.token-ttl:PT10H}")
     private Duration tokenTtl;
 
+    /**
+     * Whether online editing is on for this organisation right now: allowed by the platform administrator AND turned
+     * on by the organisation. Asked on every file call of an open editor, so switching it off stops saves at once
+     * instead of when the (hours-long) token expires.
+     */
+    public boolean editingEnabled(UUID tenantId) {
+        return settings.forTenant(tenantId).enabled();
+    }
+
     /** The organisation's own mode (V128) - exclusive unless it chose simultaneous. */
     public Mode modeFor(UUID tenantId) {
         return EditingSettingsService.SIMULTANEOUS.equals(settings.forTenant(tenantId).mode())

@@ -25,6 +25,9 @@ class EditingEngineTest {
                 <app name="application/pdf">
                   <action name="view" ext="pdf" urlsrc="http://collabora:9980/browser/abc123/cool.html?"/>
                 </app>
+                <app name="application/x-by-mime-type-only">
+                  <action name="edit" ext="" urlsrc="http://collabora:9980/browser/abc123/cool.html?m=1"/>
+                </app>
               </net-zone>
             </wopi-discovery>
             """;
@@ -33,7 +36,8 @@ class EditingEngineTest {
     void keepsOnlyEditActions_byLowerCasedExtension_andDropsTheEnginesOwnHost() {
         Map<String, String> byExt = EditingEngine.parse(DISCOVERY.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(byExt).containsOnlyKeys("docx", "odt"); // a view-only type (pdf) is not editable
+        // a view-only type (pdf) is not editable, and an action with no extension at all is not a file type
+        assertThat(byExt).containsOnlyKeys("docx", "odt");
         assertThat(byExt.get("docx")).isEqualTo("/browser/abc123/cool.html?"); // path only: the browser uses the public host
         assertThat(byExt.get("odt")).isEqualTo("/browser/abc123/cool.html?x=1&"); // ready for "WOPISrc=" to be appended
     }

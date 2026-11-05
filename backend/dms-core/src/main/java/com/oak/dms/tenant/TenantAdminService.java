@@ -8,6 +8,7 @@ import com.oak.dms.common.exception.EmailInUseException;
 import com.oak.dms.common.exception.InvalidUserStateException;
 import com.oak.dms.common.exception.MailDeliveryException;
 import com.oak.dms.common.exception.ResourceNotFoundException;
+import com.oak.dms.common.exception.UsernameInUseException;
 import com.oak.dms.security.auth.PasswordResetService;
 import com.oak.dms.common.exception.KeycloakUserAlreadyExistsException;
 import com.oak.dms.security.keycloak.KeycloakUserService;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -66,7 +68,23 @@ public class TenantAdminService {
         Map<String, Object> previous = Map.of(
                 "firstName", admin.getFirstName(),
                 "lastName", admin.getLastName() == null ? "" : admin.getLastName(),
-                "email", admin.getEmail());
+                "email", admin.getEmail(),
+                "username", admin.getUsername());
+
+        // Keycloak keeps usernames in lower case; a change of letter case alone is no change.
+        String requestedUsername = request.username() == null || request.username().isBlank()
+                ? null : request.username().strip().toLowerCase(Locale.ROOT);
+        String newUsername = requestedUsername == null || requestedUsername.equalsIgnoreCase(admin.getUsername())
+                ? null : requestedUsername; // null = unchanged
+        if (newUsername != null) {
+            // Two accounts can't share a username - within the organisation, or anywhere in the realm, or be another
+            // account's email (people sign in with either).
+            if (userRepository.existsByTenantIdAndUsernameIgnoreCaseAndUserIdNot(tenantId, newUsername, userId)
+                    || keycloakUserService.usernameTakenByAnotherAccount(newUsername, admin.getKeycloakId())) {
+                throw new UsernameInUseException();
+            }
+            admin.setUsername(newUsername);
+        }
 
         String requested = request.email().strip();
         String newEmail = requested.equalsIgnoreCase(admin.getEmail()) ? null : requested; // null = unchanged
@@ -88,12 +106,15 @@ public class TenantAdminService {
         try {
             saved = userRepository.saveAndFlush(admin);
         } catch (DataIntegrityViolationException e) {
-            throw new EmailInUseException();
+            // The unique (organisation, username) and (organisation, email) rows: only a race gets here, the checks above
+            // having already looked. Say which one was being changed.
+            throw newUsername != null && newEmail == null ? new UsernameInUseException() : new EmailInUseException();
         }
         try {
-            keycloakUserService.updateProfile(saved.getKeycloakId(), saved.getFirstName(), saved.getLastName(), newEmail);
+            keycloakUserService.updateProfile(saved.getKeycloakId(), saved.getFirstName(), saved.getLastName(), newEmail,
+                    newUsername);
         } catch (KeycloakUserAlreadyExistsException e) {
-            throw new EmailInUseException();
+            throw newUsername != null && newEmail == null ? new UsernameInUseException() : new EmailInUseException();
         }
         log.info("Platform admin updated tenant admin {} of tenant {}", userId, tenantId);
 
@@ -108,6 +129,7 @@ public class TenantAdminService {
                         "firstName", saved.getFirstName(),
                         "lastName", saved.getLastName() == null ? "" : saved.getLastName(),
                         "email", saved.getEmail(),
+                        "username", saved.getUsername(),
                         "tenantId", tenantId))
                 .log();
         return toResponse(saved);

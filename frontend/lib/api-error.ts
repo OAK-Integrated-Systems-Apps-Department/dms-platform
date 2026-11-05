@@ -99,6 +99,11 @@ export function friendlyMessage(
 ): string {
   if (isOrganisationInactive(error) && error instanceof Error)
     return error.message
+  // A refused password confirmation is a 403 too, but it is not about permission - the server says what to do
+  // ("That password isn't right."), and that is what the person needs to read.
+  if (error instanceof ApiError && error.code?.startsWith("PASSWORD_")) {
+    return error.message
+  }
   if (error instanceof ApiError && error.status === 403) {
     return "You don't have permission to do that."
   }

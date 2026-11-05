@@ -1,7 +1,7 @@
 "use client"
 
 import { LoadFailed } from "@/components/ui/load-failed"
-import { useState } from "react"
+import { useId, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Building2,
@@ -17,10 +17,15 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import {
+  ConfirmPasswordFields,
+  usePasswordConfirmation,
+} from "@/components/admin/confirm-password"
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog"
 import { FriendlyDate } from "@/components/documents/browser-items"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { LoadingState } from "@/components/ui/loading-state"
 import {
@@ -35,6 +40,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { ApiError, friendlyMessage } from "@/lib/api-error"
 import {
   deactivateOrganisation,
+  fetchOnlineEditingAllowed,
+  setOnlineEditingAllowed,
   destroyOrganisationKeys,
   fetchOrganisations,
   fetchTenantAdmins,
@@ -49,10 +56,17 @@ import {
 } from "@/lib/tenants/admin-api"
 
 const KEY = ["platform", "organisations"] as const
+const EDITING_KEY = ["platform", "organisations-online-editing"] as const
 const ADMINS_KEY = ["platform", "organisation-admins"] as const
 
 type Pending = {
-  kind: "suspend" | "resume" | "deactivate" | "reactivate"
+  kind:
+    | "suspend"
+    | "resume"
+    | "deactivate"
+    | "reactivate"
+    | "editing-on"
+    | "editing-off"
   org: OrganisationDto
 } | null
 
@@ -77,6 +91,11 @@ function stateOf(org: OrganisationDto): {
 export function Organisations() {
   const queryClient = useQueryClient()
   const orgs = useQuery({ queryKey: KEY, queryFn: fetchOrganisations })
+  // Which organisations the platform has allowed online editing - one call for the whole list.
+  const editingAllowed = useQuery({
+    queryKey: EDITING_KEY,
+    queryFn: fetchOnlineEditingAllowed,
+  })
   const [pending, setPending] = useState<Pending>(null)
   const [shredding, setShredding] = useState<OrganisationDto | null>(null)
   const [adding, setAdding] = useState(false)
@@ -84,6 +103,7 @@ export function Organisations() {
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: KEY })
+    void queryClient.invalidateQueries({ queryKey: EDITING_KEY })
   }
 
   if (orgs.isPending) return <LoadingState message="Loading organisations…" />
@@ -107,13 +127,14 @@ export function Organisations() {
         </Button>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="tbl-card w-full min-w-[980px] text-[13px]">
+        <table className="tbl-card w-full min-w-[1080px] text-[13px]">
           <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
             <tr>
               <th className="px-4 py-2.5 font-semibold">Organisation</th>
               <th className="px-4 py-2.5 font-semibold">Administrator</th>
               <th className="px-4 py-2.5 font-semibold">State</th>
               <th className="px-4 py-2.5 font-semibold">Plan</th>
+              <th className="px-4 py-2.5 font-semibold">Online editing</th>
               <th className="px-4 py-2.5 font-semibold">Created</th>
               <th className="px-4 py-2.5" />
             </tr>
@@ -147,6 +168,28 @@ export function Organisations() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground capitalize">
                     {org.subscriptionTier}
+                  </td>
+                  <td className="px-4 py-3">
+                    {/* Allowed or not by the platform; its own administrator then decides for its people. The switch only
+                        asks - it moves when the server has changed it, after the platform administrator's password. */}
+                    <label className="flex w-max items-center gap-2 text-[12.5px] font-medium">
+                      <Switch
+                        checked={editingAllowed.data?.includes(org.tenantId) === true}
+                        disabled={
+                          org.deactivated ||
+                          editingAllowed.isPending ||
+                          editingAllowed.isError
+                        }
+                        onCheckedChange={(on) =>
+                          setPending({
+                            kind: on ? "editing-on" : "editing-off",
+                            org,
+                          })
+                        }
+                        aria-label={`Online editing for ${org.tenantName}`}
+                      />
+                      {editingAllowed.data?.includes(org.tenantId) ? "Allowed" : "Off"}
+                    </label>
                   </td>
                   <td className="px-4 py-3">
                     <FriendlyDate iso={org.createdAt} />
@@ -224,32 +267,14 @@ export function Organisations() {
         </table>
       </div>
 
-      <ConfirmActionDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title={copy?.title ?? ""}
-        description={copy?.description ?? ""}
-        confirmLabel={copy?.confirm ?? ""}
-        pendingLabel="Working…"
-        onConfirm={async () => {
-          if (!pending) return null
-          try {
-            const { org, kind } = pending
-            if (kind === "suspend")
-              await setOrganisationStatus(org, "suspended")
-            else if (kind === "resume")
-              await setOrganisationStatus(org, "active")
-            else if (kind === "deactivate")
-              await deactivateOrganisation(org.tenantId)
-            else await reactivateOrganisation(org.tenantId)
-            toast.success(copy?.done ?? "Done.")
-            refresh()
-            return null
-          } catch (error) {
-            return friendlyMessage(error, "That didn't work.")
-          }
-        }}
-      />
+      {pending && copy && (
+        <PendingActionDialog
+          pending={pending}
+          copy={copy}
+          onClose={() => setPending(null)}
+          onDone={refresh}
+        />
+      )}
 
       {shredding && (
         <DestroyKeysSheet
@@ -283,6 +308,60 @@ export function Organisations() {
  * created on its own has nobody who can log into it, and no other endpoint
  * can create a user inside it afterwards.
  */
+
+/**
+ * Suspend, resume, deactivate or bring back an organisation. All but bringing one back change what its people can
+ * do, so they ask for the signed-in platform administrator's own password first; the dialog stays open on a wrong one.
+ */
+function PendingActionDialog({
+  pending,
+  copy,
+  onClose,
+  onDone,
+}: {
+  pending: NonNullable<Pending>
+  copy: { title: string; description: string; confirm: string; done: string }
+  onClose: () => void
+  onDone: () => void
+}) {
+  const confirm = usePasswordConfirmation()
+  const needsPassword = pending.kind !== "reactivate"
+  return (
+    <ConfirmActionDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={copy.title}
+      description={copy.description}
+      confirmLabel={copy.confirm}
+      pendingLabel="Working…"
+      confirmDisabled={needsPassword && !confirm.ready}
+      onConfirm={async () => {
+        try {
+          const { org, kind } = pending
+          if (kind === "suspend")
+            await setOrganisationStatus(confirm.value, org, "suspended")
+          else if (kind === "resume")
+            await setOrganisationStatus(confirm.value, org, "active")
+          else if (kind === "deactivate")
+            await deactivateOrganisation(confirm.value, org.tenantId)
+          else if (kind === "editing-on")
+            await setOnlineEditingAllowed(confirm.value, org.tenantId, true)
+          else if (kind === "editing-off")
+            await setOnlineEditingAllowed(confirm.value, org.tenantId, false)
+          else await reactivateOrganisation(org.tenantId)
+          toast.success(copy.done)
+          onDone()
+          return null
+        } catch (error) {
+          confirm.noteError(error)
+          return friendlyMessage(error, "That didn't work.")
+        }
+      }}
+    >
+      {needsPassword && <ConfirmPasswordFields confirm={confirm} />}
+    </ConfirmActionDialog>
+  )
+}
 
 /**
  * The organisation's administrator, right in the list: who they are and whether they have accepted
@@ -380,6 +459,9 @@ function AdminsSection({ org }: { org: OrganisationDto }) {
               key={admin.userId}
               org={org}
               admin={admin}
+              others={(admins.data ?? []).filter(
+                (other) => other.userId !== admin.userId
+              )}
               onCancel={() => setEditingId(null)}
               onSaved={() => {
                 setEditingId(null)
@@ -480,39 +562,70 @@ function AdminCard({
 function AdminEditor({
   org,
   admin,
+  others,
   onCancel,
   onSaved,
 }: {
   org: OrganisationDto
   admin: TenantAdminDto
+  /** The organisation's other administrators - to say at once when an email or username is already theirs. */
+  others: TenantAdminDto[]
   onCancel: () => void
   onSaved: () => void
 }) {
   const [firstName, setFirstName] = useState(admin.firstName)
   const [lastName, setLastName] = useState(admin.lastName ?? "")
   const [email, setEmail] = useState(admin.email)
+  const [username, setUsername] = useState(admin.username)
   const [saving, setSaving] = useState(false)
+  const confirm = usePasswordConfirmation()
   const [error, setError] = useState<string | null>(null)
 
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const emailOk = EMAIL_PATTERN.test(email.trim())
+  const wantedUsername = username.trim()
+  // Usernames are kept in lower case, so a change of letter case alone is no change.
+  const usernameChanged =
+    wantedUsername.toLowerCase() !== admin.username.toLowerCase()
+  const usernameOk =
+    wantedUsername.length >= 3 && USERNAME_PATTERN.test(wantedUsername)
+  // Instant feedback against the people on this screen; the server checks everyone else (another organisation's
+  // account, or an account whose email this username is) when saving.
+  const emailTaken = others.some(
+    (other) => other.email.toLowerCase() === email.trim().toLowerCase()
+  )
+  const usernameTaken =
+    usernameChanged &&
+    others.some(
+      (other) =>
+        other.username.toLowerCase() === wantedUsername.toLowerCase() ||
+        other.email.toLowerCase() === wantedUsername.toLowerCase()
+    )
   const changed =
     firstName.trim() !== admin.firstName ||
     lastName.trim() !== (admin.lastName ?? "") ||
-    email.trim() !== admin.email
-  const complete = firstName.trim() !== "" && emailOk
+    email.trim() !== admin.email ||
+    usernameChanged
+  const complete =
+    firstName.trim() !== "" &&
+    emailOk &&
+    usernameOk &&
+    !emailTaken &&
+    !usernameTaken
 
   async function save() {
     setSaving(true)
     setError(null)
     try {
-      await updateTenantAdmin(org.tenantId, admin.userId, {
+      await updateTenantAdmin(confirm.value, org.tenantId, admin.userId, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
+        username: wantedUsername,
       })
       toast.success("Administrator updated.")
       onSaved()
     } catch (e) {
+      confirm.noteError(e)
       setError(friendlyMessage(e, "Could not update the administrator."))
     } finally {
       setSaving(false)
@@ -520,7 +633,11 @@ function AdminEditor({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-primary bg-card p-3.5">
+    <div
+      role="group"
+      aria-label="Edit administrator"
+      className="flex flex-col gap-3 rounded-lg border border-primary bg-card p-3.5"
+    >
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" value={firstName} onChange={setFirstName} />
         <Field
@@ -535,19 +652,39 @@ function AdminEditor({
         type="email"
         value={email}
         onChange={setEmail}
-        error={email.trim() !== "" && !emailOk ? "Enter a valid email." : null}
+        error={
+          emailTaken
+            ? "Another administrator here already has this email."
+            : email.trim() !== "" && !emailOk
+              ? "Enter a valid email."
+              : null
+        }
         hint={
           admin.verified
-            ? "They sign in with their username; this is where password resets are sent."
+            ? "Where password resets are sent; they can sign in with it too."
             : "They haven't accepted the invitation yet — use Resend invitation after changing it."
         }
       />
-      <div>
-        <p className="mb-1 text-[12px] font-medium text-muted-foreground">
-          Username
-        </p>
-        <p className="font-mono text-[12.5px]">{admin.username}</p>
-      </div>
+      <Field
+        label="Username"
+        value={username}
+        onChange={setUsername}
+        error={
+          usernameTaken
+            ? "Another administrator here already has this username or email."
+            : username !== "" && !USERNAME_PATTERN.test(wantedUsername)
+              ? "Letters, numbers, dots, hyphens and underscores only"
+              : wantedUsername !== "" && wantedUsername.length < 3
+                ? "At least 3 characters."
+                : null
+        }
+        hint="What they sign in with - it can't be one another account has. A new username applies from their next sign-in."
+      />
+      <ConfirmPasswordFields
+        confirm={confirm}
+        hint="Enter your own password to save this administrator's details."
+      />
+
       {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onCancel} disabled={saving}>
@@ -555,7 +692,7 @@ function AdminEditor({
         </Button>
         <Button
           onClick={() => void save()}
-          disabled={!changed || !complete || saving}
+          disabled={!changed || !complete || !confirm.ready || saving}
         >
           {saving && <Loader2 className="animate-spin" />}
           {saving ? "Saving…" : "Save administrator"}
@@ -709,6 +846,7 @@ function AddOrganisationSheet({
   // More administrators for the same organisation (the backend allows up to 9 beyond the first).
   const [extras, setExtras] = useState<ExtraAdmin[]>([])
   const [saving, setSaving] = useState(false)
+  const confirm = usePasswordConfirmation()
   const [error, setError] = useState<string | null>(null)
 
   const set = (field: keyof typeof form) => (value: string) =>
@@ -742,7 +880,7 @@ function AddOrganisationSheet({
     setSaving(true)
     setError(null)
     try {
-      const result = await provisionOrganisation({
+      const result = await provisionOrganisation(confirm.value, {
         ...form,
         adminLastName: form.adminLastName.trim() || undefined,
         additionalAdmins: extras.map((extra) => ({
@@ -761,6 +899,7 @@ function AddOrganisationSheet({
       onDone()
       onOpenChange(false)
     } catch (e) {
+      confirm.noteError(e)
       setError(friendlyMessage(e, "Could not create the organisation."))
     } finally {
       setSaving(false)
@@ -869,6 +1008,9 @@ function AddOrganisationSheet({
             </Button>
           )}
 
+          <ConfirmPasswordFields confirm={confirm} />
+
+
           {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
         </div>
 
@@ -881,7 +1023,10 @@ function AddOrganisationSheet({
             >
               Cancel
             </Button>
-            <Button onClick={() => void save()} disabled={!complete || saving}>
+            <Button
+              onClick={() => void save()}
+              disabled={!complete || !confirm.ready || saving}
+            >
               {saving && <Loader2 className="animate-spin" />}
               {saving ? "Creating…" : "Create organisation"}
             </Button>
@@ -909,6 +1054,7 @@ function EditOrganisationSheet({
   const [tenantName, setTenantName] = useState(org.tenantName)
   const [subscriptionTier, setSubscriptionTier] = useState(org.subscriptionTier)
   const [saving, setSaving] = useState(false)
+  const confirm = usePasswordConfirmation()
   const [error, setError] = useState<string | null>(null)
 
   const changed =
@@ -920,7 +1066,7 @@ function EditOrganisationSheet({
     setSaving(true)
     setError(null)
     try {
-      await updateOrganisation(org, {
+      await updateOrganisation(confirm.value, org, {
         tenantName: tenantName.trim(),
         subscriptionTier: subscriptionTier.trim(),
       })
@@ -928,6 +1074,7 @@ function EditOrganisationSheet({
       onDone()
       onOpenChange(false)
     } catch (e) {
+      confirm.noteError(e)
       setError(friendlyMessage(e, "Could not update the organisation."))
     } finally {
       setSaving(false)
@@ -968,6 +1115,8 @@ function EditOrganisationSheet({
               it would lock this organisation&apos;s users out.
             </p>
           </div>
+          <ConfirmPasswordFields confirm={confirm} />
+
           {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
           <AdminsSection org={org} />
         </div>
@@ -983,7 +1132,7 @@ function EditOrganisationSheet({
             </Button>
             <Button
               onClick={() => void save()}
-              disabled={!changed || !complete || saving}
+              disabled={!changed || !complete || !confirm.ready || saving}
             >
               {saving && <Loader2 className="animate-spin" />}
               {saving ? "Saving…" : "Save changes"}
@@ -1015,9 +1164,14 @@ function Field({
   optional?: boolean
   type?: string
 }) {
+  // The label is tied to its input, so a screen reader announces it and clicking the label focuses the field.
+  const id = useId()
   return (
     <div>
-      <label className="mb-1 block text-[12px] font-medium text-foreground">
+      <label
+        htmlFor={id}
+        className="mb-1 block text-[12px] font-medium text-foreground"
+      >
         {label}
         {optional && (
           <span className="ml-1 font-normal text-muted-foreground">
@@ -1026,6 +1180,7 @@ function Field({
         )}
       </label>
       <Input
+        id={id}
         type={type}
         value={value}
         placeholder={placeholder}
@@ -1070,6 +1225,20 @@ const PENDING_COPY: Record<
     confirm: "Deactivate",
     done: `${org.tenantName} was deactivated.`,
   }),
+  "editing-on": (org) => ({
+    title: `Allow online editing for ${org.tenantName}?`,
+    description:
+      "Its administrator can then turn it on or off for their people, and sees the Online Editing page. Nothing changes for its users until they do.",
+    confirm: "Allow",
+    done: `Online editing is allowed for ${org.tenantName}.`,
+  }),
+  "editing-off": (org) => ({
+    title: `Stop online editing for ${org.tenantName}?`,
+    description:
+      "Nobody there gets the editor, \"Edit online\" disappears, an editor already open can no longer save, and its administrator no longer sees the Online Editing page. Their own setting is kept in case you allow it again.",
+    confirm: "Stop online editing",
+    done: `Online editing is stopped for ${org.tenantName}.`,
+  }),
   reactivate: (org) => ({
     title: `Reactivate ${org.tenantName}?`,
     description: "It comes back as active, with all its users and documents.",
@@ -1095,6 +1264,7 @@ function DestroyKeysSheet({
     null
   )
   const [busy, setBusy] = useState(false)
+  const confirm = usePasswordConfirmation()
   const [error, setError] = useState<string | null>(null)
   const ready =
     name.trim() === org.tenantName &&
@@ -1106,6 +1276,7 @@ function DestroyKeysSheet({
     setError(null)
     try {
       const result = await destroyOrganisationKeys(
+        confirm.value,
         org.tenantId,
         name.trim(),
         reason.trim(),
@@ -1120,6 +1291,7 @@ function DestroyKeysSheet({
       if (e instanceof ApiError && e.code === "UNENCRYPTED_FILES_LEFT") {
         setUnencryptedWarning(e.message)
       } else {
+        confirm.noteError(e)
         setError(friendlyMessage(e, "Could not destroy the keys."))
       }
     } finally {
@@ -1179,12 +1351,14 @@ function DestroyKeysSheet({
               </label>
             </div>
           )}
+          <ConfirmPasswordFields confirm={confirm} />
+
           {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
         </div>
         <SheetFooter className="border-t border-border">
           <Button
             className="bg-[var(--rust)] text-white hover:bg-[var(--rust)]/90"
-            disabled={!ready || busy}
+            disabled={!ready || !confirm.ready || busy}
             onClick={() => void destroy()}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Flame />}

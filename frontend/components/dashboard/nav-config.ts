@@ -422,6 +422,8 @@ export const navSections: NavSection[] = [
             label: "Online Editing",
             icon: FilePenLine,
             href: "/admin/editing",
+            // Only once the platform administrator has allowed it for this organisation (nothing to switch before).
+            feature: "onlineEditing",
             permission: [
               PermissionCodes.CICO_EDITING_SELECT_PROVIDER,
               PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,

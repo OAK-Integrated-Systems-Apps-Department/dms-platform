@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api-config"
+import { confirmationHeaders, type PasswordConfirmation } from "@/lib/auth/password-confirmation"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
 
 const BASE = `${API_BASE_URL}/api/v1/tenants`
@@ -71,13 +72,14 @@ export interface ProvisionOrganisationResult {
  * Keycloak.
  */
 export async function provisionOrganisation(
+  confirm: PasswordConfirmation,
   request: ProvisionOrganisationRequest
 ): Promise<ProvisionOrganisationResult> {
   return apiFetchJson(
     `${BASE}/provision`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
       body: JSON.stringify(request),
     },
     "Could not create the organisation."
@@ -90,6 +92,7 @@ export async function provisionOrganisation(
  * edit can never alter the lifecycle by accident.
  */
 export async function updateOrganisation(
+  confirm: PasswordConfirmation,
   org: OrganisationDto,
   changes: { tenantName: string; subscriptionTier: string }
 ): Promise<OrganisationDto> {
@@ -97,7 +100,7 @@ export async function updateOrganisation(
     `${BASE}/${org.tenantId}`,
     {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
       body: JSON.stringify({
         tenantName: changes.tenantName,
         subscriptionTier: changes.subscriptionTier,
@@ -110,6 +113,7 @@ export async function updateOrganisation(
 
 /** Suspend, resume or archive - name and tier are sent back unchanged. */
 export async function setOrganisationStatus(
+  confirm: PasswordConfirmation,
   org: OrganisationDto,
   status: "active" | "suspended" | "archived"
 ): Promise<OrganisationDto> {
@@ -117,7 +121,7 @@ export async function setOrganisationStatus(
     `${BASE}/${org.tenantId}`,
     {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
       body: JSON.stringify({
         tenantName: org.tenantName,
         subscriptionTier: org.subscriptionTier,
@@ -128,10 +132,13 @@ export async function setOrganisationStatus(
   )
 }
 
-export async function deactivateOrganisation(tenantId: string): Promise<void> {
+export async function deactivateOrganisation(
+  confirm: PasswordConfirmation,
+  tenantId: string
+): Promise<void> {
   await apiFetch(
     `${BASE}/${tenantId}`,
-    { method: "DELETE" },
+    { method: "DELETE", headers: confirmationHeaders(confirm) },
     "Could not deactivate the organisation."
   )
 }
@@ -148,6 +155,7 @@ export async function reactivateOrganisation(
 
 /** Crypto-shredding: destroys its keys - its encrypted documents can never be read again. */
 export async function destroyOrganisationKeys(
+  confirm: PasswordConfirmation,
   tenantId: string,
   confirmTenantName: string,
   reason: string,
@@ -157,7 +165,7 @@ export async function destroyOrganisationKeys(
     `${BASE}/${tenantId}/shred-keys`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
       body: JSON.stringify({
         confirmTenantName,
         reason,
@@ -165,6 +173,37 @@ export async function destroyOrganisationKeys(
       }),
     },
     "Could not destroy the organisation's keys."
+  )
+}
+
+/** The organisations the platform administrator has allowed to use online editing (`GET /tenants/online-editing`). */
+export async function fetchOnlineEditingAllowed(): Promise<string[]> {
+  const result = await apiFetchJson<{ tenantIds: string[] }>(
+    `${BASE}/online-editing`,
+    undefined,
+    "Could not load which organisations can use online editing."
+  )
+  return result.tenantIds
+}
+
+/**
+ * Allows or stops online editing for one organisation (`PUT /tenants/{id}/online-editing`). While it is allowed the
+ * organisation's own administrator decides for its people; while it isn't, nobody there gets the editor and its
+ * settings page is not shown. Needs the signed-in platform administrator's own password.
+ */
+export async function setOnlineEditingAllowed(
+  confirm: PasswordConfirmation,
+  tenantId: string,
+  allowed: boolean
+): Promise<{ tenantId: string; allowed: boolean }> {
+  return apiFetchJson(
+    `${BASE}/${tenantId}/online-editing`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
+      body: JSON.stringify({ allowed }),
+    },
+    "Could not change online editing for the organisation."
   )
 }
 
@@ -195,17 +234,26 @@ export async function fetchTenantAdmins(
   )
 }
 
-/** Corrects an administrator's name or email. The username is fixed. */
+/**
+ * Corrects an administrator's name, email or username. Two accounts can't share an email or a username (409
+ * EMAIL_IN_USE / USERNAME_IN_USE); a new username applies from their next sign-in.
+ */
 export async function updateTenantAdmin(
+  confirm: PasswordConfirmation,
   tenantId: string,
   userId: string,
-  changes: { firstName: string; lastName: string; email: string }
+  changes: {
+    firstName: string
+    lastName: string
+    email: string
+    username: string
+  }
 ): Promise<TenantAdminDto> {
   return apiFetchJson(
     `${BASE}/${tenantId}/admins/${userId}`,
     {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...confirmationHeaders(confirm) },
       body: JSON.stringify(changes),
     },
     "Could not update the administrator."

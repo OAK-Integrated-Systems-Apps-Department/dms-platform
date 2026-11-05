@@ -13,7 +13,7 @@ vi.mock("@/lib/checkout/use-checkout", () => ({
   useSaveEditingSettings: () => ({ mutate, isPending: false }),
 }))
 
-const base: EditingSettingsDto = { enabled: false, mode: "exclusive", engineConfigured: true }
+const base: EditingSettingsDto = { enabled: false, mode: "exclusive", engineConfigured: true, allowedByPlatform: true }
 
 describe("EditingSettingsCard", () => {
   beforeEach(() => {
@@ -49,7 +49,7 @@ describe("EditingSettingsCard", () => {
   })
 
   it("can still be turned OFF when the server has lost its engine", () => {
-    settings = { enabled: true, mode: "exclusive", engineConfigured: false }
+    settings = { ...base, enabled: true, engineConfigured: false }
     render(<EditingSettingsCard canEdit />)
 
     const toggle = screen.getByRole("switch", { name: "Online editing" })
@@ -65,5 +65,22 @@ describe("EditingSettingsCard", () => {
     expect(screen.getByRole("switch", { name: "Online editing" })).toHaveAttribute("aria-disabled", "true")
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     expect(screen.getByText(/see this setting but not change it/i)).toBeInTheDocument()
+  })
+
+  it("shows nothing to switch - only why - while the platform administrator has not allowed it", () => {
+    settings = { ...base, enabled: true, allowedByPlatform: false }
+    render(<EditingSettingsCard canEdit />)
+
+    expect(screen.getByText(/isn.t available to your organisation/)).toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Online editing" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull()
+  })
+
+  it("shows the switch and the modes again once it is allowed", () => {
+    settings = { ...base, allowedByPlatform: true }
+    render(<EditingSettingsCard canEdit />)
+
+    expect(screen.getByRole("switch", { name: "Online editing" })).toBeInTheDocument()
+    expect(screen.queryByText(/isn.t available to your organisation/)).toBeNull()
   })
 })

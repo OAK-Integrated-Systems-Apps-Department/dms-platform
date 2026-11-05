@@ -19,13 +19,18 @@ import java.util.UUID;
  * Each organisation's own online-editing switch (CICO-FR-010) - replaces the server-wide
  * {@code EDITING_ENABLED} / {@code EDITING_MODE} environment variables.
  *
- * <p>Two independent things must both be true for a tenant's users to get the editor:
+ * <p>Three things must all be true for a tenant's users to get the editor:
  * <ul>
  *   <li>the SERVER has an editing engine ({@link EditingEngine#isConfigured}) - an infrastructure fact set once
- *       by whoever runs the server; and</li>
+ *       by whoever runs the server;</li>
+ *   <li>the PLATFORM administrator has allowed this organisation to use it ({@link PlatformEditingAccess}, V136),
+ *       default NOT allowed; and</li>
  *   <li>the TENANT has turned online editing on - a permission-gated setting an administrator changes in the app
  *       (<code>cico.configure-editing-engine.select-provider</code>), default OFF.</li>
  * </ul>
+ * {@link #forTenant} is what every user-facing check reads, so it already folds the platform's allowance in: an
+ * organisation that is not allowed has {@code enabled == false} there whatever its own setting is. What its
+ * administrator had chosen is kept untouched and returns when it is allowed again.
  * One organisation turning it on never affects another, and a server that has an engine does not switch it on for
  * anyone.
  */
@@ -46,31 +51,49 @@ public class EditingSettingsService {
      * @param enabled          the tenant's own switch
      * @param engineConfigured the server has an engine - when false, turning {@code enabled} on is refused
      */
-    public record View(boolean enabled, String mode, boolean engineConfigured) {
+    public record View(boolean enabled, String mode, boolean engineConfigured, boolean allowedByPlatform) {
     }
 
     private final TenantEditingSettingsRepository repository;
     private final EditingEngine engine;
     private final AuditService auditService;
+    private final PlatformEditingAccess platformAccess;
 
-    /** A tenant's settings, or the default (off, exclusive) when it has never saved any. */
+    /**
+     * What applies to a tenant's users: its own setting (or the default - off, exclusive - when it has never saved
+     * any), switched off when the platform administrator has not allowed it online editing.
+     */
     @Transactional(readOnly = true)
     public Settings forTenant(UUID tenantId) {
+        Settings own = ownSettings(tenantId);
+        return platformAccess.allowed(tenantId) ? own : new Settings(false, own.mode());
+    }
+
+    /** What the organisation's administrator chose, whether or not the platform allows it at the moment. */
+    private Settings ownSettings(UUID tenantId) {
         return repository.findById(tenantId).map(s -> new Settings(s.isEnabled(), s.getMode())).orElse(DEFAULT);
     }
 
+    /** The caller's organisation: its own choice, and whether the platform lets it use online editing at all. */
     @Transactional(readOnly = true)
     public View view() {
-        Settings s = forTenant(TenantContext.getTenantId());
-        return new View(s.enabled(), s.mode(), engine.isConfigured());
+        UUID tenantId = TenantContext.getTenantId();
+        Settings s = ownSettings(tenantId);
+        return new View(s.enabled(), s.mode(), engine.isConfigured(), platformAccess.allowed(tenantId));
     }
 
     /**
-     * @throws CheckoutException 400 {@code EDITING_MODE_INVALID}; 409 {@code EDITING_ENGINE_NOT_CONFIGURED} when
-     *                           asked to turn it on and this server has no engine (turning it OFF is always allowed)
+     * @throws CheckoutException 400 {@code EDITING_MODE_INVALID}; 409 {@code EDITING_NOT_ALLOWED} when the platform
+     *                           administrator has not allowed this organisation online editing; 409
+     *                           {@code EDITING_ENGINE_NOT_CONFIGURED} when asked to turn it on and this server has no
+     *                           engine (turning it OFF is always allowed)
      */
     @Transactional
     public View save(boolean enabled, String mode) {
+        if (!platformAccess.allowed(TenantContext.getTenantId())) {
+            throw CheckoutException.conflict("EDITING_NOT_ALLOWED",
+                    "Online editing hasn't been made available to your organisation. Ask the platform administrator.");
+        }
         String chosen = mode == null ? EXCLUSIVE : mode.trim().toLowerCase(java.util.Locale.ROOT);
         if (!EXCLUSIVE.equals(chosen) && !SIMULTANEOUS.equals(chosen)) {
             throw CheckoutException.badRequest("EDITING_MODE_INVALID",
@@ -82,7 +105,7 @@ public class EditingSettingsService {
                             + "Ask whoever runs the server to configure one.");
         }
         UUID tenantId = TenantContext.getTenantId();
-        Settings before = forTenant(tenantId);
+        Settings before = ownSettings(tenantId);
         TenantEditingSettings row = repository.findById(tenantId)
                 .orElseGet(() -> TenantEditingSettings.builder().tenantId(tenantId).build());
         row.setEnabled(enabled);
@@ -100,6 +123,6 @@ public class EditingSettingsService {
         auditService.event(AuditActionCatalog.EDITING_SETTINGS_CHANGED)
                 .objectType(AuditObjectTypes.TENANT).objectId(tenantId)
                 .outcome(AuditOutcome.SUCCESS).previousValue(previous).newValue(now).log();
-        return new View(enabled, chosen, engine.isConfigured());
+        return new View(enabled, chosen, engine.isConfigured(), true);
     }
 }

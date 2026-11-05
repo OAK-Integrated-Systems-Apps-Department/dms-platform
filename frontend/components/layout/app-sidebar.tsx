@@ -23,7 +23,9 @@ import {
   findActiveHref,
   groupHasHref,
 } from "@/components/dashboard/nav-utils"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
+import { useEditingConfig } from "@/lib/checkout/use-checkout"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
@@ -120,11 +122,18 @@ export function AppSidebar({
   // answer arrives rather than flashing a link that may not belong here.
   const watermarking = useWatermarkAvailability().data?.present === true
   const ocr = useOcrAvailability().data === true
+  // Shared with the document screens ("Edit online"): the platform administrator has allowed it for this organisation.
+  // Not asked for a platform administrator (no organisation) or for someone who may not read documents.
+  const onlineEditing =
+    useEditingConfig(
+      !isPlatformAdmin && hasAnyPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
+    ).data?.allowedByPlatform === true
 
   function featureOn(feature: NavItem["feature"]): boolean {
     if (!feature) return true
     if (feature === "watermarking") return watermarking
     if (feature === "ocr") return ocr
+    if (feature === "onlineEditing") return onlineEditing
     return false
   }
 

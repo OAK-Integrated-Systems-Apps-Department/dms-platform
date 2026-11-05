@@ -404,6 +404,10 @@ public class DocumentRenditionService {
                     ? SlidePages.renderImage(readAll(versionContent.open(version, tenantId).content()),
                     SlidePages.THUMBNAIL_WIDTH, null)
                     : SlidePages.thumbnail(pdfBytes(version, tenantId, false));
+        } catch (StorageObjectNotFoundException e) {
+            // The file isn't in storage (yet, or any more): that is not a file that can't be drawn, so nothing is
+            // recorded against the version - it is simply tried again the next time it is asked for.
+            return null;
         } catch (ApiException e) {
             // Not servable, no converter, too large, already recorded as failed: nothing to draw, nothing new to record.
             return null;

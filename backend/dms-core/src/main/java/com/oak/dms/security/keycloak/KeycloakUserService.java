@@ -13,6 +13,9 @@ import org.keycloak.admin.client.resource.UsersResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.representations.userprofile.config.UPAttribute;
+import org.keycloak.representations.userprofile.config.UPAttributePermissions;
+import org.keycloak.representations.userprofile.config.UPConfig;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -133,7 +136,20 @@ public class KeycloakUserService {
      * {@link KeycloakUserAlreadyExistsException}.
      */
     public void updateProfile(UUID keycloakId, String firstName, String lastName, String newEmail) {
+        updateProfile(keycloakId, firstName, lastName, newEmail, null);
+    }
+
+    /**
+     * As above, and when {@code newUsername} isn't null the account is renamed too. Keycloak refuses a rename
+     * (HTTP 400) while the realm has {@code editUsernameAllowed} off, which it has by default, so the setting is
+     * switched on first - see {@link #allowUsernameChanges()}. Keycloak keeps usernames in lower case and refuses one
+     * another account has, or another account's email, with a 409 ({@link KeycloakUserAlreadyExistsException}).
+     */
+    public void updateProfile(UUID keycloakId, String firstName, String lastName, String newEmail, String newUsername) {
         try {
+            if (newUsername != null) {
+                allowUsernameChanges();
+            }
             var user = realm().users().get(keycloakId.toString());
             UserRepresentation representation = user.toRepresentation();
             representation.setFirstName(firstName);
@@ -142,12 +158,17 @@ public class KeycloakUserService {
                 representation.setEmail(newEmail);
                 representation.setEmailVerified(false);
             }
+            if (newUsername != null) {
+                representation.setUsername(newUsername);
+            }
             user.update(representation);
         } catch (WebApplicationException e) {
             if (e.getResponse() != null && e.getResponse().getStatus() == Response.Status.CONFLICT.getStatusCode()) {
-                throw new KeycloakUserAlreadyExistsException(newEmail, null);
+                throw new KeycloakUserAlreadyExistsException(newEmail, newUsername);
             }
             throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
+        } catch (KeycloakIntegrationException e) {
+            throw e; // already says what is wrong - not hidden behind a generic message
         } catch (Exception e) {
             throw new KeycloakIntegrationException("Failed to update Keycloak user " + keycloakId, e);
         }
@@ -162,6 +183,64 @@ public class KeycloakUserService {
         String self = keycloakId.toString();
         return users.searchByEmail(email, true).stream().anyMatch(u -> !self.equals(u.getId()))
                 || users.searchByUsername(email, true).stream().anyMatch(u -> !self.equals(u.getId()));
+    }
+
+    /**
+     * Whether some Keycloak account other than {@code keycloakId} already has {@code username} - as its username (in
+     * any letter case) or as its email, which people may sign in with just the same.
+     */
+    public boolean usernameTakenByAnotherAccount(String username, UUID keycloakId) {
+        UsersResource users = realm().users();
+        String self = keycloakId.toString();
+        return users.searchByUsername(username, true).stream().anyMatch(u -> !self.equals(u.getId()))
+                || users.searchByEmail(username, true).stream().anyMatch(u -> !self.equals(u.getId()));
+    }
+
+    /**
+     * Lets accounts be renamed - by an administrator, and only by one.
+     * <p>
+     * Keycloak refuses every rename while the realm has {@code editUsernameAllowed} off (which it ships with), so it
+     * has to be on for the platform administrator's screen to work. On its own that would also let every user rename
+     * THEMSELVES in Keycloak's account console (it is served, and proxied in production): their username there would
+     * then differ from the one DMS keeps for them. So the realm's user profile is first changed to let only
+     * administrators edit the {@code username} attribute, and only then is the setting switched on - there is never a
+     * moment when users can rename themselves. Both steps are done the first time a rename is asked for, and are
+     * no-ops after that.
+     */
+    private void allowUsernameChanges() {
+        var realm = realm();
+        restrictUsernameToAdministrators(realm);
+        var representation = realm.toRepresentation();
+        if (!Boolean.TRUE.equals(representation.isEditUsernameAllowed())) {
+            representation.setEditUsernameAllowed(true);
+            realm.update(representation);
+            log.info("Keycloak realm {} now allows usernames to be changed (needed to rename an administrator)",
+                    representation.getRealm());
+        }
+    }
+
+    /** The realm's user profile: the {@code username} attribute editable by administrators, not by the users themselves. */
+    private void restrictUsernameToAdministrators(RealmResource realm) {
+        var profile = realm.users().userProfile();
+        UPConfig configuration = profile.getConfiguration();
+        UPAttribute username = configuration.getAttribute("username");
+        if (username == null) {
+            throw new KeycloakIntegrationException("The realm's user profile has no username attribute, so who may "
+                    + "rename an account can't be controlled - not renaming it.");
+        }
+        UPAttributePermissions permissions = username.getPermissions() == null
+                ? new UPAttributePermissions() : username.getPermissions();
+        Set<String> editors = permissions.getEdit();
+        if (editors != null && editors.equals(Set.of("admin"))) {
+            return; // already so
+        }
+        permissions.setEdit(Set.of("admin"));
+        if (permissions.getView() == null || permissions.getView().isEmpty()) {
+            permissions.setView(Set.of("admin", "user"));
+        }
+        username.setPermissions(permissions);
+        profile.update(configuration);
+        log.info("Keycloak realm user profile now lets only administrators edit the username attribute");
     }
 
     public void disableUser(UUID keycloakId) {
