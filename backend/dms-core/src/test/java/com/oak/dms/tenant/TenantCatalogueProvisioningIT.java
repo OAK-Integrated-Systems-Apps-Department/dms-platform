@@ -141,6 +141,68 @@ class TenantCatalogueProvisioningIT {
         verify(keycloakUserService).deleteUser(keycloakId);
     }
 
+    @Test
+    void provisionTenant_canCreateSeveralAdministratorsAtOnce() throws Exception {
+        when(keycloakUserService.createUser(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> UUID.randomUUID());
+        ProvisionTenantRequest request = provisionRequestWithExtraAdmins(2);
+
+        TenantProvisioningResponse response = tenantProvisioningService.provisionTenant(request);
+
+        assertThat(response.admin().email()).isEqualTo(request.adminEmail());
+        assertThat(response.additionalAdmins()).extracting(admin -> admin.email())
+                .containsExactlyElementsOf(request.additionalAdmins().stream()
+                        .map(ProvisionTenantRequest.AdditionalAdmin::email).toList());
+        // Three accounts, each made a TENANT_ADMIN and invited.
+        verify(keycloakUserService, org.mockito.Mockito.times(3)).createUser(any(), any(), any(), any(), any());
+        verify(keycloakUserService, org.mockito.Mockito.times(3)).assignPlatformRealmRole(any(), org.mockito.ArgumentMatchers.eq("TENANT_ADMIN"));
+        verify(passwordResetService, org.mockito.Mockito.times(3)).issueForNewUser(any());
+    }
+
+    @Test
+    void provisionTenant_refusesTwoAdministratorsWithTheSameUsername_beforeCreatingAnyAccount() throws Exception {
+        ProvisionTenantRequest base = provisionRequestWithExtraAdmins(1);
+        ProvisionTenantRequest clash = new ProvisionTenantRequest(base.tenantName(), base.domain(), base.subscriptionTier(),
+                base.adminEmail(), base.adminUsername(), base.adminFirstName(), base.adminLastName(),
+                java.util.List.of(new ProvisionTenantRequest.AdditionalAdmin("other-" + base.adminEmail(),
+                        base.adminUsername().toUpperCase(), "Other", "Admin")));
+
+        assertThatThrownBy(() -> tenantProvisioningService.provisionTenant(clash))
+                .isInstanceOf(com.oak.dms.common.exception.DuplicateResourceException.class);
+
+        assertThat(tenantRepository.existsByDomainAndDeletedFalse(clash.domain())).isFalse();
+        verify(keycloakUserService, never()).createUser(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void provisionTenant_whenALaterAdministratorFails_removesEveryAccountAlreadyCreated() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(keycloakUserService.createUser(any(), any(), any(), any(), any()))
+                .thenReturn(first).thenReturn(second)
+                .thenThrow(new com.oak.dms.common.exception.KeycloakUserAlreadyExistsException("taken@example.invalid", "taken"));
+        ProvisionTenantRequest request = provisionRequestWithExtraAdmins(2);
+
+        assertThatThrownBy(() -> tenantProvisioningService.provisionTenant(request))
+                .isInstanceOf(com.oak.dms.common.exception.KeycloakUserAlreadyExistsException.class);
+
+        assertThat(tenantRepository.existsByDomainAndDeletedFalse(request.domain())).isFalse();
+        verify(keycloakUserService).deleteUser(first);
+        verify(keycloakUserService).deleteUser(second);
+    }
+
+    private static ProvisionTenantRequest provisionRequestWithExtraAdmins(int extra) {
+        ProvisionTenantRequest base = provisionRequest();
+        java.util.List<ProvisionTenantRequest.AdditionalAdmin> admins = new java.util.ArrayList<>();
+        for (int i = 1; i <= extra; i++) {
+            String tag = UUID.randomUUID().toString().substring(0, 8);
+            admins.add(new ProvisionTenantRequest.AdditionalAdmin("extra" + i + "-" + tag + "@catalogue-provisioning.invalid",
+                    "extra" + i + "-" + tag, "Extra" + i, "Admin"));
+        }
+        return new ProvisionTenantRequest(base.tenantName(), base.domain(), base.subscriptionTier(), base.adminEmail(),
+                base.adminUsername(), base.adminFirstName(), base.adminLastName(), admins);
+    }
+
     /** The real install runs and writes its rows, then fails - so the rollback has something to undo. */
     private void failAfterInstalling() {
         doAnswer(invocation -> {
@@ -165,6 +227,6 @@ class TenantCatalogueProvisioningIT {
         String suffix = UUID.randomUUID().toString();
         return new ProvisionTenantRequest("Catalogue provisioning tenant " + suffix,
                 "catalogue-provisioning-" + suffix + ".invalid", "standard",
-                "admin-" + suffix + "@catalogue-provisioning.invalid", "admin-" + suffix, "Test", "Admin");
+                "admin-" + suffix + "@catalogue-provisioning.invalid", "admin-" + suffix, "Test", "Admin", null);
     }
 }

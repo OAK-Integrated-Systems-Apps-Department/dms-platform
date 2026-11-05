@@ -7,6 +7,7 @@ import {
   Building2,
   Flame,
   Loader2,
+  Mail,
   Pause,
   Pencil,
   Play,
@@ -36,14 +37,19 @@ import {
   deactivateOrganisation,
   destroyOrganisationKeys,
   fetchOrganisations,
+  fetchTenantAdmins,
   provisionOrganisation,
+  resendTenantAdminInvite,
   reactivateOrganisation,
   setOrganisationStatus,
   updateOrganisation,
+  updateTenantAdmin,
   type OrganisationDto,
+  type TenantAdminDto,
 } from "@/lib/tenants/admin-api"
 
 const KEY = ["platform", "organisations"] as const
+const ADMINS_KEY = ["platform", "organisation-admins"] as const
 
 type Pending = {
   kind: "suspend" | "resume" | "deactivate" | "reactivate"
@@ -101,10 +107,11 @@ export function Organisations() {
         </Button>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="tbl-card w-full min-w-[820px] text-[13px]">
+        <table className="tbl-card w-full min-w-[980px] text-[13px]">
           <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
             <tr>
               <th className="px-4 py-2.5 font-semibold">Organisation</th>
+              <th className="px-4 py-2.5 font-semibold">Administrator</th>
               <th className="px-4 py-2.5 font-semibold">State</th>
               <th className="px-4 py-2.5 font-semibold">Plan</th>
               <th className="px-4 py-2.5 font-semibold">Created</th>
@@ -129,6 +136,9 @@ export function Organisations() {
                         </p>
                       </div>
                     </div>
+                  </td>
+                  <td className="max-w-[240px] px-4 py-3">
+                    <AdminCell org={org} onOpen={() => setEditing(org)} />
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={state.variant} className="rounded-btn">
@@ -273,6 +283,413 @@ export function Organisations() {
  * created on its own has nobody who can log into it, and no other endpoint
  * can create a user inside it afterwards.
  */
+
+/**
+ * The organisation's administrator, right in the list: who they are and whether they have accepted
+ * the invitation. Click it to see or correct their details.
+ */
+function AdminCell({
+  org,
+  onOpen,
+}: {
+  org: OrganisationDto
+  onOpen: () => void
+}) {
+  const admins = useQuery({
+    queryKey: [...ADMINS_KEY, org.tenantId],
+    queryFn: () => fetchTenantAdmins(org.tenantId),
+    staleTime: 30_000,
+    retry: false,
+  })
+  if (admins.isPending) {
+    return <span className="text-[12px] text-muted-foreground">Loading…</span>
+  }
+  if (admins.isError || admins.data.length === 0) {
+    return <span className="text-[12px] text-muted-foreground">—</span>
+  }
+  const [first, ...rest] = admins.data
+  const body = (
+    <>
+      <span className="flex items-center gap-1.5">
+        <span className="truncate font-medium">{first.displayName}</span>
+        {!first.verified && (
+          <Badge variant="gold" className="shrink-0">
+            Invited
+          </Badge>
+        )}
+        {rest.length > 0 && (
+          <span className="shrink-0 text-[12px] text-muted-foreground">
+            +{rest.length}
+          </span>
+        )}
+      </span>
+      <span className="block truncate text-[12px] text-muted-foreground">
+        {first.email}
+      </span>
+    </>
+  )
+  return org.deactivated ? (
+    <div className="min-w-0">{body}</div>
+  ) : (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="View or edit the administrator"
+      className="block min-w-0 max-w-full rounded-btn text-left hover:text-primary"
+    >
+      {body}
+    </button>
+  )
+}
+
+/** Administrators of an organisation, shown in its edit panel with their details editable. */
+function AdminsSection({ org }: { org: OrganisationDto }) {
+  const queryClient = useQueryClient()
+  const admins = useQuery({
+    queryKey: [...ADMINS_KEY, org.tenantId],
+    queryFn: () => fetchTenantAdmins(org.tenantId),
+    retry: false,
+  })
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  return (
+    <div className="border-t border-border pt-4">
+      <p className="mb-2 text-[12px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+        Administrator
+      </p>
+      {admins.isPending && (
+        <p className="text-[12.5px] text-muted-foreground">Loading…</p>
+      )}
+      {admins.isError && (
+        <p className="text-[12.5px] text-[var(--rust)]">
+          {friendlyMessage(
+            admins.error,
+            "Could not load the organisation's administrators."
+          )}
+        </p>
+      )}
+      {admins.data?.length === 0 && (
+        <p className="text-[12.5px] text-muted-foreground">
+          This organisation has no administrator.
+        </p>
+      )}
+      <div className="flex flex-col gap-3">
+        {admins.data?.map((admin) =>
+          editingId === admin.userId ? (
+            <AdminEditor
+              key={admin.userId}
+              org={org}
+              admin={admin}
+              onCancel={() => setEditingId(null)}
+              onSaved={() => {
+                setEditingId(null)
+                void queryClient.invalidateQueries({ queryKey: ADMINS_KEY })
+              }}
+            />
+          ) : (
+            <AdminCard
+              key={admin.userId}
+              org={org}
+              admin={admin}
+              onEdit={() => setEditingId(admin.userId)}
+            />
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AdminCard({
+  org,
+  admin,
+  onEdit,
+}: {
+  org: OrganisationDto
+  admin: TenantAdminDto
+  onEdit: () => void
+}) {
+  const [sending, setSending] = useState(false)
+
+  async function resend() {
+    setSending(true)
+    try {
+      await resendTenantAdminInvite(org.tenantId, admin.userId)
+      toast.success(`Invitation sent to ${admin.email}.`)
+    } catch (e) {
+      toast.error(friendlyMessage(e, "Could not send the invitation."))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[13.5px] font-semibold">
+            {admin.displayName}
+          </p>
+          <p className="truncate text-[12.5px] text-muted-foreground">
+            {admin.email}
+          </p>
+        </div>
+        <Badge
+          variant={admin.verified ? "default" : "gold"}
+          className="shrink-0"
+        >
+          {admin.verified ? "Active" : "Invited"}
+        </Badge>
+      </div>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12.5px]">
+        <dt className="text-muted-foreground">Username</dt>
+        <dd className="font-mono">{admin.username}</dd>
+        <dt className="text-muted-foreground">Last signed in</dt>
+        <dd>
+          {admin.lastLoginAt ? (
+            <FriendlyDate iso={admin.lastLoginAt} />
+          ) : (
+            <span className="text-muted-foreground">Not yet</span>
+          )}
+        </dd>
+        <dt className="text-muted-foreground">Added</dt>
+        <dd>
+          <FriendlyDate iso={admin.createdAt} />
+        </dd>
+      </dl>
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {!admin.verified && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={sending}
+            onClick={() => void resend()}
+          >
+            {sending && <Loader2 className="animate-spin" />}
+            <Mail /> Resend invitation
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={onEdit}>
+          <Pencil /> Edit
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AdminEditor({
+  org,
+  admin,
+  onCancel,
+  onSaved,
+}: {
+  org: OrganisationDto
+  admin: TenantAdminDto
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const [firstName, setFirstName] = useState(admin.firstName)
+  const [lastName, setLastName] = useState(admin.lastName ?? "")
+  const [email, setEmail] = useState(admin.email)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const changed =
+    firstName.trim() !== admin.firstName ||
+    lastName.trim() !== (admin.lastName ?? "") ||
+    email.trim() !== admin.email
+  const complete = firstName.trim() !== "" && emailOk
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      await updateTenantAdmin(org.tenantId, admin.userId, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+      })
+      toast.success("Administrator updated.")
+      onSaved()
+    } catch (e) {
+      setError(friendlyMessage(e, "Could not update the administrator."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-primary bg-card p-3.5">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name" value={firstName} onChange={setFirstName} />
+        <Field
+          label="Last name"
+          optional
+          value={lastName}
+          onChange={setLastName}
+        />
+      </div>
+      <Field
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        error={email.trim() !== "" && !emailOk ? "Enter a valid email." : null}
+        hint={
+          admin.verified
+            ? "They sign in with their username; this is where password resets are sent."
+            : "They haven't accepted the invitation yet — use Resend invitation after changing it."
+        }
+      />
+      <div>
+        <p className="mb-1 text-[12px] font-medium text-muted-foreground">
+          Username
+        </p>
+        <p className="font-mono text-[12.5px]">{admin.username}</p>
+      </div>
+      {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          onClick={() => void save()}
+          disabled={!changed || !complete || saving}
+        >
+          {saving && <Loader2 className="animate-spin" />}
+          {saving ? "Saving…" : "Save administrator"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** An administrator beyond the first, as typed into the Add organisation form. */
+interface ExtraAdmin {
+  email: string
+  username: string
+  firstName: string
+  lastName: string
+}
+
+const EMPTY_EXTRA: ExtraAdmin = { email: "", username: "", firstName: "", lastName: "" }
+const MAX_EXTRA_ADMINS = 9
+const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function extraComplete(extra: ExtraAdmin): boolean {
+  return (
+    EMAIL_PATTERN.test(extra.email.trim()) &&
+    extra.username.trim().length >= 3 &&
+    USERNAME_PATTERN.test(extra.username.trim()) &&
+    extra.firstName.trim() !== ""
+  )
+}
+
+/** Two administrators of one organisation can't share a username or an email. */
+function hasDuplicateAdmins(
+  first: { adminEmail: string; adminUsername: string },
+  extras: ExtraAdmin[]
+): boolean {
+  const usernames = [first.adminUsername, ...extras.map((e) => e.username)]
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+  const emails = [first.adminEmail, ...extras.map((e) => e.email)]
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+  return (
+    new Set(usernames).size !== usernames.length ||
+    new Set(emails).size !== emails.length
+  )
+}
+
+/** One more administrator's fields, with a way to remove it. */
+function ExtraAdminFields({
+  number,
+  value,
+  form,
+  others,
+  onChange,
+  onRemove,
+}: {
+  number: number
+  value: ExtraAdmin
+  form: { adminEmail: string; adminUsername: string }
+  others: ExtraAdmin[]
+  onChange: (field: keyof ExtraAdmin) => (value: string) => void
+  onRemove: () => void
+}) {
+  const taken = (field: "email" | "username") => {
+    const mine = value[field].trim().toLowerCase()
+    if (mine === "") return false
+    const used = [
+      field === "email" ? form.adminEmail : form.adminUsername,
+      ...others.map((o) => o[field]),
+    ].map((v) => v.trim().toLowerCase())
+    return used.includes(mine)
+  }
+  return (
+    <div className="mt-1 border-t border-border pt-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-[12.5px] font-semibold text-foreground">
+          Administrator {number}
+        </p>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          className="text-[var(--rust)]"
+          onClick={onRemove}
+        >
+          <Trash2 /> Remove
+        </Button>
+      </div>
+      <div className="flex flex-col gap-4">
+        <Field
+          label="Email"
+          type="email"
+          value={value.email}
+          onChange={onChange("email")}
+          placeholder="second.admin@acme.com"
+          error={
+            taken("email")
+              ? "Another administrator here already has this email."
+              : value.email.trim() !== "" && !EMAIL_PATTERN.test(value.email.trim())
+                ? "Enter a valid email."
+                : null
+          }
+        />
+        <Field
+          label="Username"
+          value={value.username}
+          onChange={onChange("username")}
+          error={
+            taken("username")
+              ? "Another administrator here already has this username."
+              : value.username !== "" && !USERNAME_PATTERN.test(value.username)
+                ? "Letters, numbers, dots, hyphens and underscores only"
+                : null
+          }
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="First name"
+            value={value.firstName}
+            onChange={onChange("firstName")}
+          />
+          <Field
+            label="Last name"
+            optional
+            value={value.lastName}
+            onChange={onChange("lastName")}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AddOrganisationSheet({
   onOpenChange,
   onDone,
@@ -289,11 +706,17 @@ function AddOrganisationSheet({
     adminFirstName: "",
     adminLastName: "",
   })
+  // More administrators for the same organisation (the backend allows up to 9 beyond the first).
+  const [extras, setExtras] = useState<ExtraAdmin[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const set = (field: keyof typeof form) => (value: string) =>
     setForm((current) => ({ ...current, [field]: value }))
+  const setExtra = (index: number, field: keyof ExtraAdmin) => (value: string) =>
+    setExtras((current) =>
+      current.map((extra, i) => (i === index ? { ...extra, [field]: value } : extra))
+    )
 
   // Mirrors the backend's own @Pattern on domain and adminUsername, so a
   // typo is caught here rather than coming back as a 400 field error.
@@ -311,7 +734,9 @@ function AddOrganisationSheet({
     form.adminUsername.trim() !== "" &&
     usernameOk &&
     form.adminFirstName.trim() !== "" &&
-    form.adminUsername.length >= 3
+    form.adminUsername.length >= 3 &&
+    extras.every(extraComplete) &&
+    !hasDuplicateAdmins(form, extras)
 
   async function save() {
     setSaving(true)
@@ -320,9 +745,18 @@ function AddOrganisationSheet({
       const result = await provisionOrganisation({
         ...form,
         adminLastName: form.adminLastName.trim() || undefined,
+        additionalAdmins: extras.map((extra) => ({
+          email: extra.email.trim(),
+          username: extra.username.trim(),
+          firstName: extra.firstName.trim(),
+          lastName: extra.lastName.trim() || undefined,
+        })),
       })
+      const count = 1 + (result.additionalAdmins?.length ?? 0)
       toast.success(
-        `${result.tenant.tenantName} created. ${result.admin.email} can set their password from the email just sent.`
+        count === 1
+          ? `${result.tenant.tenantName} created. ${result.admin.email} can set their password from the email just sent.`
+          : `${result.tenant.tenantName} created. ${count} administrators were emailed a link to set their password.`
       )
       onDone()
       onOpenChange(false)
@@ -339,8 +773,8 @@ function AddOrganisationSheet({
         <SheetHeader className="border-b border-border">
           <SheetTitle>Add organisation</SheetTitle>
           <SheetDescription>
-            Creates the organisation and its first administrator together. They
-            are emailed a link to set their own password — no password is set
+            Creates the organisation and its administrators together. Each is
+            emailed a link to set their own password — no password is set
             here.
           </SheetDescription>
         </SheetHeader>
@@ -374,7 +808,7 @@ function AddOrganisationSheet({
 
           <div className="mt-1 border-t border-border pt-4">
             <p className="mb-3 text-[12.5px] font-semibold text-foreground">
-              First administrator
+              {extras.length > 0 ? "Administrator 1" : "First administrator"}
             </p>
             <div className="flex flex-col gap-4">
               <Field
@@ -410,6 +844,30 @@ function AddOrganisationSheet({
               </div>
             </div>
           </div>
+
+          {extras.map((extra, index) => (
+            <ExtraAdminFields
+              key={index}
+              number={index + 2}
+              value={extra}
+              form={form}
+              others={extras.filter((_, i) => i !== index)}
+              onChange={(field) => setExtra(index, field)}
+              onRemove={() =>
+                setExtras((current) => current.filter((_, i) => i !== index))
+              }
+            />
+          ))}
+          {extras.length < MAX_EXTRA_ADMINS && (
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              onClick={() => setExtras((current) => [...current, { ...EMPTY_EXTRA }])}
+            >
+              <Plus size={14} aria-hidden="true" /> Add another administrator
+            </Button>
+          )}
 
           {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
         </div>
@@ -478,12 +936,12 @@ function EditOrganisationSheet({
 
   return (
     <Sheet open onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-[480px]">
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-[520px]">
         <SheetHeader className="border-b border-border">
           <SheetTitle>Edit {org.tenantName}</SheetTitle>
           <SheetDescription>
-            Suspending, deactivating and destroying keys stay on the list — this
-            only changes the name and plan.
+            Change the name and plan, and see or correct the administrator.
+            Suspending, deactivating and destroying keys stay on the list.
           </SheetDescription>
         </SheetHeader>
 
@@ -511,6 +969,7 @@ function EditOrganisationSheet({
             </p>
           </div>
           {error && <p className="text-[12.5px] text-[var(--rust)]">{error}</p>}
+          <AdminsSection org={org} />
         </div>
 
         <SheetFooter className="border-t border-border">
@@ -520,7 +979,7 @@ function EditOrganisationSheet({
               onClick={() => onOpenChange(false)}
               disabled={saving}
             >
-              Cancel
+              Close
             </Button>
             <Button
               onClick={() => void save()}

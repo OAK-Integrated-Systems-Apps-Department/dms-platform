@@ -1,6 +1,7 @@
 "use client"
 
 import { LoadFailed } from "@/components/ui/load-failed"
+import { BookmarkButton } from "@/components/bookmarks/bookmark-button"
 import { PinButton } from "@/components/pins/pin-button"
 import {
   useCallback,
@@ -383,6 +384,7 @@ export function DocumentPreview({
               </SheetDescription>
             </div>
             <PinButton row={row} />
+            <BookmarkButton row={row} />
             {zoomable && (renderer === "slides" || file.isSuccess) && (
               <div
                 role="group"

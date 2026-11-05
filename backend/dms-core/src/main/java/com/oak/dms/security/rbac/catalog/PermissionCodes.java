@@ -54,6 +54,10 @@ public final class PermissionCodes {
     public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";
     public static final String PID_CONFIGURE_LIMITS = "pid.configure-pin-limits";
 
+    // Bookmark Documents - BD (bookmarks are private; removing your own never needs a permission check -
+    // see BookmarkController#remove).
+    public static final String BD_BOOKMARK = "bd.bookmark-unbookmark-documents.bookmark";
+
     // System monitoring - SHAD (System Health and Administration Dashboard).
     // Held implicitly by TENANT_ADMIN and PLATFORM_ADMIN like every code; others get them via a role.
     public static final String SHAD_VIEW_SYSTEM_HEALTH = "shad.view-system-health-dashboard";

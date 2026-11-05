@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { useQuery } from "@tanstack/react-query"
 
 import { ActionDialog } from "@/components/folders/folder-dialogs"
@@ -222,19 +224,14 @@ export function TransferDialog({ subject, open, onOpenChange, onDone }: Transfer
         )}
         <label className="flex flex-col gap-1.5 text-[12.5px] font-semibold">
           {toHolding ? "Holding department" : "Department (optional)"}
-          <select
-            aria-label={toHolding ? "Holding department" : "Department"}
-            value={departmentId}
-            onChange={(e) => setDepartmentId(e.target.value)}
-            className="rounded-btn border border-[var(--border-strong)] bg-card px-3 py-2 text-[13px] font-normal"
-          >
-            <option value="">{toHolding ? "The source's own department" : "The new owner's own department"}</option>
-            {(departments.data ?? []).map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            inline
+            options={departments.data ?? []}
+            selected={departmentId}
+            onChange={setDepartmentId}
+            allLabel={toHolding ? "The source's own department" : "The new owner's own department"}
+            searchPlaceholder="Search departments"
+          />
         </label>
         {bulk && !toHolding && (
           <Checkbox

@@ -10,6 +10,8 @@ import com.oak.dms.user.dto.UserResponse;
  */
 public record TenantProvisioningResponse(
         TenantResponse tenant,
-        UserResponse admin
+        UserResponse admin,
+        /** The other administrators created with the organisation, in the order requested (empty if none). */
+        java.util.List<UserResponse> additionalAdmins
 ) {
 }

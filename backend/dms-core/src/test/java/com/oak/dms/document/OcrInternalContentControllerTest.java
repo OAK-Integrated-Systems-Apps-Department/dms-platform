@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.ByteArrayInputStream;
@@ -27,10 +28,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -130,9 +133,14 @@ class OcrInternalContentControllerTest {
     /** The baseline: with both credentials correct, the bytes come back. */
     @Test
     void aLiveJobsOwnGrant_servesTheDocument_andNeverCachesIt() throws Exception {
-        mockMvc.perform(get(PATH, versionId)
+        // The bytes are streamed (StreamingResponseBody), which runs on another thread: read the body only
+        // after the async dispatch completes, or the assertion races the writer and sometimes sees nothing.
+        MvcResult started = mockMvc.perform(get(PATH, versionId)
                         .header("X-Internal-Token", STATIC_TOKEN)
                         .header("X-Ocr-Job-Token", jobGrant(jobId, versionId, tenantId, Duration.ofMinutes(30))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(started))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(content().bytes("%PDF".getBytes(StandardCharsets.UTF_8)));

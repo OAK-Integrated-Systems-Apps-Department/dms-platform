@@ -75,6 +75,9 @@ export const PermissionCodes = {
   // Pin Important Documents (PID). Pins are personal; the limit is the organisation's.
   PID_PIN: "pid.pin-unpin-documents.pin",
   PID_UNPIN: "pid.pin-unpin-documents.unpin",
+  // Bookmark Documents (BD). Bookmarks are private; removing your own never needs this permission -
+  // see BookmarkController#remove on the backend.
+  BD_BOOKMARK: "bd.bookmark-unbookmark-documents.bookmark",
   PID_CONFIGURE_LIMITS: "pid.configure-pin-limits",
   // System monitoring (SHAD). Tenant admins hold these implicitly; others get them via a role.
   SHAD_VIEW_SYSTEM_HEALTH: "shad.view-system-health-dashboard",

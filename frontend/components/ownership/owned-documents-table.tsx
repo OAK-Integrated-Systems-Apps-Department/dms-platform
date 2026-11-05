@@ -1,5 +1,6 @@
 "use client"
 
+import { cn } from "@/lib/utils"
 import Link from "next/link"
 
 import { Badge } from "@/components/ui/badge"
@@ -68,7 +69,14 @@ export function OwnedDocumentsTable({
           <tbody>
             {items.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-10 text-center text-[13px] text-muted-foreground">
+                <td
+                  colSpan={7}
+                  className={cn(
+                    // Fills the page below the table; the pending tab has an intro line above its filters.
+                    showPendingReason ? "h-[max(160px,calc(100svh-540px))]" : "h-[max(160px,calc(100svh-474px))]",
+                    "px-3 text-center text-[13px] text-muted-foreground"
+                  )}
+                >
                   No documents.
                 </td>
               </tr>

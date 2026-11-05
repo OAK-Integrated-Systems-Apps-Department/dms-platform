@@ -27,6 +27,11 @@ interface SearchableSelectProps {
    * option or two are reachable. Inline, the dialog simply grows to show the list.
    */
   inline?: boolean
+  /**
+   * Shows `allLabel` as a pickable reset item. Turn it off for a field that must always hold one of `options`
+   * (the trigger then shows the selected option, or `allLabel` as a placeholder only before a pick).
+   */
+  allowClear?: boolean
 }
 
 /**
@@ -48,6 +53,7 @@ export function SearchableSelect({
   className,
   searchable = true,
   inline = false,
+  allowClear = true,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -94,7 +100,7 @@ export function SearchableSelect({
   const filteredOptions = options.filter((option) =>
     option.label.toLowerCase().includes(query.trim().toLowerCase())
   )
-  const showAllOption = query.trim() === ""
+  const showAllOption = allowClear && query.trim() === ""
   const selectedOption = options.find((option) => option.value === selected)
   const triggerLabel = selectedOption ? selectedOption.label : allLabel
 
