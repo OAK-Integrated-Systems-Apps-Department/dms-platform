@@ -61,6 +61,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(WorkflowFixtures.class)
 class DocumentRenditionIT {
 
+    /**
+     * Switches off the background thumbnail worker. The fixtures announce a version while it is still a placeholder
+     * row with no bytes, and the test then turns it into the real file; a worker running in between races those
+     * edits (and the on-demand call under test) and records failures or duplicate objects for a version that was
+     * never really in that state. Every rendition here is made on demand, which is what is being tested.
+     */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private RenditionGenerationListener backgroundRenditions;
+
     @Autowired
     private DocumentService documentService;
     @Autowired
@@ -409,11 +418,6 @@ class DocumentRenditionIT {
         jdbc.update("update document_versions set original_filename = ?, size_bytes = ? where version_id = ?",
                 filename, content.length, versionId);
         fx.putVersionContent(versionId, content);
-        // The version was announced (and the background thumbnail worker started on it) while it still held the
-        // fixture's placeholder row and no bytes, so that worker may have recorded a failure against it. The version
-        // is only now what the test means it to be: start its rendition state over.
-        jdbc.update("update document_versions set thumbnail_status = 'pending', thumbnail_object_key = null, "
-                + "rendition_failure_reason = null, rendition_failed_at = null where version_id = ?", versionId);
     }
 
     private java.util.List<UUID> failedIds() {
