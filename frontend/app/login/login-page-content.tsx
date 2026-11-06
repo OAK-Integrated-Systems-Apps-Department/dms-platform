@@ -8,8 +8,6 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import {
   ArrowRight,
-  Layers,
-  Leaf,
   Eye,
   EyeOff,
   Lock,
@@ -18,7 +16,11 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { LoginHeadline, LoginSpheres } from "@/components/auth/login-hero"
+import {
+  AuthShell,
+  authButtonClass,
+  authInputClass,
+} from "@/components/auth/auth-shell"
 import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
 import {
   loginCredentialsSchema,
@@ -105,13 +107,8 @@ async function login(
   return { ok: true }
 }
 
-// Soft green-tinted fill at every size (the phone design). Below `lg` the field is borderless; from `lg` up it keeps
-// its light border. Size and corner radius are the same everywhere.
-const inputClass =
-  "w-full rounded-btn border border-border max-lg:border-transparent bg-[var(--primary-tint)] py-3 pr-3.5 pl-10 text-[16px] text-foreground sm:py-3.5 sm:pl-11 sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-
-const primaryButtonClass =
-  "group flex w-full items-center justify-center gap-2 rounded-btn max-lg:normal-case max-lg:tracking-normal border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
+const inputClass = authInputClass
+const primaryButtonClass = authButtonClass
 
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
@@ -231,290 +228,186 @@ export function LoginPageContent() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-card lg:bg-background lg:bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
-      {/* One rounded card, split: brand panel | form */}
-      <div className="grid min-h-svh w-full grid-rows-[auto_1fr] lg:grid-rows-none lg:min-h-0 lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
-        {/* Brand panel: wide screens only */}
-        <aside
-          aria-hidden="true"
-          className="relative hidden flex-col overflow-hidden bg-[linear-gradient(150deg,#2a6a50_0%,#17402e_100%)] p-10 text-white lg:flex xl:p-12 [@media(max-height:760px)]:lg:p-7"
-        >
-          {/* Oak-leaf photo, tinted into the brand green and drifting slowly */}
-          <div
-            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.14] mix-blend-luminosity"
-            style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
-          />
-          {/* Bobbing spheres */}
-          <LoginSpheres />
-          {/* Aurora glow */}
-          <div className="pointer-events-none absolute top-1/3 -left-24 size-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
+    <AuthShell>
+      {step === "credentials" ? (
+        <>
+          <h1 className="text-center font-heading text-[28px] leading-none font-extrabold tracking-tight text-foreground max-lg:text-primary sm:text-[40px] lg:text-left">
+            <span className="lg:hidden">Welcome Back</span>
+            <span className="hidden lg:inline">Sign in</span>
+          </h1>
+          <p className="mt-2 mb-6 text-center text-[13px] text-muted-foreground sm:mt-3 sm:mb-8 sm:text-sm lg:text-left">
+            <span className="lg:hidden">Sign in to your account.</span>
+            <span className="hidden lg:inline">
+              Welcome back. Sign in to continue to {APP_NAME}.
+            </span>
+          </p>
 
-          <div className="relative flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-              <Layers size={22} />
-            </div>
-            <div>
-              <div className="font-heading text-lg font-semibold tracking-[-0.01em]">
-                {APP_NAME}
-              </div>
-              <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
-                DOCUMENT VAULT
-              </div>
-            </div>
-          </div>
-
-          <div className="relative my-auto py-8">
-            <LoginHeadline appName={APP_NAME} />
-          </div>
-        </aside>
-
-        {/* Phone layout: the oak-leaf photo, with a wave of white rising over its lower edge */}
-        <header
-          aria-hidden="true"
-          className="relative h-[36svh] max-h-[320px] min-h-[210px] overflow-hidden bg-[linear-gradient(150deg,#2a6a50_0%,#17402e_100%)] lg:hidden"
-        >
-          {/* Same treatment as the web brand panel: the photo tinted into the brand green */}
-          <div
-            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.3] mix-blend-luminosity"
-            style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
-          />
-          <div
-            className="lg-bob pointer-events-none absolute -top-16 -right-14 size-52 rounded-full opacity-70 shadow-[inset_-10px_-14px_36px_rgb(0_0_0/0.28)]"
-            style={{
-              background:
-                "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)",
-              animationDuration: "24s",
-            }}
-          />
-          <div className="pointer-events-none absolute top-1/3 -left-20 size-72 rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
-          <div className="relative flex items-center justify-center gap-2.5 pt-5 text-white">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-              <Layers size={18} />
-            </div>
-            <div className="text-left">
-              <div className="font-heading text-[15px] leading-tight font-semibold tracking-[-0.01em]">
-                {APP_NAME}
-              </div>
-              <div className="font-mono text-[9px] tracking-[0.16em] opacity-75">
-                DOCUMENT VAULT
-              </div>
-            </div>
-          </div>
-          <svg
-            viewBox="0 0 400 80"
-            preserveAspectRatio="none"
-            className="absolute inset-x-0 -bottom-px h-14 w-full fill-card"
+          <form
+            onSubmit={handleSubmit(handleCredentialsSubmit)}
+            noValidate
+            className="space-y-3 sm:space-y-5"
           >
-            <path d="M0 46 C110 6 230 78 400 22 L400 80 L0 80 Z" />
-          </svg>
-          <Leaf
-            size={58}
-            strokeWidth={1.5}
-            className="absolute right-4 bottom-8 -rotate-[28deg] fill-[#2f7557] text-[#1f4d3a]"
-          />
-          <Leaf
-            size={38}
-            strokeWidth={1.5}
-            className="absolute right-[4.25rem] bottom-6 rotate-[18deg] fill-[#1f4d3a] text-[#123527]"
-          />
-        </header>
-
-        {/* Form panel */}
-        <main className="relative flex items-start justify-center overflow-hidden bg-card px-4 pt-5 pb-8 sm:px-10 sm:pb-10 lg:items-center lg:px-12 lg:py-10 xl:px-16">
-          {/* Corner sphere, echoing the brand panel */}
-          <div
-            aria-hidden="true"
-            className="lg-bob pointer-events-none absolute -right-20 -bottom-24 hidden size-[220px] rounded-full opacity-90 shadow-[inset_-10px_-14px_36px_rgb(0_0_0/0.3)] lg:block"
-            style={{
-              background:
-                "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)",
-              animationDuration: "20s",
-            }}
-          />
-
-          <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
-            {step === "credentials" ? (
-              <>
-                <h1 className="text-center font-heading text-[28px] leading-none font-extrabold tracking-tight text-foreground max-lg:text-primary sm:text-[40px] lg:text-left">
-                  <span className="lg:hidden">Welcome Back</span>
-                  <span className="hidden lg:inline">Sign in</span>
-                </h1>
-                <p className="mt-2 mb-6 text-center text-[13px] text-muted-foreground sm:mt-3 sm:mb-8 sm:text-sm lg:text-left">
-                  <span className="lg:hidden">Sign in to your account.</span>
-                  <span className="hidden lg:inline">
-                    Welcome back. Sign in to continue to {APP_NAME}.
-                  </span>
+            <div>
+              <label
+                htmlFor="username"
+                className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
+              >
+                Username or email
+              </label>
+              <div className="relative">
+                <User
+                  size={16}
+                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
+                />
+                <input
+                  id="username"
+                  type="text"
+                  placeholder="Username or email"
+                  autoComplete="username"
+                  aria-invalid={
+                    credentialErrors.username ? true : undefined
+                  }
+                  {...register("username")}
+                  className={inputClass}
+                />
+              </div>
+              {credentialErrors.username && (
+                <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                  {credentialErrors.username.message}
                 </p>
+              )}
+            </div>
 
-                <form
-                  onSubmit={handleSubmit(handleCredentialsSubmit)}
-                  noValidate
-                  className="space-y-3 sm:space-y-5"
-                >
-                  <div>
-                    <label
-                      htmlFor="username"
-                      className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
-                    >
-                      Username or email
-                    </label>
-                    <div className="relative">
-                      <User
-                        size={16}
-                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
-                      />
-                      <input
-                        id="username"
-                        type="text"
-                        placeholder="Username or email"
-                        autoComplete="username"
-                        aria-invalid={
-                          credentialErrors.username ? true : undefined
-                        }
-                        {...register("username")}
-                        className={inputClass}
-                      />
-                    </div>
-                    {credentialErrors.username && (
-                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                        {credentialErrors.username.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="password"
-                      className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
-                    >
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock
-                        size={16}
-                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
-                      />
-                      <input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Password"
-                        autoComplete="current-password"
-                        aria-invalid={
-                          credentialErrors.password ? true : undefined
-                        }
-                        {...register("password")}
-                        className={`${inputClass} pr-11`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((prev) => !prev)}
-                        tabIndex={-1}
-                        aria-label={
-                          showPassword ? "Hide password" : "Show password"
-                        }
-                        aria-pressed={showPassword}
-                        className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
-                      >
-                        <span className="max-lg:hidden">
-                          {showPassword ? "Hide" : "Show"}
-                        </span>
-                        <span className="lg:hidden">
-                          {showPassword ? (
-                            <EyeOff size={18} />
-                          ) : (
-                            <Eye size={18} />
-                          )}
-                        </span>
-                      </button>
-                    </div>
-                    {credentialErrors.password && (
-                      <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                        {credentialErrors.password.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="size-3.5 accent-primary"
-                      />
-                      Remember me
-                    </label>
-                    <a
-                      href="/reset-password"
-                      className="text-[13px] font-semibold text-primary hover:underline"
-                    >
-                      Forgot password?
-                    </a>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={mutation.isPending}
-                    className={primaryButtonClass}
-                  >
-                    {mutation.isPending ? (
-                      "Signing in…"
-                    ) : (
-                      <>
-                        Sign in
-                        <ArrowRight
-                          size={16}
-                          className="transition-transform group-hover:translate-x-0.5 max-lg:hidden"
-                        />
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                <p className="mt-4 text-center text-[11.5px] text-[var(--ink-faint)] sm:mt-8 sm:text-xs">
-                  Need access? Contact your workspace administrator.
-                </p>
-              </>
-            ) : (
-              <div>
-                <div className="bg-primary-tint mb-3 flex size-11 sm:mb-5 sm:size-[52px] items-center justify-center rounded-full border border-border">
-                  <ShieldCheck size={24} className="text-primary" />
-                </div>
-                <h1 className="font-heading text-[22px] font-semibold tracking-[-0.02em] sm:text-[28px] text-foreground">
-                  Two-factor authentication
-                </h1>
-                <p className="mt-1.5 mb-5 text-[13px] text-muted-foreground sm:mb-8 sm:text-sm">
-                  Enter the code from your authenticator app.
-                </p>
-
-                <form onSubmit={handleOtpSubmit}>
-                  <OtpInput
-                    value={code}
-                    onChange={setCode}
-                    disabled={mutation.isPending}
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={mutation.isPending || code.length < OTP_LENGTH}
-                    className={primaryButtonClass}
-                  >
-                    {mutation.isPending ? "Verifying…" : "Submit"}
-                  </button>
-                </form>
-
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
+              >
+                Password
+              </label>
+              <div className="relative">
+                <Lock
+                  size={16}
+                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
+                />
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Password"
+                  autoComplete="current-password"
+                  aria-invalid={
+                    credentialErrors.password ? true : undefined
+                  }
+                  {...register("password")}
+                  className={`${inputClass} pr-11`}
+                />
                 <button
                   type="button"
-                  onClick={handleBackToCredentials}
-                  className="mt-5 text-[13px] font-semibold text-primary hover:underline"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  tabIndex={-1}
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                  aria-pressed={showPassword}
+                  className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
                 >
-                  Back to sign in
+                  <span className="max-lg:hidden">
+                    {showPassword ? "Hide" : "Show"}
+                  </span>
+                  <span className="lg:hidden">
+                    {showPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </span>
                 </button>
               </div>
-            )}
+              {credentialErrors.password && (
+                <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                  {credentialErrors.password.message}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="size-3.5 accent-primary"
+                />
+                Remember me
+              </label>
+              <a
+                href="/reset-password"
+                className="text-[13px] font-semibold text-primary hover:underline"
+              >
+                Forgot password?
+              </a>
+            </div>
+
+            <button
+              type="submit"
+              disabled={mutation.isPending}
+              className={primaryButtonClass}
+            >
+              {mutation.isPending ? (
+                "Signing in…"
+              ) : (
+                <>
+                  Sign in
+                  <ArrowRight
+                    size={16}
+                    className="transition-transform group-hover:translate-x-0.5 max-lg:hidden"
+                  />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="mt-4 text-center text-[11.5px] text-[var(--ink-faint)] sm:mt-8 sm:text-xs">
+            Need access? Contact your workspace administrator.
+          </p>
+        </>
+      ) : (
+        <div>
+          <div className="bg-primary-tint mb-3 flex size-11 sm:mb-5 sm:size-[52px] items-center justify-center rounded-full border border-border">
+            <ShieldCheck size={24} className="text-primary" />
           </div>
-        </main>
-      </div>
-    </div>
+          <h1 className="font-heading text-[22px] font-semibold tracking-[-0.02em] sm:text-[28px] text-foreground">
+            Two-factor authentication
+          </h1>
+          <p className="mt-1.5 mb-5 text-[13px] text-muted-foreground sm:mb-8 sm:text-sm">
+            Enter the code from your authenticator app.
+          </p>
+
+          <form onSubmit={handleOtpSubmit}>
+            <OtpInput
+              value={code}
+              onChange={setCode}
+              disabled={mutation.isPending}
+            />
+
+            <button
+              type="submit"
+              disabled={mutation.isPending || code.length < OTP_LENGTH}
+              className={primaryButtonClass}
+            >
+              {mutation.isPending ? "Verifying…" : "Submit"}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={handleBackToCredentials}
+            className="mt-5 text-[13px] font-semibold text-primary hover:underline"
+          >
+            Back to sign in
+          </button>
+        </div>
+      )}
+    </AuthShell>
   )
 }
