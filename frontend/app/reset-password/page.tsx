@@ -2,10 +2,17 @@
 
 import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { CheckCircle2, Layers } from "lucide-react"
+import { CheckCircle2, User } from "lucide-react"
 import { toast } from "sonner"
 
-import { APP_NAME, ROUTES } from "@/lib/app-config"
+import {
+  AuthHeading,
+  AuthShell,
+  authButtonClass,
+  authInputClass,
+  authInputIconClass,
+} from "@/components/auth/auth-shell"
+import { ROUTES } from "@/lib/app-config"
 import { requestPasswordReset } from "@/lib/auth/request-password-reset"
 
 /**
@@ -48,93 +55,81 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
-      <div
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
-        }}
-      />
-
-      <div className="relative z-10 w-full max-w-[404px] rounded-lg border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
-        <div className="mb-7 flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
-            <Layers size={22} color="var(--primary-foreground)" />
+    <AuthShell>
+      {mutation.isSuccess ? (
+        <>
+          <div className="mb-3 flex justify-center lg:justify-start">
+            <CheckCircle2 size={32} className="text-primary" />
           </div>
-          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            {APP_NAME}
-          </div>
-          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
-            DOCUMENT VAULT
-          </div>
-        </div>
+          <AuthHeading
+            title="Check your email"
+            subtitle={
+              <>
+                If an account matches{" "}
+                <span className="font-medium text-foreground">
+                  {usernameOrEmail}
+                </span>
+                , we&apos;ve sent a link to reset the password. The link expires
+                after a while — request a new one if it&apos;s gone stale.
+              </>
+            }
+          />
+        </>
+      ) : (
+        <>
+          <AuthHeading
+            title="Forgot your password?"
+            subtitle="Enter your username or email to reset it."
+          />
 
-        {mutation.isSuccess ? (
-          <>
-            <div className="mb-2 flex justify-center">
-              <CheckCircle2 size={28} className="text-primary" />
-            </div>
-            <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Check your email
-            </h1>
-            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              If an account matches <span className="font-medium text-foreground">{usernameOrEmail}</span>,
-              we&apos;ve sent a link to reset the password.
-            </p>
-            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              The link expires after a while — request a new one if it&apos;s gone stale.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Forgot your password?
-            </h1>
-            <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              Enter your username or email to reset it
-            </p>
-
-            <form onSubmit={handleSubmit}>
-              <div className="mb-[22px]">
-                <label
-                  htmlFor="usernameOrEmail"
-                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
-                >
-                  Username or email
-                </label>
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-5">
+            <div>
+              <label
+                htmlFor="usernameOrEmail"
+                className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
+              >
+                Username or email
+              </label>
+              <div className="relative">
+                <User size={16} className={authInputIconClass} />
                 <input
                   id="usernameOrEmail"
                   type="text"
-                  placeholder="username"
+                  placeholder="Username or email"
                   autoComplete="username"
                   value={usernameOrEmail}
                   onChange={(e) => setUsernameOrEmail(e.target.value)}
-                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  className={authInputClass}
                 />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={mutation.isPending || !usernameOrEmail.trim()}
-                className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {mutation.isPending ? "Sending…" : "Submit"}
-              </button>
-            </form>
-          </>
-        )}
+            <button
+              type="submit"
+              disabled={mutation.isPending || !usernameOrEmail.trim()}
+              className={authButtonClass}
+            >
+              {mutation.isPending ? "Sending…" : "Submit"}
+            </button>
+          </form>
+        </>
+      )}
 
-        <a
-          href={ROUTES.LOGIN}
-          className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
+      <a
+        href={ROUTES.LOGIN}
+        className="mt-6 flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline lg:justify-start"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          className="size-[13px]"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back to login
-        </a>
-      </div>
-    </div>
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Back to login
+      </a>
+    </AuthShell>
   )
 }

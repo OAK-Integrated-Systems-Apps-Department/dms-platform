@@ -3,12 +3,18 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
-import { CheckCircle2, Eye, EyeOff, Layers, XCircle } from "lucide-react"
+import { CheckCircle2, Eye, EyeOff, Lock, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
+import {
+  AuthHeading,
+  AuthShell,
+  authButtonClass,
+  authInputClass,
+  authInputIconClass,
+} from "@/components/auth/auth-shell"
 import { API_BASE_URL } from "@/lib/api-config"
 import { APP_NAME, ROUTES } from "@/lib/app-config"
-import { cn } from "@/lib/utils"
 
 type TokenStatus = "checking" | "valid" | "invalid"
 
@@ -134,204 +140,164 @@ export function UpdatePasswordPageContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-5 py-10">
-      <div
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(to bottom, transparent, transparent 38px, color-mix(in srgb, var(--primary) 3.5%, transparent) 39px)",
-        }}
-      />
+    <AuthShell>
+      {tokenStatus === "checking" && (
+        <p className="text-center text-[13.5px] leading-[1.5] text-muted-foreground lg:text-left">
+          Checking your link…
+        </p>
+      )}
 
-      <div className="relative z-10 w-full max-w-[480px] rounded-lg border border-border bg-card p-9 pb-8 shadow-[var(--ledger-shadow)]">
-        <div className="mb-7 flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
-            <Layers size={22} color="var(--primary-foreground)" />
+      {tokenStatus === "invalid" && (
+        <>
+          <div className="mb-3 flex justify-center lg:justify-start">
+            <XCircle size={32} className="text-[var(--rust)]" />
           </div>
-          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            {APP_NAME}
+          <AuthHeading
+            title="Link invalid or expired"
+            subtitle="This password reset link is no longer valid. Request a new one to continue."
+          />
+          <a href="/reset-password" className={authButtonClass}>
+            Request a new link
+          </a>
+        </>
+      )}
+
+      {tokenStatus === "valid" && mutation.isSuccess && (
+        <>
+          <div className="mb-3 flex justify-center lg:justify-start">
+            <CheckCircle2 size={32} className="text-primary" />
           </div>
-          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
-            DOCUMENT VAULT
-          </div>
-        </div>
+          <AuthHeading
+            title="Password updated"
+            subtitle="Your password has been changed. You can now sign in with your new password."
+          />
+          <a href={ROUTES.LOGIN} className={authButtonClass}>
+            Go to login
+          </a>
+        </>
+      )}
 
-        {tokenStatus === "checking" && (
-          <p className="text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-            Checking your link…
-          </p>
-        )}
+      {tokenStatus === "valid" && !mutation.isSuccess && (
+        <>
+          <AuthHeading
+            title={
+              isNewUser
+                ? `Welcome to ${APP_NAME}`
+                : "Choose a new password"
+            }
+            subtitle={
+              isNewUser
+                ? "Set your password to get started. Must be at least 8 characters."
+                : "Must be at least 8 characters."
+            }
+          />
 
-        {tokenStatus === "invalid" && (
-          <>
-            <div className="mb-2 flex justify-center">
-              <XCircle size={28} className="text-[var(--rust)]" />
-            </div>
-            <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Link invalid or expired
-            </h1>
-            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              This password reset link is no longer valid. Request a new one to
-              continue.
-            </p>
-            <a
-              href="/reset-password"
-              className="mt-4 flex w-full items-center justify-center rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
-            >
-              Request a new link
-            </a>
-          </>
-        )}
-
-        {tokenStatus === "valid" && mutation.isSuccess && (
-          <>
-            <div className="mb-2 flex justify-center">
-              <CheckCircle2 size={28} className="text-primary" />
-            </div>
-            <h1 className="mb-2 text-center font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
-              Password updated
-            </h1>
-            <p className="mb-2 text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              Your password has been changed. You can now sign in with your new
-              password.
-            </p>
-            <a
-              href={ROUTES.LOGIN}
-              className="mt-4 flex w-full items-center justify-center rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
-            >
-              Go to login
-            </a>
-          </>
-        )}
-
-        {tokenStatus === "valid" && !mutation.isSuccess && (
-          <>
-            <h1
-              className={cn(
-                "mb-2 text-center font-heading font-semibold tracking-[-0.01em] text-foreground",
-                // The NEW_USER headline is nearly 2x the word count of every
-                // other heading on this page — at this card's width (down to
-                // 22px on narrower viewports too) it wraps to 3 uneven lines
-                // at the shared text-[22px] size. Sized down (and given a
-                // tighter line-height) just for this one case so it lands on
-                // 2 balanced lines instead, without touching the shared card
-                // width (used by /reset-password and /login too) or this
-                // page's other, single-line headings.
-                isNewUser
-                  ? "text-[15px] leading-[1.35] sm:text-[18px]"
-                  : "text-[22px]"
-              )}
-            >
-              {isNewUser
-                ? `Welcome to ${APP_NAME} — set your password to get started`
-                : "Choose a new password"}
-            </h1>
-            <p className="mb-[26px] text-center text-[13.5px] leading-[1.5] text-muted-foreground">
-              {isNewUser
-                ? "Choose a password to activate your account. Must be at least 8 characters."
-                : "Must be at least 8 characters."}
-            </p>
-
-            <form onSubmit={handleSubmit}>
-              <div className="mb-[17px]">
-                <label
-                  htmlFor="newPassword"
-                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-5">
+            <div>
+              <label
+                htmlFor="newPassword"
+                className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
+              >
+                New password
+              </label>
+              <div className="relative">
+                <Lock size={16} className={authInputIconClass} />
+                <input
+                  id="newPassword"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="New password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={`${authInputClass} pr-11`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute top-1/2 right-4 -translate-y-1/2 text-primary transition-colors hover:text-[var(--primary-hover)]"
                 >
-                  New password
-                </label>
-                <div className="relative">
-                  <input
-                    id="newPassword"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••••"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] pr-10 text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    tabIndex={-1}
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    aria-pressed={showPassword}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--ink-faint)] transition-colors hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                {passwordTooShort && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                    Password must be at least 8 characters.
-                  </p>
-                )}
+                  <span className="text-[11px] font-bold tracking-[0.1em] uppercase max-lg:hidden">
+                    {showPassword ? "Hide" : "Show"}
+                  </span>
+                  <span className="lg:hidden">
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </button>
               </div>
+              {passwordTooShort && (
+                <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                  Password must be at least 8 characters.
+                </p>
+              )}
+            </div>
 
-              <div className="mb-[22px]">
-                <label
-                  htmlFor="confirmPassword"
-                  className="mb-[7px] block text-[13px] font-semibold text-foreground"
-                >
-                  Confirm new password
-                </label>
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
+              >
+                Confirm new password
+              </label>
+              <div className="relative">
+                <Lock size={16} className={authInputIconClass} />
                 <input
                   id="confirmPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••••"
+                  placeholder="Confirm new password"
                   autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-btn border border-[var(--border-strong)] bg-[var(--secondary)] px-[13px] py-[11px] text-sm text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+                  className={authInputClass}
                 />
-                {passwordsMismatch && (
-                  <p className="mt-1.5 text-[12px] text-[var(--rust)]">
-                    Passwords don&apos;t match.
-                  </p>
-                )}
               </div>
-
-              {mutation.isError && (
-                <p className="mb-[17px] text-[12.5px] text-[var(--rust)]">
-                  {(mutation.error as Error)?.message}
+              {passwordsMismatch && (
+                <p className="mt-1.5 text-[12px] text-[var(--rust)]">
+                  Passwords don&apos;t match.
                 </p>
               )}
+            </div>
 
-              <button
-                type="submit"
-                disabled={mutation.isPending || !canSubmit}
-                className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {isNewUser
-                  ? mutation.isPending
-                    ? "Setting up…"
-                    : "Set password"
-                  : mutation.isPending
-                    ? "Updating…"
-                    : "Update password"}
-              </button>
-            </form>
-          </>
-        )}
+            {mutation.isError && (
+              <p className="text-[12.5px] text-[var(--rust)]">
+                {(mutation.error as Error)?.message}
+              </p>
+            )}
 
-        <a
-          href={ROUTES.LOGIN}
-          className="mt-[22px] flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline"
+            <button
+              type="submit"
+              disabled={mutation.isPending || !canSubmit}
+              className={authButtonClass}
+            >
+              {isNewUser
+                ? mutation.isPending
+                  ? "Setting up…"
+                  : "Set password"
+                : mutation.isPending
+                  ? "Updating…"
+                  : "Update password"}
+            </button>
+          </form>
+        </>
+      )}
+
+      <a
+        href={ROUTES.LOGIN}
+        className="mt-6 flex items-center justify-center gap-[5px] text-[13px] font-semibold text-primary hover:underline lg:justify-start"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          className="size-[13px]"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.5}
-            className="size-[13px]"
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back to login
-        </a>
-      </div>
-    </div>
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Back to login
+      </a>
+    </AuthShell>
   )
 }
