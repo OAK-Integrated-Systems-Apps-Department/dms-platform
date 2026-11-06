@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Component
-public class RenditionGenerationListener {
+class RenditionGenerationListener {
 
     private final DocumentRenditionService renditions;
     private final ThreadPoolExecutor pool;

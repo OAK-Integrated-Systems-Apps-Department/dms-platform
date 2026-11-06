@@ -1,6 +1,5 @@
 package com.oak.dms.preview;
 
-import com.oak.dms.document.RenditionGenerationListener;
 import com.oak.dms.user.User;
 import com.oak.dms.workflow.support.WorkflowApiSupport;
 import com.oak.dms.workflow.support.WorkflowFixtures;
@@ -14,7 +13,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
@@ -36,14 +34,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class PreviewApiIT extends WorkflowApiSupport {
 
     private static final String VIEW = "docm.documents.view";
-
-    /**
-     * Switches off the background thumbnail worker. The fixtures announce a version while it is still a placeholder
-     * row with no bytes, and the test then writes the real file and makes requests; a worker running on the same
-     * version in the meantime races them. Everything here is made on demand, which is what is being tested.
-     */
-    @MockitoBean
-    private RenditionGenerationListener backgroundRenditions;
 
     private UUID tenantId;
     private User viewer;
