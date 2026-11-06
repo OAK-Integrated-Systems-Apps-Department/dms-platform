@@ -7,6 +7,7 @@ import com.oak.dms.user.User;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.support.TaskExecutorAdapter;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -53,6 +55,13 @@ public abstract class WorkflowApiSupport extends NotificationMailSupport {
 
     @BeforeEach
     void setUpMockMvc() {
+        /*
+         * Run StreamingResponseBody on the request thread. By default it is streamed from another thread while the
+         * request thread is still unwinding the filter chain, and both write headers to the same (not thread-safe)
+         * MockHttpServletResponse - Spring Security's header writer runs on each - so a download test failed now and
+         * then with a ConcurrentModificationException or a 500. Same-thread streaming is what the tests mean anyway.
+         */
+        context.getBean(RequestMappingHandlerAdapter.class).setTaskExecutor(new TaskExecutorAdapter(Runnable::run));
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
 

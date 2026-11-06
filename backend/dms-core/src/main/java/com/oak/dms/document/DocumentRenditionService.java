@@ -384,7 +384,30 @@ public class DocumentRenditionService {
         return locate(documentId, requestedVersion).version().getVersionId();
     }
 
+    /**
+     * Striped by version id. The background generator and an on-demand request for the same version can arrive
+     * together (open a document right after uploading it); without this both draw it and both write the same object
+     * key, and the second {@code storage_object_keys} insert fails on {@code uq_storage_object_keys_object}.
+     */
+    private final Object[] thumbnailLocks = newLocks(64);
+
+    private static Object[] newLocks(int n) {
+        Object[] locks = new Object[n];
+        for (int i = 0; i < n; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
     private byte[] thumbnailOf(DocumentVersion version, UUID tenantId) {
+        synchronized (thumbnailLocks[Math.floorMod(version.getVersionId().hashCode(), thumbnailLocks.length)]) {
+            // Whoever held the lock before may have made it: decide from the version as it is now, not as it was read.
+            DocumentVersion current = versionRepository.findById(version.getVersionId()).orElse(version);
+            return thumbnailOfLocked(current, tenantId);
+        }
+    }
+
+    private byte[] thumbnailOfLocked(DocumentVersion version, UUID tenantId) {
         if ("completed".equals(version.getThumbnailStatus()) && version.getThumbnailObjectKey() != null) {
             try {
                 return readAll(stored(version, version.getThumbnailObjectKey(), "image/jpeg", "thumbnail.jpg").content());

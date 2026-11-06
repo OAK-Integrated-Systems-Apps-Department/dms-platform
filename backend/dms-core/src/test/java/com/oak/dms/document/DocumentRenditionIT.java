@@ -61,6 +61,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(WorkflowFixtures.class)
 class DocumentRenditionIT {
 
+    /**
+     * Switches off the background thumbnail worker. The fixtures announce a version while it is still a placeholder
+     * row with no bytes, and the test then turns it into the real file; a worker running in between races those
+     * edits (and the on-demand call under test) and records failures or duplicate objects for a version that was
+     * never really in that state. Every rendition here is made on demand, which is what is being tested.
+     */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private RenditionGenerationListener backgroundRenditions;
+
     @Autowired
     private DocumentService documentService;
     @Autowired
