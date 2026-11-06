@@ -9,6 +9,9 @@ import { useForm } from "react-hook-form"
 import {
   ArrowRight,
   Layers,
+  Leaf,
+  Eye,
+  EyeOff,
   Lock,
   ShieldCheck,
   User,
@@ -102,11 +105,13 @@ async function login(
   return { ok: true }
 }
 
+// Soft green-tinted fill at every size (the phone design). Below `lg` the field is borderless; from `lg` up it keeps
+// its light border. Size and corner radius are the same everywhere.
 const inputClass =
-  "w-full rounded-btn border border-border bg-muted py-2.5 pr-3.5 pl-10 text-[16px] text-foreground sm:py-3.5 sm:pl-11 sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+  "w-full rounded-btn border border-border max-lg:border-transparent bg-[var(--primary-tint)] py-3 pr-3.5 pl-10 text-[16px] text-foreground sm:py-3.5 sm:pl-11 sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
 
 const primaryButtonClass =
-  "group flex w-full items-center justify-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary py-2.5 text-[13px] font-bold sm:py-3.5 sm:text-sm tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
+  "group flex w-full items-center justify-center gap-2 rounded-btn max-lg:normal-case max-lg:tracking-normal border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
 
 /**
  * Two steps in one page, not two routes: "credentials" then, only for
@@ -123,8 +128,9 @@ const primaryButtonClass =
  * why login() below checks /mfa-required BEFORE attempting login, instead
  * of reacting to a failed login attempt.
  *
- * Layout: a brand panel beside the form from `lg` up, the form alone
- * (with the logo above it) below that.
+ * Layout: a brand panel beside the form from `lg` up. Below that, the
+ * phone layout: the oak-leaf photo across the top, a wave of white rising
+ * over it, and the form centred on the white below.
  *
  * Rendered inside a <Suspense> boundary by app/login/page.tsx, since
  * useSearchParams() (used for the dev OTP bypass below) requires one.
@@ -227,7 +233,7 @@ export function LoginPageContent() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-card lg:bg-background lg:bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
       {/* One rounded card, split: brand panel | form */}
-      <div className="grid min-h-svh w-full lg:min-h-0 lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
+      <div className="grid min-h-svh w-full grid-rows-[auto_1fr] lg:grid-rows-none lg:min-h-0 lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
         {/* Brand panel: wide screens only */}
         <aside
           aria-hidden="true"
@@ -262,8 +268,59 @@ export function LoginPageContent() {
           </div>
         </aside>
 
+        {/* Phone layout: the oak-leaf photo, with a wave of white rising over its lower edge */}
+        <header
+          aria-hidden="true"
+          className="relative h-[36svh] max-h-[320px] min-h-[210px] overflow-hidden bg-[linear-gradient(150deg,#2a6a50_0%,#17402e_100%)] lg:hidden"
+        >
+          {/* Same treatment as the web brand panel: the photo tinted into the brand green */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.3] mix-blend-luminosity"
+            style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
+          />
+          <div
+            className="lg-bob pointer-events-none absolute -top-16 -right-14 size-52 rounded-full opacity-70 shadow-[inset_-10px_-14px_36px_rgb(0_0_0/0.28)]"
+            style={{
+              background:
+                "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)",
+              animationDuration: "24s",
+            }}
+          />
+          <div className="pointer-events-none absolute top-1/3 -left-20 size-72 rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
+          <div className="relative flex items-center justify-center gap-2.5 pt-5 text-white">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+              <Layers size={18} />
+            </div>
+            <div className="text-left">
+              <div className="font-heading text-[15px] leading-tight font-semibold tracking-[-0.01em]">
+                {APP_NAME}
+              </div>
+              <div className="font-mono text-[9px] tracking-[0.16em] opacity-75">
+                DOCUMENT VAULT
+              </div>
+            </div>
+          </div>
+          <svg
+            viewBox="0 0 400 80"
+            preserveAspectRatio="none"
+            className="absolute inset-x-0 -bottom-px h-14 w-full fill-card"
+          >
+            <path d="M0 46 C110 6 230 78 400 22 L400 80 L0 80 Z" />
+          </svg>
+          <Leaf
+            size={58}
+            strokeWidth={1.5}
+            className="absolute right-4 bottom-8 -rotate-[28deg] fill-[#2f7557] text-[#1f4d3a]"
+          />
+          <Leaf
+            size={38}
+            strokeWidth={1.5}
+            className="absolute right-[4.25rem] bottom-6 rotate-[18deg] fill-[#1f4d3a] text-[#123527]"
+          />
+        </header>
+
         {/* Form panel */}
-        <main className="relative flex items-center justify-center overflow-hidden bg-card px-4 py-5 sm:px-10 sm:py-10 lg:px-12 xl:px-16">
+        <main className="relative flex items-start justify-center overflow-hidden bg-card px-4 pt-5 pb-8 sm:px-10 sm:pb-10 lg:items-center lg:px-12 lg:py-10 xl:px-16">
           {/* Corner sphere, echoing the brand panel */}
           <div
             aria-hidden="true"
@@ -276,47 +333,17 @@ export function LoginPageContent() {
           />
 
           <div className="relative w-full max-w-[400px] animate-[lg-rise_0.7s_cubic-bezier(0.2,0.7,0.2,1)_both] motion-reduce:animate-none">
-            {/* Compact brand banner: replaces the brand panel below `lg` */}
-            <div className="relative mb-4 overflow-hidden rounded-lg sm:mb-8 bg-[linear-gradient(150deg,#2a6a50_0%,#17402e_100%)] p-3 text-white shadow-[0_10px_26px_rgb(18_53_39/0.28)] sm:p-6 lg:hidden">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.14] mix-blend-luminosity"
-                style={{ backgroundImage: "url('/images/oak-leaves.jpg')" }}
-              />
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -right-10 -bottom-16 size-36 rounded-full opacity-80 shadow-[inset_-8px_-10px_26px_rgb(0_0_0/0.3)]"
-                style={{ background: "radial-gradient(circle at 30% 24%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 42%), linear-gradient(150deg, #2f7557 0%, #1f4d3a 52%, #123527 100%)" }}
-              />
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -top-16 -right-16 size-52 rounded-full bg-[radial-gradient(closest-side,rgb(255_255_255/0.2),transparent)]"
-              />
-              <div className="relative flex items-center gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/25 sm:size-10 sm:rounded-xl">
-                  <Layers size={20} />
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-heading text-[15px] font-semibold sm:text-lg tracking-[-0.01em]">
-                    {APP_NAME}
-                  </div>
-                  <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
-                    DOCUMENT VAULT
-                  </div>
-                </div>
-              </div>
-              <p className="relative mt-2 text-[12px] leading-[1.4] opacity-85 sm:mt-4 sm:text-[13px]">
-                Your documents, organised and under control.
-              </p>
-            </div>
-
             {step === "credentials" ? (
               <>
-                <h1 className="font-heading text-[24px] leading-none font-extrabold sm:text-[40px] tracking-tight text-foreground">
-                  Sign in
+                <h1 className="text-center font-heading text-[28px] leading-none font-extrabold tracking-tight text-foreground max-lg:text-primary sm:text-[40px] lg:text-left">
+                  <span className="lg:hidden">Welcome Back</span>
+                  <span className="hidden lg:inline">Sign in</span>
                 </h1>
-                <p className="mt-1.5 mb-4 text-[13px] text-muted-foreground sm:mt-3 sm:mb-8 sm:text-sm">
-                  Welcome back. Sign in to continue to {APP_NAME}.
+                <p className="mt-2 mb-6 text-center text-[13px] text-muted-foreground sm:mt-3 sm:mb-8 sm:text-sm lg:text-left">
+                  <span className="lg:hidden">Sign in to your account.</span>
+                  <span className="hidden lg:inline">
+                    Welcome back. Sign in to continue to {APP_NAME}.
+                  </span>
                 </p>
 
                 <form
@@ -327,19 +354,19 @@ export function LoginPageContent() {
                   <div>
                     <label
                       htmlFor="username"
-                      className="mb-1 block text-[12.5px] font-semibold text-foreground sm:mb-2 sm:text-[13px]"
+                      className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
                     >
                       Username or email
                     </label>
                     <div className="relative">
                       <User
                         size={16}
-                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground sm:left-4"
+                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
                       />
                       <input
                         id="username"
                         type="text"
-                        placeholder="you@company.com"
+                        placeholder="Username or email"
                         autoComplete="username"
                         aria-invalid={
                           credentialErrors.username ? true : undefined
@@ -358,19 +385,19 @@ export function LoginPageContent() {
                   <div>
                     <label
                       htmlFor="password"
-                      className="mb-1 block text-[12.5px] font-semibold text-foreground sm:mb-2 sm:text-[13px]"
+                      className="mb-1 block text-[12.5px] font-semibold text-foreground max-lg:sr-only sm:mb-2 sm:text-[13px]"
                     >
                       Password
                     </label>
                     <div className="relative">
                       <Lock
                         size={16}
-                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground sm:left-4"
+                        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
                       />
                       <input
                         id="password"
                         type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password"
+                        placeholder="Password"
                         autoComplete="current-password"
                         aria-invalid={
                           credentialErrors.password ? true : undefined
@@ -388,7 +415,16 @@ export function LoginPageContent() {
                         aria-pressed={showPassword}
                         className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
                       >
-                        {showPassword ? "Hide" : "Show"}
+                        <span className="max-lg:hidden">
+                          {showPassword ? "Hide" : "Show"}
+                        </span>
+                        <span className="lg:hidden">
+                          {showPassword ? (
+                            <EyeOff size={18} />
+                          ) : (
+                            <Eye size={18} />
+                          )}
+                        </span>
                       </button>
                     </div>
                     {credentialErrors.password && (
@@ -428,7 +464,7 @@ export function LoginPageContent() {
                         Sign in
                         <ArrowRight
                           size={16}
-                          className="transition-transform group-hover:translate-x-0.5"
+                          className="transition-transform group-hover:translate-x-0.5 max-lg:hidden"
                         />
                       </>
                     )}
