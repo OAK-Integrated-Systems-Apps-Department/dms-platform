@@ -19,7 +19,10 @@ import { toast } from "sonner"
 import {
   AuthShell,
   authButtonClass,
+  authFieldClass,
   authInputClass,
+  authInputIconClass,
+  authInputToggleClass,
 } from "@/components/auth/auth-shell"
 import { OtpInput, OTP_LENGTH } from "@/components/auth/otp-input"
 import {
@@ -254,11 +257,8 @@ export function LoginPageContent() {
               >
                 Username or email
               </label>
-              <div className="relative">
-                <User
-                  size={16}
-                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
-                />
+              <div className={authFieldClass}>
+                <User size={16} className={authInputIconClass} />
                 <input
                   id="username"
                   type="text"
@@ -285,11 +285,8 @@ export function LoginPageContent() {
               >
                 Password
               </label>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
-                />
+              <div className={authFieldClass}>
+                <Lock size={16} className={authInputIconClass} />
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -309,9 +306,9 @@ export function LoginPageContent() {
                     showPassword ? "Hide password" : "Show password"
                   }
                   aria-pressed={showPassword}
-                  className="absolute top-1/2 right-4 -translate-y-1/2 text-[11px] font-bold tracking-[0.1em] text-primary uppercase transition-colors hover:text-[var(--primary-hover)]"
+                  className={authInputToggleClass}
                 >
-                  <span className="max-lg:hidden">
+                  <span className="text-[11px] font-bold tracking-[0.1em] uppercase max-lg:hidden">
                     {showPassword ? "Hide" : "Show"}
                   </span>
                   <span className="lg:hidden">
