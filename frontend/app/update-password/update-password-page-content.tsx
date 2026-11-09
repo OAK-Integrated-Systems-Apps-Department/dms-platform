@@ -10,8 +10,10 @@ import {
   AuthHeading,
   AuthShell,
   authButtonClass,
+  authFieldClass,
   authInputClass,
   authInputIconClass,
+  authInputToggleClass,
 } from "@/components/auth/auth-shell"
 import { API_BASE_URL } from "@/lib/api-config"
 import { APP_NAME, ROUTES } from "@/lib/app-config"
@@ -200,7 +202,7 @@ export function UpdatePasswordPageContent() {
               >
                 New password
               </label>
-              <div className="relative">
+              <div className={authFieldClass}>
                 <Lock size={16} className={authInputIconClass} />
                 <input
                   id="newPassword"
@@ -217,7 +219,7 @@ export function UpdatePasswordPageContent() {
                   tabIndex={-1}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
-                  className="absolute top-1/2 right-4 -translate-y-1/2 text-primary transition-colors hover:text-[var(--primary-hover)]"
+                  className={authInputToggleClass}
                 >
                   <span className="text-[11px] font-bold tracking-[0.1em] uppercase max-lg:hidden">
                     {showPassword ? "Hide" : "Show"}
@@ -241,7 +243,7 @@ export function UpdatePasswordPageContent() {
               >
                 Confirm new password
               </label>
-              <div className="relative">
+              <div className={authFieldClass}>
                 <Lock size={16} className={authInputIconClass} />
                 <input
                   id="confirmPassword"

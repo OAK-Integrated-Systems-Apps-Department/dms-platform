@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 import { BrandLogo } from "@/components/brand/brand-logo"
-import { Leaf } from "lucide-react"
 
 import { LoginHeadline, LoginSpheres } from "@/components/auth/login-hero"
 import { APP_NAME } from "@/lib/app-config"
@@ -77,16 +76,6 @@ export function AuthShell({ children }: { children: ReactNode }) {
           >
             <path d="M0 46 C110 6 230 78 400 22 L400 80 L0 80 Z" />
           </svg>
-          <Leaf
-            size={58}
-            strokeWidth={1.5}
-            className="absolute right-4 bottom-8 -rotate-[28deg] fill-[#2f7557] text-[#1f4d3a]"
-          />
-          <Leaf
-            size={38}
-            strokeWidth={1.5}
-            className="absolute right-[4.25rem] bottom-6 rotate-[18deg] fill-[#1f4d3a] text-[#123527]"
-          />
         </header>
 
         {/* Form panel */}
@@ -117,11 +106,22 @@ export function AuthShell({ children }: { children: ReactNode }) {
  * are the same everywhere. Leaves room on the left for a 16px icon.
  */
 export const authInputClass =
-  "w-full rounded-btn border border-border max-lg:border-transparent bg-[var(--primary-tint)] py-3 pr-3.5 pl-10 text-[16px] text-foreground sm:py-3.5 sm:pl-11 sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+  "h-full w-full appearance-none rounded-btn border border-border max-lg:border-transparent bg-[var(--primary-tint)] py-3 pr-3.5 pl-10 text-[16px] text-foreground sm:py-3.5 sm:pl-11 sm:text-sm transition-colors outline-none placeholder:text-[var(--ink-faint)] focus:border-primary focus:bg-card focus:ring-[3px] focus:ring-primary/15"
+
+/**
+ * Wrapper around an `authInputClass` field and its icons. The height is pinned
+ * (not left to the input) so iOS Safari can never stretch it and push the
+ * absolutely-placed icons away from the field.
+ */
+export const authFieldClass = "relative h-[50px] w-full"
 
 /** The icon inside the left edge of an `authInputClass` field. */
 export const authInputIconClass =
-  "pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-foreground max-lg:text-primary sm:left-4"
+  "pointer-events-none absolute inset-y-0 left-3.5 my-auto h-4 w-4 text-foreground max-lg:text-primary sm:left-4"
+
+/** The show/hide-password button on the right edge of an `authInputClass` field. */
+export const authInputToggleClass =
+  "absolute inset-y-0 right-0 flex w-12 touch-manipulation items-center justify-center text-primary lg:w-auto lg:pr-4 lg:pl-3 transition-colors hover:text-[var(--primary-hover)]"
 
 export const authButtonClass =
   "group flex w-full items-center justify-center gap-2 rounded-btn max-lg:normal-case max-lg:tracking-normal border border-[var(--primary-hover)] bg-primary py-3.5 text-sm font-bold tracking-[0.08em] text-primary-foreground uppercase shadow-[0_8px_22px_color-mix(in_srgb,var(--primary)_32%,transparent)] transition-all hover:-translate-y-px hover:bg-[var(--primary-hover)] hover:shadow-[0_12px_28px_color-mix(in_srgb,var(--primary)_40%,transparent)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
