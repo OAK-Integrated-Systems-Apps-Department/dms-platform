@@ -136,6 +136,8 @@ public final class AuditActionCatalog {
     public static final String DOCUMENT_RESTORED = "DOCUMENT_RESTORED";
     public static final String DOCUMENT_PURGED = "DOCUMENT_PURGED";
     public static final String RECYCLE_BIN_RETENTION_CHANGED = "RECYCLE_BIN_RETENTION_CHANGED";
+    /** A deleted document under legal hold outlived its recycle bin period - not purged, flagged for compliance review. */
+    public static final String RECYCLE_BIN_HOLD_FLAGGED = "RECYCLE_BIN_HOLD_FLAGGED";
     /** The own-password confirmation for a sensitive platform action was wrong (the password itself is never recorded). */
     public static final String PASSWORD_CONFIRMATION_FAILED = "PASSWORD_CONFIRMATION_FAILED";
     /** What a user may do from a document preview - print, download, copy (DPRM-FR-005). */
@@ -506,6 +508,7 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_RESTORED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_PURGED, new AuditActionSpec("RBR", AuditSeverity.HIGH, false)),
             Map.entry(RECYCLE_BIN_RETENTION_CHANGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
+            Map.entry(RECYCLE_BIN_HOLD_FLAGGED, new AuditActionSpec("RBR", AuditSeverity.MEDIUM, false)),
             Map.entry(PASSWORD_CONFIRMATION_FAILED, new AuditActionSpec("IAM", AuditSeverity.HIGH, false)),
             Map.entry(PREVIEW_POLICY_CHANGED, new AuditActionSpec("DPRM", AuditSeverity.MEDIUM, false)),
             Map.entry(PREVIEW_RENDITION_FAILED, new AuditActionSpec("DPRM", AuditSeverity.LOW, false)),

@@ -24,6 +24,20 @@
 # localhost, so on any other host without HTTPS also set
 #     AUTH_COOKIE_SECURE=false
 # in the same file (never do that behind real HTTPS).
+#
+# Memory: every mem_limit below is a variable whose default is the value
+# this file always had, so nothing changes unless you set it. On a smaller
+# machine (e.g. 16 GB RAM with WSL capped at 6 GB) override them in
+# infra/local/.env - see the "low-memory laptop" block in docs or the PR
+# that introduced these variables. A cap only bounds a container; when the
+# sum of what is running exceeds the VM, the kernel kills something anyway.
+#
+# Monitoring (Prometheus, Grafana, Loki, Promtail, Alertmanager, cAdvisor,
+# node/postgres/redis exporters, blackbox) is in the "monitoring" profile and
+# no longer starts with a plain `docker compose up -d`. Start it with:
+#     docker compose --profile monitoring up -d
+# Stop everything, monitoring included:
+#     docker compose --profile "*" down
 
 x-secrets-env: &secrets-env
   env_file:
@@ -37,9 +51,14 @@ services:
     # 1.5g it had: dashboard scans over a few million documents do not fit in less and
     # then run from disk. The -c settings tell Postgres what it has - the defaults
     # (128MB of shared buffers, 4MB of sort memory) assume a much smaller machine.
-    mem_limit: 3g
-    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=2GB",
-              "-c", "work_mem=16MB", "-c", "maintenance_work_mem=256MB"]
+    # On a small dev dataset, POSTGRES_MEM_LIMIT=1g with shared_buffers=256MB is plenty;
+    # keep shared_buffers at roughly a quarter of the limit.
+    mem_limit: ${POSTGRES_MEM_LIMIT:-3g}
+    command: ["postgres",
+              "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}",
+              "-c", "effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}",
+              "-c", "work_mem=16MB",
+              "-c", "maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-256MB}"]
     <<: *secrets-env
     environment:
       POSTGRES_USER: postgres
@@ -59,8 +78,9 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: oakdms-rabbitmq
-    # Memory ceiling.
-    mem_limit: 1g
+    # Memory ceiling. RabbitMQ blocks publishers at 40% of this (its default
+    # high watermark), so do not go much below 768m.
+    mem_limit: ${RABBITMQ_MEM_LIMIT:-1g}
     <<: *secrets-env
     environment:
       RABBITMQ_DEFAULT_USER: dms
@@ -97,7 +117,8 @@ services:
     command: ["start-dev", "--import-realm"]
     # Keycloak sizes its heap from what it can see (70%, half of it up front) - uncapped,
     # that was ~4 GB of Docker Desktop's VM. See the clamav service's note.
-    mem_limit: 1536m
+    # Lowering the limit lowers the heap with it; 1g is enough for local logins.
+    mem_limit: ${KEYCLOAK_MEM_LIMIT:-1536m}
     <<: *secrets-env
     environment:
       KC_DB: postgres
@@ -192,7 +213,7 @@ services:
     image: chrislusf/seaweedfs:latest
     container_name: oakdms-seaweedfs
     # Memory ceiling.
-    mem_limit: 1g
+    mem_limit: ${SEAWEEDFS_MEM_LIMIT:-1g}
     # Credentials never live in this committed file (see .env.example) -
     # the S3 identity config SeaweedFS itself needs (-s3.config) is
     # generated from env vars at container start, into a location inside
@@ -270,9 +291,16 @@ services:
     # Signatures take ~1.5 GB in memory, more while a new set loads. Capped (like every
     # large service here) so the stack can't exhaust Docker Desktop's VM - when it did,
     # the whole VM froze mid-upload rather than one container being restarted.
-    mem_limit: 3g
+    # With CLAMD_CONCURRENT_RELOAD=no (below) the "more while a new set loads" part
+    # goes away, and 2g is enough.
+    mem_limit: ${CLAMAV_MEM_LIMIT:-3g}
     environment:
       FRESHCLAM_CHECKS: "12" # every 2 hours
+      # By default clamd loads a new signature set BEFORE releasing the old one,
+      # so memory roughly doubles for the duration of every reload. "no" frees the
+      # old set first: scanning pauses for the few seconds the reload takes, and
+      # peak memory stays at one set. Fine for development; production keeps "yes".
+      CLAMD_CONF_ConcurrentDatabaseReload: ${CLAMD_CONCURRENT_RELOAD:-yes}
       # Kept >= dms.scanning.clamav.segment-bytes (2000 MB), otherwise clamd
       # answers "INSTREAM size limit exceeded" for a segment dms-core sends.
       # clamd scans at most 2147483645 bytes of any one stream whatever
@@ -320,12 +348,22 @@ services:
       - gotenberg
       - --chromium-disable-routes=true
       - --api-timeout=90s
-      - --libreoffice-auto-start=true
+      # true starts LibreOffice with the container, so the first preview is
+      # fast but LibreOffice sits in memory even when nobody converts anything.
+      # GOTENBERG_LIBREOFFICE_AUTO_START=false starts it on the first
+      # conversion instead (a few seconds slower once), keeping an idle
+      # stack lighter.
+      - --libreoffice-auto-start=${GOTENBERG_LIBREOFFICE_AUTO_START:-true}
+      # LibreOffice is restarted after this many conversions to hand back the
+      # memory it accumulates. 10 is Gotenberg's own default; lower (e.g. 5)
+      # keeps memory flatter on a small machine.
+      - --libreoffice-restart-after=${GOTENBERG_LIBREOFFICE_RESTART_AFTER:-10}
       - --log-level=warn
     # LibreOffice can use a lot of memory on a large or malformed file - cap it
     # so a bad upload can't starve the rest of the server. A conversion that
     # hits the limit fails (the preview says so); the container restarts.
-    mem_limit: 2g
+    # Nothing depends on this service: stopping it only disables Office previews.
+    mem_limit: ${GOTENBERG_MEM_LIMIT:-2g}
     cpus: 2
     pids_limit: 256
     healthcheck:
@@ -368,7 +406,8 @@ services:
     container_name: oakdms-core
     # The JVM takes up to 75% of what it can see (backend/Dockerfile) - capped, ~1.9 GB of
     # heap. Uploads stream through it, never held in memory, whatever their size.
-    mem_limit: 2560m
+    # At DMS_CORE_MEM_LIMIT=2g the heap is ~1.5 GB, enough for local work.
+    mem_limit: ${DMS_CORE_MEM_LIMIT:-2560m}
     env_file:
       - ../secrets/dms-core.secrets.env
       # The review screen proxies two read-only ocr-worker routes through
@@ -517,8 +556,11 @@ services:
         condition: service_healthy
       clamav:
         condition: service_healthy
+      # service_started, never service_healthy: the worker's readiness needs
+      # dms-core's tables (Flyway) to exist, so waiting for it to be healthy
+      # deadlocks on a fresh database.
       ocr-worker:
-        condition: service_healthy
+        condition: service_started
 
   ocr-worker:
     build:
@@ -530,6 +572,13 @@ services:
     # sitting exited, since a transient memory spike shouldn't take the
     # service down permanently. Verified this was needed: it was OOM-killed
     # (docker inspect's OOMKilled flag) during load testing.
+    #
+    # Note: because of this policy the Docker daemon starts this container
+    # on its own after a reboot/WSL restart, while postgres and rabbitmq
+    # (no restart policy) stay stopped until `docker compose up -d`. Until
+    # the worker retries its consumers, run
+    #     docker compose restart ocr-worker
+    # after bringing the stack back up, or /readyz stays 503.
     restart: unless-stopped
     # Real measured number, not a guess: docker stats sampled every 3s over
     # the full 50-upload Phase 1 run (368 samples, OCR_WORKER_PROCESSES=2)
@@ -545,7 +594,12 @@ services:
     # worker holds its own Docling layout model + PaddleOCR det/rec models
     # resident (see README's OCR_WORKER_PROCESSES note), so ~3.4 GiB per
     # process plus a ~1.5 GiB shared/parent floor is the shape to budget by.
-    mem_limit: 8704m
+    #
+    # On a machine that cannot give it 8.5 GiB, OCR_WORKER_MEM_LIMIT=4g keeps
+    # two processes for one-document-at-a-time development; a burst of large
+    # scans will hit the cap, the container is restarted, and the job is
+    # retried (WORKER_CRASH retry policy).
+    mem_limit: ${OCR_WORKER_MEM_LIMIT:-8704m}
     # Own secrets file, not dms-core's: ocr-worker has no login of its own
     # and needs none of dms-core's secrets directly (DB_URL/RABBITMQ_URL
     # below are composed from infra/local/.env's values, resolved by docker
@@ -572,10 +626,15 @@ services:
       # resident. Two arenas and an early trim hand it back to the kernel.
       MALLOC_ARENA_MAX: "2"
       MALLOC_TRIM_THRESHOLD_: "131072"
+      # Number of pool processes. Each holds its own copy of the models
+      # (~3.4 GiB at peak), so this is the main memory dial. Stated here so
+      # it is visible and overridable; 2 is the worker's own default.
+      OCR_WORKER_PROCESSES: ${OCR_WORKER_PROCESSES:-2}
       # Pool processes are recycled after this many documents (default 50),
       # which bounds any slow native-library growth. A recycle costs one
-      # model reload while the other process keeps working.
-      OCR_WORKER_MAX_TASKS_PER_PROCESS: "15"
+      # model reload while the other process keeps working. Lower (e.g. 5)
+      # keeps memory flatter on a small machine at the cost of more reloads.
+      OCR_WORKER_MAX_TASKS_PER_PROCESS: ${OCR_WORKER_MAX_TASKS_PER_PROCESS:-15}
     # No `ports:` -- internal-only. ocr-worker is reachable from other containers on this compose
     # network at http://ocr-worker:8090 (Docker's own service-name DNS).
     # See README's "Auth & service exposure": frontend -> dms-core
@@ -623,7 +682,10 @@ services:
     # Uncapped it competes with the rest of the stack for the Docker VM's 7.8 GB,
     # which is what froze the VM earlier. A production build is far lighter
     # (typically ~150 MB, though not measured here).
-    mem_limit: 3g
+    mem_limit: ${FRONTEND_MEM_LIMIT:-3g}
+    # With a lower FRONTEND_MEM_LIMIT the dev server eventually reaches the cap;
+    # restarting it is exactly the fix for its ever-growing memory, so let Docker do it.
+    restart: unless-stopped
     environment:
       PORT: "3000"
       # Some Docker/OS combos (bind mounts on Windows/WSL2 or certain
@@ -666,13 +728,17 @@ services:
       - dms-core
 
   # ---------------------------------------------------------------------
-  # Monitoring (Prometheus + Grafana). Config lives in infra/monitoring and
-  # is shared with production - see its README. Everything here is additive:
-  # no DMS service depends on any of it, so the stack runs exactly as before
-  # if these are stopped.
+  # Monitoring (Prometheus + Grafana + Loki and friends). Config lives in
+  # infra/monitoring and is shared with production - see its README.
+  # Everything here is additive: no DMS service depends on any of it, so the
+  # stack runs exactly as before without it (the System Monitoring screen
+  # just has nothing to show).
   #
-  #   docker compose stop prometheus grafana cadvisor node-exporter \
-  #       postgres-exporter redis-exporter
+  # All of it is in the "monitoring" profile, so a plain `docker compose up -d`
+  # leaves it out. Start / stop it with:
+  #
+  #   docker compose --profile monitoring up -d
+  #   docker compose --profile monitoring stop
   # ---------------------------------------------------------------------
 
   # Scrapes every target listed in infra/monitoring/prometheus/prometheus.yml
@@ -680,6 +746,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: oakdms-prometheus
+    profiles: [monitoring]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 1g
@@ -715,6 +782,7 @@ services:
   grafana:
     image: grafana/grafana:11.5.1
     container_name: oakdms-grafana
+    profiles: [monitoring]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 512m
@@ -814,6 +882,7 @@ services:
   blackbox:
     image: prom/blackbox-exporter:v0.25.0
     container_name: oakdms-blackbox
+    profiles: [monitoring]
     restart: unless-stopped
     mem_limit: 128m
     command:
@@ -830,6 +899,7 @@ services:
   loki:
     image: grafana/loki:3.3.2
     container_name: oakdms-loki
+    profiles: [monitoring]
     restart: unless-stopped
     mem_limit: 512m
     command: ["-config.file=/etc/loki/loki-config.yml"]
@@ -851,6 +921,7 @@ services:
   promtail:
     image: grafana/promtail:3.3.2
     container_name: oakdms-promtail
+    profiles: [monitoring]
     restart: unless-stopped
     mem_limit: 256m
     command: ["-config.file=/etc/promtail/promtail-config.yml"]
@@ -873,6 +944,7 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.28.0
     container_name: oakdms-alertmanager
+    profiles: [monitoring]
     restart: unless-stopped
     mem_limit: 128m
     # Rendered from a template at start (the relay differs per client, and
@@ -904,6 +976,7 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: oakdms-node-exporter
+    profiles: [monitoring]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 64m
@@ -932,6 +1005,7 @@ services:
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.1
     container_name: oakdms-cadvisor
+    profiles: [monitoring]
     restart: unless-stopped
     command:
       # Without this, cAdvisor also tracks every non-Docker cgroup on the
@@ -967,9 +1041,17 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: oakdms-postgres-exporter
+    profiles: [monitoring]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 128m
+    # Postgres 17+ moved the checkpoint columns from pg_stat_bgwriter to
+    # pg_stat_checkpointer; this exporter version still queries the old ones,
+    # so on postgres:18 that collector only produces
+    # 'column "checkpoints_timed" does not exist' in the Postgres log every 15 s.
+    # Off until the exporter is upgraded to a release that supports PG 17+.
+    command:
+      - --no-collector.stat_bgwriter
     <<: *secrets-env
     environment:
       # Reads the same superuser the stack already uses locally. In
@@ -987,6 +1069,7 @@ services:
   redis-exporter:
     image: oliver006/redis_exporter:v1.67.0
     container_name: oakdms-redis-exporter
+    profiles: [monitoring]
     restart: unless-stopped
     # Memory ceiling.
     mem_limit: 64m

@@ -116,7 +116,7 @@ class ReviewEndpointTenantIsolationTest {
                 documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
                 new PageImageCache(ocrProperties), watermarkDefaultsService, signatureLockService,
                 editGuard, new com.oak.dms.compliance.RetentionDueDates(null, null, null),
-                new com.oak.dms.compliance.RetentionDeletionGuard(null, null));
+                new com.oak.dms.compliance.RetentionDeletionGuard(null, null), null);
 
         // The document belongs to tenant A. Every test below is tenant B.
         Document document = Document.builder()

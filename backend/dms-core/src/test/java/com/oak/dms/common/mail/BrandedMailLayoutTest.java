@@ -22,7 +22,7 @@ class BrandedMailLayoutTest {
         String html = layout.html(content);
         String text = layout.text(content);
 
-        assertThat(html).contains("cid:brand-logo").contains("Ledger").contains("DOCUMENT VAULT")
+        assertThat(html).contains("cid:brand-logo").contains("Ledger").doesNotContain("DOCUMENT VAULT")
                 .contains("Reset your password").contains("Hi Nimal,")
                 .contains("href=\"https://app.example.com/update-password?token=abc\"")
                 .contains(">Reset password<").contains("This link expires in 30 minutes.");

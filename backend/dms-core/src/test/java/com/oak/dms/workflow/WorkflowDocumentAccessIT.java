@@ -192,7 +192,7 @@ class WorkflowDocumentAccessIT extends WorkflowApiSupport {
                 Map.of("reason", "Withdrawn"), 200);
         call(delete("/api/v1/documents/" + document), fx.jwtFor(owner), null, 204);
         // Restoring is unaffected.
-        call(post("/api/v1/recycle-bin/" + document + "/restore"), fx.jwtFor(owner), null, 204);
+        call(post("/api/v1/recycle-bin/" + document + "/restore"), fx.jwtFor(owner), null, 200);
     }
 
     // -------------------------------------------------------------- comments

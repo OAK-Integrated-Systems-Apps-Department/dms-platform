@@ -4,17 +4,10 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import {
-  ChevronRight,
-  Layers,
-  Moon,
-  PenLine,
-  Settings,
-  Sun,
-  X,
-} from "lucide-react"
+import { ChevronRight, Moon, PenLine, Settings, Sun, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { BrandLogo } from "@/components/brand/brand-logo"
 import { APP_NAME } from "@/lib/app-config"
 import type { NavGroup, NavItem } from "@/components/dashboard/types"
 import { navSections } from "@/components/dashboard/nav-config"
@@ -331,17 +324,16 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2.5 py-1">
-          <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg border border-white/15 bg-sidebar-primary group-data-[collapsible=icon]:size-8">
-            <Layers size={18} color="var(--sidebar-primary-foreground)" />
-          </div>
+        <div className="flex items-center gap-2.5 px-2 py-1 group-data-[collapsible=icon]:px-0">
+          {/* The sidebar is dark in both themes, so it always takes the dark artwork. */}
+          <BrandLogo
+            tone="on-dark"
+            mark
+            alt={APP_NAME}
+            className="hidden h-8 group-data-[collapsible=icon]:block"
+          />
           <div className="group-data-[collapsible=icon]:hidden">
-            <div className="font-heading text-[17px] leading-none font-semibold">
-              {APP_NAME}
-            </div>
-            <div className="mt-0.5 text-[10.5px] tracking-[0.08em] text-[var(--sidebar-muted)]">
-              DOCUMENT VAULT
-            </div>
+            <BrandLogo tone="on-dark" alt={APP_NAME} className="h-10" />
           </div>
         </div>
       </SidebarHeader>
@@ -373,9 +365,7 @@ export function AppSidebar({
               // still opens upward over the list.
               className={cn(
                 "top-auto right-auto text-foreground",
-                isMobile
-                  ? "bottom-[52px] left-0"
-                  : "bottom-0 left-full ml-3"
+                isMobile ? "bottom-[52px] left-0" : "bottom-0 left-full ml-3"
               )}
             >
               <div className="flex items-center justify-between p-3.5 pb-2.5">
