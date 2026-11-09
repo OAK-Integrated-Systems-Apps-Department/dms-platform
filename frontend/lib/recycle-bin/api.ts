@@ -21,6 +21,14 @@ export interface RecycleBinItemDto {
   purgeAt: string
   /** a protected version - it is never purged */
   protectedVersion: boolean
+  /** under legal hold - kept indefinitely, never auto-purged */
+  legalHold: boolean
+}
+
+/** What the recycle bin holds in storage, across the whole organisation. */
+export interface RecycleBinUsageDto {
+  documents: number
+  bytes: number
 }
 
 /** One document type's own period; null = the organisation's. */
@@ -34,6 +42,7 @@ export interface RecycleBinDto {
   retentionDays: number
   items: RecycleBinItemDto[]
   byType: TypeRetentionDto[]
+  usage: RecycleBinUsageDto
 }
 
 /** How long deleted documents of one type are kept; null = follow the organisation's period. */
@@ -56,11 +65,26 @@ export async function fetchRecycleBin(): Promise<RecycleBinDto> {
   return apiFetchJson(BASE, undefined, "Could not load the recycle bin.")
 }
 
-export async function restoreFromRecycleBin(documentId: string): Promise<void> {
-  await apiFetch(
+/** restoredToTopLevel: its folder no longer existed, so it came back at the top level. */
+export async function restoreFromRecycleBin(
+  documentId: string
+): Promise<{ restoredToTopLevel: boolean }> {
+  return apiFetchJson(
     `${BASE}/${documentId}/restore`,
     { method: "POST" },
     "Could not restore the document."
+  )
+}
+
+/** Deletes everything the caller may purge; held or protected documents are skipped. */
+export async function emptyRecycleBin(): Promise<{
+  purged: number
+  skipped: number
+}> {
+  return apiFetchJson(
+    BASE,
+    { method: "DELETE" },
+    "Could not empty the recycle bin."
   )
 }
 

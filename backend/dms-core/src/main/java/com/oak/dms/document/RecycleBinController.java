@@ -41,10 +41,9 @@ public class RecycleBinController {
 
     @PostMapping("/{id}/restore")
     @PreAuthorize("@authz.hasPermission(" + P + "RBR_RESTORE)")
-    @Operation(summary = "Restore a deleted document to where it was")
-    public ResponseEntity<Void> restore(@PathVariable("id") UUID id) {
-        service.restore(id);
-        return ResponseEntity.noContent().build();
+    @Operation(summary = "Restore a deleted document to where it was - or the top level, if its folder is gone")
+    public RecycleBinService.RestoreResult restore(@PathVariable("id") UUID id) {
+        return service.restore(id);
     }
 
     @DeleteMapping("/{id}")
@@ -53,6 +52,13 @@ public class RecycleBinController {
     public ResponseEntity<Void> purge(@PathVariable("id") UUID id) {
         service.purgeNow(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping
+    @PreAuthorize("@authz.hasPermission(" + P + "RBR_PURGE)")
+    @Operation(summary = "Empty the recycle bin - everything the caller may purge, except documents under legal hold")
+    public RecycleBinService.EmptyResult empty() {
+        return service.emptyBin();
     }
 
     public record RetentionRequest(@Min(1) @Max(3650) int retentionDays) {

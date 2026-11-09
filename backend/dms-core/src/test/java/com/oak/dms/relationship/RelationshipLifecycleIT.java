@@ -71,7 +71,7 @@ class RelationshipLifecycleIT extends RelationshipApiSupport {
         call(get("/api/v1/documents/" + b + "/relationships"), fx.jwtFor(editor), null, 404);
 
         long rowsBefore = fx.count("select count(*) from document_relationships where tenant_id = ?", tenantId);
-        call(post("/api/v1/recycle-bin/" + b + "/restore"), fx.jwtFor(editor), null, 204);
+        call(post("/api/v1/recycle-bin/" + b + "/restore"), fx.jwtFor(editor), null, 200);
         assertThat(firstItem(a).get("other").get("inRecycleBin").asBoolean()).isFalse();
         assertThat(firstItem(b).get("label").asString()).isEqualTo("Superseded by");
         assertThat(fx.count("select count(*) from document_relationships where tenant_id = ?", tenantId)).isEqualTo(rowsBefore);

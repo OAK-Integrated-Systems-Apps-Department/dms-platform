@@ -151,6 +151,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final com.oak.dms.compliance.RetentionDueDates retentionDueDates;
     // 6.1: "protect from deletion" while a retention rule still covers the document.
     private final com.oak.dms.compliance.RetentionDeletionGuard retentionDeletionGuard;
+    private final RecycleBinNotifier recycleBinNotifier;
 
     /**
      * Not transactional: the scan gate commits each of its own steps (staging,
@@ -590,6 +591,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .resourceName(document.getTitle())
                 .outcome(AuditOutcome.SUCCESS)
                 .log();
+        recycleBinNotifier.deleted(document); // RBR-FR-005 - the owner hears of it
     }
 
     private Document findOwnedByCallerTenant(UUID documentId) {
