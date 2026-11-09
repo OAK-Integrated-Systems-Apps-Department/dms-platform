@@ -9,6 +9,7 @@ import {
   AuthHeading,
   AuthShell,
   authButtonClass,
+  authFieldClass,
   authInputClass,
   authInputIconClass,
 } from "@/components/auth/auth-shell"
@@ -90,7 +91,7 @@ export default function ResetPasswordPage() {
               >
                 Username or email
               </label>
-              <div className="relative">
+              <div className={authFieldClass}>
                 <User size={16} className={authInputIconClass} />
                 <input
                   id="usernameOrEmail"
