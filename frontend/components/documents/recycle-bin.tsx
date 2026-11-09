@@ -16,6 +16,7 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import {
+  emptyRecycleBin,
   fetchRecycleBin,
   purgeFromRecycleBin,
   restoreFromRecycleBin,
@@ -41,6 +42,7 @@ export function RecycleBin() {
   const canSetRetention = hasPermission(PermissionCodes.RBR_RETENTION)
   const bin = useQuery({ queryKey: KEY, queryFn: fetchRecycleBin })
   const [purging, setPurging] = useState<RecycleBinItemDto | null>(null)
+  const [emptying, setEmptying] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
 
   function refresh() {
@@ -51,8 +53,12 @@ export function RecycleBin() {
   async function restore(item: RecycleBinItemDto) {
     setBusy(item.documentId)
     try {
-      await restoreFromRecycleBin(item.documentId)
-      toast.success(`"${item.title}" was restored.`)
+      const result = await restoreFromRecycleBin(item.documentId)
+      toast.success(
+        result.restoredToTopLevel
+          ? `"${item.title}" was restored to the top level - its folder no longer exists.`
+          : `"${item.title}" was restored.`
+      )
       refresh()
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not restore the document."))
@@ -64,10 +70,14 @@ export function RecycleBin() {
   if (bin.isPending) return <LoadingState message="Loading the recycle bin…" />
   if (bin.isError) {
     return (
-      <LoadFailed error={bin.error} fallback="Could not load the recycle bin." />
+      <LoadFailed
+        error={bin.error}
+        fallback="Could not load the recycle bin."
+      />
     )
   }
-  const { items, retentionDays, byType } = bin.data
+  const { items, retentionDays, byType, usage } = bin.data
+  const purgeable = items.filter((i) => !i.legalHold && !i.protectedVersion)
 
   return (
     // Fills the window down to the bottom, like My Documents and Shared with me,
@@ -86,8 +96,26 @@ export function RecycleBin() {
         />
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-muted-foreground">
+        <span>
+          {usage.documents} deleted{" "}
+          {usage.documents === 1 ? "document" : "documents"} ·{" "}
+          {formatBytes(usage.bytes)} of storage
+        </span>
+        {canPurge && purgeable.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[var(--rust)]"
+            onClick={() => setEmptying(true)}
+          >
+            <Trash2 /> Empty recycle bin
+          </Button>
+        )}
+      </div>
+
       {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border p-10 text-center bg-card">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card p-10 text-center">
           <Trash2 className="mx-auto mb-2 text-muted-foreground" size={22} />
           <p className="text-[13.5px] font-medium">The recycle bin is empty</p>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
@@ -97,13 +125,14 @@ export function RecycleBin() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="tbl-card w-full min-w-[760px] text-[13px]">
+          <table className="tbl-card w-full min-w-[860px] text-[13px]">
             <thead className="border-b border-border bg-muted/30 text-left text-[11.5px] tracking-[0.04em] text-muted-foreground uppercase">
               <tr>
                 <th className="px-4 py-2.5 font-semibold">Document</th>
                 <th className="px-4 py-2.5 font-semibold">Was in</th>
                 <th className="px-4 py-2.5 font-semibold">Deleted</th>
                 <th className="px-4 py-2.5 font-semibold">Deleted for good</th>
+                <th className="px-4 py-2.5 font-semibold">Days left</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -138,7 +167,11 @@ export function RecycleBin() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {item.protectedVersion ? (
+                    {item.legalHold ? (
+                      <span className="inline-flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                        <Lock size={13} /> Kept - under legal hold
+                      </span>
+                    ) : item.protectedVersion ? (
                       <span className="inline-flex items-center gap-1 text-[12.5px] text-muted-foreground">
                         <Lock size={13} /> Kept - a version is protected
                       </span>
@@ -150,16 +183,21 @@ export function RecycleBin() {
                       })
                     )}
                   </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {item.legalHold || item.protectedVersion
+                      ? "—"
+                      : daysLeft(item.purgeAt)}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       {canRestore && (
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={busy === item.documentId || item.folderGone}
+                          disabled={busy === item.documentId}
                           title={
                             item.folderGone
-                              ? "Its folder was deleted - ask an administrator"
+                              ? "Its folder was deleted - it will be restored to the top level"
                               : undefined
                           }
                           onClick={() => void restore(item)}
@@ -167,17 +205,19 @@ export function RecycleBin() {
                           <RotateCcw /> Restore
                         </Button>
                       )}
-                      {canPurge && !item.protectedVersion && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[var(--rust)]"
-                          disabled={busy === item.documentId}
-                          onClick={() => setPurging(item)}
-                        >
-                          <Trash2 /> Delete forever
-                        </Button>
-                      )}
+                      {canPurge &&
+                        !item.protectedVersion &&
+                        !item.legalHold && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[var(--rust)]"
+                            disabled={busy === item.documentId}
+                            onClick={() => setPurging(item)}
+                          >
+                            <Trash2 /> Delete forever
+                          </Button>
+                        )}
                     </div>
                   </td>
                 </tr>
@@ -186,6 +226,27 @@ export function RecycleBin() {
           </table>
         </div>
       )}
+
+      <ConfirmActionDialog
+        open={emptying}
+        onOpenChange={setEmptying}
+        title="Empty the recycle bin?"
+        description={`${purgeable.length} ${purgeable.length === 1 ? "document" : "documents"} will be deleted for good: every version's file and its encryption key are destroyed. This can't be undone. Documents under legal hold or with a protected version are kept.`}
+        confirmLabel="Empty recycle bin"
+        pendingLabel="Emptying…"
+        onConfirm={async () => {
+          try {
+            const result = await emptyRecycleBin()
+            toast.success(
+              `${result.purged} deleted for good${result.skipped > 0 ? `, ${result.skipped} kept` : ""}.`
+            )
+            refresh()
+            return null
+          } catch (error) {
+            return friendlyMessage(error, "Could not empty the recycle bin.")
+          }
+        }}
+      />
 
       <ConfirmActionDialog
         open={purging !== null}
@@ -208,6 +269,14 @@ export function RecycleBin() {
       />
     </div>
   )
+}
+
+/** Whole days until the sweep deletes it - at least 0. */
+function daysLeft(purgeAt: string): string {
+  const days = Math.ceil(
+    (new Date(purgeAt).getTime() - Date.now()) / 86_400_000
+  )
+  return String(Math.max(0, days))
 }
 
 /** Document types that keep their deleted documents longer (or shorter) than the organisation does. */

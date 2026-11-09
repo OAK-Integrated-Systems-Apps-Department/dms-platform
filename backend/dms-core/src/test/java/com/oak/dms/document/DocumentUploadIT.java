@@ -78,6 +78,8 @@ class DocumentUploadIT {
     @Autowired
     private RecycleBinService recycleBin;
     @Autowired
+    private com.oak.dms.folder.FolderService folderService;
+    @Autowired
     private OcrArtifactWriter ocrArtifactWriter;
     @Autowired
     private DocumentVersionRepository documentVersionRepository;
@@ -287,6 +289,71 @@ class DocumentUploadIT {
                 .doesNotContain(doc.documentId());
         assertThatThrownBy(() -> recycleBin.restore(doc.documentId())).isInstanceOf(ResourceNotFoundException.class);
         assertThat(auditCount("DOCUMENT_PURGED", doc.documentId())).isEqualTo(1);
+    }
+
+    /**
+     * The recycle bin's gap fixes (module RBR): the owner is told of a delete and a purge; a document whose folder was
+     * deleted after it restores to the top level; emptying the bin purges what it may and keeps a legal hold; and a held
+     * document past its retention period is flagged once, not purged.
+     */
+    @Test
+    void recycleBin_notifiesTheOwner_restoresToTopLevel_emptiesAroundAHold_andFlagsAHeldDocument() throws Exception {
+        TenantFixture tenant = createTenantWithFileSystemStorage();
+        TenantContext.set(tenant.tenantId(), tenant.userId());
+        UUID documentTypeId = createDocumentType(tenant.tenantId());
+        UUID folderId = folderService.create("Board", null).folderId();
+        byte[] content = "agenda".getBytes(StandardCharsets.UTF_8);
+        IngestionTicketResponse ticket = documentService.uploadDocument(documentTypeId, "Agenda", "agenda.txt",
+                content.length, new ByteArrayInputStream(content), folderId);
+        UUID filed = ticket.documentId();
+
+        documentService.deleteDocument(filed);
+        assertThat(jdbc.queryForObject("select count(*) from notifications where category_code = "
+                + "'recycle-bin.deleted.owner' and object_id = ?", Integer.class, filed)).isEqualTo(1);
+
+        // Its folder goes after it (the folder is empty now) - restoring must not be refused.
+        folderService.delete(folderId);
+        assertThat(recycleBin.list().items()).filteredOn(i -> i.documentId().equals(filed))
+                .singleElement().satisfies(i -> assertThat(i.folderGone()).isTrue());
+        assertThat(recycleBin.restore(filed).restoredToTopLevel()).isTrue();
+        assertThat(jdbc.queryForObject("select folder_id from documents where document_id = ?", UUID.class, filed))
+                .isNull();
+
+        // Empty the bin with one ordinary and one legally held document in it.
+        UUID plain = uploadClean(documentTypeId, "Plain", "plain.txt", "plain".getBytes(StandardCharsets.UTF_8))
+                .documentId();
+        UUID held = uploadClean(documentTypeId, "Held", "held.txt", "held".getBytes(StandardCharsets.UTF_8))
+                .documentId();
+        documentService.deleteDocument(plain);
+        documentService.deleteDocument(held);
+        jdbc.update("update documents set legal_hold = true, legal_hold_at = now() where document_id = ?", held);
+        assertThat(recycleBin.list().usage().documents()).isEqualTo(2);
+        var result = recycleBin.emptyBin();
+        assertThat(result.purged()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(auditCount("DOCUMENT_PURGED", plain)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select purged_at is null from documents where document_id = ?",
+                Boolean.class, held)).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from notifications where category_code = "
+                + "'recycle-bin.purged.owner' and object_id = ?", Integer.class, plain)).isEqualTo(1);
+
+        // Past its retention period, the held one is flagged - once - and still not purged.
+        jdbc.update("update documents set deleted_at = now() - interval '40 days' where document_id = ?", held);
+        recycleBin.purgeExpired();
+        recycleBin.purgeExpired();
+        assertThat(auditCount("RECYCLE_BIN_HOLD_FLAGGED", held)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select purged_at is null from documents where document_id = ?",
+                Boolean.class, held)).isTrue();
+
+        // An ordinary one inside the warning window is warned once.
+        UUID soon = uploadClean(documentTypeId, "Soon", "soon.txt", "soon".getBytes(StandardCharsets.UTF_8))
+                .documentId();
+        documentService.deleteDocument(soon);
+        jdbc.update("update documents set deleted_at = now() - interval '28 days' where document_id = ?", soon);
+        recycleBin.purgeExpired();
+        recycleBin.purgeExpired();
+        assertThat(jdbc.queryForObject("select count(*) from notifications where category_code = "
+                + "'recycle-bin.purge-soon.owner' and object_id = ?", Integer.class, soon)).isEqualTo(1);
     }
 
     /**

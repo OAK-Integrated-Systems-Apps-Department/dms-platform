@@ -126,7 +126,7 @@ class ReviewCorrectionsAreManualTest {
                 documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
                 new PageImageCache(ocrProperties), watermarkDefaultsService, signatureLockService,
                 editGuard, new com.oak.dms.compliance.RetentionDueDates(null, null, null),
-                new com.oak.dms.compliance.RetentionDeletionGuard(null, null));
+                new com.oak.dms.compliance.RetentionDeletionGuard(null, null), null);
 
         TenantContext.set(tenantId, UUID.randomUUID());
 

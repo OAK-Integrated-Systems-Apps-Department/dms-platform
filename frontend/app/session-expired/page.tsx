@@ -1,7 +1,8 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Layers, ShieldOff } from "lucide-react"
+import { ShieldOff } from "lucide-react"
+import { BrandLogo } from "@/components/brand/brand-logo"
 
 import { APP_NAME, ROUTES } from "@/lib/app-config"
 
@@ -44,15 +45,7 @@ export default function SessionExpiredPage() {
 
       <div className="relative z-10 w-full max-w-[404px] rounded-lg border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
         <div className="mb-[30px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
-            <Layers size={22} color="var(--primary-foreground)" />
-          </div>
-          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            {APP_NAME}
-          </div>
-          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
-            DOCUMENT VAULT
-          </div>
+          <BrandLogo alt={APP_NAME} className="h-14" />
         </div>
 
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--gold)_40%,transparent)] bg-[var(--gold-tint)]">
@@ -63,14 +56,14 @@ export default function SessionExpiredPage() {
           Your session has expired
         </h1>
         <p className="mb-[26px] text-[13.5px] leading-[1.65] text-muted-foreground">
-          For your security, you&apos;ve been signed out after a period of inactivity. Sign in again to
-          continue.
+          For your security, you&apos;ve been signed out after a period of
+          inactivity. Sign in again to continue.
         </p>
 
         <button
           type="button"
           onClick={handleSignInAgain}
-          className="w-full rounded-btn border border-[var(--primary-hover)] bg-primary h-[38px] text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
+          className="h-[38px] w-full rounded-btn border border-[var(--primary-hover)] bg-primary text-[13px] font-bold tracking-[0.06em] text-primary-foreground uppercase transition-colors hover:bg-[var(--primary-hover)]"
         >
           Sign in again
         </button>

@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * The one HTML email layout every mail the app sends goes through: the app's
- * forest-green header with the logo, a white card for the message, an
+ * forest-green header with the logo (the dark artwork), a white card for the message, an
  * optional call-to-action button and a quiet footer. Table-based with inline
  * styles because that is what mail clients (Gmail, Outlook) actually render.
  * <p>
@@ -18,6 +18,9 @@ public class BrandedMailLayout {
 
     /** Content-ID of the inline logo image. */
     static final String LOGO_CID = "brand-logo";
+    /** Shown size of mail/logo.png (stored at twice this, for high-density screens). */
+    private static final int LOGO_WIDTH = 130;
+    private static final int LOGO_HEIGHT = 56;
 
     // Mirrors frontend/app/globals.css (light theme).
     private static final String PRIMARY = "#1f4d3a";
@@ -83,18 +86,16 @@ public class BrandedMailLayout {
                 .append("<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" ")
                 .append("style=\"width:100%;max-width:600px;font-family:").append(FONT).append(";\">");
 
-        // Header: logo + wordmark on the brand colour.
+        // Header: the logo on the brand colour. The header is dark green in every mail client (mail has no
+        // theme switch), so it always takes the dark artwork - the white wordmark. The artwork carries the
+        // product name, so the name is its alt text for clients that block images.
         sb.append("<tr><td style=\"background:").append(PRIMARY)
-                .append(";border-radius:14px 14px 0 0;padding:26px 32px;\">")
-                .append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr>")
-                .append("<td style=\"padding-right:14px;\"><img src=\"cid:").append(LOGO_CID)
-                .append("\" width=\"44\" height=\"44\" alt=\"\" style=\"display:block;border:0;border-radius:10px;\"/></td>")
-                .append("<td style=\"font-family:").append(FONT).append(";\">")
-                .append("<div style=\"font-size:20px;font-weight:600;letter-spacing:-0.01em;color:#ffffff;line-height:1.2;\">")
-                .append(product).append("</div>")
-                .append("<div style=\"font-size:10px;letter-spacing:0.16em;color:").append(PRIMARY_FG)
-                .append(";opacity:0.75;margin-top:3px;\">DOCUMENT VAULT</div>")
-                .append("</td></tr></table></td></tr>");
+                .append(";border-radius:14px 14px 0 0;padding:24px 32px;\">")
+                .append("<img src=\"cid:").append(LOGO_CID)
+                .append("\" width=\"").append(LOGO_WIDTH).append("\" height=\"").append(LOGO_HEIGHT)
+                .append("\" alt=\"").append(product)
+                .append("\" style=\"display:block;border:0;font-size:20px;font-weight:600;color:#ffffff;\"/>")
+                .append("</td></tr>");
 
         // Card.
         sb.append("<tr><td style=\"background:#ffffff;border:1px solid ").append(BORDER)

@@ -140,7 +140,7 @@ public class RetentionNotifier {
     }
 
     /** Active users who may review retention - by role permission, or as tenant administrator. */
-    List<User> reviewers(UUID tenantId) {
+    public List<User> reviewers(UUID tenantId) {
         Map<UUID, User> byId = new LinkedHashMap<>();
         List<UUID> permitted = jdbc.queryForList("""
                 select distinct ur.user_id from user_roles ur
