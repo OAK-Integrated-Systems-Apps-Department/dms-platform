@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
-import { Layers, Leaf } from "lucide-react"
+import { BrandLogo } from "@/components/brand/brand-logo"
+import { Leaf } from "lucide-react"
 
 import { LoginHeadline, LoginSpheres } from "@/components/auth/login-hero"
 import { APP_NAME } from "@/lib/app-config"
@@ -17,7 +18,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh items-center justify-center bg-card lg:bg-background lg:bg-[radial-gradient(circle_at_15%_10%,var(--primary-tint),transparent_55%)] lg:p-8 [@media(max-height:760px)]:lg:p-4">
       {/* One rounded card, split: brand panel | form */}
-      <div className="grid min-h-svh w-full grid-rows-[auto_1fr] lg:grid-rows-none lg:min-h-0 lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
+      <div className="grid min-h-svh w-full grid-rows-[auto_1fr] lg:h-[min(660px,calc(100svh-2rem))] lg:min-h-0 lg:min-h-[500px] lg:max-w-[1120px] lg:grid-cols-2 lg:grid-rows-none lg:overflow-hidden lg:rounded-[28px] lg:bg-card lg:shadow-[0_30px_80px_color-mix(in_srgb,var(--primary)_22%,transparent)] lg:ring-1 lg:ring-border">
         {/* Brand panel: wide screens only */}
         <aside
           aria-hidden="true"
@@ -34,16 +35,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <div className="pointer-events-none absolute top-1/3 -left-24 size-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
 
           <div className="relative flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-              <Layers size={22} />
-            </div>
             <div>
-              <div className="font-heading text-lg font-semibold tracking-[-0.01em]">
-                {APP_NAME}
-              </div>
-              <div className="font-mono text-[9.5px] tracking-[0.16em] opacity-70">
-                DOCUMENT VAULT
-              </div>
+              {/* The brand panel is dark green in both themes - the dark artwork. */}
+              <BrandLogo tone="on-dark" alt={APP_NAME} className="h-14" />
             </div>
           </div>
 
@@ -72,16 +66,8 @@ export function AuthShell({ children }: { children: ReactNode }) {
           />
           <div className="pointer-events-none absolute top-1/3 -left-20 size-72 rounded-full bg-[radial-gradient(closest-side,rgb(185_138_62/0.25),transparent)]" />
           <div className="relative flex items-center justify-center gap-2.5 pt-5 text-white">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-              <Layers size={18} />
-            </div>
             <div className="text-left">
-              <div className="font-heading text-[15px] leading-tight font-semibold tracking-[-0.01em]">
-                {APP_NAME}
-              </div>
-              <div className="font-mono text-[9px] tracking-[0.16em] opacity-75">
-                DOCUMENT VAULT
-              </div>
+              <BrandLogo tone="on-dark" alt={APP_NAME} className="h-10" />
             </div>
           </div>
           <svg

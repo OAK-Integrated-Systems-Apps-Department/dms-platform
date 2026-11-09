@@ -2,7 +2,8 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { AlertTriangle, Layers } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
+import { BrandLogo } from "@/components/brand/brand-logo"
 
 import { APP_NAME, ROUTES } from "@/lib/app-config"
 
@@ -27,15 +28,7 @@ export function ErrorContent() {
 
       <div className="relative z-10 w-full max-w-[404px] rounded-lg border border-border bg-card p-9 pb-[34px] text-center shadow-[var(--ledger-shadow)]">
         <div className="mb-[30px] flex flex-col items-center">
-          <div className="mb-3 flex size-[46px] items-center justify-center rounded-xl bg-primary shadow-[0_4px_14px_color-mix(in_srgb,var(--primary)_28%,transparent)]">
-            <Layers size={22} color="var(--primary-foreground)" />
-          </div>
-          <div className="font-heading text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-            {APP_NAME}
-          </div>
-          <div className="mt-[5px] font-mono text-[9.5px] tracking-[0.16em] text-[var(--ink-faint)]">
-            DOCUMENT VAULT
-          </div>
+          <BrandLogo alt={APP_NAME} className="h-14" />
         </div>
 
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--rust)_40%,transparent)] bg-[var(--rust-tint)]">
@@ -45,13 +38,21 @@ export function ErrorContent() {
         <h1 className="mb-3 font-heading text-[22px] font-semibold tracking-[-0.01em] text-foreground">
           We are sorry…
         </h1>
-        <p className="mb-[26px] text-[13.5px] leading-[1.65] text-muted-foreground">{message}</p>
+        <p className="mb-[26px] text-[13.5px] leading-[1.65] text-muted-foreground">
+          {message}
+        </p>
 
         <a
           href={ROUTES.LOGIN}
           className="inline-flex w-full items-center justify-center gap-[5px] border-t border-dashed border-border pt-1.5 text-[13px] font-semibold text-primary hover:underline"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="size-[13px]">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            className="size-[13px]"
+          >
             <polyline points="15 18 9 12 15 6" />
           </svg>
           Back to login
