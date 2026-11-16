@@ -57,10 +57,12 @@ public class SearchService {
     private final DocumentService documents;
     private final SearchFallbackService fallback;
     private final SearchMetrics metrics;
+    private final SearchResultMarks marks;
 
     public SearchService(SearchProperties props, SearchEngine engine, com.oak.dms.search.index.IndexAdmin admin,
                          SearchTenantStateRepository tenants, SearchQueryBuilder builder, SearchFilterValidator validator,
-                         SearchCursor cursors, DocumentService documents, SearchFallbackService fallback, SearchMetrics metrics) {
+                         SearchCursor cursors, DocumentService documents, SearchFallbackService fallback, SearchMetrics metrics,
+                         SearchResultMarks marks) {
         this.props = props;
         this.engine = engine;
         this.admin = admin;
@@ -71,6 +73,7 @@ public class SearchService {
         this.documents = documents;
         this.fallback = fallback;
         this.metrics = metrics;
+        this.marks = marks;
     }
 
     /** @param canViewArchive whether the caller holds {@code crm.view-archive} (needed to include inactive/archived) */
@@ -92,10 +95,12 @@ public class SearchService {
             Instant start = Instant.now();
             try {
                 SearchResponse response = viaIndex(tenantId, userId, r, states, v, cursor, fingerprint);
-                metrics.queryTimer("search").record(Duration.between(start, Instant.now()));
+                boolean capped = response.notices().stream().anyMatch(n -> "REFINE".equals(n.code()));
+                metrics.queryTimer("search", capped ? "capped" : "ok").record(Duration.between(start, Instant.now()));
                 return response;
             } catch (SearchEngineException e) {
                 log.warn("Search engine could not answer ({}); using the title search", e.getMessage());
+                metrics.queryTimer("search", "error").record(Duration.between(start, Instant.now()));
                 reason = "engine";
             }
         }
@@ -185,6 +190,7 @@ public class SearchService {
             }
         }
 
+        metrics.verifyRounds(rounds);
         List<Verified> page = verified.subList(0, Math.min(r.size(), verified.size()));
         boolean pageFilled = verified.size() >= r.size();
         boolean more = pageFilled ? (verified.size() > r.size() || !exhausted) : !exhausted;
@@ -222,6 +228,8 @@ public class SearchService {
             // Highlights are decoration: the verified rows are still returned.
             log.debug("Could not fetch highlights ({})", e.getMessage());
         }
+        // Marks and thumbnail links are decided for the verified page only (never for candidates, never indexed).
+        SearchResultMarks.Marks m = marks.forPage(ids.stream().map(UUID::fromString).toList());
         List<Item> items = new ArrayList<>();
         for (Verified p : page) {
             DocumentListItem d = p.item();
@@ -238,7 +246,8 @@ public class SearchService {
                     d.ownerUserId(), d.ownerDepartmentId(), d.createdAt(),
                     src != null && src.hasNonNull("updated_at") ? OffsetDateTime.parse(src.get("updated_at").asText()) : null,
                     d.lifecycleState(), src != null && src.path("legal_hold").asBoolean(false), d.mimeType(),
-                    src != null ? src.path("body_status").asText(null) : null, highlights));
+                    src != null ? src.path("body_status").asText(null) : null, highlights, d.versionNumber(), d.sizeBytes(),
+                    m.thumbnailUrl(d.documentId()), m.pinned(d.documentId()), m.bookmarked(d.documentId())));
         }
         return items;
     }

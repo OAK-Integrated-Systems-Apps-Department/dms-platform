@@ -443,3 +443,336 @@ Test runs: Postgres `dms-workflow-pg` 5435 `dms_phase2_it` (recreated fresh: its
 - **Images** `opensearch`, `dms-core`, `frontend` built; stack started with `up -d --no-build`; dms-core healthy; OpenSearch green from inside the compose network.
 - **Dev database:** V138 and V139 applied in 0.24 s, no errors, 12 search triggers present. First backfill: both tenants `index_ready`, `backfill_state` done, 4 eligible documents = 4 indexed, 0 pending, 0 failed, lag 0; the reconciler gap is not recorded yet (daily 03:30 job).
 - **Not checked against the live app (no test users, no credentials; only the two real admin accounts exist):** search by title/metadata/text, hidden documents, archive permission, `mode: "basic"` fallback. Covered by the integration tests only. Checked instead: the search endpoints answer 401 without a login; the index holds the 4 documents; stopping OpenSearch leaves dms-core healthy with 0 restarts and no errors, and starting it returns it to green with the index intact.
+
+
+---
+
+## Phase 2 detailed plan
+
+
+### P2.0 Preconditions checked (read-only)
+- **Git:** branch `feature/chamath/search-and-retrieval`, working tree clean, Phase 1 committed as `3591c9b`.
+- **Highest Flyway number on every ref** (`git ls-tree` over all heads, remotes and tags): `origin/*` = V137, this branch = **V139**. Phase 2 migrations start at **V140**; re-check before creating each.
+- **Disk:** `/` has 14 GiB free (Phase 2 needs at least 5 GiB there: OK). Docker's data folder is `/Volumes/ChamathSSD/DockerDesktop` (settings `DataFolder`), and that disk has 136 GiB free (the 15 GB rule is met there). The project itself sits on `/`. I will report `df -h` for both before any Docker work and ask permission for Docker and Maven.
+- **Production compose:** `infra/production/docker-compose.yml` has no OpenSearch service at all. Search in production therefore runs in `mode:"basic"` until S15's profile is deployed. dms-core must be checked to start cleanly without `OPENSEARCH_URL` there (S15 test).
+
+### P2.1 What Phase 1 really built, and where the plan no longer matches
+**Built and verified** (1008 unit and 857 integration tests green except two known RabbitMQ OCR ITs; vitest 364/364; 500,000-document search gate passed; images rebuilt, V138/V139 applied to the dev DB, first backfill done): `search/{config,engine,index,extract,query,api,admin,observability}`, V138 (12 triggers, queue, tenant state), V139, single index `dms-documents-v1` behind aliases, encrypted text cache, two-layer security, title-search fallback, tenant rebuild and global rebuild with alias swap, daily reconciler, admin `reindex`/`status`, `/search` page, topbar link, nav item.
+
+**The 15 deviations** (all in the Deviations table above) are accepted as built. The ones Phase 2 depends on: #2 (private Jackson 2 mapper in the engine), #3 (nested config keys `dms.search.index.*`), #5 (`openSearch` health indicator is outside the `core` group), #6 (`text.json` not `text.txt`), #8 (admin check is `@authz.isTenantAdmin()`), #9 (`/search/filters`), #11 (over-fetch caps 6 rounds / 2,000 candidates / batch 500), #14 (reconciler compares ids).
+
+**Half-done or never exercised:**
+1. Live smoke checks (title/metadata/text, hidden document, archive permission, `mode:"basic"`) were never run against the real app: no test users. Phase 2 S16 adds a seeded-user script (opt-in, disposable data only) so this can be proven without touching dev data.
+2. The reconciler gap was never recorded in the dev DB (daily 03:30). The admin status shows `gap: null` and `lastReconciledAt: null`. S14's admin screen shows "never run" and offers "Run reconcile now" (see S14), which also lets us record the first real gap.
+3. `OpenSearchHealthIndicator` exists but `DependencyHealthService.label()` has no case for it, so the monitoring card would show the raw id `openSearch`, and `summarise()` does not whitelist its detail keys. Fixed in S14.
+4. **Reactivation gap:** `TenantServiceImpl.reactivateTenant` enqueues nothing and no trigger fires on un-delete, so a reactivated tenant stays de-indexed until a manual reindex. Fixed in S15 (V142 trigger; see below).
+5. `SearchMetrics` registers timers and counters lazily, so dashboards read "No data" until the first event; `DmsMetrics` pre-registers. S14 pre-registers.
+6. The frontend audit mirror `lib/audit-events/audit-action-catalog.ts` lacks `SEARCH_REINDEX_REQUESTED` (the backend has it). Fixed in S14 together with the preset actions.
+7. No pin batch lookup exists (bookmarks have `BookmarkService.status(ids)`); S11 adds `PinService.status`.
+
+**Plan text that no longer matches the code** (corrected by a Corrections table when appended, not by rewriting):
+| Where in the plan | Says | Reality |
+|---|---|---|
+| Title and sections 0, 1 | "Nothing has been built", V137, `search/` is `.gitkeep` | Phase 1 built and committed; highest migration is V139 |
+| Section 3 and finding 6 | RestClient + Jackson 3 `JsonNode` | Private Jackson 2 `ObjectMapper` (Deviation 2) |
+| Section 4 config keys | `index-prefix`, `indexer.idle-poll`, `query.max-candidates 500`, `max-rounds 5` | `index.prefix`, no idle-poll use, 2,000 and 6, `max-batch 500` (Deviations 3, 11) |
+| 7.3 and O2 | cache artefact `text.txt` | `text.json` with an inputs fingerprint (Deviation 6) |
+| Section 8 audit | `SEARCH_REINDEX` | `SEARCH_REINDEX_REQUESTED` |
+| Section 8 admin status | fields as listed | `Status(engine, searchEnabled, indexReady, backfillState, pendingJobs, failedJobs, lagSeconds, generation, lastReconciledAt, Gap(missing, orphans))`, 202 on reindex |
+| Section 11 S10 / Progress log | scale gate "at reduced size" | Run at the full 500,000 on 2026-11-11 (Deviation 12 superseded) |
+| Section 13 | Phase 2 outline | Replaced by this detailed plan |
+| Section 14 R9 / C1 | CI skips OpenSearch ITs | Still true: CI has no OpenSearch container; S15 delivers a patch file only |
+
+**Facts learned after Phase 1, carried into this plan:**
+- **Documented product gap (out of scope):** the normal My Documents upload has no metadata fields. Metadata values are entered on Scan & OCR > Scan documents (`/documents/scan`, PDF and images only, "Save fields" button) or by bulk import. So metadata search and metadata filters only find documents that went through those paths. The user guide (S16) explains how to enter metadata today; no upload change is made.
+- The reconciler gap is not yet recorded (item 2 above).
+- OpenSearch ITs skip without a node unless `OPENSEARCH_IT_REQUIRED=true`; CI has no OpenSearch container; workflows are not edited.
+- The 500,000 gate measured queries against synthetic documents streamed straight into OpenSearch. The real path (triggers, queue, indexer, extraction), a backfill and a global rebuild at that size were **not** measured. S16's real-path benchmark does this (default 100,000, configurable to 500,000).
+- Toggling a field's `is_searchable` or changing its type needs a tenant reindex (known limitation). S14 turns this into a visible hint (`reindexRecommended`).
+
+### P2.2 Decisions for Phase 2 (made under D1-D13 and the Phase 1 answers)
+- **P1 Marks and thumbnails are decided server-side in `SearchService`, for the verified page only.** Result items gain `thumbnailUrl`, `versionNumber`, `sizeBytes`, `pinned`, `bookmarked`. No new public endpoint is needed to read them, and none is ever indexed.
+- **P2 Thumbnail URL is `/api/v1/documents/{id}/thumbnail`** (existing endpoint: needs `docm.documents.view`, re-checks access on every request, 204 when none). It is emitted only for documents that passed layer 2 AND only when the caller holds `docm.documents.view` (search can be granted without it; then `thumbnailUrl` is null and the UI shows the file-type icon). A hidden document never reaches the code that builds a URL.
+- **P3 Preview reuses the existing `DocumentPreview` Sheet** (`components/documents/document-preview.tsx`), which already applies `usePreviewPolicy` (print/download/copy), `PageViewer` for restricted policies, the download fallback and `LoadFailed`. No second viewer and no new policy path.
+- **P4 Presets are tenant-scoped, user-private rows in PostgreSQL**; criteria are the Phase 1 `SearchRequest` filter fields minus `size` and `cursor`. Running a preset reuses `SearchFilterValidator` and the Notice machinery, so drop-outdated-filter behaviour has one implementation.
+- **P5 Per-tenant limit lives in a new table `saved_search_settings(tenant_id, max_per_user)`**, exactly like `pin_settings(tenant_id, max_pins)` with a configured default (`dms.search.presets.default-max: 50`). Evidence: there is no generic tenant-settings table; every feature has its own (`pin_settings`, `tenant_platform_settings`, `tenant_preview_policy`, `tenant_watermark_settings`); the pin limit is the closest analogue (per-user cap, default in config, audited change).
+- **P6 Monitoring follows `DmsMetrics` conventions:** closed tag sets, no tenant tag, series pre-registered.
+- **P7 No new library.** TLS and basic auth use JDK `SSLContext` and Spring `RestClient` already in the engine.
+
+### P2.3 Migrations (re-check the number before each)
+**V140__create_saved_searches.sql** (rollback `db/rollback/V140__create_saved_searches.rollback.sql`)
+```sql
+CREATE TABLE saved_searches (
+  preset_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      UUID        NOT NULL REFERENCES tenants(tenant_id),
+  user_id        UUID        NOT NULL REFERENCES users(user_id),   -- column names re-verified against V1-V139
+  name           VARCHAR(100) NOT NULL,
+  criteria       JSONB       NOT NULL,
+  schema_version INTEGER     NOT NULL DEFAULT 1,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ck_saved_searches_name CHECK (btrim(name) <> ''),
+  CONSTRAINT ck_saved_searches_criteria CHECK (jsonb_typeof(criteria) = 'object')
+);
+CREATE UNIQUE INDEX ux_saved_searches_user_name ON saved_searches (tenant_id, user_id, lower(btrim(name)));
+CREATE INDEX ix_saved_searches_user ON saved_searches (tenant_id, user_id, updated_at DESC);
+
+CREATE TABLE saved_search_settings (
+  tenant_id    UUID PRIMARY KEY REFERENCES tenants(tenant_id),
+  max_per_user INTEGER     NOT NULL CHECK (max_per_user BETWEEN 1 AND 500),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+Rollback: drop both tables (indexes with them). Test: up, down, up, with seeded rows (template `V138ToV139SearchMigrationTest`).
+- Does not store document ids, titles or text: criteria hold type/department/owner/folder ids (configuration and folder references), dates, the user's own keyword text and metadata filter values.
+- If the user is removed, presets must go with them: ON DELETE behaviour is verified against how `users` rows are retired (soft delete today: presets simply become unreachable; a hard-delete path, if any, gets `ON DELETE CASCADE`). Recorded at build time.
+
+**V141__grant_preset_permissions_to_search_users.sql** (only if open question Q1 is answered yes): grant `dsr.manage-saved-search-presets.create/update/delete` to every role that holds `dsr.search-documents`. Same shape as V139 and V134 (idempotent, rollback removes only the history row, Deviation 4 convention). `share` is not granted and stays unused.
+
+**V142__search_tenant_reactivation.sql:** `AFTER UPDATE ON tenants WHEN (OLD.is_deleted AND NOT NEW.is_deleted)` trigger that sets `search_tenant_state.index_ready=false, backfill_state='none'` (and `last_backfill_at=NULL`) so the existing backfill scheduler re-indexes the tenant. Rollback drops the trigger and function. Test: soft delete, then reactivate, then assert the backfill runs and the tenant is searchable again.
+
+### P2.4 Preset criteria JSON schema, versioning and migration rule
+Stored in `saved_searches.criteria` with `schema_version` also in the column (query-able, and a CHECK-free integer so a migration never needs DDL).
+```json
+{
+  "schemaVersion": 1,
+  "q": "invoice 2024",
+  "documentTypeId": "uuid", "departmentId": "uuid", "ownerId": "uuid",
+  "createdFrom": "2026-01-01T00:00:00Z", "createdTo": null,
+  "modifiedFrom": null, "modifiedTo": null,
+  "statuses": ["active"],
+  "folderId": "uuid", "includeSubfolders": true,
+  "meta": [ { "fieldId": "uuid", "op": "eq|gte|lte|contains", "value": "text" } ],
+  "sort": "relevance|title|created|modified", "ascending": false
+}
+```
+Rules:
+- **Unknown keys are rejected on write** (400 `PRESET_INVALID`), so a preset can never carry anything else (no document ids, no result data). Missing keys mean "not set". `size` and `cursor` are never stored.
+- **At least one criterion:** a non-blank `q`, or any of the filters. `sort`, `ascending`, `statuses` equal to `["active"]`, and `includeSubfolders` without a `folderId` do not count. Otherwise 400 `PRESET_NO_CRITERIA`.
+- **Archived or inactive in `statuses` requires `crm.view-archive`** at save and at run (at run, a user who lost the permission gets the criteria with archived states dropped and a warning, never a silent widening).
+- **Versioning:** `PresetCriteriaMigrator` holds an ordered chain `vN -> vN+1`. On every read the stored JSON is migrated in memory to the current version; the stored row is rewritten only on the next explicit update (a read never writes). A stored version **higher** than the code knows returns 409 `PRESET_VERSION_UNSUPPORTED` on run (the preset is listed, but not runnable) so a rollback of the application cannot misread a newer preset. Adding a filter later = a new optional key, still version 1; renaming or retyping a key = version 2 + a migrator step + a test with a stored v1 fixture. Version 1 fixtures are kept in test resources forever.
+- **Validation of values is the Phase 1 `SearchFilterValidator`** (types, ops, date order); bad values are 400 at save time. Values that were valid at save but are stale at run time (deleted department or document type, removed metadata field, folder gone or no longer visible) are dropped at run with a `FILTER_NO_LONGER_EXISTS` notice that names them (existing code, existing text), and the preset itself is not modified.
+
+### P2.5 Steps
+
+#### S11 Preview integration (size M, risk medium)
+**Goal:** results show thumbnails, open the existing preview in a side panel, fall back to download, and show pinned and bookmarked marks with quick actions, without any new way to see a document the caller cannot see.
+**Backend (files, all existing unless marked new):**
+- `search/query/SearchResponse.java` (Item gets `versionNumber`, `sizeBytes`, `thumbnailUrl`, `pinned`, `bookmarked`).
+- `search/query/SearchService.java`: after layer 2 and before highlights, one batch call per page: `BookmarkService.status(verifiedIds)` and `PinService.status(verifiedIds)` (new). Never for unverified candidates; never indexed; one extra indexed query each, capped by page size (<= 50, below `MAX_STATUS_IDS`).
+- `pin/PinService.java`: new `Set<UUID> status(Collection<UUID> ids)` reusing the `list()` audience rule (pins the user placed plus pins whose audience names them), `document_id IN (:ids)`; also in the basic-mode fallback (`SearchFallbackService`) so marks and thumbnails behave the same in both modes.
+- `search/query/SearchFallbackService.java`: same fields.
+- Thumbnail URL emitted only when the caller holds `docm.documents.view` (P2). The thumbnail endpoint is unchanged.
+**Endpoints:** no new endpoint for reading. Quick actions call the existing `PUT/DELETE /api/v1/bookmarks/{id}` (`bd.bookmark`) and `PUT/DELETE /api/v1/pins/{id}` (`pid.pin`, `pid.unpin`); the buttons show only if the caller holds those permissions (the existing `useHasPermission` pattern).
+**Frontend:**
+- `lib/search/types.ts` (new Item fields), `components/search/search-results.tsx` (replace the icon tile with `DocumentThumbnail` using `children` as the icon fallback; `PinButton` and `BookmarkButton` in the title row, passing the server-given `bookmarked`/`pinned` so there is no per-row request; `PinnedMark`/`BookmarkedMark` indicators).
+- New `components/search/result-preview.tsx`: a thin wrapper that renders `DocumentPreview` for the item (`row` built from the item). Opening is a button/title click with a modifier-free primary action ("Preview") and a secondary "Open document" link to `/documents/{id}`. URL state: `?preview=<documentId>` added to `paramsFromFilters`' sibling so a preview is linkable and Back closes it; it is dropped from the search signature (does not reset paging).
+- Fallbacks (all already inside `DocumentPreview`): unsupported type -> download offer; render failure or timeout -> `LoadFailed` plus download; policy `download:block` -> no download and the policy message; restricted policy on an undrawable type -> `blockedByPolicy`. Nothing re-implemented.
+**Rules and edge cases:** a result removed from visibility after the page loaded: the preview call returns 404 and the panel shows the existing not-found state; the item is not retried. Pin/bookmark failing (limit reached) shows the existing toast. Items with `thumbnailStatus` pending show the icon (the endpoint returns 204, no error).
+**Dependencies:** Phase 1 only.
+**Tests (backend IT):** marks present only for verified ids (a hidden pinned document is never counted, never marked); marks are per user (another user pins the same document: not marked for me, except through an audience pin, which is); batch size equals page size, not candidate count (assert query count); thumbnail URL absent for a caller without `docm.documents.view`; thumbnail URL for a document the caller cannot open is never produced AND `GET` on it is 404/403 (direct); basic mode returns the same fields. **Frontend:** thumbnail fallback to icon, pin/bookmark buttons gated by permission and reflecting server marks, optimistic toggle and rollback on error, preview opens and closes via the URL, `blockedByPolicy`, unsupported-type download offer, failure fallback.
+
+#### S12 Saved presets API (size L, risk medium)
+**Goal:** private, versioned, capped, audited presets that reuse the Phase 1 request model.
+**Files (new unless noted):** `search/preset/{SavedSearchController, SavedSearchService, SavedSearchRepository, PresetCriteria, PresetCriteriaMigrator, PresetLimitService, SavedSearchDto}.java`; `security/rbac/catalog/PermissionCodes.java` (add `DSR_MANAGE_PRESETS_CREATE/UPDATE/DELETE`, and `..._SHARE` declared with the comment "declared, unused"); `frontend/lib/auth/permission-codes.ts` (same constants in the same change); `audit/catalog/AuditActionCatalog.java` + `frontend/lib/audit-events/audit-action-catalog.ts` (see S14); V140 (+ V141 if approved); `application.yml` (`dms.search.presets.default-max: 50`).
+**Endpoints** (base `/api/v1/search/presets`; all tenant-scoped; any preset that is not the caller's, unknown, or in another tenant answers **404 with the same body as an unknown id**):
+| Method and path | Request | Response | Permission |
+|---|---|---|---|
+| `POST /` | `{name, criteria, overwrite?: boolean}` | 201 `{presetId, name, criteria, schemaVersion, createdAt, updatedAt}` | `dsr.manage-saved-search-presets.create` (+ `dsr.search-documents`) |
+| `GET /` | none | `{items:[{presetId, name, summary, updatedAt, runnable}], count, limit}` (no result data) | `dsr.search-documents` |
+| `GET /{id}` | none | the preset with criteria (migrated to the current version) | `dsr.search-documents` |
+| `PUT /{id}` | `{name?, criteria?}` (at least one) | 200 the updated preset | `dsr.manage-saved-search-presets.update` |
+| `DELETE /{id}` | none | 204 | `dsr.manage-saved-search-presets.delete` |
+| `POST /{id}/run` | `{size?}` | `{preset:{presetId,name}, criteria (resolved), warnings:[Notice...], result: SearchResponse}` | `dsr.search-documents` |
+| `PUT /api/v1/admin/search/presets/limit` | `{maxPerUser}` | 200 `{maxPerUser}` | tenant admin (`@authz.isTenantAdmin()`), audited `SEARCH_PRESET_LIMIT_CHANGED` |
+Listing and running need only `dsr.search-documents` (a user who can search can use what they saved, even if an administrator later removes the manage codes); the manage codes gate create, update, delete.
+**Rules and edge cases:**
+- **Duplicate name** (case-insensitive, trimmed, per user): `POST` returns 409 `PRESET_NAME_EXISTS` with the existing `presetId`; the same request with `overwrite:true` replaces that preset's criteria (keeps id and name casing of the request, bumps `updated_at`) and requires the update permission as well as create. A rename to an existing name on `PUT` is also 409 (no overwrite on rename; the UI offers it via a new `POST ... overwrite`).
+- **No criteria:** 400 `PRESET_NO_CRITERIA`. Name blank or over 100: 400 `PRESET_INVALID`.
+- **Limit:** per user count against `saved_search_settings.max_per_user` (default 50). At the limit: 409 `PRESET_LIMIT_REACHED` `{limit}`; an overwrite is not blocked by the limit. The check and insert run in one transaction with a per-user advisory lock so two concurrent saves cannot both pass at limit-1 (concurrency test, 5 runs).
+- **Run:** loads the preset by id AND tenant AND user; migrates criteria; builds a `SearchRequest` (size from the request, default 20, max 50, no cursor); calls `SearchFilterValidator` (drops outdated filters, builds warnings) then the normal `SearchService` path (so both security layers, fallback, `mode`, totals and notices behave exactly as a typed search; archived states re-checked against `crm.view-archive` now). `resolved criteria` is returned so the UI can fill its form and continue paging with the normal `GET /search` and its cursor. `updated_at` is not touched by a run. Nothing about results is stored.
+- **Privacy:** presets store criteria only. Application logs never contain the criteria, keyword text, preset names or results (ids and counts only); audit details carry the preset id and the list of criteria **field names** (never values). A user's presets are never visible to tenant admins through the API (no admin list endpoint); the 404-for-others rule has no admin exception.
+- `share` permission: declared, never checked, no code path (a test asserts no controller references it).
+**Tests (IT, real PostgreSQL; search-engine dependent ones with the node):** create/list/get/update/rename/delete/run round trips; duplicate name differing by case and spaces; overwrite flow and its permission requirement; no-criteria variants (sort only, active only, subfolders without folder); limit at 50 (configured value 3 in the test), limit raised and lowered, overwrite at limit; 404 for another user's preset and for another tenant's preset with identical body to an unknown id; privacy (admin and other users cannot list); permission matrix (see P2.7); run drops a deleted department, a deleted document type, a removed metadata field and an inaccessible folder and returns the named warnings; run with a lost `crm.view-archive` drops the archived states with a warning; stored v1 fixture migrates; a higher-version row is listed but 409 on run; unknown key in criteria rejected; **no log line contains the keyword** (log capture); concurrent saves at the limit (5 runs); migration up/down.
+**Size and risk:** L; medium (limit race, version rules).
+
+#### S13 Presets UI (size M, risk low)
+**Goal:** one-click presets within one or two clicks of the search box, with clear messages.
+**Files:** new `frontend/lib/search/{presets-api.ts, use-presets.ts}`; new `components/search/{preset-bar.tsx, save-preset-dialog.tsx, manage-presets-dialog.tsx}`; edit `components/search/search-view.tsx` (preset bar beside the keyword box and filter toggle, ~lines 124-145 as mapped), `lib/search/params.ts` (add `preset` handling), `lib/search/types.ts`.
+**Behaviour:**
+- **Preset bar** next to the keyword box: a "Saved presets" menu (one click to open, a second to run) listing names; "Save as preset" and "Manage". Hidden entirely without `dsr.search-documents`; "Save as preset" and Manage actions are disabled with an explanation (not hidden) without the manage codes, and the list/run still work.
+- **One-click run:** calls `POST /{id}/run`, then writes the resolved criteria into the URL (`router.replace`) so the page keeps its URL-as-state pattern (`?q=&type=&...&preset=<id>` is cosmetic: shown as the active chip; the criteria in the URL are what the page actually uses, so editing a filter detaches the chip). Warnings appear as the existing notices banner ("these filters no longer exist and were removed: ...").
+- **Save dialog:** name field, a read-only summary of the current criteria, the unsaved-criteria check done client-side (disabled with the message "Add a keyword or a filter first") and enforced by the server. Messages: duplicate name -> an overwrite confirmation dialog ("A preset named X exists. Replace its criteria?"); limit reached -> "You have reached the limit of N presets. Delete one to save a new one." with a Manage button; no criteria; outdated filters at run; unsupported version -> "This preset was saved by a newer version and cannot be run."; 404 on a preset removed elsewhere -> refreshes the list.
+- **Manage dialog:** list with rename (inline), "Update to current criteria" (PUT with the form's criteria; disabled when the form has no criteria), delete with confirmation (`AlertDialog`).
+**Tests (vitest, mocks like `search-view.test.tsx`):** menu lists and runs a preset and updates the URL; duplicate-name overwrite prompt; no-criteria disabled/message; limit-reached message and manage link; outdated-filter warnings shown; rename/update/delete flows; permission gating (no codes: save and manage disabled, run works; no `dsr.search-documents`: nothing); the URL stays the single state (reload restores the same criteria); keyboard operation and focus return after dialogs. `tsc --noEmit`, eslint on changed files, vitest.
+
+#### S14 Monitoring and audit (size M, risk low)
+**Goal:** operations can see search health in the existing dashboard; every preset and admin action is audited; an admin screen replaces curl.
+**Backend:**
+- `search/observability/SearchMetrics.java`: pre-register all series at construction (closed tags only; no tenant, user, query or id tags, as `DmsMetrics` forbids). Metrics:
+  - `dms.search.query` timer, tag `mode` (search|basic) and `outcome` (ok|error|capped) (exists: add `outcome`), plus `dms.search.query.verify.rounds` summary.
+  - `dms.search.fallback` counter, tag `reason` (breaker_open|engine_error|index_not_ready|disabled|timeout) (exists; pre-register the closed set).
+  - `dms.search.breaker.state` gauge: 0 closed, 1 half-open, 2 open (from `SearchCircuitBreaker`).
+  - `dms.search.cluster.status` gauge: 0 green, 1 yellow, 2 red, 3 unreachable, from the same cached health snapshot the indicator uses (no extra requests).
+  - `dms.search.bulk.failures` counter, tag `kind` (item|request) (item failures per bulk response, request failures when the whole bulk call errors).
+  - `dms.search.preview.failures` counter, tag `reason` (unsupported|failed|timeout|policy_blocked): fed by **POST `/api/v1/search/telemetry/preview`** `{reason}` (closed enum, no ids, `dsr.search-documents`, rate-limited, returns 204), called by the result preview panel when it falls back. Rationale: preview rendering failures are only observable in the browser; the server cannot see them from the thumbnail endpoint alone. (Open question Q3.)
+  - Existing gauges (`index.lag.seconds`, `jobs.pending`, `jobs.failed`) and `jobs.processed`, `index.bulk`, `verify.dropped` stay.
+- `monitoring/DependencyHealthService.java`: add `case "openSearch" -> "Search (OpenSearch)"` to `label()` and whitelist `cluster` and `search` in `summarise()` (never the `error` text, which can carry a URL); keep it out of the container `core` group (Deviation 5). Test: appears in `GET /api/v1/monitoring/health` with the label and status, and the status is DOWN, not an exception, when the node is stopped.
+- `audit/catalog/AuditActionCatalog.java` (module DSR): `SEARCH_PRESET_CREATED`, `SEARCH_PRESET_UPDATED` (rename, criteria update and overwrite), `SEARCH_PRESET_DELETED`, `SEARCH_PRESET_LIMIT_CHANGED`, `SEARCH_RECONCILE_REQUESTED` (admin run-now); `SEARCH_REINDEX_REQUESTED` exists. Severity LOW for preset events, MEDIUM for admin ones. A preset **run** is deliberately not audited (high volume, no state change). Details: preset id, criteria field names, counts; never values or names.
+- `search/admin/SearchAdminService.java` + controller: add to `Status` `lastReconcileMissing/orphans` already in `gap`; add `reindexRecommended` (boolean: any searchable metadata field definition changed after `last_backfill_at`; the field table's `updated_at` column is verified at build time) and `reconcileRunning`; add `POST /api/v1/admin/search/reconcile` (202, tenant admin, audited) that runs the existing `SearchReconciler` for the caller's tenant once (rate-limited to one per 5 minutes per tenant). This answers the "gap never recorded" fact without waiting for 03:30.
+**Frontend:**
+- `lib/audit-events/audit-action-catalog.ts`: add the six actions (including the missing `SEARCH_REINDEX_REQUESTED`) with labels; `audit-badges.ts` if it lists modules.
+- Monitoring card needs no code (labels come from the backend).
+- New `app/admin/search/page.tsx` + `components/admin/search-status.tsx` + `lib/admin/search-api.ts`; nav item in the Administration section of `components/dashboard/nav-config.ts` with `adminOnly` (matches decision O4, tenant admin). Shows: engine state (up/down/red), search enabled, index ready, backfill state, generation, pending and failed jobs, lag, last reconcile time and gap (or "never run" with a Run now button), a **Reindex** button behind an `AlertDialog` ("This re-reads every document of your organisation. Search keeps working meanwhile and results update gradually."), and the hint "Searchable metadata fields changed since the last reindex: run a reindex so existing documents use the new settings" when `reindexRecommended`. Polls every 10 s while a backfill is running.
+**Tests:** metrics registered with closed tags and zero values at startup (no tenant tag anywhere: a test scans all `dms.search.*` meters' tag keys); breaker and cluster gauges change when the node is stopped; bulk failure counters with an injected failing bulk; fallback reasons; preview telemetry rejects any value outside the enum; audit events written for each action with no values in details; frontend mirror test (every backend DSR action present in the TS catalog, via the existing catalog-sync test pattern if there is one, otherwise a new one); admin screen states (up, down, never reconciled, failed jobs, reindex confirm, hint), nav item gating; dependency card.
+
+#### S15 Production hardening (size L, risk high; code support, config and documentation only)
+**Constraint:** nothing here changes the running local stack, `infra/local/docker-compose.yml`, the dev DB, or `.github/workflows`. New files only, plus the engine config code.
+**Code (engine client):** `search/config/SearchProperties.java` gains `dms.search.opensearch.{username, password, tls.enabled, tls.ca-cert-path, tls.truststore-path, tls.truststore-password, tls.verify-hostname (default true), tls.client-cert-path/key-path (optional mTLS, off)}`; `search/engine/OpenSearchClientFactory.java` (new): builds the `RestClient` with a `JdkClientHttpRequestFactory` over an `HttpClient` using an `SSLContext` built from the custom CA (PEM, no truststore password needed) or JKS/PKCS12, hostname verification on by default (turning it off logs a WARN at startup and is refused unless `dms.search.opensearch.tls.allow-insecure=true` is also set, for disposable tests only), and a `Basic` `Authorization` header from credentials. `OpenSearchRestEngine` keeps its API; nothing else changes. Secrets: `application-docker.yml` takes `${OPENSEARCH_USERNAME}`/`${OPENSEARCH_PASSWORD}` placeholders only; the real values live in the gitignored `infra/secrets/dms-core.secrets.env` (pattern already in `.gitignore`), and the production names are added to `infra/production/secret-keys.txt` so `render-secrets.py` knows them (a tracked names-only file; flagged as a change to review). Passwords are never logged and never appear in the health detail.
+**Tests:** unit tests of the factory (CA is trusted, an unrelated CA is rejected, hostname mismatch rejected, auth header present only when configured, disabled TLS keeps plain HTTP, the password is not in `toString()`/logs); an **opt-in** IT `OpenSearchSecuredIT` (env `OPENSEARCH_SECURED_IT=true`, a disposable node `dms-search-it-tls` on port 9202 with the security plugin on and a generated test CA/cert in a temp directory, started by me with your permission; skipped otherwise): connects with auth and TLS, a wrong password and an untrusted CA fail cleanly (breaker/fallback, no secret in error text). If Docker resources are short I report instead and ship the unit tests only.
+**Documentation and config deliverables** (all in `docs/search-operations.md` plus new files, none applied):
+1. **Production profile:** `infra/production/docker-compose.opensearch.yml` (a new override file, not an edit of `docker-compose.yml`): OpenSearch with the security plugin on, TLS, basic auth, private network only, **no published port**, `mem_limit` and CPU limits, JVM heap = half the memory limit, `ulimits`, `vm.max_map_count` note, health check using credentials. Plus an index-settings guide: replicas of at least 1 (needs 2 or more nodes; a single-node production is yellow and documented as not highly available), shard layout (1 primary per 10-30 GB; for a tenant above about 5 million documents set `routing_partition_size` to 2-4 and reindex; rule of thumb from the measured 1 KB per document), the tenant-routing and per-tenant-alias ceiling (R3), refresh interval, and the disk-encryption requirement (volume-level encryption on the OpenSearch data path).
+2. **Backups:** recommendation = **rebuild from PostgreSQL** (it is the source of truth, D1) rather than a snapshot repository, with the **measured** rebuild time (S16's real-path benchmark: global rebuild at the chosen N, extrapolated and flagged as an extrapolation) and the procedure (`POST /admin/search/reindex` per tenant or the global rebuild; what users see meanwhile: `mode:"basic"` until `index_ready`). A snapshot repository variant (S3-compatible, using the existing SeaweedFS/Ceph config) is documented as optional with the exact `_snapshot` calls. (Open question Q4.)
+3. **Tenant removal cleanup, verified end to end:** an IT that soft-deletes a tenant and asserts: the `tenant_purge` job runs, the tenant's documents are gone from the index (`_count` 0), the tenant read alias is gone, `search_tenant_state` is not left claiming ready, and the encrypted text cache objects (`search/{tenant}/...`) are unreachable (key shredding path, `keysShreddedAt`) or deleted; the finding that `TenantServiceImpl` has no hard-delete path is documented, and the reactivation gap fix (V142) is tested. If cache objects survive a soft delete, that is reported as a deviation and covered by the existing purge path rather than new deletion code.
+4. **Upgrade runbook:** minor OpenSearch upgrades (rolling, image tag pin, plugin `analysis-icu` version must match exactly, the custom image rebuild), mapping changes (v2 index + global rebuild with alias swap, already built), rollback (alias swap back, drop v2 after the grace period), and the pre-upgrade checklist (status endpoint green, queue empty, backup point).
+5. **CI patch:** `docs/search-ci.patch` (a ready-to-apply unified diff against `.github/workflows/ci.yml` and `.github/scripts/start-it-services.sh`: an `opensearch` service with the ICU image, `OPENSEARCH_IT_URL`, `OPENSEARCH_IT_REQUIRED=true` in the integration job, the Trivy scan of the image). `.github/workflows` is not edited. The patch is checked with `git apply --check` against a read-only `git archive` copy only (never the working tree).
+6. **Security-owner sign-off checklist** (`docs/search-security-signoff.md`): the index holds readable extracted text; what is and is not stored (no `body` in `_source`, but a stored field is readable by anyone with index access); required controls (authentication, TLS, disk encryption, private network, no published port, snapshot encryption if used, access logs, credential rotation); what the application guarantees (two-layer security, tenant filter and routing, highlights only for verified ids, totals never raw); retention and deletion (purge removes the index document and text cache); residual risks (timing, "N or more" totals); sign-off table (name, date, decision) left blank.
+**Dependencies:** S14 (health and status) for the runbooks' checks. **Size and risk:** L; high (security-sensitive client code and no way to prove the production cluster here).
+
+#### S16 Final tests and documentation (size L, risk medium)
+**Tests (new unless noted; files under `src/test/java/com/oak/dms/search/`):**
+- `PermissionMatrixIT`: every endpoint (`GET /search`, `/suggest`, `/filters`, the preset endpoints, admin `reindex`, `status`, `reconcile`, `presets/limit`, telemetry, thumbnail URL presence) against roles: no permission, search only, search + manage, search + view-archive, tenant admin, other tenant admin; expected 200/201/403/404 table.
+- `CrossTenantIT`: another tenant's preset id, document id (404, same body as unknown), crafted filter ids, cursor from another tenant (400), another tenant's preset in `run`.
+- `HiddenEverywhereIT`: a document the caller cannot see never appears in results, highlights, totals, did-you-mean, suggest, thumbnails (`thumbnailUrl`), pin/bookmark marks, or a preset's run, including a preset saved while the document was visible (the preset stores no ids, so nothing leaks after access is removed).
+- `SearchConcurrencyIT`: concurrent index updates (many writers on one document and on many documents, out-of-order change counters, lease expiry, two indexer instances) and concurrent preset saves at the limit; **each concurrency class run 5 times**.
+- `SmokeUsersIT` / script `scripts/search-smoke.sh` (opt-in, disposable data only, never the dev DB): creates a tenant, two users (search-only, and search + `crm.view-archive`), a hidden document, an archived document and a text-bearing PDF in the **disposable** database, runs the smoke list from the second session (title, metadata, text, hidden, archived, `mode:"basic"` with the node stopped and back). This closes the gap that the live-app smoke checks could not run.
+- **Opt-in REAL-PATH benchmark `SearchRealPathBenchmarkIT`** (`@Tag("perf")`, excluded by default like `SearchScaleIT`; size from `-Dsearch.realpath.documents` or `SEARCH_REALPATH_DOCUMENTS`, default **100,000**, up to **500,000**): load N documents (versions, metadata, folders) into the disposable PostgreSQL by SQL **with the real V138 triggers enabled**; the real `search_index_jobs` queue, the real `SearchIndexer` claim/bulk/complete, with a **stubbed text source** (a test `@Primary` replacement of the text extraction seam returning fixed-size text, so PDFBox and storage are excluded and the measurement is queue + indexer + engine). Measure and report: queue drain time and throughput (documents/s), peak and p95 lag, `jobs.failed` (must be 0), memory of the 512 MB node and dms-core heap, then **a global rebuild with alias swap while a query thread runs continuously** (zero failed queries, swap atomic, p95 during the rebuild), then **a tenant backfill** (generation sweep) at N, then the reconciler gap at N (must be 0). Disk guard: the test refuses to start below 15 GB free on the Docker disk and 5 GB on `/` (checked and reported); scales down in steps (100k, 50k, 25k) and says exactly what ran.
+- Existing: all Phase 1 and earlier tests stay green (known RabbitMQ-dependent OCR ITs not fixed). Frontend: the S11/S13/S14 tests above, plus `tsc --noEmit`, eslint on changed files, full vitest.
+**Documentation (the same clean style as `ownership-user-guide.md` and `relationships-user-guide.md`: intro paragraph linking the sibling docs, "TL;DR", "Who can do what", task sections, "API summary" table with error codes, "Performance and limits", an opt-in large-data test section):**
+- `docs/search-user-guide.md`: what search covers, writing queries (phrases, prefix, filters), results and marks, preview and its restrictions, presets (save, run, rename, overwrite, delete, limits, outdated filters), notices and fallback mode, and **how to enter metadata today** (Scan & OCR > Scan documents > "Save fields", bulk import; not My Documents upload; the documented product gap), and what an administrator does (reindex, hint).
+- `docs/events/search-audit-events.md`: every DSR audit action (code, module, severity, when, details, never-included data), in the style of `docs/events/ownership-audit-events.md`.
+- `docs/search-traceability.md`: one row per DSR-FR-001..009, DSR-NFR-001..008 and each alternate flow, mapped to code, tests and docs (mirrors `ownership-traceability.md`; starts from the section 12 table).
+- API summary: inside the user guide as in the relationships guide, plus the OpenAPI additions if `docs/api/openapi.json` is generated by a build step (checked at build time; not hand-edited if generated).
+- `docs/search-operations.md` (S15), `docs/search-security-signoff.md` (S15), `docs/search-ci.patch` (S15).
+- Update `docs/search-plan.md`: Progress log rows S11-S16, new deviations, the real-path numbers, the Corrections table.
+
+### P2.6 Dependencies and order
+S11 and S12 are independent (both after Phase 1). S13 needs S12. S14 needs S12 for audit and Phase 1 for the rest. S15 needs S14 (health, status, reconcile-now) and the V142 trigger. S16 needs S11-S15 (it tests all of them and writes the traceability). Build order: S11 -> S12 -> S13 -> S14 -> S15 -> S16 (the "start phase 2" run), re-checking the highest migration number and disk before each.
+
+### P2.7 Permission matrix
+| Endpoint | none | `dsr.search-documents` | + `manage...create` | + `manage...update` | + `manage...delete` | + `crm.view-archive` | + `docm.documents.view` | tenant admin |
+|---|---|---|---|---|---|---|---|---|
+| `GET /search`, `/suggest`, `/filters` | 403 | 200 | | | | archived statuses allowed (else 403 for that filter only) | | |
+| Result `thumbnailUrl` | | null | | | | | present | |
+| Pin / bookmark buttons (existing endpoints) | | | | | | | `pid.pin`, `bd.bookmark` as today | |
+| `GET /search/presets`, `GET /{id}`, `POST /{id}/run` | 403 | 200 | | | | archived re-checked at run | | |
+| `POST /search/presets` | 403 | 403 | 201 | | | | | |
+| `PUT /search/presets/{id}` | 403 | 403 | | 200 | | | | |
+| `DELETE /search/presets/{id}` | 403 | 403 | | | 204 | | | |
+| overwrite (`POST ... overwrite:true`) | | | needs create **and** update | | | | | |
+| Another user's / tenant's / unknown preset | 404 for everyone, no admin exception | | | | | | | |
+| `PUT /admin/search/presets/limit`, `POST /admin/search/reindex`, `/reconcile`, `GET /admin/search/status` | 403 | 403 | | | | | | 200/202 |
+| `POST /search/telemetry/preview` | 403 | 204 | | | | | | |
+`share` is declared, unchecked, unused.
+
+### P2.8 Phase 2 exit criteria
+1. Results show thumbnails (or icons) and open the existing preview in the side panel under the preview security policy; each fallback (unsupported, failure, timeout, blocked download) works; pinned and bookmarked marks and quick actions work; marks and thumbnails are computed for verified ids only.
+2. Presets: create, list, rename/update, delete, run; unique name per user case-insensitive with the overwrite flow; at least one criterion; per-user limit (default 50) configurable per tenant; private to the creator (404 for everyone else, same body as unknown); outdated filter values dropped on run with warnings naming them; permissions as the matrix; audit events written; nothing about documents stored or logged.
+3. UI: Save as preset, Saved presets within two clicks, one-click run via URL state, manage dialog, every message in P2.5 S13.
+4. Metrics registered with closed tags, no tenant tag; OpenSearch on the dependency card with a label and a DOWN state when stopped; audit actions in both catalogs; admin Search screen (status, reindex with confirmation, reconcile-now, reindex hint).
+5. Production support: client auth and TLS (unit-tested, secured-node IT if resources allow), production profile and guidance, rebuild runbook with a measured time, tenant removal verified end to end incl. reactivation, upgrade runbook, CI patch (not applied), sign-off checklist, `docs/search-operations.md`.
+6. Final tests: permission matrix, cross-tenant 404, hidden-everywhere, concurrency 5 of 5 runs, smoke script on disposable data, real-path benchmark result recorded (size stated), frontend tests, docs complete (user guide, audit events, traceability, API summary).
+7. All Phase 1 and earlier tests green apart from the known RabbitMQ OCR ITs; migrations apply, roll back and re-apply; `tsc --noEmit`, eslint on changed files, vitest green; nothing committed by me; no workflow, dev DB, running stack or `local-ocr-worker` image touched.
+
+### P2.9 Risks
+- **R11 Marks and thumbnails add per-page work** (two batch queries and URL building): bounded by page size (<= 50); measured in S16 against the Phase 1 numbers; budget +10 ms p95.
+- **R12 Preset limit race** under concurrent saves: advisory lock plus tested 5 times.
+- **R13 Criteria drift:** future filters or renamed keys break stored presets: versioned schema, migrator chain, permanent v1 fixtures, 409 on unknown newer versions.
+- **R14 Telemetry endpoint** for preview failures is a new unauthenticated-by-content write path: closed enum, no ids, rate limit, `dsr.search-documents` required; if rejected (Q3) the metric is limited to server-side thumbnail outcomes.
+- **R15 Production client code cannot be proven against a real production cluster here:** unit tests plus an opt-in secured disposable node; the sign-off checklist and runbooks make the remaining check explicit.
+- **R16 Real-path benchmark at 500,000** costs disk and time (the Phase 1 PostgreSQL population took about 910 s at that size): defaults to 100,000, guarded by the disk rules, scales down and says what ran.
+- **R17 Production compose has no OpenSearch:** until S15's profile is deployed, production search is basic mode only; the user guide states it; dms-core starting without `OPENSEARCH_URL` is tested.
+- **R18 Memory:** OpenSearch (1.5 GB) plus the secured test node on 9202 plus the 9201 node and PostgreSQL on the same Docker VM; the secured IT is opt-in and I report rather than change Docker's memory.
+- **R19 Reactivation and tenant-removal semantics** depend on key shredding behaviour I could only read, not run; the IT in S15 decides, and any gap is reported as a deviation.
+
+### P2.10 Open questions (only genuine ambiguities)
+- **Q1** Who gets `dsr.manage-saved-search-presets.create/update/delete`? Without a grant migration nobody can save a preset (the codes are seeded but no role holds them). **Recommended:** V141 grants create/update/delete to every role that holds `dsr.search-documents` (same approach as V139/O5), and `share` stays ungranted. Alternative: no migration, administrators assign the codes.
+- **Q2** Should the per-tenant preset limit be changeable from the admin Search screen and `PUT /admin/search/presets/limit`, or is a table value plus the configured default enough (set by SQL)? **Recommended:** include the endpoint and a small field on the admin screen (tenant admin, audited), like the pin limit.
+- **Q3** Preview failures "coming from search" can only be seen in the browser. Accept a tiny closed-enum telemetry endpoint `POST /api/v1/search/telemetry/preview` (counter only, no ids)? **Recommended:** yes. Alternative: count only server-side thumbnail outcomes.
+- **Q4** Backups: **rebuild from PostgreSQL with a measured time** (recommended; the index is derived data and the rebuild path is already built and tested) or also a snapshot repository (needs repository storage, credentials and a restore test)? The plan documents both but only measures the rebuild.
+- **Q5** May S15 add **new files** under `infra/production/` (the OpenSearch override compose file) and add the new secret names to `infra/production/secret-keys.txt`? Existing files in `infra/local/` and `.github/workflows` are not touched; `secret-keys.txt` is the only edit to an existing tracked deployment file. **Recommended:** yes for the new compose file, and yes for the names-only secret list.
+
+
+### P2.11 Decisions recorded from the user, 2026-11-16 (authoritative; they override anything above that disagrees)
+- **Q1 yes.** V141 grants `dsr.manage-saved-search-presets.create`, `.update` and `.delete` to every role that holds `dsr.search-documents`. `share` stays ungranted, and **a test proves it**: after V141 no role holds `...share` because of this migration, and no controller references it.
+- **Q2 yes.** `PUT /api/v1/admin/search/presets/limit` (tenant admin, audited `SEARCH_PRESET_LIMIT_CHANGED`) and a field for it on the admin Search screen.
+- **Q3 yes, with guards.** `POST /api/v1/search/telemetry/preview`: login required, closed enum only, about **30 calls per minute per user** (excess answers 429), and no other data is stored or logged.
+- **Q4** Backups = rebuild from PostgreSQL with a **measured** time. The snapshot repository variant is **documented only**, not built or measured.
+- **Q5 yes.** New files under `infra/production/` (the OpenSearch override compose) and the names-only addition to `infra/production/secret-keys.txt`. **Every `infra/production` change is listed in the final report.**
+- **A1** The real-path benchmark runs at **100,000** documents; I **ask before going above that** (no 250,000 or 500,000 run without a new answer).
+- **A2** `POST /api/v1/admin/search/reindex` and `POST /api/v1/admin/search/reconcile` return **409 while one is running** (the same kind for the same tenant) and are **rate limited** (reconcile: one per 5 minutes per tenant; reindex: a comparable limit, value recorded as a deviation if it differs from the plan). Tests: second call while running gives 409; a call inside the window gives 429; the status shows the running state.
+- **A3** The secured TLS IT (`OpenSearchSecuredIT`, port 9202) runs **only if Docker memory allows**; otherwise I report that it was skipped and why, and the unit tests of the client factory remain the proof.
+- Git: I never run a git command that changes anything. Nothing is built until you reply "start phase 2".
+
+## Phase 2 progress log (2026-11-16)
+Run environment: `dms-workflow-pg` 5435 `dms_phase2_it` and `dms-search-it` 9201 (`dms-opensearch:3.7.0-icu`), `JAVA_HOME=jdk-17`, `OPENSEARCH_IT_REQUIRED=true`. Docker's data folder is `/Volumes/ChamathSSD/DockerDesktop` (136 GiB free, rule: 15 GB); `/` had 13 to 14 GiB free (rule: 5 GB). The running stack and the development database were not touched; its images were not rebuilt, so **the running application still has Phase 1 code and V143 is not applied to the development database until dms-core is rebuilt and restarted**.
+
+| Step | Status | Notes |
+|---|---|---|
+| S11 | done | `SearchResultMarks` (marks and thumbnail link for the verified page only), `PinService.status`, new item fields (`versionNumber, sizeBytes, thumbnailUrl, pinned, bookmarked`) in search and basic mode; frontend thumbnails, pin and bookmark buttons, `result-preview.tsx` over the existing `DocumentPreview`, `?preview=` URL state, `onFallback` hook. `SearchResultMarksIT` 4/4. |
+| S12 | done | V140, V141, V142, `search/preset/*`, `PermissionCodes` (+ declared-unused share), audit actions. `SearchPresetApiIT` 16/16 (round trip, duplicate and overwrite, no criteria, limit and its race, privacy 404, outdated filters, archive, versions, matrix, audit, no log line with keywords), `PresetCriteriaTest` 6/6, `PresetShareUnusedTest` 2/2 (no source and no later migration touches the share code), `V140ToV143SearchPhase2MigrationTest` 4/4 (V141 grants create/update/delete and never share, idempotent). |
+| S13 | done | `preset-bar`, `save-preset-dialog`, `manage-presets-dialog`, URL-as-state run, every message of the plan. Frontend tests in `preset-dialogs.test.tsx`, `search-view.phase2.test.tsx`, `presets.test.ts`. |
+| S14 | done | `SearchMetrics` rewritten (closed tags, pre-registered, breaker/cluster gauges, bulk and preview counters), `DependencyHealthService` label and detail for `openSearch`, six audit actions in both catalogs, `POST /admin/search/reconcile`, 409/429 on reindex and reconcile (V143), `reindexRecommended`, preset limit endpoints, `POST /search/telemetry/preview` (login, closed enum, 30 per minute per person), admin screen `app/admin/search`. `SearchMetricsTest` 4/4, `OpenSearchHealthIndicatorTest` 2/2, `SearchHealthCardIT` 1/1, `SearchAdminRunStateIT` 4/4, `SearchTelemetryIT` 4/4, `search-status.test.tsx`, `phase2-catalogs.test.ts`. |
+| S15 | done (code, config, docs; nothing applied) | `OpenSearchClientFactory` (private CA by PEM or truststore, host name always verified, basic auth), tenant purge hardening, `SearchTenantRemovalIT` 3/3, `docker-compose.opensearch.yml` and templates, `docs/search-operations.md`, `docs/search-security-signoff.md`, `docs/search-ci.patch` (`git apply --check` OK on a clean `git archive`). `OpenSearchClientFactoryTest` 11/11 against real TLS servers; **`OpenSearchSecuredIT` 4/4 against a real OpenSearch 3.7.0 with the security plugin on** (a disposable node on 9202 that replaced the 9201 node for the run because Docker memory was tight; the password appeared nowhere in the log; node removed and 9201 restored afterwards). |
+| S16 | done | `SearchPermissionMatrixIT` (15 endpoints x 8 kinds of person, 1 test), `SearchCrossTenantIT`, `SearchHiddenEverywhereIT`, `SearchConcurrencyIT` 2/2, `SearchRealPathBenchmarkIT` (opt-in) run at 100,000, user guide, audit events, traceability, operations guide. |
+
+**Full regression (2026-11-16, after all changes):** backend unit tests **1037, 0 failed, 3 skipped**; backend `*IT` run **917 tests: 888 passed, 13 skipped, 16 failed**, and the 16 are exactly the two known RabbitMQ-dependent OCR ITs (`OcrEventsConsumerLiveIT`, `OcrJobTokenHealthGroupIT`) and the 14 tests of `ImpersonationIT` and `PermissionCodeAuditIT`, which need a live Keycloak admin API (the pom's own `verify` excludes those two classes for that reason); none touches search. Not fixed, as instructed. Frontend: **vitest 426/426 (61 files, was 364/364 in 53)**, `tsc --noEmit` clean, eslint clean on all 27 changed and new files. **Concurrency** (`SearchConcurrencyIT`, the saved-preset limit race, `SearchSyncIT`, `SearchRebuildIT`: 28 tests) **5 of 5 runs green**.
+
+### Phase 2 measurements
+- **Real-path benchmark, 100,000 documents** (real triggers, queue and indexer; stubbed text; one node, 1 shard, 0 replicas, 512 MB heap): load with triggers on 8.4 s (about 12,000/s), one coalesced job per document; **queue drain 78.6 s = 1,272 documents/s**, peak lag 86 s, 0 failed jobs; **tenant backfill 120.0 s = 834/s**; **global rebuild with alias swap 136.9 s** (100,164 documents, every tenant in the test database) **while 1,447 queries ran: 0 failed or fell back, p95 104 ms**; reconciler gap 0 missing, 0 orphans in 2.2 s; OpenSearch heap 30% after the drain and 38% at the end; index 39 MB (short stub text); the test JVM (dms-core) used 1,356 MB of a 4,096 MB heap. A 2,000-document dry run on the same code gave 790 documents/s.
+- **Not run:** anything above 100,000 (the plan says to ask first; the test refuses without `-Dsearch.realpath.confirm-above=true`).
+- The 500,000-document query benchmark of Phase 1 was not repeated.
+
+## Phase 2 deviations
+| # | Step | Deviation | Reason |
+|---|---|---|---|
+| 16 | S14 | New migration **V143** (`last_reindex_requested_at`, `last_reconcile_requested_at`, `reconcile_running_until` on `search_tenant_state`). | Single-flight and rate limits for reindex and reconcile must hold across instances, so the state is in PostgreSQL, not memory. Reindex and reconcile minimum intervals are both 5 minutes (the plan said "a comparable limit" for reindex). |
+| 17 | S14 | `dms.search.breaker.state` is 0 closed / 1 open (the plan said 0/1/2). | The breaker has no half-open state to report. |
+| 18 | S14 | The fallback metric's closed reason set is the four the code has (`disabled`, `not_ready`, `continuing`, `engine`), not the plan's `breaker_open/engine_error/index_not_ready/disabled/timeout`. | Those are the reasons the service actually distinguishes; unexpected values fold into `engine`. |
+| 19 | S12 | Running a preset adds a warning `ARCHIVE_NOT_ALLOWED` when the person no longer holds `crm.view-archive` (archived states dropped). | The plan said "dropped with a warning"; it needed a code. |
+| 20 | S15 | Mutual TLS (client certificates) is not supported; the config has no client-cert keys. | The plan listed it as optional/off; basic auth plus TLS with a private CA is what the sign-off needs. |
+| 21 | S15 | Host name verification cannot be turned off on its own; turning it off requires `allow-insecure`, which trusts any certificate. | The JDK HTTP client does not allow per-client host name verification to be disabled while keeping the CA check; a combined unsafe switch is clearer and loudly warned about. |
+| 22 | S12 | **A Phase 1 flaw fixed:** `SearchResponse` and its records printed titles, highlights and suggestions in `toString`, which Spring writes to the log at DEBUG. They now print counts and ids only (found by `SearchPresetApiIT.noLogLineCarriesTheKeywordsOrNames`). | "No log line carries document or search text." |
+| 23 | S15 | **Phase 1 code changed:** `SearchIndexer.purgeTenant` skips a purge for an organisation that has been reactivated since, and resets the tenant's `index_ready` and backfill state after a purge. | Otherwise a late purge could empty a live organisation, and a removed one stayed "ready". `SearchTenantRemovalIT`. |
+| 24 | S16 | `SearchScaleIT` (Phase 1) and the new benchmark now need an explicit switch as well as the `perf` tag (`-Dsearch.scale.run=true` or a size; `-Dsearch.realpath.run=true`). | **CI runs `*IT` through surefire, which ignores the pom's `it.excludedGroups`**, so once a CI node exists the 500,000-document test would run there. `docs/search-ci.patch` also adds `-DexcludedGroups=perf`. |
+| 25 | S15 | At tenant removal the **encrypted text cache in object storage is not deleted**; the index part is. | Reported as the plan said: no new deletion code; it is unreadable once the keys are shredded and goes with each document's purge. On the sign-off sheet as residual risk 2. |
+| 26 | S16 | **No separate smoke script and no seeded live-app run.** The smoke list is covered by `SearchScenarioIT`, `SearchHiddenEverywhereIT`, `SearchSecurityIT`, `SearchFallbackIT` and `SearchPermissionMatrixIT` against real services; the manual list is in `docs/search-operations.md`. | The development database holds only two real administrator accounts and the work must not write development data, so the live-app checks of the second session still could not be run; a script that creates users would need that database. |
+| 27 | S11 | A `?preview=<id>` link opens the panel only if that document is on the current page of results. | The panel needs the row's data from the results page; a direct link to a document on another page shows no panel. |
+| 28 | S14 | The sidebar's `adminOnly` shows **Search Index** to platform administrators too; the page itself tells anyone who is not a tenant administrator that it is for them. | Existing `adminOnly` semantics. |
+| 29 | S15 | **`docs/api/openapi.json` was not regenerated** (it is written by `OpenApiSpecWriter` with watermarking on and has no search section today). | Not part of this run's scope. |
+
+### Every change under `infra/production` (for review)
+- `infra/production/docker-compose.opensearch.yml` (**new**, an override file; used only if passed to `docker compose -f`).
+- `infra/production/opensearch/opensearch.yml` and `infra/production/opensearch/README.md` (**new** templates).
+- `infra/production/secret-keys.txt`: one line added, `OPENSEARCH_PASSWORD`.
+- `infra/production/secret-profiles.txt`: one line added, `opensearch OPENSEARCH_PASSWORD`.
+- `.gitignore` (repository root): `infra/production/opensearch/certs/` and `infra/production/opensearch/security/` ignored.
+- Not changed: `infra/production/docker-compose.yml`, `deploy.sh`, `render-secrets.py`, `infra/local/*`, `.github/workflows/*`.
+
+## Corrections to the Phase 1 text (as of 2026-11-16)
+The Phase 1 sections above are left as written; where they disagree with the code, this table is right.
+
+| Where | Says | Reality |
+|---|---|---|
+| Title, sections 0 and 1 | "Nothing has been built", V137, `search/` holds `.gitkeep` | Built and committed; highest migration is now V143 |
+| Section 3 and finding 6 | RestClient with Jackson 3 `JsonNode` | a private Jackson 2 `ObjectMapper` (Deviation 2) |
+| Section 4 config keys | `index-prefix`, `idle-poll`, `max-candidates 500`, `max-rounds 5` | `index.prefix`, no idle poll, 2,000 and 6, `max-batch 500` (Deviations 3 and 11) |
+| 7.3 and O2 | cache artefact `text.txt` | `text.json` with an inputs fingerprint (Deviation 6) |
+| Section 8 audit | `SEARCH_REINDEX` | `SEARCH_REINDEX_REQUESTED` |
+| Section 8 admin status | fields as listed | also `searchEnabled`, `reindexRecommended`, `reindexRunning`, `reconcileRunning`; reindex answers 202, 409 or 429 |
+| Section 11 S10 and the Phase 1 progress log | scale gate "at reduced size" | run at the full 500,000 on 2026-11-11 (Deviation 12 superseded) |
+| Section 13 | Phase 2 outline | replaced by the detailed plan and this log |
+| Section 14, R9 and C1 | CI skips the search ITs | still true; `docs/search-ci.patch` is ready, not applied |
+| Phase 2 plan P2.1 item 3 | the health card shows a raw `openSearch` id | fixed in S14 |
+| Phase 2 plan P2.1 item 4 | reactivation leaves a tenant de-indexed | fixed in S15 (V142 and the purge guard) |
+| Phase 2 plan S15, secured IT "port 9202" | an extra node beside 9201 | it replaced the 9201 node for the run (Docker memory) |

@@ -1,11 +1,15 @@
 "use client"
 
 import Link from "next/link"
-import { Gavel } from "lucide-react"
+import { Eye, Gavel } from "lucide-react"
 
+import { BookmarkButton } from "@/components/bookmarks/bookmark-button"
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
+import { DocumentThumbnail } from "@/components/documents/document-thumbnail"
+import { PinButton } from "@/components/pins/pin-button"
 import { LifecycleBadge } from "@/components/retention/lifecycle-badge"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import type { SearchFilterOptionsDto, SearchItemDto } from "@/lib/search/types"
 import { cn } from "@/lib/utils"
 
@@ -18,9 +22,15 @@ import { Snippet } from "./snippet"
 export function SearchResultCard({
   item,
   options,
+  onPreview,
+  bookmarked,
 }: {
   item: SearchItemDto
   options: SearchFilterOptionsDto | undefined
+  /** Opens the preview panel for this result (the page keeps it in the URL). */
+  onPreview?: (documentId: string) => void
+  /** The bookmark mark to show; defaults to what the server said for this page. */
+  bookmarked?: boolean
 }) {
   const kind = fileKind(item.fileName)
   const owner = options?.owners.find((o) => o.id === item.ownerUserId)?.name
@@ -30,9 +40,25 @@ export function SearchResultCard({
   return (
     <li className="rounded-lg border border-border bg-card p-4 shadow-[var(--ledger-shadow)]">
       <div className="flex items-start gap-3">
-        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", kind.tone)}>
-          <kind.icon size={18} />
-        </span>
+        {item.thumbnailUrl ? (
+          // The server only gives a link to a caller who may use it; the picture falls back to the file-type icon.
+          <span
+            className={cn("relative size-14 shrink-0 overflow-hidden rounded-lg", kind.tone)}
+            data-testid="result-thumbnail"
+          >
+            <DocumentThumbnail
+              documentId={item.documentId}
+              fileName={item.fileName}
+              versionNumber={item.versionNumber ?? null}
+            >
+              <kind.icon size={20} />
+            </DocumentThumbnail>
+          </span>
+        ) : (
+          <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", kind.tone)}>
+            <kind.icon size={18} />
+          </span>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -47,6 +73,24 @@ export function SearchResultCard({
                 <Gavel /> Legal hold
               </Badge>
             )}
+            <span className="ml-auto flex items-center gap-1">
+              {onPreview && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  aria-label={`Preview ${item.title}`}
+                  onClick={() => onPreview(item.documentId)}
+                >
+                  <Eye size={14} /> Preview
+                </Button>
+              )}
+              <PinButton row={{ documentId: item.documentId, title: item.title }} pinned={item.pinned} />
+              <BookmarkButton
+                row={{ documentId: item.documentId, title: item.title }}
+                bookmarked={bookmarked ?? item.bookmarked ?? false}
+              />
+            </span>
           </div>
           <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
             {fileName ? <Snippet html={fileName} /> : item.fileName}

@@ -35,6 +35,7 @@ public final class AuditObjectTypes {
     public static final String AUDIT_EVENT = "AUDIT_EVENT";
     public static final String OUTBOX_EVENT = "OUTBOX_EVENT";
     public static final String SEARCH_INDEX = "SEARCH_INDEX";
+    public static final String SEARCH_PRESET = "SEARCH_PRESET";
     public static final String TENANT = "TENANT";
     public static final String DOCUMENT_TYPE = "DOCUMENT_TYPE";
     public static final String DOCUMENT_TYPE_SCHEMA = "DOCUMENT_TYPE_SCHEMA";

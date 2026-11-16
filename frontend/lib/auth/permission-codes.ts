@@ -216,6 +216,12 @@ export const PermissionCodes = {
   CRM_VIEW_ARCHIVE: "crm.view-archive",
   // Document Search & Retrieval (4.1): the /search page and API. Mirrors PermissionCodes.java.
   DSR_SEARCH_DOCUMENTS: "dsr.search-documents",
+  // Saved search presets (Phase 2). Listing and running a preset need only DSR_SEARCH_DOCUMENTS.
+  DSR_MANAGE_PRESETS_CREATE: "dsr.manage-saved-search-presets.create",
+  DSR_MANAGE_PRESETS_UPDATE: "dsr.manage-saved-search-presets.update",
+  DSR_MANAGE_PRESETS_DELETE: "dsr.manage-saved-search-presets.delete",
+  // Declared, unused; no UI may reference it (presets are private, DSR-NFR-008).
+  DSR_MANAGE_PRESETS_SHARE: "dsr.manage-saved-search-presets.share",
   CRM_REVIEW_RETENTION: "crm.review-retention",
   CRM_CONFIGURE_RETENTION: "crm.configure-retention",
   // Turning online editing on/off for the organisation and choosing its mode (the Online Editing policy page).

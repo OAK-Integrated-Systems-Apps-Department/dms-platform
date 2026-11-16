@@ -71,6 +71,11 @@ public final class AuditActionCatalog {
     public static final String OUTBOX_EVENT_PUBLISH_FAILED = "OUTBOX_EVENT_PUBLISH_FAILED";
     /** A tenant administrator asked for the search index of the organisation to be rebuilt (module DSR). */
     public static final String SEARCH_REINDEX_REQUESTED = "SEARCH_REINDEX_REQUESTED";
+    public static final String SEARCH_RECONCILE_REQUESTED = "SEARCH_RECONCILE_REQUESTED";
+    public static final String SEARCH_PRESET_CREATED = "SEARCH_PRESET_CREATED";
+    public static final String SEARCH_PRESET_UPDATED = "SEARCH_PRESET_UPDATED";
+    public static final String SEARCH_PRESET_DELETED = "SEARCH_PRESET_DELETED";
+    public static final String SEARCH_PRESET_LIMIT_CHANGED = "SEARCH_PRESET_LIMIT_CHANGED";
     public static final String USER_ROLE_REVOKED = "USER_ROLE_REVOKED";
     public static final String PERMISSION_ACTION_CREATED = "PERMISSION_ACTION_CREATED";
     public static final String PERMISSION_ACTION_UPDATED = "PERMISSION_ACTION_UPDATED";
@@ -388,6 +393,11 @@ public final class AuditActionCatalog {
             // Document search (SearchAdminController) - module DSR. Rebuilding the index re-reads every document of the
             // tenant, so it is a MEDIUM, state-changing admin action.
             Map.entry(SEARCH_REINDEX_REQUESTED, new AuditActionSpec("DSR", AuditSeverity.MEDIUM, false)),
+            Map.entry(SEARCH_RECONCILE_REQUESTED, new AuditActionSpec("DSR", AuditSeverity.MEDIUM, false)),
+            Map.entry(SEARCH_PRESET_CREATED, new AuditActionSpec("DSR", AuditSeverity.LOW, false)),
+            Map.entry(SEARCH_PRESET_UPDATED, new AuditActionSpec("DSR", AuditSeverity.LOW, false)),
+            Map.entry(SEARCH_PRESET_DELETED, new AuditActionSpec("DSR", AuditSeverity.LOW, false)),
+            Map.entry(SEARCH_PRESET_LIMIT_CHANGED, new AuditActionSpec("DSR", AuditSeverity.MEDIUM, false)),
 
             // Document types (DocumentTypeController) - module MDTM. Same
             // severity convention as every other catalog-entity group above:

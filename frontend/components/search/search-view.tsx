@@ -10,17 +10,22 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { SearchInput } from "@/components/ui/search-input"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
+import { useBookmarkStatus } from "@/lib/bookmarks/use-bookmarks"
+import { useBookmarkStatusStore } from "@/stores/bookmark-status-store"
 import { useFolders } from "@/lib/folders/use-folders"
 import {
   activeFilterCount,
   EMPTY_FILTERS,
+  extrasFromParams,
   filtersFromParams,
-  paramsFromFilters,
+  queryString,
   searchSignature,
 } from "@/lib/search/params"
 import { useSearch, useSearchFilterOptions } from "@/lib/search/use-search"
 import type { SearchFilters, SearchNoticeDto, SearchSort } from "@/lib/search/types"
 
+import { PresetBar } from "./preset-bar"
+import { ResultPreview } from "./result-preview"
 import { SearchFilterPanel } from "./search-filters"
 import { SearchResultCard } from "./search-results"
 
@@ -69,6 +74,7 @@ export function SearchView() {
     [searchParams]
   )
   const signature = searchSignature(filters)
+  const extras = useMemo(() => extrasFromParams(new URLSearchParams(searchParams.toString())), [searchParams])
 
   // Paging: the cursors visited so far. A new search (any criterion changed) starts again at the first page.
   const [cursors, setCursors] = useState<(string | null)[]>([null])
@@ -100,8 +106,31 @@ export function SearchView() {
     []
   )
 
-  function apply(next: SearchFilters) {
-    const qs = paramsFromFilters(next).toString()
+  // Warnings from running a preset (filters it dropped because they no longer exist) belong to that search only: they
+  // are shown while the page still shows exactly it, and go as soon as any criterion changes.
+  const [presetWarnings, setPresetWarnings] = useState<{ signature: string; notices: SearchNoticeDto[] } | null>(null)
+
+  /** Writes the filters to the URL. A preview that is open stays open; editing the filters detaches the preset chip. */
+  function apply(next: SearchFilters, keepPreset = false) {
+    const qs = queryString(next, { preview: extras.preview, preset: keepPreset ? extras.preset : "" })
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
+  function openPreview(documentId: string) {
+    const qs = queryString(filters, { preset: extras.preset, preview: documentId })
+    router.push(`${pathname}?${qs}`, { scroll: false })
+  }
+
+  function closePreview() {
+    const qs = queryString(filters, { preset: extras.preset })
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
+  function presetApplied(next: SearchFilters, preset: { presetId: string; name: string } | null, warnings: SearchNoticeDto[]) {
+    if (timer.current) clearTimeout(timer.current)
+    setText(next.q)
+    setPresetWarnings(warnings.length > 0 ? { signature: searchSignature(next), notices: warnings } : null)
+    const qs = queryString(next, { preset: preset?.presetId ?? "", preview: extras.preview })
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
@@ -112,11 +141,23 @@ export function SearchView() {
   }
 
   const data = results.data
-  const items = data?.items ?? []
+  const items = useMemo(() => data?.items ?? [], [data])
+
+  // Bookmarks: the server already marked this page. Once the person toggles one, the shared status (one request for the
+  // page, the app's usual pattern) takes over so the marks stay right without re-running the search.
+  const anyBookmarkChange = useBookmarkStatusStore((state) => Object.keys(state.overrides).length > 0)
+  const [bookmarksTouched, setBookmarksTouched] = useState(false)
+  if (anyBookmarkChange && !bookmarksTouched) setBookmarksTouched(true)
+  const pageIds = useMemo(() => (bookmarksTouched ? items.map((i) => i.documentId) : []), [bookmarksTouched, items])
+  const bookmarkStatus = useBookmarkStatus(pageIds)
+  const previewItem = extras.preview ? items.find((i) => i.documentId === extras.preview) : undefined
   const filterCount = activeFilterCount(filters)
   const hasCriteria = filters.q.trim() !== "" || filterCount > 0
   const settled = !results.isPlaceholderData && !results.isFetching
-  const notices = data?.notices ?? []
+  const notices = [
+    ...(presetWarnings && presetWarnings.signature === signature ? presetWarnings.notices : []),
+    ...(data?.notices ?? []),
+  ]
 
   return (
     <div className="grid gap-4">
@@ -136,6 +177,7 @@ export function SearchView() {
             },
           }}
         />
+        <PresetBar filters={filters} activePresetId={extras.preset || null} onApply={presetApplied} />
         <Button
           type="button"
           variant="outline"
@@ -244,7 +286,17 @@ export function SearchView() {
           ) : (
             <ul className="grid gap-3" aria-label="Search results">
               {items.map((item) => (
-                <SearchResultCard key={item.documentId} item={item} options={filterOptions.data} />
+                <SearchResultCard
+                  key={item.documentId}
+                  item={item}
+                  options={filterOptions.data}
+                  onPreview={openPreview}
+                  bookmarked={
+                    bookmarksTouched && !bookmarkStatus.isLoading
+                      ? bookmarkStatus.isBookmarked(item.documentId)
+                      : (item.bookmarked ?? false)
+                  }
+                />
               ))}
             </ul>
           )}
@@ -272,6 +324,8 @@ export function SearchView() {
           )}
         </>
       )}
+
+      {previewItem && <ResultPreview item={previewItem} onClose={closePreview} />}
 
       <div className="flex items-start gap-2 text-[12px] text-muted-foreground">
         <Info size={14} className="mt-0.5 shrink-0" />

@@ -752,6 +752,15 @@ dms:
       url: ${OPENSEARCH_URL:http://localhost:9200}
       connect-timeout: PT2S
       read-timeout: PT5S
+      # Production (security plugin on): basic auth and TLS. Values come from the environment (infra/secrets), never here.
+      username: ${OPENSEARCH_USERNAME:}
+      password: ${OPENSEARCH_PASSWORD:}
+      tls:
+        ca-cert-path: ${OPENSEARCH_TLS_CA_CERT:}
+        truststore-path: ${OPENSEARCH_TLS_TRUSTSTORE:}
+        truststore-password: ${OPENSEARCH_TLS_TRUSTSTORE_PASSWORD:}
+        verify-hostname: true
+        allow-insecure: false
       bulk-timeout: PT60S
     index:
       prefix: ${SEARCH_INDEX_PREFIX:dms}
@@ -777,6 +786,14 @@ dms:
     reconcile:
       enabled: ${SEARCH_RECONCILE_ENABLED:true}
       cron: "0 30 3 * * *"
+    presets:
+      # Saved search presets per person; a tenant admin can change it per organisation (saved_search_settings).
+      default-max: 50
+    admin:
+      reindex-min-interval: PT5M
+      reconcile-min-interval: PT5M
+      reconcile-lease: PT15M
+      telemetry-per-minute: 30
     query:
       default-page-size: 20
       max-page-size: 50

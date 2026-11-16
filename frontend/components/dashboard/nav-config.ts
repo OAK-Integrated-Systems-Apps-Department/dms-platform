@@ -410,6 +410,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.DPRM_TOGGLE_PREVIEW_WATERMARK,
             ],
           },
+          // Search index (4.1): engine and index health, reindex, the reconcile check and the preset limit. Tenant administrators.
+          {
+            label: "Search Index",
+            icon: Search,
+            href: "/admin/search",
+            adminOnly: true,
+          },
           // Records retention (6.1): the rules, the settings, and the documents waiting for a decision.
           {
             label: "Records Retention",

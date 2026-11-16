@@ -151,3 +151,24 @@ export const OP_LABELS: Record<MetaOp, string> = {
   lte: "is at most",
   contains: "contains",
 }
+
+/** URL parameters that are not part of "the same search": a preview panel that is open, and the preset the page was filled from. */
+export const PREVIEW_PARAM = "preview"
+export const PRESET_PARAM = "preset"
+
+export interface PageExtras {
+  preview: string
+  preset: string
+}
+
+export function extrasFromParams(params: URLSearchParams): PageExtras {
+  return { preview: params.get(PREVIEW_PARAM) ?? "", preset: params.get(PRESET_PARAM) ?? "" }
+}
+
+/** The page's query string: the filters, plus whichever extras are set. Extras never affect paging or the search signature. */
+export function queryString(filters: SearchFilters, extras: Partial<PageExtras> = {}): string {
+  const p = paramsFromFilters(filters)
+  if (extras.preset) p.set(PRESET_PARAM, extras.preset)
+  if (extras.preview) p.set(PREVIEW_PARAM, extras.preview)
+  return p.toString()
+}

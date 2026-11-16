@@ -41,6 +41,11 @@ public interface SearchEngine {
     /** Never throws: an unreachable engine is {@link Health#DOWN}. */
     Health health();
 
+    /** 0 = the circuit is closed (requests flow), 1 = open (requests are refused for a while). */
+    default int breakerState() {
+        return 0;
+    }
+
     boolean indexExists(String index);
 
     void createIndex(String index, JsonNode body);

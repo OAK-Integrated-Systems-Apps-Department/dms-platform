@@ -73,6 +73,11 @@ class SearchScaleIT extends SearchApiSupport {
 
     @Test
     void searchStaysFastOnALargeRepository() throws Exception {
+        // Opt-in twice: the perf tag AND an explicit switch, because CI runs `*IT` through surefire, which ignores the tag.
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                Boolean.getBoolean("search.scale.run") || "true".equalsIgnoreCase(System.getenv("SEARCH_SCALE_RUN"))
+                        || System.getenv("SEARCH_SCALE_DOCUMENTS") != null || System.getProperty("search.scale.documents") != null,
+                "scale gate not requested (-Dsearch.scale.run=true, or set the size with -Dsearch.scale.documents)");
         say("documents: " + N + "  (index: 1 shard, 0 replicas, 512 MB heap, one node)");
         try {
             run();

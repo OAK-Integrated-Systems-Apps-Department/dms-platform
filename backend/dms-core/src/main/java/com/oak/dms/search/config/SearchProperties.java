@@ -27,6 +27,8 @@ public class SearchProperties {
     private Extraction extraction = new Extraction();
     private Reconcile reconcile = new Reconcile();
     private Query query = new Query();
+    private Presets presets = new Presets();
+    private Admin admin = new Admin();
 
     /** HMAC key for search cursors. Blank means a random per-boot key (cursors die on restart). */
     private String cursorSecret = "";
@@ -39,6 +41,29 @@ public class SearchProperties {
         private Duration readTimeout = Duration.ofSeconds(5);
         /** Bulk and delete-by-query are allowed longer than a user query. */
         private Duration bulkTimeout = Duration.ofSeconds(60);
+        /** HTTP basic authentication (production: the security plugin is on). Blank username = none. */
+        private String username = "";
+        /** Comes from the environment (infra/secrets), never a literal in a file; never logged, never in a health detail. */
+        private String password = "";
+        private Tls tls = new Tls();
+    }
+
+    /**
+     * TLS to the search engine (an {@code https://} url). With nothing set the JVM's default trust is used (a certificate
+     * from a public CA). A private CA is given as a PEM file (or a truststore); the host name is always verified.
+     */
+    @Getter
+    @Setter
+    public static class Tls {
+        /** PEM file with one or more CA certificates to trust, in addition to nothing else (it replaces the default trust). */
+        private String caCertPath = "";
+        /** Alternative to the PEM: a PKCS12/JKS truststore. */
+        private String truststorePath = "";
+        private String truststorePassword = "";
+        /** On by default. Turning it off is refused unless {@code allowInsecure} is also set (disposable tests only). */
+        private boolean verifyHostname = true;
+        /** Trust any certificate and any host name. Never in production: a warning is logged at startup. */
+        private boolean allowInsecure = false;
     }
 
     @Getter
@@ -114,5 +139,25 @@ public class SearchProperties {
         /** Highlight snippets: how many and how long. */
         private int highlightFragments = 2;
         private int highlightFragmentSize = 150;
+    }
+
+    /** Saved search presets (S12). */
+    @Getter
+    @Setter
+    public static class Presets {
+        /** Per person, unless the tenant has its own limit (saved_search_settings). */
+        private int defaultMax = 50;
+    }
+
+    /** Admin operations: how soon after one may the same tenant start another. */
+    @Getter
+    @Setter
+    public static class Admin {
+        private Duration reindexMinInterval = Duration.ofMinutes(5);
+        private Duration reconcileMinInterval = Duration.ofMinutes(5);
+        /** A reconcile that has not finished by then is considered dead and frees the single-flight lease. */
+        private Duration reconcileLease = Duration.ofMinutes(15);
+        /** Preview telemetry calls allowed per user per minute. */
+        private int telemetryPerMinute = 30;
     }
 }

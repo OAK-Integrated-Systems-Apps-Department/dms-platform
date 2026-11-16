@@ -13,14 +13,30 @@ import java.util.UUID;
 public record SearchResponse(String mode, List<Item> items, Total total, String nextCursor, List<Notice> notices,
                              String didYouMean) {
 
+    /** Spring logs response bodies at DEBUG: counts only, never titles, highlights or suggestions. */
+    @Override
+    public String toString() {
+        return "SearchResponse[mode=" + mode + ", items=" + (items == null ? 0 : items.size()) + "]";
+    }
+
     public record Item(UUID documentId, String title, String fileName, UUID documentTypeId, String documentTypeName,
                        UUID folderId, UUID ownerUserId, UUID ownerDepartmentId, OffsetDateTime createdAt,
                        OffsetDateTime updatedAt, String lifecycleState, boolean legalHold, String mimeType,
-                       String bodyStatus, Highlights highlights) {
+                       String bodyStatus, Highlights highlights, Integer versionNumber, Long sizeBytes,
+                       String thumbnailUrl, boolean pinned, boolean bookmarked) {
+        @Override
+        public String toString() {
+            return "Item[" + documentId + "]";
+        }
     }
 
     /** Snippets with the matched words wrapped in {@code <mark>}; everything else is HTML-escaped. */
     public record Highlights(String title, String fileName, List<String> body) {
+        @Override
+        public String toString() {
+            return "Highlights[...]";
+        }
+
         public static final Highlights NONE = new Highlights(null, null, List.of());
     }
 

@@ -7,6 +7,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import com.oak.dms.search.preset.PresetLimitService;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,5 +44,30 @@ public class SearchAdminController {
     @Operation(summary = "Search engine and index status for this organisation, including queue lag and the last reconcile gap")
     public SearchAdminService.Status status() {
         return service.status();
+    }
+
+    @PostMapping("/reconcile")
+    @PreAuthorize(ADMIN)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "Check this organisation's index against the database now (409 while one runs, 429 inside the interval)")
+    public void reconcile() {
+        service.reconcileNow();
+    }
+
+    public record LimitBody(int maxPerUser) {
+    }
+
+    @GetMapping("/presets/limit")
+    @PreAuthorize(ADMIN)
+    @Operation(summary = "How many saved searches each person may keep in this organisation")
+    public PresetLimitService.Limit presetLimit() {
+        return service.presetLimit();
+    }
+
+    @PutMapping("/presets/limit")
+    @PreAuthorize(ADMIN)
+    @Operation(summary = "Change the saved-search limit per person (audited)")
+    public PresetLimitService.Limit setPresetLimit(@RequestBody LimitBody body) {
+        return service.setPresetLimit(body.maxPerUser());
     }
 }

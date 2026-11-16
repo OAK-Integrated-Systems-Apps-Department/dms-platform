@@ -33,8 +33,11 @@ public class SearchFallbackService {
     private final DocumentService documents;
     private final SearchCursor cursors;
     private final SearchProperties props;
+    private final SearchResultMarks marks;
 
-    public SearchFallbackService(DocumentService documents, SearchCursor cursors, SearchProperties props) {
+    public SearchFallbackService(DocumentService documents, SearchCursor cursors, SearchProperties props,
+                                 SearchResultMarks marks) {
+        this.marks = marks;
         this.documents = documents;
         this.cursors = cursors;
         this.props = props;
@@ -56,11 +59,13 @@ public class SearchFallbackService {
                 r.hasKeywords() ? r.q() : null, r.documentTypeId(), null, new OwnerFilter(r.ownerId(), r.departmentId()),
                 PageRequest.of(page, r.size(), sort));
 
+        SearchResultMarks.Marks m = marks.forPage(found.getContent().stream().map(DocumentListItem::documentId).toList());
         List<Item> items = new ArrayList<>();
         for (DocumentListItem d : found.getContent()) {
             items.add(new Item(d.documentId(), d.title(), d.fileName(), d.documentTypeId(), d.documentTypeName(), d.folderId(),
                     d.ownerUserId(), d.ownerDepartmentId(), d.createdAt(), null, d.lifecycleState(), false, d.mimeType(),
-                    null, Highlights.NONE));
+                    null, Highlights.NONE, d.versionNumber(), d.sizeBytes(), m.thumbnailUrl(d.documentId()),
+                    m.pinned(d.documentId()), m.bookmarked(d.documentId())));
         }
 
         List<Notice> notices = new ArrayList<>(inherited);

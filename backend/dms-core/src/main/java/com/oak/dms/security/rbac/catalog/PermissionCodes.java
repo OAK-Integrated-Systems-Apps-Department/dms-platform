@@ -266,9 +266,14 @@ public final class PermissionCodes {
     public static final String DVC_SET_MAX_VERSIONS = "dvc.configure-version-retention-rules.set-max-versions";
     public static final String DVC_SET_VERSION_PERIOD = "dvc.configure-version-retention-rules.set-retention-period";
 
-    // Document Search & Retrieval - DSR (4.1), V10 row. Referenced by SearchController. The saved-search preset codes
-    // (dsr.manage-saved-search-presets.*) are added with the presets API, when a check first references them.
+    // Document Search & Retrieval - DSR (4.1), V10 rows. Referenced by SearchController and the presets API. Granted by
+    // V139 (search) and V141 (presets create/update/delete) to roles that can search.
     public static final String DSR_SEARCH_DOCUMENTS = "dsr.search-documents";
+    public static final String DSR_MANAGE_PRESETS_CREATE = "dsr.manage-saved-search-presets.create";
+    public static final String DSR_MANAGE_PRESETS_UPDATE = "dsr.manage-saved-search-presets.update";
+    public static final String DSR_MANAGE_PRESETS_DELETE = "dsr.manage-saved-search-presets.delete";
+    /** Declared, never checked: presets are private (DSR-NFR-008). A test asserts nothing references it. */
+    public static final String DSR_MANAGE_PRESETS_SHARE = "dsr.manage-saved-search-presets.share";
 
     // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own

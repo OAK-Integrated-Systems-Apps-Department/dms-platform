@@ -190,10 +190,12 @@ public class SearchIndexer {
         try {
             result = metrics.bulkTimer().recordCallable(() -> engine.bulk(ops));
         } catch (SearchEngineException e) {
+            metrics.bulkFailures("request", 1);
             ready.forEach(p -> jobs.fail(p.job(), "bulk failed: " + e.getMessage(), backoff(p.job())));
             metrics.jobsProcessed("document", "failed", ready.size());
             return;
         } catch (Exception e) {
+            metrics.bulkFailures("request", 1);
             ready.forEach(p -> jobs.fail(p.job(), "bulk failed: " + e.getClass().getSimpleName(), backoff(p.job())));
             return;
         }
@@ -204,6 +206,10 @@ public class SearchIndexer {
             if (!items.get(i).ok()) {
                 errors.putIfAbsent(opOwner.get(i).jobId(), items.get(i).error());
             }
+        }
+        long itemFailures = items.stream().filter(it -> !it.ok()).count();
+        if (itemFailures > 0) {
+            metrics.bulkFailures("item", (int) itemFailures);
         }
         java.util.Set<UUID> touched = new java.util.HashSet<>();
         for (Prepared p : ready) {
@@ -254,6 +260,11 @@ public class SearchIndexer {
     }
 
     private void purgeTenant(Job job) {
+        if (!tenants.isRemoved(job.tenantId())) {
+            // The organisation was reactivated before this ran: purging now would empty a live tenant's search. The
+            // reactivation already reset its search state (V142), so the backfill re-indexes it.
+            return;
+        }
         ObjectNode query = JSON.createObjectNode();
         query.putObject("term").put("tenant_id", job.tenantId().toString());
         for (String target : admin.writeTargets()) {
@@ -261,6 +272,9 @@ public class SearchIndexer {
         }
         admin.dropTenantAlias(job.tenantId());
         aliased.remove(job.tenantId());
+        // A removed organisation must not be left claiming a ready index (it would be searched, empty, instead of falling back).
+        tenants.setIndexReady(job.tenantId(), false);
+        tenants.setBackfill(job.tenantId(), "none", null);
     }
 
     private void runSafely(Job job, Runnable action) {

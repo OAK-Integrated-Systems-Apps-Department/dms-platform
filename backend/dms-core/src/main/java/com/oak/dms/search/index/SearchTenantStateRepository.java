@@ -113,4 +113,70 @@ public class SearchTenantStateRepository {
                                     and j.status = 'pending')
                 """, tenantId) > 0;
     }
+
+    // ---- admin single-flight and rate limits (V143) -------------------------------------------------------------
+
+    /** True while the organisation is removed (soft-deleted). */
+    public boolean isRemoved(UUID tenantId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "select coalesce((select is_deleted from tenants where tenant_id = ?), true)", Boolean.class, tenantId));
+    }
+
+    public enum Claim { OK, RUNNING, RATE_LIMITED }
+
+    /** Atomically takes the right to start a reindex: refused while a backfill runs (RUNNING) or inside the interval. */
+    public Claim claimReindex(UUID tenantId, java.time.Duration minInterval) {
+        ensure(tenantId);
+        int n = jdbc.update("""
+                update search_tenant_state set last_reindex_requested_at = now(), updated_at = now()
+                 where tenant_id = ? and backfill_state <> 'running'
+                   and (last_reindex_requested_at is null
+                        or last_reindex_requested_at < now() - make_interval(secs => ?))
+                """, tenantId, (double) minInterval.toSeconds());
+        if (n == 1) {
+            return Claim.OK;
+        }
+        return find(tenantId).map(s -> "running".equals(s.backfillState())).orElse(false) ? Claim.RUNNING : Claim.RATE_LIMITED;
+    }
+
+    /** Atomically takes the right to run an on-demand reconcile (a lease, so a crashed run frees itself). */
+    public Claim claimReconcile(UUID tenantId, java.time.Duration minInterval, java.time.Duration lease) {
+        ensure(tenantId);
+        int n = jdbc.update("""
+                update search_tenant_state set last_reconcile_requested_at = now(),
+                       reconcile_running_until = now() + make_interval(secs => ?), updated_at = now()
+                 where tenant_id = ? and (reconcile_running_until is null or reconcile_running_until < now())
+                   and (last_reconcile_requested_at is null
+                        or last_reconcile_requested_at < now() - make_interval(secs => ?))
+                """, (double) lease.toSeconds(), tenantId, (double) minInterval.toSeconds());
+        if (n == 1) {
+            return Claim.OK;
+        }
+        return isReconcileRunning(tenantId) ? Claim.RUNNING : Claim.RATE_LIMITED;
+    }
+
+    public void finishReconcile(UUID tenantId) {
+        jdbc.update("update search_tenant_state set reconcile_running_until = null, updated_at = now() where tenant_id = ?", tenantId);
+    }
+
+    public boolean isReconcileRunning(UUID tenantId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "select coalesce((select reconcile_running_until > now() from search_tenant_state where tenant_id = ?), false)",
+                Boolean.class, tenantId));
+    }
+
+    /**
+     * True when a metadata field definition of the tenant changed after the last completed backfill. Changing whether a
+     * field is searchable (or its type) only affects documents indexed afterwards, so existing ones need a reindex. Any
+     * change counts (a heuristic: a renamed label also trips it); a reindex clears it.
+     */
+    public boolean reindexRecommended(UUID tenantId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists (
+                    select 1 from search_tenant_state s
+                      join metadata_fields f on f.tenant_id = s.tenant_id
+                     where s.tenant_id = ? and s.last_backfill_at is not null
+                       and coalesce(f.updated_at, f.created_at) > s.last_backfill_at)
+                """, Boolean.class, tenantId));
+    }
 }

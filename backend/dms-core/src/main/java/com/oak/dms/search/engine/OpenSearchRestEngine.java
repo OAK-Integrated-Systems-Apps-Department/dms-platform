@@ -43,16 +43,9 @@ public class OpenSearchRestEngine implements SearchEngine {
 
     public OpenSearchRestEngine(SearchProperties props) {
         SearchProperties.OpenSearch os = props.getOpensearch();
-        this.client = build(os.getUrl(), os.getConnectTimeout(), os.getReadTimeout());
-        this.bulkClient = build(os.getUrl(), os.getConnectTimeout(), os.getBulkTimeout());
+        this.client = OpenSearchClientFactory.build(os, os.getConnectTimeout(), os.getReadTimeout());
+        this.bulkClient = OpenSearchClientFactory.build(os, os.getConnectTimeout(), os.getBulkTimeout());
         this.breaker = new SearchCircuitBreaker(props.getQuery().getBreakerFailures(), props.getQuery().getBreakerOpen());
-    }
-
-    private static RestClient build(String url, java.time.Duration connect, java.time.Duration read) {
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
-                HttpClient.newBuilder().connectTimeout(connect).build());
-        factory.setReadTimeout(read);
-        return RestClient.builder().baseUrl(url).requestFactory(factory).build();
     }
 
     private record Resp(int status, JsonNode body) {
@@ -118,6 +111,11 @@ public class OpenSearchRestEngine implements SearchEngine {
             throw new SearchEngineException("search engine rejected " + what + " (status " + r.status()
                     + (type.isEmpty() ? "" : ", " + type) + ")");
         }
+    }
+
+    @Override
+    public int breakerState() {
+        return breaker.isOpen() ? 1 : 0;
     }
 
     @Override

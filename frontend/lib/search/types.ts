@@ -56,6 +56,14 @@ export interface SearchItemDto {
   /** ready | pending | unavailable: whether the words inside the file are searchable. Null in basic mode. */
   bodyStatus: string | null
   highlights: SearchHighlights
+  /** Phase 2: the version the thumbnail belongs to (a new version has a new picture). */
+  versionNumber?: number | null
+  sizeBytes?: number | null
+  /** The existing thumbnail endpoint; null when the caller lacks docm.documents.view (show the file-type icon). */
+  thumbnailUrl?: string | null
+  /** Pinned for the caller (their own pin, or one whose audience names them). Decided by the server for this page only. */
+  pinned?: boolean
+  bookmarked?: boolean
 }
 
 export interface SearchNoticeDto {
