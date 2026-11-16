@@ -266,6 +266,10 @@ public final class PermissionCodes {
     public static final String DVC_SET_MAX_VERSIONS = "dvc.configure-version-retention-rules.set-max-versions";
     public static final String DVC_SET_VERSION_PERIOD = "dvc.configure-version-retention-rules.set-retention-period";
 
+    // Document Search & Retrieval - DSR (4.1), V10 row. Referenced by SearchController. The saved-search preset codes
+    // (dsr.manage-saved-search-presets.*) are added with the presets API, when a check first references them.
+    public static final String DSR_SEARCH_DOCUMENTS = "dsr.search-documents";
+
     // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own
     // preferences gate on identity, not a permission.

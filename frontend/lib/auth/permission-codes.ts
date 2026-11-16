@@ -214,6 +214,8 @@ export const PermissionCodes = {
   CRM_POLICY_DELETE: "crm.manage-retention-policies.delete",
   CRM_POLICY_VIEW: "crm.manage-retention-policies.view",
   CRM_VIEW_ARCHIVE: "crm.view-archive",
+  // Document Search & Retrieval (4.1): the /search page and API. Mirrors PermissionCodes.java.
+  DSR_SEARCH_DOCUMENTS: "dsr.search-documents",
   CRM_REVIEW_RETENTION: "crm.review-retention",
   CRM_CONFIGURE_RETENTION: "crm.configure-retention",
   // Turning online editing on/off for the organisation and choosing its mode (the Online Editing policy page).
