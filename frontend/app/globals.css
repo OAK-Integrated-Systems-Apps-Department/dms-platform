@@ -274,12 +274,13 @@ input[type="password"]::-ms-clear {
   display: none;
 }
 
-input[type="password"]::-webkit-credentials-auto-fill-button,
-input[type="password"]::-webkit-textfield-decoration-container {
+/* Only the autofill button is hidden. Do NOT restyle
+   ::-webkit-textfield-decoration-container: in WebKit/iOS it wraps the text
+   itself, and taking it out of flow made typing start at the far right. */
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  display: none !important;
   visibility: hidden;
   pointer-events: none;
-  position: absolute;
-  right: 0;
 }
 
 /* =========================================================================

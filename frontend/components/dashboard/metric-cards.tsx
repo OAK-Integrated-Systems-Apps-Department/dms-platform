@@ -249,6 +249,8 @@ function Change({
   before: number
   format: (value: number) => string
 }) {
+  // Nothing in either period: a "Same" badge next to a 0 is just noise.
+  if (now === 0 && before === 0) return null
   const diff = now - before
   const Icon = diff > 0 ? ArrowUpRight : diff < 0 ? ArrowDownRight : Minus
   const percent =
