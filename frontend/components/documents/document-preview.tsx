@@ -188,6 +188,13 @@ function maxWidth(): number {
   return Math.max(MIN_WIDTH, window.innerWidth - 40)
 }
 
+export type PreviewFallbackReason = "unsupported" | "failed" | "timeout" | "policy_blocked"
+
+function isTimeout(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status
+  return status === 408 || status === 504 || (error instanceof Error && /time(d)? ?out/i.test(error.message))
+}
+
 function clampWidth(width: number): number {
   return Math.round(Math.min(maxWidth(), Math.max(MIN_WIDTH, width)))
 }
@@ -237,6 +244,7 @@ export function DocumentPreview({
   onWatermark,
   watermarkDisabled,
   watermarkHint,
+  onFallback,
 }: {
   row: Pick<
     DocumentListItemDto,
@@ -272,6 +280,11 @@ export function DocumentPreview({
   watermarkDisabled?: boolean
   /** Why it's disabled. */
   watermarkHint?: string
+  /**
+   * Called once per opening when the panel falls back from showing the file: the type can't be shown ("unsupported"),
+   * rendering failed or timed out, or the organisation's policy blocks it. Optional; callers use it for telemetry.
+   */
+  onFallback?: (reason: PreviewFallbackReason) => void
 }) {
   const nativeRenderer = rendererFor(row.mimeType, row.fileName)
   // Pinned/external content comes as raw bytes only - the server can't convert or slice it here.
@@ -353,6 +366,24 @@ export function DocumentPreview({
     retry: false,
   })
   const url = file.data?.url
+
+  // Tell the caller (once per reason) when the panel could not show the file, so search can count preview fallbacks.
+  const fallbackReason: PreviewFallbackReason | null = blockedByPolicy
+    ? "policy_blocked"
+    : renderer === null || tooBigForText
+      ? "unsupported"
+      : file.isError
+        ? isTimeout(file.error)
+          ? "timeout"
+          : "failed"
+        : null
+  const reported = useRef<PreviewFallbackReason | null>(null)
+  useEffect(() => {
+    if (fallbackReason && reported.current !== fallbackReason) {
+      reported.current = fallbackReason
+      onFallback?.(fallbackReason)
+    }
+  }, [fallbackReason, onFallback])
 
   // Ctrl (or Cmd) + mouse wheel / trackpad pinch zooms the file, not the whole page.
   useEffect(() => {

@@ -742,6 +742,70 @@ dms:
       # Blank disables the callback endpoint.
       callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
 
+  # Document Search & Retrieval (DSR). PostgreSQL is the source of truth; the OpenSearch index is
+  # derived and can always be rebuilt. See docs/search-plan.md.
+  search:
+    enabled: ${SEARCH_ENABLED:true}
+    # HMAC key for pagination cursors. Blank = random per boot (cursors die on restart; fine in dev).
+    cursor-secret: ${SEARCH_CURSOR_SECRET:}
+    opensearch:
+      url: ${OPENSEARCH_URL:http://localhost:9200}
+      connect-timeout: PT2S
+      read-timeout: PT5S
+      # Production (security plugin on): basic auth and TLS. Values come from the environment (infra/secrets), never here.
+      username: ${OPENSEARCH_USERNAME:}
+      password: ${OPENSEARCH_PASSWORD:}
+      tls:
+        ca-cert-path: ${OPENSEARCH_TLS_CA_CERT:}
+        truststore-path: ${OPENSEARCH_TLS_TRUSTSTORE:}
+        truststore-password: ${OPENSEARCH_TLS_TRUSTSTORE_PASSWORD:}
+        verify-hostname: true
+        allow-insecure: false
+      bulk-timeout: PT60S
+    index:
+      prefix: ${SEARCH_INDEX_PREFIX:dms}
+      shards: ${SEARCH_INDEX_SHARDS:1}
+      replicas: ${SEARCH_INDEX_REPLICAS:0}
+      # Production only (needs shards > 2): spreads one large tenant over several shards.
+      # routing-partition-size: 2
+    indexer:
+      enabled: ${SEARCH_INDEXER_ENABLED:true}
+      poll-interval: PT1S
+      idle-poll: PT2S
+      batch-size: 50
+      lease: PT2M
+      max-attempts: 8
+      base-backoff: PT5S
+      max-backoff: PT15M
+      workers: 2
+    extraction:
+      max-file-bytes: 104857600
+      max-pages: 1000
+      max-chars: 2000000
+      timeout: PT60S
+    reconcile:
+      enabled: ${SEARCH_RECONCILE_ENABLED:true}
+      cron: "0 30 3 * * *"
+    presets:
+      # Saved search presets per person; a tenant admin can change it per organisation (saved_search_settings).
+      default-max: 50
+    admin:
+      reindex-min-interval: PT5M
+      reconcile-min-interval: PT5M
+      reconcile-lease: PT15M
+      telemetry-per-minute: 30
+    query:
+      default-page-size: 20
+      max-page-size: 50
+      overfetch-factor: 3
+      # Largest candidate window per round (ids only, cheap); rounds and candidates cap the over-fetch loop, time-budget stops it.
+      max-batch: 500
+      max-rounds: 6
+      max-candidates: 2000
+      time-budget: PT2.5S
+      breaker-failures: 5
+      breaker-open: PT30S
+
 management:
   endpoints:
     web:
@@ -763,7 +827,9 @@ management:
         # system state by hand - only the container probe moved.
         core:
           include: "*"
-          exclude: ocrJobToken
+          # openSearch: search is optional and falls back to title search when the engine is down,
+          # so a stopped OpenSearch must never fail the container probe or roll back a release.
+          exclude: ocrJobToken,openSearch
   health:
     # The mail indicator opens a live SMTP connection (and login) on every
     # /actuator/health call. An external relay being slow, down or rejecting
