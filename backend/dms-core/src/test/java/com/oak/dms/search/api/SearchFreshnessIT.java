@@ -87,8 +87,11 @@ class SearchFreshnessIT extends SearchApiSupport {
     @AfterEach
     void stopScheduler() throws InterruptedException {
         running.set(false);
-        scheduler.interrupt();
-        scheduler.join(5000);
+        // null when the test was skipped (no OpenSearch): startScheduler() stopped at the assumption before creating it
+        if (scheduler != null) {
+            scheduler.interrupt();
+            scheduler.join(5000);
+        }
         measured.forEach(line -> System.out.println("[search-freshness] " + line));
     }
 
