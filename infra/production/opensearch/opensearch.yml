@@ -1,0 +1,27 @@
+# OpenSearch node configuration for production (mounted read-only by docker-compose.opensearch.yml).
+# A TEMPLATE: the certificate files are yours (opensearch/certs/, gitignored). See docs/search-operations.md.
+cluster.name: oakdms-search
+network.host: 0.0.0.0
+node.name: oakdms-opensearch
+
+# TLS on the HTTP layer (clients: dms-core) and between nodes (needed as soon as a second node exists).
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: certs/node.pem
+plugins.security.ssl.http.pemkey_filepath: certs/node-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: certs/root-ca.pem
+plugins.security.ssl.transport.pemcert_filepath: certs/node.pem
+plugins.security.ssl.transport.pemkey_filepath: certs/node-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
+plugins.security.ssl.transport.enforce_hostname_verification: true
+
+# Only the security admin certificate may change the security configuration (securityadmin.sh).
+plugins.security.authcz.admin_dn:
+  - "CN=admin,OU=Oak DMS,O=Oak"
+plugins.security.nodes_dn:
+  - "CN=oakdms-opensearch,OU=Oak DMS,O=Oak"
+plugins.security.allow_default_init_securityindex: false
+plugins.security.restapi.roles_enabled: ["all_access"]
+
+# The audit log of the engine itself stays on its defaults; dms-core audits what matters at the application.
+# Never let a client create indices by wildcard or delete all indices at once.
+action.destructive_requires_name: true

@@ -178,6 +178,36 @@ export const AUDIT_ACTION_CATALOG: AuditActionCatalogEntry[] = [
     label: "Pin limit changed",
   },
   {
+    action: "SEARCH_REINDEX_REQUESTED",
+    module: "DSR",
+    label: "Search reindex requested",
+  },
+  {
+    action: "SEARCH_RECONCILE_REQUESTED",
+    module: "DSR",
+    label: "Search check requested",
+  },
+  {
+    action: "SEARCH_PRESET_CREATED",
+    module: "DSR",
+    label: "Search preset saved",
+  },
+  {
+    action: "SEARCH_PRESET_UPDATED",
+    module: "DSR",
+    label: "Search preset changed",
+  },
+  {
+    action: "SEARCH_PRESET_DELETED",
+    module: "DSR",
+    label: "Search preset deleted",
+  },
+  {
+    action: "SEARCH_PRESET_LIMIT_CHANGED",
+    module: "DSR",
+    label: "Search preset limit changed",
+  },
+  {
     action: "DOCUMENT_TYPE_CREATED",
     module: "MDTM",
     label: "Document type created",

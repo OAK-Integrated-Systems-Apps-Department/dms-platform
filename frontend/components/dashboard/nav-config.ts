@@ -24,6 +24,7 @@ import {
   ScanLine,
   ScanText,
   ScrollText,
+  Search,
   Server,
   Settings2,
   Share2,
@@ -57,9 +58,8 @@ import type { NavSection } from "./types"
  * group with no visible items is dropped, so non-admins never see
  * Administration at all.
  *
- * Search and Reports are not listed: neither has a page yet, and a link that
- * does nothing is worse than no link. Add them back with an `href` when the
- * pages exist.
+ * Reports is not listed: it has no page yet, and a link that does nothing is
+ * worse than no link. Add it back with an `href` when the page exists.
  */
 export const navSections: NavSection[] = [
   {
@@ -97,6 +97,13 @@ export const navSections: NavSection[] = [
   {
     label: "Documents",
     items: [
+      // Document Search & Retrieval (4.1): keywords, phrases, details and text inside documents, with filters.
+      {
+        label: "Search",
+        icon: Search,
+        href: "/search",
+        permission: PermissionCodes.DSR_SEARCH_DOCUMENTS,
+      },
       // Bulk Import (with Import Templates under it) is a tab inside My
       // Documents (DocumentsHub), on its own /documents/... path.
       {
@@ -402,6 +409,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.DPRM_RESTRICT_PRINT_DOWNLOAD,
               PermissionCodes.DPRM_TOGGLE_PREVIEW_WATERMARK,
             ],
+          },
+          // Search index (4.1): engine and index health, reindex, the reconcile check and the preset limit. Tenant administrators.
+          {
+            label: "Search Index",
+            icon: Search,
+            href: "/admin/search",
+            adminOnly: true,
           },
           // Records retention (6.1): the rules, the settings, and the documents waiting for a decision.
           {

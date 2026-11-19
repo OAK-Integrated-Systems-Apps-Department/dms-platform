@@ -91,6 +91,15 @@ public class DependencyHealthService {
         if (details.get("error") instanceof String error) {
             return error.length() > 180 ? error.substring(0, 180) + "…" : error;
         }
+        // The search engine's own two short, fixed words ("green", "disabled"): nothing configured or secret.
+        if ("openSearch".equals(name)) {
+            if (details.get("cluster") instanceof String cluster) {
+                return "Cluster " + cluster;
+            }
+            if (details.get("search") instanceof String search) {
+                return "Search " + search;
+            }
+        }
         return null;
     }
 
@@ -119,6 +128,7 @@ public class DependencyHealthService {
             case "ssl" -> "TLS certificates";
             case "livenessState" -> "Liveness";
             case "readinessState" -> "Readiness";
+            case "openSearch" -> "Search (OpenSearch)";
             default -> name;
         };
     }

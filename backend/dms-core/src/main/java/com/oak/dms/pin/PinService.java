@@ -377,6 +377,31 @@ public class PinService {
         return limit(TenantContext.getTenantId());
     }
 
+    /**
+     * Which of {@code documentIds} the caller sees as pinned: the pins they placed plus the ones whose audience names
+     * them (the same rule as {@link #list()}). One indexed query for one page of search results. No visibility check:
+     * the caller supplies ids that were already verified (search) and only learns about their own marks.
+     */
+    @Transactional(readOnly = true)
+    public Set<UUID> status(java.util.Collection<UUID> documentIds) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            return Set.of();
+        }
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("tenant", TenantContext.getTenantId())
+                .addValue("user", TenantContext.getUserId()).addValue("ids", new ArrayList<>(documentIds));
+        return new HashSet<>(jdbc.queryForList("""
+                select a.document_id from document_pin_assignments a
+                where a.tenant_id = :tenant and a.document_id in (:ids)
+                  and (a.pinned_by = :user
+                       or (a.audience_mode = 'ALL' and not exists (
+                              select 1 from document_pin_audience_members m
+                               where m.assignment_id = a.assignment_id and m.user_id = :user))
+                       or (a.audience_mode = 'USERS' and exists (
+                              select 1 from document_pin_audience_members m
+                               where m.assignment_id = a.assignment_id and m.user_id = :user)))
+                """, params, UUID.class));
+    }
+
     private int limit(UUID tenantId) {
         List<Integer> rows = jdbc.queryForList("select max_pins from pin_settings where tenant_id = :tenant",
                 new MapSqlParameterSource("tenant", tenantId), Integer.class);

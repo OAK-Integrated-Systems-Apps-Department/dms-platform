@@ -1,0 +1,190 @@
+{
+  "settings": {
+    "index": {
+      "refresh_interval": "1s"
+    },
+    "analysis": {
+      "char_filter": {
+        "dms_name_chars": {
+          "type": "mapping",
+          "mappings": [
+            "_ => \\u0020",
+            ". => \\u0020"
+          ]
+        }
+      },
+      "filter": {
+        "dms_light_english": {
+          "type": "stemmer",
+          "language": "light_english"
+        },
+        "dms_icu_folding": {
+          "type": "icu_folding",
+          "unicode_set_filter": "[^\\u0900-\\u0DFF\\u0E00-\\u0E7F]"
+        }
+      },
+      "analyzer": {
+        "dms_name": {
+          "type": "custom",
+          "char_filter": [
+            "dms_name_chars"
+          ],
+          "tokenizer": "icu_tokenizer",
+          "filter": [
+            "dms_icu_folding"
+          ]
+        },
+        "dms_text": {
+          "type": "custom",
+          "tokenizer": "icu_tokenizer",
+          "filter": [
+            "dms_icu_folding",
+            "dms_light_english"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "_routing": {
+      "required": true
+    },
+    "_source": {
+      "excludes": [
+        "body"
+      ]
+    },
+    "properties": {
+      "tenant_id": {
+        "type": "keyword"
+      },
+      "document_id": {
+        "type": "keyword"
+      },
+      "change_counter": {
+        "type": "long"
+      },
+      "generation": {
+        "type": "long"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "dms_name",
+        "index_prefixes": {
+          "min_chars": 2,
+          "max_chars": 5
+        },
+        "fields": {
+          "stem": {
+            "type": "text",
+            "analyzer": "dms_text"
+          },
+          "sort": {
+            "type": "icu_collation_keyword",
+            "language": "en"
+          }
+        }
+      },
+      "file_name": {
+        "type": "text",
+        "analyzer": "dms_name",
+        "index_prefixes": {
+          "min_chars": 2,
+          "max_chars": 5
+        }
+      },
+      "metadata_text": {
+        "type": "text",
+        "analyzer": "dms_text"
+      },
+      "body": {
+        "type": "text",
+        "analyzer": "dms_text",
+        "store": true,
+        "index_options": "offsets",
+        "position_increment_gap": 100
+      },
+      "document_type_id": {
+        "type": "keyword"
+      },
+      "document_type_name": {
+        "type": "keyword"
+      },
+      "owner_id": {
+        "type": "keyword"
+      },
+      "owner_department_id": {
+        "type": "keyword"
+      },
+      "folder_id": {
+        "type": "keyword"
+      },
+      "ancestor_folder_ids": {
+        "type": "keyword"
+      },
+      "lifecycle_state": {
+        "type": "keyword"
+      },
+      "mime_type": {
+        "type": "keyword"
+      },
+      "body_status": {
+        "type": "keyword"
+      },
+      "body_unavailable_reason": {
+        "type": "keyword"
+      },
+      "legal_hold": {
+        "type": "boolean"
+      },
+      "is_deleted": {
+        "type": "boolean"
+      },
+      "purged": {
+        "type": "boolean"
+      },
+      "is_template": {
+        "type": "boolean"
+      },
+      "created_at": {
+        "type": "date"
+      },
+      "updated_at": {
+        "type": "date"
+      },
+      "indexed_at": {
+        "type": "date"
+      },
+      "size_bytes": {
+        "type": "long"
+      },
+      "version_number": {
+        "type": "integer"
+      },
+      "metadata": {
+        "type": "nested",
+        "properties": {
+          "field_id": {
+            "type": "keyword"
+          },
+          "key": {
+            "type": "keyword"
+          },
+          "v_kw": {
+            "type": "keyword"
+          },
+          "v_num": {
+            "type": "double"
+          },
+          "v_date": {
+            "type": "date"
+          },
+          "v_bool": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

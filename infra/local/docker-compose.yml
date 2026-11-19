@@ -399,6 +399,44 @@ services:
     # ("unhealthy" while it is actually serving). dms-core asks the engine's discovery document itself, with a
     # short cache, and answers 503 EDITING_ENGINE_UNAVAILABLE when it cannot - that is the real health signal.
 
+  # Document Search & Retrieval engine (derived data: PostgreSQL stays the source of
+  # truth and the index can always be rebuilt from it). Single node, small heap.
+  # DISABLE_SECURITY_PLUGIN is for LOCAL DEVELOPMENT ONLY and is acceptable here because
+  # there is no `ports:` entry: the node is reachable solely from dms-core on the
+  # internal compose network. Production needs authentication, TLS, disk encryption and
+  # a private network before any real use (docs/search-plan.md, Phase 2 S15).
+  # dms-core deliberately does NOT depend_on this service: search degrades to the
+  # title search when it is down, it never blocks startup.
+  opensearch:
+    build:
+      context: ./opensearch
+      args:
+        OS_VERSION: "3.7.0"
+    image: dms-opensearch:3.7.0-icu
+    container_name: oakdms-opensearch
+    # Heap is 512m (OPENSEARCH_JAVA_OPTS); the rest is off-heap/Lucene page cache.
+    mem_limit: ${OPENSEARCH_MEM_LIMIT:-1536m}
+    environment:
+      discovery.type: single-node
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "false"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    expose:
+      - "9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
   dms-core:
     build:
       context: ../../backend
@@ -437,6 +475,8 @@ services:
       REDIS_HOST: redis
       # Office files are converted to PDF for the preview (DocumentRenditionService).
       PREVIEW_CONVERTER_URL: http://gotenberg:3000
+      # Search engine (DSR). Optional: the app starts and falls back to title search without it.
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: oak-dms
@@ -1085,6 +1125,7 @@ services:
         condition: service_healthy
 
 volumes:
+  opensearch_data:
   alertmanager_data:
   loki_data:
   promtail_positions:
