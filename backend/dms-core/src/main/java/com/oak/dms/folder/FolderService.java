@@ -34,7 +34,12 @@ import java.util.regex.Pattern;
  *   <li>a folder can't be moved into itself or anything below it;</li>
  *   <li>only an empty folder - no subfolders, no documents, no upload still
  *       being scanned into it - can be deleted, so nothing is ever orphaned
- *       (DSC-NFR-006).</li>
+ *       (DSC-NFR-006);</li>
+ *   <li>those tree rules (no cycle, at most {@link #MAX_DEPTH} deep, no child under a deleted parent) are checked and
+ *       applied one structure change at a time per tenant: {@link #create}, {@link #move} and {@link #delete} take a
+ *       transaction-scoped advisory lock first (DOC-14, see {@link #lockTree}). The checks read the tree and the
+ *       writes follow in a READ COMMITTED transaction, so without that lock two concurrent changes each pass their
+ *       checks against the old tree and together break a rule.</li>
  * </ul>
  * Folder access (V53, {@link FolderAccessService}) applies throughout: the
  * list holds only folders the caller can see, a hidden folder answers 404,
@@ -138,6 +143,7 @@ public class FolderService {
     public FolderResponse create(String name, UUID parentFolderId) {
         UUID tenantId = TenantContext.getTenantId();
         String clean = validName(name);
+        lockTree(tenantId); // before the parent is read: it must still be live when the folder is inserted
         if (parentFolderId != null) {
             access.require(parentFolderId, FolderAccessLevel.edit);
             if (treePath(parentFolderId).size() >= MAX_DEPTH) {
@@ -173,6 +179,7 @@ public class FolderService {
     @Transactional
     public FolderResponse move(UUID folderId, UUID newParentId) {
         UUID tenantId = TenantContext.getTenantId();
+        lockTree(tenantId); // before anything is read: the cycle and depth checks must see every earlier move
         FolderAccessView view = access.forCaller();
         access.require(view, folderId, FolderAccessLevel.manage);
         Folder folder = own(folderId, tenantId);
@@ -199,6 +206,7 @@ public class FolderService {
     @Transactional
     public void delete(UUID folderId) {
         UUID tenantId = TenantContext.getTenantId();
+        lockTree(tenantId); // before the "no subfolders" check: a folder created meanwhile must be seen or must wait
         access.require(folderId, FolderAccessLevel.manage);
         Folder folder = own(folderId, tenantId);
         if (repository.existsByTenantIdAndParentFolderIdAndDeletedFalse(tenantId, folderId)) {
@@ -224,6 +232,33 @@ public class FolderService {
         touch(folder);
         repository.save(folder);
         audit(AuditActionCatalog.FOLDER_DELETED, folder, null);
+    }
+
+    // ------------------------------------------------------------ hierarchy lock (DOC-14)
+
+    /** Namespace of the advisory-lock key: nothing else in the application locks a key that starts with this. */
+    static final String LOCK_NAMESPACE = "folder-tree:";
+
+    /** The advisory-lock key of a tenant's folder tree: the namespace and the tenant id, as text. */
+    static String lockKey(UUID tenantId) {
+        return LOCK_NAMESPACE + tenantId;
+    }
+
+    /**
+     * Serialises structure changes of one tenant's folder tree. Must be the <b>first</b> thing a structure change does
+     * in its transaction - before it reads any folder - and the lock is held until that transaction commits or rolls
+     * back, so a change that waits here validates against the committed result of the one before it. Taken in the
+     * caller's transaction (the {@code @Transactional} method), never in a nested or separate one, which would release
+     * it before the writes. Tenants lock different keys, so they never wait for each other; the folder operations
+     * hold it for a few queries and no storage, network or scan I/O.
+     * <p>
+     * The key is hashed by PostgreSQL itself ({@code hashtextextended}, 64 bit), so every application instance
+     * sharing the database derives the same lock. Two tenants whose keys collide would merely share the lock (an
+     * unnecessary wait, never a missed one); a collision with another advisory lock of the application would need the
+     * same 64-bit value and is not realistic.
+     */
+    private void lockTree(UUID tenantId) {
+        repository.lockHierarchy(lockKey(tenantId));
     }
 
     // ------------------------------------------------------------ helpers

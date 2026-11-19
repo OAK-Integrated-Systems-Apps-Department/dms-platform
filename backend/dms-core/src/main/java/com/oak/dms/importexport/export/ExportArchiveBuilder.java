@@ -236,15 +236,19 @@ public class ExportArchiveBuilder {
         } catch (ApiException e) {
             return "File not included: " + e.getMessage();
         }
-        zip.putNextEntry(new ZipEntry(entryName));
+        // DOC-18: the stream is owned from here, so it is closed whether the entry cannot be created (a write error,
+        // an over-long name) or the copy fails; closeEntry runs only for an entry that was really started.
         try (InputStream content = downloaded.content()) {
-            if (watermark) {
-                zip.write(watermarked(content, document, version, downloaded));
-            } else {
-                content.transferTo(zip);
+            zip.putNextEntry(new ZipEntry(entryName));
+            try {
+                if (watermark) {
+                    zip.write(watermarked(content, document, version, downloaded));
+                } else {
+                    content.transferTo(zip);
+                }
+            } finally {
+                zip.closeEntry();
             }
-        } finally {
-            zip.closeEntry();
         }
         return null;
     }

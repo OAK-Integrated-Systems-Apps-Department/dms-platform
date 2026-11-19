@@ -2,6 +2,7 @@ package com.oak.dms.watermark.controller;
 
 import com.oak.dms.common.dto.ErrorResponse;
 import com.oak.dms.common.dto.PageResponse;
+import com.oak.dms.document.ContentDispositionHeader;
 import com.oak.dms.watermark.dto.WatermarkJobResponse;
 import com.oak.dms.watermark.dto.WatermarkPreviewRequest;
 import com.oak.dms.watermark.dto.WatermarkRequest;
@@ -19,7 +20,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -185,8 +185,8 @@ public class WatermarkController {
                         ? MediaType.APPLICATION_OCTET_STREAM_VALUE : result.contentType())
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(result.sizeBytes()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        // RFC 5987 encoding, so a non-ASCII title survives.
-                        ContentDisposition.attachment().filename(result.filename()).build().toString())
+                        // ASCII fallback plus RFC 5987 filename*, so a non-ASCII title survives (DOC-15).
+                        ContentDispositionHeader.attachment(result.filename()))
                 // The copy carries somebody's name and expires. A cached one
                 // would outlive both the expiry and the access check.
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")

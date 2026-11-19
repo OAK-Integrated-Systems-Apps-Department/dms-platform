@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server"
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookie-names"
+import { buildUpstreamHeaders } from "@/lib/monitoring/panel-proxy-headers"
 
 /**
  * Serves Grafana's panels under a path of our own, to callers this app has
@@ -73,27 +74,6 @@ const PANEL_CSS = `<style id="dms-panel">
 }
 </style>`
 
-/**
- * Hop-by-hop headers belong to one connection and must not be forwarded;
- * `host` has to be dropped too or Grafana builds its redirects from ours.
- */
-const SKIP_REQUEST_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "transfer-encoding",
-  "upgrade",
-  "proxy-authorization",
-  "proxy-authenticate",
-  "te",
-  "trailer",
-  // Never let a caller supply the header Grafana trusts. Without this, the
-  // whole scheme is a login form with the password printed on it.
-  "x-webauth-user",
-  "x-webauth-name",
-  "x-webauth-email",
-])
-
 const SKIP_RESPONSE_HEADERS = new Set([
   "connection",
   "keep-alive",
@@ -101,6 +81,10 @@ const SKIP_RESPONSE_HEADERS = new Set([
   "content-encoding",
   "content-length",
   "upgrade",
+  // FE-M2: this route is served from the DMS origin, so a cookie Grafana sets here would land in the DMS cookie jar -
+  // and a `Set-Cookie: dms_access_token=...; Path=/` would replace the caller's DMS sign-in. No cookie is ever sent to
+  // Grafana (see lib/monitoring/panel-proxy-headers.ts), so one it sets could not be sent back and would be useless.
+  "set-cookie",
 ])
 
 /** Asks dms-core who this is. Null means "not allowed" - the caller is never told why. */
@@ -143,11 +127,10 @@ async function handle(request: NextRequest): Promise<Response> {
   // not exist.
   const target = `${GRAFANA_ORIGIN}${incoming.pathname}${incoming.search}`
 
-  const headers = new Headers()
-  request.headers.forEach((value, key) => {
-    if (!SKIP_REQUEST_HEADERS.has(key.toLowerCase())) headers.set(key, value)
-  })
-  headers.set("X-WEBAUTH-USER", user)
+  // An allow-list (FE-M2): Grafana gets the ordinary headers it needs and the caller's name from dms-core - never the
+  // DMS sign-in cookies, never an Authorization header, never X-Forwarded-* or anything else the browser or the front
+  // proxy attached. See lib/monitoring/panel-proxy-headers.ts for what is let through and why.
+  const headers = buildUpstreamHeaders(request.headers, user)
 
   let response: Response
   try {

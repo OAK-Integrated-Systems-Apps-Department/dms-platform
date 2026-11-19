@@ -38,6 +38,12 @@ import java.util.UUID;
  * already verified, so this doesn't add a write to every request forever,
  * just the first one after setup completes.
  *
+ * SEC-11: a signed-in user whose own account is not {@code active} (status {@code locked} or {@code disabled}) is refused
+ * with 403 {@value #ACCOUNT_INACTIVE_CODE} on every request except signing out, the same way a suspended organisation's
+ * users are. This is what makes a status change take effect at once: the JWT is validated offline, so a token issued
+ * before the change stays valid until it expires, and Keycloak disabling the account only stops new logins and
+ * refreshes. A soft-deleted (deactivated) user is not found here at all and keeps getting no context, exactly as before.
+ * <p>
  * Requests whose JWT does not yet correspond to a provisioned local user
  * (e.g. the very first call after a Keycloak signup, before the
  * self-provisioning endpoint has run) proceed with no context bound;
@@ -63,6 +69,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
     /** Still reachable for a closed organisation's users: signing out clears their cookies. */
     private static final java.util.Set<String> OPEN_PATHS = java.util.Set.of("/api/v1/auth/logout");
 
+    /** The {@code code} of the 403 a locked or disabled user's request gets. */
+    public static final String ACCOUNT_INACTIVE_CODE = "ACCOUNT_INACTIVE";
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -80,12 +89,25 @@ public class TenantContextFilter extends OncePerRequestFilter {
                             && !OPEN_PATHS.contains(request.getRequestURI())) {
                         log.info("Refused {} {} for user {}: organisation {} is not active", request.getMethod(),
                                 request.getRequestURI(), user.getUserId(), user.getTenantId());
-                        refuse(request, response, inactive.get());
+                        refuse(request, response, OrganisationStatusGuard.CODE, inactive.get());
+                        return;
+                    }
+                    // SEC-11: only an active account may use the API - checked before the context is bound or the user is
+                    // marked verified, so a locked or disabled user changes nothing. No platform-admin exception: this is
+                    // the person's own account, not the organisation's.
+                    if (user.getStatus() != com.oak.dms.user.User.UserStatus.active
+                            && !OPEN_PATHS.contains(request.getRequestURI())) {
+                        log.info("Refused {} {} for user {}: account status is {}", request.getMethod(),
+                                request.getRequestURI(), user.getUserId(), user.getStatus());
+                        refuse(request, response, ACCOUNT_INACTIVE_CODE, inactiveAccountMessage(user.getStatus()));
                         return;
                     }
                     TenantContext.set(user.getTenantId(), user.getUserId(), user.getDisplayName(),
                             user.getKeycloakId());
-                    if (!user.isVerified()) {
+                    // Only an ACTIVE account is marked verified. Signing out is the one request a locked or disabled user may
+                    // still make, and it must not write to their record (SEC-11): the context is bound above so the logout is
+                    // still audited as theirs, but completing account setup is not something an inactive account does.
+                    if (!user.isVerified() && user.getStatus() == com.oak.dms.user.User.UserStatus.active) {
                         userService.markVerified(user.getUserId());
                     }
                 }
@@ -101,7 +123,13 @@ public class TenantContextFilter extends OncePerRequestFilter {
                 .anyMatch(a -> "ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
     }
 
-    private void refuse(HttpServletRequest request, HttpServletResponse response, String message)
+    private static String inactiveAccountMessage(com.oak.dms.user.User.UserStatus status) {
+        return status == com.oak.dms.user.User.UserStatus.locked
+                ? "Your account is locked. Contact your administrator."
+                : "Your account is disabled. Contact your administrator.";
+    }
+
+    private void refuse(HttpServletRequest request, HttpServletResponse response, String code, String message)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json");
@@ -110,7 +138,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         objectMapper.copy().findAndRegisterModules()
                 .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .writeValue(response.getOutputStream(), com.oak.dms.common.dto.ErrorResponse.of(
-                HttpServletResponse.SC_FORBIDDEN, "Forbidden", OrganisationStatusGuard.CODE, message,
+                HttpServletResponse.SC_FORBIDDEN, "Forbidden", code, message,
                 request.getRequestURI()));
     }
 

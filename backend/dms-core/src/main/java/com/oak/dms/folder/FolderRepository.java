@@ -31,18 +31,35 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
 
     boolean existsByTenantIdAndParentFolderIdAndDeletedFalse(UUID tenantId, UUID parentFolderId);
 
-    /** The folder and every folder below it (live ones), for move-cycle checks and subtree exports. */
+    /**
+     * The folder and every folder below it (live ones), for move-cycle checks and subtree exports.
+     * <p>
+     * {@code UNION} (not {@code UNION ALL}) on purpose (DOC-14): the recursive step carries only the folder id, so a row
+     * already in the result is discarded instead of being expanded again. On a valid tree that changes nothing; if the
+     * data ever holds a cycle (the move race that DOC-14 closed could create one) the recursion still ends, with every
+     * folder of the cycle listed once. Do not add a depth or path column here without also adding a cycle guard.
+     */
     @Query(value = """
             with recursive tree as (
                 select folder_id from folders
                 where folder_id = :folderId and tenant_id = :tenantId and not is_deleted
-                union all
+                union
                 select f.folder_id from folders f join tree t on f.parent_folder_id = t.folder_id
                 where f.tenant_id = :tenantId and not f.is_deleted
             )
             select folder_id from tree
             """, nativeQuery = true)
     List<UUID> findSubtreeIds(@Param("tenantId") UUID tenantId, @Param("folderId") UUID folderId);
+
+    /**
+     * Takes PostgreSQL's transaction-scoped advisory lock for {@code key} (DOC-14), waiting if another transaction
+     * holds it, and returns 1. The lock belongs to the <b>current transaction's connection</b> and is released by the
+     * commit or rollback - there is nothing to unlock. It must therefore be called inside the transaction that then
+     * validates and writes (see {@code FolderService#lockTree}); called outside one it would be released at once.
+     */
+    @Query(value = "select count(*) from (select pg_advisory_xact_lock(hashtextextended(:key, 0)) as locked) l",
+            nativeQuery = true)
+    long lockHierarchy(@Param("key") String key);
 
     /** Live documents filed in the folder. */
     @Query(value = "select count(*) from documents where tenant_id = :tenantId and folder_id = :folderId "

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation"
 import { ShieldOff } from "lucide-react"
 import { BrandLogo } from "@/components/brand/brand-logo"
 
-import { APP_NAME, ROUTES } from "@/lib/app-config"
+import { APP_NAME } from "@/lib/app-config"
+import { SIGN_IN_AGAIN_PATH } from "@/lib/auth/session-recovery"
 
 /**
  * Distinct from /login-timeout: that one is "your attempt to log in took
@@ -30,7 +31,8 @@ export default function SessionExpiredPage() {
   const router = useRouter()
 
   function handleSignInAgain() {
-    router.push(ROUTES.LOGIN)
+    // Not plain /login: proxy.ts sends anyone who still holds an access cookie from /login to "/" (FE-M3-B).
+    router.push(SIGN_IN_AGAIN_PATH)
   }
 
   return (

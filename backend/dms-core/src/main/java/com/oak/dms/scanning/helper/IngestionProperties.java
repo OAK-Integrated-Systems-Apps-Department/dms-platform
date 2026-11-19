@@ -29,13 +29,17 @@ public class IngestionProperties {
             "png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff", "zip"));
 
     /**
-     * A ZIP may hold at most this many entries (ZipArchiveCheck). No limit by default: one with more than
-     * clamd opens of an archive (its MaxFiles) is scanned file by file instead (ClamAvScanAdapter).
+     * A ZIP may hold at most this many entries in total, counting those of any ZIPs nested inside it
+     * (ZipArchiveCheck) - 10,000, clamd's MaxFiles. This limits what is <em>inside</em> a ZIP, never the size of
+     * the file uploaded, and it applies to ZIPs only.
      */
-    private int zipMaxEntries = Integer.MAX_VALUE;
+    private int zipMaxEntries = 10_000;
 
-    /** ...and come to at most this much unpacked. No limit by default, for the same reason (clamd's MaxScanSize). */
-    private long zipMaxUncompressedBytes = Long.MAX_VALUE;
+    /**
+     * ...and come to at most this much unpacked in total, nested archives included - 4000 MiB, clamd's
+     * MaxScanSize. Like the entry limit it concerns a ZIP's contents, not the uploaded file's size.
+     */
+    private long zipMaxUncompressedBytes = 4_194_304_000L;
 
     /**
      * File extensions refused inside a ZIP (programs and scripts), even when the scan finds no malware.

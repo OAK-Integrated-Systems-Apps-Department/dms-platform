@@ -6,6 +6,7 @@ import com.oak.dms.security.auth.ImpersonationContextFilter;
 import com.oak.dms.security.auth.JwtAuthConverter;
 import com.oak.dms.security.auth.TenantContextFilter;
 import com.oak.dms.security.rbac.controller.AuditingAccessDeniedHandler;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -48,6 +52,9 @@ public class SecurityConfig {
     private final AuditRequestContextFilter auditRequestContextFilter;
     private final CookieBearerTokenResolver cookieBearerTokenResolver;
     private final AuditingAccessDeniedHandler auditingAccessDeniedHandler;
+
+    @Value("${app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
 
     /**
      * Comma-separated allow-list, e.g. "https://dms.example.com,https://admin.dms.example.com".
@@ -109,7 +116,12 @@ public class SecurityConfig {
             // login. WopiController refuses anything without a valid signed, unexpired token for THAT
             // document, and re-checks the document's live state on every call. Like /internal/v1/ocr above,
             // it must never be proxied by nginx - see docs/checkout-design.md.
-            "/internal/v1/wopi/**"
+            "/internal/v1/wopi/**",
+            // 1.5 external sharing: a share link's recipient and a guest have no Keycloak login. Every route
+            // under here authenticates itself - a link token (+ password, + a signed 30-minute access token) or
+            // a guest's own signed token - and re-checks the link / grant against the database on every call
+            // (PublicShareService, PortalService). CookieBearerTokenResolver ignores any session cookie here.
+            "/api/v1/public/**"
     };
 
     @Bean
@@ -124,6 +136,18 @@ public class SecurityConfig {
                 // relaxed to "None", a real CSRF token scheme must be
                 // added here at the same time.
                 .csrf(csrf -> csrf.disable())
+                // Spring's default "X-Frame-Options: DENY" also stops OUR OWN web app framing a shared PDF in its
+                // viewer. So: DENY everywhere except the external-sharing content routes, which instead say who
+                // may frame them - this app and nothing else (CSP frame-ancestors).
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.disable())
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                request -> !isSharedContent(request),
+                                new XFrameOptionsHeaderWriter(XFrameOptionsHeaderWriter.XFrameOptionsMode.DENY)))
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                SecurityConfig::isSharedContent,
+                                new StaticHeadersWriter("Content-Security-Policy",
+                                        "frame-ancestors 'self' " + frontendOrigin()))))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
@@ -166,6 +190,22 @@ public class SecurityConfig {
                 .addFilterAfter(auditRequestContextFilter, ImpersonationContextFilter.class);
 
         return http.build();
+    }
+
+    /** A share-link or portal file response: {@code /api/v1/public/share/{token}/content} or {@code /portal/content}. */
+    private static boolean isSharedContent(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith("/api/v1/public/") && uri.endsWith("/content");
+    }
+
+    /** scheme://host[:port] of the web app, from app.frontend-base-url. */
+    private String frontendOrigin() {
+        try {
+            java.net.URI uri = java.net.URI.create(frontendBaseUrl);
+            return uri.getScheme() + "://" + uri.getAuthority();
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     @Bean

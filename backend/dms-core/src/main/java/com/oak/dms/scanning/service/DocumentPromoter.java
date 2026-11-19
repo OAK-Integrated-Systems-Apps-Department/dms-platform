@@ -33,6 +33,12 @@ public interface DocumentPromoter {
 
     Optional<UUID> findDocumentIdForVersion(UUID tenantId, UUID versionId);
 
+    /**
+     * What {@link #prepare} decided before the file is copied. {@code versionNumber} is a <b>hint</b>, used only for the
+     * {@code v<N>} folder in {@code objectKey}: for an existing document the real number is assigned by
+     * {@link #persist} under the document's row lock (DOC-08), so it can be higher. Nothing reads the number back out of
+     * an object key - the stored key is opaque.
+     */
     record PromotionPlan(
             UUID documentId,
             UUID versionId,

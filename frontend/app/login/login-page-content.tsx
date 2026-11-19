@@ -32,6 +32,7 @@ import {
 import { APP_NAME } from "@/lib/app-config"
 import { API_BASE_URL } from "@/lib/api-config"
 import { apiFetch, apiFetchJson } from "@/lib/api-fetch"
+import { safeReturnPath } from "@/lib/auth/safe-return-path"
 
 interface LoginResponse {
   ok: boolean
@@ -140,6 +141,11 @@ export function LoginPageContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const organisationInactive = searchParams.get("reason") === "organisation-inactive"
+  // Where proxy.ts was taking this person when it sent them here (/login?from=<path>). The value comes from the URL,
+  // so it is checked: only a path of this app is used, anything else - another site, a sign-in page - is "/".
+  // It is read from the URL on every render and the URL does not change between the password and the one-time-code
+  // step (the step is state, not a navigation), so it is still there when sign-in completes.
+  const returnPath = safeReturnPath(searchParams.get("from"))
   useEffect(() => {
     if (organisationInactive) {
       toast.error("You were signed out because your organisation's account is suspended or closed. Contact your administrator.", {
@@ -201,7 +207,7 @@ export function LoginPageContent() {
         // Next's server-component cache, not this one.
         queryClient.clear()
         toast.success("Signed in successfully.")
-        router.push("/")
+        router.push(returnPath)
         router.refresh()
         return
       }

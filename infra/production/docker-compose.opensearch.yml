@@ -1,0 +1,64 @@
+# Search engine (OpenSearch) for the production stack: AN OVERRIDE FILE, not part of the stack until you opt in.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.opensearch.yml --profile opensearch up -d
+#
+# (the `opensearch` profile is what starts the engine; add it to COMPOSE_PROFILES in .env to make it permanent).
+# Without this file dms-core runs exactly as before and answers every search with the title search (mode "basic").
+#
+# Controls required before production use (docs/search-security-signoff.md):
+#   - authentication ON (the security plugin) and TLS on the HTTP layer: certificates from opensearch/certs/ (never committed)
+#   - a PRIVATE network: no `ports:` here, the engine is reachable only from dms-core on the compose network
+#   - disk encryption: put the opensearch_data volume on an encrypted device (LUKS / encrypted cloud disk) - see docs/search-operations.md
+#   - resource limits (below) and at least one replica once a second node exists (see "Shards and replicas" in the operations guide)
+#   - the dms-core credential is a LOW-PRIVILEGE user (index patterns dms-*), never `admin`; its password is OPENSEARCH_PASSWORD,
+#     a secret listed in secret-keys.txt (OpenBao / the rendered secrets file), never a literal here.
+#
+# Verified here: the client side (TLS with a private CA, host name check, basic auth) against a disposable secured node
+# (OpenSearchSecuredIT). NOT verified here: this file against a real production host - walk through the checklist first.
+
+services:
+  opensearch:
+    image: ${OPENSEARCH_IMAGE:-dms-opensearch:3.7.0-icu}   # the custom image with analysis-icu (infra/local/opensearch/Dockerfile); push it to your registry
+    container_name: oakdms-opensearch
+    profiles: [opensearch]
+    restart: unless-stopped
+    # Half the limit is the JVM heap; the rest is Lucene's page cache. 2 GiB is the floor for ~1 million documents;
+    # see "Sizing" in docs/search-operations.md (measured: about 1 KB of index per document).
+    mem_limit: ${OPENSEARCH_MEM_LIMIT:-4g}
+    cpus: ${OPENSEARCH_CPUS:-2}
+    environment:
+      discovery.type: single-node          # a single node is YELLOW (no place for replicas) and not highly available: see the guide
+      bootstrap.memory_lock: "false"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
+      # Security stays ON: do NOT set DISABLE_SECURITY_PLUGIN. The demo installer is off; certificates and users are ours.
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+      - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - ./opensearch/certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/security:/usr/share/opensearch/config/opensearch-security:ro
+    healthcheck:
+      # HTTPS with the service user: the password comes from the environment, never an argument on disk.
+      test: ["CMD-SHELL", "curl -fs --cacert /usr/share/opensearch/config/certs/root-ca.pem -u \"$$OPENSEARCH_HEALTH_USER:$$OPENSEARCH_HEALTH_PASSWORD\" 'https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    # No `ports:` and no `expose` to the host: only dms-core, on the default network, can reach it.
+
+  dms-core:
+    # No depends_on: search degrades to the title search when the engine is down, it never blocks startup.
+    environment:
+      OPENSEARCH_URL: https://opensearch:9200
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:-dms-search}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:?OPENSEARCH_PASSWORD is not set - it is a secret, see secret-keys.txt}
+      OPENSEARCH_TLS_CA_CERT: /etc/oakdms/opensearch/root-ca.pem
+    volumes:
+      - ./opensearch/certs/root-ca.pem:/etc/oakdms/opensearch/root-ca.pem:ro
+
+volumes:
+  opensearch_data:

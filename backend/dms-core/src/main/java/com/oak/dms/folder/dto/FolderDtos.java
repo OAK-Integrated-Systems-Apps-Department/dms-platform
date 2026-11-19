@@ -56,9 +56,24 @@ public final class FolderDtos {
                                             String level) {
     }
 
-    /** @param mode inherit, everyone or restricted; entries are kept only for restricted */
+    /**
+     * @param mode    inherit, everyone or restricted; entries are kept only for restricted
+     * @param emailPeople whether to email the people newly given access; null means yes (the in-app
+     *                    notification is always created)
+     * @param message     optional note from the sharer, shown in the notification and the email
+     */
     public record UpdateFolderAccessRequest(@NotBlank String mode,
-                                            @Size(max = 200) List<@Valid FolderAccessEntryRequest> entries) {
+                                            @Size(max = 200) List<@Valid FolderAccessEntryRequest> entries,
+                                            Boolean emailPeople,
+                                            @Size(max = 500) String message) {
+
+        public UpdateFolderAccessRequest(String mode, List<FolderAccessEntryRequest> entries) {
+            this(mode, entries, null, null);
+        }
+
+        public boolean notifyByEmail() {
+            return emailPeople == null || emailPeople;
+        }
     }
 
     /** @param level view, edit or manage */

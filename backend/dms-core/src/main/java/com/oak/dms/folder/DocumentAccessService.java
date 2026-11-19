@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -282,17 +283,22 @@ public class DocumentAccessService {
                 .createdBy(TenantContext.getUserId())
                 .build()).toList());
 
+        // Whoever is newly on the list is told the document was shared with them (3.2, N10); the audit entry
+        // records that, and whether the sharer chose to email them and add a message.
+        Optional<AccessGrantedEvent> granted = AccessGrantedEvent.of("document", documentId, document.getTitle(),
+                before, wanted.values(), request.notifyByEmail(), request.message());
+        Map<String, Object> current = AccessPrincipals.snapshot(mode, wanted.values());
+        granted.ifPresent(e -> current.put("sharedNotification",
+                Map.of("emailed", e.emailPeople(), "messageIncluded", e.message() != null)));
         auditService.event(AuditActionCatalog.DOCUMENT_ACCESS_CHANGED)
                 .objectType(AuditObjectTypes.DOCUMENT)
                 .objectId(documentId)
                 .resourceName(document.getTitle())
                 .outcome(AuditOutcome.SUCCESS)
                 .previousValue(previous)
-                .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
+                .newValue(current)
                 .log();
-        // Tell whoever is newly on the list that the document was shared with them (3.2, N10).
-        AccessGrantedEvent.of("document", documentId, document.getTitle(), before, wanted.values())
-                .ifPresent(events::publishEvent);
+        granted.ifPresent(events::publishEvent);
         return getAccess(documentId);
     }
 

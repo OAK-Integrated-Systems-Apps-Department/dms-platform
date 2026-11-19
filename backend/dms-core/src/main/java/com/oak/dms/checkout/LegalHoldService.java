@@ -32,6 +32,9 @@ public class LegalHoldService {
     public void place(UUID documentId, String reason) {
         UUID tenantId = TenantContext.getTenantId();
         Document document = find(documentId, tenantId);
+        if (document.getPurgedAt() != null) {
+            throw new ResourceNotFoundException("Document", documentId); // permanently deleted (DOC-09)
+        }
         if (documentRepository.placeLegalHold(documentId, tenantId, TenantContext.getUserId(),
                 OffsetDateTime.now(), reason) == 0) {
             throw CheckoutException.conflict("DOCUMENT_ALREADY_ON_LEGAL_HOLD",

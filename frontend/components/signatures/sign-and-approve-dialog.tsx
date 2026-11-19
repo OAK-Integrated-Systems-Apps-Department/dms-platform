@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { Eye, EyeOff, Loader2, PenLine } from "lucide-react"
 import { toast } from "sonner"
 
@@ -98,7 +98,7 @@ export function SignAndApproveDialog({
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     setValue,
     trigger,
     formState: { errors, isSubmitting },
@@ -114,11 +114,12 @@ export function SignAndApproveDialog({
       visualUploadedImageBase64: null,
     },
   })
-  const consent = watch("consent")
-  const visualKind = watch("visualKind")
-  const visualText = watch("visualText")
-  const visualDrawnImageBase64 = watch("visualDrawnImageBase64")
-  const visualUploadedImageBase64 = watch("visualUploadedImageBase64")
+  // useWatch by name, as in watermark-dialog: a bare `watch()` returns a value the React Compiler cannot memoize and so
+  // opts the whole component out of compilation. Same five values, same re-renders on every change.
+  const [consent, visualKind, visualText, visualDrawnImageBase64, visualUploadedImageBase64] = useWatch({
+    control,
+    name: ["consent", "visualKind", "visualText", "visualDrawnImageBase64", "visualUploadedImageBase64"],
+  })
 
   // Pre-fills from the signer's saved visual signature the first time it loads - still editable
   // afterward, and never overwrites something they've already started typing/drawing/uploading in

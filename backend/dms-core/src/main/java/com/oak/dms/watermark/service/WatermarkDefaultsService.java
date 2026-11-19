@@ -206,8 +206,33 @@ public class WatermarkDefaultsService {
         }
     }
 
-    private Optional<byte[]> tryApply(byte[] original, VersionDetails version,
-                                       Predicate<TenantWatermarkSettings> enabled) {
+    /**
+     * Whether the plain download of this version would be watermarked - every condition
+     * {@link #applyIfConfigured} checks before it draws anything: fonts available, the tenant's download
+     * watermark on with a template named, a supported type, the version within its format's size cap
+     * ({@code version.sizeBytes()}, the stored record, so no bytes need reading to know), and that template
+     * still usable. Lets {@code DocumentServiceImpl} stream the file straight through - never reading it
+     * into memory - in the usual case where the answer is no. Never throws: if it cannot tell, the answer is
+     * no, the same "serve the original" {@link #applyIfConfigured} falls back to.
+     */
+    @Transactional(readOnly = true)
+    public boolean isDownloadWatermarkApplicable(VersionDetails version) {
+        try {
+            return eligibleTemplate(version, TenantWatermarkSettings::isDownloadWatermarkEnabled).isPresent();
+        } catch (RuntimeException e) {
+            log.warn("Could not tell whether the default download watermark applies to document {} - "
+                    + "serving the original", version.documentId(), e);
+            return false;
+        }
+    }
+
+    /**
+     * The one definition of "this file gets the tenant's default watermark": the template to draw, or empty
+     * when any condition fails. Shared by {@link #tryApply} and {@link #isDownloadWatermarkApplicable} so the
+     * two can never disagree.
+     */
+    private Optional<WatermarkTemplate> eligibleTemplate(VersionDetails version,
+                                                          Predicate<TenantWatermarkSettings> enabled) {
         if (!availability.isAvailable()) {
             return Optional.empty();
         }
@@ -231,6 +256,15 @@ public class WatermarkDefaultsService {
         if (template == null) {
             log.info("Tenant {}'s default download-watermark template is missing or retired - "
                     + "serving the original", TenantContext.getTenantId());
+            return Optional.empty();
+        }
+        return Optional.of(template);
+    }
+
+    private Optional<byte[]> tryApply(byte[] original, VersionDetails version,
+                                       Predicate<TenantWatermarkSettings> enabled) {
+        WatermarkTemplate template = eligibleTemplate(version, enabled).orElse(null);
+        if (template == null) {
             return Optional.empty();
         }
 

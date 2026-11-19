@@ -54,6 +54,9 @@ infra/production/dms-core.env
 infra/production/.deploy-history
 infra/production/.deploy.lock
 infra/production/backups/
+# OpenSearch certificates and security-plugin users (templates and README are tracked; see infra/production/opensearch/README.md)
+infra/production/opensearch/certs/
+infra/production/opensearch/security/
 
 # Development encryption key backup (infra/local) - never commit keys.
 .dms-dev-keys/

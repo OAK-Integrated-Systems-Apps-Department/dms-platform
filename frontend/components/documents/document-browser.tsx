@@ -26,6 +26,7 @@ import {
   Send,
   ScanLine,
   ShieldCheck,
+  Share2,
   Trash2,
   UserRoundCog,
   Eye,
@@ -64,6 +65,7 @@ import {
   AccessSheet,
   type AccessTarget,
 } from "@/components/folders/access-sheet"
+import { ShareSheet, type ShareTarget } from "@/components/sharing/share-sheet"
 import { FolderSelect } from "@/components/folders/folder-select"
 import { SubmitToWorkflowDialog } from "@/components/workflow/submit-to-workflow-button"
 import { Button } from "@/components/ui/button"
@@ -123,6 +125,7 @@ type Dialog =
   | { kind: "delete-folder"; folder: FolderNode }
   | { kind: "move-documents"; ids: string[]; key: number }
   | { kind: "access"; target: AccessTarget; key: number }
+  | { kind: "share"; target: ShareTarget; key: number }
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
   | { kind: "submit-for-approval"; row: DocumentListItemDto; key: number }
@@ -219,6 +222,14 @@ function FolderView({
     seeAccess: hasAnyPermission(
       PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
       PermissionCodes.DSC_FOLDER_ACCESS_ASSIGN
+    ),
+    // Share (1.5): internal access plus external links and guests. The sheet hides what the caller may not do.
+    share: hasAnyPermission(
+      PermissionCodes.DSC_FOLDER_ACCESS_VIEW,
+      PermissionCodes.DSC_FOLDER_ACCESS_ASSIGN,
+      PermissionCodes.SEA_CREATE_LINK,
+      PermissionCodes.SEA_INVITE_GUEST,
+      PermissionCodes.SEA_VIEW_GUESTS
     ),
   }
 
@@ -478,6 +489,17 @@ function FolderView({
         onSelect: () =>
           setDialog({ kind: "move-folder", folder, key: Date.now() }),
       })
+    if (can.share)
+      actions.push({
+        label: "Share",
+        icon: Share2,
+        onSelect: () =>
+          setDialog({
+            kind: "share",
+            target: { kind: "folder", id: folder.folderId, name: folder.name },
+            key: Date.now(),
+          }),
+      })
     if (can.seeAccess)
       actions.push({
         label: "Manage access",
@@ -628,6 +650,17 @@ function FolderView({
         icon: FileDown,
         onSelect: () =>
           startZipDownload({ documentIds: [row.documentId] }, row.title),
+      })
+    if (can.share)
+      actions.push({
+        label: "Share",
+        icon: Share2,
+        onSelect: () =>
+          setDialog({
+            kind: "share",
+            target: { kind: "document", id: row.documentId, name: row.title },
+            key: Date.now(),
+          }),
       })
     if (can.seeAccess)
       actions.push({
@@ -793,6 +826,26 @@ function FolderView({
             >
               <FilePlus2 />
               New from template
+            </Button>
+          )}
+          {current && can.share && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setDialog({
+                  kind: "share",
+                  target: {
+                    kind: "folder",
+                    id: current.folderId,
+                    name: current.name,
+                  },
+                  key: Date.now(),
+                })
+              }
+            >
+              <Share2 />
+              Share
             </Button>
           )}
           {current && can.seeAccess && (
@@ -1143,6 +1196,15 @@ function FolderView({
           )
         }}
       />
+
+      {dialog?.kind === "share" && (
+        <ShareSheet
+          key={dialog.key}
+          target={dialog.target}
+          open
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      )}
 
       {dialog?.kind === "access" && (
         <AccessSheet

@@ -5,7 +5,11 @@ import {
   apiUpload,
   type UploadTransfer,
 } from "@/lib/api-fetch"
-import type { FolderAccessEntryDto, FolderAccessLevel } from "@/lib/folders/api"
+import type {
+  AccessNotice,
+  FolderAccessEntryDto,
+  FolderAccessLevel,
+} from "@/lib/folders/api"
 import type { PageDto } from "@/lib/workflow/api"
 
 /** Mirrors backend/dms-core's SelectableDocumentTypeResponse - what an upload picker may show. */
@@ -176,14 +180,15 @@ export async function saveDocumentAccess(
   entries: Pick<
     FolderAccessEntryDto,
     "principalType" | "principalId" | "level"
-  >[]
+  >[],
+  notice?: AccessNotice
 ): Promise<DocumentAccessDto> {
   return apiFetchJson(
     `${API_BASE_URL}/api/v1/documents/${documentId}/access`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, entries }),
+      body: JSON.stringify({ mode, entries, ...notice }),
     },
     "Could not save who can open this document."
   )

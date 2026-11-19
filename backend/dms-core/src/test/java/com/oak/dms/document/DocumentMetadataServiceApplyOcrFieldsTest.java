@@ -58,6 +58,8 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
     private MetadataValidationService metadataValidationService;
     @Mock
     private com.oak.dms.signature.service.DocumentSignatureLockService signatureLockService;
+    @Mock
+    private com.oak.dms.folder.DocumentAccessService documentAccessService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -89,7 +91,8 @@ class DocumentMetadataServiceApplyOcrFieldsTest {
 
     private DocumentMetadataServiceImpl service() {
         return new DocumentMetadataServiceImpl(documentRepository, documentMetadataRepository,
-                documentTypeFieldService, metadataValidationService, objectMapper, signatureLockService);
+                documentTypeFieldService, metadataValidationService, objectMapper, signatureLockService,
+                documentAccessService);
     }
 
     /** The document, schema and (optionally) the metadata row already stored. */

@@ -14,6 +14,7 @@ import com.oak.dms.scanning.entity.ScanResult;
 import com.oak.dms.scanning.enums.QuarantineStatus;
 import com.oak.dms.scanning.enums.ScanMode;
 import com.oak.dms.scanning.enums.ScanResultStatus;
+import com.oak.dms.scanning.exception.PromotionRefusedException;
 import com.oak.dms.scanning.exception.ScanException;
 import com.oak.dms.scanning.helper.ScanProperties;
 import com.oak.dms.scanning.helper.StorageObjectMover;
@@ -175,6 +176,14 @@ public class IngestionProcessor {
                 case PENDING -> reschedule(row.getScanResultId(), leaseToken,
                         OffsetDateTime.now().plus(Duration.ofMillis(scanProperties.getRetry().getPollIntervalMs())));
             }
+        } catch (PromotionRefusedException e) {
+            // The file is clean; the DOCUMENT no longer takes a new version (deleted, locked, held, signed). That will not
+            // change by trying again, and each retry would scan the whole file again, so it ends here - failed for good,
+            // with the reason the uploader is shown. promote() has already removed the copy it made (if any); the staged
+            // file is this ingestion's own and goes now.
+            log.warn("Scan result {} not promoted - {}: {}", scanResultId, e.getCode(), e.getMessage());
+            failTerminal(scanResultId, leaseToken, e.toFailureReason());
+            purgeStaging(scanResultId);
         } catch (ScanException | StorageObjectMover.StagedObjectChangedException | StorageException e) {
             recordFailure(scanResultId, leaseToken, e.getMessage());
         } catch (RuntimeException e) {
@@ -208,8 +217,10 @@ public class IngestionProcessor {
     private void promote(ScanResult row, StorageLocation staging, ScanVerdict verdict, long durationMs,
                          OffsetDateTime leaseToken) {
         DocumentPromoter.PromotionPlan plan = documentPromoter.prepare(row);
+        // The key is new for this attempt (prepare() generates a fresh version id), so a failed copy removes its own partial object.
         storageObjectMover.copyVerified(staging, row.getStagingObjectKey(), plan.documentLocation(),
-                plan.objectKey(), row.getSizeBytes(), row.getMimeType(), row.getFileHash());
+                plan.objectKey(), row.getSizeBytes(), row.getMimeType(), row.getFileHash(), true,
+                StorageObjectMover.Destination.NEW_UNREFERENCED);
 
         ReleaseAttemptFinalizer.ReleasedObject[] released = new ReleaseAttemptFinalizer.ReleasedObject[1];
         boolean committed;
@@ -469,6 +480,22 @@ public class IngestionProcessor {
         if (terminal != null) {
             log.warn("Scan result {} attempt failed{}: {}", scanResultId, terminal ? " (terminal)" : "", reason);
         }
+    }
+
+    /**
+     * The gate is about to report a failure to its caller for a row it created and still holds the lease of
+     * (DOC-13): fail the row so no worker promotes a submission the caller was told was rejected, then remove its
+     * staged object. Does nothing for a row that is no longer pending (already settled) and, because both steps
+     * are conditional - {@link #failTerminal} on the lease token and {@link #purgeStaging} on a terminal
+     * status - nothing for a row a worker has since claimed: it never takes content away from accepted processing.
+     */
+    void abandonUnacceptedSubmission(UUID scanResultId, OffsetDateTime leaseToken, String reason) {
+        ScanResult row = scanResultRepository.findById(scanResultId).orElse(null);
+        if (row == null || row.getStatus() != ScanResultStatus.pending) {
+            return;
+        }
+        failTerminal(scanResultId, leaseToken, reason);
+        purgeStaging(scanResultId);
     }
 
     /** Straight to {@code failed} - interrupted staging or no cloud verdict in time. */
