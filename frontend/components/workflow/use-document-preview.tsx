@@ -34,7 +34,7 @@ interface PreviewState extends PreviewOptions {
 }
 
 /**
- * One shared DocumentPreview sheet (the same one My Documents uses) for the
+ * One shared DocumentPreview sheet (the same one Documents uses) for the
  * workflow UI. `open(row, version?)` shows a file - the current version, or a
  * pinned one for supporting documents - and `element` is rendered once by the
  * caller. Download fetches the matching version; "View details" opens the

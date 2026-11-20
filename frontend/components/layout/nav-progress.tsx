@@ -45,6 +45,10 @@ export function NavProgress() {
   }
 
   useEffect(() => {
+    // The ref holds one object for the life of the component (it is only ever mutated, never reassigned), so the cleanup
+    // below can use the object this effect started with instead of reading `timers.current` again when it runs.
+    const timerRefs = timers.current
+
     function onClick(e: MouseEvent) {
       if (e.defaultPrevented || e.button !== 0) return
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
@@ -68,7 +72,7 @@ export function NavProgress() {
     return () => {
       document.removeEventListener("click", onClick, true)
       clear()
-      window.clearTimeout(timers.current.hide)
+      window.clearTimeout(timerRefs.hide)
     }
     // start/finish only touch refs and setState
     // eslint-disable-next-line react-hooks/exhaustive-deps

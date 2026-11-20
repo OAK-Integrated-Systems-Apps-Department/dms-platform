@@ -10,6 +10,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
+import { isNotFound } from "@/lib/api-error"
 import { OUTCOME_BADGE_VARIANT, SEVERITY_BADGE_VARIANT } from "@/lib/audit-events/audit-badges"
 import { useAuditEvent } from "@/lib/audit-events/use-audit-events"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
@@ -22,7 +23,7 @@ export default function ViewAuditEventPage() {
   const params = useParams<{ id: string }>()
   const { data: event, isPending, isError, error } = useAuditEvent(params.id)
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 

@@ -22,8 +22,8 @@ const SEGMENT =
   "inline-flex max-w-[220px] items-center gap-1.5 rounded-btn px-2 py-1 text-[14px] transition-colors"
 
 /**
- * Where you are in My Documents: an "up one level" button, then
- * My Documents › Finance › Invoices, the current folder last and bold.
+ * Where you are in Documents: an "up one level" button, then
+ * Documents › Finance › Invoices, the current folder last and bold.
  * Long paths keep the first folder and the last two, with the rest in a
  * "…" menu. `summary` (e.g. "2 folders · 5 documents") sits on the right.
  */
@@ -37,7 +37,7 @@ export function FolderPath({
   trail: FolderNode[]
   onOpen: (folderId: string | null) => void
   summary?: string
-  /** Drop onto a folder further up the path (null = My Documents) to move or upload there. */
+  /** Drop onto a folder further up the path (null = Documents) to move or upload there. */
   dropTarget?: (folder: FolderNode | null) => DropBinding | undefined
 }) {
   const current = trail.at(-1)
@@ -55,13 +55,16 @@ export function FolderPath({
         aria-label="Up one level"
         disabled={!current}
         onClick={() => onOpen(parent?.folderId ?? null)}
-        className="flex shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40 size-8 rounded-btn"
+        className="flex size-8 shrink-0 items-center justify-center rounded-btn text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
       >
         <ArrowUp size={16} />
       </button>
       <span aria-hidden="true" className="h-5 w-px bg-border" />
 
-      <nav aria-label="Folder path" className="min-w-0 flex-1">
+      <nav
+        aria-label="Folder path"
+        className={cn("min-w-0", summary && "flex-1")}
+      >
         <ol className="flex flex-wrap items-center gap-0.5">
           <li>
             {current ? (
@@ -77,7 +80,7 @@ export function FolderPath({
                 )}
               >
                 <House size={15} className="shrink-0" />
-                My Documents
+                Documents
               </button>
             ) : (
               <span
@@ -85,7 +88,7 @@ export function FolderPath({
                 className={cn(SEGMENT, "font-semibold text-foreground")}
               >
                 <House size={15} className="shrink-0 text-primary" />
-                My Documents
+                Documents
               </span>
             )}
           </li>

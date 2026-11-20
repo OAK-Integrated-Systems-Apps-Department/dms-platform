@@ -67,6 +67,11 @@ public class Folder {
     @Column(name = "is_deleted", nullable = false)
     private boolean deleted;
 
+    /** Marked confidential (V144): nothing in this folder can be shared externally - see ShareTargets. */
+    @Column(name = "confidential", nullable = false)
+    @Builder.Default
+    private boolean confidential = false;
+
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 }

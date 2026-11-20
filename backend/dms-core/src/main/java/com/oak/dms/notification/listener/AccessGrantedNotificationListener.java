@@ -47,18 +47,24 @@ public class AccessGrantedNotificationListener {
         String actor = event.actorUserId() == null ? "Someone"
                 : userRepository.findById(event.actorUserId()).map(User::getDisplayName).orElse("Someone");
         String noun = document ? "a document" : "a folder";
+        // The sharer's note rides in the body after a blank line; the mail renderer shows it as its own quoted
+        // paragraph, and the inbox shows it under the sentence.
+        String body = actor + " gave you access to the " + (document ? "document" : "folder") + " \""
+                + event.objectName() + "\"."
+                + (event.message() == null ? "" : "\n\n" + event.message());
         notificationService.notify(NotificationRequest.builder()
                 .tenantId(event.tenantId())
                 .recipientUserIds(recipients)
                 .categoryCode("document.shared")
                 .title(actor + " shared " + noun + " with you: " + event.objectName())
-                .body(actor + " gave you access to the " + (document ? "document" : "folder") + " \""
-                        + event.objectName() + "\".")
-                .linkUrl(document ? "/documents/" + event.objectId() : "/shared")
+                .body(body)
+                // A folder opens in My Documents itself (the browser reads ?folder=), not the generic list.
+                .linkUrl(document ? "/documents/" + event.objectId() : "/documents?folder=" + event.objectId())
                 .objectType(event.objectType())
                 .objectId(event.objectId())
                 .actorUserId(event.actorUserId())
                 .sourceModule("documents")
+                .suppressEmail(!event.emailPeople())
                 .build());
     }
 }

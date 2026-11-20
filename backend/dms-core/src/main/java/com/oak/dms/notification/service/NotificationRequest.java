@@ -62,11 +62,17 @@ public class NotificationRequest {
     private final boolean requireViewPermission;
 
     /**
-     * Do not send the platform email for this notification: the caller delivers the same thing by email itself (Reports, when a
-     * schedule uses both the in-app and the email channel). The inbox entry is still written; the email delivery is recorded as
-     * skipped with the reason {@code sent_by_other_channel}. Off by default.
+     * Do not send the platform email for this notification (the in-app notification is still created). The email delivery is
+     * recorded as skipped with {@link #suppressEmailReason}. Off by default.
      */
     private final boolean suppressEmail;
+
+    /**
+     * Why the email was suppressed, recorded as the skip reason. Defaults to {@code sender_opted_out} (the sender chose not to
+     * email this one); Reports sets {@code sent_by_other_channel} because it delivers the same thing by email itself.
+     */
+    @Builder.Default
+    private final String suppressEmailReason = "sender_opted_out";
 
     /** Optional per-recipient content override, applied after the access check. */
     private final Function<UUID, RecipientContent> perRecipientContent;

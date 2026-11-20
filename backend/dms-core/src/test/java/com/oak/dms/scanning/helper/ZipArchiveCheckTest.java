@@ -294,4 +294,115 @@ class ZipArchiveCheckTest {
 
         assertThat(check(text).outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
     }
+
+    // ---- DOC-03: the limits are totals over the archive AND every archive nested inside it
+
+    /** {@code content} wrapped, as one entry, in a new ZIP - n times. */
+    private static byte[] nested(byte[] content, int levels) throws IOException {
+        byte[] current = content;
+        for (int i = 0; i < levels; i++) {
+            current = zipOf("level" + i + ".zip", current);
+        }
+        return current;
+    }
+
+    private static byte[] zeros(int size) {
+        return new byte[size];
+    }
+
+    @Test
+    void aBombHiddenInANestedZip_isRefusedAtTheSameLimitAsWhenFlat() throws IOException {
+        // 2 MB of zeros is far past the 1 MB limit; the ZIP holding it is a couple of KB, and so is every wrapper.
+        byte[] bomb = zipOf("zeros.bin", zeros(2_000_000));
+        assertThat(check(bomb).outcome()).as("flat").isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+
+        for (int levels = 1; levels <= 3; levels++) {
+            ZipArchiveCheck.Result result = check(nested(bomb, levels));
+            assertThat(result.outcome()).as("nested %d deep", levels).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+            assertThat(result.message()).contains("Unpacked").contains("counting any archives inside it");
+        }
+    }
+
+    @Test
+    void theUnpackedLimit_isCumulativeAcrossLevels() throws IOException {
+        // 600 KB in the outer ZIP and 600 KB in the ZIP inside it: each is under 1 MB, together they are not.
+        byte[] inner = zipOf("b.bin", noise(600_000, 1));
+        byte[] outer = zipOf("a.bin", noise(600_000, 2), "inner.zip", inner);
+
+        ZipArchiveCheck.Result result = check(outer);
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("Unpacked");
+        // ...while either alone is fine
+        assertThat(check(zipOf("a.bin", noise(600_000, 2))).outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+        assertThat(check(inner).outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+    }
+
+    @Test
+    void nestedEntries_countTowardTheSharedEntryLimit() throws IOException {
+        // 6 files + the inner ZIP's own entry + the 6 files inside it = 13 > 10, though no one level exceeds 10.
+        byte[] inner = zip("i1.txt", "x", "i2.txt", "x", "i3.txt", "x", "i4.txt", "x", "i5.txt", "x", "i6.txt", "x");
+        byte[] outer = zipOf("o1.txt", "x".getBytes(), "o2.txt", "x".getBytes(), "o3.txt", "x".getBytes(),
+                "o4.txt", "x".getBytes(), "o5.txt", "x".getBytes(), "o6.txt", "x".getBytes(), "inner.zip", inner);
+
+        ZipArchiveCheck.Result result = check(outer);
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("more than " + MAX_ENTRIES + " files");
+        assertThat(check(inner).outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+    }
+
+    @Test
+    void aValidNestedZipWithinTheLimits_isAccepted_andReportedWithTheCumulativeTotals() throws IOException {
+        byte[] inner = zip("docs/a.txt", "alpha", "docs/b.txt", "bravo-bravo", "c.txt", "c");
+        byte[] outer = zipOf("readme.txt", "hello".getBytes(StandardCharsets.UTF_8), "bundle.zip", inner);
+
+        ZipArchiveCheck.Result result = check(outer);
+
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+        // entries: readme.txt, bundle.zip, and the three inside it
+        assertThat(result.entries()).isEqualTo(5);
+        // bytes: readme (5) + the inner ZIP's own bytes + its entries (5 + 11 + 1)
+        assertThat(result.uncompressedBytes()).isEqualTo(5L + inner.length + 5 + 11 + 1);
+    }
+
+    @Test
+    void theNestingDepthLimitIsKept_aBombBeyondItIsLeftToTheScanner() throws IOException {
+        byte[] bomb = zipOf("zeros.bin", zeros(2_000_000));
+        // Opened as far as MAX_NESTING levels (3 ZIPs inside the outer one) - and refused there...
+        assertThat(check(nested(bomb, 3)).outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        // ...but not unpacked any deeper: ClamAV (MaxRecursion, MaxScanSize) is the guard past that, and nothing
+        // here spends CPU inflating it.
+        for (int levels : new int[]{4, 6}) {
+            ZipArchiveCheck.Result tooDeep = check(nested(bomb, levels));
+            assertThat(tooDeep.outcome()).as("nested %d deep", levels).isEqualTo(ZipArchiveCheck.Outcome.VALID);
+            assertThat(tooDeep.uncompressedBytes()).isLessThan(MAX_UNPACKED);
+        }
+    }
+
+    @Test
+    void aProgramInANestedZip_isStillFound_whenTheNestedZipIsAlsoCounted() throws IOException {
+        byte[] inner = zip("a.txt", "fine", "run.exe", "MZ");
+        ZipArchiveCheck.Result result = check(zipOf("bundle.zip", inner));
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+        assertThat(result.message()).contains("bundle.zip > run.exe");
+    }
+
+    @Test
+    void aCorruptOuterEntryHoldingANestedZip_isStillReportedAsDamaged() throws IOException {
+        byte[] inner = zip("a.txt", "fine");
+        byte[] outer = zipOf("bundle.zip", inner);
+        // flip a byte of the stored (deflated) data so the entry's CRC no longer matches
+        int at = outer.length / 2;
+        outer[at] ^= 0x55;
+        ZipArchiveCheck.Result result = check(outer);
+        assertThat(result.outcome()).isEqualTo(ZipArchiveCheck.Outcome.INVALID);
+    }
+
+    /** Bytes that deflate poorly, so a test's sizes stay what it says. */
+    private static byte[] noise(int size, long seed) {
+        byte[] bytes = new byte[size];
+        new java.util.Random(seed).nextBytes(bytes);
+        return bytes;
+    }
 }

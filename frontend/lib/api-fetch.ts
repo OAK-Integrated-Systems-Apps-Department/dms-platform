@@ -48,12 +48,25 @@ export const NETWORK_ERROR_MESSAGE = "Connection lost. Please try again."
  * guarding against on a fast one.
  */
 let intentionalLogout = false
+let intentionalLogoutTimer: ReturnType<typeof setTimeout> | undefined
 
 export function markIntentionalLogout(): void {
   intentionalLogout = true
-  setTimeout(() => {
+  // One window at a time: a second mark restarts it instead of letting the first timer end it early.
+  clearTimeout(intentionalLogoutTimer)
+  intentionalLogoutTimer = setTimeout(() => {
     intentionalLogout = false
   }, 15000)
+}
+
+/**
+ * Ends the window above at once. Called when the logout request FAILED (FE-M3): the person is still signed in, so a
+ * genuine session expiry in the next 15 seconds must still be reported as one.
+ */
+export function cancelIntentionalLogout(): void {
+  intentionalLogout = false
+  clearTimeout(intentionalLogoutTimer)
+  intentionalLogoutTimer = undefined
 }
 
 export function isIntentionalLogout(): boolean {
@@ -61,6 +74,7 @@ export function isIntentionalLogout(): boolean {
 }
 
 const REFRESH_URL = `${API_BASE_URL}/api/v1/auth/refresh`
+const LOGIN_URL = `${API_BASE_URL}/api/v1/auth/login`
 
 /**
  * dms-core's own auth endpoints (see SecurityConfig's PUBLIC_ENDPOINTS) are
@@ -131,19 +145,49 @@ async function fetchWithCredentials(input: string, init: RequestInit): Promise<R
  */
 let refreshPromise: Promise<boolean> | null = null
 
+/**
+ * How long, after dms-core has answered a refresh with 401 ("this session cannot be renewed"), further refreshes are
+ * not even attempted (FE-M3-B). Without it every request that fails afterwards - the next burst of a page's queries,
+ * a poll, a retry - sends its own refresh to dms-core (and through it to Keycloak), each one certain to fail the same
+ * way. Bounded on purpose: after it the next failure tries again, so a transient 401 never locks anyone out for long.
+ * Only an explicit 401 counts; a network failure, a timeout or a 5xx says nothing about the session and does not start it.
+ */
+export const TERMINAL_REFRESH_SUPPRESSION_MS = 30_000
+
+/** When the last refresh was answered with 401, or null. Module state: lives as long as the page does. */
+let terminalRefreshFailureAt: number | null = null
+
+/** Forgets a terminal refresh failure. Called after a successful sign-in or refresh: the session is new. */
+export function resetTerminalRefreshFailure(): void {
+  terminalRefreshFailureAt = null
+}
+
+function refreshIsSuppressed(): boolean {
+  return terminalRefreshFailureAt !== null && Date.now() - terminalRefreshFailureAt < TERMINAL_REFRESH_SUPPRESSION_MS
+}
+
 export function refreshSession(): Promise<boolean> {
-  if (!refreshPromise) {
-    refreshPromise = fetch(REFRESH_URL, {
-      method: "POST",
-      credentials: "include",
-      headers: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE },
+  // One refresh in flight is shared by everything that wants one, failure included (the single-flight guard).
+  if (refreshPromise) return refreshPromise
+  // A refresh just failed for good: say so without asking dms-core again.
+  if (refreshIsSuppressed()) return Promise.resolve(false)
+  refreshPromise = fetch(REFRESH_URL, {
+    method: "POST",
+    credentials: "include",
+    headers: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE },
+  })
+    .then((response) => {
+      if (response.ok) {
+        resetTerminalRefreshFailure()
+        return true
+      }
+      if (response.status === 401) terminalRefreshFailureAt = Date.now()
+      return false
     })
-      .then((response) => response.ok)
-      .catch(() => false)
-      .finally(() => {
-        refreshPromise = null
-      })
-  }
+    .catch(() => false)
+    .finally(() => {
+      refreshPromise = null
+    })
   return refreshPromise
 }
 
@@ -197,6 +241,8 @@ export async function apiFetch(
     const body = await response.json().catch(() => null)
     throw new ApiError(response.status, body?.message ?? fallbackMessage, body?.code, body?.details)
   }
+  // A new session: the "this session cannot be renewed" memory above no longer applies to it (FE-M3-B).
+  if (input === LOGIN_URL) resetTerminalRefreshFailure()
   return response
 }
 

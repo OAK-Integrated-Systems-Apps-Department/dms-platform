@@ -65,6 +65,11 @@ public class DocumentVersionService {
     private final DocumentSignatureLockService signatureLockService;
     // 2.10 legal hold + check-out (V127): a new version or a restore is refused while someone else holds the lock.
     private final com.oak.dms.checkout.DocumentEditGuard editGuard;
+    // DOC-05: a signed current version - by a signature record, a signed_copy mark, or a signature inside the file itself -
+    // is not replaced as "current" by a plain upload or a restore any more than by a check-in or the editor.
+    private final com.oak.dms.checkout.SignedContentGuard signedContentGuard;
+    // DOC-16: the tenant's default download watermark also applies to the download of a named version, current or older.
+    private final DefaultDownloadWatermark defaultDownloadWatermark;
 
     /**
      * One row of the history.
@@ -95,30 +100,53 @@ public class DocumentVersionService {
                 names.get(v.getCreatedBy()), v.getVersionId().equals(current), v.getFileHash())).toList();
     }
 
-    /** One version's file. Audited as DOCUMENT_DOWNLOADED, naming the version. */
+    /**
+     * One version's file. Audited as DOCUMENT_DOWNLOADED, naming the version. The tenant's default download watermark
+     * applies to it exactly as to the document's plain download (DOC-16), stamped with THIS version's number - a signed
+     * file is the one exemption, served as stored with {@code watermarkExemption} on the audit event.
+     */
     @Transactional
     public DownloadedDocument download(UUID documentId, UUID versionId) {
-        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_DOWNLOADED);
+        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_DOWNLOADED, true);
     }
 
-    /** One version's file, for the in-app preview. Audited as DOCUMENT_VIEWED, naming the version. */
+    /** One version's file, for the in-app preview. Audited as DOCUMENT_VIEWED, naming the version. Never watermarked here. */
     @Transactional
     public DownloadedDocument preview(UUID documentId, UUID versionId) {
-        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_VIEWED);
+        return open(documentId, versionId, AuditActionCatalog.DOCUMENT_VIEWED, false);
     }
 
-    private DownloadedDocument open(UUID documentId, UUID versionId, String action) {
+    private DownloadedDocument open(UUID documentId, UUID versionId, String action, boolean applyDefaultWatermark) {
         Document document = visible(documentId, FolderAccessLevel.view);
         DocumentVersion version = version(document, versionId);
         DownloadedDocument downloaded = versionContent.open(version);
-        auditService.event(action)
-                .objectType(AuditObjectTypes.DOCUMENT)
-                .objectId(documentId)
-                .resourceName(document.getTitle())
-                .outcome(AuditOutcome.SUCCESS)
-                .newValue(Map.of("versionId", versionId, "version", label(version)))
-                .log();
-        return downloaded;
+        // DOC-18: from here until we return, this method owns the stream - see OpenStreamGuard.
+        try {
+            Map<String, Object> audited = new java.util.LinkedHashMap<>();
+            audited.put("versionId", versionId);
+            audited.put("version", label(version));
+            if (applyDefaultWatermark) {
+                DefaultDownloadWatermark.Outcome outcome = defaultDownloadWatermark.apply(downloaded,
+                        new DocumentContentReader.VersionDetails(documentId, version.getVersionId(),
+                                version.getVersionNumber(), document.getTitle(), version.getOriginalFilename(),
+                                version.getMimeType(), version.getSizeBytes()));
+                downloaded = outcome.document();
+                if (outcome.exemption() != null) {
+                    audited.put("watermarkExemption", outcome.exemption());
+                }
+            }
+            auditService.event(action)
+                    .objectType(AuditObjectTypes.DOCUMENT)
+                    .objectId(documentId)
+                    .resourceName(document.getTitle())
+                    .outcome(AuditOutcome.SUCCESS)
+                    .newValue(audited)
+                    .log();
+            return OpenStreamGuard.closeUnlessCommitted(downloaded);
+        } catch (RuntimeException | Error e) {
+            OpenStreamGuard.closeQuietly(downloaded);
+            throw e;
+        }
     }
 
     /**
@@ -159,6 +187,7 @@ public class DocumentVersionService {
         Document document = visible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
         editGuard.guard(document);
+        signedContentGuard.guardOpening(document); // 409 DOCUMENT_HAS_SIGNATURE - before anything is read or stored
         IngestionRequest request = IngestionRequest.newVersion(documentId, REPLACEMENT_UPLOAD, originalFilename,
                 contentLength, content, clean(comment));
         return ingestionGate.submit(
@@ -176,6 +205,7 @@ public class DocumentVersionService {
         Document document = visible(documentId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
         editGuard.guard(document);
+        signedContentGuard.guardOpening(document); // 409 DOCUMENT_HAS_SIGNATURE - before anything is read or stored
         DocumentVersion version = version(document, versionId);
         if (version.getVersionId().equals(currentVersionId(document))) {
             throw new FolderException(HttpStatus.CONFLICT, "VERSION_ALREADY_CURRENT",

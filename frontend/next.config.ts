@@ -1,5 +1,7 @@
 import type { NextConfig } from "next"
 
+import { securityHeaderRules } from "./config/security-headers"
+
 const nextConfig: NextConfig = {
 
   output: "standalone",
@@ -26,6 +28,12 @@ const nextConfig: NextConfig = {
 
   experimental: {
     turbopackFileSystemCacheForBuild: false,
+  },
+
+  // FE-H1: security headers for what this app serves (see config/security-headers.ts for what each one is for and
+  // why HSTS and an enforced CSP are not here yet).
+  async headers() {
+    return securityHeaderRules()
   },
 }
 

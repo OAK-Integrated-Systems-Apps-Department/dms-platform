@@ -66,8 +66,16 @@ export function useCheckoutActions(documentId: string) {
 
   const checkIn = useMutation({
     mutationFn: ({ file, comment }: { file: File; comment?: string }) => checkInDocument(documentId, file, comment),
-    onSuccess: () => {
+    onSuccess: (ticket) => {
       refresh()
+      // A pending ticket means no version exists yet and the check-out is deliberately kept (DOC-07): it is
+      // released only once the new version is in place, never merely because the file was accepted for scanning.
+      if (ticket.status === "pending") {
+        toast.success(
+          "Check-in submitted. Your file is being scanned, and the document remains checked out until processing completes or the checkout is released."
+        )
+        return
+      }
       toast.success("Checked in. Your file is being scanned and becomes the new version when it is clean.")
     },
     onError: (error) => {

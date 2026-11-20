@@ -176,12 +176,14 @@ jobs:
       - name: Start OpenBao and Keycloak
         run: bash .github/scripts/start-it-services.sh
 
-      # -Dtest bypasses the excludes in pom.xml, so the two ITs that need a ClamAV daemon (an upload
+      # -Dtest bypasses the excludes in pom.xml, so the ITs that need a ClamAV daemon (an upload
       # must be scanned clean before the call returns) are left out here by name. No clamd runs in
-      # this job; run them locally against the full compose stack.
+      # this job: DocumentUploadIT and DocumentUploadOcrQueueingIT are run locally against the full
+      # compose stack, and the six below run in the `integration-clamav` job, which has a clamd.
+      # Moved, not dropped: keep this list and that job's -Dtest list in step.
       - name: Integration tests (*IT)
         working-directory: backend
-        run: ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test -Dtest='*IT,!DocumentUploadIT,!DocumentUploadOcrQueueingIT' -Dsurefire.failIfNoSpecifiedTests=false
+        run: ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test -Dtest='*IT,!DocumentUploadIT,!DocumentUploadOcrQueueingIT,!IngestionZipLimitsIT,!ConcurrentVersionUploadIT,!BulkImportConcurrencyIT,!IngestionFailureCleanupIT,!VersionPromotionRefusalIT,!WopiSaveSpoolIT' -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Upload test reports
         if: failure()
@@ -190,6 +192,125 @@ jobs:
           name: integration-reports
           path: backend/dms-core/target/surefire-reports/
           retention-days: 7
+
+  # The ITs that need a real ClamAV: they push content through the real ingestion gate, so every upload has to be
+  # scanned (and EICAR refused) by a live clamd. Moved here from `integration` - not dropped - because clamd wants
+  # 3 GiB (ClamAV's own minimum) and does not fit beside Keycloak, OpenBao and the tests on a 7 GB runner. This job
+  # therefore has only what these tests use: Postgres, Redis, RabbitMQ and clamd. No Keycloak, OpenBao, OpenSearch,
+  # OCR worker or SeaweedFS: the six classes read none of their settings, and the context starts on the same
+  # DB/Redis/RabbitMQ settings the `backend` job uses.
+  #
+  # Keep the -Dtest list below equal to the ClamAV-only names excluded in `integration`.
+  #
+  # Memory plan for a 7 GB runner (an estimate, not a measurement): clamd capped at 3 GiB, the forked test JVM at
+  # 1536 MB and Maven itself at 512 MB, plus Postgres/Redis/RabbitMQ and the runner. See start-clamav-it.sh for
+  # what was verified about the image and for the signature decision (no freshclam daemon, no cache).
+  integration-clamav:
+    name: Backend (dms-core) - ClamAV integration tests
+    runs-on: ubuntu-latest
+    # Startup (up to 10 min, bounded in the script) + tests (15 min) + setup.
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres
+          POSTGRES_DB: dms_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: dms
+          RABBITMQ_DEFAULT_PASS: ci-only-rabbitmq
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/dms_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: ci-only-postgres
+      REDIS_HOST: localhost
+      RABBITMQ_HOST: localhost
+      RABBITMQ_USERNAME: dms
+      RABBITMQ_PASSWORD: ci-only-rabbitmq
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Detect Java version
+        id: java
+        run: |
+          jdk="$(sed -n 's/^FROM maven:[^ ]*eclipse-temurin-\([0-9][0-9]*\).*/\1/p' backend/Dockerfile | head -n1)"
+          [ -n "$jdk" ] || { echo "::error::could not read the JDK version from backend/Dockerfile"; exit 1; }
+          echo "jdk=$jdk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.jdk }}
+          cache: maven
+          cache-dependency-path: backend/**/pom.xml
+
+      # clamav/clamav-debian:1.4.3 on 127.0.0.1:13310, waited for (bounded) until clamd answers PING and the
+      # published port works; writes CLAMAV_HOST/CLAMAV_PORT to $GITHUB_ENV. Prints the ClamAV log if it fails.
+      - name: Start ClamAV
+        timeout-minutes: 12
+        run: bash .github/scripts/start-clamav-it.sh
+
+      # No -Dsurefire.failIfNoSpecifiedTests=false here: a renamed class must fail this job, not silently run nothing.
+      # Coverage is the `backend` job's business, so JaCoCo's agent is left out of the capped test JVM.
+      - name: ClamAV integration tests
+        timeout-minutes: 15
+        working-directory: backend
+        env:
+          MAVEN_OPTS: -Xmx512m
+        run: >-
+          ./dms-core/mvnw -B -ntp -f pom.xml -pl dms-core test
+          -Djacoco.skip=true "-DargLine=-Xmx1536m"
+          -Dtest='IngestionZipLimitsIT,ConcurrentVersionUploadIT,BulkImportConcurrencyIT,IngestionFailureCleanupIT,VersionPromotionRefusalIT,WopiSaveSpoolIT'
+
+      # Belt and braces: all six must have produced a report, so a class that stopped being selected cannot pass unnoticed.
+      - name: Check that all six ClamAV test classes ran
+        working-directory: backend
+        run: |
+          missing=0
+          for c in IngestionZipLimitsIT ConcurrentVersionUploadIT BulkImportConcurrencyIT IngestionFailureCleanupIT VersionPromotionRefusalIT WopiSaveSpoolIT; do
+            if ! ls dms-core/target/surefire-reports/TEST-*."$c".xml >/dev/null 2>&1; then
+              echo "::error::$c produced no test report"
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
+
+      - name: ClamAV state and log (on failure)
+        if: failure()
+        run: |
+          docker ps -a || true
+          docker stats --no-stream dms-it-clamav || true
+          docker logs --tail 200 dms-it-clamav || true
+          free -m || true
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: integration-clamav-reports
+          path: backend/dms-core/target/surefire-reports/
+          retention-days: 7
+
+      - name: Remove the ClamAV container
+        if: always()
+        run: docker rm -f dms-it-clamav || true
 
   # Text rendering is the one part of dms-core whose correctness depends on
   # the operating system underneath it rather than on the code. The watermark
@@ -486,7 +607,7 @@ jobs:
     # Skipped when deploy.yml calls this workflow: it builds and pushes the
     # same images itself right after, so building them here would be wasted.
     if: ${{ !inputs.skip-images }}
-    needs: [backend, integration, frontend]
+    needs: [backend, integration, integration-clamav, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:

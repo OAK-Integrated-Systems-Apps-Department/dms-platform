@@ -372,8 +372,9 @@ public class WatermarkJobWorker implements WatermarkJobQueue {
     private void store(WatermarkJob job, byte[] output, DownloadedDocument source) {
         StorageLocation location = storageLocationResolver.resolveForTenant(job.getTenantId(),
                 StoragePurpose.staging);
-        String objectKey = job.getTenantId() + "/tmp/watermarks/" + job.getJobId() + "/"
-                + source.filename();
+        // DOC-20: ids and a fixed word only - the document's original filename is user-supplied and must never reach a key.
+        // The name the person downloads comes from the version (WatermarkJobService.filenameFor), not from here.
+        String objectKey = WatermarkOutputKeys.keyFor(job.getTenantId(), job.getJobId());
         storage.resolve(location).upload(location, objectKey, new ByteArrayInputStream(output),
                 output.length, source.contentType());
         complete(job.getJobId(), location.getStorageLocationId(), objectKey, output.length);
@@ -427,8 +428,10 @@ public class WatermarkJobWorker implements WatermarkJobQueue {
             job.setUpdatedAt(now);
             // Any partial output is dropped: a job that failed must not
             // leave a half-written file somebody could be served.
-            dropPartialOutput(job);
-            job.setOutputObjectKey(null);
+            // A key that is not this job's own (DOC-20) is neither deleted nor erased: it stays on the row for review.
+            if (dropPartialOutput(job)) {
+                job.setOutputObjectKey(null);
+            }
             job.setOutputSizeBytes(null);
             return repository.save(job);
         }).orElse(null));
@@ -439,9 +442,16 @@ public class WatermarkJobWorker implements WatermarkJobQueue {
         }
     }
 
-    private void dropPartialOutput(WatermarkJob job) {
+    /** @return false only when the stored key was refused as not belonging to this job - then nothing is deleted. */
+    private boolean dropPartialOutput(WatermarkJob job) {
         if (job.getOutputObjectKey() == null || job.getStorageLocationId() == null) {
-            return;
+            return true;
+        }
+        if (!WatermarkOutputKeys.isInsideJobNamespace(job.getTenantId(), job.getJobId(), job.getOutputObjectKey())) {
+            log.warn("Watermark job {} (tenant {}): its stored output key is outside the job's own namespace - not deleting "
+                            + "it; the key is left on the job row ({})", job.getJobId(), job.getTenantId(),
+                    WatermarkOutputKeys.describe(job.getOutputObjectKey()));
+            return false;
         }
         try {
             storageLocationResolver.resolveForTenant(job.getTenantId(), StoragePurpose.staging);
@@ -452,6 +462,7 @@ public class WatermarkJobWorker implements WatermarkJobQueue {
             // The sweeper picks up anything left behind.
             log.warn("Could not delete the partial output of watermark job {}", job.getJobId(), e);
         }
+        return true;
     }
 
     // ----------------------------------------------------------- helpers

@@ -12,6 +12,7 @@ import { QuarantineActionDialog, type QuarantineAction } from "@/components/quar
 import { Badge } from "@/components/ui/badge"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Panel } from "@/components/ui/panel"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import {
@@ -44,7 +45,7 @@ export default function QuarantineDetailPage() {
   const { hasPermission } = usePermissions()
   const [dialog, setDialog] = useState<QuarantineAction | null>(null)
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 

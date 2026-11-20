@@ -84,6 +84,7 @@ public class RecycleBinService {
     private final RelationshipPurgeHandler relationshipPurge;
     private final BookmarkPurgeHandler bookmarkPurge;
     private final RecycleBinNotifier notifier;
+    private final jakarta.persistence.EntityManager entityManager;
     private final int defaultRetentionDays;
     private final int warnDays;
 
@@ -94,6 +95,7 @@ public class RecycleBinService {
                              OcrArtifactWriter ocrArtifactWriter, PageImageCache pageImageCache,
                              PlatformTransactionManager transactionManager, RelationshipPurgeHandler relationshipPurge,
                              BookmarkPurgeHandler bookmarkPurge, RecycleBinNotifier notifier,
+                             jakarta.persistence.EntityManager entityManager,
                              @Value("${dms.documents.recycle-bin.retention-days:30}") int defaultRetentionDays,
                              @Value("${dms.documents.recycle-bin.warn-days:3}") int warnDays) {
         this.documentRepository = documentRepository;
@@ -110,6 +112,7 @@ public class RecycleBinService {
         this.relationshipPurge = relationshipPurge;
         this.bookmarkPurge = bookmarkPurge;
         this.notifier = notifier;
+        this.entityManager = entityManager;
         this.defaultRetentionDays = defaultRetentionDays;
         this.warnDays = warnDays;
     }
@@ -195,6 +198,13 @@ public class RecycleBinService {
         Document document = inBin(documentId);
         DocumentAccessView access = documentAccessService.forCaller();
         requireInBin(access, document, FolderAccessLevel.edit);
+        // DOC-09: from here on the document's row is ours. A purge works under the same lock, so it is either finished
+        // (then the document is gone and this is a 404) or has not started and will find it live and leave it alone;
+        // the lock is held until this transaction commits. The state is re-read after the lock was granted - the entity
+        // above was read before it.
+        lockStillInBin(document);
+        entityManager.refresh(document);
+        requireContentIntact(document);
         boolean folderGone = folderGone(access, document);
         UUID formerFolder = document.getFolderId();
         if (folderGone) {
@@ -233,7 +243,18 @@ public class RecycleBinService {
             throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_VERSION_PROTECTED",
                     "\"" + document.getTitle() + "\" has a protected version, so it can't be deleted permanently.");
         }
-        purge(document, "emptied from the recycle bin");
+        // The checks above are early answers; purge() decides again under the row lock (DOC-09).
+        switch (purge(document, "emptied from the recycle bin", null)) {
+            case PURGED -> {
+            }
+            case HELD -> throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_LEGAL_HOLD",
+                    "\"" + document.getTitle() + "\" is under legal hold, so it can't be deleted permanently.");
+            case PROTECTED -> throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_VERSION_PROTECTED",
+                    "\"" + document.getTitle() + "\" has a protected version, so it can't be deleted permanently.");
+            case RESTORED -> throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_NOT_IN_RECYCLE_BIN",
+                    "\"" + document.getTitle() + "\" was restored, so it can't be deleted permanently.");
+            default -> throw new ResourceNotFoundException("Document", documentId);
+        }
     }
 
     /**
@@ -256,8 +277,12 @@ public class RecycleBinService {
                 continue;
             }
             try {
-                purge(document, "emptied from the recycle bin");
-                purged++;
+                // A document restored, held or purged since the list was read is skipped, not failed (DOC-09).
+                if (purge(document, "emptied from the recycle bin", null) == PurgeResult.PURGED) {
+                    purged++;
+                } else {
+                    skipped++;
+                }
             } catch (RuntimeException e) {
                 log.warn("Could not purge deleted document {} while emptying the bin: {}", document.getDocumentId(),
                         e.getMessage());
@@ -351,7 +376,7 @@ public class RecycleBinService {
                 flagHeldPastRetention();
                 warnBeforePurge();
                 for (Map<String, Object> row : jdbc.queryForList("""
-                        select d.document_id from documents d
+                        select d.document_id, d.deleted_at from documents d
                         left join recycle_bin_settings s on s.tenant_id = d.tenant_id
                         left join document_types t on t.document_type_id = d.document_type_id
                         where d.is_deleted and d.purged_at is null
@@ -364,8 +389,11 @@ public class RecycleBinService {
                         order by d.deleted_at limit ?
                         """, defaultRetentionDays, PURGE_BATCH)) {
                     UUID documentId = (UUID) row.get("document_id");
+                    Object deletedAt = row.get("deleted_at");
                     try {
-                        documentRepository.findById(documentId).ifPresent(d -> purge(d, "retention period ended"));
+                        // deletedAt: a document restored and deleted again meanwhile has a new retention period (DOC-09).
+                        documentRepository.findById(documentId)
+                                .ifPresent(d -> purge(d, "retention period ended", deletedAt));
                     } catch (RuntimeException e) {
                         log.warn("Could not purge deleted document {} - will try again: {}", documentId,
                                 e.getMessage());
@@ -450,44 +478,140 @@ public class RecycleBinService {
         }
     }
 
+    /** What a purge found when it looked at the document under its row lock (DOC-09). */
+    enum PurgeResult {
+        PURGED,
+        /** Already purged, or no such document. */
+        GONE,
+        /** No longer in the bin - restored since it was selected. */
+        RESTORED,
+        /** Under legal hold now. */
+        HELD,
+        /** A protected version exists. */
+        PROTECTED,
+        /** Restored and deleted again since the sweep selected it: a new retention period has begun. */
+        RE_DELETED
+    }
+
+    private record Purged(PurgeResult result, int versions, int files) {
+    }
+
     /**
-     * Destroys the files first - deleting one that's already gone is fine, so a purge interrupted part
-     * way simply runs again - then, in one transaction, marks the rows and removes metadata and access.
+     * Deletes one document for good (DOC-09 protocol). Every entry point - one document, the emptied bin, the sweep -
+     * ends here, and whatever it decided earlier from a list or an entity is only a candidate: the decision is made again
+     * <b>inside one transaction, under the document's row lock</b> ({@code select ... for update}, which restore, the
+     * legal-hold placement and any other writer of the row must wait for, on every application instance). Only if the
+     * document is still in the bin, not purged, not held, without a protected version - and, for the sweep, still the
+     * deletion it selected - are the files destroyed; the rows are marked in the same transaction and the lock is held
+     * until it commits, so a restore can never complete while the files are going and a purge can never start on a
+     * document a restore has already committed.
+     * <p>
+     * Storage deletion cannot be rolled back. If it fails part way, or the commit fails afterwards, the transaction
+     * rolls back (nothing is marked purged, no audit event is written) while some files are already gone: the document
+     * stays in the bin, a later purge simply runs again (deleting what is gone is a no-op), and {@link #restore} refuses
+     * a document whose files can no longer be read, so a half-destroyed document cannot come back as an empty one.
+     *
+     * @param expectedDeletedAt the {@code deleted_at} the caller selected the document with (the sweep), or null
+     * @return what happened; anything but {@link PurgeResult#PURGED} means nothing was destroyed
      */
-    void purge(Document document, String why) {
-        List<DocumentVersion> versions = versionRepository.findByDocumentIdAndTenantId(document.getDocumentId(),
-                document.getTenantId());
+    PurgeResult purge(Document document, String why, Object expectedDeletedAt) {
+        UUID documentId = document.getDocumentId();
+        UUID tenantId = document.getTenantId();
+        Purged done = transactions.execute(status -> purgeLocked(documentId, tenantId, expectedDeletedAt));
+        if (done == null || done.result() != PurgeResult.PURGED) {
+            PurgeResult result = done == null ? PurgeResult.GONE : done.result();
+            log.info("Not purging document {} ({}): {}", documentId, why, result);
+            return result;
+        }
+        // Only a purge that committed is recorded.
+        auditService.event(AuditActionCatalog.DOCUMENT_PURGED)
+                .tenantId(tenantId)
+                .objectType(AuditObjectTypes.DOCUMENT)
+                .objectId(documentId)
+                .resourceName(document.getTitle())
+                .outcome(AuditOutcome.SUCCESS)
+                .newValue(Map.of("why", why, "versions", done.versions(), "filesDestroyed", done.files()))
+                .log();
+        log.info("Purged document {} ({}): {} file(s) destroyed", documentId, why, done.files());
+        notifier.purged(document, why);
+        return PurgeResult.PURGED;
+    }
+
+    /** The body of {@link #purge}: runs inside its transaction. */
+    private Purged purgeLocked(UUID documentId, UUID tenantId, Object expectedDeletedAt) {
+        // Decided from the row as the database holds it once the lock is granted - not from an entity.
+        List<Map<String, Object>> rows = jdbc.queryForList("select is_deleted, purged_at, legal_hold, deleted_at, title "
+                + "from documents where document_id = ? and tenant_id = ? for update", documentId, tenantId);
+        if (rows.isEmpty() || rows.get(0).get("purged_at") != null) {
+            return new Purged(PurgeResult.GONE, 0, 0);
+        }
+        Map<String, Object> row = rows.get(0);
+        if (!Boolean.TRUE.equals(row.get("is_deleted"))) {
+            return new Purged(PurgeResult.RESTORED, 0, 0);
+        }
+        if (Boolean.TRUE.equals(row.get("legal_hold"))) {
+            return new Purged(PurgeResult.HELD, 0, 0);
+        }
+        if (expectedDeletedAt != null && !expectedDeletedAt.equals(row.get("deleted_at"))) {
+            return new Purged(PurgeResult.RE_DELETED, 0, 0);
+        }
+        Boolean protectedVersion = jdbc.queryForObject("select exists (select 1 from document_versions where "
+                + "document_id = ? and is_protected and purged_at is null)", Boolean.class, documentId);
+        if (Boolean.TRUE.equals(protectedVersion)) {
+            return new Purged(PurgeResult.PROTECTED, 0, 0);
+        }
+        List<UUID> versionIds = jdbc.queryForList("select version_id from document_versions where document_id = ? "
+                + "and tenant_id = ? and purged_at is null", UUID.class, documentId, tenantId);
         int files = 0;
-        for (DocumentVersion version : versions) {
-            if (version.getPurgedAt() != null) {
-                continue;
-            }
+        for (DocumentVersion version : versionRepository.findAllById(versionIds)) {
             if (destroyFiles(version)) {
                 files++;
             }
         }
-        transactions.executeWithoutResult(status -> {
-            jdbc.update("update document_versions set purged_at = now(), is_deleted = true, "
-                    + "deleted_at = coalesce(deleted_at, now()) where document_id = ? and purged_at is null",
-                    document.getDocumentId());
-            jdbc.update("delete from document_metadata where document_id = ?", document.getDocumentId());
-            jdbc.update("delete from document_access where document_id = ?", document.getDocumentId());
-            // Links to or from it are removed (the history and an audit record per link stay) - 2.8 DRM-FR-011.
-            relationshipPurge.removeLinksOf(document.getTenantId(), document.getDocumentId(), document.getTitle());
-            // Bookmarks go for good too - unlike a link, there's no history to keep (4.4).
-            bookmarkPurge.removeBookmarksOf(document.getTenantId(), document.getDocumentId());
-            jdbc.update("update documents set purged_at = now() where document_id = ?", document.getDocumentId());
-        });
-        auditService.event(AuditActionCatalog.DOCUMENT_PURGED)
-                .tenantId(document.getTenantId())
-                .objectType(AuditObjectTypes.DOCUMENT)
-                .objectId(document.getDocumentId())
-                .resourceName(document.getTitle())
-                .outcome(AuditOutcome.SUCCESS)
-                .newValue(Map.of("why", why, "versions", versions.size(), "filesDestroyed", files))
-                .log();
-        log.info("Purged document {} ({}): {} file(s) destroyed", document.getDocumentId(), why, files);
-        notifier.purged(document, why);
+        jdbc.update("update document_versions set purged_at = now(), is_deleted = true, "
+                + "deleted_at = coalesce(deleted_at, now()) where document_id = ? and purged_at is null", documentId);
+        jdbc.update("delete from document_metadata where document_id = ?", documentId);
+        jdbc.update("delete from document_access where document_id = ?", documentId);
+        // Links to or from it are removed (the history and an audit record per link stay) - 2.8 DRM-FR-011.
+        relationshipPurge.removeLinksOf(tenantId, documentId, (String) row.get("title"));
+        // Bookmarks go for good too - unlike a link, there's no history to keep (4.4).
+        bookmarkPurge.removeBookmarksOf(tenantId, documentId);
+        if (jdbc.update("update documents set purged_at = now() where document_id = ? and is_deleted "
+                + "and purged_at is null", documentId) != 1) {
+            throw new IllegalStateException("Document " + documentId + " changed while it was being purged");
+        }
+        return new Purged(PurgeResult.PURGED, versionIds.size(), files);
+    }
+
+    /** Takes the document's row lock for a restore, and insists it is still in the bin once it has it. */
+    private void lockStillInBin(Document document) {
+        List<Map<String, Object>> rows = jdbc.queryForList("select is_deleted, purged_at from documents "
+                + "where document_id = ? and tenant_id = ? for update", document.getDocumentId(),
+                document.getTenantId());
+        if (rows.isEmpty() || rows.get(0).get("purged_at") != null
+                || !Boolean.TRUE.equals(rows.get(0).get("is_deleted"))) {
+            throw new ResourceNotFoundException("Document", document.getDocumentId());
+        }
+    }
+
+    /**
+     * A purge that failed part way (storage error, failed commit, crash) leaves the document in the bin with some of its
+     * files already destroyed - storage deletion can't be rolled back. Bringing such a document back would show a live
+     * document with no content, so restoring one is refused: it can only be deleted for good (which finishes the job).
+     * Checked under the row lock, against what storage actually holds for each version still in use.
+     */
+    private void requireContentIntact(Document document) {
+        List<UUID> versionIds = jdbc.queryForList("select version_id from document_versions where document_id = ? "
+                + "and tenant_id = ? and purged_at is null and not is_deleted", UUID.class, document.getDocumentId(),
+                document.getTenantId());
+        for (DocumentVersion version : versionRepository.findAllById(versionIds)) {
+            StorageLocation location = storageLocationRepository.findById(version.getStorageLocationId()).orElse(null);
+            if (location != null && !storage.resolve(location).exists(location, version.getStorageObjectKey())) {
+                throw new FolderException(HttpStatus.CONFLICT, "DOCUMENT_CONTENT_MISSING",
+                        "\"" + document.getTitle() + "\" can't be restored: part of its content was already destroyed "
+                                + "by a permanent deletion that did not finish. Delete it permanently to complete that.");
+            }
+        }
     }
 
 /**

@@ -13,7 +13,7 @@ const item = (label: string, href?: string): NavItem => ({
 
 const sections: NavSection[] = [
   {
-    items: [item("Dashboard", "/"), item("My Documents", "/documents")],
+    items: [item("Dashboard", "/"), item("Documents", "/documents")],
     groups: [
       {
         label: "OCR",

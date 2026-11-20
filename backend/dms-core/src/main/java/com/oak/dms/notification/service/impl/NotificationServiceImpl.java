@@ -125,7 +125,8 @@ public class NotificationServiceImpl implements NotificationService {
                     .build());
 
             writeInAppDelivery(notification, recipientId);
-            anyEmailPending |= writeEmailDelivery(notification, category, user, request.isSuppressEmail());
+            anyEmailPending |= writeEmailDelivery(notification, category, user, request.isSuppressEmail(),
+                    request.getSuppressEmailReason());
             created.add(notification.getNotificationId());
         }
         if (anyEmailPending) {
@@ -151,11 +152,12 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /** Returns true when a pending email delivery was created (so the caller nudges the dispatcher). */
-    private boolean writeEmailDelivery(Notification notification, NotificationCategory category, User user, boolean suppressEmail) {
+    private boolean writeEmailDelivery(Notification notification, NotificationCategory category, User user,
+                                       boolean suppressed, String suppressedReason) {
         UUID tenantId = notification.getTenantId();
         UUID recipientId = user.getUserId();
         boolean hasEmail = user.getEmail() != null && !user.getEmail().isBlank();
-        boolean emailEnabled = !suppressEmail && preferenceResolver.emailEnabled(tenantId, recipientId, category);
+        boolean emailEnabled = !suppressed && preferenceResolver.emailEnabled(tenantId, recipientId, category);
 
         if (emailEnabled && hasEmail) {
             deliveries.save(NotificationDelivery.builder()
@@ -172,7 +174,7 @@ public class NotificationServiceImpl implements NotificationService {
             return true;
         }
 
-        String reason = suppressEmail ? "sent_by_other_channel" : !hasEmail ? "no_email" : "email_disabled";
+        String reason = suppressed ? suppressedReason : !hasEmail ? "no_email" : "email_disabled";
         NotificationDelivery skipped = deliveries.save(NotificationDelivery.builder()
                 .tenantId(tenantId)
                 .notificationId(notification.getNotificationId())
@@ -186,7 +188,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .updatedAt(OffsetDateTime.now())
                 .build());
         attemptLog.append(skipped, recipientId, 1, DeliveryOutcome.skipped, reason, null, null);
-        if (!hasEmail && !suppressEmail) {
+        if (!hasEmail && !suppressed) {
             // Alternate flow: no contact on record -> in-app only, flag the admin (N6/N7).
             auditor.recipientNoEmail(notification, user);
         }

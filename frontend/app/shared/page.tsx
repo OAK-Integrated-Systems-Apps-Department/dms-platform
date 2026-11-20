@@ -10,7 +10,7 @@ import { usePageTitle } from "@/lib/use-page-title"
 /**
  * Shared with me (V53/V54): folders and documents someone gave the caller
  * access to - including ones inside folders they can't otherwise open, which
- * My Documents' folder-by-folder browsing would never reach.
+ * Documents' folder-by-folder browsing would never reach.
  */
 export default function SharedWithMePage() {
   usePageTitle("Shared With Me")

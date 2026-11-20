@@ -154,6 +154,9 @@ public class OcrArtifactWriter {
         for (Artifact artifact : Artifact.values()) {
             keys.add(keyFor(version, artifact));
         }
+        // The search index's extracted-text cache (an encrypted derived copy of this version's text): purged with it.
+        keys.add(com.oak.dms.search.extract.TextArtifactStore.keyFor(
+                version.getTenantId(), version.getDocumentId(), version.getVersionId()));
         keys.addAll(jdbc.queryForList(
                 "SELECT extracted_text_ref FROM ocr_outputs WHERE version_id = ? AND extracted_text_ref IS NOT NULL",
                 String.class, version.getVersionId()));

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
 import {
   Bell,
   ChevronDown,
@@ -26,10 +25,8 @@ import { friendlyMessage } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { useAccountIdentity } from "@/lib/auth/use-account-identity"
 import { useDashboardScope } from "@/lib/auth/use-dashboard-scope"
+import { useLogout } from "@/lib/auth/use-logout"
 import { usePermissions } from "@/lib/auth/use-permissions"
-import { API_BASE_URL } from "@/lib/api-config"
-import { apiFetch, markIntentionalLogout } from "@/lib/api-fetch"
-import { ROUTES } from "@/lib/app-config"
 import { useDashboard } from "@/lib/dashboard/use-dashboard"
 import { downloadDocumentFile } from "@/lib/documents/api"
 import { saveDownloadedFile } from "@/lib/download-file"
@@ -71,7 +68,6 @@ type PreviewRow = Parameters<typeof DocumentPreview>[0]["row"]
  */
 export function AppTopbar() {
   const router = useRouter()
-  const queryClient = useQueryClient()
   // Name and initials come from here, not useCurrentUser directly: a platform
   // administrator has no local user row, and the menu used to render "…" for
   // them. See useAccountIdentity.
@@ -90,6 +86,7 @@ export function AppTopbar() {
   const notifRows = notifications.data?.content ?? []
   const markRead = useMarkRead()
   const [preview, setPreview] = useState<PreviewRow | null>(null)
+  const { logout, pending: loggingOut } = useLogout()
 
   const [pinOpen, setPinOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
@@ -133,27 +130,6 @@ export function AppTopbar() {
     } catch (error) {
       toast.error(friendlyMessage(error, "Could not download the document."))
     }
-  }
-
-  async function handleLogout() {
-    // Marked before the logout call itself so a background query already in
-    // flight (e.g. the notifications poll) that lands its 401 just after the
-    // session cookies are cleared doesn't get mistaken by providers.tsx's
-    // global handler for an unexpected session expiry - see
-    // markIntentionalLogout's own doc comment.
-    markIntentionalLogout()
-    // Best-effort: always navigate to /login regardless of outcome, same
-    // as before - a logout call failing (already logged out, network
-    // hiccup, whatever) shouldn't trap the person on the current page.
-    try {
-      await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: "POST" })
-    } catch {}
-    // Same reasoning as login-page-content.tsx's own onSuccess: a client-side navigation never
-    // remounts the Providers tree that owns the React Query cache, so without this, whoever signs in
-    // next in this same tab would start out seeing this person's cached "me"-scoped data.
-    queryClient.clear()
-    router.push(ROUTES.LOGIN)
-    router.refresh()
   }
 
   return (
@@ -239,7 +215,7 @@ export function AppTopbar() {
               }}
             >
               <FolderOpen size={14} />
-              Open My Documents
+              Open Documents
             </button>
           </Dropdown>
         )}
@@ -365,9 +341,9 @@ export function AppTopbar() {
             <div className="my-1 border-t border-border" />
             <MenuRow
               icon={LogOut}
-              label="Log out"
+              label={loggingOut ? "Signing out…" : "Log out"}
               danger
-              onClick={handleLogout}
+              onClick={() => void logout()}
             />
           </Dropdown>
         )}

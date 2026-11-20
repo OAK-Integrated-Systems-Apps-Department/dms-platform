@@ -1,6 +1,8 @@
 package com.oak.dms.workflow.controller;
 
 import com.oak.dms.common.dto.PageResponse;
+import com.oak.dms.document.ContentDispositionHeader;
+import com.oak.dms.document.ContentServingPolicy;
 import com.oak.dms.document.dto.DownloadedDocument;
 import com.oak.dms.workflow.dto.CancelWorkflowRequest;
 import com.oak.dms.workflow.dto.DocumentWorkflowStatusResponse;
@@ -143,10 +145,12 @@ public class WorkflowInstanceController {
         String contentType = downloaded.contentType() != null && !downloaded.contentType().isBlank()
                 ? downloaded.contentType()
                 : MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        return ResponseEntity.ok()
+        // Asked for in-page: inline only for PDF and raster images, and a sandbox CSP on everything but PDF.
+        return ContentServingPolicy.withSandbox(ResponseEntity.ok(), contentType)
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDispositionHeader.of(
+                        ContentServingPolicy.dispositionType(true, contentType), downloaded.filename()))
                 // Shown in the page - never let the browser guess a riskier type.
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
@@ -160,10 +164,4 @@ public class WorkflowInstanceController {
         supportingDocumentService.remove(id, supportingDocumentId);
     }
 
-    private static String sanitizeForHeader(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return "download";
-        }
-        return filename.replaceAll("[\\r\\n\"]", "_");
-    }
 }

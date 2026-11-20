@@ -11,7 +11,7 @@ import { usePageTitle } from "@/lib/use-page-title"
  * Scan Documents - upload a file, pick which fields OCR should extract, and
  * watch it come back.
  *
- * Its own route rather than a tab inside My Documents: the file picker, the
+ * Its own route rather than a tab inside Documents: the file picker, the
  * field picker and the per-field review that follows are one task with one
  * shape, and folding it into the browser would mean two different things
  * happening on one screen.
@@ -19,7 +19,7 @@ import { usePageTitle } from "@/lib/use-page-title"
  * The upload itself is the ordinary one - same endpoint, same malware scan
  * gate, same folder rules. The only difference is that it carries a field
  * selection, and OCR starts once the file comes back clean. A document
- * scanned here appears in My Documents like any other.
+ * scanned here appears in Documents like any other.
  */
 export default function ScanDocumentsPage() {
   usePageTitle("Scan Documents")
@@ -30,7 +30,7 @@ export default function ScanDocumentsPage() {
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          { label: "My Documents", href: "/documents" },
+          { label: "Documents", href: "/documents" },
           { label: "Scan documents" },
         ]}
       />

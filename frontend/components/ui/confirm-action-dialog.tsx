@@ -69,7 +69,7 @@ export function ConfirmActionDialog({
       }}
     >
       <AlertDialogPortal>
-        <AlertDialogPopup className="max-w-[440px]">
+        <AlertDialogPopup className="max-w-[560px] break-words">
           <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-btn bg-[var(--rust-tint)] text-[var(--rust)]">
             <AlertTriangle size={20} />
           </span>

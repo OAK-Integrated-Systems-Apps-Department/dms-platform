@@ -39,6 +39,9 @@ keycloak:
     server-url: http://keycloak:8080
 
 dms:
+  search:
+    opensearch:
+      url: ${OPENSEARCH_URL:http://opensearch:9200}
   scanning:
     clamav:
       host: clamav

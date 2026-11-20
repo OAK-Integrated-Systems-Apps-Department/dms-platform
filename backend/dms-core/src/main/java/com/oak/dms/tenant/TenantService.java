@@ -30,5 +30,12 @@ public interface TenantService {
 
     TenantResponse updateTenant(UUID tenantId, UpdateTenantRequest request);
 
+    /**
+     * The update an organisation's own administrator may make: the name only. Throws
+     * {@link org.springframework.security.access.AccessDeniedException} (403), saving nothing, when the request
+     * would change the subscription tier or the status - those belong to platform administrators.
+     */
+    TenantResponse renameOwnTenant(UUID tenantId, UpdateTenantRequest request);
+
     void deactivateTenant(UUID tenantId);
 }

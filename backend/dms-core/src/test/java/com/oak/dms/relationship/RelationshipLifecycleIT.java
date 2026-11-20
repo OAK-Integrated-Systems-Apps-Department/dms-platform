@@ -71,6 +71,9 @@ class RelationshipLifecycleIT extends RelationshipApiSupport {
         call(get("/api/v1/documents/" + b + "/relationships"), fx.jwtFor(editor), null, 404);
 
         long rowsBefore = fx.count("select count(*) from document_relationships where tenant_id = ?", tenantId);
+        // The fixture only records a version; a restore (DOC-09) insists its file is really stored.
+        fx.putVersionContent(fx.jdbc().queryForObject("select current_version_id from documents where document_id = ?",
+                UUID.class, b), "stored".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         call(post("/api/v1/recycle-bin/" + b + "/restore"), fx.jwtFor(editor), null, 200);
         assertThat(firstItem(a).get("other").get("inRecycleBin").asBoolean()).isFalse();
         assertThat(firstItem(b).get("label").asString()).isEqualTo("Superseded by");

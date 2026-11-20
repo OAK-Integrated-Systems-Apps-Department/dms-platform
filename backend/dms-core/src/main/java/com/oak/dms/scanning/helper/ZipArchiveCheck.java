@@ -119,75 +119,183 @@ public final class ZipArchiveCheck {
     }
 
     private static Result check(Path file, int maxEntries, long maxUncompressedBytes, Set<String> blockedExtensions) {
-        int entries = 0;
-        long unpacked = 0;
-        byte[] buffer = new byte[64 * 1024];
+        Budget budget = new Budget(maxEntries, maxUncompressedBytes);
         try (ZipFile zip = new ZipFile(file.toFile())) {
             if (zip.size() > maxEntries) {
-                return invalid("This ZIP holds more than " + maxEntries + " files - the most the virus scanner "
-                        + "checks in one archive. Split it into smaller archives.", zip.size(), 0);
+                return invalid(tooManyEntries(maxEntries), zip.size(), 0);
             }
             for (Enumeration<? extends ZipEntry> all = zip.entries(); all.hasMoreElements(); ) {
                 ZipEntry entry = all.nextElement();
-                entries++;
+                budget.entry();
                 if (entry.isDirectory()) {
                     continue;
                 }
                 if (blockedExtensions.contains(extension(entry.getName()))) {
-                    return invalid(program(entry.getName()), entries, unpacked);
+                    return invalid(program(entry.getName()), budget.entries, budget.bytes);
                 }
-                CRC32 crc = new CRC32();
-                byte[] head = new byte[HEAD_BYTES];
-                int headLength = 0;
-                try (InputStream data = zip.getInputStream(entry)) {
-                    for (int n = data.read(buffer); n >= 0; n = data.read(buffer)) {
-                        unpacked += n;
-                        if (unpacked > maxUncompressedBytes) {
-                            return invalid("Unpacked, this ZIP comes to more than "
-                                    + (maxUncompressedBytes / (1024 * 1024)) + " MB - the most the virus scanner "
-                                    + "checks in one archive. Split it into smaller archives.", entries, unpacked);
-                        }
-                        crc.update(buffer, 0, n);
-                        if (headLength < head.length) {
-                            int take = Math.min(n, head.length - headLength);
-                            System.arraycopy(buffer, 0, head, headLength, take);
-                            headLength += take;
-                        }
+                // One pass over the entry: every byte is counted against the budget and the CRC as it is read,
+                // and an archive nested inside is looked into from the same stream rather than inflating it again.
+                String blockedInNested = null;
+                byte[] head;
+                Meter data;
+                try (InputStream raw = zip.getInputStream(entry)) {
+                    data = new Meter(raw, budget, new CRC32());
+                    head = data.readNBytes(HEAD_BYTES);
+                    if (isNestedZip(entry.getName(), head, head.length)) {
+                        InputStream rest = new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(head),
+                                new java.io.FilterInputStream(data) {
+                                    @Override
+                                    public void close() {
+                                        // the entry's stream stays open until its CRC has been read
+                                    }
+                                });
+                        blockedInNested = blockedInside(rest, blockedExtensions, 1, budget);
                     }
+                    data.drain();
                 }
-                if (entry.getCrc() != -1 && crc.getValue() != entry.getCrc()) {
-                    return invalid(damaged(), entries, unpacked);
+                if (entry.getCrc() != -1 && data.crc() != entry.getCrc()) {
+                    return invalid(damaged(), budget.entries, budget.bytes);
                 }
-                if (looksExecutable(head, headLength)) {
-                    return invalid(program(entry.getName()), entries, unpacked);
+                if (looksExecutable(head, head.length)) {
+                    return invalid(program(entry.getName()), budget.entries, budget.bytes);
                 }
-                if (isNestedZip(entry.getName(), head, headLength)) {
-                    try (InputStream nested = zip.getInputStream(entry)) {
-                        String blocked = blockedInside(nested, blockedExtensions, 1);
-                        if (blocked != null) {
-                            return invalid(program(entry.getName() + " > " + blocked), entries, unpacked);
-                        }
-                    }
+                if (blockedInNested != null) {
+                    return invalid(program(entry.getName() + " > " + blockedInNested), budget.entries, budget.bytes);
                 }
             }
-            if (entries == 0) {
+            if (budget.entries == 0) {
                 return invalid("This ZIP is empty.", 0, 0);
             }
-            return new Result(Outcome.VALID, null, entries, unpacked);
+            return new Result(Outcome.VALID, null, budget.entries, budget.bytes);
+        } catch (LimitExceeded e) {
+            return invalid(e.getMessage(), budget.entries, budget.bytes);
         } catch (ZipException e) {
             String reason = e.getMessage() == null ? "" : e.getMessage();
             if (reason.contains("encrypted")) {
-                return new Result(Outcome.ENCRYPTED, "Password-protected ZIP archive", entries, unpacked);
+                return new Result(Outcome.ENCRYPTED, "Password-protected ZIP archive", budget.entries, budget.bytes);
             }
             if (reason.contains("compression method")) {
                 return invalid("This ZIP uses a compression method that can't be checked (only the standard "
                         + "Deflate or no compression can). Re-create it with a standard ZIP tool and upload it "
-                        + "again.", entries, unpacked);
+                        + "again.", budget.entries, budget.bytes);
             }
-            return invalid(damaged(), entries, unpacked);
+            return invalid(damaged(), budget.entries, budget.bytes);
         } catch (IOException | IllegalArgumentException e) {
             // EOF part-way through an entry, a header or entry name that doesn't parse.
-            return invalid(damaged(), entries, unpacked);
+            return invalid(damaged(), budget.entries, budget.bytes);
+        }
+    }
+
+    /**
+     * What one archive - and every archive nested inside it - may hold in total. Every entry and every
+     * unpacked byte at every level is added to the same two running totals, so putting the content inside
+     * another ZIP, or several levels down, cannot get past a limit that the same content would hit flat.
+     * A byte is counted once, as it is read: an archive's own bytes where it is an entry of its parent, and
+     * its entries' bytes where they are unpacked - the same things a scanner reads.
+     */
+    private static final class Budget {
+        private final int maxEntries;
+        private final long maxBytes;
+        int entries;
+        long bytes;
+
+        Budget(int maxEntries, long maxBytes) {
+            this.maxEntries = maxEntries;
+            this.maxBytes = maxBytes;
+        }
+
+        void entry() {
+            if (++entries > maxEntries) {
+                throw new LimitExceeded(tooManyEntries(maxEntries));
+            }
+        }
+
+        void bytes(long n) {
+            bytes += n;
+            if (bytes > maxBytes) {
+                throw new LimitExceeded("Unpacked, this ZIP comes to more than " + (maxBytes / (1024 * 1024))
+                        + " MB (counting any archives inside it) - the most the virus scanner checks in one "
+                        + "archive. Split it into smaller archives.");
+            }
+        }
+    }
+
+    /** A limit was crossed; carries the message for the uploader. Not an IOException, so nothing swallows it. */
+    private static final class LimitExceeded extends RuntimeException {
+        LimitExceeded(String message) {
+            super(message, null, false, false);
+        }
+    }
+
+    private static String tooManyEntries(int maxEntries) {
+        return "This ZIP holds more than " + maxEntries + " files (counting any archives inside it) - the most "
+                + "the virus scanner checks in one archive. Split it into smaller archives.";
+    }
+
+    /** Passes an entry's bytes through, adding each to the shared budget (and to a CRC when given one). */
+    private static final class Meter extends java.io.FilterInputStream {
+        private final Budget budget;
+        private final CRC32 crc;
+
+        Meter(InputStream in, Budget budget, CRC32 crc) {
+            super(in);
+            this.budget = budget;
+            this.crc = crc;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b >= 0) {
+                budget.bytes(1);
+                if (crc != null) {
+                    crc.update(b);
+                }
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int off, int len) throws IOException {
+            int n = super.read(buffer, off, len);
+            if (n > 0) {
+                budget.bytes(n);
+                if (crc != null) {
+                    crc.update(buffer, off, n);
+                }
+            }
+            return n;
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            byte[] sink = new byte[(int) Math.min(n, 8192)];
+            long skipped = 0;
+            while (skipped < n) {
+                int read = read(sink, 0, (int) Math.min(sink.length, n - skipped));
+                if (read < 0) {
+                    break;
+                }
+                skipped += read;
+            }
+            return skipped;
+        }
+
+        @Override
+        public boolean markSupported() {
+            return false;
+        }
+
+        /** Reads what is left of the entry, so it is all counted (and its CRC complete). */
+        void drain() throws IOException {
+            byte[] sink = new byte[64 * 1024];
+            while (read(sink, 0, sink.length) >= 0) {
+                // counted as it goes
+            }
+        }
+
+        long crc() {
+            return crc.getValue();
         }
     }
 
@@ -235,36 +343,43 @@ public final class ZipArchiveCheck {
 
     /**
      * The first program or script inside a nested ZIP (as "inner.zip > setup.msi" when deeper), or
-     * null. Read front to back as a stream - its index isn't at hand inside another archive. A nested
-     * archive that can't be read this way is left to ClamAV, which opens nested archives itself.
+     * null. Read front to back as a stream - its index isn't at hand inside another archive. Every
+     * entry and every unpacked byte goes against the same {@code budget} as the outer archive's, so
+     * what is nested is limited like what is not. A nested archive that can't be read this way is left
+     * to ClamAV, which opens nested archives itself; one nested deeper than {@link #MAX_NESTING} is
+     * not opened here either.
      */
-    private static String blockedInside(InputStream content, Set<String> blockedExtensions, int depth) {
+    private static String blockedInside(InputStream content, Set<String> blockedExtensions, int depth,
+                                        Budget budget) {
         try {
             ZipInputStream zip = new ZipInputStream(content);
             for (ZipEntry entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                budget.entry();
                 if (entry.isDirectory()) {
                     continue;
                 }
                 if (blockedExtensions.contains(extension(entry.getName()))) {
                     return entry.getName();
                 }
-                byte[] head = zip.readNBytes(HEAD_BYTES);
+                Meter data = new Meter(zip, budget, null);
+                byte[] head = data.readNBytes(HEAD_BYTES);
                 if (looksExecutable(head, head.length)) {
                     return entry.getName();
                 }
                 if (depth < MAX_NESTING && isNestedZip(entry.getName(), head, head.length)) {
                     InputStream rest = new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(head),
-                            new java.io.FilterInputStream(zip) {
+                            new java.io.FilterInputStream(data) {
                                 @Override
                                 public void close() {
                                     // the outer entry's stream stays open for the next entry
                                 }
                             });
-                    String blocked = blockedInside(rest, blockedExtensions, depth + 1);
+                    String blocked = blockedInside(rest, blockedExtensions, depth + 1, budget);
                     if (blocked != null) {
                         return entry.getName() + " > " + blocked;
                     }
                 }
+                data.drain(); // unpack the rest of the entry here, so it is counted rather than skipped past
             }
         } catch (IOException | IllegalArgumentException e) {
             return null;

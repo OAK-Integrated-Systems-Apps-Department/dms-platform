@@ -20,29 +20,45 @@ import { cn } from "@/lib/utils"
  */
 export function PinButton({
   row,
+  pinned: pinnedHint,
   className,
 }: {
   row: PinTarget
+  /**
+   * What the server already said for this row (search results decide it for the whole page). Only trusted until the
+   * shared pin list has loaded; after that the list is the truth, so pinning or unpinning here shows at once.
+   */
+  pinned?: boolean
   className?: string
 }) {
-  const { pinOf, canToggle, openPin } = usePins()
+  const { pinOf, canToggle, openPin, isLoading } = usePins()
   const pin = pinOf(row.documentId)
-  const pinned = pin !== undefined
+  const { hasPermission } = usePermissions()
+  const listReadable = hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
+  const pinned = pin !== undefined || (pinnedHint === true && (isLoading || !listReadable))
 
   if (!canToggle(row.documentId)) {
-    return pin && !pin.mine ? (
-      <PinnedMark
-        by={pin.pinnedByName}
-        className={cn("size-8 justify-center", className)}
-      />
+    if (pin && !pin.mine) {
+      return (
+        <PinnedMark
+          by={pin.pinnedByName}
+          className={cn("size-8 justify-center", className)}
+        />
+      )
+    }
+    // No pin permission and no list to read (the list needs docm.documents.view): the server's word is all there is.
+    return pinnedHint === true && pin === undefined ? (
+      <PinnedMark className={cn("size-8 justify-center", className)} />
     ) : null
   }
 
   const label = pin?.mine
     ? `Change who sees ${row.title}`
-    : pinned
+    : pin
       ? `Pin ${row.title} yourself (already pinned by ${pin.pinnedByName})`
-      : `Pin ${row.title}`
+      : pinned
+        ? `Change who sees ${row.title}`
+        : `Pin ${row.title}`
 
   return (
     <button
@@ -52,9 +68,11 @@ export function PinButton({
       title={
         pin?.mine
           ? "Pinned by you - change who sees it, or unpin"
-          : pinned
+          : pin
             ? `Pinned by ${pin.pinnedByName} - click to pin it yourself`
-            : "Pin, and choose who sees it"
+            : pinned
+              ? "Pinned - change who sees it, or unpin"
+              : "Pin, and choose who sees it"
       }
       onClick={(event) => {
         event.stopPropagation()

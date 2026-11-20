@@ -113,6 +113,11 @@ public class Document {
     @Builder.Default
     private boolean template = false;
 
+    /** Marked confidential (V144): cannot be shared externally unless a tenant administrator overrides - see ShareTargets. */
+    @Column(name = "confidential", nullable = false)
+    @Builder.Default
+    private boolean confidential = false;
+
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 

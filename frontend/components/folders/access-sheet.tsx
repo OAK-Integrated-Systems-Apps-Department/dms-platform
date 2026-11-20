@@ -96,7 +96,7 @@ const FOLDER_MODES: ModeOption[] = [
     value: "everyone",
     icon: Building2,
     title: "Everyone in the organisation",
-    description: "Anyone who can use My Documents can open it.",
+    description: "Anyone who can use Documents can open it.",
   },
   {
     value: "restricted",
@@ -193,7 +193,20 @@ function AccessEditor({
   // Starting to restrict an inheriting folder copies the list it inherits.
   const [entries, setEntries] = useState<Draft[]>(access.entries)
   const [saving, setSaving] = useState(false)
+  const [notify, setNotify] = useState(true)
+  const [message, setMessage] = useState("")
   const readOnly = !access.canManage
+  // Only people newly on the list are told (the server does the same sum). Without a list of its own yet
+  // (inheriting), everyone on the draft is new - the entries shown then are the inherited ones.
+  const alreadyOn = new Set(
+    access.mode === "restricted"
+      ? access.entries.map((e) => `${e.principalType}:${e.principalId}`)
+      : []
+  )
+  const newcomers =
+    mode === "restricted"
+      ? entries.filter((e) => !alreadyOn.has(`${e.principalType}:${e.principalId}`))
+      : []
   const inheritedLabel =
     access.effectiveMode === "restricted"
       ? `Restricted - set on "${access.inheritedFromName ?? target.name}"`
@@ -210,13 +223,18 @@ function AccessEditor({
               level,
             }))
           : []
+      const notice =
+        newcomers.length > 0
+          ? { emailPeople: notify, message: notify ? message.trim() : "" }
+          : undefined
       if (target.kind === "folder") {
-        await saveFolderAccess(target.id, mode, list)
+        await saveFolderAccess(target.id, mode, list, notice)
       } else {
         await saveDocumentAccess(
           target.id,
           mode === "restricted" ? "restricted" : "inherit",
-          list
+          list,
+          notice
         )
       }
       toast.success(`Access to "${target.name}" updated.`)
@@ -367,6 +385,42 @@ function AccessEditor({
               create subfolders. Manage: also move, delete and change access.
               What people can do still depends on their role&apos;s permissions.
             </p>
+            {!readOnly && newcomers.length > 0 && (
+              <div className="mt-4 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-3">
+                <label className="flex items-start gap-2.5 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={notify}
+                    onChange={(e) => setNotify(e.target.checked)}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span>
+                    <span className="block font-medium">
+                      Notify people by email
+                    </span>
+                    <span className="block text-[12px] text-muted-foreground">
+                      {newcomers.length === 1
+                        ? "1 person or role is"
+                        : `${newcomers.length} people or roles are`}{" "}
+                      new on this list. They always get a note in their inbox;
+                      this also sends an email with a link that opens the{" "}
+                      {target.kind}.
+                    </span>
+                  </span>
+                </label>
+                {notify && (
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    placeholder="Add a message (optional)"
+                    aria-label="Message to include"
+                    className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-ring"
+                  />
+                )}
+              </div>
+            )}
           </section>
         )}
       </div>

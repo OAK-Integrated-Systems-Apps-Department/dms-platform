@@ -2,7 +2,7 @@ import { LoaderArt } from "@/components/ui/loading-state"
 
 /**
  * Shown by Next while a page is being fetched on navigation, before the page's own layout (sidebar, top bar) exists: the
- * same animated stack of sheets as the in-page loading state, centred on the app background with the product name.
+ * same growing-oak animation as the in-page loading state, centred on the app background with the product name.
  */
 export default function Loading() {
   return (

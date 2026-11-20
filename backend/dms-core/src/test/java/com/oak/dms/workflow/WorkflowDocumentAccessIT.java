@@ -191,7 +191,9 @@ class WorkflowDocumentAccessIT extends WorkflowApiSupport {
         postAs("/api/v1/workflow/instances/" + id(submitted, "instanceId") + "/cancel", owner,
                 Map.of("reason", "Withdrawn"), 200);
         call(delete("/api/v1/documents/" + document), fx.jwtFor(owner), null, 204);
-        // Restoring is unaffected.
+        // Restoring is unaffected. (The fixture only records a version; a restore - DOC-09 - insists its file is stored.)
+        fx.putVersionContent(fx.jdbc().queryForObject("select current_version_id from documents where document_id = ?",
+                UUID.class, document), "stored".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         call(post("/api/v1/recycle-bin/" + document + "/restore"), fx.jwtFor(owner), null, 200);
     }
 

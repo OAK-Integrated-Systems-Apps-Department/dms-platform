@@ -13,6 +13,7 @@ import com.oak.dms.metadata.service.MetadataValidationService;
 import com.oak.dms.metadata.dto.DocumentTypeSchemaResponse;
 import com.oak.dms.metadata.dto.ValidationError;
 import com.oak.dms.audit.helper.SystemActor;
+import com.oak.dms.folder.FolderAccessLevel;
 import com.oak.dms.security.auth.TenantContext;
 import com.oak.dms.signature.service.DocumentSignatureLockService;
 import lombok.RequiredArgsConstructor;
@@ -81,12 +82,13 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     private final MetadataValidationService metadataValidationService;
     private final ObjectMapper objectMapper;
     private final DocumentSignatureLockService signatureLockService;
+    private final com.oak.dms.folder.DocumentAccessService documentAccessService;
 
     @Override
     @Transactional(readOnly = true)
     public Map<String, Object> getValues(UUID documentId) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = requireDocument(documentId, tenantId);
+        Document document = requireAccessible(documentId, tenantId, FolderAccessLevel.view);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
 
         Map<UUID, DocumentTypeSchemaResponse.SchemaField> fieldsById = schema.fields().stream()
@@ -117,7 +119,7 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
     @Transactional
     public void saveValues(UUID documentId, Map<String, Object> valuesByFieldKey, boolean enforceMandatory) {
         UUID tenantId = TenantContext.getTenantId();
-        Document document = requireDocument(documentId, tenantId);
+        Document document = requireAccessible(documentId, tenantId, FolderAccessLevel.edit);
         signatureLockService.guard(document);
         DocumentTypeSchemaResponse schema = documentTypeFieldService.getSchema(document.getDocumentTypeId());
         writeValues(document, tenantId, schema, valuesByFieldKey, SOURCE_MANUAL, null, enforceMandatory);
@@ -452,6 +454,18 @@ public class DocumentMetadataServiceImpl implements DocumentMetadataService {
             }
         }
         return String.valueOf(stored);
+    }
+
+    /**
+     * The caller's own tenant's live document, if folder / document access lets them in at {@code needed}:
+     * hidden or deleted is 404, visible but not changeable (for {@code edit}) is 403 - the same rule every other
+     * document route applies. For the user-facing reads and writes only: the OCR path
+     * ({@link #applyOcrFields}) has no signed-in user and keeps {@link #requireDocument}.
+     */
+    private Document requireAccessible(UUID documentId, UUID tenantId, FolderAccessLevel needed) {
+        Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("documents", documentId));
+        return documentAccessService.require(documentAccessService.forCaller(), document, needed);
     }
 
     private Document requireDocument(UUID documentId, UUID tenantId) {

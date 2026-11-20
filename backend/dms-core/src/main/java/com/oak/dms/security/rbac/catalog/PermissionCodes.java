@@ -49,6 +49,17 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // Sharing and External Access - SEA, seeded by V10. Held implicitly by tenant admins.
+    public static final String SEA_CREATE_LINK = "sea.create-external-share-links.create-link";
+    public static final String SEA_SET_EXPIRY_PASSWORD = "sea.create-external-share-links.set-expiry-password";
+    public static final String SEA_SET_PERMISSION_LEVEL = "sea.create-external-share-links.set-permission-level";
+    public static final String SEA_INVITE_GUEST = "sea.manage-guest-access.invite-guest";
+    public static final String SEA_UPDATE_GUEST = "sea.manage-guest-access.update-guest-access";
+    public static final String SEA_REVOKE_GUEST = "sea.manage-guest-access.revoke-guest-access";
+    public static final String SEA_VIEW_GUESTS = "sea.manage-guest-access.view-guest-list";
+    public static final String SEA_REVOKE_SINGLE = "sea.revoke-share-links.revoke-single";
+    public static final String SEA_VIEW_ACTIVITY = "sea.view-sharing-activity-log.view";
+
     // Pin Important Documents - PID (pins are personal; the limit is the organisation's)
     public static final String PID_PIN = "pid.pin-unpin-documents.pin";
     public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";
@@ -265,6 +276,15 @@ public final class PermissionCodes {
     // A retention rule's version limits are the DVC "configure version retention" permissions (V10 rows, first used here).
     public static final String DVC_SET_MAX_VERSIONS = "dvc.configure-version-retention-rules.set-max-versions";
     public static final String DVC_SET_VERSION_PERIOD = "dvc.configure-version-retention-rules.set-retention-period";
+
+    // Document Search & Retrieval - DSR (4.1), V10 rows. Referenced by SearchController and the presets API. Granted by
+    // V139 (search) and V141 (presets create/update/delete) to roles that can search.
+    public static final String DSR_SEARCH_DOCUMENTS = "dsr.search-documents";
+    public static final String DSR_MANAGE_PRESETS_CREATE = "dsr.manage-saved-search-presets.create";
+    public static final String DSR_MANAGE_PRESETS_UPDATE = "dsr.manage-saved-search-presets.update";
+    public static final String DSR_MANAGE_PRESETS_DELETE = "dsr.manage-saved-search-presets.delete";
+    /** Declared, never checked: presets are private (DSR-NFR-008). A test asserts nothing references it. */
+    public static final String DSR_MANAGE_PRESETS_SHARE = "dsr.manage-saved-search-presets.share";
 
     // Notifications - NOTIF (3.2), seeded by V105. Granted to no role by
     // default; tenant admins hold them implicitly. Own inbox and own

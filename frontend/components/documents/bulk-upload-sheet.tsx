@@ -1,7 +1,7 @@
 "use client"
 
 import { LoadFailed } from "@/components/ui/load-failed"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -177,10 +177,12 @@ interface BulkUploadSheetProps {
   initialDrop?: DroppedFile[]
   /** May create folders - needed to keep the structure of a dropped folder. */
   canCreateFolders?: boolean
-  /** Folder preselected (e.g. the one being browsed); "" or absent = the top level of My Documents. Read once on mount. */
+  /** Folder preselected (e.g. the one being browsed); "" or absent = the top level of Documents. Read once on mount. */
   initialFolderId?: string
   /** Called once every file handed to the uploads panel has finished, e.g. to refresh a list. */
   onUploaded?: () => void
+  /** Tells the parent while the files are being checked, so it can show a loader that outlives this sheet closing. */
+  onCheckingChange?: (checking: boolean) => void
 }
 
 /**
@@ -200,6 +202,7 @@ export function BulkUploadSheet({
   canCreateFolders = false,
   initialFolderId,
   onUploaded,
+  onCheckingChange,
 }: BulkUploadSheetProps) {
   const [chosenType, setDocumentTypeId] = useState(lastDocumentType)
   const [folderId, setFolderId] = useState(initialFolderId ?? "")
@@ -210,6 +213,10 @@ export function BulkUploadSheet({
     ])
   )
   const [checking, setChecking] = useState(false)
+  useEffect(() => {
+    onCheckingChange?.(checking)
+    return () => onCheckingChange?.(false)
+  }, [checking, onCheckingChange])
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const types = useSelectableDocumentTypes(open)
@@ -428,7 +435,7 @@ export function BulkUploadSheet({
    */
   function handOff(all: UploadItem[]) {
     const nameOf = (id: string | null) =>
-      id ? (folders.byId.get(id)?.name ?? "Folder") : "My Documents"
+      id ? (folders.byId.get(id)?.name ?? "Folder") : "Documents"
     const sending = all.filter(
       (item) =>
         item.state.kind === "queued" && item.duplicate?.choice !== "skip"
@@ -446,7 +453,7 @@ export function BulkUploadSheet({
           return {
             request,
             folderId: duplicate.match.folderId,
-            folderName: duplicate.match.folderName ?? "My Documents",
+            folderName: duplicate.match.folderName ?? "Documents",
           }
         }
         const target = targetOf(item)
@@ -517,282 +524,292 @@ export function BulkUploadSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full gap-0 data-[side=right]:sm:max-w-[560px]"
-      >
-        <SheetHeader className="border-b border-border">
-          <SheetTitle>Upload documents</SheetTitle>
-          <SheetDescription>
-            Upload many files at once as one document type. Every file is
-            scanned for malware before it becomes a document.
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetContent
+          side="right"
+          className="w-full gap-0 data-[side=right]:sm:max-w-[560px]"
+        >
+          <SheetHeader className="border-b border-border">
+            <SheetTitle>Upload documents</SheetTitle>
+            <SheetDescription>
+              Upload many files at once as one document type. Every file is
+              scanned for malware before it becomes a document.
+            </SheetDescription>
+          </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-              Document type
-            </p>
-            <SearchableSelect
-              allLabel={types.isPending ? "Loading…" : "Choose a document type"}
-              selected={documentTypeId}
-              onChange={setDocumentTypeId}
-              options={(types.data ?? []).map((t) => ({
-                value: t.documentTypeId,
-                label: t.typeName,
-              }))}
-              className="w-full"
-            />
-            {types.isError && (
-              <LoadFailed error={types.error} fallback="Could not load document types." quiet />
-            )}
-            {types.data && types.data.length === 0 && (
-              <p className="mt-1.5 text-[12.5px] text-muted-foreground">
-                No active document types exist yet.
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Document type
               </p>
-            )}
-            {documentTypeId && (templates.data ?? []).length > 0 && (
-              <div className="mt-2 rounded-btn bg-muted/50 px-3 py-2 text-[12.5px]">
-                <p className="mb-1 text-muted-foreground">
-                  Templates for this type - fill one in, then upload it here:
-                </p>
-                <ul className="flex flex-col gap-0.5">
-                  {(templates.data ?? []).map((template) => (
-                    <li key={template.templateId}>
-                      <button
-                        type="button"
-                        onClick={() => void downloadTemplate(template)}
-                        className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
-                      >
-                        <Download size={13} aria-hidden="true" />
-                        {template.name}
-                        <span className="font-normal text-muted-foreground">
-                          {template.fileName && `(${template.fileName})`}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
-              Folder
-            </p>
-            <FolderSelect
-              value={folderId}
-              onChange={changeFolder}
-              className="w-full"
-              disabled={checking}
-            />
-            {keepsStructure && (
-              <p className="mt-1.5 text-[12px] text-muted-foreground">
-                {canCreateFolders
-                  ? "The folders you dropped are recreated inside this one, with each file in its own folder."
-                  : "You can't create folders, so every file goes straight into this folder."}
-              </p>
-            )}
-          </div>
-
-          <div
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragOver(true)
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault()
-              setDragOver(false)
-              if (!checking) addFiles(Array.from(e.dataTransfer.files))
-            }}
-            className={`rounded-lg border border-dashed p-6 text-center transition-colors ${
-              dragOver
-                ? "border-primary bg-primary/5"
-                : "border-[var(--border-strong)]"
-            }`}
-          >
-            <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
-            <p className="text-[13px] text-foreground">Drag files here, or</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              disabled={checking}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Choose files
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files) addFiles(Array.from(e.target.files))
-                e.target.value = ""
-              }}
-            />
-          </div>
-
-          {waitingForChoice.length > 0 && !checking && (
-            <div className="flex flex-col gap-2 rounded-lg border border-[var(--gold)] bg-[var(--gold-tint)] p-3 text-[12.5px]">
-              <p className="flex items-start gap-2 font-medium text-foreground">
-                <Copy
-                  size={14}
-                  className="mt-0.5 shrink-0 text-[var(--gold)]"
+              <SearchableSelect
+                allLabel={
+                  types.isPending ? "Loading…" : "Choose a document type"
+                }
+                selected={documentTypeId}
+                onChange={setDocumentTypeId}
+                options={(types.data ?? []).map((t) => ({
+                  value: t.documentTypeId,
+                  label: t.typeName,
+                }))}
+                className="w-full"
+              />
+              {types.isError && (
+                <LoadFailed
+                  error={types.error}
+                  fallback="Could not load document types."
+                  quiet
                 />
-                {waitingForChoice.length === 1
-                  ? "1 file is already in the DMS."
-                  : `${waitingForChoice.length} files are already in the DMS.`}{" "}
-                Choose what to do with each, then upload.
-              </p>
-              {waitingForChoice.length > 1 && (
-                <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-                  For all of them:
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => chooseForAll("version")}
-                  >
-                    New version
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => chooseForAll("both")}
-                  >
-                    Keep both
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => chooseForAll("skip")}
-                  >
-                    Skip
-                  </Button>
+              )}
+              {types.data && types.data.length === 0 && (
+                <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+                  No active document types exist yet.
+                </p>
+              )}
+              {documentTypeId && (templates.data ?? []).length > 0 && (
+                <div className="mt-2 rounded-btn bg-muted/50 px-3 py-2 text-[12.5px]">
+                  <p className="mb-1 text-muted-foreground">
+                    Templates for this type - fill one in, then upload it here:
+                  </p>
+                  <ul className="flex flex-col gap-0.5">
+                    {(templates.data ?? []).map((template) => (
+                      <li key={template.templateId}>
+                        <button
+                          type="button"
+                          onClick={() => void downloadTemplate(template)}
+                          className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                        >
+                          <Download size={13} aria-hidden="true" />
+                          {template.name}
+                          <span className="font-normal text-muted-foreground">
+                            {template.fileName && `(${template.fileName})`}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
-          )}
 
-          {items.length > 0 && (
-            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
-              {items.map((item) => (
-                <li key={item.id} className="flex items-start gap-3 p-3">
-                  <div className="min-w-0 flex-1">
-                    {item.state.kind === "queued" ? (
-                      <Input
-                        value={item.title}
-                        onChange={(e) =>
-                          update(item.id, { title: e.target.value })
-                        }
-                        aria-label={`Title for ${item.file.name}`}
-                        className="h-8 text-[13px]"
-                      />
-                    ) : (
-                      <p className="truncate text-[13.5px] font-semibold text-foreground">
-                        {item.title}
-                      </p>
-                    )}
-                    <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground">
-                      {item.file.name} · {formatBytes(item.file.size)}
-                    </p>
-                    {item.dir.length > 0 && canCreateFolders && (
-                      <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-muted-foreground">
-                        <Folder size={12} className="shrink-0" />
-                        {item.dir.join(" / ")}
-                      </p>
-                    )}
-                    {"message" in item.state && (
-                      <p className="mt-1 text-[12px] text-[var(--rust)]">
-                        {item.state.message}
-                      </p>
-                    )}
-                    {item.duplicate && item.state.kind === "queued" && (
-                      <DuplicateChoicePicker
-                        match={item.duplicate.match}
-                        choice={item.duplicate.choice}
-                        disabled={checking}
-                        needsNewName={needsNewName(item)}
-                        onChange={(choice) => choose(item.id, choice)}
-                      />
-                    )}
-                  </div>
-                  <Badge
-                    variant={item.state.kind === "queued" ? "outline" : "rust"}
-                    className="shrink-0 rounded-btn"
-                  >
-                    {STATE_LABEL[item.state.kind]}
-                  </Badge>
-                  {item.state.kind === "queued" && !checking && (
-                    <button
-                      type="button"
-                      aria-label={`Remove ${item.file.name}`}
-                      onClick={() =>
-                        setItems((current) =>
-                          current.filter((i) => i.id !== item.id)
-                        )
-                      }
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Folder
+              </p>
+              <FolderSelect
+                value={folderId}
+                onChange={changeFolder}
+                className="w-full"
+                disabled={checking}
+              />
+              {keepsStructure && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">
+                  {canCreateFolders
+                    ? "The folders you dropped are recreated inside this one, with each file in its own folder."
+                    : "You can't create folders, so every file goes straight into this folder."}
+                </p>
+              )}
+            </div>
 
-        <SheetFooter className="border-t border-border">
-          {items.length > 0 && (
-            <p className="text-[12.5px] text-muted-foreground">
-              {items.length} file{items.length === 1 ? "" : "s"}
-              {problems > 0 && ` · ${problems} with problems`}
-            </p>
-          )}
-          <div className="flex gap-2">
-            {retryable.length > 0 && !checking && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragOver(true)
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDragOver(false)
+                if (!checking) addFiles(Array.from(e.dataTransfer.files))
+              }}
+              className={`rounded-lg border border-dashed p-6 text-center transition-colors ${
+                dragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-[var(--border-strong)]"
+              }`}
+            >
+              <Upload className="mx-auto mb-2 size-5 text-muted-foreground" />
+              <p className="text-[13px] text-foreground">Drag files here, or</p>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void retry()}
+                size="sm"
+                className="mt-2"
+                disabled={checking}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <RotateCcw /> Try again ({retryable.length})
+                Choose files
               </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(Array.from(e.target.files))
+                  e.target.value = ""
+                }}
+              />
+            </div>
+
+            {waitingForChoice.length > 0 && !checking && (
+              <div className="flex flex-col gap-2 rounded-lg border border-[var(--gold)] bg-[var(--gold-tint)] p-3 text-[12.5px]">
+                <p className="flex items-start gap-2 font-medium text-foreground">
+                  <Copy
+                    size={14}
+                    className="mt-0.5 shrink-0 text-[var(--gold)]"
+                  />
+                  {waitingForChoice.length === 1
+                    ? "1 file is already in the DMS."
+                    : `${waitingForChoice.length} files are already in the DMS.`}{" "}
+                  Choose what to do with each, then upload.
+                </p>
+                {waitingForChoice.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                    For all of them:
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => chooseForAll("version")}
+                    >
+                      New version
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => chooseForAll("both")}
+                    >
+                      Keep both
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => chooseForAll("skip")}
+                    >
+                      Skip
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
-            <Button
-              type="button"
-              disabled={!canUpload}
-              onClick={() => void start()}
-              className="flex-1"
-            >
-              {checking ? <Loader2 className="animate-spin" /> : <Upload />}
-              {checking
-                ? "Checking for duplicates…"
-                : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
-            </Button>
+
+            {items.length > 0 && (
+              <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+                {items.map((item) => (
+                  <li key={item.id} className="flex items-start gap-3 p-3">
+                    <div className="min-w-0 flex-1">
+                      {item.state.kind === "queued" ? (
+                        <Input
+                          value={item.title}
+                          onChange={(e) =>
+                            update(item.id, { title: e.target.value })
+                          }
+                          aria-label={`Title for ${item.file.name}`}
+                          className="h-8 text-[13px]"
+                        />
+                      ) : (
+                        <p className="truncate text-[13.5px] font-semibold text-foreground">
+                          {item.title}
+                        </p>
+                      )}
+                      <p className="mt-1 truncate font-mono text-[11.5px] text-muted-foreground">
+                        {item.file.name} · {formatBytes(item.file.size)}
+                      </p>
+                      {item.dir.length > 0 && canCreateFolders && (
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-muted-foreground">
+                          <Folder size={12} className="shrink-0" />
+                          {item.dir.join(" / ")}
+                        </p>
+                      )}
+                      {"message" in item.state && (
+                        <p className="mt-1 text-[12px] text-[var(--rust)]">
+                          {item.state.message}
+                        </p>
+                      )}
+                      {item.duplicate && item.state.kind === "queued" && (
+                        <DuplicateChoicePicker
+                          match={item.duplicate.match}
+                          choice={item.duplicate.choice}
+                          disabled={checking}
+                          needsNewName={needsNewName(item)}
+                          onChange={(choice) => choose(item.id, choice)}
+                        />
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        item.state.kind === "queued" ? "outline" : "rust"
+                      }
+                      className="shrink-0 rounded-btn"
+                    >
+                      {STATE_LABEL[item.state.kind]}
+                    </Badge>
+                    {item.state.kind === "queued" && !checking && (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${item.file.name}`}
+                        onClick={() =>
+                          setItems((current) =>
+                            current.filter((i) => i.id !== item.id)
+                          )
+                        }
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {!documentTypeId && queued.length > 0 && (
-            <p className="text-[12px] text-muted-foreground">
-              Choose a document type to upload.
-            </p>
-          )}
-          {unnamedCopies > 0 && (
-            <p className="text-[12px] text-[var(--rust)]">
-              {unnamedCopies === 1
-                ? "1 file kept beside an existing document needs a different name."
-                : `${unnamedCopies} files kept beside existing documents need different names.`}
-            </p>
-          )}
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+
+          <SheetFooter className="border-t border-border">
+            {items.length > 0 && (
+              <p className="text-[12.5px] text-muted-foreground">
+                {items.length} file{items.length === 1 ? "" : "s"}
+                {problems > 0 && ` · ${problems} with problems`}
+              </p>
+            )}
+            <div className="flex gap-2">
+              {retryable.length > 0 && !checking && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void retry()}
+                >
+                  <RotateCcw /> Try again ({retryable.length})
+                </Button>
+              )}
+              <Button
+                type="button"
+                disabled={!canUpload}
+                onClick={() => void start()}
+                className="flex-1"
+              >
+                {checking ? <Loader2 className="animate-spin" /> : <Upload />}
+                {checking
+                  ? "Checking for duplicates…"
+                  : `Upload ${queued.length || ""} file${queued.length === 1 ? "" : "s"}`}
+              </Button>
+            </div>
+            {!documentTypeId && queued.length > 0 && (
+              <p className="text-[12px] text-muted-foreground">
+                Choose a document type to upload.
+              </p>
+            )}
+            {unnamedCopies > 0 && (
+              <p className="text-[12px] text-[var(--rust)]">
+                {unnamedCopies === 1
+                  ? "1 file kept beside an existing document needs a different name."
+                  : `${unnamedCopies} files kept beside existing documents need different names.`}
+              </p>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }
 
@@ -847,7 +864,7 @@ function DuplicateChoicePicker({
               }
               onClick={() => onChange(option.value)}
               className={cn(
-                "border transition-colors disabled:cursor-not-allowed disabled:opacity-50 h-[38px] rounded-btn px-4 text-[13px] font-semibold inline-flex items-center justify-center",
+                "inline-flex h-[38px] items-center justify-center rounded-btn border px-4 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 choice === option.value
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-card text-foreground hover:border-primary/60"

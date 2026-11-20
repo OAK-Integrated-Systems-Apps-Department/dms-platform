@@ -9,7 +9,7 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 
 /**
- * The 3-dots menu on the document page header - the same "Move to" the My Documents list offers on each
+ * The 3-dots menu on the document page header - the same "Move to" the Documents list offers on each
  * document, so a document can be re-filed from where you are reading it. Offered only to someone with the move
  * permission (the list uses the same one); whether THIS document may move (edit access, not locked, not on
  * legal hold) is the server's call and its reason is shown in the dialog. Renders nothing when there is

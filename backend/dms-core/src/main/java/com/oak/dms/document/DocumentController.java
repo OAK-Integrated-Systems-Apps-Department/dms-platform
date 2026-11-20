@@ -279,12 +279,13 @@ public class DocumentController {
                 ? downloaded.contentType()
                 : MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
-        return ResponseEntity.ok()
+        // inline only for PDF and raster images, and a sandbox CSP on everything but PDF - see ContentServingPolicy.
+        return ContentServingPolicy.withSandbox(ResponseEntity.ok(), contentType)
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        (inline ? "inline" : "attachment") + "; filename=\""
-                                + sanitizeForHeader(downloaded.filename()) + "\"")
+                        ContentDispositionHeader.of(ContentServingPolicy.dispositionType(inline, contentType),
+                                downloaded.filename()))
                 // A preview is shown in the page - never let the browser guess a riskier type.
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
@@ -312,7 +313,7 @@ public class DocumentController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PDF_VALUE)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.sizeBytes()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(pdf.filename()) + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDispositionHeader.inline(pdf.filename()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
     }
@@ -452,7 +453,7 @@ public class DocumentController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PDF_VALUE)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdf.sizeBytes()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + sanitizeForHeader(pdf.filename()) + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDispositionHeader.inline(pdf.filename()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
     }
@@ -477,11 +478,12 @@ public class DocumentController {
         String contentType = downloaded.contentType() != null && !downloaded.contentType().isBlank()
                 ? downloaded.contentType()
                 : MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        return ResponseEntity.ok()
+        return ContentServingPolicy.withSandbox(ResponseEntity.ok(), contentType)
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(downloaded.sizeBytes()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        (inline ? "inline" : "attachment") + "; filename=\"" + sanitizeForHeader(downloaded.filename()) + "\"")
+                        ContentDispositionHeader.of(ContentServingPolicy.dispositionType(inline, contentType),
+                                downloaded.filename()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(body);
     }
@@ -522,14 +524,6 @@ public class DocumentController {
     public DocumentAccessResponse updateAccess(@PathVariable("id") UUID id,
                                                @Valid @RequestBody UpdateFolderAccessRequest request) {
         return documentAccessService.updateAccess(id, request);
-    }
-
-    /** Strips characters that could break out of the quoted filename in a Content-Disposition header. */
-    private static String sanitizeForHeader(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return "download";
-        }
-        return filename.replaceAll("[\\r\\n\"]", "_");
     }
 
     // ------------------------------------------------------------------ OCR

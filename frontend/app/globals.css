@@ -431,19 +431,13 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 }
 
 /* ---------------------------------------------------------------------------------------------------------------
- * Loading state (components/ui/loading-state.tsx, app/loading.tsx): a stack of document sheets with a scan line.
- * Colours come from the theme variables, so it follows the green / gold brand in light and dark mode.
+ * Loading state (components/ui/loading-state.tsx, app/loading.tsx): the growing-oak GIF with the three dots.
  * ------------------------------------------------------------------------------------------------------------- */
 /* Fade in after a short delay so quick loads never flash the loader, and promote moving parts to the compositor. */
 .dms-loader {
   animation: dms-fade-in 0.3s ease-out 0.15s both;
 }
 
-.dms-loader-art,
-.dms-sheet-back,
-.dms-sheet-mid,
-.dms-seal,
-.dms-scan,
 .dms-loader-dots i {
   will-change: transform, opacity;
 }
@@ -455,98 +449,6 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   to {
     opacity: 1;
   }
-}
-
-.dms-loader-art {
-  position: relative;
-  width: 96px;
-  height: 116px;
-  margin-bottom: 14px;
-  animation: dms-float 3.2s ease-in-out infinite;
-}
-
-.dms-sheet {
-  position: absolute;
-  inset: 0;
-  display: block;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-}
-
-.dms-sheet-back {
-  background: color-mix(in srgb, var(--gold) 22%, var(--card));
-  transform: rotate(-9deg) translateX(-8px);
-  animation: dms-fan-back 3.2s ease-in-out infinite;
-}
-
-.dms-sheet-mid {
-  background: var(--primary-tint);
-  transform: rotate(7deg) translateX(8px);
-  animation: dms-fan-mid 3.2s ease-in-out infinite;
-}
-
-.dms-sheet-front {
-  overflow: hidden;
-  background: var(--card);
-  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 16%, transparent);
-  padding: 18px 14px;
-}
-
-.dms-line {
-  display: block;
-  height: 7px;
-  margin-bottom: 9px;
-  border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    var(--primary-tint) 0%,
-    color-mix(in srgb, var(--primary) 22%, var(--primary-tint)) 50%,
-    var(--primary-tint) 100%
-  );
-  background-size: 200% 100%;
-  animation: dms-shimmer 1.6s linear infinite;
-}
-
-.dms-line-title {
-  width: 58%;
-  height: 9px;
-  background-color: var(--primary);
-  background-image: none;
-  animation: none;
-  opacity: 0.85;
-}
-
-.dms-line-short {
-  width: 64%;
-}
-
-.dms-seal {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 20px;
-  height: 20px;
-  border-radius: 9999px;
-  background: var(--gold);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 28%, transparent);
-  animation: dms-pulse 1.8s ease-in-out infinite;
-}
-
-.dms-scan {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 26px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in srgb, var(--primary) 26%, transparent) 55%,
-    color-mix(in srgb, var(--primary) 55%, transparent) 100%
-  );
-  border-bottom: 2px solid var(--primary);
-  animation: dms-scan 2s ease-in-out infinite;
 }
 
 .dms-loader-dots {
@@ -568,16 +470,6 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 
 .dms-loader-dots i:nth-child(3) {
   animation-delay: 0.3s;
-}
-
-@keyframes dms-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
 }
 
 @keyframes dms-fan-back {
@@ -606,23 +498,6 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   }
 }
 
-@keyframes dms-scan {
-  0% {
-    transform: translateY(-26px);
-    opacity: 0;
-  }
-  15% {
-    opacity: 1;
-  }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(116px);
-    opacity: 0;
-  }
-}
-
 @keyframes dms-pulse {
   0%,
   100% {
@@ -648,17 +523,8 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 
 @media (prefers-reduced-motion: reduce) {
   .dms-loader,
-  .dms-loader-art,
-  .dms-sheet-back,
-  .dms-sheet-mid,
-  .dms-line,
-  .dms-seal,
-  .dms-scan,
   .dms-loader-dots i {
     animation: none;
-  }
-  .dms-scan {
-    opacity: 0;
   }
   .dms-loader-dots i {
     opacity: 0.6;

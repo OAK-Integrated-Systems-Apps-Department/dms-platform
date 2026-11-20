@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, XCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -31,6 +31,12 @@ import {
   type MetadataValues,
   type OcrStatusResponse,
 } from "@/lib/documents/api"
+import {
+  SCAN_FILE_ACCEPT,
+  SCAN_FILE_HINT,
+  describeUploadSize,
+  validateScanFile,
+} from "@/lib/documents/scan-upload-files"
 
 /**
  * What the form tracks once the file has been accepted.
@@ -100,6 +106,8 @@ export function DocumentUploadForm() {
   const activeDocumentTypes = (documentTypesQuery.data ?? []).filter((t) => t.status === "active")
 
   const [file, setFile] = useState<File | null>(null)
+  /** Why the file the user just chose cannot be uploaded (FE-L2); null when it can, or when nothing is chosen. */
+  const [fileError, setFileError] = useState<string | null>(null)
   // "" until the user picks one; the effective type falls back to the
   // catalogue default below. Derived rather than written by an effect: the
   // default is a function of the loaded catalogue, not a separate fact.
@@ -148,8 +156,20 @@ export function DocumentUploadForm() {
   // no type selected at all.
   const preferredType =
     activeDocumentTypes.find((t) => t.typeCode === "GENERAL") ?? activeDocumentTypes[0]
-  const effectiveDocumentType = documentType || preferredType?.typeCode || ""
-  const selectedType = activeDocumentTypes.find((t) => t.typeCode === effectiveDocumentType)
+  // The one type this form works with (FE-L4): the person's own choice while it is still an ACTIVE type, otherwise the
+  // preferred one, otherwise none. The dropdown, the field schema, the Upload button and the upload itself all read it, so
+  // they cannot disagree - and a choice the catalogue has since deactivated or removed is never sent. The choice is also
+  // dropped below, so a type that becomes active again is NOT silently re-selected.
+  const selectedType = activeDocumentTypes.find((t) => t.typeCode === documentType) ?? preferredType
+  const effectiveDocumentType = selectedType?.typeCode ?? ""
+  // Invalidate an explicit choice the loaded catalogue no longer offers as an active type (deactivated or removed). Only once a
+  // catalogue has actually loaded, so a loading or failed fetch never clears a choice. Fallback order then applies: GENERAL,
+  // first active, none.
+  // Adjusted during render (React's "reset state when data changes" pattern) rather than in an effect, so there is no frame
+  // in which a dead choice is still held.
+  if (documentTypesQuery.data !== undefined && documentType && !activeDocumentTypes.some((t) => t.typeCode === documentType)) {
+    setDocumentType("")
+  }
   const schemaQuery = useQuery({
     queryKey: ["document-type-schema", selectedType?.documentTypeId],
     queryFn: () => fetchDocumentTypeSchema(selectedType!.documentTypeId),
@@ -238,10 +258,40 @@ export function DocumentUploadForm() {
       })
   }, [version, ocrStatusQuery.data])
 
+  /**
+   * A chosen file is kept as the upload candidate only if it passes `validateScanFile`. A rejected one is dropped - the
+   * form never holds a file it would refuse, so an earlier valid choice cannot linger behind a rejected one - and the
+   * native input is cleared so it does not keep showing the rejected name. The check is a courtesy before a long
+   * upload; dms-core still validates the extension and the content itself.
+   */
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const chosen = event.target.files?.[0] ?? null
+    if (!chosen) {
+      setFile(null)
+      setFileError(null)
+      return
+    }
+    const problem = validateScanFile(chosen)
+    if (problem) {
+      setFile(null)
+      setFileError(problem)
+      event.target.value = ""
+      return
+    }
+    setFile(chosen)
+    setFileError(null)
+  }
+
   async function handleUpload() {
-    if (!file || !documentType) return
-    const selectedType = activeDocumentTypes.find((t) => t.typeCode === documentType)
-    if (!selectedType) return
+    if (!file || !selectedType) return
+    // Checked again here, not only when the file was chosen: nothing goes to the server that this form would refuse.
+    const problem = validateScanFile(file)
+    if (problem) {
+      setFile(null)
+      setFileError(problem)
+      setUploadKey((k) => k + 1)
+      return
+    }
     setUploadError(null)
     setUploading(true)
     try {
@@ -330,6 +380,7 @@ export function DocumentUploadForm() {
     setTicket(null)
     setTitle("")
     setUploadError(null)
+    setFileError(null)
     setFieldValues({})
     setFieldSelection(null)
     appliedResultKey.current = null
@@ -372,10 +423,18 @@ export function DocumentUploadForm() {
                     key={uploadKey}
                     id="file"
                     type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.tiff"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    accept={SCAN_FILE_ACCEPT}
+                    aria-invalid={fileError ? true : undefined}
+                    aria-describedby={fileError ? "file-error" : undefined}
+                    onChange={handleFileChange}
                   />
-                  <p className="mt-1.5 text-[12px] text-muted-foreground">PDF, PNG, JPEG, or TIFF.</p>
+                  {fileError ? (
+                    <p id="file-error" role="alert" className="mt-1.5 text-[12px] text-[var(--rust)]">
+                      {fileError}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-[12px] text-muted-foreground">{SCAN_FILE_HINT}</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="documentType">Document type</Label>
@@ -442,7 +501,9 @@ export function DocumentUploadForm() {
               <div className="flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  disabled={!file || !documentType || uploading}
+                  // Not while the type's field schema is still loading: the requested OCR fields come from it, and an upload sent now
+                  // would carry none.
+                  disabled={!file || !selectedType || schemaQuery.isLoading || uploading}
                   onClick={handleUpload}
                   className="flex items-center gap-2 rounded-btn border border-[var(--primary-hover)] bg-primary inline-flex h-[38px] items-center justify-center px-4 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-70"
                 >
@@ -469,7 +530,10 @@ export function DocumentUploadForm() {
                         thing and saves the ticket carrying a mime type it has
                         no other use for. */}
                     {file?.type || "unknown type"} ·{" "}
-                    {(ticket?.sizeBytes ?? file?.size ?? 0).toLocaleString()} bytes · scan:{" "}
+                    <span title={`${(ticket?.sizeBytes ?? file?.size ?? 0).toLocaleString()} bytes`}>
+                      {describeUploadSize(ticket?.sizeBytes ?? file?.size ?? 0)}
+                    </span>{" "}
+                    · scan:{" "}
                     {ticket?.status ?? "pending"}
                   </p>
                 </div>

@@ -162,8 +162,13 @@ class DocumentCheckoutIT extends WorkflowApiSupport {
 
     // ------------------------------------------------------------------ check-in / discard
 
+    /**
+     * DOC-07 (an intentional change from "released as soon as the upload is accepted"): a PENDING ticket means the file is
+     * still being scanned and no version exists, so the check-out stays - nobody can take the old version and edit it
+     * while the holder's file is on its way, and nothing is audited as "checked in" yet.
+     */
     @Test
-    void checkIn_uploadsTheFileAsANewVersion_andReleasesTheLock() throws Exception {
+    void checkIn_whileTheScanIsPending_keepsTheLock_untilTheVersionExists() throws Exception {
         postAs(path("checkout"), alice, null, 200);
         when(ingestionGate.submit(any())).thenReturn(ticket(ScanResultStatus.pending));
 
@@ -175,10 +180,64 @@ class DocumentCheckoutIT extends WorkflowApiSupport {
 
         assertThat(response.getStatus()).isEqualTo(202); // same ticket as any version upload
         verify(ingestionGate).submit(any());
+        assertThat(holder()).as("still hers").isEqualTo(alice.getUserId());
+        assertThat(audit("DOCUMENT_CHECKED_IN")).as("not checked in until the version exists").isZero();
+        // ...so Bob cannot take it, and still sees who holds it.
+        assertThat(postAs(path("checkout"), bob, null, 409).get("code").asString()).isEqualTo("DOCUMENT_CHECKED_OUT");
+        assertThat(holder()).isEqualTo(alice.getUserId());
+        // The holder can still discard it (no automatic release after a late promotion).
+        postAs(path("checkout/discard"), alice, null, 200);
+        assertThat(holder()).isNull();
+    }
+
+    @Test
+    void checkIn_thatCompletesCleanImmediately_releasesTheLock_andIsAudited() throws Exception {
+        postAs(path("checkout"), alice, null, 200);
+        when(ingestionGate.submit(any())).thenReturn(ticket(ScanResultStatus.clean));
+
+        var response = mvc.perform(multipart(path("checkin"))
+                        .file(new MockMultipartFile("file", "edited.docx", "application/octet-stream", new byte[]{9, 9}))
+                        .with(fx.jwtFor(alice)))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(201);
         assertThat(holder()).isNull();
         assertThat(audit("DOCUMENT_CHECKED_IN")).isEqualTo(1);
-        // ...and now Bob can take it.
-        postAs(path("checkout"), bob, null, 200);
+        postAs(path("checkout"), bob, null, 200); // ...and now Bob can take it
+    }
+
+    @Test
+    void checkIn_releasedFromQuarantineByAnAdministrator_releasesTheLock() throws Exception {
+        postAs(path("checkout"), alice, null, 200);
+        when(ingestionGate.submit(any())).thenReturn(ticket(ScanResultStatus.released_override));
+
+        var response = mvc.perform(multipart(path("checkin"))
+                        .file(new MockMultipartFile("file", "edited.docx", "application/octet-stream", new byte[]{9, 9}))
+                        .with(fx.jwtFor(alice)))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThat(holder()).isNull();
+        assertThat(audit("DOCUMENT_CHECKED_IN")).isEqualTo(1);
+    }
+
+    @Test
+    void checkIn_refusedAsFailedUnscannableOrQuarantined_keepsTheLock_likeInfected() throws Exception {
+        for (ScanResultStatus refused : new ScanResultStatus[]{ScanResultStatus.failed, ScanResultStatus.unscannable,
+                ScanResultStatus.quarantined}) {
+            postAs(path("checkout"), alice, null, 200);
+            when(ingestionGate.submit(any())).thenReturn(ticket(refused));
+
+            var response = mvc.perform(multipart(path("checkin"))
+                            .file(new MockMultipartFile("file", "x.docx", "application/octet-stream", new byte[]{1}))
+                            .with(fx.jwtFor(alice)))
+                    .andReturn().getResponse();
+
+            assertThat(response.getStatus()).as(refused.name()).isEqualTo(422);
+            assertThat(holder()).as(refused.name()).isEqualTo(alice.getUserId());
+            postAs(path("checkout/discard"), alice, null, 200);
+        }
+        assertThat(audit("DOCUMENT_CHECKED_IN")).isZero();
     }
 
     @Test

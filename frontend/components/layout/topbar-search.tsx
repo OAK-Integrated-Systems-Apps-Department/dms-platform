@@ -3,11 +3,13 @@
 import { useEffect, useId, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { FolderOpen, Loader2 } from "lucide-react"
+import { FolderOpen, Loader2, Search } from "lucide-react"
 
 import { GLOBAL_SEARCH_ID } from "@/components/dashboard/quick-actions"
 import { fileKind, FriendlyDate } from "@/components/documents/browser-items"
 import { SearchInput } from "@/components/ui/search-input"
+import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { usePermissions } from "@/lib/auth/use-permissions"
 import { fetchDocuments, type DocumentListItemDto } from "@/lib/documents/api"
 import { formatBytes } from "@/lib/quarantine/quarantine-badges"
 import { cn } from "@/lib/utils"
@@ -28,6 +30,10 @@ export function TopbarSearch({
   onOpen: (document: DocumentListItemDto) => void
 }) {
   const router = useRouter()
+  const { hasPermission } = usePermissions()
+  // Quick results stay as they were (a title search, for anyone who can browse). The full search page is for people who
+  // may use it: for them the box also offers "See all results".
+  const canSearch = hasPermission(PermissionCodes.DSR_SEARCH_DOCUMENTS)
   const listId = useId()
   const box = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -72,6 +78,13 @@ export function TopbarSearch({
     timer.current = setTimeout(() => setTerm(value.trim()), DEBOUNCE_MS)
   }
 
+  function seeAll() {
+    const value = query.trim()
+    if (value.length < 2) return
+    setOpen(false)
+    router.push(`/search?q=${encodeURIComponent(value)}`)
+  }
+
   function pick(document: DocumentListItemDto) {
     setOpen(false)
     onOpen(document)
@@ -80,6 +93,12 @@ export function TopbarSearch({
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       setOpen(false)
+      return
+    }
+    // Ctrl/Cmd+Enter (or Shift+Enter) opens the full results instead of previewing the highlighted row.
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey || event.shiftKey) && canSearch) {
+      event.preventDefault()
+      seeAll()
       return
     }
     if (!showList || rows.length === 0) return
@@ -186,6 +205,17 @@ export function TopbarSearch({
               })}
             </ul>
           )}
+          {canSearch && (
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={seeAll}
+              className="flex w-full items-center gap-2 border-t border-border px-3.5 py-2.5 text-left text-[12.5px] font-semibold text-primary hover:bg-muted"
+            >
+              <Search size={14} />
+              See all results for &ldquo;{query.trim()}&rdquo;
+            </button>
+          )}
           <button
             type="button"
             onMouseDown={(event) => event.preventDefault()}
@@ -196,7 +226,7 @@ export function TopbarSearch({
             className="flex w-full items-center gap-2 border-t border-border px-3.5 py-2.5 text-left text-[12.5px] font-semibold text-primary hover:bg-muted"
           >
             <FolderOpen size={14} />
-            Browse My Documents
+            Browse Documents
           </button>
         </div>
       )}

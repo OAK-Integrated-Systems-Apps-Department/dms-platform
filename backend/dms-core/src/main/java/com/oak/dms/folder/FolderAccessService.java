@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -176,17 +177,22 @@ public class FolderAccessService {
                 .createdBy(TenantContext.getUserId())
                 .build()).toList());
 
+        // Whoever is newly on the list is told the folder was shared with them (3.2, N10); the audit entry records
+        // that, and whether the sharer chose to email them and add a message.
+        Optional<AccessGrantedEvent> granted = AccessGrantedEvent.of("folder", folderId, folder.getFolderName(),
+                before, wanted.values(), request.notifyByEmail(), request.message());
+        Map<String, Object> current = AccessPrincipals.snapshot(mode, wanted.values());
+        granted.ifPresent(e -> current.put("sharedNotification",
+                Map.of("emailed", e.emailPeople(), "messageIncluded", e.message() != null)));
         auditService.event(AuditActionCatalog.FOLDER_ACCESS_CHANGED)
                 .objectType(AuditObjectTypes.FOLDER)
                 .objectId(folderId)
                 .resourceName(folder.getFolderName())
                 .outcome(AuditOutcome.SUCCESS)
                 .previousValue(previous)
-                .newValue(AccessPrincipals.snapshot(mode, wanted.values()))
+                .newValue(current)
                 .log();
-        // Tell whoever is newly on the list that the folder was shared with them (3.2, N10).
-        AccessGrantedEvent.of("folder", folderId, folder.getFolderName(), before, wanted.values())
-                .ifPresent(events::publishEvent);
+        granted.ifPresent(events::publishEvent);
         return getAccess(folderId);
     }
 

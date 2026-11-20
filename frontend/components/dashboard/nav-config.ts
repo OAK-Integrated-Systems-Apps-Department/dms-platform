@@ -24,6 +24,7 @@ import {
   ScanLine,
   ScanText,
   ScrollText,
+  Search,
   Server,
   Settings2,
   Share2,
@@ -58,9 +59,8 @@ import type { NavSection } from "./types"
  * group with no visible items is dropped, so non-admins never see
  * Administration at all.
  *
- * Search and Reports are not listed: neither has a page yet, and a link that
- * does nothing is worse than no link. Add them back with an `href` when the
- * pages exist.
+ * Reports is not listed: it has no page yet, and a link that does nothing is
+ * worse than no link. Add it back with an `href` when the page exists.
  */
 export const navSections: NavSection[] = [
   {
@@ -98,10 +98,17 @@ export const navSections: NavSection[] = [
   {
     label: "Documents",
     items: [
+      // Document Search & Retrieval (4.1): keywords, phrases, details and text inside documents, with filters.
+      {
+        label: "Search",
+        icon: Search,
+        href: "/search",
+        permission: PermissionCodes.DSR_SEARCH_DOCUMENTS,
+      },
       // Bulk Import (with Import Templates under it) is a tab inside My
       // Documents (DocumentsHub), on its own /documents/... path.
       {
-        label: "My Documents",
+        label: "Documents",
         icon: FileText,
         href: "/documents",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,
@@ -412,6 +419,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.DPRM_TOGGLE_PREVIEW_WATERMARK,
             ],
           },
+          // Search index (4.1): engine and index health, reindex, the reconcile check and the preset limit. Tenant administrators.
+          {
+            label: "Search Index",
+            icon: Search,
+            href: "/admin/search",
+            adminOnly: true,
+          },
           // Records retention (6.1): the rules, the settings, and the documents waiting for a decision.
           {
             label: "Records Retention",
@@ -444,6 +458,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.CICO_EDITING_SELECT_PROVIDER,
               PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,
             ],
+          },
+          // External sharing (1.5): the organisation's policy, every external link, and guest accounts.
+          {
+            label: "External Sharing",
+            icon: Share2,
+            href: "/admin/sharing",
+            adminOnly: true,
           },
           // Notification settings + delivery log (3.2). Any NOTIF capability gets in.
           {

@@ -226,7 +226,7 @@ class NotificationTriggersIT extends WorkflowApiSupport {
     }
 
     @Test
-    void sharingAFolder_tellsTheNewPeople_andLinksToSharedWithMe() throws Exception {
+    void sharingAFolder_tellsTheNewPeople_andLinksToTheFolderInMyDocuments() throws Exception {
         User grantee = fx.user(tenant, "Grantee");
         UUID folder = id(adminPost("/api/v1/folders", admin, Map.of("name", "Finance"), 201), "folderId");
 
@@ -235,7 +235,7 @@ class NotificationTriggersIT extends WorkflowApiSupport {
 
         Map<String, Object> shared = only(grantee, "document.shared");
         assertThat(shared.get("title")).isEqualTo("Admin shared a folder with you: Finance");
-        assertThat(shared.get("link_url")).isEqualTo("/shared");
+        assertThat(shared.get("link_url")).isEqualTo("/documents?folder=" + folder);
     }
 
     private static Map<String, Object> entry(String type, UUID principalId, String level) {

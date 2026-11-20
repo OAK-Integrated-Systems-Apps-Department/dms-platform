@@ -109,3 +109,14 @@ export function friendlyMessage(
   }
   return error instanceof Error ? error.message : fallback
 }
+
+/**
+ * Whether `error` is the server saying the thing asked for does not exist - a genuine `ApiError` carrying HTTP status 404 (FE-I1).
+ * <p>
+ * The status is the whole test. Pages used to ask whether the error's message contained "not found", which treated a 500 or a
+ * 403 worded that way as a missing resource, and would silently stop recognising a real 404 the day the backend changed its
+ * wording (or stopped sending messages at all). A plain `Error`, however it is worded, is not a 404.
+ */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}
