@@ -215,7 +215,7 @@ export function AppTopbar() {
               }}
             >
               <FolderOpen size={14} />
-              Open My Documents
+              Open Documents
             </button>
           </Dropdown>
         )}

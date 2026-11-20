@@ -30,7 +30,7 @@ function matches(href: string, pathname: string): boolean {
 
 /**
  * The one href that should read as active for `pathname`: the longest match,
- * so /documents/scan highlights "Scan documents" only, not "My Documents"
+ * so /documents/scan highlights "Scan documents" only, not "Documents"
  * as well. Matching is on path segments, so /pinned-x is not under /pinned.
  */
 export function findActiveHref(

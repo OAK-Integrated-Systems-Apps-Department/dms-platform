@@ -82,7 +82,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         id: "how-to-upload",
         question: "How do I upload documents?",
         answer: [
-          "Open My Documents and either use Upload, or drag files from your computer and drop them anywhere on the page. You can also drop whole folders - their folder structure is recreated.",
+          "Open Documents and either use Upload, or drag files from your computer and drop them anywhere on the page. You can also drop whole folders - their folder structure is recreated.",
           "Progress is shown in the panel at the bottom right of the screen, where you can also cancel or retry an upload.",
         ],
         keywords: "add drag drop folder upload",
@@ -137,7 +137,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         id: "folders",
         question: "How do I create and manage folders?",
         answer: [
-          "In My Documents, create a folder from the toolbar. Open a folder's menu to rename it, move it or manage who can open it.",
+          "In Documents, create a folder from the toolbar. Open a folder's menu to rename it, move it or manage who can open it.",
         ],
         keywords: "new folder rename",
       },
@@ -153,7 +153,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         id: "templates",
         question: "What are document templates?",
         answer: [
-          "Templates are ready-made files for a document type, such as a contract or invoice layout. Use New from template in My Documents to download one or to copy it straight into a folder.",
+          "Templates are ready-made files for a document type, such as a contract or invoice layout. Use New from template in Documents to download one or to copy it straight into a folder.",
         ],
         keywords: "template new from template",
       },

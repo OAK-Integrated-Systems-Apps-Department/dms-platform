@@ -8,14 +8,14 @@ import type { FolderNode } from "@/lib/folders/api"
 const MAX_FOLDERS = 3
 
 /**
- * Where a document lives: Dashboard › My Documents › Finance › Invoices › its title. Each folder is a link
- * that opens My Documents at that folder (`/documents?folder=…`, the same address the list itself uses), so the
+ * Where a document lives: Dashboard › Documents › Finance › Invoices › its title. Each folder is a link
+ * that opens Documents at that folder (`/documents?folder=…`, the same address the list itself uses), so the
  * path on the document page is a way back up, not just a label.
  *
  * {@code trailing} is for a page UNDER the document (the online editor): the title then links back to the
  * document and {@code trailing} is the current page.
  *
- * The folders load after the document, so for a moment only "My Documents" shows; a folder the caller cannot
+ * The folders load after the document, so for a moment only "Documents" shows; a folder the caller cannot
  * see simply ends the path early rather than failing.
  */
 export function DocumentBreadcrumb({
@@ -49,7 +49,7 @@ export function DocumentBreadcrumb({
 
   const segments: AdminBreadcrumbSegment[] = [
     { label: "Dashboard", href: "/" },
-    { label: "My Documents", href: "/documents" },
+    { label: "Documents", href: "/documents" },
     ...folderSegments,
     trailing
       ? { label: title ?? "Document", href: `/documents/${documentId}` }

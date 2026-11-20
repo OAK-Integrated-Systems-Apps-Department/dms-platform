@@ -48,7 +48,7 @@ function FieldStatusBadge({ status }: { status: OcrFieldStatus }) {
 }
 
 /**
- * Run (or re-run) OCR scanning on a document straight from My Documents,
+ * Run (or re-run) OCR scanning on a document straight from Documents,
  * the same entry-point shape as "Add watermark": pick the row, open a
  * sheet, act, watch it finish. The heavier per-field review (editing a
  * value, resolving a low-confidence match) stays on the review queue -
@@ -91,7 +91,7 @@ export function OcrScanDialog({
   const status = statusQuery.data
   const fields = status ? Object.entries(status.fields) : []
   // Documents uploaded without going through the field-selection step (e.g.
-  // straight into a My Documents folder) land with requested_fields = []
+  // straight into a Documents folder) land with requested_fields = []
   // and no result at all - re-running with no selection is refused server
   // side ("choose which fields to extract"), so a picker is needed here,
   // not just a one-click re-run.

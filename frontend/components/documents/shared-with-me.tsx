@@ -180,7 +180,7 @@ export function SharedWithMe() {
     : "Nothing has been shared with you yet. When someone gives you access to a folder or document, it shows up here."
 
   return (
-    // Fills the window down to the bottom, like My Documents, so the empty state
+    // Fills the window down to the bottom, like Documents, so the empty state
     // is a full-height box instead of a thin strip under the toolbar.
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 shadow-[var(--ledger-shadow)]">
@@ -317,7 +317,7 @@ export function SharedWithMe() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={deleting ? `Delete "${deleting.title}"?` : ""}
-        description="It disappears from My Documents for everyone. The audit trail keeps a record of it."
+        description="It disappears from Documents for everyone. The audit trail keeps a record of it."
         confirmLabel="Delete"
         pendingLabel="Deleting…"
         onConfirm={async () => {

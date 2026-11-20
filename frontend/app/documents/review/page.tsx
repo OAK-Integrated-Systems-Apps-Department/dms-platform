@@ -56,7 +56,7 @@ export default function ReviewQueuePage() {
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          { label: "My Documents", href: "/documents" },
+          { label: "Documents", href: "/documents" },
           { label: "Review Queue" },
         ]}
       />

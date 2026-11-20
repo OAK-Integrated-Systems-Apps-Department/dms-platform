@@ -80,7 +80,7 @@ export function RecycleBin() {
   const purgeable = items.filter((i) => !i.legalHold && !i.protectedVersion)
 
   return (
-    // Fills the window down to the bottom, like My Documents and Shared with me,
+    // Fills the window down to the bottom, like Documents and Shared with me,
     // so the empty state is a full-height box.
     <div className="flex min-h-[calc(100dvh-300px)] w-full flex-col gap-5">
       <RetentionBar

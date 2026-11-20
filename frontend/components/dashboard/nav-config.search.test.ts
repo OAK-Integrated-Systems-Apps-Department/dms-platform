@@ -27,7 +27,7 @@ describe("Search nav item (Document Search & Retrieval)", () => {
     expect(visibleTo([])).not.toContain("Search")
   })
 
-  it("highlights only Search while on /search, and not My Documents", () => {
+  it("highlights only Search while on /search, and not Documents", () => {
     expect(findActiveHref(navSections, "/search")).toBe("/search")
     expect(findActiveHref(navSections, "/documents")).toBe("/documents")
   })

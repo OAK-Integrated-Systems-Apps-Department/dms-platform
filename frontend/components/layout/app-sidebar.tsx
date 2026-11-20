@@ -82,7 +82,7 @@ interface AppSidebarProps {
  * own contents the same way, which is what fixes that.
  */
 export function AppSidebar({
-  activeLabel = "My Documents",
+  activeLabel = "Documents",
   onNavigate,
 }: AppSidebarProps) {
   const { resolvedTheme, setTheme } = useTheme()
@@ -156,7 +156,7 @@ export function AppSidebar({
   )
 
   // Only one item may read as active: the longest href matching the path, so
-  // /documents/scan does not also light up "My Documents".
+  // /documents/scan does not also light up "Documents".
   const activeHref = findActiveHref(visibleSections, pathname)
 
   // Which collapsible groups are open, by label. A group the person has not

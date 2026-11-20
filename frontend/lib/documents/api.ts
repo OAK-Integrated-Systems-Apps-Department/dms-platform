@@ -856,7 +856,7 @@ export interface DocumentDto {
   /** Embedded by the backend; null when the type has since been deleted. */
   documentTypeName: string | null
   title: string
-  /** The folder it is filed in; null = top level (My Documents). Drives the breadcrumb and "Move to". */
+  /** The folder it is filed in; null = top level (Documents). Drives the breadcrumb and "Move to". */
   folderId?: string | null
   currentVersionId: string | null
   latestVersionId: string | null

@@ -66,7 +66,7 @@ export async function downloadTemplate(template: DocumentTemplateDto) {
 /**
  * A document type's templates: ready-made files (a blank contract in Word, a
  * proposal in PowerPoint, a form as PDF) that people download or start a new
- * document from in My Documents. Each is virus-scanned when added or
+ * document from in Documents. Each is virus-scanned when added or
  * replaced; replacing keeps the old file in its version history.
  */
 export function DocumentTypeTemplatesTab({

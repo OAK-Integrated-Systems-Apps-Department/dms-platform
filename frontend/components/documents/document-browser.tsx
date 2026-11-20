@@ -49,6 +49,7 @@ import {
   type DragItems,
 } from "@/components/documents/browser-dnd"
 import { BulkUploadSheet } from "@/components/documents/bulk-upload-sheet"
+import { CenteredLoader } from "@/components/ui/centered-loader"
 import { TemplatePickerSheet } from "@/components/documents/template-picker-sheet"
 import { ReasonDialog } from "@/components/checkout/reason-dialog"
 import { useChangeStatus } from "@/lib/retention/use-retention"
@@ -77,7 +78,10 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { saveDownloadedFile } from "@/lib/download-file"
 import { usePins } from "@/lib/pins/use-pins"
-import { useBookmarkStatus, useBookmarkToggle } from "@/lib/bookmarks/use-bookmarks"
+import {
+  useBookmarkStatus,
+  useBookmarkToggle,
+} from "@/lib/bookmarks/use-bookmarks"
 import {
   deleteDocument,
   downloadDocumentFile,
@@ -137,7 +141,7 @@ type Dialog =
   | null
 
 /**
- * My Documents, browsed folder by folder like a SharePoint library: the top
+ * Documents, browsed folder by folder like a SharePoint library: the top
  * level shows the tenant's shared folders plus documents not filed in any
  * folder; opening a folder shows its subfolders and the documents in it, as
  * tiles (grid) or rows (list). Documents can be uploaded at the top level or
@@ -163,7 +167,9 @@ export function DocumentBrowser() {
   const relationshipType = params.get("relationshipType")
   const rawDirection = params.get("direction")
   const direction =
-    rawDirection === "source" || rawDirection === "target" || rawDirection === "any"
+    rawDirection === "source" ||
+    rawDirection === "target" ||
+    rawDirection === "any"
       ? rawDirection
       : undefined
   return (
@@ -172,7 +178,11 @@ export function DocumentBrowser() {
       folderId={folderId}
       related={
         relatedTo
-          ? { relatedTo, relationshipType: relationshipType ?? undefined, direction }
+          ? {
+              relatedTo,
+              relationshipType: relationshipType ?? undefined,
+              direction,
+            }
           : null
       }
     />
@@ -213,7 +223,9 @@ function FolderView({
       PermissionCodes.DLM_SUBMIT_DOCUMENTS_FOR_REVIEW
     ),
     viewDocuments: hasPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW),
-    manageRelationships: hasPermission(PermissionCodes.DRM_RELATIONSHIPS_CREATE),
+    manageRelationships: hasPermission(
+      PermissionCodes.DRM_RELATIONSHIPS_CREATE
+    ),
     // The server decides whose documents a caller may move (admins any, a department head their people's).
     transferOwnership: hasPermission(PermissionCodes.DOT_TRANSFER_INITIATE),
     markInactive: hasPermission(PermissionCodes.CRM_MARK_INACTIVE),
@@ -250,6 +262,8 @@ function FolderView({
   const [page, setPage] = useState(1)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<Dialog>(null)
+  // Lives here, not in the sheet: the sheet closes right after the check, and the loader should outlast it.
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false)
   const [upload, setUpload] = useState<{
     key: number
     /** Dragged in from the computer. */
@@ -457,7 +471,7 @@ function FolderView({
       documents: documents.filter((d) => movedDocuments.includes(d.documentId)),
       folders: movedFolders,
     })
-    toast.success(`Moved ${label} to "${target?.name ?? "My Documents"}".`, {
+    toast.success(`Moved ${label} to "${target?.name ?? "Documents"}".`, {
       action: { label: "Undo", onClick: () => void undo() },
     })
   }
@@ -571,7 +585,8 @@ function FolderView({
       actions.push({
         label: isBookmarked ? "Remove bookmark" : "Bookmark",
         icon: isBookmarked ? BookmarkMinus : Bookmark,
-        onSelect: () => void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
+        onSelect: () =>
+          void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
       })
     }
     if (can.versions)
@@ -606,11 +621,16 @@ function FolderView({
       })
     // 6.1: switch an active document off. Not offered under legal hold (its status is locked); normal listings only
     // ever hold active documents, so this is the only direction here - bringing one back is done from Inactive & Archive.
-    if (can.markInactive && hasAccess(row.myAccess, "edit") && row.lockState !== "legal_hold")
+    if (
+      can.markInactive &&
+      hasAccess(row.myAccess, "edit") &&
+      row.lockState !== "legal_hold"
+    )
       actions.push({
         label: "Mark inactive",
         icon: CirclePause,
-        onSelect: () => setDialog({ kind: "mark-inactive", row, key: Date.now() }),
+        onSelect: () =>
+          setDialog({ kind: "mark-inactive", row, key: Date.now() }),
       })
     if (can.transferOwnership)
       actions.push({
@@ -737,7 +757,8 @@ function FolderView({
       {related && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[12.5px]">
           <span className="flex items-center gap-1.5 rounded-btn border border-primary/40 bg-primary/5 px-2.5 py-1">
-            {related.relationshipType === "SUPERSEDES" && related.direction === "source"
+            {related.relationshipType === "SUPERSEDES" &&
+            related.direction === "source"
               ? "Documents that supersede"
               : "Documents related to"}{" "}
             <strong>{relatedDocument.data?.title ?? "this document"}</strong>
@@ -876,9 +897,7 @@ function FolderView({
                 setPage(1)
               }}
               placeholder={current ? "Search this folder…" : "Search…"}
-              aria-label={
-                current ? "Search this folder" : "Search My Documents"
-              }
+              aria-label={current ? "Search this folder" : "Search Documents"}
               className="w-[220px] max-w-full"
             />
             <div
@@ -987,7 +1006,7 @@ function FolderView({
       {folders.isPending || loadingDocuments ? (
         <LoadingState message="Loading…" />
       ) : missing ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center bg-card">
+        <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center">
           <p className="text-[13.5px] font-medium">
             This folder doesn&apos;t exist any more.
           </p>
@@ -998,12 +1017,15 @@ function FolderView({
               className="text-primary hover:underline"
               onClick={() => open(null)}
             >
-              Go to My Documents
+              Go to Documents
             </button>
           </p>
         </div>
       ) : current && documents.isError ? (
-        <LoadFailed error={documents.error} fallback="Could not load documents." />
+        <LoadFailed
+          error={documents.error}
+          fallback="Could not load documents."
+        />
       ) : view === "list" ? (
         <BrowserList
           folders={shownFolders}
@@ -1029,7 +1051,7 @@ function FolderView({
           documentDrag={documentDrag}
         />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
+        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground">
           {emptyMessage}
         </p>
       ) : (
@@ -1138,7 +1160,11 @@ function FolderView({
           description="It disappears from normal listings and search, and moves to Inactive & Archive for people allowed to see it. You can bring it back at any time."
           confirmLabel="Mark inactive"
           onConfirm={(reason) =>
-            markInactive.mutateAsync({ documentId: dialog.row.documentId, status: "inactive", reason })
+            markInactive.mutateAsync({
+              documentId: dialog.row.documentId,
+              status: "inactive",
+              reason,
+            })
           }
           onOpenChange={(next) => !next && setDialog(null)}
         />
@@ -1146,7 +1172,11 @@ function FolderView({
       {dialog?.kind === "transfer-ownership" && (
         <TransferDialog
           key={dialog.key}
-          subject={{ kind: "document", documentId: dialog.row.documentId, title: dialog.row.title }}
+          subject={{
+            kind: "document",
+            documentId: dialog.row.documentId,
+            title: dialog.row.title,
+          }}
           open
           onOpenChange={(next) => !next && setDialog(null)}
           onDone={() => {
@@ -1312,13 +1342,22 @@ function FolderView({
           onViewDetails={() => router.push(`/documents/${preview.documentId}`)}
           onWatermark={
             watermark.present && can.viewDocuments
-              ? () => setDialog({ kind: "watermark", row: preview, key: Date.now() })
+              ? () =>
+                  setDialog({
+                    kind: "watermark",
+                    row: preview,
+                    key: Date.now(),
+                  })
               : undefined
           }
           watermarkHint={
-            watermarkSupport(preview).reason ?? watermark.unavailableMessage ?? undefined
+            watermarkSupport(preview).reason ??
+            watermark.unavailableMessage ??
+            undefined
           }
-          watermarkDisabled={!watermarkSupport(preview).supported || !watermark.usable}
+          watermarkDisabled={
+            !watermarkSupport(preview).supported || !watermark.usable
+          }
         />
       )}
 
@@ -1326,9 +1365,14 @@ function FolderView({
         open={templatesOpen}
         onOpenChange={setTemplatesOpen}
         folderId={current?.folderId ?? null}
-        folderName={current ? `"${current.name}"` : "My Documents"}
+        folderName={current ? `"${current.name}"` : "Documents"}
         canCreate={can.upload && canEditHere}
         onCreated={refresh}
+      />
+
+      <CenteredLoader
+        active={checkingDuplicates}
+        message="Checking for duplicates…"
       />
 
       {upload && (
@@ -1340,6 +1384,7 @@ function FolderView({
           initialDrop={upload.files}
           canCreateFolders={can.createFolder}
           onUploaded={refresh}
+          onCheckingChange={setCheckingDuplicates}
         />
       )}
     </div>

@@ -30,7 +30,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   {
     key: "documents",
-    label: "My Documents",
+    label: "Documents",
     href: "/documents",
     icon: FileText,
     permissions: [PermissionCodes.DOCM_DOCUMENTS_VIEW],
@@ -84,7 +84,7 @@ export function DocumentsHub({
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          // Every other tab hangs off My Documents; that tab is the root itself.
+          // Every other tab hangs off Documents; that tab is the root itself.
           ...(current.key !== "documents"
             ? [{ label: TABS[0].label, href: TABS[0].href }]
             : []),

@@ -107,7 +107,7 @@ export const navSections: NavSection[] = [
       // Bulk Import (with Import Templates under it) is a tab inside My
       // Documents (DocumentsHub), on its own /documents/... path.
       {
-        label: "My Documents",
+        label: "Documents",
         icon: FileText,
         href: "/documents",
         permission: PermissionCodes.DOCM_DOCUMENTS_VIEW,

@@ -6,7 +6,7 @@ import { fetchDocumentWorkflowStatuses, type DocumentWorkflowStatusDto } from ".
 
 /**
  * The newest workflow run of each document on the page, in one call - the
- * "In approval / Approved / Rejected" badges in My Documents. Documents with
+ * "In approval / Approved / Rejected" badges in Documents. Documents with
  * no run (and documents the caller can't open) are simply absent from the map.
  */
 export function useDocumentWorkflowStatuses(documentIds: string[], enabled = true) {

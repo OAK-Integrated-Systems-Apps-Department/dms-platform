@@ -80,7 +80,7 @@ const SELECT_CLASS =
 
 /**
  * The confirmation on its own, for callers with their own trigger - the row
- * menu in My Documents. Same call and same refusals as the button; whoever
+ * menu in Documents. Same call and same refusals as the button; whoever
  * renders it checks dlm.submit-documents-for-review first. Supporting documents
  * are optional and attached in the same transaction - an invalid one fails the
  * whole submission, and the dialog stays open so it can be fixed.
