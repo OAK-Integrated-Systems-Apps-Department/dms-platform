@@ -61,6 +61,12 @@ public class NotificationRequest {
      */
     private final boolean requireViewPermission;
 
+    /**
+     * The sender chose not to email this one (the in-app notification is still created). Recorded as a
+     * skipped email delivery with reason {@code sender_opted_out}.
+     */
+    private final boolean suppressEmail;
+
     /** Optional per-recipient content override, applied after the access check. */
     private final Function<UUID, RecipientContent> perRecipientContent;
 

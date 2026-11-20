@@ -153,104 +153,114 @@ public class IngestionGateImpl implements IngestionGate {
             return ticket(scanResultId);
         }
 
-        // 4. Stage: size limit -> SHA-256 -> /Encrypt watch, one pass over the bytes.
+        // 4. Stage, check, de-duplicate. From here the pending row exists and is leased to this request, so
+        // the scheduler leaves it alone. An unexpected failure in these steps is reported to the caller, so the
+        // submission must not live on: it is failed here, under the same lease token, and its staged object
+        // removed (DOC-13). Hand-off to the scan worker (step 5) is outside this guard: once the row is released
+        // for asynchronous processing it is accepted, and the worker owns it.
         SizeLimitingInputStream limited = new SizeLimitingInputStream(buffered, maxBytes);
-        MessageDigest digest = sha256();
-        InputStream hashing = new DigestInputStream(limited, digest);
-        EncryptionMarkerInputStream encryptionWatch = detected.pdf() ? new EncryptionMarkerInputStream(hashing) : null;
-        StoredObjectMetadata stored;
-        ObjectStorageService stagingStore = engine.getScanMode() == ScanMode.post_store_object
-                ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
-                : objectStorageServiceFactory.resolve(staging);
-        try {
-            // Encrypted at rest like everything else. A cloud scanner (GuardDuty / Defender) reads the staged
-            // object in place, so there the storage's own server-side encryption protects it instead - the
-            // upload is refused if the staging location doesn't have it.
-            stored = stagingStore.upload(staging, row.getStagingObjectKey(),
-                    encryptionWatch != null ? encryptionWatch : hashing, request.contentLength(), detected.mimeType());
-        } catch (StorageException e) {
-            storageObjectMover.deleteQuietly(staging, row.getStagingObjectKey());
-            if (limited.limitExceeded()) {
-                ingestionProcessor.failTerminal(scanResultId, leaseToken,
-                        "File exceeds the maximum upload size of " + maxBytes + " bytes");
-                ingestionProcessor.purgeStaging(scanResultId);
-                throw new FileTooLargeException(maxBytes);
-            }
-            ingestionProcessor.failTerminal(scanResultId, leaseToken, "Staging upload failed: " + e.getMessage());
-            ingestionProcessor.purgeStaging(scanResultId);
-            throw e;
-        }
-        String fileHash = HexFormat.of().formatHex(digest.digest());
-        recordStaged(scanResultId, fileHash, limited.count(), stored.contentHash());
-
-        if (encryptionWatch != null && encryptionWatch.markerFound()) {
-            ingestionProcessor.markUnscannable(scanResultId, leaseToken, "Encrypted PDF", null);
-            return ticket(scanResultId);
-        }
-
-        // 4a. A ZIP is checked whole - complete, readable, within what the scanner can inspect - by
-        // reading the staged copy once. Nothing is extracted or run; the archive is kept as uploaded.
         boolean largeArchive = false;
-        if ("zip".equals(detected.extension())) {
-            ZipArchiveCheck.Result zip;
-            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
-                zip = ZipArchiveCheck.check(staged, ingestionProperties.getZipMaxEntries(),
-                        ingestionProperties.getZipMaxUncompressedBytes(),
-                        ingestionProperties.getZipBlockedExtensions().stream()
-                                .map(e -> e.trim().replaceFirst("^\\.", "").toLowerCase(java.util.Locale.ROOT))
-                                .collect(java.util.stream.Collectors.toSet()));
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
+        try {
+            // 4. Stage: size limit -> SHA-256 -> /Encrypt watch, one pass over the bytes.
+            MessageDigest digest = sha256();
+            InputStream hashing = new DigestInputStream(limited, digest);
+            EncryptionMarkerInputStream encryptionWatch = detected.pdf() ? new EncryptionMarkerInputStream(hashing) : null;
+            StoredObjectMetadata stored;
+            ObjectStorageService stagingStore = engine.getScanMode() == ScanMode.post_store_object
+                    ? objectStorageServiceFactory.resolveForInPlaceScan(staging)
+                    : objectStorageServiceFactory.resolve(staging);
+            try {
+                // Encrypted at rest like everything else. A cloud scanner (GuardDuty / Defender) reads the staged
+                // object in place, so there the storage's own server-side encryption protects it instead - the
+                // upload is refused if the staging location doesn't have it.
+                stored = stagingStore.upload(staging, row.getStagingObjectKey(),
+                        encryptionWatch != null ? encryptionWatch : hashing, request.contentLength(), detected.mimeType());
+            } catch (StorageException e) {
+                storageObjectMover.deleteQuietly(staging, row.getStagingObjectKey());
+                if (limited.limitExceeded()) {
+                    ingestionProcessor.failTerminal(scanResultId, leaseToken,
+                            "File exceeds the maximum upload size of " + maxBytes + " bytes");
+                    ingestionProcessor.purgeStaging(scanResultId);
+                    throw new FileTooLargeException(maxBytes);
+                }
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, "Staging upload failed: " + e.getMessage());
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw e;
             }
-            if (zip.outcome() == ZipArchiveCheck.Outcome.ENCRYPTED) {
-                ingestionProcessor.markUnscannable(scanResultId, leaseToken, zip.message(), null);
+            String fileHash = HexFormat.of().formatHex(digest.digest());
+            recordStaged(scanResultId, fileHash, limited.count(), stored.contentHash());
+
+            if (encryptionWatch != null && encryptionWatch.markerFound()) {
+                ingestionProcessor.markUnscannable(scanResultId, leaseToken, "Encrypted PDF", null);
                 return ticket(scanResultId);
             }
-            if (zip.outcome() == ZipArchiveCheck.Outcome.INVALID) {
-                ingestionProcessor.failTerminal(scanResultId, leaseToken, zip.message());
-                ingestionProcessor.purgeStaging(scanResultId);
-                throw new FileTypeNotAllowedException(zip.message());
-            }
-            // More than clamd opens of one archive: ClamAvScanAdapter scans it file by file instead.
-            largeArchive = zip.uncompressedBytes() > scanProperties.getClamav().getArchiveScanBytes()
-                    || zip.entries() > scanProperties.getClamav().getArchiveScanFiles();
-        }
 
-        // 4a'. An Office Open XML file's head only showed a plausible package (its parts can come in
-        // any order); its index must list [Content_Types].xml, or it's a ZIP wearing an Office extension.
-        // An index that can't be read is left to the scanner, as before this check.
-        if (FileTypeInspector.isOfficeOpenXml(detected.extension())) {
-            ZipArchiveCheck.Presence types;
-            try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
-                types = ZipArchiveCheck.containsEntry(staged, FileTypeInspector.OOXML_CONTENT_TYPES);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
+            // 4a. A ZIP is checked whole - complete, readable, within what the scanner can inspect - by
+            // reading the staged copy once. Nothing is extracted or run; the archive is kept as uploaded.
+            if ("zip".equals(detected.extension())) {
+                ZipArchiveCheck.Result zip;
+                try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                    zip = ZipArchiveCheck.check(staged, ingestionProperties.getZipMaxEntries(),
+                            ingestionProperties.getZipMaxUncompressedBytes(),
+                            ingestionProperties.getZipBlockedExtensions().stream()
+                                    .map(e -> e.trim().replaceFirst("^\\.", "").toLowerCase(java.util.Locale.ROOT))
+                                    .collect(java.util.stream.Collectors.toSet()));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                if (zip.outcome() == ZipArchiveCheck.Outcome.ENCRYPTED) {
+                    ingestionProcessor.markUnscannable(scanResultId, leaseToken, zip.message(), null);
+                    return ticket(scanResultId);
+                }
+                if (zip.outcome() == ZipArchiveCheck.Outcome.INVALID) {
+                    ingestionProcessor.failTerminal(scanResultId, leaseToken, zip.message());
+                    ingestionProcessor.purgeStaging(scanResultId);
+                    throw new FileTypeNotAllowedException(zip.message());
+                }
+                // More than clamd opens of one archive: ClamAvScanAdapter scans it file by file instead.
+                largeArchive = zip.uncompressedBytes() > scanProperties.getClamav().getArchiveScanBytes()
+                        || zip.entries() > scanProperties.getClamav().getArchiveScanFiles();
             }
-            if (types == ZipArchiveCheck.Presence.ABSENT) {
-                String message = "The file's content does not match its ." + detected.extension() + " extension";
-                ingestionProcessor.failTerminal(scanResultId, leaseToken, message);
-                ingestionProcessor.purgeStaging(scanResultId);
-                throw new FileTypeNotAllowedException(message);
-            }
-        }
 
-        // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
-        // The uploader sending the same file into the same folder again - typically because a large
-        // one is still being scanned and they weren't sure it went through - gets their first upload's
-        // ticket back, to follow that scan, rather than a refusal blaming "someone".
-        java.util.Optional<UUID> earlier = ownEarlierUpload(request, tenantId, userId, scanResultId,
-                row.getCreatedAt(), fileHash);
-        if (earlier.isPresent()) {
-            ingestionProcessor.failTerminal(scanResultId, leaseToken,
-                    "Same file as upload " + earlier.get() + " by the same user - that one is followed instead");
-            ingestionProcessor.purgeStaging(scanResultId);
-            return ticket(earlier.get());
+            // 4a'. An Office Open XML file's head only showed a plausible package (its parts can come in
+            // any order); its index must list [Content_Types].xml, or it's a ZIP wearing an Office extension.
+            // An index that can't be read is left to the scanner, as before this check.
+            if (FileTypeInspector.isOfficeOpenXml(detected.extension())) {
+                ZipArchiveCheck.Presence types;
+                try (InputStream staged = stagingStore.download(staging, row.getStagingObjectKey()).content()) {
+                    types = ZipArchiveCheck.containsEntry(staged, FileTypeInspector.OOXML_CONTENT_TYPES);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                if (types == ZipArchiveCheck.Presence.ABSENT) {
+                    String message = "The file's content does not match its ." + detected.extension() + " extension";
+                    ingestionProcessor.failTerminal(scanResultId, leaseToken, message);
+                    ingestionProcessor.purgeStaging(scanResultId);
+                    throw new FileTypeNotAllowedException(message);
+                }
+            }
+
+            // 4b. Duplicates - now that the content's fingerprint is known, before anything is scanned or stored.
+            // The uploader sending the same file into the same folder again - typically because a large
+            // one is still being scanned and they weren't sure it went through - gets their first upload's
+            // ticket back, to follow that scan, rather than a refusal blaming "someone".
+            java.util.Optional<UUID> earlier = ownEarlierUpload(request, tenantId, userId, scanResultId,
+                    row.getCreatedAt(), fileHash);
+            if (earlier.isPresent()) {
+                ingestionProcessor.failTerminal(scanResultId, leaseToken,
+                        "Same file as upload " + earlier.get() + " by the same user - that one is followed instead");
+                ingestionProcessor.purgeStaging(scanResultId);
+                return ticket(earlier.get());
+            }
+            duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
+                ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());
+                ingestionProcessor.purgeStaging(scanResultId);
+                throw refusal;
+            });
+        } catch (RuntimeException e) {
+            abandonRejectedSubmission(scanResultId, leaseToken, e);
+            throw e;
         }
-        duplicateRefusal(request, tenantId, scanResultId, row.getCreatedAt(), fileHash).ifPresent(refusal -> {
-            ingestionProcessor.failTerminal(scanResultId, leaseToken, refusal.getMessage());
-            ingestionProcessor.purgeStaging(scanResultId);
-            throw refusal;
-        });
 
         // 5. Scan and route. ClamAV answers now; cloud scanners come back pending. So does a
         // file too large for one clamd pass, or a ZIP too large for clamd to open whole: scanning
@@ -264,6 +274,24 @@ public class IngestionGateImpl implements IngestionGate {
         }
         ingestionProcessor.process(scanResultId);
         return ticket(scanResultId);
+    }
+
+    /**
+     * The caller is about to be told this submission failed, so it must not be promoted later. Fails the row
+     * and removes its staged object, but only through the processor's lease-conditional transitions: if the row
+     * already settled (the refusals above clean up themselves) or this request no longer holds its lease
+     * (a scheduler took the row over after the lease expired), nothing is changed and no object is deleted.
+     * Never throws - a failure here is attached to {@code failure} so the original exception is what the caller sees.
+     */
+    private void abandonRejectedSubmission(UUID scanResultId, OffsetDateTime leaseToken, RuntimeException failure) {
+        try {
+            ingestionProcessor.abandonUnacceptedSubmission(scanResultId, leaseToken,
+                    "Ingestion failed before it was accepted: " + failure.getClass().getSimpleName());
+        } catch (RuntimeException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+            log.warn("Could not clean up rejected submission {}: {}", scanResultId,
+                    cleanupFailure.getClass().getSimpleName());
+        }
     }
 
     @Override

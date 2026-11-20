@@ -115,7 +115,7 @@ public class WatermarkOutputSweeper {
         int removed = 0;
         for (WatermarkJob job : jobs) {
             try {
-                deleteObject(job);
+                boolean deleted = deleteObject(job);
                 // Only now is the row updated: if the delete failed we want
                 // to come back to it, and re-deleting something already gone
                 // costs nothing.
@@ -136,7 +136,9 @@ public class WatermarkOutputSweeper {
                                 // produced; only the file and the pointer go.
                                 locked.setStatus(WatermarkJobStatus.expired);
                             }
-                            locked.setOutputObjectKey(null);
+                            if (deleted) {
+                                locked.setOutputObjectKey(null);   // a refused key (DOC-20) stays on the row for review
+                            }
                             locked.setPurgedAt(now);
                             locked.setUpdatedAt(now);
                             repository.save(locked);
@@ -150,9 +152,21 @@ public class WatermarkOutputSweeper {
         return removed;
     }
 
-    private void deleteObject(WatermarkJob job) {
+    /**
+     * Deletes the job's output - but only if the stored key is this job's own (DOC-20). A key outside the job's namespace
+     * (an old one built from a hostile file name) is never handed to the storage adapter.
+     *
+     * @return false when the key was refused: nothing was deleted, and the caller keeps the key on the row
+     */
+    private boolean deleteObject(WatermarkJob job) {
         if (job.getOutputObjectKey() == null || job.getStorageLocationId() == null) {
-            return;
+            return true;
+        }
+        if (!WatermarkOutputKeys.isInsideJobNamespace(job.getTenantId(), job.getJobId(), job.getOutputObjectKey())) {
+            log.warn("Watermark job {} (tenant {}): its stored output key is outside the job's own namespace - not deleting "
+                            + "it; the key is left on the job row ({})", job.getJobId(), job.getTenantId(),
+                    WatermarkOutputKeys.describe(job.getOutputObjectKey()));
+            return false;
         }
         storageLocationRepository.findByStorageLocationIdAndDeletedFalse(job.getStorageLocationId())
                 .ifPresent(location -> {
@@ -162,5 +176,6 @@ public class WatermarkOutputSweeper {
                         // Already gone - a previous run got this far.
                     }
                 });
+        return true;
     }
 }

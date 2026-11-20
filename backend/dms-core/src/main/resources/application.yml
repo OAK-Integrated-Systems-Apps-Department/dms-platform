@@ -190,6 +190,13 @@ app:
 dms:
   notification:
     mail-from: ${NOTIFICATION_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
+  # 1.5 External sharing. The HMAC key that signs the short-lived tokens handed to a share-link recipient (30 min,
+  # after the password check) and to a portal guest (8 h). Blank = a random key per start-up, which is fine for a
+  # single instance (everyone just re-opens the link after a restart) but MUST be set when several instances run,
+  # or a token signed by one is refused by another.
+  sharing:
+    token-secret: ${SHARING_TOKEN_SECRET:}
+    mail-from: ${SHARING_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
   # 2.10 Online editing (CICO-FR-005/006/010) through Collabora Online over WOPI.
   #
   # These settings only say WHERE the engine is - infrastructure, set once by whoever runs the server. There is
@@ -620,11 +627,13 @@ dms:
     allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
     # A ZIP is kept as one file - never extracted - and checked whole before it's scanned
     # (ZipArchiveCheck): refused when damaged, empty, or password-protected (unscannable).
-    # No entry-count or unpacked-size limit by default: a ZIP past what clamd opens of one
-    # archive (dms.scanning.clamav.archive-scan-files / -bytes) is scanned file by file
-    # instead. Set these to refuse larger ZIPs outright.
-    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
-    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
+    # These two limit what is INSIDE a ZIP - entries and unpacked bytes, summed over the ZIP and
+    # every ZIP nested in it - and apply to ZIPs only. They are not an upload-size limit: any
+    # other file, and the ZIP file itself, may be any size. Defaults are clamd's MaxFiles (10000)
+    # and MaxScanSize (4000M); raise them to accept larger ZIPs (they are then opened and
+    # scanned file by file, see dms.scanning.clamav.archive-scan-files / -bytes).
+    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:10000}
+    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:4194304000}
     # A ZIP holding a program or script (.exe, .msi, .dll, .bat, .ps1, .js, .jar, ... - see
     # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
     # called, is refused even when the scan finds no malware - nested ZIPs included. Override the
@@ -742,6 +751,70 @@ dms:
       # Blank disables the callback endpoint.
       callback-secret: ${AWS_GUARDDUTY_CALLBACK_SECRET:}
 
+  # Document Search & Retrieval (DSR). PostgreSQL is the source of truth; the OpenSearch index is
+  # derived and can always be rebuilt. See docs/search-plan.md.
+  search:
+    enabled: ${SEARCH_ENABLED:true}
+    # HMAC key for pagination cursors. Blank = random per boot (cursors die on restart; fine in dev).
+    cursor-secret: ${SEARCH_CURSOR_SECRET:}
+    opensearch:
+      url: ${OPENSEARCH_URL:http://localhost:9200}
+      connect-timeout: PT2S
+      read-timeout: PT5S
+      # Production (security plugin on): basic auth and TLS. Values come from the environment (infra/secrets), never here.
+      username: ${OPENSEARCH_USERNAME:}
+      password: ${OPENSEARCH_PASSWORD:}
+      tls:
+        ca-cert-path: ${OPENSEARCH_TLS_CA_CERT:}
+        truststore-path: ${OPENSEARCH_TLS_TRUSTSTORE:}
+        truststore-password: ${OPENSEARCH_TLS_TRUSTSTORE_PASSWORD:}
+        verify-hostname: true
+        allow-insecure: false
+      bulk-timeout: PT60S
+    index:
+      prefix: ${SEARCH_INDEX_PREFIX:dms}
+      shards: ${SEARCH_INDEX_SHARDS:1}
+      replicas: ${SEARCH_INDEX_REPLICAS:0}
+      # Production only (needs shards > 2): spreads one large tenant over several shards.
+      # routing-partition-size: 2
+    indexer:
+      enabled: ${SEARCH_INDEXER_ENABLED:true}
+      poll-interval: PT1S
+      idle-poll: PT2S
+      batch-size: 50
+      lease: PT2M
+      max-attempts: 8
+      base-backoff: PT5S
+      max-backoff: PT15M
+      workers: 2
+    extraction:
+      max-file-bytes: 104857600
+      max-pages: 1000
+      max-chars: 2000000
+      timeout: PT60S
+    reconcile:
+      enabled: ${SEARCH_RECONCILE_ENABLED:true}
+      cron: "0 30 3 * * *"
+    presets:
+      # Saved search presets per person; a tenant admin can change it per organisation (saved_search_settings).
+      default-max: 50
+    admin:
+      reindex-min-interval: PT5M
+      reconcile-min-interval: PT5M
+      reconcile-lease: PT15M
+      telemetry-per-minute: 30
+    query:
+      default-page-size: 20
+      max-page-size: 50
+      overfetch-factor: 3
+      # Largest candidate window per round (ids only, cheap); rounds and candidates cap the over-fetch loop, time-budget stops it.
+      max-batch: 500
+      max-rounds: 6
+      max-candidates: 2000
+      time-budget: PT2.5S
+      breaker-failures: 5
+      breaker-open: PT30S
+
 management:
   endpoints:
     web:
@@ -763,7 +836,9 @@ management:
         # system state by hand - only the container probe moved.
         core:
           include: "*"
-          exclude: ocrJobToken
+          # openSearch: search is optional and falls back to title search when the engine is down,
+          # so a stopped OpenSearch must never fail the container probe or roll back a release.
+          exclude: ocrJobToken,openSearch
   health:
     # The mail indicator opens a live SMTP connection (and login) on every
     # /actuator/health call. An external relay being slow, down or rejecting

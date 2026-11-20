@@ -1,0 +1,7 @@
+-- Manual rollback ("down") for V141__grant_preset_permissions_to_search_users.sql.
+--
+-- Outside classpath:db/migration, so Flyway never runs it. Intentionally a no-op on the data, same convention as V134
+-- and V139: the grants are ordinary role_permissions rows, indistinguishable from ones an administrator added, and
+-- removing a permission nobody asked to lose is worse than leaving a now-unused grant. Only the history row goes so the
+-- migration can be re-applied (the re-run is idempotent).
+-- Also: DELETE FROM flyway_schema_history WHERE version = '141';

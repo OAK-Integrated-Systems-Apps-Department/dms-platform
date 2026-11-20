@@ -4,10 +4,13 @@ import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserSessions } from "@/components/users/user-sessions"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { USER_VIEW_PERMISSIONS } from "@/lib/auth/user-view-permissions"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -27,22 +30,37 @@ import { useUsersStore } from "@/stores/users-store"
  * `.../users/{id}/logout`), so there's nothing real to call yet, and the
  * session list itself is always empty until that integration exists.
  * Swap these for real mutations once that endpoint exists.
+ *
+ * Gated like View User (FE-M4): the page is for someone holding one of
+ * `USER_VIEW_PERMISSIONS`; revoking stays behind its own, narrower check
+ * (`canManage`), which the page gate does not replace.
  */
 export default function UserSessionsPage() {
   const params = useParams<{ userId: string }>()
-  const { data: user, isPending, isError, error } = useUser(params.userId)
+
+  return (
+    <DashboardShell initialActiveLabel="Users & Roles">
+      <PermissionGate permission={USER_VIEW_PERMISSIONS}>
+        <UserSessionsContent userId={params.userId} />
+      </PermissionGate>
+    </DashboardShell>
+  )
+}
+
+function UserSessionsContent({ userId }: { userId: string }) {
+  const { data: user, isPending, isError, error } = useUser(userId)
   const revokeSession = useUsersStore((state) => state.revokeSession)
   const revokeAllSessions = useUsersStore((state) => state.revokeAllSessions)
   const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Sessions` : "User Sessions")
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 
   return (
-    <DashboardShell initialActiveLabel="Users & Roles">
+    <>
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -79,6 +97,6 @@ export default function UserSessionsPage() {
             canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
-    </DashboardShell>
+    </>
   )
 }

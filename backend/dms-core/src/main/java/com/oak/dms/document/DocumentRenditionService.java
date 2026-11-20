@@ -246,6 +246,26 @@ public class DocumentRenditionService {
     }
 
     /**
+     * The current version as a PDF for an external viewer (1.5 sharing): empty when the file is shown as it is
+     * (a PDF, a picture) or can't be converted. Unlike {@link #preview} there is no caller, so no folder-access
+     * check and no audit row here - the sharing module has already decided that the link or grant covers this
+     * document and records the view itself. The tenant comes from the verified link, never from the request.
+     */
+    public Optional<DownloadedDocument> previewPdfForShare(UUID tenantId, UUID documentId) {
+        Document document = documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+        UUID versionId = document.getCurrentVersionId() != null ? document.getCurrentVersionId()
+                : document.getLatestVersionId();
+        DocumentVersion version = versionRepository
+                .findByVersionIdAndDocumentIdAndTenantIdAndDeletedFalse(versionId, documentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentVersion", versionId));
+        if (!converted(version.getOriginalFilename())) {
+            return Optional.empty();
+        }
+        return Optional.of(pdfOf(version, tenantId));
+    }
+
+    /**
      * A presentation, ready to be shown slide by slide: converted on first use like
      * {@link #preview}, and audited as DOCUMENT_VIEWED once - here, not for every slide.
      *

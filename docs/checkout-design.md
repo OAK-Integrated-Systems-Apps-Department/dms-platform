@@ -13,9 +13,14 @@ degrades to plain check-out / download / check-in.
    document list). The page re-checks every 2 s (polling, not push).
 2. The holder downloads, edits in their own Word/Excel/PowerPoint, then
 3. **Check in** - uploads the edited file (`POST .../checkin`). It goes through the same malware
-   scan as every upload and becomes the new current version; the lock is released as soon as the
-   upload is accepted. If the scanner refuses the file outright the lock **stays**, so the holder
-   can fix it and retry.
+   scan as every upload and becomes the new current version. The lock is released **once that version
+   exists** (the scan came back clean, or an administrator released the file from quarantine) - not
+   merely because the upload was accepted. If the scan is still **pending** (the scanner is down and
+   retrying, a very large file, a cloud scanner) the lock **stays** and the page says so; if the scanner
+   refuses the file outright the lock stays too, so the holder can fix it and retry. After a pending
+   check-in is promoted later, the check-out is **not** released automatically - nothing recorded says that
+   version came from a check-in rather than a plain upload or an editor save by the same holder - so the
+   holder discards it (or checks in again), or it expires (`dms.checkout.idle-timeout`).
 4. **Discard** gives the lock up with no new version. An administrator with
    `cico.force-release-lock` can **force-release** someone else's lock; a reason is mandatory and
    the audit entry is HIGH severity.
@@ -32,14 +37,43 @@ degrades to plain check-out / download / check-in.
 | Permanent delete / the hourly purge sweep | - | refused (skipped by the sweep) | - |
 
 Enforced by `DocumentEditGuard`, called beside `DocumentSignatureLockService.guard`, so a user cannot
-bypass the lock by uploading through the normal route instead of checking in. OCR and review-decision
+bypass the lock by uploading through the normal route instead of checking in.
+
+### The check-out is checked again when the version is promoted (DOC-07)
+
+A file can be accepted long before it becomes a version, and the check-out can change in between. So
+`DocumentVersionPromoter` checks it again, under the document's row lock, in the transaction that adds the
+version (all scan-result reasons except the signing-generated `signed_copy`). A lease is one acquisition of the
+check-out - who holds it and when it was taken (`checked_out_by`, `checked_out_at`; the expiry is fixed at that
+moment and an expired lease stays on the row until it is taken over or released). The upload is identified by what
+the gate recorded and no client can set: `uploaded_by` and `started_at`. Promotion is then:
+
+| State of the check-out at promotion | Result |
+|---|---|
+| nobody holds an unexpired check-out | allowed, like any upload |
+| someone **else** holds it (a takeover after expiry, or a check-out taken while the file was scanned) | refused, `DOCUMENT_CHECKED_OUT` |
+| the uploader holds one taken **after** the upload was submitted (a new lease) | refused, `DOCUMENT_CHECKED_OUT` |
+| the uploader holds one taken at or before the submission (the check-in's own lease) | allowed |
+| the uploader's lease from before the submission has **expired** and nobody took over | refused, `CHECKOUT_EXPIRED` |
+
+A refusal is permanent for that attempt: the ingestion ends `failed` with the reason (it is not retried and not
+rescanned - see the scanning design), and nothing is changed, including the other user's check-out. Never decided
+by user name alone and never by anything the client sends.
+
+**Known limitation.** A force-release clears every check-out column, so a force-released check-out leaves nothing
+to tell it from "never checked out": the pending check-in then promotes like any upload. Telling a check-in from an
+ordinary upload - needed to release the lock automatically after a late promotion, or to refuse a check-in whose
+lease was force-released - or detecting that the document changed since check-out, would need a persisted marker or
+a recorded base version, i.e. a migration; that was not done. OCR and review-decision
 writes use a different path on purpose and are not blocked by a check-out, so OCR results still land.
 
 ### Signatures and watermarks (why users cannot alter them by editing) - every file type
 
-Whatever edits a document - check-out, the online editor, a save from the editor, a check-in - is refused while
-the version it would change carries a signature (`SignedContentGuard`, error `DOCUMENT_HAS_SIGNATURE`). A
-version counts as signed when ANY of these holds, **whatever its file type**:
+Whatever edits a document - check-out, the online editor, a save from the editor, a check-in, and also a plain
+**version upload and a restore of an older version** (`POST /documents/{id}/versions` and
+`.../versions/{versionId}/restore`, including a bulk import that adds a new version to an existing document) - is
+refused while the version it would change carries a signature (`SignedContentGuard`, error `DOCUMENT_HAS_SIGNATURE`).
+A version counts as signed when ANY of these holds, **whatever its file type**:
 
 1. the DMS holds a **valid signature** bound to it (workflow approval or standalone signing);
 2. it was made by placing a **visual signature mark** (`created_reason = signed_copy`) - the mark is burned into the page;
@@ -48,10 +82,13 @@ version counts as signed when ANY of these holds, **whatever its file type**:
    with `META-INF/documentsignatures.xml`.
 
 (1) and (2) are cheap database checks asked again on every save, so a document signed in the middle of an editing
-session cannot be overwritten. (3) reads the file, so it is asked once when editing starts. If the file cannot be
+session cannot be overwritten. (3) reads the file, so it is asked once when editing starts - and, because they open
+the current file the same way, on every version upload and restore (before anything is scanned, stored or versioned). If the file cannot be
 read the answer is "refuse" (`503 DOCUMENT_FILE_UNAVAILABLE`), never "assume unsigned". This sits on top of the
 signature lock a workflow approval sets (which also refuses new versions, moves and deletes). A STANDALONE signing
-does not set that lock, which is why rules 1-2 are needed.
+does not set that lock, which is why rules 1-2 are needed - and why upload and restore call `SignedContentGuard` as
+well as the lock. Metadata edits, moves and deletes of a standalone-signed document are not covered by it: they do not
+change the signed bytes.
 
 * A signature is bound to one version forever and a valid one locks the document, which cannot then
   be checked out or opened for editing at all. A check-in or an online save only ever **adds** a version;
@@ -188,3 +225,101 @@ that way exactly as to any other type.
 * **No expiry notification** to the previous holder when a lock lapses; only the audit entry exists.
 * **Version purge** (retention, not the recycle bin) is not yet blocked by a legal hold - it belongs to the
   lifecycle module (DLM).
+
+## Recycle bin: purge, restore and legal hold must not overlap (DOC-09)
+
+A permanent deletion destroys files, which no transaction can undo, so what it is allowed to destroy is decided under
+a lock, and a restore or a legal hold cannot slip in while the files are going.
+
+**Locking protocol** (`RecycleBinService`; one PostgreSQL row lock, so it holds across application instances):
+
+* `purge` - the one place a document is deleted for good; manual purge, "empty the bin" and the hourly sweep all end here.
+  It runs in **one transaction** (an explicit `TransactionTemplate`; the method is called from inside the class, so
+  `@Transactional` on it would not apply) and starts with `select ... from documents where document_id = ? and
+  tenant_id = ? for update`. Everything it knew before - the list, an entity, the sweep's query - is only a candidate.
+* Under the lock, read from the row (not from an entity), it re-checks: still in the bin, not already purged, **no legal
+  hold**, **no protected version** and, for the sweep, still the **same deletion** it selected (a document restored and
+  deleted again has a new retention period). If any check fails, nothing is destroyed; "empty the bin" counts it as
+  skipped, the sweep moves on, and a manual purge answers 409 (restored / legal hold / protected) or 404 (already gone).
+* Only then are the files destroyed and, in the same transaction, the versions, metadata, access list, links and
+  bookmarks are marked or removed. The lock is held until commit. The audit event and the notification are written
+  **after** the commit, so only a purge that completed is recorded.
+* `restore` takes the same lock after its permission check and re-reads the row: a document purged meanwhile is a 404;
+  otherwise it is restored while the lock is held, so a purge that was waiting then finds it live and leaves it alone.
+* Legal-hold placement is a single atomic `UPDATE ... WHERE deleted = false AND purged_at IS NULL AND legal_hold =
+  false`, which also waits for the row lock and re-evaluates against the committed state: a document in the bin cannot
+  be held (it is a 404), and neither can a purged one. A hold can therefore only be placed on a live document - after
+  a restore - and the purge that follows will see it.
+
+**File deletion is not transactional - failure semantics.** If deleting fails part way, or the commit fails after the
+files are gone, or the application dies, the transaction rolls back: nothing is marked purged, no audit event is
+written, and the document stays in the bin - but some of its files may already be destroyed. Deleting a file that is
+already gone is a no-op, so the next purge (the sweep, or a manual purge) simply runs again and finishes. To stop such a
+half-destroyed document being restored as an empty one, **restore also checks, under the lock, that the stored file of
+every version still in use can be read, and refuses with `DOCUMENT_CONTENT_MISSING` if not** - the only way forward
+for that document is to delete it for good. A failure before anything was deleted leaves the document fully restorable.
+
+**Limits.** The row lock is held while storage is being deleted (a connection and that one document's row; other
+documents are not affected, and a restore of that document waits). A slow object store with many versions lengthens
+that. There is no lock timeout of its own. The retention-driven *version* purge (`VersionRetentionService.destroyDue`)
+still checks a legal hold only when it selects the versions - a hold placed between selection and deletion is not seen;
+that is a separate follow-up.
+
+## Online-editor saves are spooled to disk, not held in memory (DOC-12)
+
+The editing engine saves with WOPI `PutFile` (`WopiController.putFile`). The body used to be read into a `byte[]` - up to
+200 MiB, twice over while it was read, held until the ingestion gate finished - so a few large saves at once could exhaust the
+heap. It is now streamed to a private file (`WopiSaveSpool`) and heap use no longer depends on the size of the document
+(measured: a 64 MiB save allocates under 1 MiB instead of 128 MiB; eight concurrent 64 MiB saves under a 900 MiB heap used to
+run out of memory and now all succeed). `GetFile` already streams and is unchanged; so is the token protocol.
+
+**Order of a save** (unchanged except where marked): valid token for this document -> live document in the token's tenant ->
+`canWriteNow` (signature lock, legal hold, signature record, check-out) -> an autosave is acknowledged and its body is never
+read -> **body streamed to the spool file, counted** -> embedded-signature check **from the file** -> the gate receives the
+file with the **counted** length -> audit `DOCUMENT_EDIT_SESSION_SAVED` -> the file is deleted. Every refusal before the body
+(401, 403, 404, 409, autosave) happens without reading or creating anything.
+
+**The limit.** The existing 200 MiB cap (`MAX_SAVE_BYTES`) is unchanged and is enforced on the bytes that actually arrive:
+exactly 200 MiB is accepted, one byte more is refused with 413 and reading stops there. A declared `Content-Length` over the cap
+is refused with 413 before any file is created. The declared length is never taken as the size; chunked requests (no
+`Content-Length`) are supported and counted the same way. No other size limit was added, and the cap applies to saves only
+(documents of any size can still be opened).
+
+**Signatures.** `EmbeddedSignatureDetector` is unchanged and still decides: it is simply given a stream over the spool file
+(PDF `/ByteRange`, OOXML `_xmlsignatures/`, ODF `documentsignatures.xml`); a save that carries one is refused with 409 and nothing
+reaches the gate.
+
+**Where and who can read it.** One dedicated directory, `dms.editing.spool-dir` (default
+`<java.io.tmpdir>/oak-dms-wopi-spool`). It is created private to the service user (0700 on POSIX) and the service refuses to use
+a path that is not a plain directory it owns. Files are `wopi-save-<random uuid>.part`, created exclusively with owner-only
+permissions; nothing in a name comes from the request. Nothing serves the directory; document contents and tokens are never
+logged. The files hold the document **in plaintext** while a save is processed - the same as ordinary uploads, which Spring's
+multipart handling already spools to the temp directory, and the encryption wrapper's temporary copy of an upload. A host's
+on-access antivirus scans these files (on the Windows development machine it refused to let the EICAR test string be written
+to the spool at all); exclude the spool directory from such scanning only if the gate's own scan is relied on.
+
+**Disk.** The per-save cap does not bound the total, so two safeguards apply to each application instance:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `dms.editing.spool-max-active` | 32 | most spool files at once; a further save waits `spool-wait`, then gets **503** |
+| `dms.editing.spool-wait` | `PT15S` | how long a save waits for a free slot |
+| `dms.editing.spool-min-free-bytes` | 512 MiB | a save is refused with **507** unless the volume keeps this much free after counting what the saves in progress may still write (their declared size, or the whole 200 MiB cap for a chunked request) |
+
+Worst case disk use is `spool-max-active x 200 MiB` (6.4 GiB at the defaults); a typical office save is a few MiB. In a container
+the temp directory is the writable layer unless a volume or `tmpfs` is mounted: point `dms.editing.spool-dir` at a volume (or a
+`tmpfs` sized for the worst case, remembering a `tmpfs` is memory) and make it writable by the service user (`oakdms`).
+
+**Cleanup and crash recovery.** A file is deleted in a `finally` whatever the outcome (success, refusal, gate failure, a body
+that breaks off, an error while writing); a delete that fails is logged (file name only) and left for the sweep. A JVM that dies
+cannot clean up, so each live spool file holds an operating-system lock on one byte far beyond its data for as long as it
+exists. A scheduled sweep (`dms.editing.spool-sweep-interval`, default `PT15M`, first run after `PT2M`) deletes a file only if it
+is a regular file (never a link) named like a spool file, older than `dms.editing.spool-abandoned-after` (default `PT6H`) **and**
+that lock can be taken - which proves no save, in this process or in another instance sharing the directory, is using it; a
+process that has died has had its locks released by the operating system. Other files in the directory are never touched. There
+is no database involvement. Limits: OS file locks are not reliable on every network file system, so a spool directory should be
+local to each instance; a file left by a crash stays until the next sweep after the age threshold.
+
+**Transactions.** None is open while the body is copied or checked: the controller is not transactional, the spool is a plain
+bean, the gate keeps its own short transactions. Verified against PostgreSQL: with eight saves stalled half way through their
+bodies there is no Spring transaction, no `idle in transaction` session and no pooled connection in use.

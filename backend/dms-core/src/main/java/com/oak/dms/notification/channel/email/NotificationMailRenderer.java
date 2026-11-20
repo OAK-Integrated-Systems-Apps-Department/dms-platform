@@ -32,11 +32,24 @@ public class NotificationMailRenderer {
         String absoluteLink = absolute(n.getLinkUrl());
         String body = n.getBody() == null ? "" : n.getBody();
 
-        BrandedMailLayout.Content content = BrandedMailLayout.Content.of(subject, List.of(body));
+        boolean shared = "document.shared".equals(n.getCategoryCode());
+        // "Shared with you": the sharer's note (after a blank line) is its own quoted paragraph, and the button
+        // names what it opens, like a SharePoint share mail.
+        List<String> paragraphs = shared ? sharedParagraphs(body) : List.of(body);
+        BrandedMailLayout.Content content = BrandedMailLayout.Content.of(subject, paragraphs);
         if (absoluteLink != null) {
-            content = content.withButton("Open", absoluteLink);
+            content = content.withButton(shared ? "folder".equals(n.getObjectType()) ? "Open folder" : "Open document"
+                    : "Open", absoluteLink);
         }
         return new RenderedMail(subject, layout.html(content), layout.text(content));
+    }
+
+    private static List<String> sharedParagraphs(String body) {
+        String[] parts = body.split("\n\n", 2);
+        if (parts.length < 2 || parts[1].isBlank()) {
+            return List.of(parts[0]);
+        }
+        return List.of(parts[0], "\"" + parts[1].strip() + "\"");
     }
 
     private String absolute(String linkUrl) {

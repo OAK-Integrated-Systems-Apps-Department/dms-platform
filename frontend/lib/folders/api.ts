@@ -37,6 +37,12 @@ export function hasAccess(
 }
 
 /** Mirrors FolderAccessEntryResponse. */
+/** What to tell the people newly given access: email them (the inbox note always goes), plus an optional message. */
+export interface AccessNotice {
+  emailPeople?: boolean
+  message?: string
+}
+
 export interface FolderAccessEntryDto {
   principalType: PrincipalType
   principalId: string
@@ -83,14 +89,15 @@ export async function saveFolderAccess(
   entries: Pick<
     FolderAccessEntryDto,
     "principalType" | "principalId" | "level"
-  >[]
+  >[],
+  notice?: AccessNotice
 ): Promise<FolderAccessDto> {
   return apiFetchJson(
     `${BASE}/${folderId}/access`,
     {
       method: "PUT",
       headers: JSON_HEADERS,
-      body: JSON.stringify({ mode, entries }),
+      body: JSON.stringify({ mode, entries, ...notice }),
     },
     "Could not save who can access this folder."
   )

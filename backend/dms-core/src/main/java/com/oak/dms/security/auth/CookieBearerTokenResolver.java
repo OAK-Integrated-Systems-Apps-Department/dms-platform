@@ -30,6 +30,9 @@ public class CookieBearerTokenResolver implements BearerTokenResolver {
     /** The editing engine's server-to-server endpoints - see {@link #resolve}. Kept in step with SecurityConfig's public paths. */
     static final String WOPI_PATH_PREFIX = "/internal/v1/wopi/";
 
+    /** The external-sharing routes - see {@link #resolve}. Kept in step with SecurityConfig's public paths. */
+    static final String PUBLIC_SHARING_PATH_PREFIX = "/api/v1/public/";
+
     private final DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
 
     @Override
@@ -40,6 +43,12 @@ public class CookieBearerTokenResolver implements BearerTokenResolver {
         // ever runs. Nothing is lost by ignoring it: the path is public and the controller refuses without a valid
         // access_token (covered by WopiEditingIT).
         if (request.getRequestURI() != null && request.getRequestURI().startsWith(WOPI_PATH_PREFIX)) {
+            return null;
+        }
+        // The external-sharing routes (share-link recipients, portal guests) authenticate by their own tokens. A
+        // signed-in user opening a share link would otherwise send a (possibly expired) session cookie, which
+        // Spring would try to validate as a JWT and answer 401 before the controller ran.
+        if (request.getRequestURI() != null && request.getRequestURI().startsWith(PUBLIC_SHARING_PATH_PREFIX)) {
             return null;
         }
         String fromHeader = headerResolver.resolve(request);

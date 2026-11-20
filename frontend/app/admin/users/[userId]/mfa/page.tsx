@@ -4,10 +4,13 @@ import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserMfaManagement } from "@/components/users/user-mfa-management"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { USER_VIEW_PERMISSIONS } from "@/lib/auth/user-view-permissions"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -25,28 +28,43 @@ import { useUser } from "@/lib/users/use-user"
  * dms-core has no MFA-credential endpoints yet (that lives in Keycloak's
  * `/admin/realms/{realm}/users/{id}/credentials`), so there's nothing real
  * to call. Swap these for real mutations once that endpoint exists.
+ *
+ * Gated like View User (FE-M4): the page is for someone holding one of
+ * `USER_VIEW_PERMISSIONS`; the admin actions stay behind their own, narrower
+ * check (`canManage`), which the page gate does not replace.
  */
 export default function UserMfaManagementPage() {
   const params = useParams<{ userId: string }>()
-  const { data: user, isPending, isError, error } = useUser(params.userId)
+
+  return (
+    <DashboardShell initialActiveLabel="Users & Roles">
+      <PermissionGate permission={USER_VIEW_PERMISSIONS}>
+        <UserMfaManagementContent userId={params.userId} />
+      </PermissionGate>
+    </DashboardShell>
+  )
+}
+
+function UserMfaManagementContent({ userId }: { userId: string }) {
+  const { data: user, isPending, isError, error } = useUser(userId)
   const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} MFA` : "User MFA")
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 
   function handleRequireSetup() {
-    console.info(`MFA setup required for user ${params.userId}`)
+    console.info(`MFA setup required for user ${userId}`)
   }
 
   function handleResetCredentials() {
-    console.info(`MFA credentials reset for user ${params.userId}`)
+    console.info(`MFA credentials reset for user ${userId}`)
   }
 
   return (
-    <DashboardShell initialActiveLabel="Users & Roles">
+    <>
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -85,6 +103,6 @@ export default function UserMfaManagementPage() {
             canManage={hasPermission(PermissionCodes.OTUA_USERS_UPDATE)}
           />
         )}
-    </DashboardShell>
+    </>
   )
 }

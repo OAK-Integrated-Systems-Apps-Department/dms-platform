@@ -214,11 +214,30 @@ export const PermissionCodes = {
   CRM_POLICY_DELETE: "crm.manage-retention-policies.delete",
   CRM_POLICY_VIEW: "crm.manage-retention-policies.view",
   CRM_VIEW_ARCHIVE: "crm.view-archive",
+  // Document Search & Retrieval (4.1): the /search page and API. Mirrors PermissionCodes.java.
+  DSR_SEARCH_DOCUMENTS: "dsr.search-documents",
+  // Saved search presets (Phase 2). Listing and running a preset need only DSR_SEARCH_DOCUMENTS.
+  DSR_MANAGE_PRESETS_CREATE: "dsr.manage-saved-search-presets.create",
+  DSR_MANAGE_PRESETS_UPDATE: "dsr.manage-saved-search-presets.update",
+  DSR_MANAGE_PRESETS_DELETE: "dsr.manage-saved-search-presets.delete",
+  // Declared, unused; no UI may reference it (presets are private, DSR-NFR-008).
+  DSR_MANAGE_PRESETS_SHARE: "dsr.manage-saved-search-presets.share",
   CRM_REVIEW_RETENTION: "crm.review-retention",
   CRM_CONFIGURE_RETENTION: "crm.configure-retention",
   // Turning online editing on/off for the organisation and choosing its mode (the Online Editing policy page).
   CICO_EDITING_SELECT_PROVIDER: "cico.configure-editing-engine.select-provider",
   CICO_EDITING_CONFIGURE_CONNECTION: "cico.configure-editing-engine.configure-connection",
+
+  // Sharing and External Access (1.5) - share links, guests and the sharing activity log.
+  SEA_CREATE_LINK: "sea.create-external-share-links.create-link",
+  SEA_SET_EXPIRY_PASSWORD: "sea.create-external-share-links.set-expiry-password",
+  SEA_SET_PERMISSION_LEVEL: "sea.create-external-share-links.set-permission-level",
+  SEA_INVITE_GUEST: "sea.manage-guest-access.invite-guest",
+  SEA_UPDATE_GUEST: "sea.manage-guest-access.update-guest-access",
+  SEA_REVOKE_GUEST: "sea.manage-guest-access.revoke-guest-access",
+  SEA_VIEW_GUESTS: "sea.manage-guest-access.view-guest-list",
+  SEA_REVOKE_SINGLE: "sea.revoke-share-links.revoke-single",
+  SEA_VIEW_ACTIVITY: "sea.view-sharing-activity-log.view",
 
   // Notifications (3.2) - tenant-admin settings and the delivery log.
   NOTIF_SETTINGS_MANAGE: "notif.notification-settings.manage",
