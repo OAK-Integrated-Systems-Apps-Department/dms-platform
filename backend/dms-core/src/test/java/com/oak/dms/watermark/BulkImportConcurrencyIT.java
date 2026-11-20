@@ -41,8 +41,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -116,8 +121,8 @@ class BulkImportConcurrencyIT extends WatermarkFixtures {
         return items.findAllByBatchAndFilename(batch, filename).get(0);
     }
 
-    private <T> CompletableFuture<T> as(Fixture f, java.util.concurrent.Callable<T> work) {
-        return CompletableFuture.supplyAsync(() -> {
+    private <T> Supplier<T> asTenant(Fixture f, java.util.concurrent.Callable<T> work) {
+        return () -> {
             TenantContext.set(f.tenantId(), f.userId());
             try {
                 return work.call();
@@ -128,7 +133,16 @@ class BulkImportConcurrencyIT extends WatermarkFixtures {
             } finally {
                 TenantContext.clear();
             }
-        });
+        };
+    }
+
+    private <T> CompletableFuture<T> as(Fixture f, java.util.concurrent.Callable<T> work) {
+        return CompletableFuture.supplyAsync(asTenant(f, work));
+    }
+
+    /** For work that blocks on purpose: the common pool has about one thread per CPU, so it cannot be relied on to hold them all. */
+    private <T> CompletableFuture<T> as(Fixture f, java.util.concurrent.Callable<T> work, Executor executor) {
+        return CompletableFuture.supplyAsync(asTenant(f, work), executor);
     }
 
     private Object upload(UUID batch, String name, InputStream stream, long length) {
@@ -269,11 +283,19 @@ class BulkImportConcurrencyIT extends WatermarkFixtures {
             return call.callRealMethod();
         }).when(scanner).scan(any(), any(), any(), any(), any(), any(), anyLong(), any());
 
+        // The stalled uploads block their threads on purpose, so the threads must exist whatever the CPU count: the common
+        // pool has about one per CPU, which is too few on a small CI runner. One for each stalled upload plus free.pdf and b.pdf.
+        AtomicInteger threadNumber = new AtomicInteger();
+        ExecutorService uploads = Executors.newFixedThreadPool(stalledUploads + 2, runnable -> {
+            Thread thread = new Thread(runnable, "bulk-import-it-upload-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
         List<CompletableFuture<?>> stalled = new ArrayList<>();
         try (Connection diag = diagnostics()) {
             for (int i = 0; i < stalledUploads; i++) {
                 String name = names[i];
-                stalled.add(as(f, () -> upload(batchA, name, new Stalling(reached, release, transactionActive), TOTAL)));
+                stalled.add(as(f, () -> upload(batchA, name, new Stalling(reached, release, transactionActive), TOTAL), uploads));
             }
             assertThat(reached.await(60, TimeUnit.SECONDS)).as("every upload reached its stall in storage").isTrue();
 
@@ -292,9 +314,9 @@ class BulkImportConcurrencyIT extends WatermarkFixtures {
             // an upload into another batch - whose encryption key records need their own connections
             assertThat(jdbc.queryForObject("select 1", Integer.class)).isEqualTo(1);
             CompletableFuture<Object> sameBatch = as(f, () -> upload(batchA, "free.pdf",
-                    new ByteArrayInputStream(file(300)), 300));
+                    new ByteArrayInputStream(file(300)), 300), uploads);
             CompletableFuture<Object> otherBatch = as(f, () -> upload(batchB, "b.pdf",
-                    new ByteArrayInputStream(file(300)), 300));
+                    new ByteArrayInputStream(file(300)), 300), uploads);
             sameBatch.get(60, TimeUnit.SECONDS);
             otherBatch.get(60, TimeUnit.SECONDS);
             assertThat(stalled).as("the stalled ones are still stalled").noneMatch(CompletableFuture::isDone);
@@ -310,7 +332,12 @@ class BulkImportConcurrencyIT extends WatermarkFixtures {
             }
         } finally {
             release.countDown();
+            uploads.shutdown();
+            if (!uploads.awaitTermination(60, TimeUnit.SECONDS)) {
+                uploads.shutdownNow();                  // a wedged upload is interrupted rather than left to leak its thread
+            }
         }
+        assertThat(uploads.isTerminated()).as("no upload thread outlives the test").isTrue();
         for (int i = 0; i < stalledUploads; i++) {
             assertThat(item(batchA, names[i]).getStagedSizeBytes()).isEqualTo((long) TOTAL);
         }
