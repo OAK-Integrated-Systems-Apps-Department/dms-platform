@@ -351,7 +351,7 @@ export function ItemMenu({
         aria-expanded={open}
         onClick={(e) => toggle(e.currentTarget)}
         className={cn(
-          "flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground size-8 rounded-btn",
+          "flex size-8 items-center justify-center rounded-btn text-muted-foreground hover:bg-muted hover:text-foreground",
           open && "bg-muted text-foreground"
         )}
       >
@@ -402,7 +402,7 @@ export function ItemMenu({
 }
 
 const TILE =
-  "group relative flex h-[196px] flex-col overflow-hidden rounded-lg border bg-card text-left shadow-[var(--ledger-shadow)] transition-colors"
+  "group relative flex h-[var(--tile-h,196px)] flex-col overflow-hidden rounded-lg border bg-card text-left shadow-[var(--ledger-shadow)] transition-colors"
 
 /** A folder with something held over it that can be dropped there. */
 const DROP_OVER = "border-primary bg-primary/10 ring-2 ring-primary"
@@ -413,10 +413,16 @@ export function FolderTile({
   actions,
   drag,
   drop,
+  checked = false,
+  onToggle,
 }: {
   folder: FolderNode
   onOpen: () => void
   actions: ItemAction[]
+  /** Part of the selection. */
+  checked?: boolean
+  /** Omit for a listing where folders cannot be selected. */
+  onToggle?: () => void
   /** Drag it onto another folder to move it. */
   drag?: DragBinding
   /** Drop documents, folders or files from the computer onto it. */
@@ -426,11 +432,14 @@ export function FolderTile({
     <li
       {...drag}
       {...drop?.handlers}
+      data-select-key={`folder:${folder.folderId}`}
       className={cn(
         TILE,
         drop?.over
           ? DROP_OVER
-          : "border-border hover:border-primary/50 hover:bg-muted/40"
+          : checked
+            ? "border-primary bg-primary/5 ring-1 ring-primary"
+            : "border-border hover:border-primary/50 hover:bg-muted/40"
       )}
     >
       <button
@@ -444,7 +453,11 @@ export function FolderTile({
       {folder.restricted && (
         <span
           title="Only specific people and roles can open this folder"
-          className="absolute top-2.5 left-2.5 inline-flex h-6 items-center justify-center gap-1 rounded-btn bg-muted px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
+          className={cn(
+            "absolute top-2.5 inline-flex h-6 items-center justify-center gap-1 rounded-btn bg-muted px-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground",
+            // Leaves room for the checkbox in the corner.
+            onToggle ? "left-9" : "left-2.5"
+          )}
         >
           <Lock size={11} aria-hidden="true" />
           Restricted
@@ -457,6 +470,20 @@ export function FolderTile({
           <FriendlyDate iso={folder.updatedAt ?? folder.createdAt} />
         </p>
       </button>
+      {onToggle && (
+        <input
+          type="checkbox"
+          aria-label={`Select ${folder.name}`}
+          checked={checked}
+          onChange={onToggle}
+          className={cn(
+            "absolute top-3.5 left-3.5 size-4",
+            checked
+              ? "opacity-100"
+              : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+          )}
+        />
+      )}
       <ItemMenu
         label={folder.name}
         actions={actions}
@@ -498,6 +525,7 @@ export function DocumentTile({
   return (
     <li
       {...drag}
+      data-select-key={`doc:${row.documentId}`}
       className={cn(
         TILE,
         checked
@@ -541,7 +569,10 @@ export function DocumentTile({
             )}
             <span className="truncate">{row.title}</span>
             <PinnedIndicator documentId={row.documentId} />
-            <BookmarkedIndicator documentId={row.documentId} bookmarked={bookmarked} />
+            <BookmarkedIndicator
+              documentId={row.documentId}
+              bookmarked={bookmarked}
+            />
             <LockStateIndicator lockState={row.lockState} />
           </span>
           {flag}
@@ -552,7 +583,11 @@ export function DocumentTile({
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {approval && <ApprovalBadge status={approval} />}
-          <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
+          <LifecycleBadge
+            state={row.lifecycleState}
+            archiveDueAt={row.archiveDueAt}
+            hideActive
+          />
         </div>
       </div>
       {onToggle && (
@@ -588,6 +623,8 @@ export function BrowserList({
   checked,
   onToggle,
   onToggleAll,
+  checkedFolders,
+  onToggleFolder,
   onOpenFolder,
   onOpenDocument,
   folderActions,
@@ -606,6 +643,9 @@ export function BrowserList({
   checked: Set<string>
   onToggle: (documentId: string) => void
   onToggleAll: (on: boolean) => void
+  /** Folders that are part of the selection, when folders can be selected. */
+  checkedFolders?: Set<string>
+  onToggleFolder?: (folderId: string) => void
   onOpenFolder: (folder: FolderNode) => void
   onOpenDocument: (row: DocumentListItemDto) => void
   folderActions: (folder: FolderNode) => ItemAction[]
@@ -627,7 +667,7 @@ export function BrowserList({
   const allChecked =
     rows.length > 0 && rows.every((r) => checked.has(r.documentId))
   // Checkboxes appear on hover/focus; once anything is selected they all stay visible.
-  const selecting = checked.size > 0
+  const selecting = checked.size > 0 || (checkedFolders?.size ?? 0) > 0
   const hoverOnly = (show: boolean) =>
     cn(
       "transition-opacity",
@@ -678,14 +718,27 @@ export function BrowserList({
                 key={folder.folderId}
                 {...folderDrag?.(folder)}
                 {...drop?.handlers}
+                data-select-key={`folder:${folder.folderId}`}
                 className={cn(
-                  "border-b border-border last:border-b-0",
+                  "group border-b border-border last:border-b-0",
                   drop?.over
                     ? "bg-primary/10 outline-2 -outline-offset-2 outline-primary"
-                    : "hover:bg-muted/40"
+                    : checkedFolders?.has(folder.folderId)
+                      ? "bg-primary/5"
+                      : "hover:bg-muted/40"
                 )}
               >
-                <td className="px-3 py-2" />
+                <td className="px-3 py-2">
+                  {selectable && onToggleFolder && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${folder.name}`}
+                      checked={checkedFolders?.has(folder.folderId) ?? false}
+                      onChange={() => onToggleFolder(folder.folderId)}
+                      className={hoverOnly(selecting)}
+                    />
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   <button
                     type="button"
@@ -729,6 +782,7 @@ export function BrowserList({
               <tr
                 key={row.documentId}
                 {...documentDrag?.(row)}
+                data-select-key={`doc:${row.documentId}`}
                 className={cn(
                   "group border-b border-border last:border-b-0",
                   checked.has(row.documentId)
@@ -773,10 +827,19 @@ export function BrowserList({
                             aria-label="Restricted"
                           />
                         )}
-                        <ApprovalBadge status={approvals?.get(row.documentId)} />
-                        <LifecycleBadge state={row.lifecycleState} archiveDueAt={row.archiveDueAt} hideActive />
+                        <ApprovalBadge
+                          status={approvals?.get(row.documentId)}
+                        />
+                        <LifecycleBadge
+                          state={row.lifecycleState}
+                          archiveDueAt={row.archiveDueAt}
+                          hideActive
+                        />
                         <PinnedIndicator documentId={row.documentId} />
-                        <BookmarkedIndicator documentId={row.documentId} bookmarked={bookmarkedIds?.has(row.documentId)} />
+                        <BookmarkedIndicator
+                          documentId={row.documentId}
+                          bookmarked={bookmarkedIds?.has(row.documentId)}
+                        />
                         <LockStateIndicator lockState={row.lockState} />
                         {flag?.(row)}
                       </p>
