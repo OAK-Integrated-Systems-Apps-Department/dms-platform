@@ -10,7 +10,7 @@ const subscribeToNothing = () => () => {}
 const MIN_VISIBLE_MS = 2500
 
 /**
- * The growing-sprout animation (public/loading.gif) in the middle of the page over a blurred screen (no box), with a short message under it, while
+ * The growing-sprout animation (public/images/loading.gif) in the middle of the page over a blurred screen (no box), with a short message under it, while
  * something is being checked (for duplicates, for viruses). It is a status, not a blocker: it ignores the pointer, so
  * whatever is underneath stays usable, and it sits above sheets and dialogs so it is seen wherever it is shown.
  */
@@ -59,7 +59,7 @@ export function CenteredLoader({
       {/* An animated GIF: next/image would not animate it, and the file is small and local. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/loading.gif"
+        src="/images/loading.gif"
         alt=""
         width={260}
         height={252}
