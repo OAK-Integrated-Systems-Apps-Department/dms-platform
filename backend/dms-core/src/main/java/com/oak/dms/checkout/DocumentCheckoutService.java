@@ -134,7 +134,14 @@ public class DocumentCheckoutService {
         IngestionTicketResponse ticket = versionService.upload(documentId, originalFilename, contentLength,
                 content, comment);
 
-        if (accepted(ticket.status())) {
+        // DOC-07: released only once the new version EXISTS (clean, or an administrator's override). A pending ticket
+        // means the file is still being scanned, perhaps for hours (scanner down, a very large file, a cloud scanner):
+        // releasing then would let someone else check the document out and edit the old version while this file is
+        // still on its way, and then be overwritten when it arrives. While pending the lock stays; promotion checks that
+        // it still belongs to this check-in (DocumentVersionPromoter), and it ends when the holder discards it, checks
+        // in again or it expires. It is NOT released automatically after the late promotion: nothing persisted says
+        // that version came from a check-in rather than a plain upload or an editor save by the same holder.
+        if (versionExists(ticket.status())) {
             documentRepository.releaseCheckout(documentId, tenantId, me);
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("scanResultId", ticket.scanResultId());
@@ -145,7 +152,7 @@ public class DocumentCheckoutService {
                     .resourceName(document.getTitle()).outcome(AuditOutcome.SUCCESS)
                     .newValue(details).log();
         }
-        // Refused outright (infected / failed): the lock stays, so the holder can correct the file.
+        // Pending, or refused outright (infected / failed): the lock stays, so the holder can follow it up or correct the file.
         return ticket;
     }
 
@@ -186,9 +193,9 @@ public class DocumentCheckoutService {
 
     // ---------------------------------------------------------------------------------------
 
-    private static boolean accepted(ScanResultStatus status) {
-        return status == ScanResultStatus.pending || status == ScanResultStatus.clean
-                || status == ScanResultStatus.released_override;
+    /** The new version is in place - the file was scanned clean (or released from quarantine) and promoted. */
+    private static boolean versionExists(ScanResultStatus status) {
+        return status == ScanResultStatus.clean || status == ScanResultStatus.released_override;
     }
 
     /** CICO-FR-009: a signature-locked or legal-hold document cannot be checked out. */

@@ -97,11 +97,16 @@ class BulkImportServiceImplTest {
     private final ImportRowValidator rowValidator = mock(ImportRowValidator.class);
     private final ImportTemplateService importTemplateService = mock(ImportTemplateService.class);
     private final IntakeVirusScanner intakeScanner = mock(IntakeVirusScanner.class);
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager =
+            mock(org.springframework.transaction.PlatformTransactionManager.class);
     private final ImportTemplateWorkbook realWorkbook = new ImportTemplateWorkbook();
 
     @BeforeEach
     void setTenant() {
         TenantContext.set(tenantId, userId);
+        // receiveFile runs two short transactions; here they are plain calls (the real boundaries: BulkImportReceiveFilePhasesTest, BulkImportConcurrencyIT)
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
     }
 
     @AfterEach
@@ -357,8 +362,12 @@ class BulkImportServiceImplTest {
         when(storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging)).thenReturn(staging);
         when(objectStorageServiceFactory.resolve(staging)).thenReturn(storage);
         byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
+        // storage reads the stream to the end, as every real adapter does (the service now checks that)
         when(storage.upload(eq(staging), any(), any(), anyLong(), eq("application/pdf")))
-                .thenReturn(new StoredObjectMetadata("k", content.length, "application/pdf", null, null));
+                .thenAnswer(call -> {
+                    ((java.io.InputStream) call.getArgument(2)).transferTo(java.io.OutputStream.nullOutputStream());
+                    return new StoredObjectMetadata("k", content.length, "application/pdf", null, null);
+                });
         org.mockito.Mockito.doThrow(new ImportFileBlockedException("'a.pdf' was blocked by the virus scan"))
                 .when(intakeScanner).scan(eq(tenantId), eq(batch.getImportBatchId()), eq(item.getImportItemId()),
                         eq("a.pdf"), eq(staging), any(), anyLong(), eq("application/pdf"));
@@ -383,17 +392,24 @@ class BulkImportServiceImplTest {
         when(storageLocationResolver.resolveForTenant(tenantId, StoragePurpose.staging)).thenReturn(staging);
         when(objectStorageServiceFactory.resolve(staging)).thenReturn(storage);
         byte[] content = "%PDF-1.7\n%test".getBytes(StandardCharsets.US_ASCII);
-        String expectedKey = "imports/" + tenantId + "/" + batch.getImportBatchId() + "/" + item.getImportItemId();
-        when(storage.upload(eq(staging), eq(expectedKey), any(), anyLong(), eq("application/pdf")))
-                .thenReturn(new StoredObjectMetadata(expectedKey, content.length, "application/pdf", null, null));
+        // DOC-11: the key is the row's prefix plus an id made for this attempt alone
+        String keyPrefix = "imports/" + tenantId + "/" + batch.getImportBatchId() + "/" + item.getImportItemId() + "/";
+        when(importItemRepository.findById(item.getImportItemId())).thenReturn(Optional.of(item));
+        when(storage.upload(eq(staging), org.mockito.ArgumentMatchers.startsWith(keyPrefix), any(), anyLong(),
+                eq("application/pdf")))
+                .thenAnswer(call -> {
+                    ((java.io.InputStream) call.getArgument(2)).transferTo(java.io.OutputStream.nullOutputStream());
+                    return new StoredObjectMetadata(call.getArgument(1), content.length, "application/pdf", null, null);
+                });
 
         service(realWorkbook).receiveFile(batch.getImportBatchId(), "a.pdf", "application/octet-stream",
                 content.length, new ByteArrayInputStream(content));
 
-        verify(storage).upload(eq(staging), eq(expectedKey), any(), eq((long) content.length), eq("application/pdf"));
+        verify(storage).upload(eq(staging), org.mockito.ArgumentMatchers.startsWith(keyPrefix), any(),
+                eq((long) content.length), eq("application/pdf"));
         verify(storageLocationResolver, never()).resolveForTenant(any());
         assertThat(item.getStagedStorageLocationId()).isEqualTo(staging.getStorageLocationId());
-        assertThat(item.getStagedObjectKey()).isEqualTo(expectedKey);
+        assertThat(item.getStagedObjectKey()).startsWith(keyPrefix);
     }
 
     @Test
@@ -584,7 +600,7 @@ class BulkImportServiceImplTest {
                 mock(OutboxEventPublisher.class), new ImportExportProperties(), new ObjectMapper(),
                 new FileTypeInspector(new IngestionProperties()), importSchemaFields, mock(BulkImportAuditor.class),
                 new ImportTemplateCsv(), rowValidator, importTemplateService, mock(FolderService.class),
-                intakeScanner);
+                intakeScanner, transactionManager);
     }
 
     private DocumentTypeSchemaResponse schema(int version) {

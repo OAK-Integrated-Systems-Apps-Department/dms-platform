@@ -178,16 +178,71 @@ Not detected in Phase 1: encrypted ODF documents and legacy
 | Retries exhausted (`max-attempts`, default 10 ≈ 2 h) | `failed`, never promoted; staged object purged after `failed-retention-hours` (72) | `failed` |
 | Cloud verdict never arrives (`cloud-verdict-timeout-minutes`, 60) | `failed` | `failed` |
 | Promotion copy/commit fails after CLEAN | counted as a failed attempt; `clean` is only ever set together with the version insert, so the retry rescans | pending, retrying |
+| Promotion refused: the document was deleted, locked by a signature, put under legal hold, signed, or its check-out changed (held by someone else, a newer lease, an expired one) while the file was scanned (`PromotionRefusedException`) | **`failed` at once** - not a failed attempt, never retried and never rescanned; reason `promotion-refused:<code>:<message>`, `DOCUMENT_SCAN_FAILED` audited, staged object purged, any copy already made removed | `failed`, "The file passed the malware scan but was not added: ..." |
 | Quarantine copy fails after INFECTED | row stays `infected` (never promoted) and isolation is retried indefinitely | `infected` |
 | Process dies mid-staging | lease expires → scheduler fails the row ("upload interrupted") and deletes the partial object | `failed` |
 | Process dies mid-scan | lease expires → scheduler rescans from staging | pending → outcome |
-| Dies after copy to document location, before commit | an unreferenced clean object remains; no version points at it, so it's unreachable. The retry promotes under new ids (storage waste only; Phase 2 GC) | pending → clean |
+| The copy to the document location fails part way (storage error, read error, hash mismatch) | `StorageObjectMover.copyVerified` removes the partial object at that attempt's own destination key and rethrows the original failure; counted as a failed attempt, the staged object is kept, the retry promotes under new ids (DOC-13) | pending, retrying |
+| The upload request fails after its row exists (ZIP/OOXML read error, unexpected exception) | the gate fails the row under its own lease and removes the staged object, then rethrows - the caller is told it failed and the scheduler can never promote it (DOC-13) | `failed` |
+| Dies after copy to document location, before commit | an unreferenced clean object remains; no version points at it, so it's unreachable. The retry promotes under new ids (storage waste only; needs the future reconciliation sweep) | pending → clean |
 | Dies after copy to quarantine, before commit | row still `infected`; the retry re-copies to the same deterministic key | `infected` → `quarantined` |
 | Dies after commit, before the staging delete | the purge sweep deletes staged objects of finished rows | - |
 
 Bytes reach a document location only after a CLEAN verdict, only as the
 hash-verified scanned bytes, and only a DB-validated version row can
 reference them.
+
+**A failed copy or a failed request leaves nothing behind (DOC-13).**
+- *Destination ownership.* `copyVerified` removes what a failed copy left at the
+  destination only when the caller declares the key exclusively its own
+  (`StorageObjectMover.Destination.NEW_UNREFERENCED`): a key generated for one attempt
+  (`DocumentVersionPromoter.prepare` builds a new version id each time; a re-scan release
+  copies to its own attempt's staging key), referenced by nothing until the commit. The
+  deterministic quarantine key a retry overwrites is not exclusive, so there only the
+  long-standing hash-mismatch removal applies. A source that cannot be opened never touches
+  the destination, and the source object is never deleted by a copy.
+- *The original failure wins.* The exception the caller sees is the one that broke the copy;
+  if the removal also fails, that failure is attached to it as a suppressed exception and
+  logged (key and location, no content). Through the encrypting wrapper the removal deletes
+  the object and then its key record, so a failed object delete keeps the key record for a
+  later reconciliation. The shared `EncryptingObjectStorageService.undo()` is unchanged: it
+  also restores a previous key record when an upload overwrites an object, so deleting the
+  object there could destroy committed content.
+- *The gate.* After the pending row exists, a failure in the staging upload, the ZIP/OOXML
+  checks or the duplicate checks fails the row and removes its staged object
+  (`IngestionProcessor.abandonUnacceptedSubmission`) before the exception reaches the caller.
+  Both steps are conditional: the row is failed only while it is still `pending` and still
+  holds this request's lease, and the staged object is removed only once the row is terminal. A
+  worker that has taken the row over (after a lease expiry) keeps its row and its content. The hand-off to the
+  scan worker is outside this guard: from then on the submission is accepted and the worker owns it.
+  Nothing here holds a transaction or a connection across storage I/O; each step is the same
+  short transaction as before.
+- *Not covered.* A process that dies mid-write, a host shutdown, a storage call whose outcome is
+  unknown, a removal that itself fails, and objects orphaned before this change are not cleaned
+  up. A reconciliation sweep for the document location (and atomic writes in the filesystem
+  adapter) would be the hardening for those; neither is part of this change.
+
+**The document is checked again when the version is added.** The request-time
+guards (signature lock, legal hold, check-out, signed version) run before the
+scan, which can take a while (a large file, a cloud scanner, a retry). So
+`DocumentVersionPromoter.persist` - in the transaction that adds the version,
+under the document's row lock (`lockByDocumentIdAndTenantId`) and before it
+writes anything - refuses a document that has meanwhile been deleted, locked by
+a workflow signature, put under legal hold, or (for any reason other than
+`signed_copy`) whose current version is signed by a signature record or a
+`signed_copy` mark. `prepare` makes the same check unlocked, so a refusal usually
+costs no file copy. The decision uses only the scan result's `created_reason`,
+which server code sets; exactly one reason is exempt, `signed_copy` (signing
+produces that version itself, often on top of an earlier `signed_copy`). A
+check-in, an online save, a bulk-import version, a restore and a template
+replacement are checked like any upload. The check-out is checked as well
+(DOC-07): refused when someone other than the uploader holds an unexpired
+one, when the uploader's own was taken after the file was submitted, or when
+the uploader's lease from before the submission has expired - see
+`docs/checkout-design.md`. A refusal is permanent for that attempt, so it ends the
+ingestion as `failed` with the real reason instead of being retried and
+rescanned (see the table above); the document, its versions and its signatures
+are untouched.
 
 ## 7. Quarantine isolation - how it is enforced
 
@@ -302,7 +357,12 @@ time. It is never stored as a raw credential and never logged.
      The archive is refused (415, with the reason) when it's damaged or
      truncated, or empty, or uses a compression method other than stored or
      Deflate. `dms.ingestion.zip-max-entries` / `zip-max-uncompressed-bytes`
-     can refuse larger ZIPs too, but have no limit by default.
+     (default 10,000 entries / 4000 MiB, clamd's `MaxFiles` / `MaxScanSize`) refuse a
+     ZIP with more entries or more unpacked data than that. They are totals over the
+     ZIP and every ZIP nested inside it (up to 3 deep), so nesting cannot get around
+     them, and they limit a ZIP's *contents* only - not the size of the uploaded
+     file, and not any other file type, which stay unlimited. Raise them to accept
+     larger ZIPs (those are then scanned file by file, step 4 below).
      A password-protected entry anywhere makes it unscannable.
 
      A ZIP holding a program or script is refused too, even if ClamAV would find
@@ -336,6 +396,57 @@ time. It is never stored as a raw credential and never logged.
   This replaces the earlier deviation from VMSBDI-FR-004, under which no
   archive uploads were accepted. Other archive formats (7z, rar, tar, gz) are
   still refused.
+- **Bulk-import ZIPs (`ImportArchiveIntake`) and file sizes.** A ZIP sent to a bulk import is never stored
+  or ingested as a document; each entry is unpacked and staged as if uploaded alone. The size an entry
+  declares is **not trusted**: it is a field the uploader wrote in the ZIP's central directory, and
+  neither the JDK nor the storage adapters enforce it (the file-system adapter reads to the end of the
+  stream, S3, Azure and the encryption wrapper echo the declared length back as the stored size).
+  `BulkImportServiceImpl.receiveFile` therefore judges the bytes that really arrive:
+  - the declared length is checked against what is left of `dms.import-export.max-batch-size` (default 20 GB,
+    `remaining = cap - already staged`, by subtraction so a huge forged value cannot overflow);
+  - `ExactLengthInputStream` then hands storage exactly that many bytes and counts them, so nothing larger than
+    what was checked can be staged;
+  - after the upload the service checks that exactly that many bytes were read **and** the source holds no
+    more (an adapter that stops at the declared length never asks for more, so this is checked by the service),
+    and that storage holds as much as was read;
+  - a mismatch, a too-large or a short file is refused (`IMPORT_FILE_SIZE_MISMATCH`, or
+    `IMPORT_BATCH_SIZE_EXCEEDED` when the true size would not fit), the object it may have written is
+    deleted (a failed delete is logged as an error and attached to the exception), and nothing is recorded;
+  - the size recorded on the row (`staged_size_bytes`) and used for the batch total is the counted size,
+    not the size the storage adapter reports; the worker passes that verified size on to the scan gate.
+  The scan gate's own limit (`dms.scanning.max-file-size-bytes`, unlimited by default) and the ZIP checks
+  above apply to uploads as documents, not to bulk-import entries.
+- **Bulk-import uploads hold no transaction, lock or connection during I/O (DOC-11).** Storage upload and the
+  virus scan can take minutes. Held inside one transaction they keep a pooled connection and the batch row
+  lock for as long - a handful of slow uploads exhausted the pool and stopped the whole application, and the
+  encryption key records (`REQUIRES_NEW`, a second connection while the first was held) made it a
+  self-sustaining deadlock. `BulkImportServiceImpl.receiveFile` is therefore three steps:
+  1. **A short transaction**: lock the batch row (`select ... for update`), check the batch is still
+     `uploading`, find the row the file belongs to, check the declared size against what is left of
+     `max-batch-size`; commit and release. Nothing is reserved.
+  2. **No transaction**: type check, upload under an object key made for this attempt alone
+     (`imports/<tenant>/<batch>/<item>/<attempt-id>`, so two attempts never overwrite or delete one
+     another's object), the exact-length verification above, the virus scan.
+  3. **A short transaction**: lock the batch row again and decide from the state committed *now*: still
+     `uploading` (not cancelled, not submitted), the row still unstaged, the counted size still fits
+     `max-batch-size - already staged` (overflow-safe). Only then is the item recorded.
+  A race therefore costs wasted work, never a broken rule: an upload overtaken by a cancel or submit
+  (`IMPORT_BATCH_NOT_UPLOADING`), by another upload for the same row (`IMPORT_FILE_ALREADY_RECEIVED`) or by
+  another upload that used the remaining capacity (`IMPORT_BATCH_SIZE_EXCEEDED`) is refused and **its own
+  object is deleted** (with its key record); an accepted object is never touched by another attempt's
+  clean-up, and `cancel` deletes the objects of items that were committed before it. Uploads into one batch
+  now run in parallel, and a client that loses such a race retries.
+  *Uncertain commit.* If the last transaction ends in an exception **after** its checks passed, the commit
+  may or may not have happened. The service asks the database - under the batch lock, so a commit still in
+  flight finishes first - whether the row carries this attempt's key: recorded means the upload succeeded and
+  the object is kept; not recorded means the object is deleted; if the question cannot be answered the object
+  is **kept** for reconciliation, an error is logged and the caller gets `503 IMPORT_FILE_STATE_UNCERTAIN`
+  (an accepted file is never deleted on a guess). Such a retained, unreferenced object is not removed
+  automatically.
+  `receiveFile` deliberately carries **no transactional advice** (not even `NEVER` or `NOT_SUPPORTED`, which
+  bind an `EntityManager` - and a pooled connection - to the thread for the whole method) and fails at once if
+  it is called from inside a transaction; the class is therefore not `@Transactional` as a whole - the
+  methods that write declare it themselves.
 - No new secret is needed locally.
 
 ## 10. Audit events
@@ -375,6 +486,14 @@ async paths carry the tenant explicitly and record the SYSTEM actor, with
   in a sandbox with Defender/GuardDuty enabled, using the EICAR test file.
 - `new_version` promotion does a minor-version increment. Publishing and
   major-version rules belong to the future versioning module.
+- The final version number is assigned in `DocumentVersionPromoter.persist`,
+  from the newest version row read after the document's row lock is held, so
+  two uploads of one document that overlap are numbered consecutively and
+  never collide on `uq_document_versions_document_number`. The number in the
+  `PromotionPlan` made by `prepare` (before the file copy, no lock) is only a
+  hint: it names the `v<N>` folder in the object key, which can therefore lag
+  the stored number. Storage keys are opaque; nothing reads a number back out
+  of one.
 
 ## 12. Releasing a false positive (Phase 2, V40)
 

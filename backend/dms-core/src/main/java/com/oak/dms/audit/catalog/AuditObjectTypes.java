@@ -43,6 +43,10 @@ public final class AuditObjectTypes {
     public static final String METADATA_FIELD_OPTION = "METADATA_FIELD_OPTION";
     public static final String METADATA_FIELD_VALIDATION = "METADATA_FIELD_VALIDATION";
     public static final String DOCUMENT = "DOCUMENT";
+    /** An external share link (share_links, V144). */
+    public static final String SHARE_LINK = "SHARE_LINK";
+    /** A guest account (guest_accounts, V144). */
+    public static final String GUEST_ACCOUNT = "GUEST_ACCOUNT";
     /** A folder of the shared folder tree (folders) - the object of every FOLDER_* event. */
     public static final String FOLDER = "FOLDER";
     public static final String DOCUMENT_VERSION = "DOCUMENT_VERSION";

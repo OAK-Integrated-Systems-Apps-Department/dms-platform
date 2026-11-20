@@ -52,7 +52,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Document d set d.legalHold = true, d.legalHoldAt = :now, d.legalHoldBy = :userId, "
             + "d.legalHoldReason = :reason where d.documentId = :documentId and d.tenantId = :tenantId "
-            + "and d.deleted = false and d.legalHold = false")
+            + "and d.deleted = false and d.purgedAt is null and d.legalHold = false")
     int placeLegalHold(@Param("documentId") UUID documentId, @Param("tenantId") UUID tenantId,
                        @Param("userId") UUID userId, @Param("now") OffsetDateTime now,
                        @Param("reason") String reason);

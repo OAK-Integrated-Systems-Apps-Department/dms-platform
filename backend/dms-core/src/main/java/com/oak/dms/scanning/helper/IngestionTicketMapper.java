@@ -3,6 +3,7 @@ package com.oak.dms.scanning.helper;
 import com.oak.dms.scanning.dto.IngestionTicketResponse;
 import com.oak.dms.scanning.entity.ScanResult;
 import com.oak.dms.scanning.enums.ScanResultStatus;
+import com.oak.dms.scanning.exception.PromotionRefusedException;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -49,7 +50,10 @@ public class IngestionTicketMapper {
                     + "so it was not accepted. Unpack the archives inside it, or split it, and upload again."
                     : "Password-protected or encrypted files can't be scanned and are not accepted. "
                     + "Remove the protection and upload the file again.";
-            case failed -> "The file could not be scanned and was not added. Please try uploading it again later.";
+            // Scanned clean, but the document stopped accepting a new version meanwhile (PromotionRefusedException).
+            case failed -> PromotionRefusedException.userMessage(reason)
+                    .map(why -> "The file passed the malware scan but was not added: " + why)
+                    .orElse("The file could not be scanned and was not added. Please try uploading it again later.");
         };
     }
 }

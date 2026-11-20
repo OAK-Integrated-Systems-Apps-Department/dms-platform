@@ -240,6 +240,22 @@ public final class AuditActionCatalog {
     public static final String EDITING_SETTINGS_CHANGED = "EDITING_SETTINGS_CHANGED";
     /** The platform administrator allowed or stopped online editing for one organisation (V136). */
     public static final String TENANT_ONLINE_EDITING_CHANGED = "TENANT_ONLINE_EDITING_CHANGED";
+    // 1.5 Sharing and External Access (SEA), V144.
+    public static final String SHARE_LINK_CREATED = "SHARE_LINK_CREATED";
+    public static final String SHARE_LINK_REVOKED = "SHARE_LINK_REVOKED";
+    public static final String SHARE_LINK_ACCESSED = "SHARE_LINK_ACCESSED";
+    public static final String SHARE_LINK_DOWNLOADED = "SHARE_LINK_DOWNLOADED";
+    public static final String SHARE_LINK_FLAGGED = "SHARE_LINK_FLAGGED";
+    public static final String SHARE_LINK_REVIEWED = "SHARE_LINK_REVIEWED";
+    public static final String GUEST_INVITED = "GUEST_INVITED";
+    public static final String GUEST_ACCESS_GRANTED = "GUEST_ACCESS_GRANTED";
+    public static final String GUEST_ACCESS_REVOKED = "GUEST_ACCESS_REVOKED";
+    public static final String GUEST_DISABLED = "GUEST_DISABLED";
+    public static final String GUEST_DELETED = "GUEST_DELETED";
+    public static final String GUEST_SIGNED_IN = "GUEST_SIGNED_IN";
+    public static final String GUEST_DOWNLOADED = "GUEST_DOWNLOADED";
+    public static final String SHARING_SETTINGS_CHANGED = "SHARING_SETTINGS_CHANGED";
+    public static final String CONFIDENTIAL_FLAG_CHANGED = "CONFIDENTIAL_FLAG_CHANGED";
     public static final String DOCUMENT_LEGAL_HOLD_PLACED = "DOCUMENT_LEGAL_HOLD_PLACED";
     public static final String DOCUMENT_LEGAL_HOLD_LIFTED = "DOCUMENT_LEGAL_HOLD_LIFTED";
     // 6.1 Records retention (CRM-FR-018): every status change, retention transition and rule/setting change.
@@ -640,6 +656,21 @@ public final class AuditActionCatalog {
             Map.entry(DOCUMENT_EDIT_SESSION_SAVED, new AuditActionSpec("CICO", AuditSeverity.LOW, false)),
             Map.entry(EDITING_SETTINGS_CHANGED, new AuditActionSpec("CICO", AuditSeverity.MEDIUM, false)),
             Map.entry(TENANT_ONLINE_EDITING_CHANGED, new AuditActionSpec("CICO", AuditSeverity.HIGH, false)),
+            Map.entry(SHARE_LINK_CREATED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(SHARE_LINK_REVOKED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(SHARE_LINK_ACCESSED, new AuditActionSpec("SEA", AuditSeverity.LOW, false)),
+            Map.entry(SHARE_LINK_DOWNLOADED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(SHARE_LINK_FLAGGED, new AuditActionSpec("SEA", AuditSeverity.HIGH, false)),
+            Map.entry(SHARE_LINK_REVIEWED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_INVITED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_ACCESS_GRANTED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_ACCESS_REVOKED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_DISABLED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_DELETED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(GUEST_SIGNED_IN, new AuditActionSpec("SEA", AuditSeverity.LOW, false)),
+            Map.entry(GUEST_DOWNLOADED, new AuditActionSpec("SEA", AuditSeverity.MEDIUM, false)),
+            Map.entry(SHARING_SETTINGS_CHANGED, new AuditActionSpec("SEA", AuditSeverity.HIGH, false)),
+            Map.entry(CONFIDENTIAL_FLAG_CHANGED, new AuditActionSpec("SEA", AuditSeverity.HIGH, false)),
             Map.entry(DOCUMENT_LEGAL_HOLD_PLACED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
             Map.entry(DOCUMENT_LEGAL_HOLD_LIFTED, new AuditActionSpec("CRM", AuditSeverity.HIGH, true)),
             Map.entry(DOCUMENT_STATUS_CHANGED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),

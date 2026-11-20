@@ -26,9 +26,10 @@ import java.util.UUID;
 
 /**
  * Tenant lifecycle is a platform-administration concern: creating and
- * listing tenants is restricted to PLATFORM_ADMIN. Reading/updating a
- * single tenant is also allowed for that tenant's own admins, via
- * tenantSecurity.isSameTenant.
+ * listing tenants is restricted to PLATFORM_ADMIN. Reading a single tenant
+ * is also allowed for any member of that tenant (tenantSecurity.isSameTenant);
+ * updating it is also allowed for that tenant's own admins (isSameTenant plus
+ * authz.isTenantAdmin), who may only rename it.
  */
 @RestController
 @RequestMapping("/api/v1/tenants")
@@ -143,14 +144,27 @@ public class TenantController {
     }
 
     @PutMapping("/{tenantId}")
-    @PreAuthorize("hasRole('PLATFORM_ADMIN') or @tenantSecurity.isSameTenant(#tenantId)")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN') or (@tenantSecurity.isSameTenant(#tenantId) and @authz.isTenantAdmin())")
     @Operation(summary = "Update a tenant")
     public TenantResponse updateTenant(@PathVariable UUID tenantId, @Valid @RequestBody UpdateTenantRequest request,
                                        HttpServletRequest http) {
-        // A platform administrator confirms with their own password; an organisation's own administrator
-        // editing their own organisation is not asked.
-        passwordConfirmation.requireIfPlatformAdmin(http);
-        return tenantService.updateTenant(tenantId, request);
+        // Reaching here means the caller is a platform administrator, or the tenant administrator of this very
+        // organisation (an ordinary member of it is refused above). A platform administrator confirms with their
+        // own password and may change every field. An organisation's own administrator is not asked for a
+        // password, but may only rename the organisation: the subscription tier and the lifecycle status are
+        // platform-level, so changing either is refused (403) before anything is saved.
+        if (isPlatformAdmin()) {
+            passwordConfirmation.require(http);
+            return tenantService.updateTenant(tenantId, request);
+        }
+        return tenantService.renameOwnTenant(tenantId, request);
+    }
+
+    private static boolean isPlatformAdmin() {
+        org.springframework.security.core.Authentication authentication =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
     }
 
     @DeleteMapping("/{tenantId}")

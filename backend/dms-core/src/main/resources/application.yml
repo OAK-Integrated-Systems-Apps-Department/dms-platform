@@ -190,6 +190,13 @@ app:
 dms:
   notification:
     mail-from: ${NOTIFICATION_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
+  # 1.5 External sharing. The HMAC key that signs the short-lived tokens handed to a share-link recipient (30 min,
+  # after the password check) and to a portal guest (8 h). Blank = a random key per start-up, which is fine for a
+  # single instance (everyone just re-opens the link after a restart) but MUST be set when several instances run,
+  # or a token signed by one is refused by another.
+  sharing:
+    token-secret: ${SHARING_TOKEN_SECRET:}
+    mail-from: ${SHARING_MAIL_FROM:${MAIL_USERNAME:no-reply@oakdms.local}}
   # 2.10 Online editing (CICO-FR-005/006/010) through Collabora Online over WOPI.
   #
   # These settings only say WHERE the engine is - infrastructure, set once by whoever runs the server. There is
@@ -620,11 +627,13 @@ dms:
     allowed-file-types: ${INGESTION_ALLOWED_FILE_TYPES:pdf,doc,docx,xls,xlsx,ppt,pptx,odt,ods,odp,odg,rtf,txt,csv,tsv,md,xml,json,msg,eml,vsd,vsdx,dwg,png,jpg,jpeg,gif,bmp,webp,heic,heif,tif,tiff,zip}
     # A ZIP is kept as one file - never extracted - and checked whole before it's scanned
     # (ZipArchiveCheck): refused when damaged, empty, or password-protected (unscannable).
-    # No entry-count or unpacked-size limit by default: a ZIP past what clamd opens of one
-    # archive (dms.scanning.clamav.archive-scan-files / -bytes) is scanned file by file
-    # instead. Set these to refuse larger ZIPs outright.
-    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:2147483647}
-    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:9223372036854775807}
+    # These two limit what is INSIDE a ZIP - entries and unpacked bytes, summed over the ZIP and
+    # every ZIP nested in it - and apply to ZIPs only. They are not an upload-size limit: any
+    # other file, and the ZIP file itself, may be any size. Defaults are clamd's MaxFiles (10000)
+    # and MaxScanSize (4000M); raise them to accept larger ZIPs (they are then opened and
+    # scanned file by file, see dms.scanning.clamav.archive-scan-files / -bytes).
+    zip-max-entries: ${INGESTION_ZIP_MAX_ENTRIES:10000}
+    zip-max-uncompressed-bytes: ${INGESTION_ZIP_MAX_UNCOMPRESSED_BYTES:4194304000}
     # A ZIP holding a program or script (.exe, .msi, .dll, .bat, .ps1, .js, .jar, ... - see
     # ZipArchiveCheck.DEFAULT_BLOCKED_EXTENSIONS), or a file that starts like one whatever it's
     # called, is refused even when the scan finds no malware - nested ZIPs included. Override the

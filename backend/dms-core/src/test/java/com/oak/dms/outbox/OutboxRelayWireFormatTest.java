@@ -10,6 +10,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -84,13 +85,15 @@ class OutboxRelayWireFormatTest {
         OutboxEvent event = pendingEvent();
         when(outboxEventRepository.findBatchToPublish(any(Pageable.class))).thenReturn(List.of(event));
 
+        OutboxConfirms.stubAck(rabbitTemplate);
         new OutboxRelay(outboxEventRepository, rabbitTemplate, auditService).relayPendingEvents();
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(rabbitTemplate).send(
                 eq(RabbitMqConfig.DMS_EVENTS_EXCHANGE),
                 eq(RabbitMqConfig.ROUTING_KEY_OCR_COMPLETED),
-                captor.capture());
+                captor.capture(),
+                any(CorrelationData.class));
         return captor.getValue();
     }
 
@@ -166,6 +169,7 @@ class OutboxRelayWireFormatTest {
         OutboxEvent event = pendingEvent();
         when(outboxEventRepository.findBatchToPublish(any(Pageable.class))).thenReturn(List.of(event));
 
+        OutboxConfirms.stubAck(rabbitTemplate);
         new OutboxRelay(outboxEventRepository, rabbitTemplate, auditService).relayPendingEvents();
 
         assertThat(event.getStatus()).isEqualTo(OutboxEvent.Status.published);

@@ -136,6 +136,9 @@ class BookmarkIT extends WorkflowApiSupport {
         assertThat(hidden.get("items")).isEmpty();
         assertThat(hidden.get("unavailableCount").asInt()).isEqualTo(1);
 
+        // The fixture only records a version; a restore (DOC-09) insists its file is really stored.
+        fx.putVersionContent(fx.jdbc().queryForObject("select current_version_id from documents where document_id = ?",
+                UUID.class, doc), "stored".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         call(post("/api/v1/recycle-bin/" + doc + "/restore"), fx.jwtFor(alice), null, 200);
         JsonNode restored = get200("/api/v1/bookmarks", alice);
         assertThat(restored.get("items")).hasSize(1);

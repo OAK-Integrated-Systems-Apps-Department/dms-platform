@@ -443,6 +443,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.CICO_EDITING_CONFIGURE_CONNECTION,
             ],
           },
+          // External sharing (1.5): the organisation's policy, every external link, and guest accounts.
+          {
+            label: "External Sharing",
+            icon: Share2,
+            href: "/admin/sharing",
+            adminOnly: true,
+          },
           // Notification settings + delivery log (3.2). Any NOTIF capability gets in.
           {
             label: "Notification Settings",

@@ -49,6 +49,17 @@ public final class PermissionCodes {
     /** Gates {@code ImpersonationController#start} - see that class and {@code ImpersonationContextFilter} for the full "Act as User" mechanism. */
     public static final String OTUA_USERS_IMPERSONATE = "otua.manage-users.impersonate";
 
+    // Sharing and External Access - SEA, seeded by V10. Held implicitly by tenant admins.
+    public static final String SEA_CREATE_LINK = "sea.create-external-share-links.create-link";
+    public static final String SEA_SET_EXPIRY_PASSWORD = "sea.create-external-share-links.set-expiry-password";
+    public static final String SEA_SET_PERMISSION_LEVEL = "sea.create-external-share-links.set-permission-level";
+    public static final String SEA_INVITE_GUEST = "sea.manage-guest-access.invite-guest";
+    public static final String SEA_UPDATE_GUEST = "sea.manage-guest-access.update-guest-access";
+    public static final String SEA_REVOKE_GUEST = "sea.manage-guest-access.revoke-guest-access";
+    public static final String SEA_VIEW_GUESTS = "sea.manage-guest-access.view-guest-list";
+    public static final String SEA_REVOKE_SINGLE = "sea.revoke-share-links.revoke-single";
+    public static final String SEA_VIEW_ACTIVITY = "sea.view-sharing-activity-log.view";
+
     // Pin Important Documents - PID (pins are personal; the limit is the organisation's)
     public static final String PID_PIN = "pid.pin-unpin-documents.pin";
     public static final String PID_UNPIN = "pid.pin-unpin-documents.unpin";

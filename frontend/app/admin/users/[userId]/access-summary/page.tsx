@@ -4,10 +4,13 @@ import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAccessSummary } from "@/components/users/access-summary"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
+import { USER_VIEW_PERMISSIONS } from "@/lib/auth/user-view-permissions"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
@@ -18,22 +21,35 @@ import { useUser } from "@/lib/users/use-user"
  * Nested under `app/admin/users/[userId]/`, matching the wireframe's URL
  * and this project's existing dynamic-segment convention
  * (`app/admin/roles/[roleId]/...`).
+ *
+ * Gated like View User (FE-M4): the page is for someone holding one of
+ * `USER_VIEW_PERMISSIONS`; activating or deactivating stays behind its own,
+ * narrower check (`canManage`), which the page gate does not replace.
  */
 export default function UserAccessSummaryPage() {
   const params = useParams<{ userId: string }>()
-  const { data: user, isPending, isError, error, toggleStatus } = useUser(
-    params.userId
+
+  return (
+    <DashboardShell initialActiveLabel="Users & Roles">
+      <PermissionGate permission={USER_VIEW_PERMISSIONS}>
+        <UserAccessSummaryContent userId={params.userId} />
+      </PermissionGate>
+    </DashboardShell>
   )
+}
+
+function UserAccessSummaryContent({ userId }: { userId: string }) {
+  const { data: user, isPending, isError, error, toggleStatus } = useUser(userId)
   const { hasPermission } = usePermissions()
 
   usePageTitle(user ? `${user.name} Access Summary` : "User Access Summary")
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 
   return (
-    <DashboardShell initialActiveLabel="Users & Roles">
+    <>
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -71,6 +87,6 @@ export default function UserAccessSummaryPage() {
             }
           />
         )}
-    </DashboardShell>
+    </>
   )
 }

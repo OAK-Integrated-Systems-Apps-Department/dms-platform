@@ -6,6 +6,7 @@ import com.oak.dms.document.event.DocumentVersionCreatedEvent;
 import com.oak.dms.scanning.entity.ScanResult;
 import com.oak.dms.scanning.enums.IngestionKind;
 import com.oak.dms.scanning.enums.ScanResultStatus;
+import com.oak.dms.scanning.exception.PromotionRefusedException;
 import com.oak.dms.scanning.service.DocumentPromoter;
 import com.oak.dms.storage.entity.StorageLocation;
 import com.oak.dms.storage.enums.StoragePurpose;
@@ -52,6 +53,13 @@ public class DocumentVersionPromoter implements DocumentPromoter {
     private final com.oak.dms.ocrworker.OcrProperties ocrProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final com.oak.dms.user.UserRepository userRepository;
+    // DOC-06: the document's state is re-checked at promotion (see requirePromotable) - signed-by-record uses the
+    // same guard as upload, restore, check-in and the editor.
+    private final com.oak.dms.checkout.SignedContentGuard signedContentGuard;
+    private final jakarta.persistence.EntityManager entityManager;
+
+    /** created_reason of a version made by placing a signature mark - see {@link #requirePromotable}. */
+    private static final String SIGNED_COPY = "signed_copy";
 
     @Override
     @Transactional(readOnly = true)
@@ -65,8 +73,12 @@ public class DocumentVersionPromoter implements DocumentPromoter {
             documentId = UUID.randomUUID();
             versionNumber = INITIAL_VERSION_NUMBER;
         } else {
-            Document document = findDocument(cleanResult.getTargetDocumentId(), tenantId);
+            Document document = findPromotableDocument(cleanResult.getTargetDocumentId(), tenantId);
+            // An early, unlocked look so a refusal costs no file copy; persist() decides, under a row lock.
+            requirePromotable(document, cleanResult);
             documentId = document.getDocumentId();
+            // Only a HINT (DOC-08): decided here without a lock, so it can be stale by the time persist() runs.
+            // persist() assigns the real number under the document's row lock.
             versionNumber = documentVersionRepository.findTopByDocumentIdOrderByVersionNumberDesc(documentId)
                     .map(latest -> latest.getVersionNumber() + 1)
                     .orElse(INITIAL_VERSION_NUMBER);
@@ -130,21 +142,34 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                         cleanResult.getDuplicateOfDocumentId(), uploadedBy, cleanResult.getScanResultId()));
             }
         } else {
-            Document document = findDocument(plan.documentId(), tenantId);
+            // DOC-06: the scan took however long it took, and the document may have been deleted, locked, held or
+            // signed meanwhile. Under the document's row lock - so a concurrent lock/hold/delete either committed
+            // before this read or waits for this transaction - and before anything is written, check again.
+            Document document = lockPromotableDocument(plan.documentId(), tenantId, cleanResult);
+            // The newest committed version, read AFTER the lock is held: any promotion of this document that ran
+            // before this one has committed its row by now (every version is created here, under this same lock, and
+            // this read is a new statement at READ COMMITTED), and any that runs later waits for this transaction.
             DocumentVersion latest = documentVersionRepository
                     .findTopByDocumentIdOrderByVersionNumberDesc(document.getDocumentId())
                     .orElse(null);
+            // DOC-08: the number is assigned HERE, from that row - not taken from the plan. prepare() chose
+            // plan.versionNumber() long before (before the file was copied, outside any lock), so two uploads of one
+            // document prepared together both proposed the same number and the second insert hit
+            // uq_document_versions_document_number. The plan's number is only a hint, used for the "v<N>" folder in the
+            // object key; the row stores its own key and nothing reads the number back out of a key.
+            int finalNumber = latest != null ? latest.getVersionNumber() + 1 : INITIAL_VERSION_NUMBER;
+            if (finalNumber != plan.versionNumber()) {
+                log.debug("Version of document {} numbered {} (prepared as {}): another version was promoted meanwhile",
+                        plan.documentId(), finalNumber, plan.versionNumber());
+            }
+            version.versionNumber(finalNumber);
             // Minor increment on the latest version; publishing/major-version
             // rules belong to the versioning module once it exists.
-
             int major = latest != null ? latest.getMajorVersion() : 1;
             int minor = latest != null ? latest.getMinorVersion() + 1 : 0;
             version.majorVersion(major).minorVersion(minor).versionLabel(major + "." + minor);
             // The newest clean version is the one opened and downloaded - there's no approval step that
             // could hold it back yet (a restore arrives here too, as a new 'rollback' version).
-
-            version.majorVersion(latest != null ? latest.getMajorVersion() : 1)
-                    .minorVersion(latest != null ? latest.getMinorVersion() + 1 : 0);
             UUID previousLatest = document.getLatestVersionId();
 
             document.setLatestVersionId(plan.versionId());
@@ -229,9 +254,115 @@ public class DocumentVersionPromoter implements DocumentPromoter {
                 .map(DocumentVersion::getDocumentId);
     }
 
-    private Document findDocument(UUID documentId, UUID tenantId) {
+    /** The tenant's live document, or a refusal: deleted, or not this tenant's (never said apart, so nothing leaks). */
+    private Document findPromotableDocument(UUID documentId, UUID tenantId) {
         return documentRepository.findByDocumentIdAndTenantIdAndDeletedFalse(documentId, tenantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
+                .orElseThrow(DocumentVersionPromoter::documentUnavailable);
+    }
+
+    /**
+     * {@link #findPromotableDocument} under {@code SELECT ... FOR UPDATE}
+     * ({@link DocumentRepository#lockByDocumentIdAndTenantId} - the first lock of the documented lock order, documents
+     * before workflow instances, and the one the synchronous version-change listener takes in this same transaction
+     * anyway), then {@link #requirePromotable}. The lock query hands back an entity that is already in the
+     * persistence context as it was loaded, not as the row now is, so it is refreshed after the lock is held.
+     */
+    private Document lockPromotableDocument(UUID documentId, UUID tenantId, ScanResult scan) {
+        Document document = documentRepository.lockByDocumentIdAndTenantId(documentId, tenantId)
+                .orElseThrow(DocumentVersionPromoter::documentUnavailable);
+        entityManager.refresh(document);
+        requirePromotable(document, scan);
+        return document;
+    }
+
+    /**
+     * Whether a new version may be added to {@code document} now. Refuses - permanently, see
+     * {@link PromotionRefusedException} - a document under a workflow signature lock or a legal hold, and (the DOC-05
+     * rule) a user's upload or restore over a version that is signed by a signature record or a {@code signed_copy}
+     * mark ({@link com.oak.dms.checkout.SignedContentGuard#protectedByRecord}; the signature inside a FILE cannot
+     * appear on a version that already exists, so the records are what can change during a scan).
+     * <p>
+     * The decision rests only on the scan result's {@code created_reason}, which server code sets when the upload is
+     * submitted ({@code DocumentVersionService}, the editor, template replacement, signature placement) and the client
+     * can never supply. Exactly one reason is exempt, {@code signed_copy}: signing a document produces that version
+     * itself, often on top of a previous {@code signed_copy} (adding a page, placing again), so the signature rules
+     * would refuse signing. A check-in, an online save, a bulk-import version, a restore and a template replacement
+     * are ordinary here.
+     * <p>
+     * The check-out is checked too (DOC-07, {@link #requireCheckoutAllows}): the new version may not arrive across a
+     * check-out that is not the uploader's own.
+     * <p>
+     * FOLLOW-UP: the workflow signature placement ({@code SignaturePlacementService}) has no request-time lock or
+     * legal-hold guard, unlike the standalone one, so exempting {@code signed_copy} here keeps that existing behaviour;
+     * a hold placed during a workflow's stamping step is not caught. Deleted documents are refused for every reason.
+     */
+    private void requirePromotable(Document document, ScanResult scan) {
+        if (SIGNED_COPY.equals(scan.getCreatedReason())) {
+            return;
+        }
+        String title = "\"" + document.getTitle() + "\"";
+        if (document.getSignatureLockedAt() != null) {
+            throw new PromotionRefusedException("DOCUMENT_SIGNATURE_LOCKED", title + " was locked because it carries a "
+                    + "valid signature while the file was being scanned, so the new version was not added.");
+        }
+        if (document.isLegalHold()) {
+            throw new PromotionRefusedException("DOCUMENT_LEGAL_HOLD", title + " was placed under legal hold while the "
+                    + "file was being scanned, so the new version was not added.");
+        }
+        if (signedContentGuard.protectedByRecord(document)) {
+            throw new PromotionRefusedException(com.oak.dms.checkout.SignedContentGuard.CODE, title + " was signed "
+                    + "while the file was being scanned, so the new version was not added.");
+        }
+        requireCheckoutAllows(document, scan, title);
+    }
+
+    /**
+     * DOC-07: the check-out as it is NOW, under the row lock, against the upload as it was SUBMITTED. A lease is one
+     * acquisition of the check-out - who holds it and when it was taken ({@code checked_out_by}, {@code checked_out_at};
+     * the expiry is fixed at acquisition and an expired lease stays on the row until someone takes it over or it is
+     * released). The upload is identified by the two things the gate recorded when it accepted it and that nothing
+     * client-supplied can set: {@code uploaded_by} and {@code started_at}. So, with {@code now} the promotion time:
+     * <ul>
+     *   <li>nobody holds an unexpired check-out - allowed, as any upload (a check-out that was force-released leaves no
+     *       trace on the row, so it cannot be told from "never checked out": see the limitation in the design doc);</li>
+     *   <li>someone ELSE holds one - refused (a takeover after expiry, or a check-out taken while the file was scanning);</li>
+     *   <li>the uploader holds one taken AFTER the upload was submitted - refused: a new lease, not the one this file
+     *       was submitted under;</li>
+     *   <li>the uploader holds one taken at or before the submission - allowed: their own lease, the check-in's;</li>
+     *   <li>the uploader's lease that existed at submission has since EXPIRED (still on the row, no one took over) -
+     *       refused: the check-out this file was checked in under ended while it was being scanned.</li>
+     * </ul>
+     * Never decided by user name alone, never by anything a client sends. A missing {@code started_at} (the gate always
+     * sets it) is treated as "not provably before", i.e. fail closed. Called for every reason but {@code signed_copy}.
+     */
+    private void requireCheckoutAllows(Document document, ScanResult scan, String title) {
+        java.util.UUID holder = document.getCheckedOutBy();
+        if (holder == null) {
+            return;
+        }
+        boolean uploaderIsHolder = holder.equals(scan.getUploadedBy());
+        OffsetDateTime leaseTaken = document.getCheckedOutAt();
+        boolean leasePredatesUpload = leaseTaken != null && scan.getStartedAt() != null
+                && !leaseTaken.isAfter(scan.getStartedAt());
+        if (document.isCheckedOutAt(OffsetDateTime.now())) {
+            if (!uploaderIsHolder) {
+                throw new PromotionRefusedException("DOCUMENT_CHECKED_OUT", title + " is checked out by someone else, so "
+                        + "the new version was not added. It was either submitted before that check-out or after the "
+                        + "check-out it was checked in under ended.");
+            }
+            if (!leasePredatesUpload) {
+                throw new PromotionRefusedException("DOCUMENT_CHECKED_OUT", title + " was checked out again after this "
+                        + "file was submitted, so the new version was not added.");
+            }
+        } else if (uploaderIsHolder && leasePredatesUpload) {
+            throw new PromotionRefusedException("CHECKOUT_EXPIRED", "Your check-out of " + title + " expired while the "
+                    + "file was being scanned, so the new version was not added. Check it out again and re-upload.");
+        }
+    }
+
+    private static PromotionRefusedException documentUnavailable() {
+        return new PromotionRefusedException("DOCUMENT_UNAVAILABLE",
+                "The document was deleted while the file was being scanned, so the new version was not added.");
     }
 
     /**

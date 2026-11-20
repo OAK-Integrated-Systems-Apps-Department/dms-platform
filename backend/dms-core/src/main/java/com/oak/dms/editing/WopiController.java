@@ -34,7 +34,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
@@ -60,6 +59,9 @@ import java.util.UUID;
  * AUTOSAVES ARE IGNORED (answered 200, nothing stored): the engine autosaves every few minutes and each would
  * otherwise become a version. A deliberate save (Ctrl+S, or closing the editor) is kept. The trade-off: edits since
  * the last deliberate save are not stored if the browser dies mid-session.
+ * <p>
+ * The body of a save is streamed to a private spool file ({@link WopiSaveSpool}), not held in memory: it is counted as it
+ * arrives, refused over {@link #MAX_SAVE_BYTES}, checked for a signature from the file, and handed to the gate from the file.
  *
  * <h2>Not supported on purpose</h2>
  * WOPI locking ({@code SupportsLocks} is false): our own check-out is the lock in exclusive mode, and in
@@ -72,7 +74,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WopiController {
 
-    /** Largest save accepted (bytes) - bigger than any editable Office file the upload limits already allow. */
+    /** Largest save accepted (bytes), enforced on the bytes that arrive - not a limit on documents in general (GetFile has none). */
     private static final long MAX_SAVE_BYTES = 200L * 1024 * 1024;
 
     private final WopiTokenCodec tokens;
@@ -82,6 +84,7 @@ public class WopiController {
     private final AuditService auditService;
     private final EditingSessionService sessions;
     private final SignedContentGuard signedContentGuard;
+    private final WopiSaveSpool spool;
 
     /** The web app's public address, e.g. "https://dms.example.com/" - only its origin is used. */
     @org.springframework.beans.factory.annotation.Value("${app.frontend-base-url:}")
@@ -163,42 +166,43 @@ public class WopiController {
             if ("true".equalsIgnoreCase(coolAutosave) || "true".equalsIgnoreCase(loolAutosave)) {
                 return ResponseEntity.ok(Map.of("LastModifiedTime", OffsetDateTime.now().toInstant().toString()));
             }
-            long declared = request.getContentLengthLong();
-            if (declared > MAX_SAVE_BYTES) {
-                throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "That file is too large to save.");
+            // DOC-12: the body goes to a private file, never into a byte[] - heap use does not depend on the size of the
+            // save. The cap is enforced on the bytes that arrive (a declared length over it is refused before anything is
+            // created), the file is removed in every case, and no database transaction or lock is open while it is read.
+            try (InputStream body = request.getInputStream();
+                 WopiSaveSpool.Spooled save = spool.receive(body, request.getContentLengthLong(), MAX_SAVE_BYTES)) {
+                String filename = contentReader.currentForEditing(grant.tenantId(), documentId).filename();
+                // The version being edited carried no signature (that is checked before a session may start), so a saved
+                // file that DOES is one the editor signed. Signing is the DMS's job, with its own records and locks - a
+                // signature made in here would sit outside all of that, so the save is refused.
+                boolean signed;
+                try (InputStream in = save.openStream()) {
+                    signed = EmbeddedSignatureDetector.hasSignature(filename, in);
+                }
+                if (signed) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Digital signatures can't be added in the editor. Sign the document from its page instead.");
+                }
+                IngestionTicketResponse ticket;
+                try (InputStream in = save.openStream()) {
+                    ticket = ingestionGate.submit(IngestionRequest.newVersion(documentId,
+                            DocumentVersionService.REPLACEMENT_UPLOAD, filename, save.sizeBytes(), in, "Edited online"));
+                }
+                boolean accepted = ticket.status() == ScanResultStatus.pending || ticket.status() == ScanResultStatus.clean
+                        || ticket.status() == ScanResultStatus.released_override;
+                if (!accepted) {
+                    log.warn("Online save of document {} refused by the scanner: {}", documentId, ticket.status());
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                            "The saved file was not accepted (" + ticket.status() + ").");
+                }
+                auditService.event(AuditActionCatalog.DOCUMENT_EDIT_SESSION_SAVED)
+                        .objectType(AuditObjectTypes.DOCUMENT).objectId(documentId)
+                        .resourceName(document.getTitle()).outcome(AuditOutcome.SUCCESS)
+                        .newValue(Map.of("scanResultId", ticket.scanResultId(), "bytes", save.sizeBytes()))
+                        .log();
+                return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
+                        .body(Map.of("LastModifiedTime", OffsetDateTime.now().toInstant().toString()));
             }
-            byte[] bytes;
-            try (InputStream in = request.getInputStream()) {
-                bytes = in.readNBytes((int) MAX_SAVE_BYTES + 1);
-            }
-            if (bytes.length > MAX_SAVE_BYTES) {
-                throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "That file is too large to save.");
-            }
-            String filename = contentReader.currentForEditing(grant.tenantId(), documentId).filename();
-            // The version being edited carried no signature (that is checked before a session may start), so a saved
-            // file that DOES is one the editor signed. Signing is the DMS's job, with its own records and locks - a
-            // signature made in here would sit outside all of that, so the save is refused.
-            if (EmbeddedSignatureDetector.hasSignature(filename, new ByteArrayInputStream(bytes))) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Digital signatures can't be added in the editor. Sign the document from its page instead.");
-            }
-            IngestionTicketResponse ticket = ingestionGate.submit(IngestionRequest.newVersion(documentId,
-                    DocumentVersionService.REPLACEMENT_UPLOAD, filename, bytes.length,
-                    new ByteArrayInputStream(bytes), "Edited online"));
-            boolean accepted = ticket.status() == ScanResultStatus.pending || ticket.status() == ScanResultStatus.clean
-                    || ticket.status() == ScanResultStatus.released_override;
-            if (!accepted) {
-                log.warn("Online save of document {} refused by the scanner: {}", documentId, ticket.status());
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                        "The saved file was not accepted (" + ticket.status() + ").");
-            }
-            auditService.event(AuditActionCatalog.DOCUMENT_EDIT_SESSION_SAVED)
-                    .objectType(AuditObjectTypes.DOCUMENT).objectId(documentId)
-                    .resourceName(document.getTitle()).outcome(AuditOutcome.SUCCESS)
-                    .newValue(Map.of("scanResultId", ticket.scanResultId(), "bytes", bytes.length))
-                    .log();
-            return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
-                    .body(Map.of("LastModifiedTime", OffsetDateTime.now().toInstant().toString()));
         } finally {
             TenantContext.clear();
         }

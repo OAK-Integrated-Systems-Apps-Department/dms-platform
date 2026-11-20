@@ -4,9 +4,12 @@ import { LoadFailed } from "@/components/ui/load-failed"
 import { notFound, useParams } from "next/navigation"
 
 import { AdminBreadcrumb } from "@/components/admin/admin-breadcrumb"
+import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserAuditHistory } from "@/components/users/user-audit-history"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
+import { USER_VIEW_PERMISSIONS } from "@/lib/auth/user-view-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
 import { useUser } from "@/lib/users/use-user"
 
@@ -18,22 +21,42 @@ import { useUser } from "@/lib/users/use-user"
  * dynamic-segment convention (`app/admin/users/[userId]/mfa`,
  * `.../sessions`, `.../access-summary`).
  *
- * The user itself now comes from dms-core (`useUser`, same as View User).
- * `recentActivity` is always empty until an audit-log endpoint exists on
- * the backend — see `lib/users/api.ts`'s `toUserRecord` for the same gap.
+ * The user itself comes from dms-core (`useUser`, same as View User).
+ * The activity feed below is still always empty: `toUserRecord`
+ * (`lib/users/api.ts`) sets `recentActivity` to `[]` and nothing here reads
+ * the audit log. dms-core does have an audit-events endpoint
+ * (`GET /api/v1/audit-events`, filterable by `objectId`/`actorId`, needing
+ * `ABDR_VIEW_AUDIT_HISTORY`); this page just does not use it yet, so wiring
+ * the feed up is separate work.
+ *
+ * Gated like View User (FE-M4): the content, and the request for the user it
+ * needs, exist only for someone holding one of `USER_VIEW_PERMISSIONS`. The
+ * backend refuses everyone else anyway; this just shows them an explicit
+ * "no permission" instead of a page shell and a failed-load toast.
  */
 export default function UserAuditHistoryPage() {
   const params = useParams<{ userId: string }>()
-  const { data: user, isPending, isError, error } = useUser(params.userId)
+
+  return (
+    <DashboardShell initialActiveLabel="Users & Roles">
+      <PermissionGate permission={USER_VIEW_PERMISSIONS}>
+        <UserAuditHistoryContent userId={params.userId} />
+      </PermissionGate>
+    </DashboardShell>
+  )
+}
+
+function UserAuditHistoryContent({ userId }: { userId: string }) {
+  const { data: user, isPending, isError, error } = useUser(userId)
 
   usePageTitle(user ? `${user.name} Activity` : "User Activity")
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 
   return (
-    <DashboardShell initialActiveLabel="Users & Roles">
+    <>
         <AdminBreadcrumb
           className="mb-3"
           segments={[
@@ -64,6 +87,6 @@ export default function UserAuditHistoryPage() {
         ) : (
         <UserAuditHistory user={user} />
         )}
-    </DashboardShell>
+    </>
   )
 }

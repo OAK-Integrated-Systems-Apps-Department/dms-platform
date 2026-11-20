@@ -9,6 +9,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDepartmentSelect } from "@/components/departments/user-department-select"
 import { UserEditForm } from "@/components/users/user-edit-form"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -23,7 +24,7 @@ export default function EditUserPage() {
 
   usePageTitle(user ? `Edit ${user.name}` : "Edit User")
 
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 

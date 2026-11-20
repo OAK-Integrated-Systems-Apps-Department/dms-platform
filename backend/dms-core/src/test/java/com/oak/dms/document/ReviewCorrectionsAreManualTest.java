@@ -93,7 +93,7 @@ class ReviewCorrectionsAreManualTest {
     @Mock private DocumentMetadataService documentMetadataService;
     @Mock private MetadataValidationService metadataValidationService;
     @Mock private OcrProperties ocrProperties;
-    @Mock private com.oak.dms.watermark.service.WatermarkDefaultsService watermarkDefaultsService;
+    @Mock private DefaultDownloadWatermark defaultDownloadWatermark;
     @Mock private com.oak.dms.signature.service.DocumentSignatureLockService signatureLockService;
     @Mock private com.oak.dms.checkout.DocumentEditGuard editGuard;
 
@@ -124,7 +124,7 @@ class ReviewCorrectionsAreManualTest {
                 documentOcrLineItemRepository, documentOcrCorrectionRepository,
                 processingJobRepository, ocrWorkerClient, ocrEnqueueService,
                 documentMetadataService, metadataValidationService, objectMapper, ocrProperties,
-                new PageImageCache(ocrProperties), watermarkDefaultsService, signatureLockService,
+                new PageImageCache(ocrProperties), defaultDownloadWatermark, signatureLockService,
                 editGuard, new com.oak.dms.compliance.RetentionDueDates(null, null, null),
                 new com.oak.dms.compliance.RetentionDeletionGuard(null, null), null);
 

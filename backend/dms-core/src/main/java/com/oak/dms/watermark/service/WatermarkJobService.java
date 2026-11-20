@@ -14,6 +14,7 @@ import com.oak.dms.watermark.dto.WatermarkJobResponse;
 import com.oak.dms.watermark.entity.WatermarkJob;
 import com.oak.dms.watermark.enums.WatermarkJobStatus;
 import com.oak.dms.watermark.exception.WatermarkException;
+import com.oak.dms.watermark.job.WatermarkOutputKeys;
 import com.oak.dms.watermark.repository.WatermarkJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -131,6 +132,17 @@ public class WatermarkJobService {
         // document may have been deleted, or the folder closed to them,
         // since. Throws 404 if either.
         var version = documentContentReader.describe(job.getDocumentId(), job.getVersionId());
+
+        // DOC-20: the stored key is read back only if it is this job's own output. A key from before the fix could have been
+        // built from a hostile file name and point outside the job's directory; it is never handed to storage, and the
+        // caller gets the same answer as for an output that is gone. Nothing about the key is sent to the client.
+        if (!WatermarkOutputKeys.isInsideJobNamespace(job.getTenantId(), job.getJobId(), job.getOutputObjectKey())) {
+            log.warn("Watermark job {} (tenant {}): its stored output key is outside the job's own namespace - not reading "
+                            + "it ({})", job.getJobId(), job.getTenantId(),
+                    WatermarkOutputKeys.describe(job.getOutputObjectKey()));
+            throw new WatermarkException(org.springframework.http.HttpStatus.GONE, "WATERMARK_EXPIRED",
+                    "This watermarked copy is no longer available. Ask for a new one.");
+        }
 
         StorageLocation location = storageLocationRepository
                 .findByStorageLocationIdAndDeletedFalse(job.getStorageLocationId())

@@ -9,6 +9,7 @@ import { PermissionGate } from "@/components/admin/permission-gate"
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 import { UserDetailView } from "@/components/users/user-detail-view"
 import { LoadingState } from "@/components/ui/loading-state"
+import { isNotFound } from "@/lib/api-error"
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { usePageTitle } from "@/lib/use-page-title"
@@ -26,7 +27,7 @@ export default function ViewUserPage() {
   // A missing user (deleted, wrong tenant, bad id) surfaces as a fetch
   // error from dms-core rather than an empty local-store lookup — route
   // it to the same not-found screen the mock store used to trigger.
-  if (isError && error instanceof Error && error.message.includes("not found")) {
+  if (isError && isNotFound(error)) {
     notFound()
   }
 

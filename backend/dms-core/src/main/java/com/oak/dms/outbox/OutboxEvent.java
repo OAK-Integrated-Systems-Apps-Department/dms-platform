@@ -80,6 +80,23 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private OffsetDateTime publishedAt;
 
+    /**
+     * OBX-03: the earliest time the relay may try this event (while it is pending). Not inserted by the application: the
+     * column's database default ({@code now()}) makes a new event eligible at once, on the DATABASE's clock - the same clock
+     * the relay's eligibility test uses. The relay sets it after a failed publish.
+     */
+    @Column(name = "next_attempt_at", insertable = false)
+    private OffsetDateTime nextAttemptAt;
+
+    /**
+     * OBX-03: when the relay FIRST failed to publish this event, on the database clock - the start of its retry window. Null
+     * until then, so an event that waited a long time before its first attempt (the relay was down) still gets the whole
+     * window; it is never invented for rows that predate this column (see the migration): the first failure the relay
+     * observes sets it.
+     */
+    @Column(name = "first_failed_at")
+    private OffsetDateTime firstFailedAt;
+
     public enum Status {
         pending, published, failed
     }

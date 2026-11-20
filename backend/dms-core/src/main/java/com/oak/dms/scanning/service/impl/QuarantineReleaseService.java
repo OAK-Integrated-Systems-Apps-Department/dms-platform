@@ -169,7 +169,8 @@ class QuarantineReleaseService {
             // A cloud re-scan reads the staged copy in place, so it can't be encrypted (see IngestionGateImpl).
             staged = storageObjectMover.copyVerified(quarantineLocation(record), record.getQuarantineObjectKey(),
                     staging, attempt.getStagingObjectKey(), record.getSizeBytes(), attempt.getMimeType(),
-                    record.getFileHash(), attempt.getScanMode() != ScanMode.post_store_object);
+                    record.getFileHash(), attempt.getScanMode() != ScanMode.post_store_object,
+                    StorageObjectMover.Destination.NEW_UNREFERENCED);
         } catch (StorageException | StorageObjectMover.StagedObjectChangedException e) {
             storageObjectMover.deleteQuietly(staging, attempt.getStagingObjectKey());
             ingestionProcessor.failTerminal(attemptId, leaseToken,
@@ -232,7 +233,7 @@ class QuarantineReleaseService {
         draft.setDocumentVersionId(plan.versionId());
         storageObjectMover.copyVerified(quarantineLocation(record), record.getQuarantineObjectKey(),
                 plan.documentLocation(), plan.objectKey(), record.getSizeBytes(), original.getMimeType(),
-                record.getFileHash());
+                record.getFileHash(), true, StorageObjectMover.Destination.NEW_UNREFERENCED);
 
         // 3. One transaction: override row + version + record released + audit.
         //    V40's gate trigger checks the whole chain at commit.

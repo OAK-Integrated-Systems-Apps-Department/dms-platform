@@ -164,6 +164,19 @@ public class TenantServiceImpl implements TenantService {
     }
 
     @Override
+    public TenantResponse renameOwnTenant(UUID tenantId, UpdateTenantRequest request) {
+        Tenant tenant = tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
+        boolean tierChanged = !tenant.getSubscriptionTier().equals(request.subscriptionTier());
+        boolean statusChanged = !tenant.getStatus().name().equals(request.status().name());
+        if (tierChanged || statusChanged) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Only a platform administrator may change an organisation's subscription tier or status");
+        }
+        return updateTenant(tenantId, request);
+    }
+
+    @Override
     public void deactivateTenant(UUID tenantId) {
         Tenant tenant = tenantRepository.findByTenantIdAndDeletedFalse(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", tenantId));
