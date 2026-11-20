@@ -2,6 +2,7 @@
 
 import { LoadFailed } from "@/components/ui/load-failed"
 import { useRef, useState } from "react"
+import { useMarqueeSelect } from "@/components/documents/use-marquee-select"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -41,6 +42,7 @@ import {
   DocumentTile,
   FolderTile,
   type ItemAction,
+  ItemMenu,
 } from "@/components/documents/browser-items"
 import {
   countLabel,
@@ -109,7 +111,10 @@ import {
 import {
   setBrowserView,
   useBrowserView,
+  tileGridProps,
+  useTileSize,
 } from "@/lib/documents/use-browser-view"
+import { TileSizeControl } from "@/components/documents/tile-size-control"
 import { FOLDERS_KEY, useFolders } from "@/lib/folders/use-folders"
 import { useDocumentWorkflowStatuses } from "@/lib/workflow/use-document-workflow-statuses"
 import { LinkToDialog } from "@/components/relationships/link-to-dialog"
@@ -120,6 +125,8 @@ import { cn } from "@/lib/utils"
 const PAGE_SIZE = 25
 
 /** Keys the upload panel opened by a drop, so each drop starts it fresh. */
+// Gives each bulk-action dialog a fresh key, so it opens with a fresh state.
+let selectionDialogs = 0
 let droppedUploads = 0
 
 type Dialog =
@@ -131,6 +138,17 @@ type Dialog =
   | { kind: "access"; target: AccessTarget; key: number }
   | { kind: "share"; target: ShareTarget; key: number }
   | { kind: "delete-documents"; rows: DocumentListItemDto[] }
+  | {
+      kind: "move-selection"
+      documents: DocumentListItemDto[]
+      folders: FolderNode[]
+      key: number
+    }
+  | {
+      kind: "delete-selection"
+      rows: DocumentListItemDto[]
+      folders: FolderNode[]
+    }
   | { kind: "versions"; row: DocumentListItemDto; key: number }
   | { kind: "submit-for-approval"; row: DocumentListItemDto; key: number }
   | { kind: "watermark"; row: DocumentListItemDto; key: number }
@@ -256,11 +274,19 @@ function FolderView({
   const ocrAvailable = useOcrAvailability().data ?? false
 
   const view = useBrowserView()
+  const tileSize = useTileSize()
   const folders = useFolders()
   const relatedDocument = useDocument(related?.relatedTo ?? "")
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [checked, setChecked] = useState<Set<string>>(new Set())
+  // Folders can be selected too (by dragging a box over them, or their checkbox).
+  const [checkedFolders, setCheckedFolders] = useState<Set<string>>(new Set())
+  // What was selected when a Ctrl/Shift drag began - the box adds to it.
+  const marqueeBase = useRef<{
+    docs: Set<string>
+    folders: Set<string>
+  } | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   // Lives here, not in the sheet: the sheet closes right after the check, and the loader should outlast it.
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
@@ -301,6 +327,18 @@ function FolderView({
       next ? `${pathname}?folder=${encodeURIComponent(next)}` : pathname,
       { scroll: false }
     )
+  }
+
+  function toggleFolder(folderId: string) {
+    const next = new Set(checkedFolders)
+    if (next.has(folderId)) next.delete(folderId)
+    else next.add(folderId)
+    setCheckedFolders(next)
+  }
+
+  function clearSelection() {
+    setChecked(new Set())
+    setCheckedFolders(new Set())
   }
 
   function toggle(documentId: string) {
@@ -388,16 +426,31 @@ function FolderView({
   /** A document's drag carries the whole selection when it's part of it. */
   function documentDrag(row: DocumentListItemDto) {
     if (!canMoveDocument(row)) return undefined
-    const documents = checked.has(row.documentId)
+    const inSelection = checked.has(row.documentId)
+    const documents = inSelection
       ? rows.filter((r) => checked.has(r.documentId) && canMoveDocument(r))
       : [row]
-    return dnd.source({ documents, folders: [] })
+    const folders = inSelection
+      ? shownFolders.filter(
+          (f) => checkedFolders.has(f.folderId) && canMoveFolder(f)
+        )
+      : []
+    return dnd.source({ documents, folders })
   }
 
+  /** A folder's drag carries the whole selection, folders and documents, when it's part of it. */
   function folderDrag(folder: FolderNode) {
-    return canMoveFolder(folder)
-      ? dnd.source({ documents: [], folders: [folder] })
-      : undefined
+    if (!canMoveFolder(folder)) return undefined
+    if (!checkedFolders.has(folder.folderId))
+      return dnd.source({ documents: [], folders: [folder] })
+    return dnd.source({
+      documents: rows.filter(
+        (r) => checked.has(r.documentId) && canMoveDocument(r)
+      ),
+      folders: shownFolders.filter(
+        (f) => checkedFolders.has(f.folderId) && canMoveFolder(f)
+      ),
+    })
   }
 
   async function uploadDropped(
@@ -453,7 +506,7 @@ function FolderView({
     }
     failed.forEach((message) => toast.error(message))
     if (movedDocuments.length + movedFolders.length === 0) return
-    if (movedDocuments.length > 0) setChecked(new Set())
+    clearSelection()
     refresh()
 
     async function undo() {
@@ -719,6 +772,22 @@ function FolderView({
   const shownFolders = folderQuery
     ? children.filter((c) => c.name.toLowerCase().includes(folderQuery))
     : children
+  // The selection: documents on this page and folders shown here (a stale id from elsewhere is ignored).
+  const selectedDocuments = rows.filter((r) => checked.has(r.documentId))
+  const selectedFolders = shownFolders.filter((f) =>
+    checkedFolders.has(f.folderId)
+  )
+  const hasFolders = selectedFolders.length > 0
+  const selectionCount = checked.size + selectedFolders.length
+  // What each bulk action may actually touch when folders are part of the selection.
+  const movableDocuments = selectedDocuments.filter(canMoveDocument)
+  const movableFolders = selectedFolders.filter(canMoveFolder)
+  const deletableDocuments = can.deleteDocuments
+    ? selectedDocuments.filter((r) => hasAccess(r.myAccess, "edit"))
+    : []
+  const deletableFolders = can.deleteFolder
+    ? selectedFolders.filter((f) => hasAccess(f.myAccess, "manage"))
+    : []
   // A link to a folder that was deleted (or never existed).
   const missing = folderId !== null && !folders.isPending && !current
   const loadingDocuments = !missing && documents.isPending
@@ -734,6 +803,26 @@ function FolderView({
         ]
           .filter(Boolean)
           .join(" · ") || undefined
+  const marquee = useMarqueeSelect({
+    enabled: !folders.isPending && !loadingDocuments && !missing,
+    onStart: (additive) => {
+      marqueeBase.current = additive
+        ? { docs: new Set(checked), folders: new Set(checkedFolders) }
+        : { docs: new Set(), folders: new Set() }
+    },
+    onSelect: (keys) => {
+      const base = marqueeBase.current
+      const docs = new Set(base?.docs)
+      const folderIds = new Set(base?.folders)
+      keys.forEach((key) => {
+        if (key.startsWith("doc:")) docs.add(key.slice(4))
+        else if (key.startsWith("folder:")) folderIds.add(key.slice(7))
+      })
+      setChecked(docs)
+      setCheckedFolders(folderIds)
+    },
+    onClickEmpty: clearSelection,
+  })
   const emptyMessage = folderQuery
     ? "Nothing here matches your search."
     : current
@@ -773,16 +862,14 @@ function FolderView({
           </span>
         </div>
       )}
-      <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-        <div className="border-b border-border px-4 py-2">
-          <FolderPath
-            trail={trail}
-            onOpen={open}
-            summary={summary}
-            dropTarget={dnd.target}
+      <div className="mb-3 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
+        {/* One row: where you are, what you can do here, then the counts, search and view. It wraps on narrow screens. */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-3 py-1.5">
+          <FolderPath trail={trail} onOpen={open} dropTarget={dnd.target} />
+          <span
+            aria-hidden="true"
+            className="mx-1.5 hidden h-5 w-px bg-border sm:block"
           />
-        </div>
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           {can.createFolder && canEditHere && !missing && (
             <Button
               variant="ghost"
@@ -829,16 +916,6 @@ function FolderView({
               else toast.error("That folder has no files to upload.")
             }}
           />
-          {current && can.export && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => downloadFolder(current)}
-            >
-              <Download />
-              Download
-            </Button>
-          )}
           {!missing && (
             <Button
               variant="ghost"
@@ -849,47 +926,22 @@ function FolderView({
               New from template
             </Button>
           )}
-          {current && can.share && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setDialog({
-                  kind: "share",
-                  target: {
-                    kind: "folder",
-                    id: current.folderId,
-                    name: current.name,
-                  },
-                  key: Date.now(),
-                })
-              }
-            >
-              <Share2 />
-              Share
-            </Button>
-          )}
-          {current && can.seeAccess && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setDialog({
-                  kind: "access",
-                  target: {
-                    kind: "folder",
-                    id: current.folderId,
-                    name: current.name,
-                  },
-                  key: Date.now(),
-                })
-              }
-            >
-              <ShieldCheck />
-              Manage access
-            </Button>
+          {/* Folder-level actions (download as a ZIP, share, who has access) sit in a menu so the toolbar stays on one line. */}
+          {current && (
+            <ItemMenu
+              label={current.name}
+              buttonLabel="Folder actions"
+              actions={folderActions(current).filter((action) =>
+                ["Download", "Share", "Manage access"].includes(action.label)
+              )}
+            />
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {summary && (
+              <span className="hidden text-[12.5px] whitespace-nowrap text-muted-foreground 2xl:inline">
+                {summary}
+              </span>
+            )}
             <SearchInput
               value={query}
               onChange={(value) => {
@@ -900,6 +952,7 @@ function FolderView({
               aria-label={current ? "Search this folder" : "Search Documents"}
               className="w-[220px] max-w-full"
             />
+            {view === "grid" && <TileSizeControl />}
             <div
               role="radiogroup"
               aria-label="View"
@@ -934,19 +987,33 @@ function FolderView({
         </div>
       </div>
 
-      {checked.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-btn border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]">
-          <span className="font-semibold">{checked.size} selected</span>
-          {can.moveDocuments && canEditHere && (
+      {selectionCount > 0 && (
+        <div
+          data-no-marquee
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-btn border border-primary/40 bg-primary/5 px-3.5 py-2 text-[13px]"
+        >
+          <span className="font-semibold">{selectionCount} selected</span>
+          {(hasFolders
+            ? movableDocuments.length + movableFolders.length > 0
+            : can.moveDocuments && canEditHere) && (
             <Button
               variant="outline"
               size="sm"
               onClick={() =>
-                setDialog({
-                  kind: "move-documents",
-                  ids: [...checked],
-                  key: Date.now(),
-                })
+                setDialog(
+                  checkedFolders.size > 0
+                    ? {
+                        kind: "move-selection",
+                        documents: movableDocuments,
+                        folders: movableFolders,
+                        key: ++selectionDialogs,
+                      }
+                    : {
+                        kind: "move-documents",
+                        ids: [...checked],
+                        key: ++selectionDialogs,
+                      }
+                )
               }
             >
               <FolderInput />
@@ -954,16 +1021,15 @@ function FolderView({
             </Button>
           )}
           {can.manageRelationships &&
-            rows
-              .filter((r) => checked.has(r.documentId))
-              .every((r) => hasAccess(r.myAccess, "edit")) && (
+            checked.size > 0 &&
+            selectedDocuments.every((r) => hasAccess(r.myAccess, "edit")) && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() =>
                   setDialog({
                     kind: "link-to",
-                    rows: rows.filter((r) => checked.has(r.documentId)),
+                    rows: selectedDocuments,
                     key: Date.now(),
                   })
                 }
@@ -972,115 +1038,133 @@ function FolderView({
                 Link to…
               </Button>
             )}
-          {can.export && (
+          {can.export && checked.size > 0 && (
             <Button variant="outline" size="sm" onClick={downloadSelected}>
               <Download />
               Download
             </Button>
           )}
-          {can.deleteDocuments && (
+          {(hasFolders
+            ? deletableDocuments.length + deletableFolders.length > 0
+            : can.deleteDocuments) && (
             <Button
               variant="outline"
               size="sm"
               onClick={() =>
-                setDialog({
-                  kind: "delete-documents",
-                  rows: rows.filter((r) => checked.has(r.documentId)),
-                })
+                setDialog(
+                  checkedFolders.size > 0
+                    ? {
+                        kind: "delete-selection",
+                        rows: deletableDocuments,
+                        folders: deletableFolders,
+                      }
+                    : { kind: "delete-documents", rows: selectedDocuments }
+                )
               }
             >
               <Trash2 />
               Delete
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setChecked(new Set())}
-          >
+          <Button variant="outline" size="sm" onClick={clearSelection}>
             Clear
           </Button>
+          {hasFolders &&
+            checked.size > 0 &&
+            (can.export || can.manageRelationships) && (
+              <span className="text-[12px] text-muted-foreground">
+                Download and Link to use the selected documents only.
+              </span>
+            )}
         </div>
       )}
 
-      {folders.isPending || loadingDocuments ? (
-        <LoadingState message="Loading…" />
-      ) : missing ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center">
-          <p className="text-[13.5px] font-medium">
-            This folder doesn&apos;t exist any more.
+      {/* Drag a box over empty space here to select several folders and documents at once. */}
+      <div {...marquee.containerProps} className="flex flex-1 flex-col">
+        {folders.isPending || loadingDocuments ? (
+          <LoadingState message="Loading…" />
+        ) : missing ? (
+          <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center">
+            <p className="text-[13.5px] font-medium">
+              This folder doesn&apos;t exist any more.
+            </p>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              It may have been deleted or moved.{" "}
+              <button
+                type="button"
+                className="text-primary hover:underline"
+                onClick={() => open(null)}
+              >
+                Go to Documents
+              </button>
+            </p>
+          </div>
+        ) : current && documents.isError ? (
+          <LoadFailed
+            error={documents.error}
+            fallback="Could not load documents."
+          />
+        ) : view === "list" ? (
+          <BrowserList
+            folders={shownFolders}
+            rows={rows}
+            checked={checked}
+            onToggle={toggle}
+            checkedFolders={checkedFolders}
+            onToggleFolder={toggleFolder}
+            onToggleAll={(on) => {
+              const next = new Set(checked)
+              rows.forEach((r) =>
+                on ? next.add(r.documentId) : next.delete(r.documentId)
+              )
+              setChecked(next)
+            }}
+            onOpenFolder={(folder) => open(folder.folderId)}
+            onOpenDocument={(row) => setPreview(row)}
+            folderActions={folderActions}
+            documentActions={documentActions}
+            approvals={approvals.data}
+            bookmarkedIds={bookmarkStatus.bookmarkedIds}
+            empty={emptyMessage}
+            folderDrag={folderDrag}
+            folderDrop={dnd.target}
+            documentDrag={documentDrag}
+          />
+        ) : shownFolders.length === 0 && rows.length === 0 ? (
+          <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground">
+            {emptyMessage}
           </p>
-          <p className="mt-1 text-[12.5px] text-muted-foreground">
-            It may have been deleted or moved.{" "}
-            <button
-              type="button"
-              className="text-primary hover:underline"
-              onClick={() => open(null)}
-            >
-              Go to Documents
-            </button>
-          </p>
-        </div>
-      ) : current && documents.isError ? (
-        <LoadFailed
-          error={documents.error}
-          fallback="Could not load documents."
-        />
-      ) : view === "list" ? (
-        <BrowserList
-          folders={shownFolders}
-          rows={rows}
-          checked={checked}
-          onToggle={toggle}
-          onToggleAll={(on) => {
-            const next = new Set(checked)
-            rows.forEach((r) =>
-              on ? next.add(r.documentId) : next.delete(r.documentId)
-            )
-            setChecked(next)
-          }}
-          onOpenFolder={(folder) => open(folder.folderId)}
-          onOpenDocument={(row) => setPreview(row)}
-          folderActions={folderActions}
-          documentActions={documentActions}
-          approvals={approvals.data}
-          bookmarkedIds={bookmarkStatus.bookmarkedIds}
-          empty={emptyMessage}
-          folderDrag={folderDrag}
-          folderDrop={dnd.target}
-          documentDrag={documentDrag}
-        />
-      ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex min-h-[240px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground">
-          {emptyMessage}
-        </p>
-      ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
-          {shownFolders.map((folder) => (
-            <FolderTile
-              key={folder.folderId}
-              folder={folder}
-              onOpen={() => open(folder.folderId)}
-              actions={folderActions(folder)}
-              drag={folderDrag(folder)}
-              drop={dnd.target(folder)}
-            />
-          ))}
-          {rows.map((row) => (
-            <DocumentTile
-              key={row.documentId}
-              row={row}
-              checked={checked.has(row.documentId)}
-              onToggle={() => toggle(row.documentId)}
-              onOpen={() => setPreview(row)}
-              actions={documentActions(row)}
-              drag={documentDrag(row)}
-              approval={approvals.data?.get(row.documentId)}
-              bookmarked={bookmarkStatus.isBookmarked(row.documentId)}
-            />
-          ))}
-        </ul>
-      )}
+        ) : (
+          <ul {...tileGridProps(tileSize)}>
+            {shownFolders.map((folder) => (
+              <FolderTile
+                key={folder.folderId}
+                folder={folder}
+                checked={checkedFolders.has(folder.folderId)}
+                onToggle={() => toggleFolder(folder.folderId)}
+                onOpen={() => open(folder.folderId)}
+                actions={folderActions(folder)}
+                drag={folderDrag(folder)}
+                drop={dnd.target(folder)}
+              />
+            ))}
+            {rows.map((row) => (
+              <DocumentTile
+                key={row.documentId}
+                row={row}
+                checked={checked.has(row.documentId)}
+                onToggle={() => toggle(row.documentId)}
+                onOpen={() => setPreview(row)}
+                actions={documentActions(row)}
+                drag={documentDrag(row)}
+                approval={approvals.data?.get(row.documentId)}
+                bookmarked={bookmarkStatus.isBookmarked(row.documentId)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+      {marquee.overlay}
       {(documents.data?.totalPages ?? 0) > 1 && (
         <TablePagination
           currentPage={page}
@@ -1206,6 +1290,69 @@ function FolderView({
           }
         />
       )}
+      {dialog?.kind === "move-selection" && (
+        <MoveDialog
+          key={dialog.key}
+          title={`Move ${countLabel({ documents: dialog.documents, folders: dialog.folders })}`}
+          description="Choose where they go. A folder takes everything in it along."
+          noneLabel="Top level"
+          initial={current?.folderId ?? ""}
+          exclude={new Set(dialog.folders.flatMap((f) => [...subtreeIds(f)]))}
+          onClose={() => setDialog(null)}
+          onMove={async (target) => {
+            // Reports its own result (and offers Undo), like a drag onto a folder.
+            await moveDragged(
+              { documents: dialog.documents, folders: dialog.folders },
+              (target && folders.byId.get(target)) || null
+            )
+            return null
+          }}
+        />
+      )}
+      <ConfirmActionDialog
+        open={dialog?.kind === "delete-selection"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        title={
+          dialog?.kind === "delete-selection"
+            ? `Delete ${countLabel({ documents: dialog.rows, folders: dialog.folders })}?`
+            : ""
+        }
+        description="Documents move to the recycle bin, where they can be restored. A folder can only be deleted when it is empty - one that still holds something is left as it is."
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        onConfirm={async () => {
+          if (dialog?.kind !== "delete-selection") return null
+          let deleted = 0
+          for (const row of dialog.rows) {
+            try {
+              await deleteDocument(row.documentId)
+              deleted++
+            } catch (error) {
+              toast.error(
+                `${row.title}: ${friendlyMessage(error, "could not be deleted")}`
+              )
+            }
+          }
+          for (const folder of dialog.folders) {
+            try {
+              await deleteFolder(folder.folderId)
+              deleted++
+            } catch (error) {
+              toast.error(
+                `"${folder.name}": ${friendlyMessage(error, "could not be deleted.")}`
+              )
+            }
+          }
+          if (deleted > 0) {
+            toast.success(
+              `Deleted ${deleted} ${deleted === 1 ? "item" : "items"}.`
+            )
+            clearSelection()
+            refresh()
+          }
+          return null
+        }}
+      />
       <ConfirmActionDialog
         open={dialog?.kind === "delete-folder"}
         onOpenChange={(open) => !open && setDialog(null)}

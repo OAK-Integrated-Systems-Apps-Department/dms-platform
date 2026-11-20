@@ -55,13 +55,16 @@ export function FolderPath({
         aria-label="Up one level"
         disabled={!current}
         onClick={() => onOpen(parent?.folderId ?? null)}
-        className="flex shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40 size-8 rounded-btn"
+        className="flex size-8 shrink-0 items-center justify-center rounded-btn text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
       >
         <ArrowUp size={16} />
       </button>
       <span aria-hidden="true" className="h-5 w-px bg-border" />
 
-      <nav aria-label="Folder path" className="min-w-0 flex-1">
+      <nav
+        aria-label="Folder path"
+        className={cn("min-w-0", summary && "flex-1")}
+      >
         <ol className="flex flex-wrap items-center gap-0.5">
           <li>
             {current ? (

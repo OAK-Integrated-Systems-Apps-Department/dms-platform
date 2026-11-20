@@ -81,7 +81,7 @@ export function DocumentsHub({
   return (
     <>
       <AdminBreadcrumb
-        className="mb-3"
+        className="mb-2"
         segments={[
           { label: "Dashboard", href: "/" },
           // Every other tab hangs off Documents; that tab is the root itself.
@@ -94,12 +94,13 @@ export function DocumentsHub({
           { label: current.label },
         ]}
       />
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="mb-1.5 font-heading text-[26px] font-semibold tracking-[-0.01em]">
+      {/* Title and description share a line (they wrap on narrow screens); the counts sit on the same row. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 className="font-heading text-[22px] font-semibold tracking-[-0.01em]">
             {current.label}
           </h1>
-          <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
+          <p className="text-[13px] leading-[1.5] text-muted-foreground">
             {current.description}
           </p>
         </div>
@@ -111,7 +112,7 @@ export function DocumentsHub({
       {visible.length > 1 && (
         <nav
           aria-label="Documents sections"
-          className="mb-6 border-b border-border"
+          className="mb-4 border-b border-border"
         >
           <ul className="-mb-px flex flex-wrap gap-1">
             {visible.map((tab) => {

@@ -8,10 +8,7 @@ interface LoadingStateProps {
 
 /**
  * The one shared "this is loading" state, for a query or store fetch still in flight. It replaces a whole content area
- * (a table, a detail view, a form) with a small document-themed animation: a stack of sheets with a scan line sweeping
- * over the top one, drawn in the app's own green, gold and card colours (so it follows light and dark mode), with the
- * message underneath. The motion is pure CSS and stops for people who ask for reduced motion (see `.dms-loader` in
- * app/globals.css).
+ * (a table, a detail view, a form) with the growing-oak GIF (see LoaderArt) with the message underneath.
  *
  * Not for every kind of "loading": an inline control (a dropdown trigger, a button, one line of text) would be dwarfed
  * by this and should get its own small inline spinner instead.
@@ -39,20 +36,21 @@ export function LoadingState({ message = "Loading…", className }: LoadingState
   )
 }
 
-/** The animated stack of sheets, shared by the in-page loading state and the full-screen one. */
-export function LoaderArt() {
+/**
+ * The growing-oak animation (public/images/loading.gif), shared by the in-page loading state and the full-screen one.
+ * Lives under public/images/ because the proxy lets that folder through without a session, so it also shows before sign-in.
+ */
+export function LoaderArt({ size = 200 }: { size?: number }) {
   return (
-    <div className="dms-loader-art" aria-hidden="true">
-      <span className="dms-sheet dms-sheet-back" />
-      <span className="dms-sheet dms-sheet-mid" />
-      <span className="dms-sheet dms-sheet-front">
-        <i className="dms-line dms-line-title" />
-        <i className="dms-line" />
-        <i className="dms-line" />
-        <i className="dms-line dms-line-short" />
-        <b className="dms-seal" />
-        <u className="dms-scan" />
-      </span>
-    </div>
+    // An animated GIF: next/image would not animate it, and the file is small and local.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/images/loading.gif"
+      alt=""
+      aria-hidden="true"
+      width={size}
+      height={Math.round((size * 303) / 313)}
+      className="select-none"
+    />
   )
 }

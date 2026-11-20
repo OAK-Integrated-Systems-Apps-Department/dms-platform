@@ -46,7 +46,10 @@ import {
 import {
   setBrowserView,
   useBrowserView,
+  tileGridProps,
+  useTileSize,
 } from "@/lib/documents/use-browser-view"
+import { TileSizeControl } from "@/components/documents/tile-size-control"
 import {
   fetchSharedFolders,
   hasAccess,
@@ -54,7 +57,10 @@ import {
   type FolderNode,
 } from "@/lib/folders/api"
 import { FOLDERS_KEY } from "@/lib/folders/use-folders"
-import { useBookmarkStatus, useBookmarkToggle } from "@/lib/bookmarks/use-bookmarks"
+import {
+  useBookmarkStatus,
+  useBookmarkToggle,
+} from "@/lib/bookmarks/use-bookmarks"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 25
@@ -83,6 +89,7 @@ export function SharedWithMe() {
     bookmark: hasPermission(PermissionCodes.BD_BOOKMARK),
   }
   const view = useBrowserView()
+  const tileSize = useTileSize()
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [preview, setPreview] = useState<DocumentListItemDto | null>(null)
@@ -152,7 +159,8 @@ export function SharedWithMe() {
       actions.push({
         label: isBookmarked ? "Remove bookmark" : "Bookmark",
         icon: isBookmarked ? BookmarkMinus : Bookmark,
-        onSelect: () => void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
+        onSelect: () =>
+          void bookmarks.toggle(row.documentId, isBookmarked).catch(() => {}),
       })
     }
     if (can.seeAccess)
@@ -211,6 +219,7 @@ export function SharedWithMe() {
             aria-label="Search shared items"
             className="w-[220px] max-w-full"
           />
+          {view === "grid" && <TileSizeControl />}
           <div
             role="radiogroup"
             aria-label="View"
@@ -247,9 +256,12 @@ export function SharedWithMe() {
       {loading ? (
         <LoadingState message="Loading…" />
       ) : folders.isError || documents.isError ? (
-        <LoadFailed error={folders.error} fallback="Could not load what's shared with you." />
+        <LoadFailed
+          error={folders.error}
+          fallback="Could not load what's shared with you."
+        />
       ) : shownFolders.length === 0 && rows.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground">
           {empty}
         </p>
       ) : view === "list" ? (
@@ -268,7 +280,7 @@ export function SharedWithMe() {
           empty={empty}
         />
       ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
+        <ul {...tileGridProps(tileSize)}>
           {shownFolders.map((folder) => (
             <FolderTile
               key={folder.folderId}
