@@ -90,6 +90,7 @@ public class ReportNotifier {
                     .sourceModule(MODULE)
                     .dedupeKey(dedupeKey)
                     .suppressEmail(suppressEmail)
+                    .suppressEmailReason("sent_by_other_channel")
                     .build());
             return true;
         } catch (RuntimeException e) {
