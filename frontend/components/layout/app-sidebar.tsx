@@ -19,6 +19,7 @@ import {
 import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePermissions } from "@/lib/auth/use-permissions"
 import { useEditingConfig } from "@/lib/checkout/use-checkout"
+import { useReportCatalog } from "@/lib/reports/use-reports"
 import { useIsPlatformAdmin } from "@/lib/auth/use-is-platform-admin"
 import { useWatermarkAvailability } from "@/lib/watermarks/use-watermark-availability"
 import { useOcrAvailability } from "@/lib/documents/use-ocr-availability"
@@ -122,11 +123,20 @@ export function AppSidebar({
       !isPlatformAdmin && hasAnyPermission(PermissionCodes.DOCM_DOCUMENTS_VIEW)
     ).data?.allowedByPlatform === true
 
+  // Reports: the catalogue answers only while the organisation has them switched on (403 REPORTS_DISABLED otherwise), so a
+  // successful answer is the signal. Not asked for a platform administrator or for someone who may neither build nor run.
+  const reports =
+    useReportCatalog(
+      !isPlatformAdmin &&
+        hasAnyPermission(PermissionCodes.CRG_RUN, PermissionCodes.CRG_BUILD)
+    ).data !== undefined
+
   function featureOn(feature: NavItem["feature"]): boolean {
     if (!feature) return true
     if (feature === "watermarking") return watermarking
     if (feature === "ocr") return ocr
     if (feature === "onlineEditing") return onlineEditing
+    if (feature === "reports") return reports
     return false
   }
 

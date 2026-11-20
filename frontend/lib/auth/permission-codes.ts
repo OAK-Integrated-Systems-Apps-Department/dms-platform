@@ -242,4 +242,17 @@ export const PermissionCodes = {
   DOT_BULK_EXECUTE: "dot.bulk-transfer-ownership.execute-transfer",
   DOT_HISTORY_VIEW: "dot.view-ownership-history.view",
   DOT_HISTORY_EXPORT: "dot.view-ownership-history.export",
+
+  // Custom Report Generation (CRG). build = create/edit definitions; run = run a template or definition
+  // (an ad-hoc definition needs both). The last three were added by V139.
+  CRG_BUILD: "crg.generate-custom-reports.build",
+  CRG_RUN: "crg.generate-custom-reports.run",
+  CRG_SCHEDULE_CREATE: "crg.schedule-automated-reports.create-schedule",
+  CRG_SCHEDULE_UPDATE_CANCEL: "crg.schedule-automated-reports.update-cancel-schedule",
+  CRG_TEMPLATE_CREATE: "crg.manage-report-templates.create",
+  CRG_TEMPLATE_UPDATE: "crg.manage-report-templates.update",
+  CRG_TEMPLATE_DELETE: "crg.manage-report-templates.delete",
+  CRG_TEMPLATE_PUBLISH: "crg.manage-report-templates.publish",
+  CRG_CONFIGURE_REPORTS: "crg.configure-reports.manage",
+  CRG_VIEW_ALL_RUNS: "crg.view-all-runs.view",
 } as const

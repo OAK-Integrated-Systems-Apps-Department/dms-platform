@@ -386,3 +386,28 @@ for what is collected and how to change a panel or an alert.
   maven-failsafe-plugin configured), so CI runs the 28 unit/context tests.
 - **Actions pinning.** Workflows use major-version tags (`@v5`). Pin to
   commit SHAs if your org requires it.
+
+## 6. Custom Report Generation settings (`DMS_REPORTS_*`)
+
+Platform ceilings and defaults for 5.3. All are optional; the values below are the defaults (also in the root `.env.example` and `dms.reports` in `application.yml`). An organisation can set **lower** values in Administration > Reports, never higher. They go in `infra/production/dms-core.env` if you change them.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DMS_REPORTS_ENABLED` | `true` | Global off switch; while false the endpoints answer 403 `REPORTS_DISABLED` |
+| `DMS_REPORTS_MAX_ROWS` / `_MAX_PDF_ROWS` | `200000` / `5000` | Row ceilings per run |
+| `DMS_REPORTS_MAX_METADATA_FILTERS` / `_MAX_FILTERS` / `_MAX_COLUMNS` | `5` / `25` / `40` | Size of one report |
+| `DMS_REPORTS_PREVIEW_TIMEOUT` / `_RUN_TIMEOUT` | `PT10S` / `PT5M` | Statement timeouts |
+| `DMS_REPORTS_MAX_CONCURRENT_PER_TENANT` / `_DEFAULT_...` | `10` / `3` | Runs at once per organisation |
+| `DMS_REPORTS_MAX_QUEUED_PER_USER` | `5` | Waiting runs per person |
+| `DMS_REPORTS_MAX_FILE_RETENTION_DAYS` / `_DEFAULT_...` | `90` / `7` | How long a file can be downloaded |
+| `DMS_REPORTS_RUN_HISTORY_RETENTION` | `P180D` | How long run records are kept |
+| `DMS_REPORTS_MAX_ATTACHMENT_MB` / `_DEFAULT_...` | `25` / `10` | Email attachment size |
+| `DMS_REPORTS_MAX_TEMPLATES_PER_USER` | `200` | Saved reports per person |
+| `DMS_REPORTS_MAX_SCHEDULES_PER_USER` / `_PER_TENANT` | `50` / `1000` | Schedules |
+| `DMS_REPORTS_MAX_RECIPIENTS_PER_SCHEDULE` / `_DEFAULT_...` | `100` / `25` | Recipients per schedule |
+| `DMS_REPORTS_DEFAULT_PAUSE_AFTER_FAILURES` | `5` | Failures before a schedule pauses |
+| `DMS_REPORTS_MAX_CATCH_UP_WINDOW_HOURS` / `_DEFAULT_...` | `168` / `24` | How late a missed run may still start |
+| `DMS_REPORTS_ALLOW_HOURLY_SCHEDULES` | `false` | Whether hourly is selectable |
+| `DMS_REPORTS_SCHEDULE_ENABLED` / `_SCHEDULE_POLL` / `_DELIVERY_POLL` | `true` / `PT1M` / `PT30S` | Scheduler job; only one server runs it at a time (advisory lock) |
+
+Notes: PDF text needs a font with the characters used; Sinhala has no shaping with the current PDF library (see `custom-reports-design.md`, section 9). Report files are written to temporary storage while a run is in progress - allow disk for a few concurrent runs.

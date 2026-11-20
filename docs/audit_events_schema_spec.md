@@ -100,3 +100,9 @@ noted here so the implementer doesn't re-introduce the same gap.
   protected against concurrent writes from multiple application
   instances (e.g. a database-level lock), or the chain can become
   incorrect under concurrent load even with no real tampering.
+
+## Module CRG - Custom Report Generation (5.3)
+
+Eighteen actions are registered in `AuditActionCatalog` with module `CRG`: `REPORT_RUN_REQUESTED`, `REPORT_GENERATED`, `REPORT_FAILED`, `REPORT_DOWNLOADED`, `REPORT_TEMPLATE_CREATED`, `REPORT_TEMPLATE_UPDATED`, `REPORT_TEMPLATE_DELETED`, `REPORT_TEMPLATE_SHARED`, `REPORT_TEMPLATE_PUBLISHED`, `REPORT_SCHEDULE_CREATED`, `REPORT_SCHEDULE_UPDATED`, `REPORT_SCHEDULE_PAUSED`, `REPORT_SCHEDULE_RESUMED`, `REPORT_SCHEDULE_CANCELLED`, `REPORT_SCHEDULE_RUN_SKIPPED`, `REPORT_DELIVERED`, `REPORT_SETTINGS_UPDATED`, `REPORT_FIELD_SETTINGS_UPDATED`.
+
+Severity is LOW except `REPORT_GENERATED`, `REPORT_DOWNLOADED`, `REPORT_DELIVERED`, `REPORT_SETTINGS_UPDATED` and `REPORT_FIELD_SETTINGS_UPDATED`, which are MEDIUM (a report is a data-exit path). Object types: `REPORT_RUN`, `REPORT_TEMPLATE`, `REPORT_SCHEDULE`, `TENANT`. Payloads hold ids, counts, field keys and operators only - never filter values, row content or recipient addresses. Per-action payloads: [events/report-audit-events.md](events/report-audit-events.md).

@@ -662,6 +662,42 @@ dms:
     # Points per chart. The step is derived from this and the window, so a
     # 7-day chart costs about the same as a 1-hour one.
     chart-points: ${MONITORING_CHART_POINTS:120}
+  reports:
+    # 5.3 Custom Report Generation - see ReportProperties and docs/custom-reports-design.md.
+    # Platform ceilings and defaults. A tenant may set LOWER values in its own settings, never higher
+    # (ReportSettingsService resolves min(tenant value, ceiling)). Env names: DMS_REPORTS_*.
+    # Global off switch: no organisation can use reports while this is false (endpoints answer 403 REPORTS_DISABLED).
+    enabled: ${DMS_REPORTS_ENABLED:true}
+    max-rows: ${DMS_REPORTS_MAX_ROWS:200000}
+    max-pdf-rows: ${DMS_REPORTS_MAX_PDF_ROWS:5000}
+    max-metadata-filters: ${DMS_REPORTS_MAX_METADATA_FILTERS:5}
+    max-filters: ${DMS_REPORTS_MAX_FILTERS:25}
+    max-columns: ${DMS_REPORTS_MAX_COLUMNS:40}
+    preview-timeout: ${DMS_REPORTS_PREVIEW_TIMEOUT:PT10S}
+    run-timeout: ${DMS_REPORTS_RUN_TIMEOUT:PT5M}
+    max-concurrent-per-tenant: ${DMS_REPORTS_MAX_CONCURRENT_PER_TENANT:10}
+    default-concurrent-per-tenant: ${DMS_REPORTS_DEFAULT_CONCURRENT_PER_TENANT:3}
+    max-queued-per-user: ${DMS_REPORTS_MAX_QUEUED_PER_USER:5}
+    max-file-retention-days: ${DMS_REPORTS_MAX_FILE_RETENTION_DAYS:90}
+    default-file-retention-days: ${DMS_REPORTS_DEFAULT_FILE_RETENTION_DAYS:7}
+    run-history-retention: ${DMS_REPORTS_RUN_HISTORY_RETENTION:P180D}
+    max-attachment-mb: ${DMS_REPORTS_MAX_ATTACHMENT_MB:25}
+    default-attachment-mb: ${DMS_REPORTS_DEFAULT_ATTACHMENT_MB:10}
+    max-templates-per-user: ${DMS_REPORTS_MAX_TEMPLATES_PER_USER:200}
+    max-schedules-per-user: ${DMS_REPORTS_MAX_SCHEDULES_PER_USER:50}
+    max-schedules-per-tenant: ${DMS_REPORTS_MAX_SCHEDULES_PER_TENANT:1000}
+    max-recipients-per-schedule: ${DMS_REPORTS_MAX_RECIPIENTS_PER_SCHEDULE:100}
+    default-recipients-per-schedule: ${DMS_REPORTS_DEFAULT_RECIPIENTS_PER_SCHEDULE:25}
+    default-pause-after-failures: ${DMS_REPORTS_DEFAULT_PAUSE_AFTER_FAILURES:5}
+    max-catch-up-window-hours: ${DMS_REPORTS_MAX_CATCH_UP_WINDOW_HOURS:168}
+    default-catch-up-window-hours: ${DMS_REPORTS_DEFAULT_CATCH_UP_WINDOW_HOURS:24}
+    # Whether a tenant may choose an hourly minimum schedule interval (otherwise daily is the floor).
+    allow-hourly-schedules: ${DMS_REPORTS_ALLOW_HOURLY_SCHEDULES:false}
+    # ReportScheduleJob (one server at a time, Postgres advisory lock) - the on/off switch and poll interval.
+    schedule-enabled: ${DMS_REPORTS_SCHEDULE_ENABLED:true}
+    schedule-poll: ${DMS_REPORTS_SCHEDULE_POLL:PT1M}
+    # How often deliveries waiting for a retry (after 1, 5 and 15 minutes) are looked at.
+    delivery-poll: ${DMS_REPORTS_DELIVERY_POLL:PT30S}
   pins:
     # How many documents one person may pin (PID-FR-007) until the organisation sets its own
     # (PUT /api/v1/pins/limit, pid.configure-pin-limits).

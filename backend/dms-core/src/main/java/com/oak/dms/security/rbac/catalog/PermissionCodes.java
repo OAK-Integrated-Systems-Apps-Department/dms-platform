@@ -291,4 +291,19 @@ public final class PermissionCodes {
     public static final String DOT_BULK_EXECUTE = "dot.bulk-transfer-ownership.execute-transfer";
     public static final String DOT_HISTORY_VIEW = "dot.view-ownership-history.view";
     public static final String DOT_HISTORY_EXPORT = "dot.view-ownership-history.export";
+
+    // Custom Report Generation - CRG (5.3). The first seven are V10 rows; the last three were added by V139.
+    // build = create/edit definitions in the builder; run = run a template or definition; running an ad-hoc definition needs both.
+    public static final String CRG_BUILD = "crg.generate-custom-reports.build";
+    public static final String CRG_RUN = "crg.generate-custom-reports.run";
+    public static final String CRG_SCHEDULE_CREATE = "crg.schedule-automated-reports.create-schedule";
+    public static final String CRG_SCHEDULE_UPDATE_CANCEL = "crg.schedule-automated-reports.update-cancel-schedule";
+    public static final String CRG_TEMPLATE_CREATE = "crg.manage-report-templates.create";
+    public static final String CRG_TEMPLATE_UPDATE = "crg.manage-report-templates.update";
+    public static final String CRG_TEMPLATE_DELETE = "crg.manage-report-templates.delete";
+    public static final String CRG_TEMPLATE_PUBLISH = "crg.manage-report-templates.publish";
+    /** Tenant admin: settings, field catalogue, delivery rules, official templates, schedule governance, external recipients. */
+    public static final String CRG_CONFIGURE_REPORTS = "crg.configure-reports.manage";
+    /** See the run METADATA of everyone in the tenant - never their files. */
+    public static final String CRG_VIEW_ALL_RUNS = "crg.view-all-runs.view";
 }

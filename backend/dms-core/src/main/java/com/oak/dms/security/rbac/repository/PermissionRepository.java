@@ -46,6 +46,9 @@ public interface PermissionRepository extends JpaRepository<Permission, UUID> {
     Optional<Permission> findVisibleToTenant(@Param("permissionId") UUID permissionId,
                                               @Param("tenantId") UUID tenantId);
 
+    /** A shared (global) permission by code - used to add the default report-run grant next to docm.documents.view (CRG, V139). */
+    Optional<Permission> findByPermissionCodeAndTenantIdIsNullAndDeletedFalse(String permissionCode);
+
     /** Global/shared catalog only - used to guard a new tenant-custom permission's code against colliding with a shared one. */
     boolean existsByPermissionCodeAndTenantIdIsNullAndDeletedFalse(String permissionCode);
 

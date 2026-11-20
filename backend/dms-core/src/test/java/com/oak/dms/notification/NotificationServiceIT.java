@@ -76,6 +76,19 @@ class NotificationServiceIT {
     }
 
     @Test
+    void suppressEmail_keepsTheInboxEntryAndRecordsTheEmailAsSentByAnotherChannel() {
+        UUID id = service.notify(base("comment.mention").dedupeKey("quiet").suppressEmail(true).build()).get(0);
+
+        assertThat(deliveries(id, "in_app", "sent")).isEqualTo(1);
+        assertThat(deliveries(id, "email", "pending")).isZero();
+        assertThat(deliveries(id, "email", "skipped")).isEqualTo(1);
+        assertThat(fx.count("select count(*) from notification_deliveries d where d.notification_id = ? and d.channel = 'email'"
+                + " and d.skip_reason = 'sent_by_other_channel'", id)).isEqualTo(1);
+        // It is not a missing address, so no "recipient has no email" audit is raised.
+        assertThat(fx.count("select count(*) from audit_events where action = 'NOTIFICATION_RECIPIENT_NO_EMAIL' and tenant_id = ?", tenant)).isZero();
+    }
+
+    @Test
     void sameDedupeKey_isIdempotent() {
         List<UUID> first = service.notify(base("comment.mention").dedupeKey("dup").build());
         List<UUID> second = service.notify(base("comment.mention").dedupeKey("dup").build());

@@ -62,6 +62,12 @@ public final class AuditObjectTypes {
     public static final String WATERMARK_JOB = "WATERMARK_JOB";
     /** A tenant's download-watermarking policy (tenant_watermark_settings) - object id is the tenant id. */
     public static final String TENANT_WATERMARK_SETTINGS = "TENANT_WATERMARK_SETTINGS";
+    /** One generation of a custom report (report_runs) - REPORT_RUN_REQUESTED, REPORT_GENERATED, REPORT_FAILED, REPORT_DOWNLOADED. */
+    public static final String REPORT_RUN = "REPORT_RUN";
+    /** A saved report template (report_templates) - the object of every REPORT_TEMPLATE_* event. */
+    public static final String REPORT_TEMPLATE = "REPORT_TEMPLATE";
+    /** A report schedule (report_schedules) - the object of every REPORT_SCHEDULE_* event. */
+    public static final String REPORT_SCHEDULE = "REPORT_SCHEDULE";
     /** The master key that wraps every stored object's data key - the object of every ENCRYPTION_* event. */
     public static final String ENCRYPTION_KEY = "ENCRYPTION_KEY";
 

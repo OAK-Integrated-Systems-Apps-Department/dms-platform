@@ -44,7 +44,7 @@ export interface NavItem {
    * it. Resolved live in `AppSidebar`; omit for the usual case, where a
    * permission alone decides.
    */
-  feature?: "watermarking" | "ocr" | "onlineEditing"
+  feature?: "watermarking" | "ocr" | "onlineEditing" | "reports"| "ocr" | "onlineEditing"
   /**
    * For administrators of either kind - PLATFORM_ADMIN or TENANT_ADMIN.
    * For screens that are an administrator's job but aren't tied to one

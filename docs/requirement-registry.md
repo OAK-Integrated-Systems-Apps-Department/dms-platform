@@ -5850,55 +5850,40 @@ support export in standard formats such as PDF, Excel, and CSV.
 
 ### Functional Requirements
 
-  -------------------------------------------------------------------------
-  **ID**       **Requirement**
-  ------------ ------------------------------------------------------------
-  CRG-FR-001   The system shall allow users to generate custom reports
-               based on configurable filter criteria.
-
-  CRG-FR-002   The system shall support filtering by document type,
-               department, document owner, approval status, creation date,
-               modification date, and workflow stage.
-
-  CRG-FR-003   The system shall allow users to save and re-run report
-               configurations.
-
-  CRG-FR-004   The system shall allow generated reports to be exported
-               (e.g., to Excel, CSV, or PDF).
-
-  CRG-FR-005   The system shall restrict report data to information the
-               requesting user is authorized to view.
-
-  CRG-FR-006   The system shall allow users to schedule reports for
-               automated generation and delivery at a defined frequency
-               (e.g., daily, weekly, monthly), specifying recipients,
-               delivery channel, time zone, and failure notification
-               handling. Permission to access the reported data shall be
-               validated at execution time, not only at schedule creation.
-  -------------------------------------------------------------------------
+| **ID** | **Requirement** |
+|---|---|
+| CRG-FR-001 | Generate custom reports from configurable filter criteria. |
+| CRG-FR-002 | Filter by document type, department, owner, approval status, creation date, modification date and workflow stage, and by any other field the organisation enables, including custom metadata. |
+| CRG-FR-003 | Save, name, share, duplicate and re-run report configurations as templates. |
+| CRG-FR-004 | Export to PDF, Excel and CSV, limited to the formats the organisation allows. |
+| CRG-FR-005 | Restrict data to what the requesting user is authorised to see, applied in the query, with no existence leaks. |
+| CRG-FR-006 | Schedule reports (daily, weekly, monthly) with recipients, delivery channel, time zone and failure handling. Permission is validated at execution time, not only when the schedule is created. |
+| CRG-FR-007 | Choose columns, order, sort and one group-by per report. |
+| CRG-FR-008 | The tenant administrator configures reporting: settings, field catalogue, official and locked templates, schedule governance. |
+| CRG-FR-009 | Run history with status, download, retry and cancel. |
+| CRG-FR-010 | Live preview (count plus sample) while building. |
+| CRG-FR-011 | "No data found", error-with-retry and "results limited to your access" states. |
+| CRG-FR-012 | Every report states how it was made: generated at (with zone), requester, resolved filters, row count, and the confidentiality notice when set. |
 
 ### Non-Functional Requirements
 
-  -------------------------------------------------------------------------
-  **ID**        **Requirement**
-  ------------- -----------------------------------------------------------
-  CRG-NFR-001   Performance: Report generation shall complete within an
-                acceptable time frame (target: under a few minutes) for
-                typical data volumes.
+| **ID** | **Requirement** |
+|---|---|
+| CRG-NFR-001 | Performance: preview p95 under 3 s for 100k documents; 50k rows to Excel or CSV under 60 s; hard stop at the run timeout. |
+| CRG-NFR-002 | Scalability: constant memory per run regardless of row count; every query carries the tenant; indexes for default filters and sorts. |
+| CRG-NFR-003 | Accuracy: one consistent snapshot per run, reflecting the data at generation time. |
+| CRG-NFR-004 | Usability: a non-technical user can build and save a report with the builder only (plain-language operators, a sentence summary of the filters, field search, inline validation). |
+| CRG-NFR-005 | Data security: exports obey the source access rules, are encrypted at rest, expire, and download only through an authenticated, re-authorised endpoint. |
+| CRG-NFR-006 | Accessibility: keyboard operable, labelled controls, status changes announced, usable on narrow screens, nothing relies on colour alone. |
+| CRG-NFR-007 | Observability: run, row, failure and schedule-skip metrics, tagged by format and never by tenant. |
+| CRG-NFR-008 | Safe to upgrade: saved templates carry a definition version and tolerate removed or unknown fields. |
 
-  CRG-NFR-002   Scalability: Report generation shall remain performant as
-                the underlying document repository grows in size.
+### Decisions that change behaviour
 
-  CRG-NFR-003   Accuracy: Reports shall accurately reflect the current
-                state of the underlying document data at generation time.
-
-  CRG-NFR-004   Usability: The report filter interface shall be intuitive
-                for non-technical business users to configure without IT
-                assistance.
-
-  CRG-NFR-005   Data Security: Exported reports shall respect the same
-                access control restrictions as the source data.
-  -------------------------------------------------------------------------
+-   **Recipient-scoped delivery:** a scheduled report is delivered per recipient and contains only what that recipient may see; external addresses only when the organisation allows them.
+-   **Execution-time checks:** a scheduled run executes as the schedule owner, and the owner's access, the template and the selected fields are re-checked each time. A failed check skips the run, notifies, and pauses the schedule after repeated failures.
+-   **Tenant-admin customisation:** the organisation sets limits (below the platform ceilings), the field catalogue, output and branding, and official or locked templates.
+-   **Approval status** is derived from the document's latest workflow instance (see docs/custom-reports-design.md).
 
 ### Workflow
 

@@ -19,6 +19,197 @@
         },
         "type" : "object"
       },
+      "AdminFieldResponse" : {
+        "properties" : {
+          "canFilter" : {
+            "type" : "boolean"
+          },
+          "canGroup" : {
+            "type" : "boolean"
+          },
+          "canSelect" : {
+            "type" : "boolean"
+          },
+          "canSort" : {
+            "type" : "boolean"
+          },
+          "custom" : {
+            "type" : "boolean"
+          },
+          "defaultSelected" : {
+            "type" : "boolean"
+          },
+          "key" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "officialTemplatesUsing" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "override" : {
+            "$ref" : "#/components/schemas/FieldOverride"
+          },
+          "schedulesUsing" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminFieldsUpdate" : {
+        "properties" : {
+          "overrides" : {
+            "items" : {
+              "$ref" : "#/components/schemas/FieldOverride"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminRunResponse" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "deliveryScope" : {
+            "type" : "string"
+          },
+          "errorCode" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "finishedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "forUserId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "requestedBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "requestedByName" : {
+            "type" : "string"
+          },
+          "rowCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "runId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "scheduleId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "startedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "trigger" : {
+            "type" : "string"
+          },
+          "truncated" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminScheduleResponse" : {
+        "properties" : {
+          "consecutiveFailures" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "frequency" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastFailureCode" : {
+            "type" : "string"
+          },
+          "lastRunAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "nextRunAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "ownerName" : {
+            "type" : "string"
+          },
+          "ownerUserId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "pauseReason" : {
+            "type" : "string"
+          },
+          "recipientCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "templateName" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AdminSettingsResponse" : {
+        "properties" : {
+          "ceilings" : {
+            "$ref" : "#/components/schemas/Ceilings"
+          },
+          "settings" : {
+            "$ref" : "#/components/schemas/EffectiveReportSettings"
+          }
+        },
+        "type" : "object"
+      },
       "AssignRoleRequest" : {
         "properties" : {
           "roleId" : {
@@ -315,6 +506,120 @@
         },
         "type" : "object"
       },
+      "Capabilities" : {
+        "properties" : {
+          "build" : {
+            "type" : "boolean"
+          },
+          "configure" : {
+            "type" : "boolean"
+          },
+          "publish" : {
+            "type" : "boolean"
+          },
+          "run" : {
+            "type" : "boolean"
+          },
+          "schedule" : {
+            "type" : "boolean"
+          },
+          "viewAllRuns" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "CatalogResponse" : {
+        "properties" : {
+          "capabilities" : {
+            "$ref" : "#/components/schemas/Capabilities"
+          },
+          "fields" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Field"
+            },
+            "type" : "array"
+          },
+          "maxRelativeDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "relativeDateOptions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "settings" : {
+            "$ref" : "#/components/schemas/Settings"
+          }
+        },
+        "type" : "object"
+      },
+      "Ceilings" : {
+        "properties" : {
+          "allowHourlySchedules" : {
+            "type" : "boolean"
+          },
+          "catchUpWindowHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "fileRetentionDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxAttachmentMb" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxColumns" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxConcurrentRuns" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxFilters" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxMetadataFilters" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxPdfRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxQueuedPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRecipientsPerSchedule" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerTenant" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxTemplatesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "Column" : {
         "properties" : {
           "fieldKey" : {
@@ -328,6 +633,20 @@
           }
         },
         "required" : [ "fieldKey" ],
+        "type" : "object"
+      },
+      "ColumnInfo" : {
+        "properties" : {
+          "key" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "CreateDocumentTypeRequest" : {
@@ -1060,6 +1379,172 @@
         },
         "type" : "object"
       },
+      "EffectiveReportSettings" : {
+        "properties" : {
+          "allowAttachments" : {
+            "type" : "boolean"
+          },
+          "allowExternalRecipients" : {
+            "type" : "boolean"
+          },
+          "allowedDeliveryChannels" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "allowedFormats" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "catchUpWindowHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "confidentialityNotice" : {
+            "type" : "string"
+          },
+          "csvDelimiter" : {
+            "type" : "string"
+          },
+          "csvIncludeBom" : {
+            "type" : "boolean"
+          },
+          "dateFormat" : {
+            "type" : "string"
+          },
+          "defaultColumns" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "defaultFormat" : {
+            "type" : "string"
+          },
+          "defaultLocale" : {
+            "type" : "string"
+          },
+          "defaultSort" : {
+            "items" : {
+              "additionalProperties" : { },
+              "type" : "object"
+            },
+            "type" : "array"
+          },
+          "defaultTimeZone" : {
+            "type" : "string"
+          },
+          "deliveryModeDefault" : {
+            "type" : "string"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "externalDomainAllowlist" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "failureAdminUserIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "failureNotifyAdmins" : {
+            "type" : "boolean"
+          },
+          "fileRetentionDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "footerText" : {
+            "type" : "string"
+          },
+          "headerText" : {
+            "type" : "string"
+          },
+          "includeInactiveByDefault" : {
+            "type" : "boolean"
+          },
+          "maxAttachmentMb" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxConcurrentRuns" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxPdfRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxQueuedPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRecipientsPerSchedule" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerTenant" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxTemplatesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "minScheduleInterval" : {
+            "type" : "string"
+          },
+          "numberFormat" : {
+            "type" : "string"
+          },
+          "overLimitBehaviour" : {
+            "type" : "string"
+          },
+          "pauseAfterConsecutiveFailures" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pdfOrientation" : {
+            "type" : "string"
+          },
+          "pdfPageSize" : {
+            "type" : "string"
+          },
+          "schedulingEnabled" : {
+            "type" : "boolean"
+          },
+          "showFilterSummary" : {
+            "type" : "boolean"
+          },
+          "showGeneratedBy" : {
+            "type" : "boolean"
+          },
+          "showLogo" : {
+            "type" : "boolean"
+          },
+          "skipEmptyScheduledReports" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
       "EncryptionStatus" : {
         "properties" : {
           "enabled" : {
@@ -1177,6 +1662,122 @@
           "maxDocuments" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "Field" : {
+        "properties" : {
+          "defaultSelected" : {
+            "type" : "boolean"
+          },
+          "filterable" : {
+            "type" : "boolean"
+          },
+          "groupable" : {
+            "type" : "boolean"
+          },
+          "key" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "metadata" : {
+            "type" : "boolean"
+          },
+          "multi" : {
+            "type" : "boolean"
+          },
+          "operators" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "selectable" : {
+            "type" : "boolean"
+          },
+          "sortable" : {
+            "type" : "boolean"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "FieldOverride" : {
+        "properties" : {
+          "defaultSelected" : {
+            "type" : "boolean"
+          },
+          "displayOrder" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "fieldKey" : {
+            "type" : "string"
+          },
+          "filterable" : {
+            "type" : "boolean"
+          },
+          "groupable" : {
+            "type" : "boolean"
+          },
+          "labelOverride" : {
+            "type" : "string"
+          },
+          "selectable" : {
+            "type" : "boolean"
+          },
+          "showCode" : {
+            "type" : "boolean"
+          },
+          "sortable" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "FieldValuesResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Value"
+            },
+            "type" : "array"
+          },
+          "hasMore" : {
+            "type" : "boolean"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "Filter" : {
+        "properties" : {
+          "field" : {
+            "type" : "string"
+          },
+          "operator" : {
+            "type" : "string"
+          },
+          "values" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           }
         },
         "type" : "object"
@@ -1312,6 +1913,21 @@
           }
         },
         "required" : [ "usernameOrEmail" ],
+        "type" : "object"
+      },
+      "Grant" : {
+        "properties" : {
+          "accessLevel" : {
+            "type" : "string"
+          },
+          "principalId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "principalType" : {
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "GrantPermissionRequest" : {
@@ -1848,6 +2464,78 @@
         },
         "type" : "object"
       },
+      "Option" : {
+        "properties" : {
+          "label" : {
+            "type" : "string"
+          },
+          "value" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PageResponseAdminRunResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AdminRunResponse"
+            },
+            "type" : "array"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageResponseAdminScheduleResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AdminScheduleResponse"
+            },
+            "type" : "array"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "PageResponseAuditEventResponse" : {
         "properties" : {
           "content" : {
@@ -2178,6 +2866,66 @@
         },
         "type" : "object"
       },
+      "PageResponseRunResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/RunResponse"
+            },
+            "type" : "array"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageResponseScheduleRunResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ScheduleRunResponse"
+            },
+            "type" : "array"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "PageResponseTenantResponse" : {
         "properties" : {
           "content" : {
@@ -2366,6 +3114,53 @@
           "updatedAt" : {
             "format" : "date-time",
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PreviewResponse" : {
+        "properties" : {
+          "columns" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ColumnInfo"
+            },
+            "type" : "array"
+          },
+          "limitedToAccess" : {
+            "type" : "boolean"
+          },
+          "maxPdfRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "resolvedFilters" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "sample" : {
+            "items" : {
+              "items" : {
+                "type" : "string"
+              },
+              "type" : "array"
+            },
+            "type" : "array"
+          },
+          "timeZone" : {
+            "type" : "string"
+          },
+          "timedOut" : {
+            "type" : "boolean"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -2651,6 +3446,26 @@
         },
         "type" : "object"
       },
+      "ReassignRequest" : {
+        "properties" : {
+          "newOwnerUserId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "Recipient" : {
+        "properties" : {
+          "ref" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "RecycleBin" : {
         "properties" : {
           "byType" : {
@@ -2740,6 +3555,203 @@
           }
         },
         "required" : [ "fields" ],
+        "type" : "object"
+      },
+      "ReportDefinition" : {
+        "properties" : {
+          "columns" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "filters" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Filter"
+            },
+            "type" : "array"
+          },
+          "groupBy" : {
+            "type" : "string"
+          },
+          "includeInactive" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Sort"
+            },
+            "type" : "array"
+          },
+          "source" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ReportSettingsUpdate" : {
+        "properties" : {
+          "allowAttachments" : {
+            "type" : "boolean"
+          },
+          "allowExternalRecipients" : {
+            "type" : "boolean"
+          },
+          "allowedDeliveryChannels" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "allowedFormats" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "catchUpWindowHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "confidentialityNotice" : {
+            "type" : "string"
+          },
+          "csvDelimiter" : {
+            "type" : "string"
+          },
+          "csvIncludeBom" : {
+            "type" : "boolean"
+          },
+          "dateFormat" : {
+            "type" : "string"
+          },
+          "defaultColumns" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "defaultFormat" : {
+            "type" : "string"
+          },
+          "defaultLocale" : {
+            "type" : "string"
+          },
+          "defaultSort" : {
+            "items" : {
+              "additionalProperties" : { },
+              "type" : "object"
+            },
+            "type" : "array"
+          },
+          "defaultTimeZone" : {
+            "type" : "string"
+          },
+          "deliveryModeDefault" : {
+            "type" : "string"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "externalDomainAllowlist" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "failureAdminUserIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "failureNotifyAdmins" : {
+            "type" : "boolean"
+          },
+          "fileRetentionDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "footerText" : {
+            "type" : "string"
+          },
+          "headerText" : {
+            "type" : "string"
+          },
+          "includeInactiveByDefault" : {
+            "type" : "boolean"
+          },
+          "maxAttachmentMb" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxConcurrentRuns" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxPdfRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRecipientsPerSchedule" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxRows" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerTenant" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxSchedulesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxTemplatesPerUser" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "minScheduleInterval" : {
+            "type" : "string"
+          },
+          "numberFormat" : {
+            "type" : "string"
+          },
+          "overLimitBehaviour" : {
+            "type" : "string"
+          },
+          "pauseAfterConsecutiveFailures" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pdfOrientation" : {
+            "type" : "string"
+          },
+          "pdfPageSize" : {
+            "type" : "string"
+          },
+          "schedulingEnabled" : {
+            "type" : "boolean"
+          },
+          "showFilterSummary" : {
+            "type" : "boolean"
+          },
+          "showGeneratedBy" : {
+            "type" : "boolean"
+          },
+          "showLogo" : {
+            "type" : "boolean"
+          },
+          "skipEmptyScheduledReports" : {
+            "type" : "boolean"
+          }
+        },
         "type" : "object"
       },
       "ResetPasswordRequest" : {
@@ -2878,6 +3890,283 @@
         },
         "type" : "object"
       },
+      "RunNowResponse" : {
+        "properties" : {
+          "runIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "RunRequest" : {
+        "properties" : {
+          "definition" : {
+            "$ref" : "#/components/schemas/ReportDefinition"
+          },
+          "filterOverrides" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Filter"
+            },
+            "type" : "array"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "RunResponse" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "downloadable" : {
+            "type" : "boolean"
+          },
+          "errorCode" : {
+            "type" : "string"
+          },
+          "errorMessage" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "finishedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "progressRows" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "rowCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "runId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "startedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "enum" : [ "queued", "running", "completed", "failed", "cancelled", "expired", "skipped" ],
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "trigger" : {
+            "type" : "string"
+          },
+          "truncated" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "ScheduleRequest" : {
+        "properties" : {
+          "dayOfMonth" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "daysOfWeek" : {
+            "items" : {
+              "format" : "int32",
+              "type" : "integer"
+            },
+            "type" : "array"
+          },
+          "deliveryChannels" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "deliveryMode" : {
+            "type" : "string"
+          },
+          "endDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "frequency" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "recipients" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Recipient"
+            },
+            "type" : "array"
+          },
+          "startDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "timeOfDay" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ScheduleResponse" : {
+        "properties" : {
+          "consecutiveFailures" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "dayOfMonth" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "daysOfWeek" : {
+            "items" : {
+              "format" : "int32",
+              "type" : "integer"
+            },
+            "type" : "array"
+          },
+          "deliveryChannels" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "deliveryMode" : {
+            "type" : "string"
+          },
+          "endDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "format" : {
+            "type" : "string"
+          },
+          "frequency" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastFailureCode" : {
+            "type" : "string"
+          },
+          "lastRunAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "nextRunAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "ownerUserId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "pauseReason" : {
+            "type" : "string"
+          },
+          "recipients" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Recipient"
+            },
+            "type" : "array"
+          },
+          "startDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "templateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "templateName" : {
+            "type" : "string"
+          },
+          "timeOfDay" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ScheduleRunResponse" : {
+        "properties" : {
+          "delivered" : {
+            "type" : "boolean"
+          },
+          "deliveryNote" : {
+            "type" : "string"
+          },
+          "failed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pending" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "run" : {
+            "$ref" : "#/components/schemas/RunResponse"
+          },
+          "sent" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "skipped" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "SchemaField" : {
         "properties" : {
           "dataType" : {
@@ -2945,6 +4234,30 @@
         },
         "type" : "object"
       },
+      "Settings" : {
+        "properties" : {
+          "automationEnabled" : {
+            "type" : "boolean"
+          },
+          "precedence" : {
+            "type" : "string"
+          },
+          "protectFromDeletion" : {
+            "type" : "boolean"
+          },
+          "requireStatusReason" : {
+            "type" : "boolean"
+          },
+          "versionGraceDays" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "whenNoPolicy" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ShredRequest" : {
         "properties" : {
           "acknowledgeUnencrypted" : {
@@ -2986,6 +4299,17 @@
           "wrappedKeysDeleted" : {
             "format" : "int64",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "Sort" : {
+        "properties" : {
+          "direction" : {
+            "type" : "string"
+          },
+          "field" : {
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -3048,6 +4372,115 @@
         "type" : "object"
       },
       "StreamingResponseBody" : { },
+      "TemplatePublishRequest" : {
+        "properties" : {
+          "audience" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Grant"
+            },
+            "type" : "array"
+          },
+          "locked" : {
+            "type" : "boolean"
+          },
+          "userEditableFilters" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "TemplateRequest" : {
+        "properties" : {
+          "definition" : {
+            "$ref" : "#/components/schemas/ReportDefinition"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "TemplateResponse" : {
+        "properties" : {
+          "access" : {
+            "type" : "string"
+          },
+          "activeSchedules" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "definition" : {
+            "$ref" : "#/components/schemas/ReportDefinition"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "grants" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Grant"
+            },
+            "type" : "array"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "locked" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "ownerName" : {
+            "type" : "string"
+          },
+          "ownerUserId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "scope" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "userEditableFilters" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "warnings" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "TemplateShareRequest" : {
+        "properties" : {
+          "grants" : {
+            "items" : {
+              "$ref" : "#/components/schemas/Grant"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
       "TenantProvisioningResponse" : {
         "properties" : {
           "admin" : {
@@ -3561,6 +4994,17 @@
             "type" : "string"
           },
           "severity" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "Value" : {
+        "properties" : {
+          "label" : {
+            "type" : "string"
+          },
+          "value" : {
             "type" : "string"
           }
         },
@@ -8075,6 +9519,1264 @@
         },
         "summary" : "Restore a deleted document to where it was",
         "tags" : [ "Recycle bin" ]
+      }
+    },
+    "/api/v1/reports/admin/fields" : {
+      "get" : {
+        "description" : "Built-in fields and the organisation's active custom fields, each with what it supports and the override (null when untouched).",
+        "operationId" : "fields",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminFieldResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Every field the report builder can offer, with the administrator's overrides",
+        "tags" : [ "Custom reports" ]
+      },
+      "put" : {
+        "description" : "A field not listed goes back to the code's defaults. An override can only restrict what a field supports. 422 REPORT_FIELD_SETTINGS_INVALID names each problem by field. Audited as REPORT_FIELD_SETTINGS_UPDATED with the changed fields' old and new values.",
+        "operationId" : "saveFields",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AdminFieldsUpdate"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminFieldResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace all field overrides in one transaction",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/principals" : {
+      "get" : {
+        "description" : "type=user|role, q = part of the name (or, for people, the email), limit up to 100. Active ones only. Needs only the report-administration permission, not the user-management ones.",
+        "operationId" : "principals",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "type",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/Option"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Search people or roles by name, for the administration pickers",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/runs" : {
+      "get" : {
+        "description" : "That it happened, for whom and how it ended - never its filters, its file or a way to download it: a report's data belongs to the person it was made for.",
+        "operationId" : "runs",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "queued", "running", "completed", "failed", "cancelled", "expired", "skipped" ],
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "requestedBy",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "templateId",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "scheduleId",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageable",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/components/schemas/Pageable"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseAdminRunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Every run in the organisation, metadata only",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/schedules" : {
+      "get" : {
+        "description" : "Owner, template, frequency, next run, status, last failure and how many recipients - not who they are. Filter by status, owner and template.",
+        "operationId" : "schedules",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "ownerUserId",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "templateId",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageable",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/components/schemas/Pageable"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseAdminScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Every schedule in the organisation, metadata only",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/schedules/{scheduleId}/cancel" : {
+      "post" : {
+        "description" : "Its history is kept.",
+        "operationId" : "cancel_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "Cancel any schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/schedules/{scheduleId}/pause" : {
+      "post" : {
+        "description" : "Its history is kept. Audited as REPORT_SCHEDULE_PAUSED with reason ADMIN.",
+        "operationId" : "pause_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pause any schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/schedules/{scheduleId}/reassign" : {
+      "post" : {
+        "description" : "The new owner must be active, may run reports, and can see the template (422 REASSIGN_OWNER_*); a schedule that sends to external addresses also needs an owner who may administer reports. A schedule paused because its owner left starts again.",
+        "operationId" : "reassign_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReassignRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Hand a schedule to another user",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/schedules/{scheduleId}/resume" : {
+      "post" : {
+        "description" : "409 SCHEDULE_OWNER_INACTIVE while its owner is gone: reassign it first.",
+        "operationId" : "resume_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "Resume a paused schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/settings" : {
+      "get" : {
+        "description" : "Every value is already capped at its ceiling; a limit the organisation never set shows the platform's.",
+        "operationId" : "settings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminSettingsResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The organisation's report settings as they are in force, with the platform ceilings",
+        "tags" : [ "Custom reports" ]
+      },
+      "put" : {
+        "description" : "The whole settings object is replaced. 422 REPORT_SETTINGS_INVALID names every field that is outside a platform ceiling or an allowed value. Audited as REPORT_SETTINGS_UPDATED with the old and new values; a save that changes nothing is not audited. Returns what is now in force.",
+        "operationId" : "saveSettings_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReportSettingsUpdate"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminSettingsResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace the organisation's report settings",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/admin/settings/sample" : {
+      "post" : {
+        "description" : "Five invented rows, no organisation data. The body is the (unsaved) settings; they are validated like a save (422 REPORT_SETTINGS_INVALID) and stored nowhere. format is pdf or csv.",
+        "operationId" : "sample",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "format",
+          "required" : false,
+          "schema" : {
+            "default" : "pdf",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReportSettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "format" : "byte",
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A sample file under the settings on screen, before they are saved",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/catalog" : {
+      "get" : {
+        "description" : "Only fields the organisation has left on are listed, with the filter operators each type allows. Settings are already capped at the platform ceilings. 403 REPORTS_DISABLED when reports are off for the organisation.",
+        "operationId" : "catalog",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CatalogResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The fields, operators, limits and defaults the caller's organisation has configured",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/catalog/fields/{key}/values" : {
+      "get" : {
+        "description" : "For a filter's picker: document types, departments, people, statuses, workflow stages and the options of custom dropdown fields. `q` searches the label; a page holds at most 50 and `hasMore` says whether to ask for the next, so a large organisation's people are never sent in one answer. 404 REPORT_FIELD_NOT_FOUND for a field that is not in the organisation's catalogue; 422 REPORT_FIELD_HAS_NO_CHOICES for a typed field.",
+        "operationId" : "fieldValues",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "key",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FieldValuesResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The values a choice or reference field can take, one searchable page at a time",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/preview" : {
+      "post" : {
+        "description" : "Runs the same query a real run would, limited to documents the caller can open: totals only count visible rows and no count of hidden ones is ever returned (limitedToAccess just says the result is narrowed). A slow query is cut off at the preview timeout and answered with timedOut=true. 422 with a stable code and the offending field when the definition is not valid; 403 REPORT_DOCUMENT_ACCESS_REQUIRED without access to documents.",
+        "operationId" : "preview",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReportDefinition"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PreviewResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A visible-row total and the first 50 rows of a report definition",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/runs" : {
+      "get" : {
+        "description" : "Defaults to the last 30 days. Filter by status (queued, running, completed, failed, cancelled, expired, skipped), template and the earliest creation time.",
+        "operationId" : "list_3",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "queued", "running", "completed", "failed", "cancelled", "expired", "skipped" ],
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "templateId",
+          "required" : false,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageable",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/components/schemas/Pageable"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseRunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The caller's own runs, newest first",
+        "tags" : [ "Custom reports" ]
+      },
+      "post" : {
+        "description" : "Always asynchronous: answers 202 with the run, and a worker produces the file. Poll GET /runs/{id}, or wait for the notification. Needs the run permission, and the build permission when the definition is the caller's own. 422 with a stable code for an invalid definition or a format the organisation has not enabled; 429 REPORT_RATE_LIMITED when the caller or their organisation already has too many running.",
+        "operationId" : "create_4",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Ask for a report file to be generated",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/runs/{runId}" : {
+      "get" : {
+        "description" : "404 REPORT_RUN_NOT_FOUND for a run that is someone else's - exactly as for one that does not exist.",
+        "operationId" : "get_9",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "runId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Status, progress, row count and error of one of the caller's runs",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/runs/{runId}/cancel" : {
+      "post" : {
+        "description" : "409 REPORT_RUN_STATE_INVALID once it has finished.",
+        "operationId" : "cancel_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "runId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Cancel one of the caller's runs while it is queued or running",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/runs/{runId}/download" : {
+      "get" : {
+        "description" : "Streams the file after checking again that it is the caller's, that they still hold the run permission and access to documents, and that reports are still on for their organisation. 410 REPORT_EXPIRED once the file has expired; 409 REPORT_NOT_READY while it is being made; 404 REPORT_NO_FILE for a report that found no data. Audited as REPORT_DOWNLOADED.",
+        "operationId" : "download",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "runId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StreamingResponseBody"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Download a finished report file",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/runs/{runId}/retry" : {
+      "post" : {
+        "description" : "Creates a new run from the failed run's snapshot, on current data and with the caller's current access. 409 REPORT_RUN_NOT_RETRYABLE unless it is the caller's own failed run.",
+        "operationId" : "retry",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "runId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Run the same report again after a failure",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules" : {
+      "get" : {
+        "operationId" : "list_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ScheduleResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The caller's own schedules (cancelled ones excluded)",
+        "tags" : [ "Custom reports" ]
+      },
+      "post" : {
+        "description" : "Daily, weekly (days of the week) or monthly (a day, or the last day), at a time of day in an IANA time zone. Recipients are people, roles or departments - each gets the report under THEIR OWN access - or external addresses, which get it under YOUR access as an attachment and need the report-administration permission. 422 SCHEDULE_INVALID lists each problem by field; 409 SCHEDULE_LIMIT_REACHED at the per-person limit.",
+        "operationId" : "create_3",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ScheduleRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Schedule a template",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules/{scheduleId}" : {
+      "delete" : {
+        "description" : "Its history is kept.",
+        "operationId" : "cancel",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "Cancel a schedule",
+        "tags" : [ "Custom reports" ]
+      },
+      "get" : {
+        "description" : "404 SCHEDULE_NOT_FOUND for someone else's schedule.",
+        "operationId" : "get_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "One schedule",
+        "tags" : [ "Custom reports" ]
+      },
+      "put" : {
+        "description" : "Everything is checked again as for a new one. Failures so far are forgotten. A schedule paused after repeated failures stays paused until it is resumed.",
+        "operationId" : "update_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ScheduleRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace a schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules/{scheduleId}/pause" : {
+      "post" : {
+        "description" : "No runs until it is resumed. Nothing is deleted.",
+        "operationId" : "pause",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pause a schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules/{scheduleId}/resume" : {
+      "post" : {
+        "description" : "The next run is worked out from now; missed slots are not made up.",
+        "operationId" : "resume",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Resume a paused schedule",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules/{scheduleId}/run-now" : {
+      "post" : {
+        "description" : "Delivers exactly as a scheduled run would, to the same recipients, and does not move the next run. 422 SCHEDULE_CANNOT_RUN says why when it cannot (e.g. the template is gone).",
+        "operationId" : "runNow_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunNowResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Run a schedule once, now",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/schedules/{scheduleId}/runs" : {
+      "get" : {
+        "description" : "Each run with what happened to its deliveries - counts of sent, failed, pending and skipped, never addresses.",
+        "operationId" : "history",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "scheduleId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pageable",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/components/schemas/Pageable"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseScheduleRunResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A schedule's run history, newest first",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates" : {
+      "get" : {
+        "description" : "Their own, those shared with them (through them, one of their roles or their department) and the organisation's official ones. `access` says what they may do: owner, edit or run. `warnings` lists fields an administrator has since switched off - the template still runs without them.",
+        "operationId" : "list_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TemplateResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The templates the caller may see or run",
+        "tags" : [ "Custom reports" ]
+      },
+      "post" : {
+        "description" : "The definition is checked against the organisation's field catalogue. 409 TEMPLATE_NAME_TAKEN for a name you already use (case-insensitive); 409 TEMPLATE_LIMIT_REACHED at the organisation's per-person limit.",
+        "operationId" : "create_2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemplateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Save a definition as a private template",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates/{templateId}" : {
+      "delete" : {
+        "description" : "409 TEMPLATE_HAS_SCHEDULES with the number of schedules while any are active or paused. `cancelSchedules=true` cancels them in the same transaction.",
+        "operationId" : "delete_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "cancelSchedules",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "Delete a template (soft delete)",
+        "tags" : [ "Custom reports" ]
+      },
+      "get" : {
+        "description" : "404 TEMPLATE_NOT_FOUND for a template the caller may not see, exactly as for one that does not exist.",
+        "operationId" : "get_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "One template",
+        "tags" : [ "Custom reports" ]
+      },
+      "put" : {
+        "description" : "For the owner and anyone it was shared with for editing; an official template needs the publish permission. 403 TEMPLATE_READ_ONLY when it was shared to run only.",
+        "operationId" : "update_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemplateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace a template's name, description and definition",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates/{templateId}/duplicate" : {
+      "post" : {
+        "description" : "Works on anything the caller may see, except a locked official template (403 TEMPLATE_LOCKED) unless they can publish. The optional name defaults to \"<name> (copy)\".",
+        "operationId" : "duplicate",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "name",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Save a copy as the caller's own private template",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates/{templateId}/publish" : {
+      "post" : {
+        "description" : "The template then has no owner, so it outlives its author. Optionally locked (people can run it and change only the filters you list) and limited to an audience; with no audience it is for everyone who may run reports.",
+        "operationId" : "publish",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemplatePublishRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Publish the caller's template as the organisation's own",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates/{templateId}/share" : {
+      "post" : {
+        "description" : "Owner only. Each grant is a user, role or department with access `run` or `edit`. An empty list makes the template private again. Audited as REPORT_TEMPLATE_SHARED with a count, not the names.",
+        "operationId" : "share",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemplateShareRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace who a template is shared with",
+        "tags" : [ "Custom reports" ]
+      }
+    },
+    "/api/v1/reports/templates/{templateId}/unpublish" : {
+      "post" : {
+        "description" : "409 TEMPLATE_NAME_TAKEN if the caller already has a template with that name.",
+        "operationId" : "unpublish",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "templateId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Take an official template back as the caller's private one",
+        "tags" : [ "Custom reports" ]
       }
     },
     "/api/v1/roles" : {

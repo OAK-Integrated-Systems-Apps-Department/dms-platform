@@ -61,6 +61,13 @@ public class NotificationRequest {
      */
     private final boolean requireViewPermission;
 
+    /**
+     * Do not send the platform email for this notification: the caller delivers the same thing by email itself (Reports, when a
+     * schedule uses both the in-app and the email channel). The inbox entry is still written; the email delivery is recorded as
+     * skipped with the reason {@code sent_by_other_channel}. Off by default.
+     */
+    private final boolean suppressEmail;
+
     /** Optional per-recipient content override, applied after the access check. */
     private final Function<UUID, RecipientContent> perRecipientContent;
 

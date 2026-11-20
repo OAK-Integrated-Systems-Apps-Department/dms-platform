@@ -25,7 +25,7 @@ describe("EditingSettingsCard", () => {
     settings = { ...base, enabled: true, mode: "simultaneous" }
     render(<EditingSettingsCard canEdit />)
 
-    expect(screen.getByRole("switch", { name: "Online editing" })).toBeChecked()
+    expect(screen.getByRole("switch", { name: /^Online editing/ })).toBeChecked()
     expect(screen.getByRole("radio", { name: "Together" })).toHaveAttribute("aria-checked", "true")
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
   })
@@ -33,7 +33,7 @@ describe("EditingSettingsCard", () => {
   it("turning it on and choosing a mode saves exactly that", () => {
     render(<EditingSettingsCard canEdit />)
 
-    fireEvent.click(screen.getByRole("switch", { name: "Online editing" }))
+    fireEvent.click(screen.getByRole("switch", { name: /^Online editing/ }))
     fireEvent.click(screen.getByRole("radio", { name: "Together" }))
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
@@ -44,7 +44,7 @@ describe("EditingSettingsCard", () => {
     settings = { ...base, engineConfigured: false }
     render(<EditingSettingsCard canEdit />)
 
-    expect(screen.getByRole("switch", { name: "Online editing" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("switch", { name: /^Online editing/ })).toHaveAttribute("aria-disabled", "true")
     expect(screen.getByText(/no editing engine set up/i)).toBeInTheDocument()
   })
 
@@ -52,7 +52,7 @@ describe("EditingSettingsCard", () => {
     settings = { ...base, enabled: true, engineConfigured: false }
     render(<EditingSettingsCard canEdit />)
 
-    const toggle = screen.getByRole("switch", { name: "Online editing" })
+    const toggle = screen.getByRole("switch", { name: /^Online editing/ })
     expect(toggle).not.toHaveAttribute("aria-disabled", "true")
     fireEvent.click(toggle)
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
@@ -62,7 +62,7 @@ describe("EditingSettingsCard", () => {
   it("is read-only without the select-provider permission", () => {
     render(<EditingSettingsCard canEdit={false} />)
 
-    expect(screen.getByRole("switch", { name: "Online editing" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("switch", { name: /^Online editing/ })).toHaveAttribute("aria-disabled", "true")
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     expect(screen.getByText(/see this setting but not change it/i)).toBeInTheDocument()
   })
@@ -72,7 +72,7 @@ describe("EditingSettingsCard", () => {
     render(<EditingSettingsCard canEdit />)
 
     expect(screen.getByText(/isn.t available to your organisation/)).toBeInTheDocument()
-    expect(screen.queryByRole("switch", { name: "Online editing" })).toBeNull()
+    expect(screen.queryByRole("switch", { name: /^Online editing/ })).toBeNull()
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull()
   })
 
@@ -80,7 +80,7 @@ describe("EditingSettingsCard", () => {
     settings = { ...base, allowedByPlatform: true }
     render(<EditingSettingsCard canEdit />)
 
-    expect(screen.getByRole("switch", { name: "Online editing" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: /^Online editing/ })).toBeInTheDocument()
     expect(screen.queryByText(/isn.t available to your organisation/)).toBeNull()
   })
 })

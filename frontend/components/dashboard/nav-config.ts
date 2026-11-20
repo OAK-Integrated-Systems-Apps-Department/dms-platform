@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Archive,
+  FileBarChart,
   Hourglass,
   ScanEye,
   UserCog,
@@ -124,6 +125,14 @@ export const navSections: NavSection[] = [
         icon: Archive,
         href: "/documents/archive",
         permission: PermissionCodes.CRM_VIEW_ARCHIVE,
+      },
+      // 5.3: configurable reports over documents - shown only while the organisation has reports switched on.
+      {
+        label: "Reports",
+        icon: FileBarChart,
+        href: "/reports",
+        feature: "reports",
+        permission: [PermissionCodes.CRG_RUN, PermissionCodes.CRG_BUILD],
       },
       {
         label: "Recycle Bin",
@@ -416,6 +425,13 @@ export const navSections: NavSection[] = [
               PermissionCodes.CRM_CONFIGURE_RETENTION,
               PermissionCodes.CRM_REVIEW_RETENTION,
             ],
+          },
+          // Custom reports (5.3): what people may build, run, schedule and see; their limits, branding and delivery.
+          {
+            label: "Reports",
+            icon: FileBarChart,
+            href: "/admin/reports",
+            permission: [PermissionCodes.CRG_CONFIGURE_REPORTS],
           },
           // Online editing (2.10): turn it on for the organisation and choose exclusive or simultaneous (CICO-FR-010).
           {

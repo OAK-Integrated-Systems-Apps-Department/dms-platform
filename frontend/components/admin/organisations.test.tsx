@@ -382,7 +382,7 @@ describe("Organisations: the platform administrator allows or stops online editi
     Object.values(mocks).forEach((mock) => mock.mockReset())
   })
 
-  const toggle = (name: string) => screen.findByRole("switch", { name: `Online editing for ${name}` })
+  const toggle = (name: string) => screen.findByRole("switch", { name: new RegExp(`^Online editing for ${name}`) })
 
   it("shows, per organisation, whether online editing is allowed", async () => {
     renderScreen([org(), org({ tenantId: "t2", tenantName: "Beta Ltd", domain: "beta.example.com" })], [], ["t2"])
@@ -439,7 +439,7 @@ describe("Organisations: the platform administrator allows or stops online editi
     expect(screen.getByRole("alertdialog")).toBeTruthy()
     expect((within(screen.getByRole("alertdialog")).getByLabelText("Your password") as HTMLInputElement).value).toBe("")
     // The page behind an open dialog is inert, so it is looked up as hidden.
-    expect(screen.getByRole("switch", { name: "Online editing for Acme Ltd", hidden: true })).not.toBeChecked()
+    expect(screen.getByRole("switch", { name: /^Online editing for Acme Ltd/, hidden: true })).not.toBeChecked()
   })
 
   it("cancelling changes nothing", async () => {

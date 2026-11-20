@@ -43,6 +43,9 @@ import java.util.UUID;
 @Transactional
 public class RolePermissionServiceImpl implements RolePermissionService {
 
+    private static final String DOCUMENT_VIEW = "docm.documents.view";
+    private static final String CRG_RUN = com.oak.dms.security.rbac.catalog.PermissionCodes.CRG_RUN;
+
     private final RolePermissionRepository rolePermissionRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
@@ -90,7 +93,45 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                         "resourceScope", request.resourceScope() == null ? "" : request.resourceScope()))
                 .log();
 
+        grantDefaultReportRun(role, permission, request.resourceScope());
+
         return rolePermissionMapper.toResponse(saved, permission.getPermissionCode());
+    }
+
+    /**
+     * Custom Report Generation default (V139): whoever can see documents can run a report they were given, so a role
+     * granted {@code docm.documents.view} also gets {@code crg.generate-custom-reports.run} (same scope) unless it already
+     * has it. Additive only - the grant just made is unchanged, and an administrator can still revoke the run grant.
+     */
+    private void grantDefaultReportRun(Role role, Permission granted, String resourceScope) {
+        if (!DOCUMENT_VIEW.equals(granted.getPermissionCode())) {
+            return;
+        }
+        permissionRepository.findByPermissionCodeAndTenantIdIsNullAndDeletedFalse(CRG_RUN).ifPresent(run -> {
+            if (rolePermissionRepository.existsByRoleIdAndPermissionIdAndResourceScope(
+                    role.getRoleId(), run.getPermissionId(), resourceScope)) {
+                return;
+            }
+            RolePermission extra = rolePermissionRepository.save(RolePermission.builder()
+                    .tenantId(role.getTenantId())
+                    .roleId(role.getRoleId())
+                    .permissionId(run.getPermissionId())
+                    .resourceScope(resourceScope)
+                    .build());
+            log.info("Granted default permission {} to role {} alongside {}", CRG_RUN, role.getRoleId(), DOCUMENT_VIEW);
+            auditService.event(AuditActionCatalog.ROLE_PERMISSION_ASSIGNED)
+                    .objectType(AuditObjectTypes.ROLE_PERMISSION)
+                    .objectId(extra.getRolePermissionId())
+                    .resourceName(CRG_RUN)
+                    .permissionCode(CRG_RUN)
+                    .outcome(AuditOutcome.SUCCESS)
+                    .newValue(Map.of(
+                            "roleId", role.getRoleId(),
+                            "permissionCode", CRG_RUN,
+                            "resourceScope", resourceScope == null ? "" : resourceScope,
+                            "reason", "default alongside " + DOCUMENT_VIEW))
+                    .log();
+        });
     }
 
     @Override

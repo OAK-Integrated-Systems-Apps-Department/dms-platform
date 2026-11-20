@@ -40,22 +40,22 @@ describe("RetentionSettingsCard", () => {
   it("shows the organisation's settings and offers no save until something changes", () => {
     granted = [CONFIGURE]
     render(<RetentionSettingsCard />)
-    expect(screen.getByRole("switch", { name: "Run retention automatically" })).toBeChecked()
+    expect(screen.getByRole("switch", { name: /^Run retention automatically/ })).toBeChecked()
     expect(screen.getByRole("radio", { name: "Longest retention" })).toHaveAttribute("aria-checked", "true")
     expect(screen.getByRole("radio", { name: "Flag it for an administrator" })).toHaveAttribute("aria-checked", "true")
     expect(screen.getByLabelText("Days a removed version stays restorable")).toHaveValue(30)
-    expect(screen.getByRole("switch", { name: "Protect documents from deletion during retention" })).not.toBeChecked()
+    expect(screen.getByRole("switch", { name: /^Protect documents from deletion during retention/ })).not.toBeChecked()
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
   })
 
   it("saves exactly what was changed - every setting, including how long removed versions stay restorable", () => {
     granted = [CONFIGURE]
     render(<RetentionSettingsCard />)
-    fireEvent.click(screen.getByRole("switch", { name: "Run retention automatically" }))
+    fireEvent.click(screen.getByRole("switch", { name: /^Run retention automatically/ }))
     fireEvent.click(screen.getByRole("radio", { name: "Most specific rule" }))
     fireEvent.click(screen.getByRole("radio", { name: "Leave it alone" }))
-    fireEvent.click(screen.getByRole("switch", { name: "Require a reason for status changes" }))
-    fireEvent.click(screen.getByRole("switch", { name: "Protect documents from deletion during retention" }))
+    fireEvent.click(screen.getByRole("switch", { name: /^Require a reason for status changes/ }))
+    fireEvent.click(screen.getByRole("switch", { name: /^Protect documents from deletion during retention/ }))
     fireEvent.change(screen.getByLabelText("Days a removed version stays restorable"), { target: { value: "90" } })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(save).toHaveBeenCalledWith({
@@ -70,7 +70,7 @@ describe("RetentionSettingsCard", () => {
 
   it("someone without the configure permission can look but not change or run anything", () => {
     render(<RetentionSettingsCard />)
-    expect(screen.getByRole("switch", { name: "Run retention automatically" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("switch", { name: /^Run retention automatically/ })).toHaveAttribute("aria-disabled", "true")
     expect(screen.getByLabelText("Days a removed version stays restorable")).toBeDisabled()
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     expect(screen.queryByRole("button", { name: "Apply rules now" })).not.toBeInTheDocument()

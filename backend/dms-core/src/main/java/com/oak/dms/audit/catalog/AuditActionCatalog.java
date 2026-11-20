@@ -247,6 +247,26 @@ public final class AuditActionCatalog {
     public static final String RETENTION_POLICY_DELETED = "RETENTION_POLICY_DELETED";
     public static final String RETENTION_SETTINGS_CHANGED = "RETENTION_SETTINGS_CHANGED";
     public static final String RETENTION_RUN_REQUESTED = "RETENTION_RUN_REQUESTED";
+    // 5.3 Custom Report Generation (CRG) - see docs/events/report-audit-events.md. Payloads never carry filter values,
+    // row content, file names or recipient addresses.
+    public static final String REPORT_RUN_REQUESTED = "REPORT_RUN_REQUESTED";
+    public static final String REPORT_GENERATED = "REPORT_GENERATED";
+    public static final String REPORT_FAILED = "REPORT_FAILED";
+    public static final String REPORT_DOWNLOADED = "REPORT_DOWNLOADED";
+    public static final String REPORT_TEMPLATE_CREATED = "REPORT_TEMPLATE_CREATED";
+    public static final String REPORT_TEMPLATE_UPDATED = "REPORT_TEMPLATE_UPDATED";
+    public static final String REPORT_TEMPLATE_DELETED = "REPORT_TEMPLATE_DELETED";
+    public static final String REPORT_TEMPLATE_SHARED = "REPORT_TEMPLATE_SHARED";
+    public static final String REPORT_TEMPLATE_PUBLISHED = "REPORT_TEMPLATE_PUBLISHED";
+    public static final String REPORT_SCHEDULE_CREATED = "REPORT_SCHEDULE_CREATED";
+    public static final String REPORT_SCHEDULE_UPDATED = "REPORT_SCHEDULE_UPDATED";
+    public static final String REPORT_SCHEDULE_PAUSED = "REPORT_SCHEDULE_PAUSED";
+    public static final String REPORT_SCHEDULE_RESUMED = "REPORT_SCHEDULE_RESUMED";
+    public static final String REPORT_SCHEDULE_CANCELLED = "REPORT_SCHEDULE_CANCELLED";
+    public static final String REPORT_SCHEDULE_RUN_SKIPPED = "REPORT_SCHEDULE_RUN_SKIPPED";
+    public static final String REPORT_DELIVERED = "REPORT_DELIVERED";
+    public static final String REPORT_SETTINGS_UPDATED = "REPORT_SETTINGS_UPDATED";
+    public static final String REPORT_FIELD_SETTINGS_UPDATED = "REPORT_FIELD_SETTINGS_UPDATED";
     public static final String DOCUMENT_VERSIONS_REMOVED = "DOCUMENT_VERSIONS_REMOVED";
     public static final String RETENTION_VERSION_RESTORED = "RETENTION_VERSION_RESTORED";
     public static final String DOCUMENT_VERSIONS_DESTROYED = "DOCUMENT_VERSIONS_DESTROYED";
@@ -637,6 +657,26 @@ public final class AuditActionCatalog {
             Map.entry(RETENTION_POLICY_DELETED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
             Map.entry(RETENTION_SETTINGS_CHANGED, new AuditActionSpec("CRM", AuditSeverity.HIGH, false)),
             Map.entry(RETENTION_RUN_REQUESTED, new AuditActionSpec("CRM", AuditSeverity.MEDIUM, false)),
+            Map.entry(REPORT_RUN_REQUESTED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_GENERATED, new AuditActionSpec("CRG", AuditSeverity.MEDIUM, false)),
+            Map.entry(REPORT_FAILED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_DOWNLOADED, new AuditActionSpec("CRG", AuditSeverity.MEDIUM, false)),
+            Map.entry(REPORT_TEMPLATE_CREATED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_TEMPLATE_UPDATED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_TEMPLATE_DELETED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_TEMPLATE_SHARED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_TEMPLATE_PUBLISHED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_CREATED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_UPDATED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_PAUSED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_RESUMED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_CANCELLED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            Map.entry(REPORT_SCHEDULE_RUN_SKIPPED, new AuditActionSpec("CRG", AuditSeverity.LOW, false)),
+            // MEDIUM for every delivery: the brief wants external deliveries (a data-exit path) at MEDIUM, and severity is fixed per
+            // action here (the event builder has no override), so internal deliveries are MEDIUM too rather than the exit path LOW.
+            Map.entry(REPORT_DELIVERED, new AuditActionSpec("CRG", AuditSeverity.MEDIUM, false)),
+            Map.entry(REPORT_SETTINGS_UPDATED, new AuditActionSpec("CRG", AuditSeverity.MEDIUM, false)),
+            Map.entry(REPORT_FIELD_SETTINGS_UPDATED, new AuditActionSpec("CRG", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_VERSIONS_REMOVED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
             Map.entry(RETENTION_VERSION_RESTORED, new AuditActionSpec("DVC", AuditSeverity.MEDIUM, false)),
             Map.entry(DOCUMENT_VERSIONS_DESTROYED, new AuditActionSpec("DVC", AuditSeverity.HIGH, false)),
