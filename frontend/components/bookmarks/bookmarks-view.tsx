@@ -163,7 +163,7 @@ function EditNoteDialog({
  * off the list and counted in the notice below instead - it reappears on its own once the document
  * comes back (BD-FR-010).
  *
- * Grid and list views, the same toggle (and the same remembered preference, shared with My Documents
+ * Grid and list views, the same toggle (and the same remembered preference, shared with Documents
  * and Shared with me) as the rest of the document screens.
  */
 export function BookmarksView() {
@@ -228,7 +228,7 @@ export function BookmarksView() {
 
   const empty = query.trim()
     ? "None of your bookmarks match your search."
-    : "You haven't bookmarked anything yet. Use the bookmark icon on any document - in My Documents, its preview, or its own page - to add one here."
+    : "You haven't bookmarked anything yet. Use the bookmark icon on any document - in Documents, its preview, or its own page - to add one here."
 
   return (
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">

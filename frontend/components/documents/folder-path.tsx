@@ -22,8 +22,8 @@ const SEGMENT =
   "inline-flex max-w-[220px] items-center gap-1.5 rounded-btn px-2 py-1 text-[14px] transition-colors"
 
 /**
- * Where you are in My Documents: an "up one level" button, then
- * My Documents › Finance › Invoices, the current folder last and bold.
+ * Where you are in Documents: an "up one level" button, then
+ * Documents › Finance › Invoices, the current folder last and bold.
  * Long paths keep the first folder and the last two, with the rest in a
  * "…" menu. `summary` (e.g. "2 folders · 5 documents") sits on the right.
  */
@@ -37,7 +37,7 @@ export function FolderPath({
   trail: FolderNode[]
   onOpen: (folderId: string | null) => void
   summary?: string
-  /** Drop onto a folder further up the path (null = My Documents) to move or upload there. */
+  /** Drop onto a folder further up the path (null = Documents) to move or upload there. */
   dropTarget?: (folder: FolderNode | null) => DropBinding | undefined
 }) {
   const current = trail.at(-1)
@@ -77,7 +77,7 @@ export function FolderPath({
                 )}
               >
                 <House size={15} className="shrink-0" />
-                My Documents
+                Documents
               </button>
             ) : (
               <span
@@ -85,7 +85,7 @@ export function FolderPath({
                 className={cn(SEGMENT, "font-semibold text-foreground")}
               >
                 <House size={15} className="shrink-0 text-primary" />
-                My Documents
+                Documents
               </span>
             )}
           </li>

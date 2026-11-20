@@ -60,7 +60,7 @@ describe("TopbarSearch", () => {
     await typeAndWait("contract")
     await screen.findByText("Supplier contract")
     expect(screen.queryByText(/See all results/)).toBeNull()
-    expect(screen.getByText("Browse My Documents")).toBeInTheDocument()
+    expect(screen.getByText("Browse Documents")).toBeInTheDocument()
   })
 
   it("people with it get 'See all results', which opens the search page with their words", async () => {

@@ -161,11 +161,11 @@ export function PinnedDocumentsView() {
     : filter === "others"
       ? "Nobody has pinned a document for you."
       : filter === "mine"
-        ? "You haven't pinned anything. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
-        : "Nothing pinned yet. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
+        ? "You haven't pinned anything. Use Pin on any document in Documents, in its preview, or on its own page, and choose who sees it."
+        : "Nothing pinned yet. Use Pin on any document in Documents, in its preview, or on its own page, and choose who sees it."
 
   return (
-    // Fills the window down to the bottom, like My Documents, so the empty state
+    // Fills the window down to the bottom, like Documents, so the empty state
     // is a full-height box instead of a thin strip under the toolbar.
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 shadow-[var(--ledger-shadow)]">

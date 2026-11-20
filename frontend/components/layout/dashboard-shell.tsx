@@ -45,7 +45,7 @@ interface DashboardShellProps {
  */
 export function DashboardShell({
   children,
-  initialActiveLabel = "My Documents",
+  initialActiveLabel = "Documents",
   fillHeight = false,
 }: DashboardShellProps) {
   const [activeLabel, setActiveLabel] = useState(initialActiveLabel)

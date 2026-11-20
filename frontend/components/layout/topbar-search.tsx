@@ -226,7 +226,7 @@ export function TopbarSearch({
             className="flex w-full items-center gap-2 border-t border-border px-3.5 py-2.5 text-left text-[12.5px] font-semibold text-primary hover:bg-muted"
           >
             <FolderOpen size={14} />
-            Browse My Documents
+            Browse Documents
           </button>
         </div>
       )}

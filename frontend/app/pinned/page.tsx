@@ -25,7 +25,7 @@ export default function PinnedDocumentsPage() {
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
           The documents you pinned and the ones other people pinned for you.
-          Pin one from My Documents, its preview or its own page, and choose who
+          Pin one from Documents, its preview or its own page, and choose who
           sees it. Only the person who pinned a document can unpin it.
         </p>
       </div>

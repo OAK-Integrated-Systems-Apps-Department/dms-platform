@@ -21,7 +21,7 @@ export default function MyBookmarksPage() {
           My Bookmarks
         </h1>
         <p className="text-[13.5px] leading-[1.6] text-muted-foreground">
-          Private shortcuts only you can see. Bookmark a document from My Documents, its preview, its
+          Private shortcuts only you can see. Bookmark a document from Documents, its preview, its
           own page, search results or Shared with me, and find it again here.
         </p>
       </div>

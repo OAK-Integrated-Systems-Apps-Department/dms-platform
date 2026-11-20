@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { fileKind } from "@/components/documents/browser-items"
+import { CenteredLoader } from "@/components/ui/centered-loader"
 import {
   ACTIVE_STATES,
   cancelAllUploads,
@@ -134,6 +135,11 @@ export function UploadsPanel() {
       aria-label="Uploads and downloads"
       className="fixed right-4 bottom-4 z-50 w-[380px] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
     >
+      {/* The growing tree, centred on the page, while the virus scanner is the only thing still working. */}
+      <CenteredLoader
+        active={busy && active.every((j) => j.state === "scanning")}
+        message="Checking for viruses…"
+      />
       <header className="flex items-center gap-2 bg-muted/60 py-2.5 pr-2 pl-4">
         <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">
           {title}

@@ -56,7 +56,7 @@ export default function SavedReviewsPage() {
         className="mb-3"
         segments={[
           { label: "Dashboard", href: "/" },
-          { label: "My Documents", href: "/documents" },
+          { label: "Documents", href: "/documents" },
           { label: "Saved reviews" },
         ]}
       />

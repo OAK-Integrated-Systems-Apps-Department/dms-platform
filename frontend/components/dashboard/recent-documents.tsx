@@ -87,7 +87,7 @@ export function RecentDocuments({
           icon={FileText}
           title="No documents yet"
           text="Documents you upload, or that people give you access to, will show up here."
-          action={{ href: "/documents", label: "Go to My Documents" }}
+          action={{ href: "/documents", label: "Go to Documents" }}
         />
       ) : (
         <>

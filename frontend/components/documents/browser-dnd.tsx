@@ -12,7 +12,7 @@ import {
 import type { FolderNode } from "@/lib/folders/api"
 import { cn } from "@/lib/utils"
 
-/** What's being dragged around inside My Documents. */
+/** What's being dragged around inside Documents. */
 export interface DragItems {
   documents: DocumentListItemDto[]
   folders: FolderNode[]
@@ -110,7 +110,7 @@ export function useBrowserDragDrop({
     target: FolderNode | null,
     filesOnly: boolean
   ): DropBinding {
-    const name = target?.name ?? "My Documents"
+    const name = target?.name ?? "Documents"
     const accepts = (e: DragEvent<HTMLElement>) =>
       moving
         ? !filesOnly && canMoveInto(moving, target)
@@ -160,7 +160,7 @@ export function useBrowserDragDrop({
   return {
     /** The open folder's whole area - files dropped anywhere on it upload here. */
     area: bind(HERE, here, true),
-    /** A folder tile/row, or a folder (null = My Documents) in the path. */
+    /** A folder tile/row, or a folder (null = Documents) in the path. */
     target: (folder: FolderNode | null) =>
       bind(folder?.folderId ?? TOP, folder, false),
     /** Makes these items draggable; undefined when there's nothing the user may move. */
