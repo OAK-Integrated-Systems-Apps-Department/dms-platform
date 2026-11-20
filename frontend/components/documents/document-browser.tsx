@@ -42,6 +42,7 @@ import {
   DocumentTile,
   FolderTile,
   type ItemAction,
+  ItemMenu,
 } from "@/components/documents/browser-items"
 import {
   countLabel,
@@ -861,16 +862,14 @@ function FolderView({
           </span>
         </div>
       )}
-      <div className="mb-4 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
-        <div className="border-b border-border px-4 py-2">
-          <FolderPath
-            trail={trail}
-            onOpen={open}
-            summary={summary}
-            dropTarget={dnd.target}
+      <div className="mb-3 rounded-lg border border-border bg-card shadow-[var(--ledger-shadow)]">
+        {/* One row: where you are, what you can do here, then the counts, search and view. It wraps on narrow screens. */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-3 py-1.5">
+          <FolderPath trail={trail} onOpen={open} dropTarget={dnd.target} />
+          <span
+            aria-hidden="true"
+            className="mx-1.5 hidden h-5 w-px bg-border sm:block"
           />
-        </div>
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           {can.createFolder && canEditHere && !missing && (
             <Button
               variant="ghost"
@@ -917,16 +916,6 @@ function FolderView({
               else toast.error("That folder has no files to upload.")
             }}
           />
-          {current && can.export && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => downloadFolder(current)}
-            >
-              <Download />
-              Download
-            </Button>
-          )}
           {!missing && (
             <Button
               variant="ghost"
@@ -937,47 +926,22 @@ function FolderView({
               New from template
             </Button>
           )}
-          {current && can.share && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setDialog({
-                  kind: "share",
-                  target: {
-                    kind: "folder",
-                    id: current.folderId,
-                    name: current.name,
-                  },
-                  key: Date.now(),
-                })
-              }
-            >
-              <Share2 />
-              Share
-            </Button>
-          )}
-          {current && can.seeAccess && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setDialog({
-                  kind: "access",
-                  target: {
-                    kind: "folder",
-                    id: current.folderId,
-                    name: current.name,
-                  },
-                  key: Date.now(),
-                })
-              }
-            >
-              <ShieldCheck />
-              Manage access
-            </Button>
+          {/* Folder-level actions (download as a ZIP, share, who has access) sit in a menu so the toolbar stays on one line. */}
+          {current && (
+            <ItemMenu
+              label={current.name}
+              buttonLabel="Folder actions"
+              actions={folderActions(current).filter((action) =>
+                ["Download", "Share", "Manage access"].includes(action.label)
+              )}
+            />
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {summary && (
+              <span className="hidden text-[12.5px] whitespace-nowrap text-muted-foreground 2xl:inline">
+                {summary}
+              </span>
+            )}
             <SearchInput
               value={query}
               onChange={(value) => {
