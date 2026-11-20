@@ -371,6 +371,11 @@
               DocumentUploadOcrQueueingIT: both need an upload to be scanned clean
               before the call returns).
               Run those locally with -Dit.test=... against the full compose stack.
+              Six more ITs need clamd the same way (IngestionZipLimitsIT, ConcurrentVersionUploadIT,
+              BulkImportConcurrencyIT, IngestionFailureCleanupIT, VersionPromotionRefusalIT,
+              WopiSaveSpoolIT). They are excluded here, NOT dropped: the integration-clamav job in
+              .github/workflows/ci.yml runs them against a real clamd, and that job's -Dtest list and
+              these excludes must stay in step.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -386,6 +391,12 @@
                         <exclude>**/PermissionCodeAuditIT.java</exclude>
                         <exclude>**/DocumentUploadIT.java</exclude>
                         <exclude>**/DocumentUploadOcrQueueingIT.java</exclude>
+                        <exclude>**/IngestionZipLimitsIT.java</exclude>
+                        <exclude>**/ConcurrentVersionUploadIT.java</exclude>
+                        <exclude>**/BulkImportConcurrencyIT.java</exclude>
+                        <exclude>**/IngestionFailureCleanupIT.java</exclude>
+                        <exclude>**/VersionPromotionRefusalIT.java</exclude>
+                        <exclude>**/WopiSaveSpoolIT.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
