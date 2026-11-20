@@ -23,10 +23,10 @@ const byId = new Map<string, FolderNode>(
 vi.mock("@/lib/folders/use-folders", () => ({ useFolders: () => ({ byId }) }))
 
 describe("DocumentBreadcrumb", () => {
-  it("shows the folder path in order, each folder opening My Documents at that folder", () => {
+  it("shows the folder path in order, each folder opening Documents at that folder", () => {
     render(<DocumentBreadcrumb documentId="doc-1" title="Invoice 41" folderId="b" />)
 
-    expect(screen.getByRole("link", { name: "My Documents" })).toHaveAttribute("href", "/documents")
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute("href", "/documents")
     expect(screen.getByRole("link", { name: "Finance" })).toHaveAttribute("href", "/documents?folder=a")
     expect(screen.getByRole("link", { name: "Invoices" })).toHaveAttribute("href", "/documents?folder=b")
     // The document itself is the current page: marked as such and not navigable (no href).
@@ -40,7 +40,7 @@ describe("DocumentBreadcrumb", () => {
 
   it("a top-level document has no folder crumbs", () => {
     render(<DocumentBreadcrumb documentId="doc-1" title="Loose file" folderId={null} />)
-    expect(screen.getByRole("link", { name: "My Documents" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "Finance" })).not.toBeInTheDocument()
     expect(screen.getByText("Loose file")).toBeInTheDocument()
   })
@@ -65,7 +65,7 @@ describe("DocumentBreadcrumb", () => {
 
   it("a folder the caller cannot see just ends the path early", () => {
     render(<DocumentBreadcrumb documentId="doc-1" title="Hidden" folderId="zzz" />)
-    expect(screen.getByRole("link", { name: "My Documents" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument()
     expect(screen.getByText("Hidden")).toBeInTheDocument()
   })
 })

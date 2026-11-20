@@ -96,7 +96,7 @@ const FOLDER_MODES: ModeOption[] = [
     value: "everyone",
     icon: Building2,
     title: "Everyone in the organisation",
-    description: "Anyone who can use My Documents can open it.",
+    description: "Anyone who can use Documents can open it.",
   },
   {
     value: "restricted",

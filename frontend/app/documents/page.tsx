@@ -10,15 +10,15 @@ import { PermissionCodes } from "@/lib/auth/permission-codes"
 import { usePageTitle } from "@/lib/use-page-title"
 
 /**
- * My Documents (Module DSC): the organisation's shared folders and the
+ * Documents (Module DSC): the organisation's shared folders and the
  * documents in them. Browsing needs docm.documents.view; each action needs
  * its own permission (checked server-side too).
  */
 export default function DocumentsPage() {
-  usePageTitle("My Documents")
+  usePageTitle("Documents")
 
   return (
-    <DashboardShell initialActiveLabel="My Documents">
+    <DashboardShell initialActiveLabel="Documents">
       <DocumentsHub active="documents">
         <PermissionGate permission={PermissionCodes.DOCM_DOCUMENTS_VIEW}>
           <Suspense fallback={null}>

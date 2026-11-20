@@ -58,7 +58,7 @@ export function WatermarksContent() {
   )
 
   return (
-    <DashboardShell initialActiveLabel="My Documents">
+    <DashboardShell initialActiveLabel="Documents">
       <DocumentsHub active="watermarks">
         {featureOff ? (
           <div className="rounded-lg border border-border bg-card p-[26px] text-[13.5px] text-muted-foreground shadow-[var(--ledger-shadow)]">

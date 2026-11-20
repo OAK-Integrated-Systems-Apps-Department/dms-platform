@@ -31,7 +31,10 @@ import {
 import {
   setBrowserView,
   useBrowserView,
+  tileGridProps,
+  useTileSize,
 } from "@/lib/documents/use-browser-view"
+import { TileSizeControl } from "@/components/documents/tile-size-control"
 import { saveDownloadedFile } from "@/lib/download-file"
 import { describeAudience } from "@/lib/pins/audience"
 import { usePins } from "@/lib/pins/use-pins"
@@ -50,6 +53,7 @@ import { cn } from "@/lib/utils"
 export function PinnedDocumentsView() {
   const router = useRouter()
   const view = useBrowserView()
+  const tileSize = useTileSize()
   const {
     pins,
     limit,
@@ -127,7 +131,8 @@ export function PinnedDocumentsView() {
     const isArchived = archived.has(row.documentId)
     // A document switched off by hand or archived by a retention rule already carries its own status badge on the row
     // (6.1); this flag is for the approval-archived case, so the two never say the same thing twice.
-    const showArchivedFlag = isArchived && (row.lifecycleState ?? "active") === "active"
+    const showArchivedFlag =
+      isArchived && (row.lifecycleState ?? "active") === "active"
     if (!pin && !showArchivedFlag) return null
     return (
       <span className="inline-flex flex-wrap items-center gap-1">
@@ -161,11 +166,11 @@ export function PinnedDocumentsView() {
     : filter === "others"
       ? "Nobody has pinned a document for you."
       : filter === "mine"
-        ? "You haven't pinned anything. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
-        : "Nothing pinned yet. Use Pin on any document in My Documents, in its preview, or on its own page, and choose who sees it."
+        ? "You haven't pinned anything. Use Pin on any document in Documents, in its preview, or on its own page, and choose who sees it."
+        : "Nothing pinned yet. Use Pin on any document in Documents, in its preview, or on its own page, and choose who sees it."
 
   return (
-    // Fills the window down to the bottom, like My Documents, so the empty state
+    // Fills the window down to the bottom, like Documents, so the empty state
     // is a full-height box instead of a thin strip under the toolbar.
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 shadow-[var(--ledger-shadow)]">
@@ -219,6 +224,7 @@ export function PinnedDocumentsView() {
             aria-label="Search pinned documents"
             className="w-[220px] max-w-full"
           />
+          {view === "grid" && <TileSizeControl />}
           <div
             role="radiogroup"
             aria-label="View"
@@ -260,7 +266,7 @@ export function PinnedDocumentsView() {
           onRetry={() => void refetch()}
         />
       ) : rows.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] px-6 py-12 text-center text-[13px] text-muted-foreground bg-card">
+        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-card px-6 py-12 text-center text-[13px] text-muted-foreground">
           {empty}
         </p>
       ) : view === "list" ? (
@@ -279,7 +285,7 @@ export function PinnedDocumentsView() {
           empty={empty}
         />
       ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
+        <ul {...tileGridProps(tileSize)}>
           {rows.map((row) => (
             <DocumentTile
               key={row.documentId}

@@ -41,7 +41,7 @@ const ACTIONS: QuickAction[] = [
     permissions: [PermissionCodes.DOCM_DOCUMENTS_VIEW],
   },
   {
-    label: "My Documents",
+    label: "Documents",
     hint: "Browse your folders",
     icon: FolderOpen,
     color: "#2b579a",

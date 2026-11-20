@@ -161,7 +161,7 @@ export function DocumentEditor({ documentId, fullScreen = false }: { documentId:
       )
     }
     return (
-      <DashboardShell initialActiveLabel="My Documents">
+      <DashboardShell initialActiveLabel="Documents">
         <DocumentBreadcrumb
           className="mb-3"
           documentId={documentId}

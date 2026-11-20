@@ -18,7 +18,10 @@ import { toast } from "sonner"
 
 import { ActionDialog } from "@/components/folders/folder-dialogs"
 import { SectionError } from "@/components/dashboard/dash-card"
-import { DocumentTile, type ItemAction } from "@/components/documents/browser-items"
+import {
+  DocumentTile,
+  type ItemAction,
+} from "@/components/documents/browser-items"
 import { DocumentPreview } from "@/components/documents/document-preview"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -29,9 +32,22 @@ import { TablePagination } from "@/components/ui/table-pagination"
 import { Textarea } from "@/components/ui/textarea"
 import { friendlyMessage } from "@/lib/api-error"
 import { useBookmarksList } from "@/lib/bookmarks/use-bookmarks"
-import type { BookmarkedDocumentDto, BookmarkSortKey, SortDirection } from "@/lib/bookmarks/api"
-import { downloadDocumentFile, type DocumentListItemDto } from "@/lib/documents/api"
-import { setBrowserView, useBrowserView } from "@/lib/documents/use-browser-view"
+import type {
+  BookmarkedDocumentDto,
+  BookmarkSortKey,
+  SortDirection,
+} from "@/lib/bookmarks/api"
+import {
+  downloadDocumentFile,
+  type DocumentListItemDto,
+} from "@/lib/documents/api"
+import {
+  setBrowserView,
+  useBrowserView,
+  tileGridProps,
+  useTileSize,
+} from "@/lib/documents/use-browser-view"
+import { TileSizeControl } from "@/components/documents/tile-size-control"
 import { saveDownloadedFile } from "@/lib/download-file"
 import { useFolders } from "@/lib/folders/use-folders"
 import { cn, formatDateTime } from "@/lib/utils"
@@ -61,10 +77,19 @@ function NoteCell({
         className="group flex max-w-[260px] items-center gap-1.5 text-left text-[13px]"
         aria-label={note ? "Edit note" : "Add a note"}
       >
-        <span className={note ? "truncate text-foreground" : "truncate text-muted-foreground italic"}>
+        <span
+          className={
+            note
+              ? "truncate text-foreground"
+              : "truncate text-muted-foreground italic"
+          }
+        >
           {note || "Add a note…"}
         </span>
-        <Pencil size={12} className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+        <Pencil
+          size={12}
+          className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
+        />
       </button>
     )
   }
@@ -163,21 +188,31 @@ function EditNoteDialog({
  * off the list and counted in the notice below instead - it reappears on its own once the document
  * comes back (BD-FR-010).
  *
- * Grid and list views, the same toggle (and the same remembered preference, shared with My Documents
+ * Grid and list views, the same toggle (and the same remembered preference, shared with Documents
  * and Shared with me) as the rest of the document screens.
  */
 export function BookmarksView() {
   const router = useRouter()
   const view = useBrowserView()
+  const tileSize = useTileSize()
   const folders = useFolders()
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [sort, setSort] = useState<BookmarkSortKey>("bookmarkedAt")
   const [dir, setDir] = useState<SortDirection>("desc")
   const [preview, setPreview] = useState<DocumentListItemDto | null>(null)
-  const [editingNote, setEditingNote] = useState<BookmarkedDocumentDto | null>(null)
+  const [editingNote, setEditingNote] = useState<BookmarkedDocumentDto | null>(
+    null
+  )
 
-  const { page: data, isLoading, isError, refetch, updateNote, remove } = useBookmarksList({
+  const {
+    page: data,
+    isLoading,
+    isError,
+    refetch,
+    updateNote,
+    remove,
+  } = useBookmarksList({
     page: page - 1,
     size: PAGE_SIZE,
     sort,
@@ -207,13 +242,21 @@ export function BookmarksView() {
     const { document } = item
     return [
       { label: "Open", icon: Eye, onSelect: () => setPreview(document) },
-      { label: "Download", icon: Download, onSelect: () => void download(document) },
+      {
+        label: "Download",
+        icon: Download,
+        onSelect: () => void download(document),
+      },
       {
         label: "Details",
         icon: ExternalLink,
         onSelect: () => router.push(`/documents/${document.documentId}`),
       },
-      { label: item.note ? "Edit note…" : "Add a note…", icon: Pencil, onSelect: () => setEditingNote(item) },
+      {
+        label: item.note ? "Edit note…" : "Add a note…",
+        icon: Pencil,
+        onSelect: () => setEditingNote(item),
+      },
       {
         label: "Remove bookmark",
         icon: BookmarkMinus,
@@ -228,7 +271,7 @@ export function BookmarksView() {
 
   const empty = query.trim()
     ? "None of your bookmarks match your search."
-    : "You haven't bookmarked anything yet. Use the bookmark icon on any document - in My Documents, its preview, or its own page - to add one here."
+    : "You haven't bookmarked anything yet. Use the bookmark icon on any document - in Documents, its preview, or its own page - to add one here."
 
   return (
     <div className="flex min-h-[calc(100dvh-300px)] min-w-0 flex-col">
@@ -255,6 +298,7 @@ export function BookmarksView() {
             aria-label="Search bookmarks"
             className="w-[220px] max-w-full"
           />
+          {view === "grid" && <TileSizeControl />}
           <div
             role="radiogroup"
             aria-label="View"
@@ -289,7 +333,8 @@ export function BookmarksView() {
       </div>
 
       <p className="mb-4 text-[12.5px] text-muted-foreground">
-        Bookmarks are private to you. To share a shortcut with others, pin the document instead.
+        Bookmarks are private to you. To share a shortcut with others, pin the
+        document instead.
       </p>
 
       {isLoading ? (
@@ -304,7 +349,7 @@ export function BookmarksView() {
           {empty}
         </p>
       ) : view === "grid" ? (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
+        <ul {...tileGridProps(tileSize)}>
           {items.map((item) => (
             <DocumentTile
               key={item.document.documentId}
@@ -315,7 +360,10 @@ export function BookmarksView() {
               bookmarked
               flag={
                 item.archived ? (
-                  <Badge variant="muted" title="No longer current, but still here">
+                  <Badge
+                    variant="muted"
+                    title="No longer current, but still here"
+                  >
                     Archived
                   </Badge>
                 ) : undefined
@@ -329,7 +377,12 @@ export function BookmarksView() {
             <table className="w-full min-w-[920px] border-collapse">
               <thead>
                 <tr className="border-b border-border">
-                  <SortableTh label="Title" active={sort === "title"} direction={dir} onClick={() => toggleSort("title")} />
+                  <SortableTh
+                    label="Title"
+                    active={sort === "title"}
+                    direction={dir}
+                    onClick={() => toggleSort("title")}
+                  />
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                     Type
                   </th>
@@ -352,7 +405,10 @@ export function BookmarksView() {
               </thead>
               <tbody>
                 {items.map(({ document, bookmarkedAt, note, archived }) => (
-                  <tr key={document.documentId} className="border-b border-border last:border-b-0 hover:bg-muted/60">
+                  <tr
+                    key={document.documentId}
+                    className="border-b border-border last:border-b-0 hover:bg-muted/60"
+                  >
                     <td className="px-3 py-3 text-[13px]">
                       <button
                         type="button"
@@ -362,7 +418,11 @@ export function BookmarksView() {
                         {document.title}
                       </button>
                       {archived && (
-                        <Badge variant="muted" className="ml-2" title="No longer current, but still here">
+                        <Badge
+                          variant="muted"
+                          className="ml-2"
+                          title="No longer current, but still here"
+                        >
                           Archived
                         </Badge>
                       )}
@@ -379,13 +439,18 @@ export function BookmarksView() {
                       {formatDateTime(bookmarkedAt)}
                     </td>
                     <td className="px-3 py-3">
-                      <NoteCell note={note} onSave={(next) => updateNote(document.documentId, next)} />
+                      <NoteCell
+                        note={note}
+                        onSave={(next) => updateNote(document.documentId, next)}
+                      />
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => router.push(`/documents/${document.documentId}`)}
+                          onClick={() =>
+                            router.push(`/documents/${document.documentId}`)
+                          }
                           aria-label={`Open ${document.title}'s page`}
                           title="Open document page"
                           className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -394,7 +459,9 @@ export function BookmarksView() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => void remove(document.documentId).catch(() => {})}
+                          onClick={() =>
+                            void remove(document.documentId).catch(() => {})
+                          }
                           aria-label={`Remove ${document.title} from bookmarks`}
                           title="Remove bookmark"
                           className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-[var(--rust-tint)] hover:text-[var(--rust)]"
@@ -413,7 +480,11 @@ export function BookmarksView() {
 
       {totalPages > 1 && (
         <div className="mt-4">
-          <TablePagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          <TablePagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       )}
 

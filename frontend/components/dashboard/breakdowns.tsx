@@ -138,7 +138,7 @@ export function FoldersCard({
         <EmptyState
           icon={FolderOpen}
           title="No documents yet"
-          action={{ href: "/documents", label: "Go to My Documents" }}
+          action={{ href: "/documents", label: "Go to Documents" }}
         />
       ) : (
         <BarList
@@ -153,7 +153,7 @@ export function FoldersCard({
             value: f.count,
             hint: f.bytes > 0 ? formatBytes(f.bytes) : undefined,
             color: f.folderId ? "var(--primary)" : "var(--ink-faint)",
-            title: f.name ? `Open ${f.name}` : "Open My Documents",
+            title: f.name ? `Open ${f.name}` : "Open Documents",
             onSelect: () =>
               router.push(
                 f.folderId
